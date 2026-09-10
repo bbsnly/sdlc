@@ -357,3 +357,79 @@ func TestStoringADocumentTheLoopDoesNotKnowExplainsWhatItDoesKnow(t *testing.T) 
 		}
 	}
 }
+
+// TestTheFreezeHoldsThroughTheShippedLauncher is the claim on the front page,
+// checked the way a user meets it: a real repository, the real binary, and the
+// hook script that hooks.json actually names.
+func TestTheFreezeHoldsThroughTheShippedLauncher(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the POSIX launcher does not run here")
+	}
+	binary := build(t)
+	root := project(t, binary)
+	runTool(t, binary, root, "start")
+
+	test := filepath.Join(root, "invoice_test.go")
+	if err := os.WriteFile(test, []byte("package main\n\n// AC-1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Before the freeze the test author writes tests.
+	if got := parse(t, launcher(t, binary, root,
+		event(root, "Write", "sdlc:sdet", "invoice_test.go"))); got.HookSpecificOutput.PermissionDecision == "deny" {
+		t.Fatalf("the test author was refused before the freeze: %s",
+			got.HookSpecificOutput.PermissionDecisionReason)
+	}
+
+	runToolWithInput(t, binary, root, "# Test plan\n\nAC-1 -> TestRejectsZero\n",
+		"artifact", "write", "test_plan")
+	runTool(t, binary, root, "freeze")
+	runTool(t, binary, root, "gate", "tests_frozen", "pass", "--note", "1 criterion, 1 failing test")
+
+	// After it, nobody edits that file -- not the implementer, not the agent
+	// that wrote it, not the conversation.
+	for _, agent := range []string{"", "sdlc:sdet", "sdlc:implementer"} {
+		got := parse(t, launcher(t, binary, root, event(root, "Edit", agent, "invoice_test.go")))
+		if got.HookSpecificOutput.PermissionDecision != "deny" {
+			t.Errorf("%q edited a frozen acceptance test", agent)
+			continue
+		}
+		if !strings.Contains(got.HookSpecificOutput.PermissionDecisionReason, "sdlc unfreeze") {
+			t.Errorf("the denial does not name the way out: %q",
+				got.HookSpecificOutput.PermissionDecisionReason)
+		}
+	}
+}
+
+// The gate verifies rather than believes. Editing a frozen test behind its back
+// is the one move that makes every gate after it meaningless, so the gate has
+// to notice on its own.
+func TestTheTestGateRefusesAPassOnTestsThatChanged(t *testing.T) {
+	binary := build(t)
+	root := project(t, binary)
+	runTool(t, binary, root, "start")
+
+	test := filepath.Join(root, "invoice_test.go")
+	if err := os.WriteFile(test, []byte("package main\n\n// AC-1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runToolWithInput(t, binary, root, "# Test plan\n", "artifact", "write", "test_plan")
+	runTool(t, binary, root, "freeze")
+
+	if err := os.WriteFile(test, []byte("package main\n\n// quietly different\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.CommandContext(t.Context(), binary, "gate", "tests_frozen", "pass")
+	cmd.Dir = root
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err == nil {
+		t.Fatal("the gate passed on tests that are not the ones that were frozen")
+	}
+	for _, want := range []string{"SDLC-E0025", "invoice_test.go"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("the refusal is missing %q:\n%s", want, stderr.String())
+		}
+	}
+}

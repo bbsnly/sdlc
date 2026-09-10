@@ -152,6 +152,24 @@ var Rules = []Rule{
 		},
 	},
 	{
+		ID: "sdet-writes-tests-only",
+		Route: "write the acceptance tests; the code that makes them pass comes next, " +
+			"from sdlc:implementer. If this project keeps fixtures somewhere the " +
+			"loop does not recognise, add that directory to paths.tests in " +
+			".sdlc/config.json",
+		check: func(r Request) string {
+			if NormalizeAgent(r.Agent) != "sdet" || r.Tests.IsTest {
+				return ""
+			}
+			if pathrules.UnderAny(r.Path, storyDir(r.Story), "CODEMAP.md") {
+				return ""
+			}
+			return "the agent that writes the acceptance tests does not write the code " +
+				"they are meant to fail against -- a test written beside its " +
+				"implementation tests the implementation, not the criterion"
+		},
+	},
+	{
 		ID: "researcher-writes-analysis-only",
 		Route: "keep to the story's own directory and CODEMAP.md, and persist the " +
 			"analysis with `sdlc artifact write`; the tests come next, from " +

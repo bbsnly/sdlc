@@ -61,7 +61,7 @@ say no are the point:
 | --- | --- | --- | --- |
 | 1 · Select | A story is chosen from the backlog and its acceptance criteria agreed | — | Yes |
 | 2 · Analyse | The story is read against the codebase; threats and security sensitivity decided | — | Yes |
-| 3 · Test | Acceptance tests are written from the criteria, and **frozen** — hash-locked | — | Not yet |
+| 3 · Test | Acceptance tests are written from the criteria, and **frozen** — hash-locked | — | Yes |
 | 4 · Plan | The plan is reviewed by an architect, a red team and a security reviewer | **Yes** | Not yet |
 | 5 · Implement | Code is written until the frozen tests pass. Tests cannot be touched | — | Not yet |
 | 6 · Verify | An independent agent re-derives the tests from the spec, hunting test-gaming | **Yes** | Not yet |

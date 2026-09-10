@@ -254,6 +254,7 @@ const RecordFile = "gate-record.json"
 var Artifacts = []Artifact{
 	{Name: "analysis", File: "ANALYSIS.md", Gate: GateAnalysis, Role: "researcher"},
 	{Name: "threats", File: "THREATS.md", Gate: GateAnalysis, Role: "researcher"},
+	{Name: "test_plan", File: "TEST-PLAN.md", Gate: GateTestsFrozen, Role: "sdet"},
 }
 
 // ArtifactsFor lists the documents a gate is expected to produce.

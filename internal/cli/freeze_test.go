@@ -42,6 +42,7 @@ func frozenStory(t *testing.T) string {
 	mustRun(t, "init")
 	mustRun(t, "start")
 	writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// AC-1\n")
+	mustRunWith(t, "# Test plan\n\nAC-1 -> TestRejectsZero\n", "artifact", "write", "test_plan")
 	return root
 }
 

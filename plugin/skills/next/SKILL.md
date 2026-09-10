@@ -87,13 +87,53 @@ answer here is the single most expensive mistake in the loop: everything downstr
 sdlc gate analysis fail --note "<n> open questions the specification does not settle"
 ```
 
+## Gate 3 — Acceptance tests, then frozen
+
+Delegate to the `sdlc:sdet` agent. Give it a brief containing:
+
+- the story id, and the paths to `story.json`, `ANALYSIS.md` and `THREATS.md`
+- that `paths.tests` and `commands.test` in `.sdlc/config.json` say where tests live and how to
+  run them
+- that it stores its test plan with `sdlc artifact write test_plan`
+
+Do not write the tests yourself, and do not adjust them afterwards. The tests are what every
+later gate measures against, and a test shaped by the conversation that will also shape the
+implementation measures nothing.
+
+If the agent reports anything in `untestable`, stop. A criterion nobody can test is a
+Definition-of-Ready problem that reached Gate 3, and writing something adjacent to it is worse
+than saying so:
+
+```bash
+sdlc gate tests_frozen fail --note "AC-3 cannot be observed from outside"
+```
+
+Otherwise run the project's own test command — `commands.test` from `.sdlc/config.json` — and
+read the output yourself. Every new test must fail. If any of them passes, the behaviour already
+exists or the test does not test it; either way the gate does not pass.
+
+Then freeze:
+
+```bash
+sdlc freeze
+sdlc gate tests_frozen pass --note "<n> criteria, <n> failing tests"
+```
+
+`sdlc freeze` records what every test file contains. From that point the tests cannot be edited
+by anyone, including you and including the agent that wrote them — the hook refuses it and points
+at `sdlc unfreeze`, which asks for a reason and puts it on the record. Lifting the freeze is
+sometimes right and is also exactly the shortcut that makes the rest of the loop meaningless, so
+never do it to make something pass.
+
+`sdlc status --json` reports the freeze and whether it is still intact.
+
 ## What is not built yet
 
-Gates 3 to 9 — acceptance tests, the plan, implementation, verification, review, commit and
-retro — are not in this version. When gate 2 passes, say so plainly and stop:
+Gates 4 to 9 — the plan, implementation, verification, review, commit and retro — are not in
+this version. When gate 3 passes, say so plainly and stop:
 
-> Analysis is done and recorded. The rest of the loop is not built yet; `sdlc status` shows
-> where this story stands.
+> The acceptance tests are written, failing and frozen. The rest of the loop is not built yet;
+> `sdlc status` shows where this story stands.
 
 Do not carry on into the later gates by hand. The point of the loop is that each gate is done by
 someone who cannot see the others' reasoning, and doing it in this conversation is exactly what

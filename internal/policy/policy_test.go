@@ -19,7 +19,7 @@ type fixture struct {
 var fixtures = map[string]fixture{
 	"write-outside-repository": {
 		denies:  Request{Tool: "Write", Path: "/etc/hosts", Outside: true, Story: "A-1"},
-		permits: Request{Tool: "Write", Agent: "sdlc-sdet", Path: "internal/x_test.go", Story: "A-1"},
+		permits: Request{Tool: "Write", Agent: "sdlc-sdet", Path: "internal/x_test.go", Story: "A-1", Tests: Tests{IsTest: true}},
 	},
 	"write-protected-path": {
 		denies:  Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/state/active", Story: "A-1"},
@@ -41,6 +41,10 @@ var fixtures = map[string]fixture{
 		denies: Request{Tool: "Write", Agent: "sdlc-implementer", Path: "internal/x_test.go", Story: "A-1",
 			Tests: Tests{IsTest: true}},
 		permits: Request{Tool: "Write", Agent: "sdlc-implementer", Path: "internal/x.go", Story: "A-1"},
+	},
+	"sdet-writes-tests-only": {
+		denies:  Request{Tool: "Write", Agent: "sdlc-sdet", Path: "internal/billing/invoice.go", Story: "A-1"},
+		permits: Request{Tool: "Write", Agent: "sdlc-sdet", Path: "internal/billing/invoice_test.go", Story: "A-1", Tests: Tests{IsTest: true}},
 	},
 	"researcher-writes-analysis-only": {
 		denies:  Request{Tool: "Write", Agent: "sdlc-researcher", Path: "internal/billing/invoice.go", Story: "A-1"},
