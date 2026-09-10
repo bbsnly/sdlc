@@ -221,10 +221,14 @@ tasks:
         # SDLC_KIT points at the *parent* of the kit: the selftest resolves
         # $SDLC_KIT/sdlc/..., mirroring how the kit installs under ~/.claude.
         # Without this it silently tests whatever is installed on the machine
-        # rather than the vendored copy -- which is a false green, and is how
-        # this leg first passed locally and failed on all three CI runners.
-        kit=$(pwd)/test/parity/legacy
-        out=$(SDLC_KIT="$kit" bash "$kit/sdlc/bin/selftest.sh" 2>&1) || {
+        # rather than the vendored copy -- a false green, and how this leg
+        # first passed locally and failed on all three CI runners.
+        #
+        # The path is computed inside bash, not here. Task's embedded shell
+        # reports pwd as a native Windows path (D:\a\...), and the selftest
+        # puts $SDLC_KIT/sdlc/bin on PATH -- where Git Bash needs a POSIX path
+        # or the `gate` it just added is not found.
+        out=$(bash -c 'kit=$(cd test/parity/legacy && pwd); SDLC_KIT="$kit" exec bash "$kit/sdlc/bin/selftest.sh"' 2>&1) || {
           echo "$out" >&2
           exit 1
         }
