@@ -24,6 +24,10 @@ vars:
   MARKDOWNLINT_VERSION: 0.23.2
   SHELLCHECK_VERSION: 0.11.0
 
+  # A hook runs on every matching tool call, so package init is on the
+  # latency path of the user's whole session. Budget in milliseconds.
+  INIT_BUDGET_MS: 3
+
   GOLANGCI: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v{{.GOLANGCI_VERSION}}
   ACTIONLINT: go run github.com/rhysd/actionlint/cmd/actionlint@v{{.ACTIONLINT_VERSION}}
   GITLEAKS: go run github.com/zricethezav/gitleaks/v8@v{{.GITLEAKS_VERSION}}
@@ -47,6 +51,7 @@ tasks:
       - task: shellcheck
       - task: markdownlint
       - task: linkcheck
+      - task: init-time
       - task: secrets
       - task: no-internal-docs
 
@@ -164,6 +169,37 @@ tasks:
     desc: Check relative links in README.md and docs/, and that README links into no docs/ page
     cmds:
       - go run ./internal/tools/linkcheck
+
+  init-time:
+    desc: Assert package init stays inside the hook latency budget
+    silent: true
+    cmds:
+      - |
+        bin="${TMPDIR:-/tmp}/sdlc-init-$$"
+        go build -o "$bin" ./cmd/sdlc
+        # The first run of a fresh binary pays to page itself in, which on a
+        # shared CI runner can be ten times the steady-state cost and has
+        # nothing to do with how much init the code does. Take the floor of
+        # several runs: that is the number a hook actually pays, since a
+        # session invokes the binary over and over.
+        total=""
+        for _ in 1 2 3 4; do
+          run=$(GODEBUG=inittrace=1 "$bin" version 2>&1 >/dev/null \
+            | awk '/^init /{for(i=1;i<=NF;i++) if($i=="clock,") s+=$(i-2)} END{printf "%.3f", s+0}')
+          total=$(awk -v a="$total" -v b="$run" 'BEGIN{ if (a=="" || b+0 < a+0) print b; else print a }')
+        done
+        rm -f "$bin"
+        over=$(awk -v t="$total" -v b="{{.INIT_BUDGET_MS}}" 'BEGIN{print (t>b) ? 1 : 0}')
+        if [ "$over" = "1" ]; then
+          echo "sdlc: package init takes ${total} ms, over the ${b:-3} ms budget." >&2
+          echo "      A hook runs on every matching tool call, so this is felt on every" >&2
+          echo "      turn of the user's session. Find it with:" >&2
+          echo "        go build -o /tmp/sdlc ./cmd/sdlc && GODEBUG=inittrace=1 /tmp/sdlc version" >&2
+          echo "      The usual cause is a new import doing work in init() or in a" >&2
+          echo "      package-level variable. Move it into a function." >&2
+          exit 1
+        fi
+        echo "init: ${total} ms (budget {{.INIT_BUDGET_MS}} ms)"
 
   secrets:
     desc: Scan for committed credentials
