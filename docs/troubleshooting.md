@@ -150,3 +150,55 @@ them with `sdlc artifact write`, then record the gate. The error names the ones 
 
 Only a pass is held to this. A gate can fail because its work could not be done, and that has to
 stay recordable.
+
+### SDLC-E0021
+
+The repository's files could not be listed.
+
+`sdlc freeze` asks git which files are part of the working tree, so that build output and
+vendored code cannot be mistaken for acceptance tests. Check that git is installed and on your
+`PATH`, and that this directory is a repository git can read. `sdlc doctor` checks both.
+
+### SDLC-E0022
+
+The tests are already frozen.
+
+A freeze covers one story's acceptance tests, and taking a second one over the top would quietly
+bless whatever changed in between. If the tests genuinely have to change, run
+`sdlc unfreeze --reason "..."` first — the reason goes on the record — and freeze again.
+
+### SDLC-E0023
+
+There is no freeze.
+
+The test gate cannot pass until `sdlc freeze` has recorded what every acceptance test contains,
+because without it a later edit to a test leaves no trace. If the message says the freeze belongs
+to another story, that freeze is stale: unfreeze it and take one for this story.
+
+### SDLC-E0024
+
+No test files were found.
+
+Either the acceptance tests have not been written yet, or `paths.tests` in `.sdlc/config.json`
+does not describe where this project keeps them. It matches a file by the directory it is in
+(`dirs`) or by its name (`file_globs`), and `sdlc init` fills both in from the stack it detected.
+
+### SDLC-E0025
+
+A frozen test is not what was frozen.
+
+The named files changed, or are gone, since the freeze was taken. That is the situation the
+freeze exists to make visible: an agent that can edit its own acceptance tests will eventually
+edit them, and every gate after that is theatre.
+
+Restore them, or — if a test really did encode the wrong behaviour — run
+`sdlc unfreeze --reason "..."` and freeze again, so that the change is a decision somebody can
+review rather than something that happened quietly.
+
+### SDLC-E0026
+
+Lifting the freeze needs a reason.
+
+`--reason` takes one line saying which acceptance criterion the test got wrong. Lifting the
+freeze is sometimes right and is also exactly the move an agent would make to reach green;
+recording why is what tells the two apart.

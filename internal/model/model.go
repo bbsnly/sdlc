@@ -296,6 +296,53 @@ func ArtifactNames() string {
 	return strings.Join(names, ", ")
 }
 
+// LockSchema versions the freeze file, so that a future change to its shape can
+// be recognised rather than guessed at.
+const LockSchema = "sdlc/tests-lock/1"
+
+// Lock is the freeze: the acceptance tests as they stood when the test gate
+// passed, recorded by content.
+//
+// This is the hinge the whole loop turns on. An agent that can edit its own
+// acceptance tests will eventually edit them -- not maliciously, just by taking
+// the shortest path to green -- and every gate after that is theatre. Hashing
+// the files is what makes a later change visible instead of arguable.
+type Lock struct {
+	Schema string            `json:"schema"`
+	Story  string            `json:"story"`
+	At     string            `json:"at"`
+	Files  map[string]string `json:"files"` // repository-relative path -> sha256
+}
+
+// NewLock records a freeze.
+func NewLock(story string, files map[string]string, at time.Time) *Lock {
+	return &Lock{Schema: LockSchema, Story: story, At: Timestamp(at), Files: files}
+}
+
+// Holds reports whether this repository-relative path is part of the freeze.
+// The nil lock holds nothing, which is what "no freeze yet" means.
+func (l *Lock) Holds(path string) bool {
+	if l == nil {
+		return false
+	}
+	_, ok := l.Files[path]
+	return ok
+}
+
+// Paths lists the frozen files in a stable order, for a message that has to
+// name them.
+func (l *Lock) Paths() []string {
+	if l == nil {
+		return nil
+	}
+	out := make([]string, 0, len(l.Files))
+	for p := range l.Files {
+		out = append(out, p)
+	}
+	slices.Sort(out)
+	return out
+}
+
 // GateStatus is the outcome recorded for a gate.
 type GateStatus string
 

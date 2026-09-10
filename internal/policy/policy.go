@@ -22,6 +22,17 @@ type Request struct {
 	Path    string // repository-relative, slash-separated
 	Outside bool   // the path resolves outside the repository
 	Story   string // the story the iteration is on
+	Tests   Tests  // what the freeze says about this path
+}
+
+// Tests is the freeze, as it applies to one path. The caller works these out --
+// from the project's configuration and the lock on disk -- so that the rules
+// stay a decision table that can be read and tested on its own.
+type Tests struct {
+	IsTest   bool // the project's conventions say this path is a test
+	Frozen   bool // this story's acceptance tests have been frozen
+	Locked   bool // this exact file is part of the freeze
+	AllowNew bool // configuration permits new test files after the freeze
 }
 
 // NormalizeAgent reduces an agent name to the bare role the rules are written
@@ -100,6 +111,44 @@ var Rules = []Rule{
 			}
 			return r.Path + " is protected while a story is being worked on: it is either " +
 				"human-owned configuration or the loop's own record of what happened"
+		},
+	},
+	{
+		ID: "frozen-test-is-not-edited",
+		Route: "change the code until the test passes; if the test itself is wrong, " +
+			"say which acceptance criterion it got wrong and run " +
+			"`sdlc unfreeze --reason \"...\"` so the change is on the record",
+		check: func(r Request) string {
+			if !r.Tests.Locked {
+				return ""
+			}
+			return r.Path + " is a frozen acceptance test. It was locked by content when " +
+				"the test gate passed, and an agent that can edit its own tests will " +
+				"eventually edit them -- which makes every gate after this one theatre"
+		},
+	},
+	{
+		ID: "no-new-test-after-the-freeze",
+		Route: "put the case in one of the frozen files, or run " +
+			"`sdlc unfreeze --reason \"...\"` and freeze again so the new file is covered",
+		check: func(r Request) string {
+			if !r.Tests.Frozen || !r.Tests.IsTest || r.Tests.Locked || r.Tests.AllowNew {
+				return ""
+			}
+			return r.Path + " would be a new test file added after the freeze, which is " +
+				"the freeze with extra steps: a test written now can be written to pass"
+		},
+	},
+	{
+		ID: "implementer-does-not-write-tests",
+		Route: "make the existing tests pass; if they are wrong, say so rather than " +
+			"changing them",
+		check: func(r Request) string {
+			if NormalizeAgent(r.Agent) != "implementer" || !r.Tests.IsTest {
+				return ""
+			}
+			return "the agent that implements a story does not write its tests -- that " +
+				"is the separation the loop is made of"
 		},
 	},
 	{

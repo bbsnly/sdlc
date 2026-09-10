@@ -51,6 +51,8 @@ func New(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newStopCmd(),
 		newGateCmd(),
 		newArtifactCmd(),
+		newFreezeCmd(),
+		newUnfreezeCmd(),
 		newDoctorCmd(),
 		newVersionCmd(),
 	)
@@ -170,4 +172,31 @@ func newVersionCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&short, "short", false, "print only the semantic version")
 	return cmd
+}
+
+// activeStory is the story the iteration is on. Every command that changes loop
+// state needs it, and every one of them has to explain the same thing when
+// there is none, so it is explained once here.
+func activeStory(s *store.Store, what string) (string, error) {
+	id, err := s.Active()
+	if err != nil {
+		return "", err
+	}
+	if id == "" {
+		return "", sdlcerr.New(sdlcerr.NoActiveIteration,
+			"there is no story being worked on",
+			what+", and no iteration is running")
+	}
+	return id, nil
+}
+
+// appendEvent adds one line to a story's record. The record is how a later gate
+// finds out what happened without trusting a conversation it cannot see.
+func appendEvent(s *store.Store, id, kind, message string) error {
+	record, err := s.Record(id)
+	if err != nil {
+		return err
+	}
+	record.Append(kind, message, s.Now())
+	return s.SaveRecord(record)
 }

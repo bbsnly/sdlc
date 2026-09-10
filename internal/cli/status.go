@@ -2,12 +2,14 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/store"
 )
 
 type nextUp struct {
@@ -22,6 +24,18 @@ type statusPayload struct {
 	Gates   map[string]string `json:"gates,omitempty"`
 	Backlog map[string]int    `json:"backlog"`
 	Next    *nextUp           `json:"next,omitempty"`
+	Freeze  *freezeState      `json:"freeze,omitempty"`
+}
+
+// freezeState is what the freeze looks like from outside: how many acceptance
+// tests it covers, and whether they are still what was frozen. A skill reads
+// this to know whether Gate 3 has actually happened.
+type freezeState struct {
+	Story   string   `json:"story"`
+	At      string   `json:"at"`
+	Files   int      `json:"files"`
+	Intact  bool     `json:"intact"`
+	Changed []string `json:"changed,omitempty"`
 }
 
 func newStatusCmd() *cobra.Command {
@@ -60,6 +74,9 @@ func newStatusCmd() *cobra.Command {
 				for gate, result := range record.Gates {
 					payload.Gates[string(gate)] = string(result.Status)
 				}
+				if payload.Freeze, err = describeFreeze(s, active); err != nil {
+					return err
+				}
 			} else if sel, ok := backlog.Next(); ok {
 				payload.Next = &nextUp{Story: sel.Story.ID, Title: sel.Story.Title}
 			}
@@ -74,6 +91,7 @@ func newStatusCmd() *cobra.Command {
 			} else {
 				fmt.Fprintf(w, "%s  in progress  %s\n\n", active, payload.Title)
 				printGates(w, record)
+				printFreeze(w, payload.Freeze)
 			}
 			fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))
 			switch {
@@ -89,6 +107,33 @@ func newStatusCmd() *cobra.Command {
 			}
 			return nil
 		},
+	}
+}
+
+// describeFreeze reports the freeze as it applies to this story. A freeze taken
+// for a different story is stale, and reporting it here would be worse than
+// reporting nothing: a skill would read it as this story's tests being locked.
+func describeFreeze(s *store.Store, story string) (*freezeState, error) {
+	lock, err := s.Lock()
+	if err != nil || lock == nil || lock.Story != story {
+		return nil, err
+	}
+	changed := verifyFreeze(s, lock)
+	return &freezeState{
+		Story: lock.Story, At: lock.At, Files: len(lock.Files),
+		Intact: len(changed) == 0, Changed: changed,
+	}, nil
+}
+
+func printFreeze(w io.Writer, f *freezeState) {
+	switch {
+	case f == nil:
+		fmt.Fprintf(w, "\n  tests  not frozen\n")
+	case f.Intact:
+		fmt.Fprintf(w, "\n  tests  %s frozen at %s\n", countFiles(f.Files), f.At)
+	default:
+		fmt.Fprintf(w, "\n  tests  %s frozen at %s, and %s changed since\n",
+			countFiles(f.Files), f.At, strings.Join(f.Changed, ", "))
 	}
 }
 

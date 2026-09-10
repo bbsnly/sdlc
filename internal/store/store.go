@@ -8,8 +8,11 @@
 package store
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -30,6 +33,7 @@ const (
 	stateDir   = config.Dir + "/state"
 	storiesDir = config.Dir + "/stories"
 	activeFile = stateDir + "/active"
+	lockFile   = stateDir + "/tests.lock"
 	recordFile = model.RecordFile
 )
 
@@ -201,6 +205,66 @@ func (s *Store) ClearActive() error {
 }
 
 // ---------------------------------------------------------------- record
+
+// ---------------------------------------------------------------- the freeze
+
+// Lock reads the freeze, or nil if the tests have not been frozen.
+func (s *Store) Lock() (*model.Lock, error) {
+	path := filepath.Join(s.root, filepath.FromSlash(lockFile))
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
+			"the test freeze could not be read",
+			lockFile+" exists but could not be opened").WithCause(err)
+	}
+	var l model.Lock
+	if err := json.Unmarshal(raw, &l); err != nil {
+		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
+			"the test freeze could not be read",
+			lockFile+" is not valid JSON").WithCause(err)
+	}
+	return &l, nil
+}
+
+// SaveLock writes the freeze.
+func (s *Store) SaveLock(l *model.Lock) error {
+	return s.writeJSON(filepath.Join(s.root, filepath.FromSlash(lockFile)), l)
+}
+
+// ClearLock lifts the freeze. It is a separate, deliberate act: lifting it by
+// accident is the one thing that must not be easy.
+func (s *Store) ClearLock() error {
+	path := filepath.Join(s.root, filepath.FromSlash(lockFile))
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return sdlcerr.New(sdlcerr.StateUnwritable,
+			"the test freeze could not be lifted",
+			lockFile+" could not be removed").WithCause(err)
+	}
+	return nil
+}
+
+// HashFile is the content of one file, as the freeze records it.
+func (s *Store) HashFile(rel string) (string, error) {
+	f, err := os.Open(filepath.Join(s.root, filepath.FromSlash(rel)))
+	if err != nil {
+		return "", sdlcerr.New(sdlcerr.StateUnreadable,
+			rel+" could not be read",
+			"the freeze records what a test file contains, and this one could not "+
+				"be opened").WithCause(err)
+	}
+	defer f.Close()
+
+	sum := sha256.New()
+	if _, err := io.Copy(sum, f); err != nil {
+		return "", sdlcerr.New(sdlcerr.StateUnreadable,
+			rel+" could not be read",
+			"reading it stopped part way through").WithCause(err)
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
+}
 
 // Record reads a story's gate record, starting a fresh one if there is none.
 func (s *Store) Record(id string) (*model.Record, error) {

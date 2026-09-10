@@ -21,8 +21,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/policy"
+	"github.com/bbsnly/sdlc/internal/store"
+	"github.com/bbsnly/sdlc/internal/testset"
 )
 
 // maxPayload bounds the read. A hook that reads forever hangs the session.
@@ -150,7 +153,34 @@ func decide(event string, raw []byte, getenv func(string) string) (policy.Verdic
 		Path:    rel,
 		Outside: outside && path != "",
 		Story:   story,
+		Tests:   testState(project, story, rel),
 	}), event, true
+}
+
+// testState works out what the freeze says about this path.
+//
+// Anything unreadable answers "not a test". The freeze is one rule among
+// several, and a project whose configuration will not parse should still have
+// its protected paths and its separation of duties enforced -- doctor is where
+// a broken configuration gets reported, not here.
+func testState(project, story, rel string) policy.Tests {
+	if rel == "" {
+		return policy.Tests{}
+	}
+	cfg, err := config.Load(project)
+	if err != nil {
+		slog.Debug("hook could not read the configuration", "err", err)
+		return policy.Tests{}
+	}
+	m := testset.New(cfg.Paths.Tests)
+	t := policy.Tests{IsTest: m.Match(rel), AllowNew: cfg.Freeze.AllowNewTestFiles}
+
+	lock, err := store.New(&config.Project{Root: project, Config: cfg}).Lock()
+	if err != nil || lock == nil || lock.Story != story {
+		return t
+	}
+	t.Frozen, t.Locked = true, lock.Holds(rel)
+	return t
 }
 
 // activeStory reads the story being worked on, directly rather than through the

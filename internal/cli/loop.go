@@ -250,19 +250,13 @@ func newGateCmd() *cobra.Command {
 			}
 			id := storyID
 			if id == "" {
-				if id, err = s.Active(); err != nil {
+				if id, err = activeStory(s, "gate records an outcome for the story being worked on"); err != nil {
 					return err
 				}
 			}
-			if id == "" {
-				return sdlcerr.New(sdlcerr.NoActiveIteration,
-					"there is no story to record this against",
-					"gate records an outcome for the story being worked on, and no "+
-						"iteration is running")
-			}
 
 			if status == model.GatePass {
-				if err := requireDocuments(s, id, gate); err != nil {
+				if err := requireEvidence(s, id, gate); err != nil {
 					return err
 				}
 			}
@@ -317,6 +311,49 @@ func printGates(w io.Writer, record *model.Record) {
 }
 
 func quote(s string) string { return `"` + s + `"` }
+
+// requireEvidence refuses to record a pass for a gate that has not left behind
+// what the gates after it read.
+//
+// This is where the tool stops being a notebook. Asking the assistant to check
+// first is exactly the instruction this project exists to stop relying on: the
+// hole that started this line of work was a skill saying "do not do this
+// yourself" and the model doing it anyway.
+func requireEvidence(s *store.Store, id string, gate model.Gate) error {
+	if err := requireDocuments(s, id, gate); err != nil {
+		return err
+	}
+	if gate == model.GateTestsFrozen {
+		return requireFreeze(s, id)
+	}
+	return nil
+}
+
+// requireFreeze holds the test gate to the thing it exists for.
+func requireFreeze(s *store.Store, id string) error {
+	lock, err := s.Lock()
+	if err != nil {
+		return err
+	}
+	switch {
+	case lock == nil:
+		return sdlcerr.New(sdlcerr.NotFrozen,
+			"the test gate cannot pass until the tests are frozen",
+			"nothing has been recorded, so a later edit to an acceptance test would "+
+				"leave no trace, and every gate after this one assumes it would")
+	case lock.Story != id:
+		return sdlcerr.New(sdlcerr.NotFrozen,
+			"the freeze on disk belongs to "+lock.Story+", not "+id,
+			"a freeze covers one story's acceptance tests, and this one was taken "+
+				"for a different story")
+	}
+	if changed := verifyFreeze(s, lock); len(changed) > 0 {
+		return sdlcerr.New(sdlcerr.FreezeBroken,
+			"the frozen tests are not what was frozen",
+			strings.Join(changed, ", ")+" changed after the freeze was taken")
+	}
+	return nil
+}
 
 // requireDocuments refuses to record a pass for a gate whose documents are not
 // on disk.

@@ -107,15 +107,9 @@ func newArtifactWriteCmd() *cobra.Command {
 			}
 			id := storyID
 			if id == "" {
-				if id, err = s.Active(); err != nil {
+				if id, err = activeStory(s, "a gate's documents belong to the story being worked on"); err != nil {
 					return err
 				}
-			}
-			if id == "" {
-				return sdlcerr.New(sdlcerr.NoActiveIteration,
-					"there is no story to store this against",
-					"a gate's documents belong to the story being worked on, and no "+
-						"iteration is running")
 			}
 
 			content, err := readArtifact(cmd, file)
@@ -182,12 +176,7 @@ func readArtifact(cmd *cobra.Command, file string) ([]byte, error) {
 func reportArtifact(cmd *cobra.Command, s *store.Store, id string,
 	a model.Artifact, path string, size int,
 ) error {
-	record, err := s.Record(id)
-	if err != nil {
-		return err
-	}
-	record.Append("artifact", a.Name+" stored at "+path, s.Now())
-	if err := s.SaveRecord(record); err != nil {
+	if err := appendEvent(s, id, "artifact", a.Name+" stored at "+path); err != nil {
 		return err
 	}
 
@@ -196,6 +185,6 @@ func reportArtifact(cmd *cobra.Command, s *store.Store, id string,
 			OK: true, Story: id, Name: a.Name, Path: path, Bytes: size,
 		})
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s (%d bytes)\n", id, a.Name, path, size)
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s (%d bytes)\n", id, a.Name, path, size)
 	return err
 }

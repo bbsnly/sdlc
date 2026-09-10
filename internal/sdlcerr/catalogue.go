@@ -63,6 +63,24 @@ var (
 	ArtifactUnreadable = register("SDLC-E0018",
 		`check the path given to --file, or pipe the document in instead`)
 
+	AlreadyFrozen = register("SDLC-E0022",
+		`run "sdlc unfreeze --reason ..." first if the tests really have to change`)
+
+	NotFrozen = register("SDLC-E0023",
+		`run "sdlc freeze" once the acceptance tests are written and failing`)
+
+	NoTestsFound = register("SDLC-E0024",
+		`write the acceptance tests first, or widen paths.tests in .sdlc/config.json so it finds them`)
+
+	FreezeBroken = register("SDLC-E0025",
+		`restore the frozen tests, or run "sdlc unfreeze --reason ..." and freeze again so the change is on the record`)
+
+	ReasonRequired = register("SDLC-E0026",
+		`pass --reason with the one line that explains why the tests have to change`)
+
+	RepositoryUnreadable = register("SDLC-E0021",
+		`check that git is installed and that this directory is a repository git can read`)
+
 	GateDocumentsMissing = register("SDLC-E0020",
 		`store the gate's documents with "sdlc artifact write", then record the gate`)
 

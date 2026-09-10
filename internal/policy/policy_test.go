@@ -25,6 +25,23 @@ var fixtures = map[string]fixture{
 		denies:  Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/state/active", Story: "A-1"},
 		permits: Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
 	},
+	"frozen-test-is-not-edited": {
+		denies: Request{Tool: "Edit", Agent: "sdlc-implementer", Path: "internal/x_test.go", Story: "A-1",
+			Tests: Tests{IsTest: true, Frozen: true, Locked: true}},
+		permits: Request{Tool: "Edit", Agent: "sdlc-implementer", Path: "internal/x.go", Story: "A-1",
+			Tests: Tests{Frozen: true}},
+	},
+	"no-new-test-after-the-freeze": {
+		denies: Request{Tool: "Write", Agent: "sdlc-sdet", Path: "internal/new_test.go", Story: "A-1",
+			Tests: Tests{IsTest: true, Frozen: true}},
+		permits: Request{Tool: "Write", Agent: "sdlc-sdet", Path: "internal/new_test.go", Story: "A-1",
+			Tests: Tests{IsTest: true, Frozen: true, AllowNew: true}},
+	},
+	"implementer-does-not-write-tests": {
+		denies: Request{Tool: "Write", Agent: "sdlc-implementer", Path: "internal/x_test.go", Story: "A-1",
+			Tests: Tests{IsTest: true}},
+		permits: Request{Tool: "Write", Agent: "sdlc-implementer", Path: "internal/x.go", Story: "A-1"},
+	},
 	"researcher-writes-analysis-only": {
 		denies:  Request{Tool: "Write", Agent: "sdlc-researcher", Path: "internal/billing/invoice.go", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc-researcher", Path: "CODEMAP.md", Story: "A-1"},
@@ -273,5 +290,77 @@ func TestTheArtifactRuleIsNarrow(t *testing.T) {
 func TestAnEmptyPathIsNotADecision(t *testing.T) {
 	if !Evaluate(Request{Tool: "Write", Path: "", Story: "A-1"}).Allowed {
 		t.Error("a tool call with no path was refused")
+	}
+}
+
+// ------------------------------------------------------------------ the freeze
+
+// The freeze is the loop's central claim, so it holds against everyone. An
+// exception for the agent that wrote the tests would be an exception for the
+// agent most able to argue for one.
+func TestAFrozenTestIsFrozenForEverybody(t *testing.T) {
+	frozen := Tests{IsTest: true, Frozen: true, Locked: true}
+	for _, agent := range []string{"", "sdlc:sdet", "sdlc:implementer", "sdlc:verifier", "somebody"} {
+		got := Evaluate(Request{
+			Tool: "Edit", Agent: agent, Path: "internal/x_test.go", Story: "A-1", Tests: frozen,
+		})
+		if got.Allowed {
+			t.Errorf("%q edited a frozen test", agent)
+			continue
+		}
+		if !strings.Contains(got.Route, "sdlc unfreeze") {
+			t.Errorf("the denial does not name the way out: %q", got.Route)
+		}
+	}
+}
+
+// Before the freeze, writing tests is the whole job of the gate that writes
+// them. A rule that fired early would make the loop impossible to run.
+func TestBeforeTheFreezeTheTestAuthorWritesTests(t *testing.T) {
+	got := Evaluate(Request{
+		Tool: "Write", Agent: "sdlc:sdet", Path: "internal/x_test.go", Story: "A-1",
+		Tests: Tests{IsTest: true},
+	})
+	if !got.Allowed {
+		t.Errorf("the test author was refused by %s: %s", got.Rule, got.Reason)
+	}
+}
+
+// Production code is untouched by any of this. The freeze is about tests, and a
+// rule that reached past them would stop the implementation gate dead.
+func TestTheFreezeDoesNotReachProductionCode(t *testing.T) {
+	got := Evaluate(Request{
+		Tool: "Edit", Agent: "sdlc:implementer", Path: "internal/billing/invoice.go", Story: "A-1",
+		Tests: Tests{Frozen: true},
+	})
+	if !got.Allowed {
+		t.Errorf("the implementer was refused by %s: %s", got.Rule, got.Reason)
+	}
+}
+
+// A project can decide that new test files are allowed after the freeze. It is
+// a real loosening -- a test written now can be written to pass -- so the rule
+// has to actually read the setting rather than assume the strict answer.
+//
+// The setting is about the agent that writes tests. It does not let the
+// implementer write one: that rule is not a setting, and a test asserting it
+// here is how it stays that way.
+func TestANewTestAfterTheFreezeFollowsTheProjectsSetting(t *testing.T) {
+	req := Request{Tool: "Write", Agent: "sdlc:sdet", Path: "internal/extra_test.go",
+		Story: "A-1", Tests: Tests{IsTest: true, Frozen: true}}
+
+	if Evaluate(req).Allowed {
+		t.Error("a new test file was added after the freeze")
+	}
+	req.Tests.AllowNew = true
+	if got := Evaluate(req); !got.Allowed {
+		t.Errorf("the project allows new test files, but %s refused: %s", got.Rule, got.Reason)
+	}
+
+	req.Agent = "sdlc:implementer"
+	if got := Evaluate(req); got.Allowed {
+		t.Error("the setting let the implementer write a test")
+	} else if got.Rule != "implementer-does-not-write-tests" {
+		t.Errorf("refused by %s, want implementer-does-not-write-tests", got.Rule)
 	}
 }

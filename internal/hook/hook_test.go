@@ -2,6 +2,8 @@ package hook
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -276,5 +278,90 @@ func TestATamperedActiveStoryTurnsEnforcementOffRatherThanBuildingABadPath(t *te
 
 	if denied(call(t, event(root, "Write", "sdlc-researcher", "internal/x.go"), noEnv)) {
 		t.Error("a tampered active file was used to build a rule")
+	}
+}
+
+// ------------------------------------------------------------------ the freeze
+
+// freeze writes a lock covering one file, with the hash of what is on disk.
+func freeze(t *testing.T, root, story, rel, body string) {
+	t.Helper()
+	write(t, root, rel, body)
+	sum := sha256.Sum256([]byte(body))
+	write(t, root, ".sdlc/state/tests.lock", `{"schema":"sdlc/tests-lock/1","story":"`+story+
+		`","at":"2026-09-10T08:30:00Z","files":{"`+rel+`":"`+hex.EncodeToString(sum[:])+`"}}`)
+}
+
+// The freeze has to survive the trip through the hook, or it protects nothing
+// where it matters: the rules are only reached with the state the hook worked
+// out from the project's own files.
+func TestAFrozenTestIsRefusedThroughTheHook(t *testing.T) {
+	root := loopProject(t)
+	freeze(t, root, "A-1", "internal/invoice_test.go", "package internal\n")
+
+	r := call(t, event(root, "Edit", "sdlc-implementer", "internal/invoice_test.go"), noEnv)
+	if !denied(r) {
+		t.Fatal("a frozen acceptance test was editable during an iteration")
+	}
+	reason := r.HookSpecificOutput.PermissionDecisionReason
+	for _, want := range []string{"frozen", "sdlc unfreeze", "frozen-test-is-not-edited"} {
+		if !strings.Contains(reason, want) {
+			t.Errorf("reason is missing %q: %q", want, reason)
+		}
+	}
+}
+
+// A freeze belongs to one story. Left over from another, it must not lock this
+// one's tests -- and must not be quietly ignored either, which is why the CLI
+// refuses to pass the gate on it.
+func TestAFreezeFromAnotherStoryDoesNotBiteHere(t *testing.T) {
+	root := loopProject(t)
+	freeze(t, root, "OTHER-9", "internal/invoice_test.go", "package internal\n")
+
+	if denied(call(t, event(root, "Edit", "sdlc-sdet", "internal/invoice_test.go"), noEnv)) {
+		t.Error("another story's freeze locked this story's tests")
+	}
+}
+
+// Before the freeze, the test author writes tests. After it, a new test file is
+// the freeze with extra steps.
+func TestNewTestFilesAreOnlyRefusedAfterTheFreeze(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, "internal/invoice_test.go", "package internal\n")
+
+	if denied(call(t, event(root, "Write", "sdlc-sdet", "internal/extra_test.go"), noEnv)) {
+		t.Error("the test author could not write a test before the freeze")
+	}
+
+	freeze(t, root, "A-1", "internal/invoice_test.go", "package internal\n")
+	if !denied(call(t, event(root, "Write", "sdlc-sdet", "internal/extra_test.go"), noEnv)) {
+		t.Error("a new test file was added after the freeze")
+	}
+}
+
+// The project decides what a test file is. A project that names nothing has
+// nothing frozen, and the hook must not invent a convention for it.
+func TestWhatCountsAsATestComesFromTheProject(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, ".sdlc/config.json", `{"version":1,"paths":{"tests":{"dirs":[],"file_globs":["*.check.js"]}}}`)
+	write(t, root, "internal/invoice_test.go", "package internal\n")
+
+	if denied(call(t, event(root, "Write", "sdlc-implementer", "internal/invoice_test.go"), noEnv)) {
+		t.Error("a Go test was protected in a project that only calls *.check.js a test")
+	}
+	if !denied(call(t, event(root, "Write", "sdlc-implementer", "billing/total.check.js"), noEnv)) {
+		t.Error("the project's own convention was not applied")
+	}
+}
+
+// A configuration that will not parse must not switch off the rules that have
+// nothing to do with it. Failing open on everything is how a control quietly
+// stops being one.
+func TestABrokenConfigurationStillProtectsWhatItCan(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, ".sdlc/config.json", "{not json")
+
+	if !denied(call(t, event(root, "Write", "", ".sdlc/state/active"), noEnv)) {
+		t.Error("loop state became writable because the configuration was broken")
 	}
 }
