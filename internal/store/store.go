@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/bbsnly/sdlc/internal/config"
+	"github.com/bbsnly/sdlc/internal/fsx"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
@@ -257,42 +258,15 @@ func (s *Store) writeJSON(path string, v any) error {
 	return s.writeFile(path, append(data, '\n'))
 }
 
-// writeFile writes atomically: a temporary file beside the target, then a
-// rename. An interrupted write leaves the old file intact rather than a
-// truncated one, which matters because these files are the loop's memory.
+// writeFile writes atomically, so an interrupted write leaves the old file
+// intact rather than a truncated one. These files are the loop's memory: a
+// half-written record is worse than no record, because the loop would read it
+// and believe it.
 func (s *Store) writeFile(path string, data []byte) error {
-	fail := func(why string, err error) error {
+	if err := fsx.WriteFileAtomic(path, data, 0o644); err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
-			relative(s.root, path)+" could not be written", why).WithCause(err)
-	}
-
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fail("its directory could not be created", err)
-	}
-	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp*")
-	if err != nil {
-		return fail("a temporary file could not be created beside it", err)
-	}
-	tmp := f.Name()
-	defer func() { _ = os.Remove(tmp) }()
-
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		return fail("writing failed part way through", err)
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return fail("the write could not be flushed to disk", err)
-	}
-	if err := f.Close(); err != nil {
-		return fail("the temporary file could not be closed", err)
-	}
-	if err := os.Chmod(tmp, 0o644); err != nil {
-		return fail("its permissions could not be set", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fail("the finished file could not be moved into place", err)
+			relative(s.root, path)+" could not be written",
+			"its directory may not be writable, or the disk may be full").WithCause(err)
 	}
 	return nil
 }

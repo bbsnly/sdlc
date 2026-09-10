@@ -1,0 +1,59 @@
+{
+  "_doc": [
+    "This is the machine-readable half of your project's contract with the loop.",
+    "The other half is the '## SDLC Contract' section of your CLAUDE.md: rules a",
+    "script cannot check, written for the assistant to read.",
+    "",
+    "Commands run from the repository root. Leave one empty to skip that step.",
+    "The coverage and mutation commands must print their percentage as the last",
+    "number on stdout.",
+    "",
+    "Run 'sdlc doctor' after changing anything here.",
+    "Reference: https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md"
+  ],
+
+  "version": 1,
+
+  "backlog": { "path": {{q .BacklogPath}} },
+
+  "git": { "trunk_branch": {{q .TrunkBranch}}, "remote": false },
+
+  "_commands_doc": {{q .StackNote}},
+  "commands": {
+    "smoke":     {{q (cmd .Commands "smoke")}},
+    "build":     {{q (cmd .Commands "build")}},
+    "test":      {{q (cmd .Commands "test")}},
+    "lint":      {{q (cmd .Commands "lint")}},
+    "fmt":       {{q (cmd .Commands "fmt")}},
+    "fmt_check": {{q (cmd .Commands "fmt_check")}},
+    "fmt_file":  {{q (cmd .Commands "fmt_file")}},
+    "coverage":  {{q (cmd .Commands "coverage")}},
+    "mutation":  {{q (cmd .Commands "mutation")}}
+  },
+
+  "thresholds": {
+    "diff_size_cap": 500,
+    "coverage_min": 80,
+    "mutation_min": 70
+  },
+
+  "paths": {
+    "tests": {
+      "dirs": {{jsonList .TestDirs}},
+      "file_globs": {{jsonList .TestGlobs}}
+    },
+    "src": {{jsonList .SrcDirs}}
+  },
+
+  "spec": { "paths": ["docs/", "spec/", "README.md"] },
+
+  "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
+
+  "reviews": { "gate7_advisory": false },
+
+  "freeze": { "allow_new_test_files": false },
+
+  "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
+
+  "budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] }
+}

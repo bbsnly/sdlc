@@ -1,0 +1,28 @@
+{
+  "_schema": ".sdlc/templates/story.schema.json",
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "Example: reject invoices with a non-positive total",
+      "as_a": "billing operator",
+      "i_want": "the system to refuse to create an invoice whose total is zero or negative",
+      "so_that": "we never issue meaningless or refund-shaped invoices by accident",
+      "priority": 1,
+      "status": "ready",
+      "risk_tier": "low",
+      "depends_on": [],
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "WHEN CreateInvoice is called with a total greater than zero, the system shall return an invoice in state Draft."
+        },
+        {
+          "id": "AC-2",
+          "text": "IF CreateInvoice is called with a total of zero or less, THEN the system shall return the domain error ErrNonPositiveTotal and create nothing."
+        }
+      ],
+      "non_goals": ["persistence", "currency conversion"],
+      "notes": "This is an example. Replace it with a story of your own, or delete it and write one with /sdlc:story."
+    }
+  ]
+}
