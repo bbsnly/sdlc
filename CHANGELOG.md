@@ -16,6 +16,10 @@ commit so the work is visible as it happens.
 - `sdlc init`, `status`, `story list`, `start`, `stop` and `gate`: enough of
   the loop to take one story from the backlog through a recorded gate. Every
   command takes `--json` for a skill to read.
+- `sdlc doctor`: checks the repository, the configuration, the backlog, the
+  contract section, whether each configured command's program is installed, and
+  whether the hooks can find the binary at all. Every problem it reports carries
+  the command that fixes it.
 - The Claude Code plugin: `/sdlc:next` to work a story through Gate 1 and
   Gate 2, the `sdlc:researcher` analysis agent, and the `PreToolUse` hook that
   enforces who may write where. The repository is its own marketplace.

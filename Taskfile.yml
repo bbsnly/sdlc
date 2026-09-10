@@ -112,6 +112,21 @@ tasks:
         fi
         [ "$fail" -eq 0 ] || exit 1
 
+  build:
+    desc: Build the sdlc binary into dist/
+    silent: true
+    cmds:
+      - |
+        out=dist/sdlc
+        [ "{{OS}}" = "windows" ] && out=dist/sdlc.exe
+        mkdir -p dist
+        go build -o "$out" ./cmd/sdlc
+        echo "built $out"
+        echo
+        echo "To try the plugin from this checkout:"
+        echo "  export PATH=\"$(pwd)/dist:\$PATH\""
+        echo "  claude --plugin-dir $(pwd)/plugin"
+
   fmt:
     desc: Format Go source
     cmds:

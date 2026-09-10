@@ -64,6 +64,11 @@ func Execute(args []string, stdout, stderr io.Writer) int {
 	if err == nil {
 		return 0
 	}
+	// A command that has already said its piece just wants an exit code.
+	var quiet quietExit
+	if errors.As(err, &quiet) {
+		return quiet.code
+	}
 	// The flag is read after the fact because cobra parses it during Execute,
 	// and a failure before parsing still has to print something.
 	if machine, _ := root.PersistentFlags().GetBool(jsonFlag); machine {
@@ -74,9 +79,20 @@ func Execute(args []string, stdout, stderr io.Writer) int {
 	return exitCode(err)
 }
 
-// exitCode keeps 1 for "this did not work" and leaves room for the codes a
-// later command needs to mean something more specific.
-func exitCode(error) int { return 1 }
+// quietExit ends the command with a code and no error text. doctor uses it:
+// its report is the message, and "sdlc: " followed by nothing would be noise.
+type quietExit struct{ code int }
+
+func (q quietExit) Error() string { return "" }
+
+// exitCode keeps 1 for "this did not work" and lets a command choose its own.
+func exitCode(err error) int {
+	var quiet quietExit
+	if errors.As(err, &quiet) {
+		return quiet.code
+	}
+	return 1
+}
 
 // errorPayload is the machine form of a failure. It carries the same three
 // fields a person would read, so a skill can show them rather than inventing

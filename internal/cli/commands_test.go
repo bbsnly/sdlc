@@ -375,3 +375,118 @@ func TestBacklogCountsReadInAFixedOrder(t *testing.T) {
 		t.Errorf("counts read in the wrong order: %q", first)
 	}
 }
+
+// ------------------------------------------------------------------ doctor
+
+// The rule doctor exists to keep: a check that only reports a problem leaves
+// the reader to guess, which is how a tool teaches people to ignore it.
+func TestEveryProblemDoctorReportsCarriesAFix(t *testing.T) {
+	project(t)
+	mustRun(t, "init")
+	// Break several things at once, so one run covers several checks.
+	if err := os.Remove(filepath.Join(".", "CLAUDE.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, ".", "user_stories.json", `{"stories":[]}`)
+	writeFile(t, ".", ".sdlc/config.json",
+		`{"version":1,"commands":{"test":"definitely-not-a-real-program --run"}}`)
+
+	got := decode[doctorPayload](t, run(t, "doctor", "--json"))
+	if got.OK || got.Problems == 0 {
+		t.Fatalf("doctor found nothing wrong: %+v", got)
+	}
+	for _, c := range got.Checks {
+		if c.State == stateProblem && strings.TrimSpace(c.Fix) == "" {
+			t.Errorf("%q is a problem with no fix", c.Name)
+		}
+		if c.Detail == "" {
+			t.Errorf("%q says nothing about what it found", c.Name)
+		}
+	}
+}
+
+func TestDoctorNamesAConfiguredProgramThatIsNotInstalled(t *testing.T) {
+	project(t)
+	mustRun(t, "init")
+	writeFile(t, ".", ".sdlc/config.json",
+		`{"version":1,"commands":{"lint":"definitely-not-a-real-program run ./..."}}`)
+
+	got := decode[doctorPayload](t, run(t, "doctor", "--json"))
+	found := false
+	for _, c := range got.Checks {
+		if strings.Contains(c.Detail, "definitely-not-a-real-program") {
+			found = true
+			if !strings.Contains(c.Detail, "lint") {
+				t.Errorf("the problem does not say which command would fail: %q", c.Detail)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("doctor did not notice a command whose program is not installed: %+v", got.Checks)
+	}
+}
+
+// A failure early on must not produce a cascade of unrelated failures.
+func TestDoctorSkipsWhatItCannotCheckYet(t *testing.T) {
+	t.Setenv("GIT_WORK_TREE", "")
+	t.Chdir(t.TempDir())
+
+	got := decode[doctorPayload](t, run(t, "doctor", "--json"))
+	problems, skipped := 0, 0
+	for _, c := range got.Checks {
+		switch c.State {
+		case stateProblem:
+			problems++
+		case stateSkipped:
+			skipped++
+		}
+	}
+	if problems != 1 {
+		t.Errorf("outside a repository doctor reported %d problems, want just the one", problems)
+	}
+	if skipped == 0 {
+		t.Error("nothing was reported as skipped, so the later checks appear to have passed")
+	}
+}
+
+func TestDoctorExitsNonZeroWhenSomethingIsWrong(t *testing.T) {
+	project(t)
+	mustRun(t, "init")
+	writeFile(t, ".", "user_stories.json", `{"stories":[]}`)
+
+	r := run(t, "doctor")
+	if r.code == 0 {
+		t.Error("doctor exited 0 with a problem to report")
+	}
+	// Its report is the message; an empty "sdlc: " line would be noise.
+	if strings.Contains(r.stderr, "sdlc: \n") {
+		t.Errorf("doctor printed an empty error line:\n%q", r.stderr)
+	}
+	if !strings.Contains(r.stdout, "fix:") {
+		t.Errorf("stdout carried no fix:\n%s", r.stdout)
+	}
+}
+
+func TestProgramsInFindsWhatWouldActuallyRun(t *testing.T) {
+	for command, want := range map[string][]string{
+		"go build ./...":                     {"go"},
+		"go build ./... && go vet ./...":     {"go"},
+		`test -z "$(gofmt -l .)"`:            {"gofmt"},
+		"npm run build --silent":             {"npm"},
+		"pytest -q --cov | grep -E '^TOTAL'": {"pytest", "grep"},
+		"":                                   nil,
+		"   ":                                nil,
+	} {
+		got := programsIn(command)
+		if len(got) != len(want) {
+			t.Errorf("programsIn(%q) = %v, want %v", command, got, want)
+			continue
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("programsIn(%q) = %v, want %v", command, got, want)
+				break
+			}
+		}
+	}
+}

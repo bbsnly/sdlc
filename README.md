@@ -15,31 +15,59 @@ always green.
 [![ci](https://github.com/bbsnly/sdlc/actions/workflows/ci.yml/badge.svg)](https://github.com/bbsnly/sdlc/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Status: pre-release
+## Status: early, and honest about it
 
-**Nothing is installable yet.** This repository is public from its first commit
-because the work is worth watching as it happens, not because it is ready. There
-is no release, no npm package and no plugin to install.
+There is no release, no npm package and no published plugin yet. What exists is
+the first vertical slice: a story can be selected and analysed, with both gates
+recorded and a hook enforcing who may write where while it happens. Gates 3 to 9
+are not built.
 
 [Watch the repository](https://github.com/bbsnly/sdlc/subscription) to hear
-about the first one.
+about the first release.
+
+### Trying it from source
+
+```console
+$ git clone https://github.com/bbsnly/sdlc && cd sdlc
+$ ./task build
+$ export PATH="$PWD/dist:$PATH"
+```
+
+Then, in a project of your own:
+
+```console
+$ sdlc init
+$ sdlc status
+```
+
+`init` reads the repository, writes a configuration with commands that match it,
+and adds the contract section to your `CLAUDE.md`. It never overwrites your own
+files, and it writes no `.gitignore`: what a project commits is the project's
+decision.
+
+To use the two gates that exist, start Claude Code with the plugin loaded and
+run `/sdlc:next`:
+
+```console
+$ claude --plugin-dir /path/to/sdlc/plugin
+```
 
 ## What the loop actually does
 
 A story moves through nine gates. Each gate has an owner, and the ones that can
 say no are the point:
 
-| Gate | What happens | Can it block? |
-| --- | --- | --- |
-| 1 · Select | A story is chosen from the backlog and its acceptance criteria agreed | — |
-| 2 · Analyse | The story is read against the codebase; threats and security sensitivity decided | — |
-| 3 · Test | Acceptance tests are written from the criteria, and **frozen** — hash-locked | — |
-| 4 · Plan | The plan is reviewed by an architect, a red team and a security reviewer | **Yes** |
-| 5 · Implement | Code is written until the frozen tests pass. Tests cannot be touched | — |
-| 6 · Verify | An independent agent re-derives the tests from the spec, hunting test-gaming | **Yes** |
-| 7 · Review | The diff is reviewed in a context that never saw the reasoning behind it | **Yes** |
-| 8 · Commit | The commit gate checks the tests are still the frozen ones | **Yes** |
-| 9 · Retro | Lessons are recorded where the next story will read them | — |
+| Gate | What happens | Can it block? | Built |
+| --- | --- | --- | --- |
+| 1 · Select | A story is chosen from the backlog and its acceptance criteria agreed | — | Yes |
+| 2 · Analyse | The story is read against the codebase; threats and security sensitivity decided | — | Yes |
+| 3 · Test | Acceptance tests are written from the criteria, and **frozen** — hash-locked | — | Not yet |
+| 4 · Plan | The plan is reviewed by an architect, a red team and a security reviewer | **Yes** | Not yet |
+| 5 · Implement | Code is written until the frozen tests pass. Tests cannot be touched | — | Not yet |
+| 6 · Verify | An independent agent re-derives the tests from the spec, hunting test-gaming | **Yes** | Not yet |
+| 7 · Review | The diff is reviewed in a context that never saw the reasoning behind it | **Yes** | Not yet |
+| 8 · Commit | The commit gate checks the tests are still the frozen ones | **Yes** | Not yet |
+| 9 · Retro | Lessons are recorded where the next story will read them | — | Not yet |
 
 The freeze is what makes the rest mean anything. An agent that can edit its own
 acceptance tests will eventually edit them, and every gate after that is
