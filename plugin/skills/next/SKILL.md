@@ -69,18 +69,15 @@ This is enforced, not requested. Nobody edits a gate's documents in place — no
 agent whose gate it is. They go through `sdlc artifact write`, the same as every other piece of
 loop state, and the hook refuses anything else.
 
-When it returns, read its JSON result and confirm both documents are on disk:
-
-```bash
-ls .sdlc/stories/<ID>/ANALYSIS.md .sdlc/stories/<ID>/THREATS.md
-```
-
-If either is missing, the gate did not happen: the agent's summary is not the artifact. Say so
-and stop rather than recording a pass. Otherwise record the gate:
+When it returns, read its JSON result and record the gate:
 
 ```bash
 sdlc gate analysis pass --note "<security_sensitive and open_questions, in one clause>"
 ```
+
+If either document was not stored the gate will refuse to pass, and say which one is missing.
+That is not something to work around: the agent's summary is not the document, and the gates
+after this one read the document. Show the user what the researcher reported and stop.
 
 If the agent reports `open_questions` above zero, or `split_recommended`, do not pass the gate.
 Record it as a failure with the reason, show the user the open questions, and stop. Guessing an

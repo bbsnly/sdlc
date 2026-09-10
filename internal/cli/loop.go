@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -260,6 +261,12 @@ func newGateCmd() *cobra.Command {
 						"iteration is running")
 			}
 
+			if status == model.GatePass {
+				if err := requireDocuments(s, id, gate); err != nil {
+					return err
+				}
+			}
+
 			record, err := s.Record(id)
 			if err != nil {
 				return err
@@ -310,3 +317,30 @@ func printGates(w io.Writer, record *model.Record) {
 }
 
 func quote(s string) string { return `"` + s + `"` }
+
+// requireDocuments refuses to record a pass for a gate whose documents are not
+// on disk.
+//
+// The gates after this one read the documents, not the summary that said they
+// exist. Checking here rather than asking the assistant to check is the whole
+// argument of this tool: a gate nobody verifies is a gate that will eventually
+// be passed on a story where the work did not happen.
+//
+// Only a pass is held to this. A gate can fail precisely because its work could
+// not be done, and refusing to record that would leave the loop with no way to
+// say so.
+func requireDocuments(s *store.Store, id string, gate model.Gate) error {
+	var missing []string
+	for _, a := range model.ArtifactsFor(gate) {
+		if !s.ArtifactStored(id, a) {
+			missing = append(missing, a.Name+" ("+store.ArtifactPath(id, a)+")")
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return sdlcerr.New(sdlcerr.GateDocumentsMissing,
+		string(gate)+" cannot pass until its documents are stored",
+		"the gates after this one read "+strings.Join(missing, " and ")+
+			", and nothing is there")
+}

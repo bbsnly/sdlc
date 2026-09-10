@@ -118,6 +118,18 @@ var Rules = []Rule{
 		},
 	},
 	{
+		ID: "gate-record-is-written-by-the-tool",
+		Route: "record outcomes with `sdlc gate <name> pass|fail --note \"...\"`; " +
+			"the record is the loop's memory and every later gate reads it",
+		check: func(r Request) string {
+			if !strings.EqualFold(fileAt(r.Story, r.Path), model.RecordFile) {
+				return ""
+			}
+			return model.RecordFile + " is the loop's record of what happened, and a " +
+				"record the assistant can edit is not a record"
+		},
+	},
+	{
 		ID: "gate-artifact-is-written-by-the-tool",
 		Route: "run `sdlc artifact write <name>` and give it the document -- " +
 			"delegate to the agent whose gate it is rather than writing it yourself",
@@ -197,11 +209,19 @@ func (v Verdict) Message() string {
 // nobody can satisfy. Going through the tool works for every writer and matches
 // what the loop already does with the rest of its state.
 func artifactAt(story, path string) (model.Artifact, bool) {
+	return model.ArtifactByFile(fileAt(story, path))
+}
+
+// fileAt is the name of the file this path names directly inside the story's
+// own directory, or "" if it is anywhere else. Anywhere else includes a
+// subdirectory of it: the gates' own files sit at the top level, and a
+// reviewer's notes underneath are nobody's business but theirs.
+func fileAt(story, path string) string {
 	rest, inStory := strings.CutPrefix(path, storyDir(story)+"/")
-	if !inStory || strings.Contains(rest, "/") {
-		return model.Artifact{}, false
+	if !inStory || rest == "" || strings.Contains(rest, "/") {
+		return ""
 	}
-	return model.ArtifactByFile(rest)
+	return rest
 }
 
 func storyDir(story string) string {

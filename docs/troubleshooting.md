@@ -140,3 +140,13 @@ A gate's document is prose that a person reads and that later gates review, so a
 already generous. Storing a truncated one would be worse than refusing: every gate after this
 one would review something that stops mid-sentence. Keep the document itself here and link to
 the bulk — the log, the dataset, the capture — from inside it.
+
+### SDLC-E0020
+
+You recorded a pass for a gate whose documents are not there.
+
+A gate's documents are what the gates after it read — not the summary that said they exist. Store
+them with `sdlc artifact write`, then record the gate. The error names the ones that are missing.
+
+Only a pass is held to this. A gate can fail because its work could not be done, and that has to
+stay recordable.

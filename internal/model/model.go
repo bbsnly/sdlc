@@ -245,10 +245,26 @@ type Artifact struct {
 	Role string // the agent whose gate it is
 }
 
+// RecordFile is the gate record's name inside a story's directory. It is what
+// the loop remembers: what happened at each gate, when, and why. It is named
+// here rather than in the store because the rules that protect it need it too.
+const RecordFile = "gate-record.json"
+
 // Artifacts is every document the loop knows how to store.
 var Artifacts = []Artifact{
 	{Name: "analysis", File: "ANALYSIS.md", Gate: GateAnalysis, Role: "researcher"},
 	{Name: "threats", File: "THREATS.md", Gate: GateAnalysis, Role: "researcher"},
+}
+
+// ArtifactsFor lists the documents a gate is expected to produce.
+func ArtifactsFor(g Gate) []Artifact {
+	var out []Artifact
+	for _, a := range Artifacts {
+		if a.Gate == g {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // FindArtifact looks one up by the name a person types.

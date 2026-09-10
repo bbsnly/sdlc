@@ -79,6 +79,12 @@ Enforcement uses Claude Code's own surfaces and nothing else: hooks, the
 permission block, and the plugin's agents. No git hooks are installed, and
 `sdlc` never writes to `.git/hooks`.
 
+One rule is worth knowing before you first see it fire. A gate's documents — the
+analysis, the threat assessment — are stored with `sdlc artifact write`, not
+written as files by the agent that produced them. They are loop state, the same
+as the gate record, and treating them that way is what stops the conversation
+quietly doing a gate's work and then recording a pass on it.
+
 That is a deliberate limit worth stating plainly. This is a discipline tool, not
 a sandbox: it constrains an agent that is trying to do the right thing, and it
 does not defend against one that is trying to escape.

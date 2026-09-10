@@ -30,7 +30,7 @@ const (
 	stateDir   = config.Dir + "/state"
 	storiesDir = config.Dir + "/stories"
 	activeFile = stateDir + "/active"
-	recordFile = "gate-record.json"
+	recordFile = model.RecordFile
 )
 
 // safeID is what a story id may contain, given that it becomes a directory
@@ -252,6 +252,17 @@ func (s *Store) WriteArtifact(story string, a model.Artifact, content []byte) (s
 		return "", err
 	}
 	return relative(s.root, path), nil
+}
+
+// ArtifactStored reports whether a gate's document is on disk. An unsafe story
+// id answers false rather than failing: the caller is asking a question about a
+// file, and every path that could write one has already refused this id.
+func (s *Store) ArtifactStored(story string, a model.Artifact) bool {
+	dir, err := s.StoryDir(story)
+	if err != nil {
+		return false
+	}
+	return fsx.Exists(filepath.Join(dir, a.File))
 }
 
 // ArtifactPath is where an artifact lives, relative to the repository root and

@@ -29,6 +29,10 @@ var fixtures = map[string]fixture{
 		denies:  Request{Tool: "Write", Agent: "sdlc-researcher", Path: "internal/billing/invoice.go", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc-researcher", Path: "CODEMAP.md", Story: "A-1"},
 	},
+	"gate-record-is-written-by-the-tool": {
+		denies:  Request{Tool: "Edit", Agent: "", Path: ".sdlc/stories/A-1/gate-record.json", Story: "A-1"},
+		permits: Request{Tool: "Edit", Agent: "", Path: ".sdlc/stories/A-1/reviews/gate-record.json", Story: "A-1"},
+	},
 	"gate-artifact-is-written-by-the-tool": {
 		denies:  Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/ANALYSIS.md", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
@@ -223,6 +227,24 @@ func TestAGateArtifactIsWrittenByTheToolAndNobodyElse(t *testing.T) {
 			if !strings.Contains(got.Route, "sdlc artifact write") {
 				t.Errorf("the denial does not name the sanctioned route: %q", got.Route)
 			}
+		}
+	}
+}
+
+// The gate record is what every later gate reads to find out what happened. An
+// assistant that can edit it can make it say something that did not.
+func TestTheGateRecordIsNobodysToEdit(t *testing.T) {
+	for _, agent := range []string{"", "sdlc:researcher", "sdlc-implementer", "sdlc:verifier"} {
+		got := Evaluate(Request{
+			Tool: "Write", Agent: agent,
+			Path: ".sdlc/stories/A-1/gate-record.json", Story: "A-1",
+		})
+		if got.Allowed {
+			t.Errorf("%q edited the gate record", agent)
+			continue
+		}
+		if !strings.Contains(got.Route, "sdlc gate") {
+			t.Errorf("the denial does not name the route: %q", got.Route)
 		}
 	}
 }

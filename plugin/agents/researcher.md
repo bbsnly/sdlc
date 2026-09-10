@@ -70,7 +70,7 @@ SDLC_DOCUMENT
 
 The command prints where it stored each one. Use the headings of `.sdlc/templates/ANALYSIS.md`
 if that file exists. If the document contains a line that is exactly the delimiter, change the
-delimiter; or write it to a scratch file under `.sdlc/stories/<ID>/` and pass `--file`.
+delimiter.
 
 If you found structure missing from `CODEMAP.md`, append it there. Facts only, no opinions.
 

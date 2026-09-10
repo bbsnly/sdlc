@@ -154,3 +154,48 @@ func TestListNamesEveryDocumentAndWhereItBelongs(t *testing.T) {
 		}
 	}
 }
+
+// The tagline of this tool is that a model cannot talk its way past a gate.
+// This is where that is true or it is not: the gates after Gate 2 read the
+// documents, not the summary that said they exist.
+func TestAGateCannotPassUntilItsDocumentsAreStored(t *testing.T) {
+	storyUnderway(t)
+
+	r := run(t, "gate", "analysis", "pass", "--note", "looks fine to me")
+	if r.code == 0 {
+		t.Fatal("the analysis gate passed with nothing to show for it")
+	}
+	for _, want := range []string{"SDLC-E0020", "analysis", "threats", "ANALYSIS.md"} {
+		if !strings.Contains(r.stderr, want) {
+			t.Errorf("the refusal is missing %q:\n%s", want, r.stderr)
+		}
+	}
+
+	// One of the two is not enough: the error names what is still missing.
+	mustRunWith(t, "# Analysis\n", "artifact", "write", "analysis")
+	r = run(t, "gate", "analysis", "pass")
+	if r.code == 0 {
+		t.Fatal("the gate passed with half its documents")
+	}
+	if strings.Contains(r.stderr, "ANALYSIS.md") || !strings.Contains(r.stderr, "THREATS.md") {
+		t.Errorf("the refusal does not name what is actually missing:\n%s", r.stderr)
+	}
+
+	mustRunWith(t, "# Threats\n", "artifact", "write", "threats")
+	mustRun(t, "gate", "analysis", "pass", "--note", "no trust boundary crossed")
+}
+
+// A gate can fail because the work could not be done, and the loop has to be
+// able to say so. Holding a failure to the same rule would leave no way to
+// record the thing the rule exists to catch.
+func TestAGateCanStillFailWithNothingStored(t *testing.T) {
+	storyUnderway(t)
+	mustRun(t, "gate", "analysis", "fail", "--note", "7 open questions the spec does not settle")
+	mustRun(t, "gate", "analysis", "pending")
+}
+
+// Most gates produce no documents, and the rule must not invent one for them.
+func TestAGateWithNoDocumentsPassesOnItsOwn(t *testing.T) {
+	storyUnderway(t)
+	mustRun(t, "gate", "dor", "pass", "--note", "criteria are testable")
+}

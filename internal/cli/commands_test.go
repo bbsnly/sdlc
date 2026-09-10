@@ -176,6 +176,11 @@ func TestAStoryGoesThroughStartGateAndStop(t *testing.T) {
 		t.Fatalf("start = %+v", start)
 	}
 
+	// Gate 2 cannot pass until its documents are stored, so the flow through it
+	// is the flow a real story takes.
+	mustRunWith(t, "# Analysis\n", "artifact", "write", "analysis")
+	mustRunWith(t, "# Threats\n", "artifact", "write", "threats")
+
 	gate := decode[gatePayload](t, mustRun(t, "gate", "analysis", "pass",
 		"--note", "no trust boundary crossed", "--json"))
 	if gate.Story != "US-001" || gate.Gate != "analysis" || gate.Status != "pass" {

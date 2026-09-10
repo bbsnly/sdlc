@@ -153,6 +153,8 @@ func TestAStoryReachesTheAnalysisGate(t *testing.T) {
 
 	runTool(t, binary, root, "start")
 	runTool(t, binary, root, "gate", "dor", "pass", "--note", "criteria are testable")
+	runToolWithInput(t, binary, root, "# Analysis\n", "artifact", "write", "analysis")
+	runToolWithInput(t, binary, root, "# Threats\n", "artifact", "write", "threats")
 	runTool(t, binary, root, "gate", "analysis", "pass", "--note", "not security sensitive")
 
 	var after struct {

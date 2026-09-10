@@ -63,6 +63,9 @@ var (
 	ArtifactUnreadable = register("SDLC-E0018",
 		`check the path given to --file, or pipe the document in instead`)
 
+	GateDocumentsMissing = register("SDLC-E0020",
+		`store the gate's documents with "sdlc artifact write", then record the gate`)
+
 	ArtifactTooLarge = register("SDLC-E0019",
 		`store the document itself and link to the bulk from it — a gate's document is read by a person`)
 
