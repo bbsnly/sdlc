@@ -1,0 +1,30 @@
+# Normalise line endings so the same bytes reach every platform.
+#
+# Without this, a Windows checkout converts source to CRLF and `gofmt -l`
+# reports every Go file as unformatted -- which is what the windows-latest
+# matrix leg caught on the first push.
+* text=auto eol=lf
+
+# Files that must keep LF wherever they land: shell reads them, and a shebang
+# followed by CR is a "bad interpreter" error.
+*.sh        text eol=lf
+*.go        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.jsonc     text eol=lf
+*.md        text eol=lf
+task        text eol=lf
+go.mod      text eol=lf
+go.sum      text eol=lf
+
+# Windows batch files are the one exception: cmd.exe is happiest with CRLF.
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+
+# Binaries are never touched.
+*.png       binary
+*.jpg       binary
+*.gz        binary
+*.xz        binary
+*.zip       binary
