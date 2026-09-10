@@ -6,13 +6,24 @@
 package cli
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/bbsnly/sdlc/internal/config"
+	"github.com/bbsnly/sdlc/internal/sdlcerr"
+	"github.com/bbsnly/sdlc/internal/store"
 	"github.com/bbsnly/sdlc/internal/version"
 )
+
+// jsonFlag is the name of the machine-output flag. It is persistent, so that a
+// skill can put it anywhere in the command line without having to know which
+// subcommand it belongs to.
+const jsonFlag = "json"
 
 // New builds the root command with its subcommands attached.
 func New(stdout, stderr io.Writer) *cobra.Command {
@@ -29,7 +40,18 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	root.AddCommand(newVersionCmd(), newDoctorCmd())
+	root.PersistentFlags().Bool(jsonFlag, false,
+		"print one line of JSON instead of prose, for a script or a skill to read")
+	root.AddCommand(
+		newInitCmd(),
+		newStatusCmd(),
+		newStoryCmd(),
+		newStartCmd(),
+		newStopCmd(),
+		newGateCmd(),
+		newDoctorCmd(),
+		newVersionCmd(),
+	)
 	return root
 }
 
@@ -37,11 +59,78 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 func Execute(args []string, stdout, stderr io.Writer) int {
 	root := New(stdout, stderr)
 	root.SetArgs(args)
-	if err := root.Execute(); err != nil {
-		fmt.Fprintf(stderr, "sdlc: %v\n", err)
+
+	err := root.Execute()
+	if err == nil {
+		return 0
+	}
+	// The flag is read after the fact because cobra parses it during Execute,
+	// and a failure before parsing still has to print something.
+	if machine, _ := root.PersistentFlags().GetBool(jsonFlag); machine {
+		_ = emitJSON(stdout, newErrorPayload(err))
 		return 1
 	}
-	return 0
+	fmt.Fprint(stderr, sdlcerr.Render(err))
+	return exitCode(err)
+}
+
+// exitCode keeps 1 for "this did not work" and leaves room for the codes a
+// later command needs to mean something more specific.
+func exitCode(error) int { return 1 }
+
+// errorPayload is the machine form of a failure. It carries the same three
+// fields a person would read, so a skill can show them rather than inventing
+// its own wording.
+type errorPayload struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error"`
+	Why   string `json:"why,omitempty"`
+	Fix   string `json:"fix,omitempty"`
+	Code  string `json:"code,omitempty"`
+	Docs  string `json:"docs,omitempty"`
+}
+
+func newErrorPayload(err error) errorPayload {
+	var e *sdlcerr.Error
+	if !errors.As(err, &e) {
+		return errorPayload{Error: err.Error()}
+	}
+	return errorPayload{
+		Error: e.What,
+		Why:   e.Why,
+		Fix:   e.Fix,
+		Code:  e.Code.String(),
+		Docs:  e.Code.URL(),
+	}
+}
+
+// emitJSON writes one compact line. Stdout is a protocol surface: everything
+// that reads it reads it a line at a time.
+func emitJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	return enc.Encode(v)
+}
+
+// wantJSON reports whether the caller asked for machine output.
+func wantJSON(cmd *cobra.Command) bool {
+	v, _ := cmd.Flags().GetBool(jsonFlag)
+	return v
+}
+
+// openStore resolves the project the command is being run in.
+func openStore() (*store.Store, *config.Project, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil, nil, sdlcerr.New(sdlcerr.NotAGitRepo,
+			"the current directory could not be read",
+			"sdlc works relative to where it is run").WithCause(err)
+	}
+	p, err := config.Open(wd)
+	if err != nil {
+		return nil, nil, err
+	}
+	return store.New(p), p, nil
 }
 
 func newVersionCmd() *cobra.Command {

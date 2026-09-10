@@ -361,3 +361,51 @@ func TestInitLeavesAClaudeMDThatAlreadyHasTheContract(t *testing.T) {
 		t.Error("a filled-in contract was overwritten")
 	}
 }
+
+// ------------------------------------------------------------------ fragments
+
+// The contract is appended to a file the user already has, and markdownlint
+// skips it in this repository because a fragment starting at a `##` heading is
+// not a document with a missing title. The shape that makes it read correctly
+// once appended is asserted here instead.
+func TestContractFragmentIsWellFormedMarkdown(t *testing.T) {
+	raw, err := templates.ReadFile("templates/contract.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(raw), "\n")
+
+	if !strings.HasPrefix(lines[0], ContractHeading) {
+		t.Fatalf("the fragment must open with %q, got %q", ContractHeading, lines[0])
+	}
+	for i, line := range lines {
+		next := ""
+		if i+1 < len(lines) {
+			next = lines[i+1]
+		}
+		if strings.HasPrefix(line, "#") && strings.TrimSpace(next) != "" {
+			t.Errorf("line %d: a heading needs a blank line after it: %q", i+1, line)
+		}
+		if strings.HasPrefix(line, "- ") && i > 0 {
+			prev := lines[i-1]
+			if strings.TrimSpace(prev) != "" && !strings.HasPrefix(prev, "- ") &&
+				!strings.HasPrefix(prev, "  ") {
+				t.Errorf("line %d: a list needs a blank line before it: %q", i+1, line)
+			}
+		}
+	}
+}
+
+// The fragment names commands the user will type. A rename that misses it
+// leaves the assistant reading instructions for a command that is gone.
+func TestContractFragmentNamesOnlyCommandsThatExist(t *testing.T) {
+	raw, err := templates.ReadFile("templates/contract.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stale := range []string{"/sdlc-loop", "/sdlc-init", "/sdlc-approve", "gate loop"} {
+		if strings.Contains(string(raw), stale) {
+			t.Errorf("the contract still refers to %q, which this version does not provide", stale)
+		}
+	}
+}

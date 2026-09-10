@@ -22,5 +22,15 @@
     "MD034": false
   },
   "globs": ["**/*.md"],
-  "ignores": ["plan/**", "test/parity/legacy/**", "node_modules/**"]
+
+  // internal/scaffold/templates holds fragments that are written into a user's
+  // own files. They are program data, not documentation of this repository, and
+  // a fragment that starts at a `##` heading is not a document with a missing
+  // title. Their shape is asserted by the scaffold's tests instead.
+  "ignores": [
+    "plan/**",
+    "test/parity/legacy/**",
+    "internal/scaffold/templates/**",
+    "node_modules/**"
+  ]
 }

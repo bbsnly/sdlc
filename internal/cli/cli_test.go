@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestVersionPrintsOneLine(t *testing.T) {
@@ -47,19 +49,24 @@ func TestUnknownCommandFailsWithAMessage(t *testing.T) {
 // Every verb carries the shape the documentation depends on. This is the seed
 // of the --help shape test that later rows extend.
 func TestEveryCommandHasAShortAndAnExample(t *testing.T) {
-	root := New(&bytes.Buffer{}, &bytes.Buffer{})
-	for _, c := range root.Commands() {
-		if c.Name() == "help" || c.Name() == "completion" {
-			continue // cobra writes these; we do not
-		}
-		if c.Short == "" {
-			t.Errorf("%s: Short is empty", c.Name())
-		}
-		if strings.HasSuffix(c.Short, ".") {
-			t.Errorf("%s: Short should not end in a period (cobra convention)", c.Name())
-		}
-		if c.Example == "" {
-			t.Errorf("%s: no Example; a verb that does anything non-obvious needs one", c.Name())
+	var walk func(*cobra.Command, string)
+	walk = func(c *cobra.Command, path string) {
+		for _, sub := range c.Commands() {
+			name := strings.TrimSpace(path + " " + sub.Name())
+			if sub.Name() == "help" || sub.Name() == "completion" {
+				continue // cobra writes these; we do not
+			}
+			if sub.Short == "" {
+				t.Errorf("%s: Short is empty", name)
+			}
+			if strings.HasSuffix(sub.Short, ".") {
+				t.Errorf("%s: Short should not end in a period (cobra convention)", name)
+			}
+			if sub.Example == "" {
+				t.Errorf("%s: no Example; a verb that does anything non-obvious needs one", name)
+			}
+			walk(sub, name)
 		}
 	}
+	walk(New(&bytes.Buffer{}, &bytes.Buffer{}), "")
 }
