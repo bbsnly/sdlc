@@ -9,9 +9,11 @@ on:
 permissions:
   contents: read
 
+# A new push supersedes the one before it. An in-flight run of an older commit
+# is answering a question nobody is asking any more, on three runners.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   check:

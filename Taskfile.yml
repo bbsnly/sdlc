@@ -218,7 +218,13 @@ tasks:
           echo "      so it fails rather than skips." >&2
           exit 1
         fi
-        out=$(cd test/parity/legacy && bash bin/selftest.sh 2>&1) || {
+        # SDLC_KIT points at the *parent* of the kit: the selftest resolves
+        # $SDLC_KIT/sdlc/..., mirroring how the kit installs under ~/.claude.
+        # Without this it silently tests whatever is installed on the machine
+        # rather than the vendored copy -- which is a false green, and is how
+        # this leg first passed locally and failed on all three CI runners.
+        kit=$(pwd)/test/parity/legacy
+        out=$(SDLC_KIT="$kit" bash "$kit/sdlc/bin/selftest.sh" 2>&1) || {
           echo "$out" >&2
           exit 1
         }
