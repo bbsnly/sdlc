@@ -1,23 +1,35 @@
 // Package hook is the fast path.
 //
 // Claude Code runs a hook on every matching tool call, so this code is on the
-// latency path of the user's whole session. Nothing here builds a command
-// tree, reads config it does not need, or touches the network. The rest of the
-// CLI is reached only when the first argument is not `hook`.
+// latency path of the user's whole session. Nothing here builds a command tree,
+// parses configuration it does not need, or touches the network. The rest of
+// the CLI is reached only when the first argument is not `hook`.
 //
-// The verbs land in a later phase; today this is the shape and the contract:
-// a payload arrives as JSON on stdin, a decision leaves as JSON on stdout, and
-// stdout carries nothing else, ever.
+// It fails open. Every error -- an unreadable payload, a missing file, a path
+// that cannot be resolved -- ends in "carry on". A hook that blocks a session
+// because of its own bug is worse than the mistake it was trying to prevent,
+// and the loop's real guarantee is the gate record, which a wrong write cannot
+// forge.
 package hook
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/bbsnly/sdlc/internal/pathrules"
+	"github.com/bbsnly/sdlc/internal/policy"
 )
 
-// Decision is what Claude Code reads back from a hook. Field names match the
-// hook protocol and are not ours to rename.
+// maxPayload bounds the read. A hook that reads forever hangs the session.
+const maxPayload = 1 << 20
+
+// Decision is the generic reply: keep going, or stop with a reason. It is what
+// a hook says when it has nothing specific to add, and what the crash handler
+// falls back to.
 type Decision struct {
 	// Continue false stops the action. Omitted when true, because the common
 	// case should be the smallest payload.
@@ -36,24 +48,128 @@ func Allow() Decision { return Decision{Continue: true} }
 // Deny refuses an action, with a reason the reader can act on.
 func Deny(reason string) Decision { return Decision{Continue: false, StopReason: reason} }
 
-// Run dispatches a hook event. args is everything after the `hook` verb.
-func Run(args []string, stdin io.Reader, stdout io.Writer) int {
+// preToolUseOutput is the shape Claude Code reads to refuse a tool call. The
+// field names belong to the hook protocol and are not ours to rename.
+type preToolUseOutput struct {
+	HookEventName            string `json:"hookEventName"`
+	PermissionDecision       string `json:"permissionDecision"`
+	PermissionDecisionReason string `json:"permissionDecisionReason"`
+}
+
+type preToolUseReply struct {
+	HookSpecificOutput preToolUseOutput `json:"hookSpecificOutput"`
+}
+
+// payload is the part of the hook event this needs.
+type payload struct {
+	HookEventName string `json:"hook_event_name"`
+	ToolName      string `json:"tool_name"`
+	AgentType     string `json:"agent_type"`
+	CWD           string `json:"cwd"`
+	ToolInput     struct {
+		FilePath     string `json:"file_path"`
+		NotebookPath string `json:"notebook_path"`
+	} `json:"tool_input"`
+}
+
+// Run dispatches a hook event. args is everything after the `hook` verb, so
+// args[0] is the event name.
+func Run(args []string, stdin io.Reader, stdout io.Writer, getenv func(string) string) int {
+	// The payload is always drained, even when the answer is already known:
+	// leaving it unread can give the caller a broken pipe.
+	raw, _ := io.ReadAll(io.LimitReader(stdin, maxPayload))
 	if len(args) == 0 {
 		return emit(stdout, Allow())
 	}
-	// Payloads are small and bounded; a hook that hangs reading stdin would
-	// hang the session, so the read is limited rather than unbounded.
-	_, _ = io.Copy(io.Discard, io.LimitReader(stdin, 1<<20))
 
-	// Until the policy engine lands, every event is allowed. This is the
-	// honest state: the plumbing is real, the decisions are not yet.
-	return emit(stdout, Allow())
+	verdict, event, ok := decide(args[0], raw, getenv)
+	if !ok || verdict.Allowed {
+		return emit(stdout, Allow())
+	}
+	return emit(stdout, preToolUseReply{HookSpecificOutput: preToolUseOutput{
+		HookEventName:            event,
+		PermissionDecision:       "deny",
+		PermissionDecisionReason: verdict.Message(),
+	}})
 }
 
-func emit(stdout io.Writer, d Decision) int {
-	b, err := json.Marshal(d)
+// decide works out whether this event should be refused. ok is false whenever
+// the answer cannot be reached at all, which is treated exactly like an allow.
+func decide(event string, raw []byte, getenv func(string) string) (policy.Verdict, string, bool) {
+	// A human who started the session can turn enforcement off. This is read
+	// from the environment, which a session cannot change from the inside.
+	if getenv("SDLC_ENFORCE") == "0" {
+		return policy.Allowed, event, false
+	}
+
+	var p payload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return policy.Allowed, event, false
+	}
+	if p.HookEventName != "" {
+		event = p.HookEventName
+	}
+
+	project := getenv("CLAUDE_PROJECT_DIR")
+	if project == "" {
+		project = p.CWD
+	}
+	if project == "" {
+		return policy.Allowed, event, false
+	}
+
+	// Two files decide whether the loop has any business here: the project
+	// takes part, and a story is being worked on. Outside those, this does
+	// nothing at all.
+	if !exists(filepath.Join(project, ".sdlc", "config.json")) {
+		return policy.Allowed, event, false
+	}
+	story := activeStory(project)
+	if story == "" {
+		return policy.Allowed, event, false
+	}
+
+	path := p.ToolInput.FilePath
+	if path == "" {
+		path = p.ToolInput.NotebookPath
+	}
+	rel, outside := pathrules.Rel(project, path)
+
+	return policy.Evaluate(policy.Request{
+		Tool:    p.ToolName,
+		Agent:   p.AgentType,
+		Path:    rel,
+		Outside: outside && path != "",
+		Story:   story,
+	}), event, true
+}
+
+// activeStory reads the story being worked on, directly rather than through the
+// store: this runs on every tool call, and parsing the configuration to learn
+// something that is not in it would be work for nothing.
+func activeStory(project string) string {
+	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "active"))
 	if err != nil {
-		// Unreachable for this struct, but a hook must always produce valid
+		return ""
+	}
+	id := strings.TrimSpace(string(raw))
+	// The CLI checks this when it writes the file. Checking it again here is
+	// cheap, and this is the one place the value becomes part of a path.
+	if id == "" || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
+		return ""
+	}
+	return id
+}
+
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
+func emit(stdout io.Writer, v any) int {
+	b, err := json.Marshal(v)
+	if err != nil {
+		// Unreachable for these types, but a hook must always produce valid
 		// JSON: a parse error on the other side is worse than a denial.
 		fmt.Fprint(stdout, `{"continue":true}`)
 		return 0

@@ -52,7 +52,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	// function precisely so that not calling it costs nothing.
 	if isHook {
 		defer logging.Stage(opts, "hook")()
-		return hook.Run(args[1:], stdin, stdout)
+		return hook.Run(args[1:], stdin, stdout, getenv)
 	}
 
 	defer logging.Stage(opts, "cli")()

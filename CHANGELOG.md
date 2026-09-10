@@ -16,6 +16,10 @@ commit so the work is visible as it happens.
 - `sdlc init`, `status`, `story list`, `start`, `stop` and `gate`: enough of
   the loop to take one story from the backlog through a recorded gate. Every
   command takes `--json` for a skill to read.
+- Write-scope enforcement while a story is being worked on. Configuration and
+  loop state are protected from every agent, the analysis agent may write only
+  its analysis, and the main conversation is told to delegate. Every refusal
+  names the rule and the sanctioned way to do the same thing.
 - Error codes `SDLC-E0001` through `SDLC-E0015`, each documented in
   [docs/troubleshooting.md](docs/troubleshooting.md). Codes are API: once
   published, a code's meaning does not change and it is never reused.
