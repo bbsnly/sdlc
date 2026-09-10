@@ -1,0 +1,90 @@
+package sdlcerr
+
+import "fmt"
+
+// The catalogue. Every failure a user can read is registered here, once.
+//
+// Codes are API. Once published, a code's meaning does not change, and a code is
+// never reused for a second condition. To retire one, delete its entry here and
+// mark its section in docs/troubleshooting.md with a leading **Retired.** — that
+// page is the permanent registry, so a reader who finds the code in an old log
+// still lands on what it meant. A test asserts the three halves of that rule:
+// every live code has a heading, every heading is live or marked retired, and no
+// live code is marked retired.
+var (
+	NotAGitRepo = register("SDLC-E0001",
+		`run "git init" first, or change to a directory inside your repository`)
+
+	NotInitialised = register("SDLC-E0002",
+		`run "sdlc init" in the root of your repository`)
+
+	AlreadyInitialised = register("SDLC-E0003",
+		`edit .sdlc/config.json directly, or run "sdlc init --force" to overwrite it`)
+
+	ConfigUnreadable = register("SDLC-E0004",
+		`fix the JSON in .sdlc/config.json, or delete it and run "sdlc init" again`)
+
+	StateUnreadable = register("SDLC-E0005",
+		`this is a bug — please open an issue at https://github.com/bbsnly/sdlc/issues with the code above`)
+
+	StateUnwritable = register("SDLC-E0006",
+		`check that you can write to .sdlc/ and that the disk is not full`)
+
+	BacklogMissing = register("SDLC-E0007",
+		`run "sdlc init" to create the backlog, or point backlog.path in .sdlc/config.json at the file you use`)
+
+	BacklogUnreadable = register("SDLC-E0008",
+		`fix the JSON in your backlog file — every story needs an "id" and a "title"`)
+
+	StoryNotFound = register("SDLC-E0009",
+		`run "sdlc story list" to see the ids you can use`)
+
+	NoRunnableStory = register("SDLC-E0010",
+		`add a story to the backlog, or unblock one — "sdlc story list" shows why each is held back`)
+
+	NoActiveIteration = register("SDLC-E0011",
+		`run "sdlc start" to begin an iteration on the next story`)
+
+	IterationAlreadyActive = register("SDLC-E0012",
+		`finish the current story, or run "sdlc stop" to end the iteration without recording a result`)
+
+	UnknownGate = register("SDLC-E0013",
+		`run "sdlc gate --help" to see the gate names this version knows`)
+
+	UnknownGateStatus = register("SDLC-E0014",
+		`use one of: pass, fail, pending`)
+)
+
+// entry is one row of the catalogue.
+type entry struct {
+	code Code
+	fix  string
+}
+
+// catalogue holds every registered code in registration order.
+var catalogue []entry
+
+// byID guards against two conditions sharing a code, at init time rather than
+// at test time, so a duplicate cannot reach a build that skipped the tests.
+var byID = map[string]int{}
+
+func register(id, fix string) Code {
+	if _, dup := byID[id]; dup {
+		panic(fmt.Sprintf("sdlcerr: %s is registered twice — codes are API and are never reused", id))
+	}
+	if fix == "" {
+		panic(fmt.Sprintf("sdlcerr: %s has no fix — an error without a fix is not finished", id))
+	}
+	byID[id] = len(catalogue)
+	catalogue = append(catalogue, entry{code: Code{id: id}, fix: fix})
+	return Code{id: id}
+}
+
+func fixFor(c Code) string {
+	i, ok := byID[c.id]
+	if !ok {
+		// Unreachable: Code cannot be constructed outside this package.
+		return `this is a bug — please open an issue at https://github.com/bbsnly/sdlc/issues`
+	}
+	return catalogue[i].fix
+}

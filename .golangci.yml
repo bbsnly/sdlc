@@ -6,6 +6,7 @@ linters:
     - bodyclose
     - copyloopvar
     - errorlint
+    - forbidigo
     - gocritic
     - misspell
     - nilerr
@@ -14,6 +15,18 @@ linters:
     - unconvert
     - usestdlibvars
     - wastedassign
+  settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^errors\.New$
+          msg: >-
+            a user reads this package's errors: build them with sdlcerr.New so they
+            carry a code and a fix
+        - pattern: ^fmt\.Errorf$
+          msg: >-
+            a user reads this package's errors: build them with sdlcerr.New and attach
+            the cause with WithCause
   exclusions:
     generated: lax
     presets:
@@ -23,6 +36,13 @@ linters:
       - path: _test\.go$
         linters:
           - errcheck
+          - forbidigo
+      # forbidigo guards the packages whose errors reach a person. Everything
+      # else returns ordinary errors and is wrapped on the way out; the list
+      # grows as those surfaces are built.
+      - linters:
+          - forbidigo
+        path-except: ^(cmd/sdlc|internal/(cli|config|gate|policy|shellpolicy|store|version))/
 
 formatters:
   enable:
