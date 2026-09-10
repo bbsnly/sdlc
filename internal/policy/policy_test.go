@@ -163,6 +163,38 @@ func TestResearcherIsScopedToItsOwnStory(t *testing.T) {
 	}
 }
 
+// The same agent arrives under a different name depending on how it was
+// installed. A rule that matched only one spelling would stop enforcing the
+// moment the install method changed.
+func TestTheResearcherIsRecognisedUnderEverySpelling(t *testing.T) {
+	for _, name := range []string{"sdlc:researcher", "sdlc-researcher", "researcher"} {
+		got := Evaluate(Request{Tool: "Write", Agent: name, Path: "internal/x.go", Story: "A-1"})
+		if got.Allowed {
+			t.Errorf("%q was not recognised as the analysis agent", name)
+		}
+		if got.Rule != "researcher-writes-analysis-only" {
+			t.Errorf("%q was refused by %s", name, got.Rule)
+		}
+	}
+}
+
+// "sdlc:" alone must not be read as the main conversation, and an agent whose
+// name merely starts with the same letters is a different agent.
+func TestNormalizeAgentDoesNotOverreach(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                  "",
+		"sdlc:sdet":         "sdet",
+		"sdlc-implementer":  "implementer",
+		"sdlcsomething":     "sdlcsomething",
+		"other:researcher":  "other:researcher",
+		"  sdlc:verifier  ": "verifier",
+	} {
+		if got := NormalizeAgent(in); got != want {
+			t.Errorf("NormalizeAgent(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestAnEmptyPathIsNotADecision(t *testing.T) {
 	if !Evaluate(Request{Tool: "Write", Path: "", Story: "A-1"}).Allowed {
 		t.Error("a tool call with no path was refused")

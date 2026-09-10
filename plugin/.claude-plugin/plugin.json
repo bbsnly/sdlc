@@ -1,0 +1,13 @@
+{
+  "name": "sdlc",
+  "version": "0.0.1",
+  "description": "Run one story at a time through nine gates: tests are written and frozen before any implementation, and the agent that implements cannot edit them.",
+  "author": {
+    "name": "Anatoliy Babushka",
+    "email": "anatoliybabushka@gmail.com"
+  },
+  "homepage": "https://github.com/bbsnly/sdlc",
+  "repository": "https://github.com/bbsnly/sdlc",
+  "license": "MIT",
+  "keywords": ["sdlc", "tdd", "code-review", "workflow", "gates"]
+}

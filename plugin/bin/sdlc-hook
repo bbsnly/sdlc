@@ -1,0 +1,45 @@
+#!/bin/sh
+# Hand a hook event to the sdlc binary, wherever it happens to live.
+#
+# This runs on every matching tool call, so it does as little as possible and
+# never blocks the session on its own failure: if the binary cannot be found,
+# the tool call is allowed and the reason is written to stderr, where Claude
+# Code shows it. Enforcement silently off would be worse than enforcement off
+# with an explanation.
+set -eu
+
+event="${1:-}"
+
+find_binary() {
+  if [ -n "${SDLC_BIN:-}" ] && [ -x "${SDLC_BIN}" ]; then
+    printf '%s' "${SDLC_BIN}"
+    return 0
+  fi
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/bin/sdlc" ]; then
+    printf '%s' "${CLAUDE_PLUGIN_ROOT}/bin/sdlc"
+    return 0
+  fi
+  if command -v sdlc >/dev/null 2>&1; then
+    command -v sdlc
+    return 0
+  fi
+  return 1
+}
+
+if binary="$(find_binary)"; then
+  exec "${binary}" hook "${event}"
+fi
+
+# Drain stdin so the caller never sees a broken pipe, then allow the call.
+cat >/dev/null 2>&1 || true
+printf '{"continue":true}\n'
+
+cat >&2 <<'MSG'
+sdlc: the sdlc binary was not found, so nothing is being enforced.
+
+  why  the plugin is installed but the binary it drives is not on PATH and is
+       not in the plugin's own bin/ directory
+  fix  run "sdlc doctor" in your terminal; if that also fails, reinstall with
+       "npx @bbsnly/sdlc install"
+MSG
+exit 0

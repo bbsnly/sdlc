@@ -16,6 +16,9 @@ commit so the work is visible as it happens.
 - `sdlc init`, `status`, `story list`, `start`, `stop` and `gate`: enough of
   the loop to take one story from the backlog through a recorded gate. Every
   command takes `--json` for a skill to read.
+- The Claude Code plugin: `/sdlc:next` to work a story through Gate 1 and
+  Gate 2, the `sdlc:researcher` analysis agent, and the `PreToolUse` hook that
+  enforces who may write where. The repository is its own marketplace.
 - Write-scope enforcement while a story is being worked on. Configuration and
   loop state are protected from every agent, the analysis agent may write only
   its analysis, and the main conversation is told to delegate. Every refusal

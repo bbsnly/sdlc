@@ -17,10 +17,28 @@ import (
 // Request is what is about to happen.
 type Request struct {
 	Tool    string // Write, Edit, MultiEdit, NotebookEdit
-	Agent   string // the agent asking; empty is the main conversation
+	Agent   string // the role asking; empty is the main conversation
 	Path    string // repository-relative, slash-separated
 	Outside bool   // the path resolves outside the repository
 	Story   string // the story the iteration is on
+}
+
+// NormalizeAgent reduces an agent name to the bare role the rules are written
+// against.
+//
+// The same agent arrives under three names depending on how it was installed:
+// "sdlc:researcher" from the plugin, "sdlc-researcher" from a loose agent file,
+// and "researcher" if someone renamed it. A rule that matched only one of them
+// would silently stop enforcing when the install method changed, which is the
+// worst way for a security control to fail.
+func NormalizeAgent(name string) string {
+	name = strings.TrimSpace(name)
+	for _, prefix := range []string{"sdlc:", "sdlc-"} {
+		if rest, ok := strings.CutPrefix(name, prefix); ok {
+			return rest
+		}
+	}
+	return name
 }
 
 // Verdict is the answer. An allowed verdict carries nothing else: there is
@@ -88,13 +106,13 @@ var Rules = []Rule{
 		Route: "write the analysis under the story's own directory; " +
 			"the tests come next, from sdlc-sdet, and the code after that",
 		check: func(r Request) string {
-			if r.Agent != "sdlc-researcher" {
+			if NormalizeAgent(r.Agent) != "researcher" {
 				return ""
 			}
 			if pathrules.UnderAny(r.Path, storyDir(r.Story), "CODEMAP.md") {
 				return ""
 			}
-			return "sdlc-researcher writes analysis, not code or tests"
+			return "the analysis agent writes analysis, not code or tests"
 		},
 	},
 	{
@@ -102,7 +120,7 @@ var Rules = []Rule{
 		Route: "delegate the work to the agent whose gate it is, " +
 			"or run `sdlc stop` to end the iteration and take over yourself",
 		check: func(r Request) string {
-			if r.Agent != "" {
+			if NormalizeAgent(r.Agent) != "" {
 				return ""
 			}
 			if pathrules.UnderAny(r.Path, ".sdlc", "CODEMAP.md") {
