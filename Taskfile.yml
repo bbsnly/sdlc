@@ -228,7 +228,14 @@ tasks:
         # reports pwd as a native Windows path (D:\a\...), and the selftest
         # puts $SDLC_KIT/sdlc/bin on PATH -- where Git Bash needs a POSIX path
         # or the `gate` it just added is not found.
-        out=$(bash -c 'kit=$(cd test/parity/legacy && pwd); SDLC_KIT="$kit" exec bash "$kit/sdlc/bin/selftest.sh"' 2>&1) || {
+        out=$(bash -c '
+          kit=$(cd test/parity/legacy && pwd)
+          # Git Bash inherits a native PWD from the parent, so pwd yields
+          # D:/a/... rather than /d/a/... . The selftest puts $SDLC_KIT/sdlc/bin
+          # on PATH, and a drive-letter entry there is silently ignored -- every
+          # `gate` call then reports "command not found" on Windows alone.
+          command -v cygpath >/dev/null 2>&1 && kit=$(cygpath -u "$kit")
+          SDLC_KIT="$kit" exec bash "$kit/sdlc/bin/selftest.sh"' 2>&1) || {
           echo "$out" >&2
           exit 1
         }
