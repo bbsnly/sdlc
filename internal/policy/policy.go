@@ -116,6 +116,19 @@ var Rules = []Rule{
 		},
 	},
 	{
+		ID: "story-artifact-belongs-to-its-gate",
+		Route: "delegate it to the agent whose gate it is -- that agent starts from a " +
+			"fresh context, which is the whole reason its answer is worth more than yours",
+		check: func(r Request) string {
+			owner, name, ok := artifactOwner(r.Story, r.Path)
+			if !ok || NormalizeAgent(r.Agent) == owner {
+				return ""
+			}
+			return name + " is written by the " + owner + " agent, not by whoever happens " +
+				"to be holding the conversation"
+		},
+	},
+	{
 		ID: "orchestrator-delegates",
 		Route: "delegate the work to the agent whose gate it is, " +
 			"or run `sdlc stop` to end the iteration and take over yourself",
@@ -166,6 +179,30 @@ func (v Verdict) Message() string {
 		return ""
 	}
 	return v.Reason + ". Instead: " + v.Route + " [" + v.Rule + "]"
+}
+
+// storyArtifacts names the file each gate produces and the role that owns it.
+//
+// Without this the loop has a hole exactly where it matters: the main
+// conversation may write under .sdlc/ for its own bookkeeping, and the analysis
+// lives under .sdlc/, so it could simply do Gate 2 itself and record a pass.
+// Every gate after that would then be reviewing work shaped by the reasoning it
+// was supposed to be independent of.
+var storyArtifacts = map[string]string{
+	"ANALYSIS.md": "researcher",
+	"THREATS.md":  "researcher",
+}
+
+// artifactOwner reports which role owns the path, if it is one of a story's
+// gate artifacts.
+func artifactOwner(story, path string) (owner, name string, ok bool) {
+	dir := storyDir(story) + "/"
+	rest, inStory := strings.CutPrefix(path, dir)
+	if !inStory || strings.Contains(rest, "/") {
+		return "", "", false
+	}
+	owner, ok = storyArtifacts[rest]
+	return owner, rest, ok
 }
 
 func storyDir(story string) string {

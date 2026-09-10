@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,6 +84,11 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, getenv func(string) s
 	}
 
 	verdict, event, ok := decide(args[0], raw, getenv)
+	// Why a hook did nothing is the hardest thing to find out from the outside,
+	// so every decision is available at debug level. SDLC_DEBUG_FILE is the way
+	// to see it: a hook's stderr is often invisible.
+	slog.Debug("hook decision",
+		"event", event, "considered", ok, "allowed", verdict.Allowed, "rule", verdict.Rule)
 	if !ok || verdict.Allowed {
 		return emit(stdout, Allow())
 	}
@@ -134,6 +140,9 @@ func decide(event string, raw []byte, getenv func(string) string) (policy.Verdic
 		path = p.ToolInput.NotebookPath
 	}
 	rel, outside := pathrules.Rel(project, path)
+	slog.Debug("hook considering",
+		"tool", p.ToolName, "agent", p.AgentType, "role", policy.NormalizeAgent(p.AgentType),
+		"path", path, "rel", rel, "outside", outside, "story", story, "project", project)
 
 	return policy.Evaluate(policy.Request{
 		Tool:    p.ToolName,

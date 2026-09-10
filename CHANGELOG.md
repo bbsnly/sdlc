@@ -23,6 +23,9 @@ commit so the work is visible as it happens.
 - The Claude Code plugin: `/sdlc:next` to work a story through Gate 1 and
   Gate 2, the `sdlc:researcher` analysis agent, and the `PreToolUse` hook that
   enforces who may write where. The repository is its own marketplace.
+- A gate's artifacts can only be written by the agent whose gate it is. The
+  analysis is written by the analysis agent, not by whoever is holding the
+  conversation.
 - Write-scope enforcement while a story is being worked on. Configuration and
   loop state are protected from every agent, the analysis agent may write only
   its analysis, and the main conversation is told to delegate. Every refusal

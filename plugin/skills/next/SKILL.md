@@ -64,6 +64,9 @@ Delegate to the `sdlc:researcher` agent. Give it a brief containing:
 Do not do this analysis yourself. The agent starts from a fresh context on purpose: it has not
 seen the conversation that led here, so it cannot inherit an assumption from it.
 
+This is enforced, not requested. If you try to write `ANALYSIS.md` or `THREATS.md` yourself the
+hook will refuse it, and the refusal will point you back here. Delegate.
+
 When it returns, read its JSON result and check that both files exist. Then record the gate:
 
 ```bash

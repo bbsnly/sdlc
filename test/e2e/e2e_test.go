@@ -245,3 +245,34 @@ func TestTheLauncherWithoutABinaryAllowsAndExplains(t *testing.T) {
 		}
 	}
 }
+
+// TestTheAnalysisCannotBeWrittenByTheConversationItself covers the hole a live
+// run found: the main conversation wrote Gate 2's analysis itself and every
+// rule allowed it, because the orchestrator may write under .sdlc/ and the
+// analysis lives under .sdlc/. Every gate after that would have been reviewing
+// work shaped by the reasoning it was supposed to be independent of.
+func TestTheAnalysisCannotBeWrittenByTheConversationItself(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the POSIX launcher does not run here")
+	}
+	binary := build(t)
+	root := project(t, binary)
+	runTool(t, binary, root, "start")
+
+	analysis := ".sdlc/stories/US-001/ANALYSIS.md"
+
+	got := parse(t, launcher(t, binary, root, event(root, "Write", "", analysis)))
+	if got.HookSpecificOutput.PermissionDecision != "deny" {
+		t.Fatal("the conversation wrote the analysis itself")
+	}
+	if !strings.Contains(got.HookSpecificOutput.PermissionDecisionReason, "fresh context") {
+		t.Errorf("the denial does not say why it matters: %q",
+			got.HookSpecificOutput.PermissionDecisionReason)
+	}
+
+	allowed := parse(t, launcher(t, binary, root, event(root, "Write", "sdlc:researcher", analysis)))
+	if allowed.HookSpecificOutput.PermissionDecision == "deny" {
+		t.Errorf("the analysis agent could not write its own analysis: %s",
+			allowed.HookSpecificOutput.PermissionDecisionReason)
+	}
+}

@@ -29,6 +29,10 @@ var fixtures = map[string]fixture{
 		denies:  Request{Tool: "Write", Agent: "sdlc-researcher", Path: "internal/billing/invoice.go", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc-researcher", Path: "CODEMAP.md", Story: "A-1"},
 	},
+	"story-artifact-belongs-to-its-gate": {
+		denies:  Request{Tool: "Write", Agent: "", Path: ".sdlc/stories/A-1/ANALYSIS.md", Story: "A-1"},
+		permits: Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/ANALYSIS.md", Story: "A-1"},
+	},
 	"orchestrator-delegates": {
 		denies:  Request{Tool: "Write", Agent: "", Path: "internal/billing/invoice.go", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
@@ -192,6 +196,52 @@ func TestNormalizeAgentDoesNotOverreach(t *testing.T) {
 		if got := NormalizeAgent(in); got != want {
 			t.Errorf("NormalizeAgent(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The hole this closes was found by running the loop for real: the main
+// conversation wrote the analysis itself and every rule allowed it, because the
+// orchestrator may write under .sdlc/ and the analysis lives under .sdlc/.
+func TestAGateArtifactCannotBeWrittenByWhoeverIsHoldingTheConversation(t *testing.T) {
+	for _, artifact := range []string{"ANALYSIS.md", "THREATS.md"} {
+		path := ".sdlc/stories/A-1/" + artifact
+
+		for _, agent := range []string{"", "sdlc:sdet", "sdlc-implementer", "somebody-else"} {
+			got := Evaluate(Request{Tool: "Write", Agent: agent, Path: path, Story: "A-1"})
+			if got.Allowed {
+				t.Errorf("%s was written by %q", artifact, agent)
+			}
+			if !strings.Contains(got.Route, "fresh context") {
+				t.Errorf("the denial does not say why delegating matters: %q", got.Route)
+			}
+		}
+
+		if got := Evaluate(Request{
+			Tool: "Write", Agent: "sdlc:researcher", Path: path, Story: "A-1",
+		}); !got.Allowed {
+			t.Errorf("the researcher could not write %s: %s", artifact, got.Reason)
+		}
+	}
+}
+
+// The rule is about the story's own artifacts, not about the directory. Other
+// bookkeeping under it stays open, and a file of the same name somewhere else
+// is a different file.
+func TestTheArtifactRuleIsNarrow(t *testing.T) {
+	for _, path := range []string{
+		".sdlc/stories/A-1/notes.md",
+		".sdlc/stories/A-1/reviews/ANALYSIS.md",
+		".sdlc/lessons.md",
+	} {
+		if got := Evaluate(Request{Tool: "Write", Agent: "", Path: path, Story: "A-1"}); !got.Allowed {
+			t.Errorf("%s was refused by %s: %s", path, got.Rule, got.Reason)
+		}
+	}
+	// A file of the same name outside the story directory is a different file.
+	// It is still governed -- by the rule that governs code, not this one.
+	got := Evaluate(Request{Tool: "Write", Agent: "sdlc-implementer", Path: "docs/ANALYSIS.md", Story: "A-1"})
+	if !got.Allowed {
+		t.Errorf("docs/ANALYSIS.md was refused by %s", got.Rule)
 	}
 }
 
