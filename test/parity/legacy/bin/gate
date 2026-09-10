@@ -1,0 +1,631 @@
+#!/usr/bin/env bash
+# gate — deterministic gate/state CLI for the SDLC loop.
+#
+# Every subcommand prints ONE compact JSON object on stdout and keeps raw tool
+# output in .sdlc/stories/<ID>/logs/. The orchestrator (Claude) and the hooks
+# call this; nothing here depends on the language or stack of the project —
+# project commands and thresholds come from .sdlc/config.json.
+#
+# Requires: bash 3.2+, git, jq, sha256sum or shasum.
+set -euo pipefail
+
+SDLC_DIR=".sdlc"
+CONFIG="$SDLC_DIR/config.json"
+STATE_DIR="$SDLC_DIR/state"
+STORIES_DIR="$SDLC_DIR/stories"
+LEDGER="$SDLC_DIR/claude-progress.json"
+
+# ---------------------------------------------------------------- helpers
+die() { printf '{"ok":false,"error":%s}\n' "$(jq -Rn --arg m "$1" '$m')"; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || die "missing dependency: $1"; }
+need git; need jq
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+[ -n "$ROOT" ] || die "not inside a git repository"
+cd "$ROOT"
+
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+cfg() { jq -r "$1 // empty" "$CONFIG" 2>/dev/null; }      # scalar (empty if missing)
+cfgj() { jq -c "$1" "$CONFIG" 2>/dev/null; }               # json
+require_config() { [ -f "$CONFIG" ] || die "no $CONFIG — run /sdlc-init first"; }
+story_dir() { echo "$STORIES_DIR/$1"; }
+record_path() { echo "$STORIES_DIR/$1/gate-record.json"; }
+current_story() {
+  if [ -f "$STATE_DIR/active" ]; then cat "$STATE_DIR/active"; return; fi
+  local bl; bl="$(cfg '.backlog.path')"; [ -n "$bl" ] || bl=user_stories.json
+  [ -f "$bl" ] && jq -r '[.stories[] | select(.status=="in_progress" or .status=="awaiting_human")][0].id // empty' "$bl" || true
+}
+json_file_set() { # json_file_set <file> <jq filter> [--arg k v ...]
+  local f="$1"; shift; local filter="$1"; shift
+  local tmp; tmp="$(mktemp)"
+  jq "$@" "$filter" "$f" > "$tmp" && mv "$tmp" "$f"
+}
+ensure_ledger() {
+  mkdir -p "$STATE_DIR" "$STORIES_DIR"
+  [ -f "$LEDGER" ] || printf '{"version":1,"current":null,"stories":{},"totals":{"stories_done":0,"cost_usd":0}}\n' > "$LEDGER"
+}
+ensure_record() { # ensure_record <id>
+  local id="$1" d; d="$(story_dir "$id")"
+  mkdir -p "$d/logs" "$d/reviews"
+  [ -f "$(record_path "$id")" ] || jq -nc --arg id "$id" --arg t "$(now)" \
+    '{story:$id,created:$t,gates:{},events:[],escalations:[],approvals:[],metrics:{compactions:0,review_rounds:0,verify_runs:0,tokens_note:"filled by sdlc-run.sh"}}' \
+    > "$(record_path "$id")"
+}
+append_event() { # append_event <id> <type> <message>
+  ensure_record "$1"
+  json_file_set "$(record_path "$1")" '.events += [{"at":$t,"type":$ty,"message":$m}]' --arg t "$(now)" --arg ty "$2" --arg m "$3"
+}
+run_logged() { # run_logged <id> <name> <command> -> prints exit code; log in story logs
+  local id="$1" name="$2" cmd="$3" log rc=0
+  log="$(story_dir "$id")/logs/$name.log"
+  mkdir -p "$(dirname "$log")"
+  { echo "# $(now)  \$ $cmd"; } > "$log"
+  set +e
+  bash -lc "$cmd" >> "$log" 2>&1
+  rc=$?
+  set -e
+  echo "$rc"
+}
+last_number() { # last numeric token in a log file (commands.coverage/mutation must print a number last)
+  grep -Eo '[0-9]+([.][0-9]+)?' "$1" | tail -1 || true
+}
+ge() { # ge <a> <b>  -> 0 if a >= b (float-safe)
+  awk -v a="$1" -v b="$2" 'BEGIN{exit !(a+0 >= b+0)}'
+}
+
+# Bookkeeping paths are not "code": they never invalidate a verification and
+# they never appear in the diff reviewers see. (.sdlc/ records, ledger, codemap, backlog)
+bookkeeping_excludes() {
+  local bl; bl="$(cfg '.backlog.path')"; [ -n "$bl" ] || bl=user_stories.json
+  printf '%s\n' ':(exclude).sdlc' ':(exclude)CODEMAP.md' ":(exclude)$bl"
+}
+is_bookkeeping_path() {
+  local bl; bl="$(cfg '.backlog.path')"; [ -n "$bl" ] || bl=user_stories.json
+  case "$1" in .sdlc/*|CODEMAP.md|"$bl") return 0;; *) return 1;; esac
+}
+# Diff of CODE in the working tree (tracked + untracked) against HEAD, with the
+# bookkeeping paths excluded from the comparison. Never touches the real index.
+tree_diff() {
+  local tmp; tmp="$(mktemp)"; rm -f "$tmp"
+  GIT_INDEX_FILE="$tmp" git add -A . >/dev/null 2>&1
+  GIT_INDEX_FILE="$tmp" git diff --cached HEAD "$@" -- . $(bookkeeping_excludes)
+  rm -f "$tmp"
+}
+# Hash of the CODE state: HEAD plus the exact code diff. Bookkeeping writes (records,
+# ledger, codemap, backlog) never change it; any code change does.
+tree_hash() {
+  { git rev-parse HEAD; tree_diff; } | if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1
+}
+# Full working-tree snapshot INCLUDING bookkeeping (used for the verifier's worktree).
+tree_hash_full() {
+  local tmp; tmp="$(mktemp)"; rm -f "$tmp"
+  GIT_INDEX_FILE="$tmp" git add -A . >/dev/null 2>&1
+  GIT_INDEX_FILE="$tmp" git write-tree
+  rm -f "$tmp"
+}
+
+# List test files (tracked + untracked, not ignored) matching config paths.tests:
+#   { "dirs": ["tests/","test/"], "file_globs": ["*_test.go","test_*.py"] }
+test_files() {
+  local pattern=""
+  while IFS= read -r d; do [ -n "$d" ] && pattern="$pattern|${d%/}/*"; done < <(cfgj '.paths.tests.dirs // [] | .[]' | jq -r '.')
+  while IFS= read -r g; do [ -n "$g" ] && pattern="$pattern|$g|*/$g"; done < <(cfgj '.paths.tests.file_globs // [] | .[]' | jq -r '.')
+  pattern="${pattern#|}"
+  [ -n "$pattern" ] || return 0
+  git ls-files -co --exclude-standard | while IFS= read -r f; do
+    eval "case \"\$f\" in $pattern) echo \"\$f\";; esac"
+  done
+}
+is_test_path() { # is_test_path <relpath>
+  local pattern="" f="$1"
+  while IFS= read -r d; do [ -n "$d" ] && pattern="$pattern|${d%/}/*"; done < <(cfgj '.paths.tests.dirs // [] | .[]' | jq -r '.')
+  while IFS= read -r g; do [ -n "$g" ] && pattern="$pattern|$g|*/$g"; done < <(cfgj '.paths.tests.file_globs // [] | .[]' | jq -r '.')
+  pattern="${pattern#|}"
+  [ -n "$pattern" ] || return 1
+  eval "case \"\$f\" in $pattern) return 0;; esac"
+  return 1
+}
+
+# ---------------------------------------------------------------- subcommands
+cmd_help() {
+cat <<'EOF'
+gate <command> [args]        all output is one JSON object
+
+state & backlog
+  summary                      compact state summary (used by SessionStart hook)
+  loop start <ID>              mark loop active for story ID (hooks enforce from here)
+  loop end                     mark loop inactive (story finished / escalated / paused)
+  story next [ID]              pick next runnable story (or validate ID) -> story json
+  story get <ID>               story json
+  story status <ID> <status>   todo|ready|in_progress|awaiting_human|blocked|done|dropped
+  record <ID> <gate> <status> [note]   set gate status in gate-record.json (pass|fail|skip|pending)
+                               gates: dor analysis plan design_review implementation verifier_review code_review commit retro
+                               (verifier_review/code_review also record the current code tree hash)
+  flag <ID> <key> <value>      set a story flag, e.g. security_sensitive true
+  story add '<json>'           append a story to the backlog (splits, fix-forward)
+  record-get <ID>              gate-record.json
+  metric <ID> <key> <value>    set numeric/string metric in gate record + ledger
+  escalate <ID> <type> <msg>   write state/escalation.json, story -> awaiting_human, loop end
+  approve <ID> [--reject <why>]  clear escalation (human decision); records tree hash
+
+verification & anti-gaming
+  freeze <ID>                  hash all test files -> tests.lock (blocks edits via hooks)
+  unfreeze <ID> <reason>       remove lock (logged; orchestrator only, before SDET rework)
+  lock-check                   compare current test files to tests.lock
+  tree-hash                    hash of full working tree incl. untracked files
+  diff <ID>                    write diff.patch + stats to story dir
+  diff-size                    added+deleted lines vs HEAD
+  verify <ID>                  fmt/build/lint/test/coverage/mutation + lock-check -> record
+  snapshot <ID>                detached worktree with exact working-tree contents (verifier)
+  snapshot-clean <ID>          remove that worktree
+  run <ID> <cmd-name>          run a configured command, log it, return exit code
+  commit-check <ID>            everything the commit hook needs, one JSON verdict
+  trunk-health                 branch/clean/smoke/remote checks (Gate 0)
+
+review & close-out
+  consensus <ID> <4|7> <N>     aggregate that gate's round-N review files -> open_required, rereview
+  retro <ID>                   render the deterministic sections of retro.md + event papercuts (Gate 9)
+EOF
+}
+
+cmd_summary() {
+  require_config; ensure_ledger
+  local cur; cur="$(current_story)"
+  local active=false; [ -f "$STATE_DIR/active" ] && active=true
+  local esc="null"; [ -f "$STATE_DIR/escalation.json" ] && esc="$(jq -c . "$STATE_DIR/escalation.json")"
+  local rec="null"; [ -n "$cur" ] && [ -f "$(record_path "$cur")" ] && rec="$(jq -c '{gates:(.gates|to_entries|map({(.key):.value.status})|add // {}),metrics}' "$(record_path "$cur")")"
+  local branch; branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+  local dirty; dirty="$(git status --porcelain | wc -l | tr -d ' ')"
+  local backlog; backlog="$(cfg '.backlog.path')"
+  local counts="null"; [ -f "$backlog" ] && counts="$(jq -c '[.stories[].status] | group_by(.) | map({(.[0]):length}) | add // {}' "$backlog")"
+  local lessons="[]"; [ -f "$SDLC_DIR/lessons.md" ] && lessons="$( (grep -E '^- ' "$SDLC_DIR/lessons.md" || true) | tail -3 | jq -R . | jq -sc .)"
+  jq -nc --arg cur "$cur" --argjson active "$active" --argjson esc "$esc" --argjson rec "$rec" \
+        --arg branch "$branch" --arg dirty "$dirty" --argjson counts "$counts" --argjson lessons "$lessons" \
+        '{ok:true,loop_active:$active,current_story:(if $cur=="" then null else $cur end),record:$rec,escalation:$esc,branch:$branch,dirty_files:($dirty|tonumber),backlog:$counts,recent_lessons:$lessons}'
+}
+
+cmd_loop() {
+  require_config; ensure_ledger
+  case "${1:-}" in
+    start)
+      [ -n "${2:-}" ] || die "usage: gate loop start <ID>"
+      ensure_record "$2"
+      echo "$2" > "$STATE_DIR/active"
+      rm -f "$STATE_DIR/stop-blocks"
+      jq -nc --arg id "$2" --arg t "$(now)" '{story:$id,since:$t}' > "$STATE_DIR/current.json"
+      json_file_set "$LEDGER" '.current={story:$id,since:$t} | .stories[$id] = ((.stories[$id] // {}) + {status:"in_progress",started:((.stories[$id].started) // $t)})' --arg id "$2" --arg t "$(now)"
+      append_event "$2" "loop_start" "iteration started"
+      jq -nc --arg id "$2" '{ok:true,active:true,story:$id}' ;;
+    end)
+      local cur; cur="$(current_story)"
+      rm -f "$STATE_DIR/active" "$STATE_DIR/stop-blocks" "$STATE_DIR/current.json"
+      [ -n "$cur" ] && append_event "$cur" "loop_end" "iteration ended" || true
+      jq -nc --arg id "$cur" '{ok:true,active:false,story:(if $id=="" then null else $id end)}' ;;
+    *) die "usage: gate loop start <ID> | gate loop end" ;;
+  esac
+}
+
+backlog_path() { local p; p="$(cfg '.backlog.path')"; [ -n "$p" ] || p="user_stories.json"; [ -f "$p" ] || die "backlog not found: $p"; echo "$p"; }
+
+cmd_story() {
+  require_config; ensure_ledger
+  local bl; bl="$(backlog_path)"
+  case "${1:-}" in
+    next)
+      if [ -n "${2:-}" ]; then
+        jq -e --arg id "$2" '.stories[] | select(.id==$id)' "$bl" >/dev/null || die "story not found: $2"
+        jq -c --arg id "$2" '{ok:true,story:(.stories[] | select(.id==$id))}' "$bl"; return
+      fi
+      # runnable: status ready|todo|in_progress|awaiting_human(resume) and all deps done; lowest priority number first
+      jq -c '
+        (.stories | map(select(.status=="done") | .id)) as $done
+        | [ .stories[] | select(.status=="in_progress" or .status=="awaiting_human") ] as $resume
+        | if ($resume|length)>0 then {ok:true,resume:true,story:$resume[0]}
+          else ([ .stories[] | select(.status=="ready" or .status=="todo")
+                  | select(((.depends_on // []) - $done) | length == 0) ]
+                | sort_by((.priority // 999), .id)) as $c
+               | if ($c|length)>0 then {ok:true,resume:false,story:$c[0]}
+                 else {ok:false,error:"no runnable story (all done, blocked, or dependencies unmet)"} end
+          end' "$bl" ;;
+    get)  jq -c --arg id "${2:-}" '{ok:true,story:(.stories[] | select(.id==$id))}' "$bl" ;;
+    add)  # gate story add '<json object>'  (id, title, acceptance_criteria[], priority, depends_on[], risk_tier, status)
+      [ -n "${2:-}" ] || die "usage: gate story add '<json>'"
+      jq -e . <<<"$2" >/dev/null 2>&1 || die "story add: argument is not valid JSON"
+      local nid; nid="$(jq -r '.id // empty' <<<"$2")"; [ -n "$nid" ] || die "story add: id required"
+      jq -e --arg id "$nid" '.stories[] | select(.id==$id)' "$bl" >/dev/null 2>&1 && die "story add: $nid already exists"
+      json_file_set "$bl" '.stories += [($s | .status = (.status // "ready") | .created = $t)]' --argjson s "$2" --arg t "$(now)"
+      jq -nc --arg id "$nid" '{ok:true,added:$id}' ;;
+    status)
+      [ -n "${2:-}" ] && [ -n "${3:-}" ] || die "usage: gate story status <ID> <status>"
+      case "$3" in todo|ready|in_progress|awaiting_human|blocked|done|dropped) ;; *) die "bad status: $3";; esac
+      json_file_set "$bl" '(.stories[] | select(.id==$id) | .status) = $s | (.stories[] | select(.id==$id) | .updated) = $t' --arg id "$2" --arg s "$3" --arg t "$(now)"
+      json_file_set "$LEDGER" '.stories[$id] = ((.stories[$id] // {}) + {status:$s,updated:$t}) | if $s=="done" then .totals.stories_done += 1 | .stories[$id].finished=$t | .current=null else . end' --arg id "$2" --arg s "$3" --arg t "$(now)"
+      append_event "$2" "status" "$3"
+      jq -nc --arg id "$2" --arg s "$3" '{ok:true,story:$id,status:$s}' ;;
+    *) die "usage: gate story next|get|status" ;;
+  esac
+}
+
+cmd_record() {
+  require_config; [ -n "${1:-}" ] && [ -n "${2:-}" ] && [ -n "${3:-}" ] || die "usage: gate record <ID> <gate> <status> [note]"
+  ensure_record "$1"
+  case "$2" in verification) die "gate 'verification' is written by 'gate verify' only";; esac
+  local th=""; case "$2" in verifier_review|code_review) th="$(tree_hash)";; esac
+  json_file_set "$(record_path "$1")" '.gates[$g] = ((.gates[$g] // {}) + {status:$s,at:$t,note:$n} + (if $th != "" then {tree_hash:$th} else {} end))' --arg g "$2" --arg s "$3" --arg t "$(now)" --arg n "${4:-}" --arg th "$th"
+  jq -c '{ok:true,story:.story,gates:(.gates|to_entries|map({(.key):.value.status})|add // {})}' "$(record_path "$1")"
+}
+cmd_flag() { # gate flag <ID> <key> <true|false|string>
+  require_config; [ -n "${1:-}" ] && [ -n "${2:-}" ] && [ -n "${3:-}" ] || die "usage: gate flag <ID> <key> <value>"
+  ensure_record "$1"
+  local v; case "$3" in true|false) v="$3";; *) v="$(jq -Rn --arg x "$3" '$x')";; esac
+  json_file_set "$(record_path "$1")" ".flags = ((.flags // {}) + {(\$k): $v})" --arg k "$2"
+  append_event "$1" "flag" "$2=$3"
+  jq -c '{ok:true,story:.story,flags:.flags}' "$(record_path "$1")"
+}
+cmd_record_get() { require_config; [ -f "$(record_path "${1:-}")" ] || die "no record for ${1:-?}"; jq -c . "$(record_path "$1")"; }
+
+cmd_metric() {
+  require_config; ensure_ledger; [ -n "${1:-}" ] && [ -n "${2:-}" ] && [ -n "${3:-}" ] || die "usage: gate metric <ID> <key> <value>"
+  ensure_record "$1"
+  local v="$3"; if printf '%s' "$v" | grep -Eq '^-?[0-9]+([.][0-9]+)?$'; then v="$(jq -nc --argjson x "$v" '$x')"; else v="$(jq -Rn --arg x "$v" '$x')"; fi
+  local bl st; bl="$(cfg '.backlog.path')"; [ -n "$bl" ] || bl=user_stories.json
+  st="$(jq -r --arg id "$1" '.stories[] | select(.id==$id) | .status // ""' "$bl" 2>/dev/null || true)"
+  [ "$st" = "done" ] || json_file_set "$(record_path "$1")" ".metrics[\$k] = $v" --arg k "$2"
+  json_file_set "$LEDGER" ".stories[\$id] = ((.stories[\$id] // {}) + {metrics: (((.stories[\$id].metrics) // {}) + {(\$k): $v})})" --arg id "$1" --arg k "$2"
+  jq -nc --arg k "$2" --argjson v "$v" '{ok:true,metric:$k,value:$v}'
+}
+
+cmd_escalate() {
+  require_config; ensure_ledger; [ -n "${1:-}" ] && [ -n "${2:-}" ] && [ -n "${3:-}" ] || die "usage: gate escalate <ID> <type> <message>"
+  ensure_record "$1"
+  jq -nc --arg id "$1" --arg ty "$2" --arg m "$3" --arg t "$(now)" --arg th "$(tree_hash)" \
+     '{story:$id,type:$ty,message:$m,at:$t,tree_hash:$th,resolved:false}' > "$STATE_DIR/escalation.json"
+  json_file_set "$(record_path "$1")" '.escalations += [{"at":$t,"type":$ty,"message":$m}]' --arg t "$(now)" --arg ty "$2" --arg m "$3"
+  cmd_story status "$1" awaiting_human >/dev/null
+  cmd_loop end >/dev/null
+  jq -c '{ok:true,escalation:.}' "$STATE_DIR/escalation.json"
+}
+
+cmd_approve() {
+  require_config; ensure_ledger; [ -n "${1:-}" ] || die "usage: gate approve <ID> [--reject <why>]"
+  [ -f "$STATE_DIR/escalation.json" ] || die "nothing to approve: no escalation pending"
+  ensure_record "$1"
+  local th; th="$(tree_hash)"
+  if [ "${2:-}" = "--reject" ]; then
+    json_file_set "$(record_path "$1")" '.approvals += [{"at":$t,"decision":"rejected","reason":$r,"tree_hash":$th}]' --arg t "$(now)" --arg r "${3:-no reason given}" --arg th "$th"
+    rm -f "$STATE_DIR/escalation.json"
+    cmd_story status "$1" in_progress >/dev/null
+    jq -nc --arg id "$1" '{ok:true,story:$id,decision:"rejected",next:"loop will re-enter at the failed gate and read the rejection reason from the gate record"}'
+  else
+    json_file_set "$(record_path "$1")" '.approvals += [{"at":$t,"decision":"approved","tree_hash":$th,"type":$ty}]' --arg t "$(now)" --arg th "$th" --arg ty "$(jq -r .type "$STATE_DIR/escalation.json")"
+    rm -f "$STATE_DIR/escalation.json"
+    cmd_story status "$1" in_progress >/dev/null
+    jq -nc --arg id "$1" --arg th "$th" '{ok:true,story:$id,decision:"approved",tree_hash:$th}'
+  fi
+}
+
+cmd_freeze() {
+  require_config; [ -n "${1:-}" ] || die "usage: gate freeze <ID> [--force]"
+  ensure_record "$1"
+  local lock; lock="$(story_dir "$1")/tests.lock"
+  if [ -f "$lock" ] && [ "${2:-}" != "--force" ]; then die "tests already frozen for $1 (use: gate unfreeze <ID> <reason>)"; fi
+  local files="{}" n=0
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    files="$(jq -c --arg f "$f" --arg h "$(sha "$f")" '. + {($f):$h}' <<<"$files")"; n=$((n+1))
+  done < <(test_files)
+  [ "$n" -gt 0 ] || die "no test files found — check paths.tests in $CONFIG"
+  jq -nc --arg id "$1" --arg t "$(now)" --argjson files "$files" --argjson allow "$(cfgj '.freeze.allow_new_test_files // false')" \
+     '{story:$id,frozen_at:$t,allow_new_test_files:$allow,files:$files}' > "$lock"
+  cp "$lock" "$STATE_DIR/tests.lock"
+  cmd_record "$1" tests_frozen pass "$n files hashed" >/dev/null
+  append_event "$1" "freeze" "$n test files frozen"
+  jq -nc --arg id "$1" --argjson n "$n" --arg lock "$lock" '{ok:true,story:$id,files_frozen:$n,lock:$lock}'
+}
+
+cmd_unfreeze() {
+  require_config; [ -n "${1:-}" ] && [ -n "${2:-}" ] || die "usage: gate unfreeze <ID> <reason>"
+  local lock; lock="$(story_dir "$1")/tests.lock"
+  [ -f "$lock" ] || die "not frozen"
+  mv "$lock" "$lock.$(date -u +%Y%m%d%H%M%S).unfrozen"
+  rm -f "$STATE_DIR/tests.lock"
+  json_file_set "$(record_path "$1")" '.gates.tests_frozen = {status:"pending",at:$t,note:$n} | .gates.verification = {status:"pending",at:$t,note:"invalidated by unfreeze"} | .gates.verifier_review = {status:"pending",at:$t,note:"invalidated by unfreeze"} | .gates.code_review = {status:"pending",at:$t,note:"invalidated by unfreeze"}' --arg t "$(now)" --arg n "unfrozen: $2"
+  append_event "$1" "unfreeze" "$2"
+  jq -nc --arg id "$1" '{ok:true,story:$id,frozen:false,note:"verification and code_review reset to pending"}'
+}
+
+lock_check_json() { # prints json; ok=true iff no tampering
+  local lock="$STATE_DIR/tests.lock"
+  [ -f "$lock" ] || { echo '{"ok":false,"frozen":false,"error":"no tests.lock"}'; return; }
+  local modified="[]" missing="[]" extra="[]" allow
+  allow="$(jq -r '.allow_new_test_files' "$lock")"
+  while IFS= read -r f; do
+    if [ -f "$f" ]; then
+      [ "$(sha "$f")" = "$(jq -r --arg f "$f" '.files[$f]' "$lock")" ] || modified="$(jq -c --arg f "$f" '. + [$f]' <<<"$modified")"
+    else missing="$(jq -c --arg f "$f" '. + [$f]' <<<"$missing")"; fi
+  done < <(jq -r '.files | keys[]' "$lock")
+  while IFS= read -r f; do
+    jq -e --arg f "$f" '.files[$f]' "$lock" >/dev/null 2>&1 || extra="$(jq -c --arg f "$f" '. + [$f]' <<<"$extra")"
+  done < <(test_files)
+  jq -nc --argjson m "$modified" --argjson mi "$missing" --argjson e "$extra" --argjson allow "$allow" \
+     '{frozen:true,modified:$m,missing:$mi,extra:$e,ok:(($m|length)==0 and ($mi|length)==0 and (($e|length)==0 or $allow))}'
+}
+cmd_lock_check() { require_config; lock_check_json; }
+
+cmd_tree_hash() { jq -nc --arg h "$(tree_hash)" '{ok:true,tree_hash:$h}'; }
+
+cmd_diff() {
+  require_config; [ -n "${1:-}" ] || die "usage: gate diff <ID>"
+  ensure_record "$1"
+  local d; d="$(story_dir "$1")"
+  tree_diff > "$d/diff.patch"
+  tree_diff --stat > "$d/diff.stat"
+  local added deleted
+  added="$(tree_diff --numstat | awk '{a+=$1} END{print a+0}')"
+  deleted="$(tree_diff --numstat | awk '{d+=$2} END{print d+0}')"
+  jq -nc --arg p "$d/diff.patch" --argjson a "$added" --argjson dl "$deleted" --argjson files "$(tree_diff --name-only | jq -R . | jq -sc .)" \
+     '{ok:true,patch:$p,added:$a,deleted:$dl,changed_lines:($a+$dl),files:$files}'
+}
+cmd_diff_size() { local a d; a="$(tree_diff --numstat | awk '{a+=$1} END{print a+0}')"; d="$(tree_diff --numstat | awk '{d+=$2} END{print d+0}')"; jq -nc --argjson a "$a" --argjson d "$d" --argjson cap "$(cfgj '.thresholds.diff_size_cap // 500')" '{ok:(($a+$d)<=$cap),changed_lines:($a+$d),cap:$cap}'; }
+
+cmd_run() {
+  require_config; [ -n "${1:-}" ] && [ -n "${2:-}" ] || die "usage: gate run <ID> <command-name>"
+  local c; c="$(cfg ".commands.$2")"; [ -n "$c" ] || die "no command configured: commands.$2"
+  ensure_record "$1"
+  local rc; rc="$(run_logged "$1" "$2" "$c")"
+  jq -nc --arg n "$2" --argjson rc "$rc" --arg log "$(story_dir "$1")/logs/$2.log" --arg tail "$(tail -20 "$(story_dir "$1")/logs/$2.log")" \
+     '{ok:($rc==0),command:$n,exit_code:$rc,log:$log,tail:$tail}'
+}
+
+cmd_verify() {
+  require_config; [ -n "${1:-}" ] || die "usage: gate verify <ID>"
+  ensure_record "$1"
+  local id="$1" steps="{}" ok=true rc log
+  # 1. frozen tests untouched?
+  local lc; lc="$(lock_check_json)"
+  steps="$(jq -c --argjson lc "$lc" '. + {lock_check:$lc}' <<<"$steps")"
+  [ "$(jq -r .ok <<<"$lc")" = "true" ] || ok=false
+  # 2. commands in order; a missing command is skipped, a failing one fails the gate
+  local name
+  for name in fmt_check build lint test; do
+    local c; c="$(cfg ".commands.$name")"
+    if [ -z "$c" ]; then steps="$(jq -c --arg n "$name" '. + {($n):{skipped:true}}' <<<"$steps")"; continue; fi
+    rc="$(run_logged "$id" "$name" "$c")"
+    steps="$(jq -c --arg n "$name" --argjson rc "$rc" --arg log "$(story_dir "$id")/logs/$name.log" '. + {($n):{ok:($rc==0),exit_code:$rc,log:$log}}' <<<"$steps")"
+    [ "$rc" = "0" ] || ok=false
+  done
+  # 3. numeric gates: command must print the number last
+  for name in coverage mutation; do
+    local c thr val; c="$(cfg ".commands.$name")"; thr="$(cfg ".thresholds.${name}_min")"
+    if [ -z "$c" ] || [ -z "$thr" ]; then steps="$(jq -c --arg n "$name" '. + {($n):{skipped:true}}' <<<"$steps")"; continue; fi
+    rc="$(run_logged "$id" "$name" "$c")"; log="$(story_dir "$id")/logs/$name.log"; val="$(last_number "$log")"
+    if [ "$rc" = "0" ] && [ -n "$val" ] && ge "$val" "$thr"; then
+      steps="$(jq -c --arg n "$name" --argjson v "$val" --argjson t "$thr" --arg log "$log" '. + {($n):{ok:true,value:$v,min:$t,log:$log}}' <<<"$steps")"
+    else
+      steps="$(jq -c --arg n "$name" --arg v "${val:-null}" --argjson t "$thr" --argjson rc "$rc" --arg log "$log" '. + {($n):{ok:false,value:($v|tonumber? // null),min:$t,exit_code:$rc,log:$log}}' <<<"$steps")"; ok=false
+    fi
+  done
+  # 4. diff size
+  local ds; ds="$(cmd_diff_size)"; steps="$(jq -c --argjson ds "$ds" '. + {diff_size:$ds}' <<<"$steps")"
+  [ "$(jq -r .ok <<<"$ds")" = "true" ] || ok=false
+  # 5. record
+  local th; th="$(tree_hash)"
+  local status="fail"; [ "$ok" = "true" ] && status="pass"
+  json_file_set "$(record_path "$id")" '.gates.verification = {status:$s,at:$t,tree_hash:$th,steps:$steps} | .metrics.verify_runs += 1' \
+     --arg s "$status" --arg t "$(now)" --arg th "$th" --argjson steps "$steps"
+  jq -nc --argjson ok "$ok" --arg th "$th" --argjson steps "$steps" '{ok:$ok,tree_hash:$th,steps:($steps|to_entries|map({(.key):(if .value.skipped then "skipped" elif .value.ok then "pass" else "FAIL" end)})|add),detail:$steps}'
+}
+
+cmd_snapshot() {
+  require_config; [ -n "${1:-}" ] || die "usage: gate snapshot <ID>"
+  ensure_record "$1"
+  local tree code commit dir repo; tree="$(tree_hash_full)"; code="$(tree_hash)"; repo="$(basename "$ROOT")"
+  commit="$(git commit-tree "$tree" -p HEAD -m "sdlc verification snapshot $1 $(now)")"
+  dir="${TMPDIR:-/tmp}/sdlc-snap-$repo-$1-${commit:0:12}"
+  [ -d "$dir" ] || git worktree add --detach "$dir" "$commit" >/dev/null 2>&1
+  jq -nc --arg id "$1" --arg dir "$dir" --arg c "$commit" --arg th "$code" --arg t "$(now)" '{story:$id,worktree:$dir,commit:$c,tree_hash:$th,at:$t}' > "$STATE_DIR/snapshot-$1.json"
+  jq -c '{ok:true} + .' "$STATE_DIR/snapshot-$1.json"
+}
+cmd_snapshot_clean() {
+  require_config; [ -n "${1:-}" ] || die "usage: gate snapshot-clean <ID>"
+  local f="$STATE_DIR/snapshot-$1.json"
+  if [ -f "$f" ]; then git worktree remove --force "$(jq -r .worktree "$f")" >/dev/null 2>&1 || true; rm -f "$f"; fi
+  git worktree prune >/dev/null 2>&1 || true
+  jq -nc --arg id "$1" '{ok:true,story:$id,snapshot:"removed"}'
+}
+
+cmd_trunk_health() {
+  require_config; ensure_ledger
+  local trunk branch dirty cur remote="skipped" behind=0 ahead=0 smoke="skipped" ok=true problems="[]"
+  trunk="$(cfg '.git.trunk_branch')"; [ -n "$trunk" ] || trunk=main
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+  cur="$(current_story)"
+  [ "$branch" = "$trunk" ] || { ok=false; problems="$(jq -c --arg b "$branch" --arg t "$trunk" '. + ["on branch \($b), trunk is \($t)"]' <<<"$problems")"; }
+  dirty="$(git status --porcelain | wc -l | tr -d ' ')"
+  if [ -z "$cur" ] && [ "$dirty" != "0" ]; then ok=false; problems="$(jq -c '. + ["working tree dirty with no story in progress — commit, stash, or revert before starting"]' <<<"$problems")"; fi
+  if [ "$(cfg '.git.remote')" = "true" ]; then
+    if git fetch --quiet origin "$trunk" 2>/dev/null; then
+      behind="$(git rev-list --count "HEAD..origin/$trunk" 2>/dev/null || echo 0)"; ahead="$(git rev-list --count "origin/$trunk..HEAD" 2>/dev/null || echo 0)"; remote="fetched"
+      [ "$behind" = "0" ] || problems="$(jq -c --arg n "$behind" '. + ["behind origin by \($n) commits — rebase before commit gate"]' <<<"$problems")"
+    else remote="fetch_failed"; fi
+  fi
+  local c; c="$(cfg '.commands.smoke')"; [ -n "$c" ] || c="$(cfg '.commands.test')"
+  if [ -n "$c" ] && [ -z "$cur" ]; then
+    mkdir -p "$STATE_DIR"; local log="$STATE_DIR/trunk-health.log"; { echo "# $(now) \$ $c"; } > "$log"
+    set +e; bash -lc "$c" >> "$log" 2>&1; local rc=$?; set -e
+    if [ "$rc" = "0" ]; then smoke="pass"; else smoke="FAIL"; ok=false; problems="$(jq -c --arg l "$log" '. + ["trunk smoke/test failed — see \($l); fix-forward or revert before new work"]' <<<"$problems")"; fi
+  fi
+  jq -nc --argjson ok "$ok" --arg b "$branch" --arg dirty "$dirty" --arg cur "$cur" --arg remote "$remote" --argjson behind "$behind" --argjson ahead "$ahead" --arg smoke "$smoke" --argjson p "$problems" \
+     '{ok:$ok,branch:$b,dirty_files:($dirty|tonumber),story_in_progress:(if $cur=="" then null else $cur end),remote:$remote,behind:$behind,ahead:$ahead,smoke:$smoke,problems:$p}'
+}
+
+cmd_commit_check() {
+  require_config; [ -n "${1:-}" ] || die "usage: gate commit-check <ID> [commit-message-file]"
+  local id="$1" msgfile="${2:-}" problems="[]" rec; rec="$(record_path "$id")"
+  [ -f "$rec" ] || die "no gate record for $id"
+  # Bookkeeping-only commit (retro, lessons, codemap, ledger, backlog status)? Then no code checks apply.
+  local code_changed=false f
+  while IFS= read -r f; do [ -n "$f" ] && ! is_bookkeeping_path "$f" && code_changed=true; done < <(git status --porcelain | cut -c4- | sed 's/^.* -> //')
+  if [ "$code_changed" = "false" ]; then
+    [ "$(jq -r '.gates.commit.status // "missing"' "$rec")" = "pass" ] || problems="$(jq -c '. + ["bookkeeping-only commit allowed only after the story code commit (gate commit is not pass)"]' <<<"$problems")"
+    local okb=true; [ "$(jq 'length' <<<"$problems")" = "0" ] || okb=false
+    jq -nc --argjson ok "$okb" --arg id "$id" --argjson p "$problems" '{ok:$ok,story:$id,kind:"bookkeeping",problems:$p}'; return
+  fi
+  local g; for g in dor analysis tests_frozen design_review implementation verification verifier_review code_review; do
+    [ "$(jq -r --arg g "$g" '.gates[$g].status // "missing"' "$rec")" = "pass" ] || problems="$(jq -c --arg g "$g" '. + ["gate \($g) is not pass"]' <<<"$problems")"
+  done
+  local th rth; th="$(tree_hash)"; rth="$(jq -r '.gates.verification.tree_hash // ""' "$rec")"
+  [ "$th" = "$rth" ] || problems="$(jq -c '. + ["code changed since gate verify — run: gate verify <ID>, re-run sdlc-verifier, then code review"]' <<<"$problems")"
+  local vth; vth="$(jq -r '.gates.verifier_review.tree_hash // ""' "$rec")"
+  [ "$vth" = "$th" ] || problems="$(jq -c '. + ["independent verifier verdict is for a different tree — re-run sdlc-verifier on a fresh snapshot"]' <<<"$problems")"
+  local cth; cth="$(jq -r '.gates.code_review.tree_hash // ""' "$rec")"
+  [ "$cth" = "$th" ] || problems="$(jq -c '. + ["code review verdict is for a different tree — re-run sdlc-code-reviewer on the current diff"]' <<<"$problems")"
+  local lc; lc="$(lock_check_json)"; [ "$(jq -r .ok <<<"$lc")" = "true" ] || problems="$(jq -c --argjson lc "$lc" '. + ["frozen tests tampered: \($lc|tostring)"]' <<<"$problems")"
+  local ds; ds="$(cmd_diff_size)"; [ "$(jq -r .ok <<<"$ds")" = "true" ] || problems="$(jq -c --argjson d "$ds" '. + ["diff exceeds cap: \($d.changed_lines) > \($d.cap) — split the story"]' <<<"$problems")"
+  local trunk branch; trunk="$(cfg '.git.trunk_branch')"; [ -n "$trunk" ] || trunk=main; branch="$(git rev-parse --abbrev-ref HEAD)"
+  [ "$branch" = "$trunk" ] || problems="$(jq -c --arg b "$branch" '. + ["not on trunk (\($b))"]' <<<"$problems")"
+  [ "$(pwd)" = "$ROOT" ] || problems="$(jq -c '. + ["commits only from the project root workspace"]' <<<"$problems")"
+  # human approval required?
+  local bl tier need="false"; bl="$(cfg '.backlog.path')"; [ -n "$bl" ] || bl=user_stories.json
+  tier="$(jq -r --arg id "$id" '.stories[] | select(.id==$id) | .risk_tier // "low"' "$bl" 2>/dev/null || echo low)"
+  local secflag; secflag="$(jq -r '.flags.security_sensitive // false' "$rec")"
+  if jq -e --arg t "$tier" '.human_gates.pre_commit_pause_tiers // ["high"] | index($t)' "$CONFIG" >/dev/null 2>&1 || [ "$secflag" = "true" ]; then need="true"; fi
+  if [ "$need" = "true" ]; then
+    jq -e --arg th "$th" '.approvals | map(select(.decision=="approved" and .tree_hash==$th)) | length > 0' "$rec" >/dev/null 2>&1 \
+      || problems="$(jq -c '. + ["human pre-commit approval required for this risk tier/security flag and none matches the current tree — run: gate escalate <ID> pre_commit_approval <summary>"]' <<<"$problems")"
+  fi
+  if [ -n "$msgfile" ]; then
+    [ -f "$msgfile" ] || problems="$(jq -c --arg m "$msgfile" '. + ["commit message file missing: \($m)"]' <<<"$problems")"
+    [ -f "$msgfile" ] && grep -q "$id" "$msgfile" || problems="$(jq -c --arg id "$id" '. + ["commit message must reference story \($id)"]' <<<"$problems")"
+  fi
+  local ok=true; [ "$(jq 'length' <<<"$problems")" = "0" ] || ok=false
+  jq -nc --argjson ok "$ok" --arg id "$id" --arg th "$th" --argjson p "$problems" '{ok:$ok,story:$id,tree_hash:$th,problems:$p}'
+}
+
+# Blocking reviewers per consensus.md: architect and code-reviewer always; security iff the story is
+# flagged security_sensitive; perf iff its own review reports a budget breach.
+cmd_consensus() {
+  require_config; [ -n "${1:-}" ] && [ -n "${2:-}" ] && [ -n "${3:-}" ] || die "usage: gate consensus <ID> <4|7> <round>"
+  local id="$1" g="$2" n="$3" d rec sec files
+  case "$g" in 4|7) ;; *) die "gate must be 4 (design review) or 7 (code review)";; esac
+  d="$(story_dir "$id")"; rec="$(record_path "$id")"; [ -f "$rec" ] || die "no gate record for $id"
+  sec="$(jq -r '.flags.security_sensitive // false' "$rec")"
+  if [ "$g" = "7" ]; then files="$(ls "$d"/reviews/*-gate7-round"$n".json 2>/dev/null || true)"
+  else files="$(ls "$d"/reviews/*-round"$n".json 2>/dev/null | grep -v -- '-gate7-' || true)"; fi
+  [ -n "$files" ] || die "no gate $g review files for round $n in $d/reviews/"
+  # shellcheck disable=SC2086
+  jq -sc --arg id "$id" --argjson g "$g" --argjson n "$n" --argjson sec "$sec" '
+    map(. as $r
+        | ($r.persona // "unknown") as $p
+        | {persona:$p, verdict:($r.verdict // "missing"), artifact:($r.artifact // null),
+           blocking:(($p=="sdlc-architect" or $p=="sdlc-code-reviewer")
+                     or ($p=="sdlc-security" and $sec)
+                     or ($p=="sdlc-perf" and (($r.budget_breach // false) or (($r.criteria.budget_compliance.pass // true)|not)))),
+           open:[ ($r.findings // [])[] | select(.required==true and (.severity=="blocker" or .severity=="major"))
+                  | {reviewer:$p, id:.id, severity:.severity, title:.title, location:.location} ]})
+    | . as $rs
+    | ([ $rs[] | select(.blocking and .verdict=="request_changes") | .open[] ]) as $open
+    | ([ $rs[] | select(.blocking and .verdict=="request_changes" and (.open|length)>0) | .persona ] | unique) as $re
+    | ([ $rs[] | select(.blocking|not) | .open[] ]) as $adv
+    | {ok:true, story:$id, round:$n, passes:(($open|length)==0),
+       reviewers:[ $rs[] | {persona,verdict,blocking,open_required:(.open|length)} ],
+       open_required:$open, rereview:$re,
+       advisory_majors:$adv, gate:$g}' $files
+}
+
+# Renders everything in retro.md that is a pure function of the gate record, the review files and
+# verification.json. Sections the bookkeeper owns (Deviations, Lessons, Follow-ups) are preserved
+# across re-runs. Papercuts are appended once per (story, kind, at).
+cmd_retro() {
+  require_config; ensure_ledger; [ -n "${1:-}" ] || die "usage: gate retro <ID>"
+  local id="$1" d rec out tmp title
+  d="$(story_dir "$id")"; rec="$(record_path "$id")"; [ -f "$rec" ] || die "no gate record for $id"
+  out="$d/retro.md"; tmp="$(mktemp)"
+  title="$(jq -r '.title // ""' "$d/story.json" 2>/dev/null || true)"
+  local ver="{}"; [ -f "$d/verification.json" ] && ver="$(jq -c . "$d/verification.json")"
+  local reviews="[]" f
+  for f in "$d"/reviews/*-round*.json; do
+    [ -f "$f" ] || continue
+    local gnum=4; case "$f" in *-gate7-*) gnum=7;; esac
+    reviews="$(jq -c --slurpfile r "$f" --argjson g "$gnum" '. + [$r[0] | {persona:(.persona // "?"), round:(.round // 0), verdict:(.verdict // "?"), gate:$g,
+        counts:([(.findings // [])[].severity] | {b:map(select(.=="blocker"))|length, m:map(select(.=="major"))|length, mi:map(select(.=="minor"))|length, n:map(select(.=="nit"))|length})}]' <<<"$reviews")"
+  done
+  local keep_dev="- " keep_les="- " keep_fu="- "
+  section() { # section <file> <heading-prefix> -> body lines until next "## "
+    awk -v h="$2" 'BEGIN{p=0} /^## /{ if(p){exit}; if(index($0,h)==1){p=1; next} } p{print}' "$1" | sed '/^[[:space:]]*$/d'
+  }
+  if [ -f "$out" ]; then
+    local x
+    x="$(section "$out" "## Deviations")"; [ -n "$x" ] && keep_dev="$x"
+    x="$(section "$out" "## Lessons")";    [ -n "$x" ] && keep_les="$x"
+    x="$(section "$out" "## Follow-ups")"; [ -n "$x" ] && keep_fu="$x"
+  fi
+  {
+    echo "# Retro — $id $title"
+    echo; echo "## Timeline"; echo "| Gate | Status | At | Note |"; echo "|---|---|---|---|"
+    jq -r '["dor","analysis","tests_frozen","plan","design_review","implementation","verification","verifier_review","code_review","commit","retro"] as $o
+           | .gates as $g | $o[] | select($g[.]) | "| \(.) | \($g[.].status) | \($g[.].at // "") | \($g[.].note // "") |"' "$rec"
+    echo; echo "## Review rounds"; echo "| Gate | Round | Reviewer | Verdict | blocker/major/minor/nit |"; echo "|---|---|---|---|---|"
+    jq -r 'sort_by(.gate,.round,.persona)[] | "| \(.gate) | \(.round) | \(.persona) | \(.verdict) | \(.counts.b)/\(.counts.m)/\(.counts.mi)/\(.counts.n) |"' <<<"$reviews"
+    echo; echo "## Verification"
+    jq -r 'if (.verdict? // null) == null then "- no verification.json"
+           else "- verdict \(.verdict) · held-out \(.held_out.written // "?")/\(.held_out.passed // "?")/\((.held_out.failed // [])|length) (written/passed/failed) · frozen \(.frozen.passed // "?") passed, \((.frozen.failed // [])|length) failed · coverage \(.commands.coverage | if type=="object" then (.value // "n/a") else (. // "n/a") end) · mutation \(.commands.mutation | if type=="object" then (.value // "n/a") else (. // "n/a") end) · tamper lock_ok=\(.tamper_audit.lock_ok // "?")" end' <<<"$ver"
+    echo; echo "## Escalations and approvals"
+    jq -r '((.escalations // [])[] | "- escalation \(.at) \(.type): \(.message)"), ((.approvals // [])[] | "- approval \(.at) \(.decision)\(if .type then " (\(.type))" else "" end)\(if .reason then ": \(.reason)" else "" end)")' "$rec"
+    [ "$(jq '((.escalations // [])|length) + ((.approvals // [])|length)' "$rec")" = "0" ] && echo "- none"
+    echo; echo "## Deviations declared by the implementer"; echo "$keep_dev"
+    echo; echo "## Metrics"
+    jq -r '.metrics | to_entries[] | select(.key != "tokens_note") | "- \(.key): \(.value)"' "$rec"
+    echo; echo "## Lessons (only what an input file states; copied to .sdlc/lessons.md)"; echo "$keep_les"
+    echo; echo "## Follow-ups filed"; echo "$keep_fu"
+  } > "$tmp" && mv "$tmp" "$out"
+  # papercuts: unfreeze events, escalations (incl. loop_stalled), review rounds > 2
+  local pc="$SDLC_DIR/papercuts.jsonl" added=0 line
+  touch "$pc"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if ! grep -Fqx "$line" "$pc"; then echo "$line" >> "$pc"; added=$((added+1)); fi
+  done < <(
+    jq -c --arg id "$id" --arg src "$(record_path "$id")" '
+      ((.events // [])[] | select(.type=="unfreeze") | {story:$id,at:.at,kind:"unfreeze",detail:.message,source:$src}),
+      ((.escalations // [])[] | {story:$id,at:.at,kind:.type,detail:.message,source:$src})' "$rec"
+    jq -c --arg id "$id" --arg src "$d/reviews/" --slurpfile rec "$rec" 'map(select(.round>2)) | group_by(.gate)[] | max_by(.round) | {story:$id,at:(if .gate==7 then ($rec[0].gates.code_review.at // "") else ($rec[0].gates.design_review.at // "") end),kind:"review_rounds",detail:"gate \(.gate) reached round \(.round)",source:$src}' <<<"$reviews"
+  )
+  local dr rr
+  dr="$(jq '[.[] | select(.gate==4) | .round] | max // 0' <<<"$reviews")"
+  rr="$(jq '[.[] | select(.gate==7) | .round] | max // 0' <<<"$reviews")"
+  [ "$dr" != "0" ] && cmd_metric "$id" design_rounds "$dr" >/dev/null
+  [ "$rr" != "0" ] && cmd_metric "$id" review_rounds "$rr" >/dev/null
+  jq -nc --arg id "$id" --arg out "$out" --argjson pa "$added" --argjson dr "$dr" --argjson rr "$rr" \
+     '{ok:true,story:$id,retro:$out,papercuts_added:$pa,design_rounds:$dr,review_rounds:$rr}'
+}
+
+# ---------------------------------------------------------------- dispatch
+case "${1:-help}" in
+  help|-h|--help) cmd_help ;;
+  summary)        cmd_summary ;;
+  loop)           shift; cmd_loop "$@" ;;
+  story)          shift; cmd_story "$@" ;;
+  record)         shift; cmd_record "$@" ;;
+  record-get)     shift; cmd_record_get "$@" ;;
+  flag)           shift; cmd_flag "$@" ;;
+  metric)         shift; cmd_metric "$@" ;;
+  escalate)       shift; cmd_escalate "$@" ;;
+  approve)        shift; cmd_approve "$@" ;;
+  freeze)         shift; cmd_freeze "$@" ;;
+  unfreeze)       shift; cmd_unfreeze "$@" ;;
+  lock-check)     cmd_lock_check ;;
+  tree-hash)      cmd_tree_hash ;;
+  diff)           shift; cmd_diff "$@" ;;
+  diff-size)      cmd_diff_size ;;
+  run)            shift; cmd_run "$@" ;;
+  verify)         shift; cmd_verify "$@" ;;
+  snapshot)       shift; cmd_snapshot "$@" ;;
+  snapshot-clean) shift; cmd_snapshot_clean "$@" ;;
+  trunk-health)   cmd_trunk_health ;;
+  commit-check)   shift; cmd_commit_check "$@" ;;
+  consensus)      shift; cmd_consensus "$@" ;;
+  retro)          shift; cmd_retro "$@" ;;
+  *) die "unknown command: $1 (try: gate help)" ;;
+esac

@@ -52,6 +52,7 @@ tasks:
       - task: markdownlint
       - task: linkcheck
       - task: init-time
+      - task: parity-selftest
       - task: secrets
       - task: no-internal-docs
 
@@ -154,7 +155,10 @@ tasks:
     silent: true
     cmds:
       - |
-        files=$(git ls-files '*.sh' 'task' 2>/dev/null || true)
+        # The vendored legacy kit under test/parity/legacy is a fixture: the
+        # differential tests compare against it byte for byte, so restyling it
+        # would break the thing it exists to prove.
+        files=$(git ls-files '*.sh' 'task' 2>/dev/null | grep -v '^test/parity/legacy/' || true)
         if [ -n "$files" ]; then
           # shellcheck disable=SC2086
           shellcheck $files
@@ -200,6 +204,25 @@ tasks:
           exit 1
         fi
         echo "init: ${total} ms (budget {{.INIT_BUDGET_MS}} ms)"
+
+  parity-selftest:
+    desc: Run the vendored legacy kit's own selftest, which is the parity contract
+    silent: true
+    cmds:
+      - |
+        if ! command -v jq >/dev/null 2>&1; then
+          echo "sdlc: jq is not installed, and the vendored kit's selftest needs it." >&2
+          echo "      macOS:  brew install jq" >&2
+          echo "      Linux:  apt-get install jq" >&2
+          echo "      This leg proves the port still matches the shell kit it replaces," >&2
+          echo "      so it fails rather than skips." >&2
+          exit 1
+        fi
+        out=$(cd test/parity/legacy && bash bin/selftest.sh 2>&1) || {
+          echo "$out" >&2
+          exit 1
+        }
+        echo "$out" | tail -n 1
 
   secrets:
     desc: Scan for committed credentials

@@ -1,0 +1,61 @@
+{
+  "_doc": "Machine-readable contract the gate CLI and hooks read. Human-readable rules live in CLAUDE.md '## SDLC Contract'. Commands run with `bash -lc` from the repo root. coverage/mutation commands MUST print the percentage as the last number on stdout. Leave a command empty ('') to skip that gate step.",
+  "version": 1,
+  "backlog": { "path": "user_stories.json" },
+  "git": { "trunk_branch": "main", "remote": false },
+  "commands": {
+    "smoke":     "",
+    "build":     "",
+    "test":      "",
+    "lint":      "",
+    "fmt":       "",
+    "fmt_check": "",
+    "fmt_file":  "",
+    "coverage":  "",
+    "mutation":  ""
+  },
+  "thresholds": {
+    "diff_size_cap": 500,
+    "coverage_min": 80,
+    "mutation_min": 70
+  },
+  "paths": {
+    "tests": { "dirs": ["tests/", "test/"], "file_globs": ["*_test.go", "*.test.ts", "*.spec.ts", "test_*.py", "*_test.py", "*Test.java", "*_spec.rb"] },
+    "src":   ["src/", "internal/", "pkg/", "cmd/", "lib/"]
+  },
+  "spec": { "paths": ["docs/", "spec/", "README.md"] },
+  "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
+  "reviews": { "gate7_advisory": false },
+  "freeze": { "allow_new_test_files": false },
+  "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
+  "budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] },
+  "_examples": {
+    "go": {
+      "smoke": "go build ./... && go vet ./...",
+      "build": "go build ./...",
+      "test": "go test ./... -count=1",
+      "lint": "golangci-lint run ./...",
+      "fmt": "gofmt -w .",
+      "fmt_check": "test -z \"$(gofmt -l .)\"",
+      "fmt_file": "gofmt -w \"$FILE\"",
+      "coverage": "go test ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'",
+      "mutation": "gremlins unleash --silent 2>/dev/null | grep -Eo 'Mutation score: [0-9.]+' | grep -Eo '[0-9.]+' || echo 0",
+      "paths.tests": { "dirs": [], "file_globs": ["*_test.go"] }
+    },
+    "node": {
+      "build": "npm run build --silent",
+      "test": "npm test --silent",
+      "lint": "npm run lint --silent",
+      "fmt_check": "npx prettier --check .",
+      "coverage": "npx vitest run --coverage --coverage.reporter=text-summary | grep -Eo 'Lines *: *[0-9.]+' | grep -Eo '[0-9.]+'",
+      "mutation": "npx stryker run --reporters clear-text | grep -Eo '[0-9.]+ *%' | tail -1 | grep -Eo '[0-9.]+'"
+    },
+    "python": {
+      "test": "pytest -q",
+      "lint": "ruff check .",
+      "fmt_check": "ruff format --check .",
+      "coverage": "pytest -q --cov --cov-report=term | grep -E '^TOTAL' | grep -Eo '[0-9]+%' | tr -d %",
+      "mutation": "mutmut run >/dev/null 2>&1; mutmut results 2>/dev/null | grep -Eo '[0-9]+' | head -1"
+    }
+  }
+}

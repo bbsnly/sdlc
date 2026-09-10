@@ -1,0 +1,15 @@
+<type>(<scope>): <summary in ≤ 72 chars> [<ID>]
+
+<Why, in one or two sentences. What changes for a user or integrator.>
+
+Acceptance criteria:
+- [x] AC-1 <text>
+- [x] AC-2 <text>
+
+Gates: dor ✓ analysis ✓ tests_frozen ✓ design_review ✓(N rounds) implementation ✓ verification ✓ verifier_review ✓ code_review ✓(N rounds)
+Verifier: held-out p/w, coverage x%, mutation y%
+Reviewers: <one line>
+
+Story: <ID>
+Gate-Record: .sdlc/stories/<ID>/gate-record.json
+Co-Authored-By: Claude <noreply@anthropic.com>
