@@ -1,0 +1,26 @@
+{
+  // Documentation conventions for this repository. Each disabled rule is
+  // disabled for a reason, stated here, rather than because it was noisy.
+  "config": {
+    "default": true,
+
+    // Prose wraps at 80 by hand. Tables and code blocks cannot always, and
+    // reflowing a table to fit is worse for the reader than a long line.
+    "MD013": {
+      "line_length": 100,
+      "tables": false,
+      "code_blocks": false,
+      "headings": false
+    },
+
+    // A `$` prefix marks the line the reader types, which matters here because
+    // some blocks show output and some do not, and CI runs a subset of them.
+    // The convention is load-bearing; the rule would forbid it.
+    "MD014": false,
+
+    // Bare URLs are fine in prose where the URL is the thing being named.
+    "MD034": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": ["plan/**", "test/parity/legacy/**", "node_modules/**"]
+}

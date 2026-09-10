@@ -1,0 +1,68 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only by default. Jobs that need more ask for it explicitly.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      # Actions are pinned to a commit SHA, not a tag: a tag can be moved.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.21.x'
+
+      # The Taskfile pins shellcheck and refuses to run without that exact
+      # version, so CI installs that version rather than whatever the runner
+      # image happens to ship.
+      - name: Install pinned shellcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^[[:space:]]*SHELLCHECK_VERSION:[[:space:]]*\([^[:space:]]*\).*/\1/p' Taskfile.yml | head -n 1)
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            Linux-X64)   asset="shellcheck-v${version}.linux.x86_64.tar.xz" ;;
+            Linux-ARM64) asset="shellcheck-v${version}.linux.aarch64.tar.xz" ;;
+            macOS-ARM64) asset="shellcheck-v${version}.darwin.aarch64.tar.xz" ;;
+            macOS-X64)   asset="shellcheck-v${version}.darwin.x86_64.tar.xz" ;;
+            Windows-*)   asset="shellcheck-v${version}.zip" ;;
+            *) echo "no pinned shellcheck build for ${RUNNER_OS}-${RUNNER_ARCH}" >&2; exit 1 ;;
+          esac
+          url="https://github.com/koalaman/shellcheck/releases/download/v${version}/${asset}"
+          mkdir -p "${RUNNER_TEMP}/shellcheck"
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/${asset}" "$url"
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            unzip -q -o "${RUNNER_TEMP}/${asset}" -d "${RUNNER_TEMP}/shellcheck"
+          else
+            tar -xJf "${RUNNER_TEMP}/${asset}" -C "${RUNNER_TEMP}/shellcheck" --strip-components=1
+          fi
+          echo "${RUNNER_TEMP}/shellcheck" >> "${GITHUB_PATH}"
+
+      - name: task check
+        shell: bash
+        run: ./task check

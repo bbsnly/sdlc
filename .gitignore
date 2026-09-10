@@ -1,0 +1,32 @@
+# Build output
+/dist/
+/bin/sdlc
+/bin/sdlc.exe
+
+# Internal working documents. Never committed: this repository carries the
+# product and what a user needs to understand it, and nothing else.
+/plan/
+
+# The loop's own story prose, when sdlc runs on itself. The machine state the
+# gates need (tests.lock, gate-record.json, story.json) stays tracked; the
+# model-written prose does not. This is a rule about THIS repository -- sdlc
+# writes no opinion about what your project should commit.
+/.sdlc/stories/*/ANALYSIS.md
+/.sdlc/stories/*/PLAN.md
+/.sdlc/stories/*/TEST-PLAN.md
+/.sdlc/stories/*/THREATS.md
+/.sdlc/stories/*/implementation-notes.md
+/.sdlc/stories/*/retro.md
+/.sdlc/stories/*/reviews/
+/.sdlc/stories/*/diff.patch
+/.sdlc/stories/*/diff.stat
+/.sdlc/stories/*/logs/
+/.sdlc/state/
+
+# Scratch paths the launcher and tests use
+/.scratch/
+*.tmp
+
+# OS and editor noise
+.DS_Store
+Thumbs.db

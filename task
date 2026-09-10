@@ -1,0 +1,29 @@
+#!/bin/sh
+# Bootstrap wrapper for `task`, in the manner of gradlew or mvnw.
+#
+# A fresh clone runs `./task check` with nothing installed but Go. The pinned
+# version is read from Taskfile.yml so there is exactly one place to bump it.
+set -eu
+
+here=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+taskfile="$here/Taskfile.yml"
+
+if [ ! -f "$taskfile" ]; then
+  echo "task: Taskfile.yml not found beside this script" >&2
+  exit 1
+fi
+
+version=$(sed -n 's/^[[:space:]]*TASK_VERSION:[[:space:]]*\([^[:space:]]*\).*/\1/p' "$taskfile" | head -n 1)
+if [ -z "$version" ]; then
+  echo "task: could not read TASK_VERSION from Taskfile.yml" >&2
+  exit 1
+fi
+
+if ! command -v go >/dev/null 2>&1; then
+  echo "task: Go is not installed, and this wrapper runs task through it." >&2
+  echo "      Install Go: https://go.dev/dl/" >&2
+  echo "      Or install task directly: https://taskfile.dev/installation/" >&2
+  exit 1
+fi
+
+exec go run "github.com/go-task/task/v3/cmd/task@v${version}" --dir "$here" "$@"

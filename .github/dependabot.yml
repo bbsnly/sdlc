@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Tool versions are pinned in Taskfile.yml as `go run module@version` specs,
+  # which Dependabot does not parse; those are bumped by hand on trunk.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
