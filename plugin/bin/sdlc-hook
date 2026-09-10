@@ -3,9 +3,13 @@
 #
 # This runs on every matching tool call, so it does as little as possible and
 # never blocks the session on its own failure: if the binary cannot be found,
-# the tool call is allowed and the reason is written to stderr, where Claude
-# Code shows it. Enforcement silently off would be worse than enforcement off
-# with an explanation.
+# the tool call is allowed and the reason goes to stderr, where Claude Code
+# shows it. Enforcement silently off would be worse than enforcement off with
+# an explanation.
+#
+# The fallback path uses only shell builtins. An environment that has lost the
+# sdlc binary may have lost more, and the failure path is the last place that
+# should need something else to be installed.
 set -eu
 
 event="${1:-}"
@@ -30,16 +34,16 @@ if binary="$(find_binary)"; then
   exec "${binary}" hook "${event}"
 fi
 
-# Drain stdin so the caller never sees a broken pipe, then allow the call.
-cat >/dev/null 2>&1 || true
+# Read the payload to end of file so the caller never writes into a closed pipe.
+while IFS= read -r _payload_line; do :; done || true
+
 printf '{"continue":true}\n'
 
-cat >&2 <<'MSG'
-sdlc: the sdlc binary was not found, so nothing is being enforced.
-
-  why  the plugin is installed but the binary it drives is not on PATH and is
-       not in the plugin's own bin/ directory
-  fix  run "sdlc doctor" in your terminal; if that also fails, reinstall with
-       "npx @bbsnly/sdlc install"
-MSG
+printf '%s\n' \
+  'sdlc: the sdlc binary was not found, so nothing is being enforced.' \
+  '' \
+  '  why  the plugin is installed, but the binary it drives is not on PATH and' \
+  '       is not in the bin directory of the plugin' \
+  '  fix  run "sdlc doctor" in your terminal; if that also fails, reinstall' \
+  '       with "npx @bbsnly/sdlc install"' >&2
 exit 0

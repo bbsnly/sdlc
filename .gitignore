@@ -30,3 +30,8 @@
 # OS and editor noise
 .DS_Store
 Thumbs.db
+
+# The binary the plugin launcher finds. Built by `task build-plugin`, never committed:
+# the plugin ships from a release archive, not from the repository.
+/plugin/bin/sdlc
+/plugin/bin/sdlc.exe
