@@ -240,6 +240,26 @@ func (s *Store) SaveRecord(r *model.Record) error {
 	return s.writeJSON(filepath.Join(dir, recordFile), r)
 }
 
+// WriteArtifact stores one of a gate's documents inside the story's directory
+// and returns the path it was written to, relative to the repository root.
+func (s *Store) WriteArtifact(story string, a model.Artifact, content []byte) (string, error) {
+	dir, err := s.StoryDir(story)
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, a.File)
+	if err := s.writeFile(path, content); err != nil {
+		return "", err
+	}
+	return relative(s.root, path), nil
+}
+
+// ArtifactPath is where an artifact lives, relative to the repository root and
+// slash-separated, whether or not it has been written yet.
+func ArtifactPath(story string, a model.Artifact) string {
+	return storiesDir + "/" + story + "/" + a.File
+}
+
 // Now is the store's clock, so that everything written in one operation carries
 // the same timestamp.
 func (s *Store) Now() time.Time { return s.now() }

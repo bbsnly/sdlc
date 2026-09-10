@@ -26,7 +26,7 @@ import (
 const jsonFlag = "json"
 
 // New builds the root command with its subcommands attached.
-func New(stdout, stderr io.Writer) *cobra.Command {
+func New(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "sdlc",
 		Short: "Run a story-driven delivery loop with enforced gates",
@@ -38,6 +38,7 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 		// A bare `sdlc` should teach, not error.
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
+	root.SetIn(stdin)
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	root.PersistentFlags().Bool(jsonFlag, false,
@@ -49,6 +50,7 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 		newStartCmd(),
 		newStopCmd(),
 		newGateCmd(),
+		newArtifactCmd(),
 		newDoctorCmd(),
 		newVersionCmd(),
 	)
@@ -56,8 +58,8 @@ func New(stdout, stderr io.Writer) *cobra.Command {
 }
 
 // Execute builds and runs the tree, returning a process exit code.
-func Execute(args []string, stdout, stderr io.Writer) int {
-	root := New(stdout, stderr)
+func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	root := New(stdin, stdout, stderr)
 	root.SetArgs(args)
 
 	err := root.Execute()

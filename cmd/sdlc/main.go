@@ -56,7 +56,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	}
 
 	defer logging.Stage(opts, "cli")()
-	return cli.Execute(args, stdout, stderr)
+	return cli.Execute(args, stdin, stdout, stderr)
 }
 
 // crash turns a panic into something the caller can act on: a machine-readable

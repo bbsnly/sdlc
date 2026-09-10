@@ -1,6 +1,6 @@
 ---
 name: researcher
-description: Gate 2 analysis agent. Use it to analyse a selected story against the specification, the codebase map and the architecture contract, and to produce ANALYSIS.md, THREATS.md and a security-sensitivity decision before any tests or plan are written. Fresh context; writes only under .sdlc/stories/<ID>/ and CODEMAP.md.
+description: Gate 2 analysis agent. Use it to analyse a selected story against the specification, the codebase map and the architecture contract, and to produce the analysis, the threat assessment and a security-sensitivity decision before any tests or plan are written. Fresh context; stores its documents through `sdlc artifact write` and otherwise writes only under .sdlc/stories/<ID>/ and CODEMAP.md.
 model: opus
 effort: high
 tools: Read, Grep, Glob, Bash, Write
@@ -51,15 +51,35 @@ Paths come from the brief you were given.
 
 ## Outputs
 
-- `.sdlc/stories/<ID>/ANALYSIS.md` — use the headings of `.sdlc/templates/ANALYSIS.md` if it exists
-- `.sdlc/stories/<ID>/THREATS.md`
-- If you found structure missing from `CODEMAP.md`, append it there. Facts only, no opinions.
-- Your final message is one JSON object and nothing else:
+Store both documents with `sdlc artifact write`. Do not create them with a file write: a gate's
+documents are loop state, the same as the gate record, and the hook refuses anyone who edits
+them in place — including you. Piping them through the command is also the only route that
+works, because a subagent's file writes are refused outright when the name reads like a report.
 
-  ```json
-  {"analysis": "<path>", "threats": "<path>", "security_sensitive": false,
-   "split_recommended": false, "open_questions": 0, "touched_files": 0}
-  ```
+```bash
+sdlc artifact write analysis <<'SDLC_DOCUMENT'
+# Analysis — <ID>
+...
+SDLC_DOCUMENT
+
+sdlc artifact write threats <<'SDLC_DOCUMENT'
+# Threats — <ID>
+...
+SDLC_DOCUMENT
+```
+
+The command prints where it stored each one. Use the headings of `.sdlc/templates/ANALYSIS.md`
+if that file exists. If the document contains a line that is exactly the delimiter, change the
+delimiter; or write it to a scratch file under `.sdlc/stories/<ID>/` and pass `--file`.
+
+If you found structure missing from `CODEMAP.md`, append it there. Facts only, no opinions.
+
+Your final message is one JSON object and nothing else, with the paths the command reported:
+
+```json
+{"analysis": "<path>", "threats": "<path>", "security_sensitive": false,
+ "split_recommended": false, "open_questions": 0, "touched_files": 0}
+```
 
 ## Rules
 

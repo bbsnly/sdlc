@@ -34,14 +34,30 @@ type result struct {
 
 func run(t *testing.T, args ...string) result {
 	t.Helper()
+	return runWith(t, "", args...)
+}
+
+// runWith is run with a document on standard input, which is how a gate's
+// documents arrive.
+func runWith(t *testing.T, stdin string, args ...string) result {
+	t.Helper()
 	var out, errb bytes.Buffer
-	code := Execute(args, &out, &errb)
+	code := Execute(args, strings.NewReader(stdin), &out, &errb)
 	return result{stdout: out.String(), stderr: errb.String(), code: code}
 }
 
 func mustRun(t *testing.T, args ...string) result {
 	t.Helper()
 	r := run(t, args...)
+	if r.code != 0 {
+		t.Fatalf("sdlc %s failed with %d:\n%s", strings.Join(args, " "), r.code, r.stderr)
+	}
+	return r
+}
+
+func mustRunWith(t *testing.T, stdin string, args ...string) result {
+	t.Helper()
+	r := runWith(t, stdin, args...)
 	if r.code != 0 {
 		t.Fatalf("sdlc %s failed with %d:\n%s", strings.Join(args, " "), r.code, r.stderr)
 	}

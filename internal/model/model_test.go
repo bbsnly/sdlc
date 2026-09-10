@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -251,5 +252,70 @@ func TestBacklogParsesTheTemplateShape(t *testing.T) {
 	}
 	if b.Schema == "" {
 		t.Error("_schema was dropped; saving would strip it from the user's file")
+	}
+}
+
+// ---------------------------------------------------------------- artifacts
+
+// The registry is what the CLI, the policy and the skills all read. A row that
+// names a gate that does not exist, or two rows claiming the same file, would
+// be found by a user rather than by a test.
+func TestTheArtifactRegistryIsConsistent(t *testing.T) {
+	gates := map[Gate]bool{}
+	for _, g := range Gates {
+		gates[g] = true
+	}
+	names, files := map[string]bool{}, map[string]bool{}
+
+	for _, a := range Artifacts {
+		switch {
+		case a.Name == "" || a.File == "" || a.Role == "":
+			t.Errorf("%+v has an empty field", a)
+		case !gates[a.Gate]:
+			t.Errorf("%s belongs to %q, which is not a gate", a.Name, a.Gate)
+		case names[a.Name]:
+			t.Errorf("%s is registered twice", a.Name)
+		case files[strings.ToLower(a.File)]:
+			t.Errorf("two documents both claim %s", a.File)
+		}
+		names[a.Name], files[strings.ToLower(a.File)] = true, true
+
+		if got, ok := FindArtifact(a.Name); !ok || got != a {
+			t.Errorf("FindArtifact(%q) = %+v, %v", a.Name, got, ok)
+		}
+		if got, ok := ArtifactByFile(a.File); !ok || got != a {
+			t.Errorf("ArtifactByFile(%q) = %+v, %v", a.File, got, ok)
+		}
+		if !strings.Contains(ArtifactNames(), a.Name) {
+			t.Errorf("ArtifactNames() does not mention %s: %q", a.Name, ArtifactNames())
+		}
+	}
+}
+
+// The name is what a person types, so spacing and case are theirs to get wrong.
+func TestAnArtifactNameIsForgivingButNotVague(t *testing.T) {
+	for _, in := range []string{"analysis", "ANALYSIS", "  Analysis  "} {
+		if _, ok := FindArtifact(in); !ok {
+			t.Errorf("FindArtifact(%q) found nothing", in)
+		}
+	}
+	for _, in := range []string{"", "analysi", "analysis.md", "postmortem"} {
+		if got, ok := FindArtifact(in); ok {
+			t.Errorf("FindArtifact(%q) = %+v, want nothing", in, got)
+		}
+	}
+}
+
+// macOS and Windows treat analysis.md and ANALYSIS.md as the same file, so a
+// rule that matched only one spelling would stop enforcing on two of the three
+// platforms this ships to.
+func TestAFileNameMatchesWhateverCaseItArrivesIn(t *testing.T) {
+	for _, in := range []string{"ANALYSIS.md", "analysis.md", "Analysis.MD"} {
+		if _, ok := ArtifactByFile(in); !ok {
+			t.Errorf("ArtifactByFile(%q) found nothing", in)
+		}
+	}
+	if _, ok := ArtifactByFile("notes.md"); ok {
+		t.Error("notes.md was taken for a gate's document")
 	}
 }

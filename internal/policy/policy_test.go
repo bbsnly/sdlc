@@ -23,15 +23,15 @@ var fixtures = map[string]fixture{
 	},
 	"write-protected-path": {
 		denies:  Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/state/active", Story: "A-1"},
-		permits: Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/stories/A-1/ANALYSIS.md", Story: "A-1"},
+		permits: Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
 	},
 	"researcher-writes-analysis-only": {
 		denies:  Request{Tool: "Write", Agent: "sdlc-researcher", Path: "internal/billing/invoice.go", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc-researcher", Path: "CODEMAP.md", Story: "A-1"},
 	},
-	"story-artifact-belongs-to-its-gate": {
-		denies:  Request{Tool: "Write", Agent: "", Path: ".sdlc/stories/A-1/ANALYSIS.md", Story: "A-1"},
-		permits: Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/ANALYSIS.md", Story: "A-1"},
+	"gate-artifact-is-written-by-the-tool": {
+		denies:  Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/ANALYSIS.md", Story: "A-1"},
+		permits: Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
 	},
 	"orchestrator-delegates": {
 		denies:  Request{Tool: "Write", Agent: "", Path: "internal/billing/invoice.go", Story: "A-1"},
@@ -202,24 +202,27 @@ func TestNormalizeAgentDoesNotOverreach(t *testing.T) {
 // The hole this closes was found by running the loop for real: the main
 // conversation wrote the analysis itself and every rule allowed it, because the
 // orchestrator may write under .sdlc/ and the analysis lives under .sdlc/.
-func TestAGateArtifactCannotBeWrittenByWhoeverIsHoldingTheConversation(t *testing.T) {
+//
+// The rule refuses the researcher too. That is deliberate and it is not a
+// weaker rule: a gate artifact is loop state, and loop state goes through the
+// tool. It also happens to be the only shape that works, because Claude Code
+// refuses a subagent's Write when the filename reads like a report.
+func TestAGateArtifactIsWrittenByTheToolAndNobodyElse(t *testing.T) {
 	for _, artifact := range []string{"ANALYSIS.md", "THREATS.md"} {
 		path := ".sdlc/stories/A-1/" + artifact
 
-		for _, agent := range []string{"", "sdlc:sdet", "sdlc-implementer", "somebody-else"} {
+		for _, agent := range []string{"", "sdlc:researcher", "sdlc:sdet", "sdlc-implementer", "somebody-else"} {
 			got := Evaluate(Request{Tool: "Write", Agent: agent, Path: path, Story: "A-1"})
 			if got.Allowed {
-				t.Errorf("%s was written by %q", artifact, agent)
+				t.Errorf("%s was written in place by %q", artifact, agent)
 			}
-			if !strings.Contains(got.Route, "fresh context") {
-				t.Errorf("the denial does not say why delegating matters: %q", got.Route)
+			if got.Rule != "gate-artifact-is-written-by-the-tool" {
+				t.Errorf("%q writing %s was refused by %s, want the artifact rule",
+					agent, artifact, got.Rule)
 			}
-		}
-
-		if got := Evaluate(Request{
-			Tool: "Write", Agent: "sdlc:researcher", Path: path, Story: "A-1",
-		}); !got.Allowed {
-			t.Errorf("the researcher could not write %s: %s", artifact, got.Reason)
+			if !strings.Contains(got.Route, "sdlc artifact write") {
+				t.Errorf("the denial does not name the sanctioned route: %q", got.Route)
+			}
 		}
 	}
 }

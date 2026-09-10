@@ -109,3 +109,34 @@ id you used contains a path separator, a `..`, or a character that is not safe i
 
 Rename the story. Ids of letters, digits, dots, dashes and underscores always work — `AUTH-3`,
 `US-001`, `billing.2` — and the backlog schema asks for the `PREFIX-123` shape.
+
+### SDLC-E0016
+
+You asked to store a document the loop does not know about.
+
+Run `sdlc artifact list` for the names this version accepts. They are tied to the gate that
+produces them, so a new one arrives with the gate that needs it.
+
+### SDLC-E0017
+
+The document you asked to store was empty.
+
+The content is read from standard input, or from the path given to `--file`. If you are piping
+from another command, check that it produced anything.
+
+### SDLC-E0018
+
+The document could not be read.
+
+With `--file`, the path does not exist or cannot be opened; check it, or drop the flag and pipe
+the document in instead. Without it, reading from standard input stopped part way through, which
+usually means whatever was producing the document failed.
+
+### SDLC-E0019
+
+The document is bigger than the largest one `sdlc` will store.
+
+A gate's document is prose that a person reads and that later gates review, so a megabyte is
+already generous. Storing a truncated one would be worse than refusing: every gate after this
+one would review something that stops mid-sentence. Keep the document itself here and link to
+the bulk — the log, the dataset, the capture — from inside it.

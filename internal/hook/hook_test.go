@@ -194,14 +194,32 @@ func TestAProtectedPathIsRefusedWithARouteAndARuleID(t *testing.T) {
 	}
 }
 
-func TestTheResearcherMayWriteItsAnalysisAndNothingElse(t *testing.T) {
+func TestTheResearcherWorksInItsOwnStoryAndNowhereElse(t *testing.T) {
 	root := loopProject(t)
 
-	if denied(call(t, event(root, "Write", "sdlc-researcher", ".sdlc/stories/A-1/ANALYSIS.md"), noEnv)) {
-		t.Error("the researcher could not write its own analysis")
+	if denied(call(t, event(root, "Write", "sdlc-researcher", ".sdlc/stories/A-1/notes.md"), noEnv)) {
+		t.Error("the researcher could not take notes in its own story directory")
 	}
 	if !denied(call(t, event(root, "Write", "sdlc-researcher", "internal/billing/invoice.go"), noEnv)) {
 		t.Error("the researcher wrote production code")
+	}
+}
+
+// A gate artifact is loop state, so it goes through the tool no matter who is
+// asking -- including the agent whose gate it is.
+func TestAGateArtifactIsNotWrittenInPlaceByAnyone(t *testing.T) {
+	root := loopProject(t)
+
+	for _, agent := range []string{"", "sdlc-researcher", "sdlc:researcher"} {
+		r := call(t, event(root, "Write", agent, ".sdlc/stories/A-1/ANALYSIS.md"), noEnv)
+		if !denied(r) {
+			t.Errorf("%q wrote the analysis in place", agent)
+			continue
+		}
+		if !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "sdlc artifact write") {
+			t.Errorf("the denial does not name the route: %q",
+				r.HookSpecificOutput.PermissionDecisionReason)
+		}
 	}
 }
 

@@ -322,3 +322,45 @@ func TestWriteFailureNamesThePathRelativeToTheRepository(t *testing.T) {
 		t.Errorf("error does not name the path: %v", err)
 	}
 }
+
+// A gate that ran twice has one record, not two: the second document replaces
+// the first, in place, where the next gate is already looking for it.
+func TestWritingADocumentTwiceLeavesTheSecondOne(t *testing.T) {
+	s := newStore(t)
+	analysis, _ := model.FindArtifact("analysis")
+
+	if _, err := s.WriteArtifact("A-1", analysis, []byte("first\n")); err != nil {
+		t.Fatal(err)
+	}
+	path, err := s.WriteArtifact("A-1", analysis, []byte("second\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := ".sdlc/stories/A-1/ANALYSIS.md"; path != want {
+		t.Errorf("path = %q, want %q", path, want)
+	}
+	if path != ArtifactPath("A-1", analysis) {
+		t.Errorf("WriteArtifact said %q but ArtifactPath says %q", path, ArtifactPath("A-1", analysis))
+	}
+
+	body, err := os.ReadFile(filepath.Join(s.root, filepath.FromSlash(path)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "second\n" {
+		t.Errorf("on disk: %q", body)
+	}
+}
+
+// The story id reaches this from a file an assistant may have written, and it
+// becomes a directory name.
+func TestADocumentCannotEscapeTheStoriesDirectory(t *testing.T) {
+	s := newStore(t)
+	analysis, _ := model.FindArtifact("analysis")
+
+	if _, err := s.WriteArtifact("../../etc", analysis, []byte("x\n")); err == nil {
+		t.Fatal("a document was written outside the stories directory")
+	} else if got := codeOf(t, err); got != sdlcerr.UnsafeStoryID {
+		t.Errorf("code = %s, want %s", got, sdlcerr.UnsafeStoryID)
+	}
+}

@@ -54,6 +54,18 @@ var (
 	UnknownGateStatus = register("SDLC-E0014",
 		`use one of: pass, fail, pending`)
 
+	UnknownArtifact = register("SDLC-E0016",
+		`run "sdlc artifact list" to see what this version can store`)
+
+	EmptyArtifact = register("SDLC-E0017",
+		`pipe the document in, or pass --file with a path that has something in it`)
+
+	ArtifactUnreadable = register("SDLC-E0018",
+		`check the path given to --file, or pipe the document in instead`)
+
+	ArtifactTooLarge = register("SDLC-E0019",
+		`store the document itself and link to the bulk from it — a gate's document is read by a person`)
+
 	UnsafeStoryID = register("SDLC-E0015",
 		`rename the story so its id is letters, digits, dots, dashes and underscores -- for example AUTH-3`)
 )

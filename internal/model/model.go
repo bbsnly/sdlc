@@ -230,6 +230,56 @@ func GateNames() string {
 	return strings.Join(names, ", ")
 }
 
+// Artifact is a document a gate produces and later gates read.
+//
+// The loop writes these through the sdlc command rather than letting an agent
+// write the file directly. That is not a preference: Claude Code refuses a
+// subagent's Write when the filename reads like a report -- "ANALYSIS.md" is
+// refused, "THREATS.md" is not -- so an agent writing its own artifacts works
+// for one of them and silently fails for the other. Going through the tool is
+// also what the loop already does with every other piece of its state.
+type Artifact struct {
+	Name string // what a person types: "analysis"
+	File string // the file it becomes, inside the story's directory
+	Gate Gate   // the gate that produces it
+	Role string // the agent whose gate it is
+}
+
+// Artifacts is every document the loop knows how to store.
+var Artifacts = []Artifact{
+	{Name: "analysis", File: "ANALYSIS.md", Gate: GateAnalysis, Role: "researcher"},
+	{Name: "threats", File: "THREATS.md", Gate: GateAnalysis, Role: "researcher"},
+}
+
+// FindArtifact looks one up by the name a person types.
+func FindArtifact(name string) (Artifact, bool) {
+	for _, a := range Artifacts {
+		if a.Name == strings.ToLower(strings.TrimSpace(name)) {
+			return a, true
+		}
+	}
+	return Artifact{}, false
+}
+
+// ArtifactByFile looks one up by its file name, for a rule that has a path.
+func ArtifactByFile(file string) (Artifact, bool) {
+	for _, a := range Artifacts {
+		if strings.EqualFold(a.File, file) {
+			return a, true
+		}
+	}
+	return Artifact{}, false
+}
+
+// ArtifactNames lists what can be written, for a message that has to say.
+func ArtifactNames() string {
+	names := make([]string, 0, len(Artifacts))
+	for _, a := range Artifacts {
+		names = append(names, a.Name)
+	}
+	return strings.Join(names, ", ")
+}
+
 // GateStatus is the outcome recorded for a gate.
 type GateStatus string
 

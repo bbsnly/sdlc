@@ -10,7 +10,7 @@ import (
 
 func TestVersionPrintsOneLine(t *testing.T) {
 	var out, errb bytes.Buffer
-	if code := Execute([]string{"version"}, &out, &errb); code != 0 {
+	if code := Execute([]string{"version"}, strings.NewReader(""), &out, &errb); code != 0 {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	if lines := strings.Count(strings.TrimSpace(out.String()), "\n"); lines != 0 {
@@ -20,7 +20,7 @@ func TestVersionPrintsOneLine(t *testing.T) {
 
 func TestShortVersionHasNoDecoration(t *testing.T) {
 	var out, errb bytes.Buffer
-	Execute([]string{"version", "--short"}, &out, &errb)
+	Execute([]string{"version", "--short"}, strings.NewReader(""), &out, &errb)
 	if strings.ContainsAny(out.String(), "()") {
 		t.Errorf("--short should print only the version, got %q", out.String())
 	}
@@ -28,7 +28,7 @@ func TestShortVersionHasNoDecoration(t *testing.T) {
 
 func TestBareInvocationHelpsRatherThanErrors(t *testing.T) {
 	var out, errb bytes.Buffer
-	if code := Execute(nil, &out, &errb); code != 0 {
+	if code := Execute(nil, strings.NewReader(""), &out, &errb); code != 0 {
 		t.Errorf("a bare invocation should teach, not fail: exit %d", code)
 	}
 	if !strings.Contains(out.String(), "Available Commands") {
@@ -38,7 +38,7 @@ func TestBareInvocationHelpsRatherThanErrors(t *testing.T) {
 
 func TestUnknownCommandFailsWithAMessage(t *testing.T) {
 	var out, errb bytes.Buffer
-	if code := Execute([]string{"nope"}, &out, &errb); code == 0 {
+	if code := Execute([]string{"nope"}, strings.NewReader(""), &out, &errb); code == 0 {
 		t.Error("an unknown command should fail")
 	}
 	if !strings.Contains(errb.String(), "nope") {
@@ -68,5 +68,5 @@ func TestEveryCommandHasAShortAndAnExample(t *testing.T) {
 			walk(sub, name)
 		}
 	}
-	walk(New(&bytes.Buffer{}, &bytes.Buffer{}), "")
+	walk(New(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}), "")
 }

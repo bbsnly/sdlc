@@ -11,6 +11,7 @@ package policy
 import (
 	"strings"
 
+	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/pathrules"
 )
 
@@ -103,8 +104,9 @@ var Rules = []Rule{
 	},
 	{
 		ID: "researcher-writes-analysis-only",
-		Route: "write the analysis under the story's own directory; " +
-			"the tests come next, from sdlc-sdet, and the code after that",
+		Route: "keep to the story's own directory and CODEMAP.md, and persist the " +
+			"analysis with `sdlc artifact write`; the tests come next, from " +
+			"sdlc-sdet, and the code after that",
 		check: func(r Request) string {
 			if NormalizeAgent(r.Agent) != "researcher" {
 				return ""
@@ -116,16 +118,16 @@ var Rules = []Rule{
 		},
 	},
 	{
-		ID: "story-artifact-belongs-to-its-gate",
-		Route: "delegate it to the agent whose gate it is -- that agent starts from a " +
-			"fresh context, which is the whole reason its answer is worth more than yours",
+		ID: "gate-artifact-is-written-by-the-tool",
+		Route: "run `sdlc artifact write <name>` and give it the document -- " +
+			"delegate to the agent whose gate it is rather than writing it yourself",
 		check: func(r Request) string {
-			owner, name, ok := artifactOwner(r.Story, r.Path)
-			if !ok || NormalizeAgent(r.Agent) == owner {
+			artifact, ok := artifactAt(r.Story, r.Path)
+			if !ok {
 				return ""
 			}
-			return name + " is written by the " + owner + " agent, not by whoever happens " +
-				"to be holding the conversation"
+			return artifact.File + " is a gate's own record and is written by sdlc, " +
+				"not edited in place -- the same rule as every other piece of loop state"
 		},
 	},
 	{
@@ -181,28 +183,25 @@ func (v Verdict) Message() string {
 	return v.Reason + ". Instead: " + v.Route + " [" + v.Rule + "]"
 }
 
-// storyArtifacts names the file each gate produces and the role that owns it.
+// artifactAt reports the gate artifact at this path, if there is one.
 //
-// Without this the loop has a hole exactly where it matters: the main
+// Without this rule the loop has a hole exactly where it matters: the main
 // conversation may write under .sdlc/ for its own bookkeeping, and the analysis
-// lives under .sdlc/, so it could simply do Gate 2 itself and record a pass.
-// Every gate after that would then be reviewing work shaped by the reasoning it
-// was supposed to be independent of.
-var storyArtifacts = map[string]string{
-	"ANALYSIS.md": "researcher",
-	"THREATS.md":  "researcher",
-}
-
-// artifactOwner reports which role owns the path, if it is one of a story's
-// gate artifacts.
-func artifactOwner(story, path string) (owner, name string, ok bool) {
-	dir := storyDir(story) + "/"
-	rest, inStory := strings.CutPrefix(path, dir)
+// lives under .sdlc/, so it could do Gate 2 itself and record a pass on its own
+// work. Every gate after that would be reviewing something shaped by the
+// reasoning it was supposed to be independent of.
+//
+// The rule refuses everyone, including the agent whose gate it is. That is not
+// a compromise: Claude Code refuses a subagent's Write when the filename reads
+// like a report, so "only the researcher may write ANALYSIS.md" is a rule that
+// nobody can satisfy. Going through the tool works for every writer and matches
+// what the loop already does with the rest of its state.
+func artifactAt(story, path string) (model.Artifact, bool) {
+	rest, inStory := strings.CutPrefix(path, storyDir(story)+"/")
 	if !inStory || strings.Contains(rest, "/") {
-		return "", "", false
+		return model.Artifact{}, false
 	}
-	owner, ok = storyArtifacts[rest]
-	return owner, rest, ok
+	return model.ArtifactByFile(rest)
 }
 
 func storyDir(story string) string {

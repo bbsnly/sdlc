@@ -59,15 +59,24 @@ Delegate to the `sdlc:researcher` agent. Give it a brief containing:
 - the story id and its full text, including every acceptance criterion
 - the paths it should read: `CODEMAP.md`, `CLAUDE.md`'s `## SDLC Contract` section, and the
   `spec.paths` from `.sdlc/config.json`
-- where to write: `.sdlc/stories/<ID>/ANALYSIS.md` and `.sdlc/stories/<ID>/THREATS.md`
+- that it stores its two documents with `sdlc artifact write analysis` and
+  `sdlc artifact write threats`
 
 Do not do this analysis yourself. The agent starts from a fresh context on purpose: it has not
 seen the conversation that led here, so it cannot inherit an assumption from it.
 
-This is enforced, not requested. If you try to write `ANALYSIS.md` or `THREATS.md` yourself the
-hook will refuse it, and the refusal will point you back here. Delegate.
+This is enforced, not requested. Nobody edits a gate's documents in place — not you, not the
+agent whose gate it is. They go through `sdlc artifact write`, the same as every other piece of
+loop state, and the hook refuses anything else.
 
-When it returns, read its JSON result and check that both files exist. Then record the gate:
+When it returns, read its JSON result and confirm both documents are on disk:
+
+```bash
+ls .sdlc/stories/<ID>/ANALYSIS.md .sdlc/stories/<ID>/THREATS.md
+```
+
+If either is missing, the gate did not happen: the agent's summary is not the artifact. Say so
+and stop rather than recording a pass. Otherwise record the gate:
 
 ```bash
 sdlc gate analysis pass --note "<security_sensitive and open_questions, in one clause>"

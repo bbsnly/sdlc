@@ -227,7 +227,7 @@ func TestSkillsOnlyNameCommandsGatesAndAgentsThatExist(t *testing.T) {
 	// Taken from the command tree itself, so a renamed verb fails here rather
 	// than at the moment the assistant runs it.
 	verbs := map[string]bool{}
-	for _, c := range cli.New(io.Discard, io.Discard).Commands() {
+	for _, c := range cli.New(strings.NewReader(""), io.Discard, io.Discard).Commands() {
 		verbs[c.Name()] = true
 	}
 	if len(verbs) < 5 {
