@@ -57,7 +57,15 @@ jobs:
           esac
           url="https://github.com/koalaman/shellcheck/releases/download/v${version}/${asset}"
           mkdir -p "${RUNNER_TEMP}/shellcheck"
-          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/${asset}" "$url"
+          # The release host returns a 500 often enough to redden a run on its
+          # own. The default backoff gives up after about seven seconds, which
+          # is shorter than these outages last.
+          curl -fsSL --retry 5 --retry-all-errors --retry-max-time 180 \
+            --connect-timeout 20 -o "${RUNNER_TEMP}/${asset}" "$url" || {
+            echo "could not download ${asset} from ${url}" >&2
+            echo "this is the shellcheck release host, not the build: re-run the job" >&2
+            exit 1
+          }
           if [ "${RUNNER_OS}" = "Windows" ]; then
             unzip -q -o "${RUNNER_TEMP}/${asset}" -d "${RUNNER_TEMP}/shellcheck"
           else

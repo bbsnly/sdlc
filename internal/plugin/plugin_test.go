@@ -3,6 +3,7 @@ package plugin
 import (
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -152,18 +153,37 @@ func TestTheHookRunsSomethingThatExists(t *testing.T) {
 			}
 			script := strings.Fields(rel)[0]
 			path := filepath.Join(pluginDir, filepath.FromSlash(script))
-			info, err := os.Stat(path)
-			if err != nil {
+			if _, err := os.Stat(path); err != nil {
 				t.Errorf("the hook runs %s, which is not in the repository", script)
 				continue
 			}
-			if info.Mode().Perm()&0o111 == 0 {
-				t.Errorf("%s is not executable, so the hook cannot run it", script)
-			}
+			assertExecutableInGit(t, "plugin/"+script)
 			if _, err := os.Stat(path + ".cmd"); err != nil {
 				t.Errorf("%s has no .cmd beside it, so Windows has no launcher", script)
 			}
 		}
+	}
+}
+
+// assertExecutableInGit checks the mode recorded in the index rather than on
+// disk. That is the bit that survives a clone -- and on Windows the filesystem
+// carries no permission bits at all, so the working copy cannot answer this.
+func assertExecutableInGit(t *testing.T, repoPath string) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", "ls-files", "--stage", "--", repoPath)
+	cmd.Dir = repoRoot
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git ls-files %s: %v", repoPath, err)
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) == 0 {
+		t.Fatalf("%s is not tracked, so it would not ship", repoPath)
+	}
+	if fields[0] != "100755" {
+		t.Errorf("%s is mode %s in the index, want 100755: the hook could not run it "+
+			"after a clone (fix with: git update-index --chmod=+x %s)",
+			repoPath, fields[0], repoPath)
 	}
 }
 
