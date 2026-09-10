@@ -13,7 +13,7 @@ commit so the work is visible as it happens.
 
 - Repository scaffolding: MIT license, build tasks, CI on Linux, macOS and
   Windows, and the link and hygiene checks that gate every commit.
-- Error codes `SDLC-E0001` through `SDLC-E0014`, each documented in
+- Error codes `SDLC-E0001` through `SDLC-E0015`, each documented in
   [docs/troubleshooting.md](docs/troubleshooting.md). Codes are API: once
   published, a code's meaning does not change and it is never reused.
 

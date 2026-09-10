@@ -53,6 +53,9 @@ var (
 
 	UnknownGateStatus = register("SDLC-E0014",
 		`use one of: pass, fail, pending`)
+
+	UnsafeStoryID = register("SDLC-E0015",
+		`rename the story so its id is letters, digits, dots, dashes and underscores -- for example AUTH-3`)
 )
 
 // entry is one row of the catalogue.

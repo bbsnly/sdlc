@@ -101,3 +101,11 @@ Run `sdlc gate --help` for the gate names. They are stable within a major versio
 ### SDLC-E0014
 
 A gate result must be `pass`, `fail`, or `pending`.
+
+### SDLC-E0015
+
+A story id becomes a directory name under `.sdlc/stories/`, so it has to be usable as one. The
+id you used contains a path separator, a `..`, or a character that is not safe in a filename.
+
+Rename the story. Ids of letters, digits, dots, dashes and underscores always work — `AUTH-3`,
+`US-001`, `billing.2` — and the backlog schema asks for the `PREFIX-123` shape.
