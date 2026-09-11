@@ -112,3 +112,90 @@ jobs:
       - name: task check
         shell: bash
         run: ./task check
+
+  # Every target a release publishes, compiled. `task check` builds only for
+  # the runner it is on, so three of the six platforms goreleaser ships were
+  # built for the first time during the release itself -- the one run where a
+  # compile error costs the most. This is seconds of work and takes that risk
+  # off release day entirely.
+  cross:
+    name: cross-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build every platform we ship
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Read from .goreleaser.yml rather than repeated here, so adding a
+          # platform to a release cannot forget to add it to this check.
+          goos=$(sed -n 's/^ *goos: \[\(.*\)\]$/\1/p' .goreleaser.yml | tr -d ' ' | tr ',' ' ')
+          goarch=$(sed -n 's/^ *goarch: \[\(.*\)\]$/\1/p' .goreleaser.yml | tr -d ' ' | tr ',' ' ')
+          if [ -z "${goos}" ] || [ -z "${goarch}" ]; then
+            echo "::error::could not read goos/goarch out of .goreleaser.yml" >&2
+            exit 1
+          fi
+          for os in ${goos}; do
+            for arch in ${goarch}; do
+              echo "==> ${os}/${arch}"
+              GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 go build -o /dev/null ./cmd/sdlc
+            done
+          done
+          # `go vet` is per-platform too: a build tag or a syscall constant can
+          # be wrong on one GOOS and fine on the rest.
+          for os in ${goos}; do
+            GOOS="${os}" go vet ./...
+          done
+
+  # The architectures no `check` runner covers. A release publishes six
+  # platforms; until this job existed, three of them -- linux/arm64,
+  # darwin/amd64, windows/arm64 -- had never run the binary they ship, let
+  # alone installed it. This runs the tests and every installer route that
+  # applies, which is what the primary runners do, without the linters and
+  # vendored-kit legs that are not architecture-dependent.
+  install:
+    name: install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, windows-11-arm, macos-15-intel]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The npm installer is one of the routes under test, so node has to be
+      # here for it to be tested rather than skipped.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.21.x'
+
+      - name: Say which platform this actually is
+        shell: bash
+        run: go version && go env GOOS GOARCH
+
+      - name: Install every way this platform can be installed
+        shell: bash
+        run: go test -count=1 ./test/install/...
+
+      - name: The test suite, on this architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Everything except the installers, which the step above already ran
+          # and which are slow enough not to want twice.
+          go list ./... | grep -v '/test/install$' | xargs go test -count=1
