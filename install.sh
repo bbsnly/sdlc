@@ -86,11 +86,19 @@ case "$(uname -m)" in
     ;;
 esac
 
+# SDLC_DOWNLOAD_BASE points this at somewhere other than GitHub. It exists so
+# that this script can be tested against a local mirror on every commit,
+# rather than only by a real release.
+download_base="${SDLC_DOWNLOAD_BASE:-https://github.com/$repo/releases/download}"
+# The "latest" lookup is the sibling of the download path, so a mirror that
+# serves one serves the other. That is what lets the resolve-the-latest-version
+# path -- the one every reader of the documentation takes -- be tested at all.
+latest_url="${download_base%/download}/latest"
+
 if [ -z "$version" ]; then
   # Resolve "latest" through the redirect rather than the API: the API is rate
   # limited per IP, and a shared network can exhaust it for everyone on it.
-  latest=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
-    "https://github.com/$repo/releases/latest" 2>/dev/null) || latest=""
+  latest=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$latest_url" 2>/dev/null) || latest=""
   version="${latest##*/tag/v}"
   # The same shape the other two installers require: a version starts with a
   # digit. Without it a redirect to anything but a tag yields a plausible
@@ -98,7 +106,7 @@ if [ -z "$version" ]; then
   case "$version" in
     "" | *"/"* | *"releases"* | [!0-9]*)
       die "could not work out the latest version of sdlc." \
-        "why  https://github.com/$repo/releases/latest did not redirect to a tag;" \
+        "why  $latest_url did not redirect to a tag;" \
         "     the usual cause is no network, or no release yet" \
         "fix  pass one: install.sh --version X.Y.Z"
       ;;
@@ -106,10 +114,7 @@ if [ -z "$version" ]; then
 fi
 
 archive="sdlc_${version}_${os}_${arch}.tar.gz"
-# SDLC_DOWNLOAD_BASE points this at somewhere other than GitHub. It exists so
-# that this script can be tested against a local mirror on every commit,
-# rather than only by a real release.
-base="${SDLC_DOWNLOAD_BASE:-https://github.com/$repo/releases/download}/v${version}"
+base="${download_base}/v${version}"
 
 tmp=$(mktemp -d)
 # incoming is the staging name inside the install directory, set once the
@@ -172,31 +177,67 @@ if [ "$actual" != "$expected" ]; then
     "happens twice, report it at https://github.com/$repo/issues"
 fi
 
-tar -xzf "$tmp/$archive" -C "$tmp" sdlc || die "could not unpack $archive"
+tar -xzf "$tmp/$archive" -C "$tmp" sdlc || die \
+  "could not unpack $archive" \
+  "why  the archive does not contain sdlc where this script expects it" \
+  "fix  report it at https://github.com/$repo/issues"
+[ -f "$tmp/sdlc" ] || die \
+  "$archive does not contain sdlc" \
+  "why  the archive is not the one this script expects" \
+  "fix  report it at https://github.com/$repo/issues"
 
-mkdir -p "$dir" || die "could not create $dir"
+mkdir -p "$dir" || die \
+  "could not create $dir" \
+  "why  this script asks for no privileges, and $dir needs some" \
+  "fix  install somewhere you own: install.sh --dir \"\$HOME/.local/bin\""
 # Install through a temporary name in the same directory and rename: a half
 # written binary on PATH is worse than no binary on PATH, and rename is the
 # only step that is atomic.
 chmod 0755 "$tmp/sdlc"
 incoming="$dir/.sdlc.incoming.$$"
-mv "$tmp/sdlc" "$incoming" || die "could not write to $dir"
+mv "$tmp/sdlc" "$incoming" || die \
+  "could not write to $dir" \
+  "why  this script asks for no privileges, and $dir needs some" \
+  "fix  install somewhere you own: install.sh --dir \"\$HOME/.local/bin\""
 mv "$incoming" "$dir/sdlc" || die "could not install into $dir"
 incoming=""
 
 echo "sdlc: installed $("$dir/sdlc" version 2>/dev/null || echo "v$version") in $dir"
 
-case ":$PATH:" in
-  *":$dir:"*) ;;
-  *)
-    echo
-    echo "  $dir is not on your PATH. Add it:"
-    echo
-    echo "    export PATH=\"$dir:\$PATH\""
-    echo
-    echo "  and put that line in your shell profile (~/.zshrc, ~/.bashrc) to keep it."
-    ;;
-esac
+# Compare resolved paths, not spellings: "$HOME/.local/bin" and the absolute
+# path it expands to are the same directory, and printing "not on your PATH"
+# about a directory that is on it teaches the reader to ignore the message.
+target=$(cd "$dir" 2>/dev/null && pwd -P) || target="$dir"
+on_path=no
+saved_ifs=$IFS
+IFS=:
+for entry in $PATH; do
+  [ -n "$entry" ] || continue
+  resolved=$(cd "$entry" 2>/dev/null && pwd -P) || continue
+  if [ "$resolved" = "$target" ]; then
+    on_path=yes
+    break
+  fi
+done
+IFS=$saved_ifs
+
+if [ "$on_path" = no ]; then
+  echo
+  echo "  $dir is not on your PATH. Add it:"
+  echo
+  case "${SHELL##*/}" in
+    fish)
+      echo "    fish_add_path \"$dir\""
+      echo
+      echo "  fish remembers that one; nothing else to edit."
+      ;;
+    *)
+      echo "    export PATH=\"$dir:\$PATH\""
+      echo
+      echo "  and put that line in your shell profile (~/.zshrc, ~/.bashrc) to keep it."
+      ;;
+  esac
+fi
 
 cat <<'NEXT'
 

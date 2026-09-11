@@ -18,8 +18,13 @@ release's `checksums.txt`, and installs a single static binary into
 `~/.local/bin`. It touches nothing else and asks for no privileges.
 
 ```console
-$ curl -fsSL .../install.sh | sh -s -- --version 0.1.0 --dir /usr/local/bin
+$ curl -fsSL .../install.sh | sh -s -- --version 0.1.0 --dir ~/.local/bin
 ```
+
+`--dir` can point anywhere you can write. Somewhere like `/usr/local/bin` needs
+privileges the script does not ask for, so run it under `sudo` yourself if that
+is where you want it — the script will otherwise tell you it could not write
+there.
 
 `SDLC_VERSION` and `SDLC_INSTALL_DIR` do the same thing, which is easier to
 read in a provisioning script.
@@ -83,6 +88,14 @@ The repository is its own marketplace, so there is nothing else to add. That
 gives you the `/sdlc:next` skill, eleven agents, and the `PreToolUse` hook that
 does the enforcing.
 
+Worth knowing: the marketplace serves the repository's default branch, not a
+tag. `/plugin update sdlc@sdlc` therefore gives you the plugin as it is on
+`main`, which can be ahead of the binary release you have installed — the
+version in the plugin's manifest names the release it was cut for, not the
+commit you received. The two halves are kept compatible on purpose, and the
+binary is the one that enforces; if they ever disagree, `sdlc doctor` is what
+tells you.
+
 ## Check it worked
 
 From inside a project:
@@ -98,8 +111,14 @@ with the command that fixes it.
 
 ## Verifying a download yourself
 
-Every release publishes `checksums.txt`, and every archive is attested: GitHub
-records which workflow, in which repository, at which commit, produced it.
+Every release publishes `checksums.txt`, and every archive is attested, along
+with `checksums.txt` itself and the two install scripts: GitHub records which
+workflow, in which repository, at which commit, produced them. Attesting the
+checksum file is what makes it worth checking against — a list anyone could
+replace would prove nothing about the archives it lists.
+
+The `Source code (zip)` and `Source code (tar.gz)` entries GitHub adds to every
+release are not ours and are neither attested nor listed in `checksums.txt`.
 
 ```console
 $ gh attestation verify sdlc_0.1.0_darwin_arm64.tar.gz --repo bbsnly/sdlc
@@ -114,8 +133,13 @@ not depend on fetching a checksum from the same place as the download.
 
 ## Updating
 
-Run the same installer again. It overwrites the binary in place, atomically —
-a half-written binary on your `PATH` would be worse than an old one.
+Run the same installer again. Every route writes the new binary under a name
+`PATH` cannot resolve and then renames it, so the only visible change is
+atomic: a half-written binary on your `PATH` would be worse than an old one.
+
+On Windows, close anything running `sdlc.exe` first — a running executable
+cannot be replaced, and the installer will say so rather than leave a damaged
+one behind.
 
 To update the plugin, `/plugin update sdlc@sdlc` in Claude Code.
 

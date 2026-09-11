@@ -22,8 +22,11 @@ var (
 type Info struct {
 	Version string // semver, or "0.0.0-dev" for an untagged build
 	Commit  string // full commit sha, or "" when unknown
-	Date    string // RFC3339 build time, or "" when unknown
-	Dirty   bool   // built from a tree with uncommitted changes
+	// RFC3339, or "" when unknown. A released build carries the *commit*
+	// date, not the time it was built: a build time would differ on every
+	// rebuild of the same tag and make the binary unreproducible.
+	Date  string
+	Dirty bool // built from a tree with uncommitted changes
 }
 
 var (

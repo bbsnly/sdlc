@@ -79,31 +79,40 @@ switch -Regex ($osArch) {
     }
 }
 
+# SDLC_DOWNLOAD_BASE points this at somewhere other than GitHub. It exists so
+# that this script can be tested against a local mirror on every commit,
+# rather than only by a real release.
+$downloadBase = if ($env:SDLC_DOWNLOAD_BASE) { $env:SDLC_DOWNLOAD_BASE } else { "https://github.com/$repo/releases/download" }
+# The "latest" lookup is the sibling of the download path, so a mirror that
+# serves one serves the other. That is what lets the resolve-the-latest-version
+# path -- the one every reader of the documentation takes -- be tested at all.
+$latestUrl = ($downloadBase -replace '/download$', '/latest')
+
 if (-not $Version) {
     # Resolve "latest" through the redirect rather than the API: the API is
     # rate limited per IP, and a shared network can exhaust it for everyone.
+    #
+    # Where the redirect surfaces differs by host: Windows PowerShell 5.1
+    # throws a WebException, PowerShell 7 returns the response. Both are read.
+    $location = $null
     try {
-        $response = Invoke-WebRequest -Uri "https://github.com/$repo/releases/latest" `
+        $response = Invoke-WebRequest -Uri $latestUrl `
             -MaximumRedirection 0 -ErrorAction SilentlyContinue -UseBasicParsing
-        $location = $response.Headers.Location
+        if ($response) { $location = [string]$response.Headers.Location }
     } catch {
-        $location = $_.Exception.Response.Headers.Location
+        try { $location = [string]$_.Exception.Response.Headers.Location } catch { $location = $null }
     }
     if ($location -match '/tag/v(?<v>[0-9][^/]*)$') {
         $Version = $Matches['v']
     } else {
         Stop-WithAdvice 'could not work out the latest version of sdlc.' @(
-            "why  https://github.com/$repo/releases/latest did not redirect to a tag;",
+            "why  $latestUrl did not redirect to a tag;",
             '     the usual cause is no network, or no release yet',
             'fix  set $env:SDLC_VERSION to the version you want')
     }
 }
 
 $archive = "sdlc_${Version}_windows_${arch}.zip"
-# SDLC_DOWNLOAD_BASE points this at somewhere other than GitHub. It exists so
-# that this script can be tested against a local mirror on every commit,
-# rather than only by a real release.
-$downloadBase = if ($env:SDLC_DOWNLOAD_BASE) { $env:SDLC_DOWNLOAD_BASE } else { "https://github.com/$repo/releases/download" }
 $base = "$downloadBase/v$Version"
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("sdlc-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null

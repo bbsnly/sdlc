@@ -120,13 +120,26 @@ func release(t *testing.T, corrupt bool) string {
 
 // serve publishes a release directory at the path layout GitHub uses, so the
 // only thing the installers do differently is the host they ask.
+//
+// That includes /releases/latest, which answers with the redirect an
+// installer reads when no version was given. Without it the resolve-the-latest
+// path -- the one every reader of the documentation takes -- could only be
+// exercised by a real release.
 func serve(t *testing.T, dir string) string {
 	t.Helper()
+	const downloads = "/releases/download/"
 	mux := http.NewServeMux()
-	mux.Handle("/v"+version+"/", http.StripPrefix("/v"+version+"/", http.FileServer(http.Dir(dir))))
+	mux.Handle(downloads+"v"+version+"/",
+		http.StripPrefix(downloads+"v"+version+"/", http.FileServer(http.Dir(dir))))
+	mux.HandleFunc("/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/releases/tag/v"+version, http.StatusFound)
+	})
+	mux.HandleFunc("/releases/tag/", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	return server.URL
+	return server.URL + "/releases/download"
 }
 
 func writeTarGz(t *testing.T, path, binary string) {
@@ -208,11 +221,23 @@ func appendByte(t *testing.T, path string) {
 // worked. An installer's output is most of what it is, so both are returned.
 func run(t *testing.T, base, dir string, name string, args ...string) (string, error) {
 	t.Helper()
+	return runWithEnv(t, base, dir, []string{"SDLC_VERSION=" + version}, name, args...)
+}
+
+// runResolvingLatest is the same, with no version given: the installer has to
+// ask the mirror which one is newest, the way it does for a real user.
+func runResolvingLatest(t *testing.T, base, dir string, name string, args ...string) (string, error) {
+	t.Helper()
+	return runWithEnv(t, base, dir, nil, name, args...)
+}
+
+func runWithEnv(t *testing.T, base, dir string, extra []string, name string, args ...string) (string, error) {
+	t.Helper()
 	cmd := exec.CommandContext(t.Context(), name, args...)
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(os.Environ(), extra...)
+	cmd.Env = append(cmd.Env,
 		"SDLC_DOWNLOAD_BASE="+base,
 		"SDLC_INSTALL_DIR="+dir,
-		"SDLC_VERSION="+version,
 		// install.ps1 writes a PATH entry into the user environment, which
 		// outlives the test and points at a temporary directory that does
 		// not. This is the same switch a Dockerfile would use.
@@ -366,4 +391,80 @@ func skipUnlessNode(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("node is not on PATH; this leg runs on every CI platform, which all have it")
 	}
+}
+
+// Every reader of the documentation takes this path: no version given, so the
+// installer has to ask which release is newest and read it out of a redirect.
+// It was the one branch of all three installers that no test ran, and the
+// PowerShell one reads the redirect differently on 5.1 and on 7.
+func TestEachInstallerResolvesTheLatestVersionForItself(t *testing.T) {
+	base := serve(t, release(t, false))
+	for _, route := range installRoutes() {
+		t.Run(route.name, func(t *testing.T) {
+			route.skip(t)
+			dir := t.TempDir()
+			out, err := runResolvingLatest(t, base, dir, route.command[0], route.command[1:]...)
+			if err != nil {
+				t.Fatalf("%s could not resolve the latest version: %v\n%s", route.name, err, out)
+			}
+			installed(t, dir)
+			if !strings.Contains(out, version) {
+				t.Errorf("the installer never named the version it chose:\n%s", out)
+			}
+		})
+	}
+}
+
+// A release that dropped a platform is the case this branch exists for, and
+// the refusal has to leave nothing behind -- the same promise as a bad
+// checksum, on a path that reaches a different line of code.
+func TestEachInstallerRefusesAReleaseThatDoesNotListThisPlatform(t *testing.T) {
+	base := serve(t, releaseMissingThisPlatform(t))
+	for _, route := range installRoutes() {
+		t.Run(route.name, func(t *testing.T) {
+			route.skip(t)
+			dir := t.TempDir()
+			out, err := run(t, base, dir, route.command[0], route.command[1:]...)
+			if err == nil {
+				t.Fatalf("%s installed from a release that does not list it:\n%s", route.name, out)
+			}
+			if !strings.Contains(out, "does not list") {
+				t.Errorf("the refusal did not say why:\n%s", out)
+			}
+			nothingInstalled(t, dir)
+		})
+	}
+}
+
+type installRoute struct {
+	name    string
+	command []string
+	skip    func(*testing.T)
+}
+
+// installRoutes is the three ways in, so that a claim made about one of them
+// can be made about all three in the same breath.
+func installRoutes() []installRoute {
+	return []installRoute{
+		{"shell", []string{"sh", "install.sh"}, skipUnlessPOSIX},
+		{"powershell", []string{"pwsh", "-NoProfile", "-File", "install.ps1"}, skipUnlessWindows},
+		{"npm", []string{"node", "npm/bin/sdlc-install.js"}, skipUnlessNode},
+	}
+}
+
+// releaseMissingThisPlatform is a release whose checksums.txt is real but does
+// not mention the archive this machine needs.
+func releaseMissingThisPlatform(t *testing.T) string {
+	t.Helper()
+	dir := release(t, false)
+	checksums := filepath.Join(dir, "checksums.txt")
+	raw, err := os.ReadFile(checksums)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := strings.ReplaceAll(string(raw), archiveName(), "sdlc_"+version+"_plan9_mips.tar.gz")
+	if err := os.WriteFile(checksums, []byte(other), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

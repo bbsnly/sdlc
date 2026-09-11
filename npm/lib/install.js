@@ -98,15 +98,23 @@ async function download(url, into) {
   fs.writeFileSync(into, Buffer.from(await response.arrayBuffer()))
 }
 
+// The "latest" lookup is the sibling of the download path, so a mirror that
+// serves one serves the other. That is what lets the resolve-the-latest-version
+// path -- the one every reader of the documentation takes -- be tested at all.
+function latestURL() {
+  return downloadBase().replace(/\/download$/, '/latest')
+}
+
 async function latestVersion() {
   // Through the redirect rather than the API: the API is rate limited per IP,
   // and a shared network can exhaust it for everyone on it.
-  const response = await fetch(`https://github.com/${REPO}/releases/latest`, { redirect: 'manual' })
+  const url = latestURL()
+  const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(60_000) })
   const location = response.headers.get('location') || ''
   const match = location.match(/\/tag\/v([0-9][^/]*)$/)
   if (!match) {
     throw new Failure('could not work out the latest version of sdlc.', [
-      `why  https://github.com/${REPO}/releases/latest did not redirect to a tag;`,
+      `why  ${url} did not redirect to a tag;`,
       '     the usual cause is no network, or no release yet',
       'fix  pass one: npx @bbsnly/sdlc install --version X.Y.Z',
     ])
