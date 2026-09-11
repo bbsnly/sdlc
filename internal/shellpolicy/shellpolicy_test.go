@@ -181,3 +181,62 @@ func TestAnAllowedFindingHasNoMessage(t *testing.T) {
 		}
 	}
 }
+
+// The freeze is the hinge the whole loop turns on, and it was enforced against
+// the file tools only. `Write` to `x_test.go` was refused as a frozen
+// acceptance test; `echo cheat > x_test.go` was allowed. One redirect went
+// round all of it.
+func TestAFrozenTestCannotBeWrittenThroughTheShell(t *testing.T) {
+	state := State{CommitReady: true, Frozen: []string{"internal/invoice_test.go", "x_test.go"}}
+	for _, command := range []string{
+		"echo cheat > x_test.go",
+		"echo cheat >> x_test.go",
+		"echo cheat > ./x_test.go",
+		"sed -i '' s/want/got/ internal/invoice_test.go",
+		"rm internal/invoice_test.go",
+		"mv other.go x_test.go",
+		"cp /dev/null internal/invoice_test.go",
+		"tee x_test.go < /dev/null",
+		"python3 -c 'open(\"x_test.go\",\"w\")' && echo done",
+		"true; echo cheat > x_test.go",
+	} {
+		t.Run(command, func(t *testing.T) {
+			f, refused := Inspect(command, state)
+			if !refused {
+				t.Fatal("a frozen acceptance test was writable through the shell")
+			}
+			if f.Rule == "" {
+				t.Error("the refusal names no rule")
+			}
+		})
+	}
+}
+
+// And everything else stays out of the way. A loop that refuses the test
+// command is a loop nobody runs.
+func TestOrdinaryCommandsAreStillFineAfterTheFreeze(t *testing.T) {
+	state := State{CommitReady: true, Frozen: []string{"internal/invoice_test.go", "x_test.go"}}
+	for _, command := range []string{
+		"go test ./...",
+		"go test ./internal/... -run TestInvoice",
+		"echo hi > internal/invoice.go",
+		"cat internal/invoice_test.go",
+		"grep -n want internal/invoice_test.go",
+		"sed -n 1,20p internal/invoice_test.go",
+		"gofmt -l .",
+	} {
+		t.Run(command, func(t *testing.T) {
+			if f, refused := Inspect(command, state); refused {
+				t.Errorf("refused an ordinary command: %s", f.Message())
+			}
+		})
+	}
+}
+
+// Before the freeze there is nothing to protect, and the sdet writes these
+// files for a living.
+func TestBeforeTheFreezeTheShellIsAsFreeAsItWas(t *testing.T) {
+	if _, refused := Inspect("echo written > x_test.go", State{CommitReady: true}); refused {
+		t.Error("a test file was refused before anything was frozen")
+	}
+}

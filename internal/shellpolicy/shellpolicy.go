@@ -14,6 +14,7 @@
 package shellpolicy
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/bbsnly/sdlc/internal/model"
@@ -26,6 +27,11 @@ type State struct {
 	// before committing. CommitWhy says what is missing when it has not.
 	CommitReady bool
 	CommitWhy   string
+
+	// Frozen is every acceptance test the freeze holds, repository-relative
+	// and slash-separated. Empty before the freeze, and before then there is
+	// nothing here to protect.
+	Frozen []string
 }
 
 // Finding is a refusal. An empty Rule means nothing objected.
@@ -81,6 +87,9 @@ func Inspect(command string, s State) (Finding, bool) {
 			return f, true
 		}
 		if f, ok := checkLoopState(words, redirects); ok {
+			return f, true
+		}
+		if f, ok := checkFrozenTests(segment, words, redirects, s); ok {
 			return f, true
 		}
 	}
@@ -142,6 +151,127 @@ func checkLoopState(words, redirects []string) (Finding, bool) {
 		}
 	}
 	return Finding{}, false
+}
+
+// checkFrozenTests is the freeze, applied to the shell.
+//
+// Every other rule the freeze has is enforced against the file tools, and a
+// shell command went straight past them: `Write` to `x_test.go` was refused as
+// a frozen acceptance test, and `echo cheat > x_test.go` was allowed. One
+// redirect was the whole way round the hinge the loop turns on.
+func checkFrozenTests(segment string, words, redirects []string, s State) (Finding, bool) {
+	if len(s.Frozen) == 0 {
+		return Finding{}, false
+	}
+	candidates := redirects
+	switch {
+	case runsInlineCode(words):
+		// `python3 -c '...'` is a program, not a list of arguments, and the
+		// file it opens is inside a string. There is no parsing this without
+		// being an interpreter, so the whole of it is searched instead: a
+		// frozen path appearing anywhere in code that runs is enough.
+		candidates = append(candidates, wordsIn(segment)...)
+	case changesAFile(words):
+		candidates = append(candidates, words[1:]...)
+	}
+	for _, c := range candidates {
+		if frozen, ok := isFrozen(c, s.Frozen); ok {
+			return Finding{
+				Rule: "frozen-test-through-the-tool",
+				Reason: frozen + " is a frozen acceptance test, and a shell command is " +
+					"the one way around every rule that protects it",
+				Route: "leave it alone -- it was locked by content when the test gate " +
+					"passed, and every gate after that is measured against it. If it " +
+					"genuinely has to change, `sdlc unfreeze --reason ...` puts the " +
+					"reason on the record",
+			}, true
+		}
+	}
+	return Finding{}, false
+}
+
+// isFrozen matches a word from a command line against the frozen set, allowing
+// for the spellings the same file arrives under: as written, with a ./ in
+// front, or as an absolute path.
+func isFrozen(word string, frozen []string) (string, bool) {
+	word = strings.TrimPrefix(filepath.ToSlash(clean(word)), "./")
+	if word == "" {
+		return "", false
+	}
+	for _, f := range frozen {
+		switch {
+		case strings.EqualFold(word, f),
+			strings.HasSuffix(strings.ToLower(word), "/"+strings.ToLower(f)),
+			strings.HasSuffix(strings.ToLower(f), "/"+strings.ToLower(word)):
+			return f, true
+		}
+	}
+	return "", false
+}
+
+// changesAFile reports whether this command, as it is written, exists to
+// change a file.
+//
+// Narrower than the mutating list, and deliberately so. That list names `sed`
+// whether or not the invocation edits in place, because refusing a read of the
+// loop's record costs nothing. A frozen test is different: reading one is how
+// the implementer knows what to implement, and `sed -n 1,20p x_test.go` has to
+// go through.
+func changesAFile(words []string) bool {
+	if len(words) == 0 {
+		return false
+	}
+	switch name := base(words[0]); name {
+	case "sed", "perl":
+		return hasFlagPrefix(words[1:], "-i", "--in-place")
+	case "awk", "grep":
+		// Neither writes where it is pointed; both need a redirect, which is
+		// already counted.
+		return false
+	default:
+		return mutating[name]
+	}
+}
+
+// runsInlineCode reports whether this is an interpreter being handed a program
+// on the command line, where the files it touches are not arguments at all.
+func runsInlineCode(words []string) bool {
+	if len(words) == 0 {
+		return false
+	}
+	switch base(words[0]) {
+	case "python", "python3", "perl", "ruby", "node", "deno", "bun", "php":
+		return hasFlagPrefix(words[1:], "-c", "-e", "--eval", "--print")
+	}
+	return false
+}
+
+func hasFlagPrefix(words []string, prefixes ...string) bool {
+	for _, w := range words {
+		for _, p := range prefixes {
+			if strings.HasPrefix(w, p) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// wordsIn pulls every path-shaped run of characters out of a piece of text, so
+// that a filename quoted inside a program is still a filename.
+func wordsIn(text string) []string {
+	return strings.FieldsFunc(text, func(r rune) bool { return !inAPath(r) })
+}
+
+// inAPath reports whether a rune can appear in a path this cares about.
+func inAPath(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return true
+	case r == '.', r == '/', r == '_', r == '-':
+		return true
+	}
+	return false
 }
 
 // segments splits a command line into the pieces that run on their own. It does

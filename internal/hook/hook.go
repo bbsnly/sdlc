@@ -173,11 +173,30 @@ func inspectShell(project, story string, p payload) policy.Verdict {
 		"agent", p.AgentType, "story", story, "commit_ready", ready, "why", why)
 
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command,
-		shellpolicy.State{CommitReady: ready, CommitWhy: why})
+		shellpolicy.State{CommitReady: ready, CommitWhy: why, Frozen: frozenTests(project, story)})
 	if !refused {
 		return policy.Allowed
 	}
 	return policy.Verdict{Rule: finding.Rule, Reason: finding.Reason, Route: finding.Route}
+}
+
+// frozenTests is what the freeze holds, for the shell rules to refuse writes
+// to. Nothing readable means nothing frozen, which is the same answer as
+// before Gate 3 and leaves the shell as free as it was.
+func frozenTests(project, story string) []string {
+	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "tests.lock"))
+	if err != nil {
+		return nil
+	}
+	var lock model.Lock
+	if err := json.Unmarshal(raw, &lock); err != nil {
+		return nil
+	}
+	// A freeze belonging to another story says nothing about this one.
+	if lock.Story != story {
+		return nil
+	}
+	return lock.Paths()
 }
 
 // commitReady reports whether the story has been through the gates that come

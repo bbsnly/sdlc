@@ -29,6 +29,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   way out, and it is on the record. The freeze belongs to the iteration: it
   survives `sdlc stop` and a new session, and is lifted when the story
   finishes, so the next story freezes its own tests.
+- The freeze holds against shell commands. Every rule protecting it applied to
+  the file-writing tools only, so `Write` to a frozen test was refused and
+  `echo cheat > x_test.go` was not. Reading one is still never refused.
 - The freeze covers what a test depends on, not only the test file. A golden
   file, a jest snapshot, a mock and the `conftest.py` that decides what a
   pytest fixture returns each change whether a test passes without the test

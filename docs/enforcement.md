@@ -136,7 +136,7 @@ iteration and take over yourself.
 
 Every rule above governs the file-writing tools. A shell command is not one of
 them, which would leave `cat > .sdlc/stories/A-1/ANALYSIS.md` walking past all
-of them. These three close that, and nothing else about your shell is touched:
+of them. These four close that, and nothing else about your shell is touched:
 your tests, your build and your tooling run exactly as before.
 
 This is pattern matching, not a shell. It is deliberately narrow.
@@ -153,6 +153,19 @@ it is never refused.
 
 *Instead:* `sdlc artifact write`, `sdlc review add`, `sdlc gate`,
 `sdlc unfreeze --reason "..."`.
+
+### `frozen-test-through-the-tool`
+
+Refuses a command that would write, rewrite or delete a frozen acceptance test:
+by redirection, through `rm`, `mv`, `cp`, `tee`, `sed -i` and their like, or
+from inside a program handed to an interpreter with `-c` or `-e`.
+
+Reading one is never refused — `cat`, `grep`, `sed -n` and the test runner all
+work as they always did, and reading the tests is how the implementer knows
+what to implement. Before the freeze this rule does nothing at all.
+
+*Instead:* leave it alone, or `sdlc unfreeze --reason "..."` if it genuinely
+has to change.
 
 ### `commit-gate`
 
