@@ -32,11 +32,21 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          # goreleaser and npm are given their tokens explicitly and upload
+          # over the API. The default would leave a contents:write token in
+          # .git/config for the whole job, including while npm's dependency
+          # tree runs.
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          # The released binary is not built out of a cache. A tag can restore
+          # the default branch's cache, which is written by CI runs that
+          # execute third-party linters, and Go does not re-verify a cached
+          # build output against its inputs. A planted entry would be compiled
+          # into the release and then attested -- accurately, and worthlessly.
+          cache: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -50,20 +60,63 @@ jobs:
       - name: Preflight
         shell: bash
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${NPM_TOKEN}" ]; then
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
             echo "::error::NPM_TOKEN is not set, so @bbsnly/sdlc cannot be published." >&2
             echo "Add it under Settings -> Secrets and variables -> Actions, then re-run." >&2
             exit 1
           fi
-          go run ./internal/tools/release check -tag "${GITHUB_REF_NAME}"
+          # Not just that the token exists: that it can publish. An expired or
+          # read-only token passes a non-empty check and fails at the last
+          # step of the run, which is the one place failing is expensive.
+          if ! who=$(npm whoami 2>&1); then
+            echo "::error::NPM_TOKEN cannot authenticate to npm: ${who}" >&2
+            exit 1
+          fi
+          echo "npm: authenticated as ${who}"
+
+          go run ./internal/tools/release -tag "${GITHUB_REF_NAME}" check
+          version=$(go run ./internal/tools/release version)
+
+          # A version already on npm cannot be published again, and npm is the
+          # last step. Finding out now costs nothing.
+          if npm view "@bbsnly/sdlc@${version}" version >/dev/null 2>&1; then
+            echo "::error::@bbsnly/sdlc@${version} is already published; npm versions are immutable." >&2
+            exit 1
+          fi
+
+          # A tag can point at any commit. Without this, `git tag v9 <sha>`
+          # releases code that was never on trunk -- the tagged commit's own
+          # CI runs, so the checks are real, but nobody reviewed it.
+          git fetch --no-tags --depth=0 origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::${GITHUB_REF_NAME} points at a commit that is not on main." >&2
+            echo "Releases come from trunk. Merge it first, then tag." >&2
+            exit 1
+          fi
+
+      - name: Read pinned tool versions
+        id: pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          read_pin() {
+            value=$(sed -n "s/^[[:space:]]*$1:[[:space:]]*\([^[:space:]]*\).*/\1/p" Taskfile.yml | head -n 1)
+            if [ -z "${value}" ]; then
+              echo "::error::$1 is not set in Taskfile.yml" >&2
+              exit 1
+            fi
+            echo "$2=${value}" >> "${GITHUB_OUTPUT}"
+          }
+          read_pin SYFT_VERSION syft
+          read_pin GORELEASER_VERSION goreleaser
 
       - name: Install pinned syft
         uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          syft-version: v1.51.1
+          syft-version: v${{ steps.pins.outputs.syft }}
 
       - name: Release notes
         shell: bash
@@ -73,11 +126,10 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_VERSION: ${{ steps.pins.outputs.goreleaser }}
         run: |
           set -euo pipefail
-          # Pinned in one place, like every other tool this repository uses.
-          version=$(sed -n 's/^[[:space:]]*GORELEASER_VERSION:[[:space:]]*\([^[:space:]]*\).*/\1/p' Taskfile.yml | head -n 1)
-          go run "github.com/goreleaser/goreleaser/v2@v${version}" release \
+          go run "github.com/goreleaser/goreleaser/v2@v${GORELEASER_VERSION}" release \
             --clean --release-notes release-notes.md
 
       # What GitHub can say about these files that the files cannot say about
@@ -103,8 +155,32 @@ jobs:
           # from the same place as the download.
           cp dist/checksums.txt npm/checksums.txt
           cp LICENSE npm/LICENSE
+
+          # The package's whole verification story is that it carries the pins
+          # for its own release. If that copy were ever missing or stale, the
+          # installer would quietly fall back to fetching them and nothing
+          # would fail -- so it is asserted here instead.
+          version=$(go run ./internal/tools/release version)
+          if ! grep -q "sdlc_${version}_linux_amd64.tar.gz" npm/checksums.txt; then
+            echo "::error::npm/checksums.txt does not describe ${version}" >&2
+            exit 1
+          fi
+
           # A pre-release must not become what `npm install` gives people by
-          # default, so it goes out under `next` instead of `latest`.
+          # default, so it goes out under `next` instead of `latest`. Read from
+          # the version rather than the ref: a hyphen anywhere in a tag is not
+          # the same thing as a semver pre-release.
           tag=latest
-          case "${GITHUB_REF_NAME}" in *-*) tag=next ;; esac
+          case "${version}" in *-*) tag=next ;; esac
           npm publish ./npm --provenance --access public --tag "$tag"
+
+      # Last, because everything before it can be run again and this cannot.
+      # goreleaser publishes a draft, so until this step the archives are
+      # uploaded but not downloadable: a run that fails anywhere above leaves
+      # nothing half-released, and no one can fetch an archive that has not
+      # been attested yet.
+      - name: Open the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --repo "${GITHUB_REPOSITORY}"

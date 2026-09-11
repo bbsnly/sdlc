@@ -85,7 +85,10 @@ function onPath(dir, env = process.env) {
 }
 
 async function download(url, into) {
-  const response = await fetch(url, { redirect: 'follow' })
+  // Without a deadline a stalled connection hangs `npx` indefinitely, with
+  // nothing on screen after "downloading". Sixty seconds is long enough for a
+  // slow link and short enough to be a failure rather than a hang.
+  const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) })
   if (!response.ok) {
     throw new Failure(`could not download ${path.basename(into)}`, [
       `why  ${url} answered ${response.status} ${response.statusText}`,
@@ -113,23 +116,39 @@ async function latestVersion() {
 
 // checksumsFor prefers the copy published inside this package: it was written
 // when the release was built and cannot be changed afterwards, which a file
-// fetched now, from the same place as the download, cannot promise. The
-// fallback is stated out loud rather than taken quietly.
-async function checksumsFor(version, tmp, log) {
+// fetched now, from the same place as the download, cannot promise.
+//
+// That copy describes exactly one release, though, and --version or
+// SDLC_VERSION can ask for another. When the archive being installed is not
+// one it lists, the pins for that version are fetched instead -- treating the
+// embedded file as authoritative there would report a missing platform build
+// for a platform the release certainly has. Either fallback is said out loud.
+async function checksumsFor(version, archive, tmp, log) {
   const embedded = path.join(__dirname, '..', 'checksums.txt')
   if (fs.existsSync(embedded)) {
-    return parseChecksums(fs.readFileSync(embedded, 'utf8'))
+    const pins = parseChecksums(fs.readFileSync(embedded, 'utf8'))
+    if (pins.has(archive)) return pins
+    log(`sdlc: this package carries the pins for a different release, so the v${version} ones are being fetched`)
+  } else {
+    log(`sdlc: this package carries no checksums, so they are being fetched from the v${version} release`)
   }
-  log(`sdlc: this package carries no checksums, so they are being fetched from the v${version} release`)
   const fetched = path.join(tmp, 'checksums.txt')
   await download(`${downloadBase()}/v${version}/checksums.txt`, fetched)
   return parseChecksums(fs.readFileSync(fetched, 'utf8'))
 }
 
+// psQuote makes a value safe inside a single-quoted PowerShell string. The
+// temporary directory sits under the user's profile, so a username with an
+// apostrophe in it -- O'Brien -- would otherwise end the string early and turn
+// a verified download into a parse error.
+function psQuote(value) {
+  return value.replace(/'/g, "''")
+}
+
 function unpack(archive, into, binary) {
   if (archive.endsWith('.zip')) {
     execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command',
-      `Expand-Archive -LiteralPath '${archive}' -DestinationPath '${into}' -Force`], { stdio: 'pipe' })
+      `Expand-Archive -LiteralPath '${psQuote(archive)}' -DestinationPath '${psQuote(into)}' -Force`], { stdio: 'pipe' })
   } else {
     execFileSync('tar', ['-xzf', archive, '-C', into, binary], { stdio: 'pipe' })
   }
@@ -144,12 +163,13 @@ async function install(options = {}) {
   const target = path.join(dir, binary)
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-'))
+  let incoming = null
   try {
     log(`sdlc: downloading ${archive}`)
     const downloaded = path.join(tmp, archive)
     await download(`${downloadBase()}/v${version}/${archive}`, downloaded)
 
-    const expected = (await checksumsFor(version, tmp, log)).get(archive)
+    const expected = (await checksumsFor(version, archive, tmp, log)).get(archive)
     if (!expected) {
       throw new Failure(`checksums.txt does not list ${archive}`, [
         'why  the release is missing the build for this platform',
@@ -175,12 +195,17 @@ async function install(options = {}) {
     // Through a temporary name in the target's own directory and then rename:
     // a half written binary on PATH is worse than no binary on PATH, and
     // rename is the only step that is atomic.
-    const incoming = path.join(dir, `.sdlc.incoming.${process.pid}`)
+    incoming = path.join(dir, `.sdlc.incoming.${process.pid}`)
     fs.copyFileSync(unpacked, incoming)
     fs.chmodSync(incoming, 0o755)
     fs.renameSync(incoming, target)
+    incoming = null
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true })
+    // The staging name is inside the install directory, which the temporary
+    // directory's cleanup does not reach. A failed copy would otherwise leave
+    // a partial executable there for good.
+    if (incoming) fs.rmSync(incoming, { force: true })
   }
 
   log(`sdlc: installed v${version} in ${dir}`)

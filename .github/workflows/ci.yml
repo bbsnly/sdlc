@@ -35,6 +35,10 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          # Nothing here pushes, and gitleaks reads history without auth. The
+          # default leaves the job's token in .git/config for every later step,
+          # including the third-party linters `task check` runs.
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -61,6 +65,16 @@ jobs:
             Windows-*)   asset="shellcheck-v${version}.zip" ;;
             *) echo "no pinned shellcheck build for ${RUNNER_OS}-${RUNNER_ARCH}" >&2; exit 1 ;;
           esac
+          # A GitHub release asset is mutable: the tag staying put does not
+          # mean the bytes behind it did. This binary goes on PATH ahead of
+          # everything else in the job, so it is verified like any download.
+          want=$(awk -v a="${asset}" '$2 == a { print $1 }' .github/shellcheck.sha256)
+          if [ -z "${want}" ]; then
+            echo "::error::no sha256 for ${asset} in .github/shellcheck.sha256" >&2
+            echo "SHELLCHECK_VERSION was bumped without regenerating it:" >&2
+            echo "  ./task shellcheck-checksums" >&2
+            exit 1
+          fi
           url="https://github.com/koalaman/shellcheck/releases/download/v${version}/${asset}"
           mkdir -p "${RUNNER_TEMP}/shellcheck"
           # The release host returns a 500 often enough to redden a run on its
@@ -72,6 +86,17 @@ jobs:
             echo "this is the shellcheck release host, not the build: re-run the job" >&2
             exit 1
           }
+          if command -v sha256sum >/dev/null 2>&1; then
+            got=$(sha256sum "${RUNNER_TEMP}/${asset}" | awk '{print $1}')
+          else
+            got=$(shasum -a 256 "${RUNNER_TEMP}/${asset}" | awk '{print $1}')
+          fi
+          if [ "${got}" != "${want}" ]; then
+            echo "::error::${asset} does not match its pinned checksum" >&2
+            echo "expected ${want}" >&2
+            echo "got      ${got}" >&2
+            exit 1
+          fi
           if [ "${RUNNER_OS}" = "Windows" ]; then
             unzip -q -o "${RUNNER_TEMP}/${asset}" -d "${RUNNER_TEMP}/shellcheck"
           else

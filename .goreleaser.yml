@@ -63,6 +63,13 @@ archives:
 checksum:
   name_template: checksums.txt
   algorithm: sha256
+  # The install scripts are what fetch and verify everything else, so they are
+  # the one thing a user cannot check against checksums.txt unless they are in
+  # it. This runs before the release pipe, which is why they are named here as
+  # well as under release.extra_files.
+  extra_files:
+    - glob: install.sh
+    - glob: install.ps1
 
 sboms:
   - id: archives
@@ -88,17 +95,27 @@ release:
   # without anyone having to remember to say so.
   prerelease: auto
   mode: replace
+  # Published as a draft and opened by the workflow as its last step. Every
+  # upload happens before anyone can download it, so a run that dies part-way
+  # leaves nothing public and can simply be run again -- and no one can fetch
+  # an archive in the window before it is attested.
+  draft: true
+  # Served from the release itself, at the tag, so that what verified this
+  # release stays with it.
+  extra_files:
+    - glob: install.sh
+    - glob: install.ps1
   footer: |
     ## Install
 
     ```sh
-    curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/{{ .Tag }}/install.sh | sh
     ```
 
     Windows PowerShell:
 
     ```powershell
-    irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/bbsnly/sdlc/{{ .Tag }}/install.ps1 | iex
     ```
 
     Then, in Claude Code:
@@ -108,5 +125,7 @@ release:
     /plugin install sdlc@sdlc
     ```
 
-    Every archive is listed in `checksums.txt`, and the install scripts verify
-    against it before putting anything on your PATH.
+    Those URLs are pinned to this tag, so they are the scripts this release was
+    published with. Both are attached below and listed in `checksums.txt`,
+    along with every archive, and the install scripts verify against it before
+    putting anything on your PATH.

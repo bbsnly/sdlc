@@ -13,33 +13,61 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/bbsnly/sdlc/internal/release"
 )
 
 func main() {
-	root := flag.String("C", ".", "repository root")
-	tag := flag.String("tag", "", "tag being released, checked against the version")
-	out := flag.String("o", "", "write to this file instead of standard output")
-	flag.Parse()
-
-	if err := run(flag.Arg(0), *root, *tag, *out); err != nil {
+	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "release: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(command, root, tag, out string) error {
+// run parses its own arguments so that flags work on either side of the
+// subcommand. The plain flag package stops parsing at the first non-flag
+// argument, so `release check -tag v1` -- the form this tool documents, and the
+// form the release workflow uses -- left -tag unset and checked nothing at all.
+// Parsing twice around the subcommand is what makes the documented spelling
+// mean what it says.
+//
+// A leftover argument is an error rather than something to ignore, because a
+// mistyped flag that is silently dropped is how a check ends up checking
+// nothing while reporting success.
+func run(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("release", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	root := fs.String("C", ".", "repository root")
+	tag := fs.String("tag", "", "tag being released, checked against the version")
+	out := fs.String("o", "", "write to this file instead of standard output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	command := ""
+	if fs.NArg() > 0 {
+		command = fs.Arg(0)
+		if err := fs.Parse(fs.Args()[1:]); err != nil {
+			return err
+		}
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	return dispatch(command, *root, *tag, *out, stdout)
+}
+
+func dispatch(command, root, tag, out string, stdout io.Writer) error {
 	switch command {
 	case "", "check":
-		return check(root, tag)
+		return check(root, tag, stdout)
 	case "version":
 		version, err := release.Version(root)
 		if err != nil {
 			return err
 		}
-		return emit(out, version+"\n")
+		return emit(out, version+"\n", stdout)
 	case "notes":
 		version, err := release.Version(root)
 		if err != nil {
@@ -49,13 +77,13 @@ func run(command, root, tag, out string) error {
 		if err != nil {
 			return err
 		}
-		return emit(out, notes+"\n")
+		return emit(out, notes+"\n", stdout)
 	default:
 		return fmt.Errorf("unknown command %q: expected check, version or notes", command)
 	}
 }
 
-func check(root, tag string) error {
+func check(root, tag string, stdout io.Writer) error {
 	problems, err := release.Check(root, tag)
 	if err != nil {
 		return err
@@ -65,7 +93,7 @@ func check(root, tag string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("release: %s, and every file that carries it agrees\n", version)
+		fmt.Fprintf(stdout, "release: %s, and every file that carries it agrees\n", version)
 		return nil
 	}
 	for _, p := range problems {
@@ -75,10 +103,10 @@ func check(root, tag string) error {
 		"and give it a section in %s", len(problems), release.ChangelogFile)
 }
 
-func emit(path, text string) error {
+func emit(path, text string, stdout io.Writer) error {
 	if path == "" {
-		fmt.Print(text)
-		return nil
+		_, err := io.WriteString(stdout, text)
+		return err
 	}
 	return os.WriteFile(path, []byte(text), 0o644)
 }

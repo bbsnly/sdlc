@@ -92,8 +92,11 @@ if [ -z "$version" ]; then
   latest=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
     "https://github.com/$repo/releases/latest" 2>/dev/null) || latest=""
   version="${latest##*/tag/v}"
+  # The same shape the other two installers require: a version starts with a
+  # digit. Without it a redirect to anything but a tag yields a plausible
+  # string that goes straight into a URL.
   case "$version" in
-    "" | *"/"* | *"releases"*)
+    "" | *"/"* | *"releases"* | [!0-9]*)
       die "could not work out the latest version of sdlc." \
         "why  https://github.com/$repo/releases/latest did not redirect to a tag;" \
         "     the usual cause is no network, or no release yet" \
@@ -109,16 +112,31 @@ archive="sdlc_${version}_${os}_${arch}.tar.gz"
 base="${SDLC_DOWNLOAD_BASE:-https://github.com/$repo/releases/download}/v${version}"
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
+# incoming is the staging name inside the install directory, set once the
+# target is known. Both are cleaned up, and the INT and TERM traps exit: a
+# handler that only tidies up lets the script carry on past a Ctrl-C, against
+# a temporary directory it has just deleted.
+incoming=""
+cleanup() {
+  rm -rf "$tmp"
+  [ -z "$incoming" ] || rm -f "$incoming"
+}
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 echo "sdlc: downloading $archive"
-curl -fsSL --retry 3 --retry-all-errors --connect-timeout 20 \
+# --retry-all-errors is deliberately not used here: it needs curl 7.71, and
+# RHEL 8, CentOS 7 and Ubuntu 20.04 ship older ones that exit at option
+# parsing rather than running. -f already means a 404 is not retried, and
+# --retry covers the transient and 5xx cases on its own.
+curl -fsSL --retry 3 --connect-timeout 20 \
   -o "$tmp/$archive" "$base/$archive" || die \
   "could not download $archive" \
   "why  $base/$archive did not answer with the file" \
   "fix  check that v$version is released, and that this machine can reach github.com"
 
-curl -fsSL --retry 3 --retry-all-errors --connect-timeout 20 \
+curl -fsSL --retry 3 --connect-timeout 20 \
   -o "$tmp/checksums.txt" "$base/checksums.txt" || die \
   "could not download the checksums for v$version" \
   "why  $base/checksums.txt did not answer with the file" \
@@ -126,7 +144,8 @@ curl -fsSL --retry 3 --retry-all-errors --connect-timeout 20 \
 
 # Verify before anything is made executable or moved onto a PATH directory.
 # A release you cannot check is a release you should not install.
-expected=$(awk -v want="$archive" '$2 == want || $2 == "*" want { print $1 }' "$tmp/checksums.txt")
+expected=$(tr -d '\r' < "$tmp/checksums.txt" |
+  awk -v want="$archive" '$2 == want || $2 == "*" want { print $1 }')
 [ -n "$expected" ] || die \
   "checksums.txt does not list $archive" \
   "why  the release is missing the build for this platform" \
@@ -160,8 +179,10 @@ mkdir -p "$dir" || die "could not create $dir"
 # written binary on PATH is worse than no binary on PATH, and rename is the
 # only step that is atomic.
 chmod 0755 "$tmp/sdlc"
-mv "$tmp/sdlc" "$dir/.sdlc.incoming.$$" || die "could not write to $dir"
-mv "$dir/.sdlc.incoming.$$" "$dir/sdlc" || die "could not install into $dir"
+incoming="$dir/.sdlc.incoming.$$"
+mv "$tmp/sdlc" "$incoming" || die "could not write to $dir"
+mv "$incoming" "$dir/sdlc" || die "could not install into $dir"
+incoming=""
 
 echo "sdlc: installed $("$dir/sdlc" version 2>/dev/null || echo "v$version") in $dir"
 

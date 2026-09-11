@@ -193,6 +193,46 @@ tasks:
           shellcheck $files
         fi
 
+  shellcheck-checksums:
+    desc: Regenerate .github/shellcheck.sha256 after bumping SHELLCHECK_VERSION
+    silent: true
+    cmds:
+      - |
+        # Run this on trunk whenever SHELLCHECK_VERSION changes. CI installs
+        # shellcheck from a GitHub release asset, and a release asset can be
+        # replaced without the tag moving, so the bytes are pinned here.
+        set -eu
+        version="{{.SHELLCHECK_VERSION}}"
+        out=.github/shellcheck.sha256
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        {
+          echo "# sha256 of every shellcheck release asset CI installs, cross-checked against"
+          echo "# the digests GitHub reports for the release. The version is in the filename,"
+          echo "# so bumping SHELLCHECK_VERSION in Taskfile.yml without regenerating this file"
+          echo "# fails the lookup rather than passing with a stale hash."
+          echo "#"
+          echo "# Regenerate with: ./task shellcheck-checksums"
+        } > "$tmp/out"
+        for asset in \
+          "shellcheck-v${version}.darwin.aarch64.tar.xz" \
+          "shellcheck-v${version}.darwin.x86_64.tar.xz" \
+          "shellcheck-v${version}.linux.aarch64.tar.xz" \
+          "shellcheck-v${version}.linux.x86_64.tar.xz" \
+          "shellcheck-v${version}.zip"; do
+          url="https://github.com/koalaman/shellcheck/releases/download/v${version}/${asset}"
+          curl -fsSL --retry 3 -o "$tmp/$asset" "$url"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sum=$(sha256sum "$tmp/$asset" | awk '{print $1}')
+          else
+            sum=$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')
+          fi
+          printf '%s  %s\n' "$sum" "$asset" >> "$tmp/out"
+          echo "  $asset  $sum" >&2
+        done
+        mv "$tmp/out" "$out"
+        echo "wrote $out" >&2
+
   powershell:
     desc: Parse install.ps1, so a syntax error is not first seen by a Windows user
     silent: true

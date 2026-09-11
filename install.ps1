@@ -33,15 +33,27 @@ $ErrorActionPreference = 'Stop'
 # Windows PowerShell 5.1 negotiates TLS 1.0 by default, which github.com
 # refuses. Without this the download fails with a connection error that says
 # nothing about TLS.
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+[Net.ServicePointManager]::SecurityProtocol =
+    [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+# Windows PowerShell 5.1 renders a progress bar for every Invoke-WebRequest,
+# and drawing it costs more than downloading the four megabytes it describes.
+$ProgressPreference = 'SilentlyContinue'
 
 $repo = 'bbsnly/sdlc'
 
 function Stop-WithAdvice {
     param([string] $What, [string[]] $Advice = @())
-    Write-Host "sdlc: $What" -ForegroundColor Red
-    foreach ($line in $Advice) { Write-Host "  $line" }
-    exit 1
+    # The error goes to the error stream so that `2>` and CI log capture see
+    # it, not only a human watching the console.
+    [Console]::Error.WriteLine("sdlc: $What")
+    foreach ($line in $Advice) { [Console]::Error.WriteLine("  $line") }
+    # `exit` inside `irm ... | iex` -- the invocation this script documents --
+    # terminates the user's whole PowerShell session, closing the window on
+    # the message it just printed. Throwing stops the script and leaves the
+    # session standing. Run as a file, the trailing exit code still applies.
+    if ($MyInvocation.ScriptName -or $PSCommandPath) { exit 1 }
+    throw "sdlc: $What"
 }
 
 if (-not $Dir) { $Dir = Join-Path $env:LOCALAPPDATA 'Programs\sdlc\bin' }
@@ -49,11 +61,19 @@ if (-not $Dir) { $Dir = Join-Path $env:LOCALAPPDATA 'Programs\sdlc\bin' }
 # paste; everything downstream wants it without.
 if ($Version) { $Version = $Version -replace '^v', '' }
 
-switch ($env:PROCESSOR_ARCHITECTURE) {
-    'AMD64' { $arch = 'amd64' }
-    'ARM64' { $arch = 'arm64' }
+# PROCESSOR_ARCHITECTURE describes the *process*, not the machine: a 32-bit
+# or emulated x64 PowerShell on an ARM64 machine reports x86 or AMD64 and
+# would install the wrong binary. OSArchitecture asks the operating system.
+$osArch = try {
+    [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+} catch {
+    if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+}
+switch -Regex ($osArch) {
+    '^(X64|AMD64)$' { $arch = 'amd64' }
+    '^(Arm64|ARM64)$' { $arch = 'arm64' }
     default {
-        Stop-WithAdvice "no prebuilt binary for $env:PROCESSOR_ARCHITECTURE." @(
+        Stop-WithAdvice "no prebuilt binary for $osArch." @(
             'Build from source instead:',
             "  go install github.com/$repo/cmd/sdlc@latest")
     }
@@ -109,8 +129,13 @@ try {
     # cannot check is a release you should not install.
     $expected = $null
     foreach ($line in Get-Content (Join-Path $tmp 'checksums.txt')) {
-        $parts = $line -split '\s+', 2
-        if ($parts.Count -eq 2 -and ($parts[1].TrimStart('*') -eq $archive)) { $expected = $parts[0] }
+        $parts = $line.Trim() -split '\s+', 2
+        if ($parts.Count -ne 2) { continue }
+        # Anchored to 64 hex so that an HTML error page saved under this name
+        # cannot supply a "checksum", and so a later duplicate line cannot
+        # quietly replace the first one: the first match wins and we stop.
+        if ($parts[0] -notmatch '^[0-9a-fA-F]{64}$') { continue }
+        if ($parts[1].Trim().TrimStart('*') -eq $archive) { $expected = $parts[0]; break }
     }
     if (-not $expected) {
         Stop-WithAdvice "checksums.txt does not list $archive" @(
@@ -127,9 +152,29 @@ try {
             "happens twice, report it at https://github.com/$repo/issues")
     }
 
-    Expand-Archive -Path (Join-Path $tmp $archive) -DestinationPath (Join-Path $tmp 'unpacked') -Force
+    Expand-Archive -LiteralPath (Join-Path $tmp $archive) -DestinationPath (Join-Path $tmp 'unpacked') -Force
+    $unpacked = Join-Path $tmp 'unpacked\sdlc.exe'
+    if (-not (Test-Path -LiteralPath $unpacked)) {
+        Stop-WithAdvice "$archive does not contain sdlc.exe" @(
+            'why  the archive is not the one this script expects',
+            "fix  report it at https://github.com/$repo/issues")
+    }
     New-Item -ItemType Directory -Path $Dir -Force | Out-Null
-    Copy-Item -Path (Join-Path $tmp 'unpacked\sdlc.exe') -Destination (Join-Path $Dir 'sdlc.exe') -Force
+    # Copy in under a name PATH cannot resolve, then rename: the copy is the
+    # only slow step, and a half-written sdlc.exe on PATH is worse than none.
+    # Renaming is also what makes upgrading over a running sdlc.exe fail
+    # cleanly instead of leaving a truncated file behind.
+    $incoming = Join-Path $Dir ".sdlc.incoming.$PID"
+    try {
+        Copy-Item -LiteralPath $unpacked -Destination $incoming -Force
+        Move-Item -LiteralPath $incoming -Destination (Join-Path $Dir 'sdlc.exe') -Force
+    } catch {
+        Remove-Item -LiteralPath $incoming -Force -ErrorAction SilentlyContinue
+        Stop-WithAdvice "could not install into $Dir" @(
+            "why  $($_.Exception.Message)",
+            'fix  close any running sdlc.exe and try again, or set',
+            '     $env:SDLC_INSTALL_DIR to somewhere you can write')
+    }
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
@@ -147,12 +192,32 @@ if ($env:SDLC_NO_PATH -eq '1') {
     Write-Host ''
     Write-Host "  PATH was left alone (SDLC_NO_PATH=1). Add $Dir to it yourself."
 } else {
-    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    if (($userPath -split ';') -notcontains $Dir) {
-        [Environment]::SetEnvironmentVariable('Path', "$Dir;$userPath", 'User')
-        Write-Host ''
-        Write-Host "  $Dir has been added to your PATH."
-        Write-Host '  Open a new terminal for it to take effect.'
+    # Read and write the raw registry value, not the expanded one. The cost of
+    # going below [Environment]::SetEnvironmentVariable is that already-open
+    # programs are not notified, which is why the message below says to open a
+    # new terminal -- it said so before this, and it is still what is true.
+    # [Environment]::GetEnvironmentVariable returns %JAVA_HOME%\bin already
+    # expanded, and writing that back as a plain string would permanently
+    # freeze every such reference in the user's PATH at today's value.
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+    try {
+        $userPath = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        if (($userPath -split ';') -notcontains $Dir) {
+            $kind = if ($userPath -match '%') {
+                [Microsoft.Win32.RegistryValueKind]::ExpandString
+            } else {
+                [Microsoft.Win32.RegistryValueKind]::String
+            }
+            # A profile with no user PATH yet gets the directory on its own,
+            # rather than a value with a trailing separator.
+            $updated = if ($userPath) { "$Dir;$userPath" } else { $Dir }
+            $key.SetValue('Path', $updated, $kind)
+            Write-Host ''
+            Write-Host "  $Dir has been added to your PATH."
+            Write-Host '  Open a new terminal for it to take effect.'
+        }
+    } finally {
+        if ($key) { $key.Dispose() }
     }
 }
 $env:Path = "$Dir;$env:Path"
