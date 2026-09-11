@@ -90,7 +90,11 @@ jobs:
           # A tag can point at any commit. Without this, `git tag v9 <sha>`
           # releases code that was never on trunk -- the tagged commit's own
           # CI runs, so the checks are real, but nobody reviewed it.
-          git fetch --no-tags --depth=0 origin main
+          # Explicit refspec: `git fetch origin main` only reliably updates
+          # FETCH_HEAD, and the remote-tracking ref is what merge-base reads.
+          # (`--depth=0` is not "unshallow" -- it is `fatal: depth 0 is not a
+          # positive number`, which would have failed the first release here.)
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
             echo "::error::${GITHUB_REF_NAME} points at a commit that is not on main." >&2
             echo "Releases come from trunk. Merge it first, then tag." >&2
@@ -120,7 +124,14 @@ jobs:
 
       - name: Release notes
         shell: bash
-        run: go run ./internal/tools/release notes -o release-notes.md
+        run: |
+          set -euo pipefail
+          go run ./internal/tools/release notes -o release-notes.md
+          # An empty file would publish an empty release rather than fail.
+          if [ ! -s release-notes.md ]; then
+            echo "::error::release-notes.md is empty; CHANGELOG.md has no section for this version." >&2
+            exit 1
+          fi
 
       - name: Build and publish the release
         shell: bash
@@ -132,6 +143,30 @@ jobs:
           go run "github.com/goreleaser/goreleaser/v2@v${GORELEASER_VERSION}" release \
             --clean --release-notes release-notes.md
 
+      # goreleaser reads --release-notes inside its changelog pipe, and several
+      # ordinary-looking settings skip that pipe entirely -- in which case the
+      # notes are read, handed over and silently discarded, and the release
+      # goes out with nothing but the footer. Checking the published body is
+      # the only way to know the file actually arrived.
+      - name: Check the release says what the changelog says
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" \
+            --json body --jq .body > published-body.md
+          # Compared line by line: the body has a footer appended, so it is a
+          # superset of the notes rather than equal to them. Blank lines are
+          # dropped because the template joins the parts with its own.
+          missing=$(grep -vxFf published-body.md release-notes.md | grep -v '^[[:space:]]*$' || true)
+          if [ -n "${missing}" ]; then
+            echo "::error::the release body is missing lines from release-notes.md" >&2
+            printf '%s\n' "${missing}" >&2
+            exit 1
+          fi
+          echo "release body carries every line of the changelog section"
+
       # What GitHub can say about these files that the files cannot say about
       # themselves: which workflow, in which repository, at which commit,
       # produced them. Verified with `gh attestation verify`.
@@ -142,6 +177,24 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
+
+      # Before npm, because the npm package is the one thing here that cannot
+      # be taken back: published versions are immutable and unpublishing is
+      # restricted. The package's installer downloads from this release, so
+      # publishing it while the release is still a draft would put a broken
+      # `npx @bbsnly/sdlc install` on the registry permanently.
+      #
+      # goreleaser publishes a draft, so until this step the archives are
+      # uploaded but not downloadable: a run that fails anywhere above leaves
+      # nothing half-released, and no one can fetch an archive that has not
+      # been attested yet. If the npm step below fails, this release is still
+      # correct and complete on its own -- every other install route works,
+      # and the publish can be rerun.
+      - name: Open the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --repo "${GITHUB_REPOSITORY}"
 
       - name: Publish @bbsnly/sdlc
         shell: bash
@@ -174,13 +227,3 @@ jobs:
           case "${version}" in *-*) tag=next ;; esac
           npm publish ./npm --provenance --access public --tag "$tag"
 
-      # Last, because everything before it can be run again and this cannot.
-      # goreleaser publishes a draft, so until this step the archives are
-      # uploaded but not downloadable: a run that fails anywhere above leaves
-      # nothing half-released, and no one can fetch an archive that has not
-      # been attested yet.
-      - name: Open the release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --repo "${GITHUB_REPOSITORY}"

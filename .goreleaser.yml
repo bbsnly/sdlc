@@ -84,8 +84,17 @@ snapshot:
 # The changelog is written by a person, in CHANGELOG.md, and reviewed like
 # anything else. Generating release notes from commit subjects would produce a
 # second, worse changelog that disagrees with the first.
+#
+# `disable: true` is the wrong way to say that, and used to be set here. It
+# skips the whole changelog pipe -- including the branch that loads
+# `--release-notes` into the release body -- so the hand-written notes were
+# read from disk, handed to goreleaser and silently dropped, leaving a release
+# with nothing but the footer. What actually suppresses the generated
+# changelog is passing `--release-notes`: the pipe loads the file and returns
+# before it ever looks at the commit log. The release workflow asserts the
+# published body against the file, so this cannot regress unnoticed.
 changelog:
-  disable: true
+  use: git
 
 release:
   github:

@@ -172,7 +172,16 @@ tasks:
       - |
         # `node --test DIR` treats the directory as one test file; the glob is
         # what makes it run each file. Quoted so the shell leaves it to node.
-        node --test 'npm/test/*.test.js' 2>&1 | tail -n 8
+        #
+        # Captured rather than piped. Task's embedded shell has errexit on but
+        # pipefail off, so `node --test ... | tail` reported the failure in its
+        # output and still exited 0 -- this leg could not fail. Same shape as
+        # parity-selftest below, for the same reason.
+        out=$(node --test 'npm/test/*.test.js' 2>&1) || {
+          echo "$out" >&2
+          exit 1
+        }
+        echo "$out" | tail -n 8
 
   actionlint:
     desc: Lint GitHub Actions workflows

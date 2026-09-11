@@ -51,6 +51,14 @@ var mutating = map[string]bool{
 	"truncate": true, "install": true, "ln": true, "chmod": true,
 	"chown": true, "touch": true, "shred": true, "unlink": true,
 	"rmdir": true, "sponge": true,
+	// Editors that rewrite a file given on the command line. `sed -i` is the
+	// most common way an agent changes a file from a shell, and the record it
+	// would be changing is the loop's own evidence -- unlike a test, nothing
+	// downstream notices afterwards. Named here whether or not the invocation
+	// actually asks for in-place editing: a `sed` that only reads names its
+	// input too, and refusing a read of the gate record costs nothing.
+	"sed": true, "perl": true, "awk": true, "ed": true, "patch": true,
+	"python": true, "python3": true, "ruby": true, "node": true,
 	// Windows spellings, because Bash on Windows is not always a POSIX shell.
 	"del": true, "erase": true, "move": true, "copy": true,
 }
@@ -242,6 +250,12 @@ func loopState(word string) (string, bool) {
 		if at(p, own) {
 			return own, true
 		}
+	}
+	// The directory itself, taken wholesale. Every path inside it was covered
+	// and this was not, so `rm -rf .sdlc/state` was refused while `rm -rf
+	// .sdlc` -- which destroys the same thing and more -- went through.
+	if p == ".sdlc" || strings.HasSuffix(p, "/.sdlc") {
+		return ".sdlc", true
 	}
 	rest, inStories := cutAt(p, ".sdlc/stories")
 	if !inStories {
