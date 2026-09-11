@@ -93,8 +93,9 @@ Stopping does not undo anything. The gates already recorded stay recorded, the
 story stays in progress, and starting again resumes it.
 
 A story whose gates have all passed is a different case, and `stop` says so: it
-is done, and the next `sdlc start` moves on to the next story instead of
-reopening it.
+is done, the test freeze it was holding is lifted, and the next `sdlc start`
+moves on to the next story instead of reopening it. An unfinished story keeps
+its freeze, so stopping and starting again cannot be a way round it.
 
 ## `sdlc gate GATE STATUS`
 

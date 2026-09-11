@@ -167,13 +167,18 @@ A freeze covers one story's acceptance tests, and taking a second one over the t
 bless whatever changed in between. If the tests genuinely have to change, run
 `sdlc unfreeze --reason "..."` first — the reason goes on the record — and freeze again.
 
+This is about the story you are working on. A freeze left behind by a story that has since
+finished is not in the way: `sdlc stop` lifts it when the story is done, and `sdlc freeze`
+replaces one that names a finished story rather than refusing over it.
+
 ### SDLC-E0023
 
 There is no freeze.
 
 The test gate cannot pass until `sdlc freeze` has recorded what every acceptance test contains,
 because without it a later edit to a test leaves no trace. If the message says the freeze belongs
-to another story, that freeze is stale: unfreeze it and take one for this story.
+to another story, that story is still in progress — finish or stop it, rather than unfreezing
+work that is under way.
 
 ### SDLC-E0024
 

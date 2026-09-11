@@ -109,7 +109,7 @@ func TestGoInstallAtAVersionReportsThatVersion(t *testing.T) {
 	// The mirror carries this module only. Its dependencies come from
 	// wherever they normally would, which in practice is the module cache
 	// the rest of the suite has already filled.
-	cmd.Env = goEnv(t, gobin, "file://"+filepath.ToSlash(proxy)+",https://proxy.golang.org,direct")
+	cmd.Env = goEnv(t, gobin, fileURL(proxy)+",https://proxy.golang.org,direct")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go install %s failed: %v\n%s", pkg, err, out)
 	}
@@ -251,4 +251,14 @@ func evictFromModuleCache(t *testing.T) {
 			t.Fatalf("evicting %s from the module cache: %v", p, err)
 		}
 	}
+}
+
+// fileURL turns a directory into the file:// URL a GOPROXY list accepts.
+//
+// Three slashes, not two: on Windows the path starts with a drive letter, and
+// `file://C:/...` reads C: as the host -- "invalid file:// proxy URL with
+// non-path elements", which is how this first failed on windows-11-arm. The
+// leading slash is already there on POSIX, so it is added only if missing.
+func fileURL(dir string) string {
+	return "file:///" + strings.TrimPrefix(filepath.ToSlash(dir), "/")
 }

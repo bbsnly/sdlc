@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -56,10 +57,19 @@ func newFreezeCmd() *cobra.Command {
 				return err
 			}
 			if lock != nil {
-				return sdlcerr.New(sdlcerr.AlreadyFrozen,
-					"the tests are already frozen",
-					"they were frozen for "+lock.Story+" at "+lock.At+", covering "+
-						countFiles(len(lock.Files)))
+				stale, err := freezeIsALeftover(s, lock, id)
+				if err != nil {
+					return err
+				}
+				if !stale {
+					return sdlcerr.New(sdlcerr.AlreadyFrozen,
+						"the tests are already frozen",
+						"they were frozen for "+lock.Story+" at "+lock.At+", covering "+
+							countFiles(len(lock.Files)))
+				}
+				if err := s.ClearLock(); err != nil {
+					return err
+				}
 			}
 
 			files, err := findTests(cmd, p, s)
@@ -94,6 +104,34 @@ func newFreezeCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// freezeIsALeftover reports whether an existing freeze belongs to a story that
+// has finished, which makes it this story's to replace rather than to refuse
+// over.
+//
+// A finished story's freeze is normally lifted when the story is settled, so
+// this is the second line of defence: a project that ran a story before that
+// existed, or one whose last iteration ended some other way, would otherwise
+// be stuck at Gate 3 forever with the only way out an override meant for
+// something else.
+//
+// A freeze naming a story that is still in progress is not a leftover, and
+// still refuses. So does one naming a story that is not in the backlog at all:
+// that is a state nobody should walk past.
+func freezeIsALeftover(s *store.Store, lock *model.Lock, active string) (bool, error) {
+	if lock.Story == "" || lock.Story == active {
+		return false, nil
+	}
+	story, _, err := s.Story(lock.Story)
+	if err != nil {
+		var known *sdlcerr.Error
+		if errors.As(err, &known) && known.Code == sdlcerr.StoryNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	return story.Status == model.StatusDone, nil
 }
 
 func newUnfreezeCmd() *cobra.Command {

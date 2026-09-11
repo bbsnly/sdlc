@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -368,5 +370,108 @@ func TestStatusSaysAStoryIsFinishedBeforeItIsPutDown(t *testing.T) {
 	}
 	if !strings.Contains(out, "`sdlc stop` to end the iteration") {
 		t.Errorf("status does not say how to put a finished story down:\n%s", out)
+	}
+}
+
+// addStory appends a second story to the scaffolded backlog, so that a test
+// can be about what happens after the first one is finished.
+func addStory(t *testing.T, root, id string) {
+	t.Helper()
+	path := filepath.Join(root, "user_stories.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var backlog struct {
+		Schema  string           `json:"_schema"`
+		Stories []map[string]any `json:"stories"`
+	}
+	if err := json.Unmarshal(raw, &backlog); err != nil {
+		t.Fatal(err)
+	}
+	if len(backlog.Stories) == 0 {
+		t.Fatal("the scaffolded backlog is empty")
+	}
+	next := maps.Clone(backlog.Stories[0])
+	next["id"] = id
+	next["title"] = "The story after the first one"
+	next["status"] = string(model.StatusReady)
+	next["priority"] = 2
+	backlog.Stories = append(backlog.Stories, next)
+
+	out, err := json.MarshalIndent(backlog, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The loop is meant to run for as long as there are stories. It ran for
+// exactly one: the test freeze is a single file for the whole project, and
+// nothing ever lifted it, so the second story's Gate 3 refused with "already
+// frozen" and named `sdlc unfreeze` -- the override for changing tests
+// mid-story, recorded as a deviation -- as the way out. Every project hit
+// this on its second story.
+func TestASecondStoryCanFreezeItsOwnTests(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	addStory(t, root, "US-002")
+	mustRun(t, "start")
+
+	reach(t, root, "")
+	mustRun(t, "stop")
+
+	started := mustRun(t, "start")
+	if !strings.Contains(started.stdout, "US-002") {
+		t.Fatalf("the second story was not picked up: %s", started.stdout)
+	}
+	for _, gate := range []model.Gate{model.GateDoR, model.GateAnalysis} {
+		satisfy(t, root, gate)
+		mustRun(t, "gate", string(gate), "pass", "--note", "reached by the test")
+	}
+
+	writeFile(t, root, "internal/second_test.go", "package internal\n\n// AC-1\n")
+	mustRunWith(t, "# Test plan\n", "artifact", "write", "test_plan")
+	if r := run(t, "freeze"); r.code != 0 {
+		t.Fatalf("the second story could not freeze its tests (exit %d):\n%s%s", r.code, r.stdout, r.stderr)
+	}
+	if got := lockOnDisk(t, root).Story; got != "US-002" {
+		t.Errorf("the freeze names %q, want US-002", got)
+	}
+}
+
+// Finishing a story lifts its freeze. Once the story is done its tests are on
+// trunk and there is nothing left to protect, and leaving the freeze behind is
+// what stopped the next story.
+func TestFinishingAStoryLiftsItsFreeze(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+	reach(t, root, "")
+	mustRun(t, "stop")
+
+	if _, err := os.Stat(filepath.Join(root, ".sdlc", "state", "tests.lock")); !os.IsNotExist(err) {
+		t.Errorf("the freeze outlived the story it was taken for: %v", err)
+	}
+}
+
+// Stopping an unfinished story must not lift its freeze. `sdlc stop` is how a
+// session ends mid-story, and the story is picked up again next time; a freeze
+// that came off here would make `stop`, edit, `start` the way round every gate
+// after Gate 3.
+func TestStoppingAnUnfinishedStoryKeepsItsFreeze(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+	reach(t, root, model.GatePlan)
+
+	if lockOnDisk(t, root).Story == "" {
+		t.Fatal("the tests were not frozen")
+	}
+	mustRun(t, "stop")
+	if got := lockOnDisk(t, root).Story; got == "" {
+		t.Error("stopping an unfinished story lifted its freeze")
 	}
 }

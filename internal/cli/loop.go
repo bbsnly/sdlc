@@ -289,6 +289,11 @@ func newStopCmd() *cobra.Command {
 						return err
 					}
 				}
+				if done {
+					if err := releaseFreeze(s, active); err != nil {
+						return err
+					}
+				}
 			}
 			if err := s.ClearActive(); err != nil {
 				return err
@@ -350,6 +355,30 @@ func settleStory(s *store.Store, id string, record *model.Record) (bool, error) 
 		return false, s.SetStoryStatus(id, model.StatusInProgress)
 	}
 	return !remaining, nil
+}
+
+// releaseFreeze lifts a finished story's test freeze.
+//
+// The freeze belongs to the iteration it was taken in. It holds across every
+// gate and across sessions, which is the whole point -- and it is lifted only
+// where the iteration ends, on a story that has nothing left to do. Lifting it
+// when the last gate passes instead would be a step too early: a gate can be
+// re-recorded as a failure, which puts the story back in progress, and it
+// would then run gates 5 to 8 again with nothing frozen.
+//
+// Left behind, it becomes the next story's problem: `sdlc freeze` at Gate 3
+// refuses with "already frozen" and sends the reader to `sdlc unfreeze`, an
+// override meant for changing tests mid-story and recorded as a deviation.
+// Every project's second story stopped there.
+//
+// Only the finished story's own freeze is lifted. One that names a different
+// story is not this story's to release.
+func releaseFreeze(s *store.Store, id string) error {
+	lock, err := s.Lock()
+	if err != nil || lock == nil || lock.Story != id {
+		return err
+	}
+	return s.ClearLock()
 }
 
 func newGateCmd() *cobra.Command {

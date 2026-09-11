@@ -26,7 +26,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   written. `sdlc freeze` records a hash per test file; after that the
   implementer cannot edit a test, cannot add a test, and cannot pass the
   verification gate on tests that changed. `sdlc unfreeze --reason` is the
-  way out, and it is on the record.
+  way out, and it is on the record. The freeze belongs to the iteration: it
+  survives `sdlc stop` and a new session, and is lifted when the story
+  finishes, so the next story freezes its own tests.
 - Reviews are recorded against the thing they reviewed. A design review is
   stamped with the hash of the plan it read and a code review with the hash
   of the tree it read, so a review of an older version of the work shows as

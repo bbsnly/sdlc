@@ -83,6 +83,10 @@ nobody edits them — not the implementer, not the agent that wrote them, not th
 conversation. `sdlc unfreeze --reason "..."` lifts it and puts the reason on the
 record.
 
+The freeze belongs to the iteration. It survives `sdlc stop` and a new session,
+so resuming a story finds its tests still locked; it is lifted when the story
+finishes, so the next story freezes its own.
+
 **Refused without it:** a pass with no test plan, no freeze, a freeze belonging
 to another story, or a frozen file that has changed or vanished.
 
