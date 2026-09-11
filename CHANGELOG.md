@@ -75,6 +75,17 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   recording a gate as failed afterwards puts the story back to `in_progress`
   — which is the only way back into finished work, and says on the record why
   it came back.
+- Every agent can write only what its gate produces, reviewers included. The
+  eight reviewing roles had no write scope at all, so an architect could edit
+  production code in the middle of a design review and a code reviewer could
+  fix what it was about to approve. Each keeps its own story directory, and
+  the verdict still goes through `sdlc review add`.
+- Picking a story up again changes nothing. `sdlc start` on a story already
+  under way stamped a fresh timestamp into the backlog, which is a tracked
+  file and therefore part of the tree the verifier and the Gate 7 reviewers
+  are stamped against — so resuming in a new session, which is how the loop
+  is meant to be used, sent five reviewers back to re-review work that had
+  not changed.
 
 ### The command
 
@@ -102,6 +113,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   the rule it applied and the sanctioned way to do the same thing.
 - The repository is its own marketplace, so installing the plugin is two
   lines in Claude Code.
+- `npx skills add bbsnly/sdlc` installs the runbook on its own, as a plain
+  Agent Skill, for any agent that reads them. It carries no binary, no agents
+  and no hook, so the skill checks for the tool and for the agents before it
+  does anything and says what to install if either is missing.
 
 ### Installing
 
