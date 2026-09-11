@@ -83,7 +83,7 @@ func TestReadingAndOrdinaryWorkAreUntouched(t *testing.T) {
 func TestTheRuleFollowsTheFileNotTheDirectory(t *testing.T) {
 	for _, command := range []string{
 		"echo x > .sdlc/stories/B-2/ANALYSIS.md",
-		"rm /home/me/repo/.sdlc/stories/B-2/gate-record.json",
+		"rm /home/dev/repo/.sdlc/stories/B-2/gate-record.json",
 		`del .sdlc\stories\A-1\PLAN.md`,
 	} {
 		refused(t, command, ready, "loop-state-through-the-tool")
