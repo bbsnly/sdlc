@@ -1,0 +1,37 @@
+{
+  "name": "@bbsnly/sdlc",
+  "version": "0.1.0",
+  "description": "Install sdlc: a story-driven delivery loop for Claude Code, with gates a model cannot talk its way past.",
+  "license": "MIT",
+  "author": "Anatoliy Babushka <anatoliybabushka@gmail.com>",
+  "homepage": "https://github.com/bbsnly/sdlc",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bbsnly/sdlc.git",
+    "directory": "npm"
+  },
+  "bugs": {
+    "url": "https://github.com/bbsnly/sdlc/issues"
+  },
+  "keywords": [
+    "sdlc",
+    "claude-code",
+    "tdd",
+    "code-review",
+    "workflow",
+    "gates"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "sdlc-install": "bin/sdlc-install.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "checksums.txt",
+    "LICENSE",
+    "README.md"
+  ]
+}

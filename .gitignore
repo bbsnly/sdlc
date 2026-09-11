@@ -35,3 +35,9 @@ Thumbs.db
 # the plugin ships from a release archive, not from the repository.
 /plugin/bin/sdlc
 /plugin/bin/sdlc.exe
+
+# Built at release time, never committed: the checksums belong to a release
+# that does not exist yet when the repository is at rest.
+/npm/checksums.txt
+/npm/LICENSE
+/npm/*.tgz

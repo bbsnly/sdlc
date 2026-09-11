@@ -1,0 +1,110 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+# Read-only by default. The release job asks for exactly what it needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # The same bar every commit has to clear, on all three platforms, run again
+  # against the tagged commit. A tag can point anywhere; this is what makes
+  # "it passed on main" true of the thing actually being released.
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload its archives
+      id-token: write # provenance for the archives and for the npm package
+      attestations: write
+    steps:
+      # Actions are pinned to a commit SHA, not a tag: a tag can be moved.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.21.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Fail before anything is published rather than halfway through. A
+      # release that made it to GitHub and not to npm is the worst outcome
+      # here: the version exists, and the install line in the release notes
+      # does not work.
+      - name: Preflight
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::NPM_TOKEN is not set, so @bbsnly/sdlc cannot be published." >&2
+            echo "Add it under Settings -> Secrets and variables -> Actions, then re-run." >&2
+            exit 1
+          fi
+          go run ./internal/tools/release check -tag "${GITHUB_REF_NAME}"
+
+      - name: Install pinned syft
+        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          syft-version: v1.51.1
+
+      - name: Release notes
+        shell: bash
+        run: go run ./internal/tools/release notes -o release-notes.md
+
+      - name: Build and publish the release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Pinned in one place, like every other tool this repository uses.
+          version=$(sed -n 's/^[[:space:]]*GORELEASER_VERSION:[[:space:]]*\([^[:space:]]*\).*/\1/p' Taskfile.yml | head -n 1)
+          go run "github.com/goreleaser/goreleaser/v2@v${version}" release \
+            --clean --release-notes release-notes.md
+
+      # What GitHub can say about these files that the files cannot say about
+      # themselves: which workflow, in which repository, at which commit,
+      # produced them. Verified with `gh attestation verify`.
+      - name: Attest the archives
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+
+      - name: Publish @bbsnly/sdlc
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The checksums travel inside the package. npm packages are
+          # immutable once published, so a checksum that shipped with the
+          # installer is a stronger promise than one fetched at install time
+          # from the same place as the download.
+          cp dist/checksums.txt npm/checksums.txt
+          cp LICENSE npm/LICENSE
+          # A pre-release must not become what `npm install` gives people by
+          # default, so it goes out under `next` instead of `latest`.
+          tag=latest
+          case "${GITHUB_REF_NAME}" in *-*) tag=next ;; esac
+          npm publish ./npm --provenance --access public --tag "$tag"

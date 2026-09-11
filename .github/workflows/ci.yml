@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Called by the release workflow, so a tag clears the same bar as a commit
+  # rather than a copy of it that has drifted.
+  workflow_call:
 
 # Read-only by default. Jobs that need more ask for it explicitly.
 permissions:
@@ -11,8 +14,11 @@ permissions:
 
 # A new push supersedes the one before it. An in-flight run of an older commit
 # is answering a question nobody is asking any more, on three runners.
+# The "ci-" prefix keeps this group distinct from the release workflow's own,
+# which would otherwise collide when release.yml calls this one: inside a
+# called workflow, github.workflow is the caller's name.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -5,17 +5,22 @@ take about ten minutes, most of which is writing one good acceptance criterion.
 
 ## Install
 
-There is no release yet, so build from source. You need Go 1.26 or newer and
-git.
-
 ```console
-$ git clone https://github.com/bbsnly/sdlc && cd sdlc
-$ ./task build
-$ export PATH="$PWD/dist:$PATH"
+$ curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
 ```
 
-Put that `export` in your shell profile if you would rather not think about it
-again.
+On Windows, `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex`.
+There is also `npx @bbsnly/sdlc install`, `go install`, and a source build —
+[Installation](installation.md) has all of them, and how to verify a download.
+
+Then, in Claude Code:
+
+```text
+/plugin marketplace add bbsnly/sdlc
+/plugin install sdlc@sdlc
+```
+
+The repository is its own marketplace, so there is nothing else to add.
 
 ## Set a project up
 

@@ -15,16 +15,26 @@ always green.
 [![ci](https://github.com/bbsnly/sdlc/actions/workflows/ci.yml/badge.svg)](https://github.com/bbsnly/sdlc/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Status: complete, and not yet released
+## Status
 
 All nine gates are built and enforced, and a story can go from the backlog to a
-commit without leaving the loop. There is no release, no npm package and no
-published plugin yet, so for now it is used from a clone.
+commit without leaving the loop. **The first release is not tagged yet**, so the
+`curl` line below does not work for a few more minutes; the source route does.
+[Watch the repository](https://github.com/bbsnly/sdlc/subscription) to hear when
+it lands.
 
-[Watch the repository](https://github.com/bbsnly/sdlc/subscription) to hear
-about the first release.
+## Install
 
-### Trying it from source
+```console
+$ curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
+```
+
+Windows PowerShell: `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex`.
+There is also `npx @bbsnly/sdlc install` and `go install`. Every route downloads
+the same native binary and checks it against the release's checksums first — see
+[Installation](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md).
+
+From source, which is what to use until the first release is tagged:
 
 ```console
 $ git clone https://github.com/bbsnly/sdlc && cd sdlc
@@ -32,7 +42,15 @@ $ ./task build
 $ export PATH="$PWD/dist:$PATH"
 ```
 
-Then, in a project of your own:
+Then, in Claude Code:
+
+```text
+/plugin marketplace add bbsnly/sdlc
+/plugin install sdlc@sdlc
+```
+
+The repository is its own marketplace, so there is nothing else to add. Then, in
+a project of your own:
 
 ```console
 $ sdlc init
@@ -142,6 +160,7 @@ reviewer.
 
 | Page | What is in it |
 | --- | --- |
+| [Installation](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md) | every way to install it, and how to verify a download |
 | [Getting started](https://github.com/bbsnly/sdlc/blob/main/docs/getting-started.md) | from nothing to a story going through the loop |
 | [The loop](https://github.com/bbsnly/sdlc/blob/main/docs/the-loop.md) | what each gate is for, what it produces, what is refused without it |
 | [Commands](https://github.com/bbsnly/sdlc/blob/main/docs/commands.md) | every command and flag |

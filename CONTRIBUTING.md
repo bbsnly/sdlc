@@ -57,6 +57,38 @@ honest fix when the newer version is the one we should be testing against.
 - **Conventional commits.** `feat:`, `fix:`, `docs:`, `refactor:`, `test:`,
   `chore:`, with a body that says *why* rather than restating *what*.
 
+## Cutting a release
+
+The version lives in `plugin/.claude-plugin/plugin.json`, and every other file
+that repeats it is checked against that one on every commit. `./task
+release-check` is the leg that does it, so a half-finished bump fails
+immediately rather than during a release.
+
+1. Bump the version in `plugin/.claude-plugin/plugin.json` and `npm/package.json`.
+2. Write the section for it in `CHANGELOG.md`. The release notes are that
+   section, verbatim — they are written by a person and reviewed like anything
+   else, not generated from commit subjects.
+3. `./task check`, then `./task release-snapshot` to see exactly what the
+   release will publish, in `dist/`.
+4. Commit, then tag and push:
+
+   ```console
+   $ git tag v0.1.0 && git push origin main v0.1.0
+   ```
+
+The tag starts `.github/workflows/release.yml`, which runs the full check
+matrix on the tagged commit before it builds anything, then publishes the
+archives, their checksums, an SBOM and a build provenance attestation, and
+finally `@bbsnly/sdlc` to npm. A pre-release tag (`v0.2.0-rc.1`) is marked as a
+pre-release on GitHub and published to npm under `next` rather than `latest`.
+
+Two things the workflow cannot do for itself:
+
+- **`NPM_TOKEN`** must exist in the repository's Actions secrets, or the
+  release stops at its first step rather than publishing half of itself.
+- **Immutable releases** are enabled by hand in Settings → General. There is no
+  API for it, and it is what stops a published tag being quietly replaced.
+
 ## What is not in this repository
 
 Design records, planning documents and the specification of the legacy shell kit

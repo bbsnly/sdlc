@@ -1,0 +1,109 @@
+# Release build for sdlc.
+#
+# What a release produces, and why each piece is there:
+#
+#   - one archive per platform, holding a static binary, the licence, the
+#     readme and the changelog. A release archive is a complete thing; a
+#     reader who has only the archive can still see what they have.
+#   - checksums.txt, which the install scripts and the npm package verify
+#     against before they put anything on your PATH.
+#   - an SBOM beside each archive, so a security team can answer "what is in
+#     this" without unpacking it.
+#
+# Everything is reproducible from the tag: -trimpath removes the build
+# machine's paths, mod_timestamp pins file times to the commit, and the
+# version, commit and date come from the tag rather than from the clock.
+version: 2
+
+project_name: sdlc
+
+before:
+  hooks:
+    - go mod download
+    # The release must not be the thing that discovers the version files
+    # disagree. This is the same check `task check` runs on every commit; the
+    # tag itself is checked against the version in the workflow, before
+    # anything is built.
+    - go run ./internal/tools/release check
+
+builds:
+  - id: sdlc
+    main: ./cmd/sdlc
+    binary: sdlc
+    env:
+      # No cgo: the binary is run by a hook on machines that are not the
+      # build machine, and a dynamic libc dependency is how that breaks.
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/bbsnly/sdlc/internal/version.version={{ .Version }}
+      - -X github.com/bbsnly/sdlc/internal/version.commit={{ .FullCommit }}
+      - -X github.com/bbsnly/sdlc/internal/version.date={{ .CommitDate }}
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+archives:
+  - id: sdlc
+    ids: [sdlc]
+    # sdlc_0.1.0_darwin_arm64.tar.gz -- the name the install scripts build,
+    # so it is spelled out rather than left to a default that could change.
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - id: archives
+    artifacts: archive
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-snapshot'
+
+# The changelog is written by a person, in CHANGELOG.md, and reviewed like
+# anything else. Generating release notes from commit subjects would produce a
+# second, worse changelog that disagrees with the first.
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: bbsnly
+    name: sdlc
+  # A pre-1.0 tag with a suffix (v0.1.0-rc.1) is marked as a pre-release
+  # without anyone having to remember to say so.
+  prerelease: auto
+  mode: replace
+  footer: |
+    ## Install
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
+    ```
+
+    Windows PowerShell:
+
+    ```powershell
+    irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex
+    ```
+
+    Then, in Claude Code:
+
+    ```text
+    /plugin marketplace add bbsnly/sdlc
+    /plugin install sdlc@sdlc
+    ```
+
+    Every archive is listed in `checksums.txt`, and the install scripts verify
+    against it before putting anything on your PATH.
