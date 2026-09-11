@@ -152,8 +152,13 @@ tree rather than the plan.
 `git commit` is refused by the hook until every gate above has passed, and the
 refusal names the one that has not.
 
-**Refused without it:** a pass while anything is uncommitted, or with a broken
-freeze.
+The gate also asks the verifier and the code reviewer about the tree as it is
+now, not as it was when they approved. An approval goes stale the moment the
+code changes, and the window between the code review and the commit is the one
+place that would otherwise not be checked.
+
+**Refused without it:** a pass while anything is uncommitted, with a broken
+freeze, or with code that has changed since the reviewers saw it.
 
 ## Gate 9 — `retro`
 

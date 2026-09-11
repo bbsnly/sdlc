@@ -475,3 +475,48 @@ func TestStoppingAnUnfinishedStoryKeepsItsFreeze(t *testing.T) {
 		t.Error("stopping an unfinished story lifted its freeze")
 	}
 }
+
+// An approval is stamped with what was in front of it, and that is checked
+// when the gate it belongs to is recorded -- but nothing checked it again
+// afterwards. Between `code_review pass` and `commit pass` the code could be
+// changed freely: the freeze covers test files, and the commit gate asked only
+// that the tree be committed, not that it be the tree anybody reviewed.
+//
+// Adding a function to a source file after the review and committing it went
+// straight through. That is the front page's claim -- "nothing reaches trunk
+// until an independent verifier and a code reviewer have each signed off" --
+// not being true.
+func TestCodeChangedAfterTheReviewCannotBeCommitted(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+	reach(t, root, model.GateCommit)
+
+	writeFile(t, root, "internal/backdoor.go", "package internal\n\nfunc Backdoor() string { return \"nobody reviewed this\" }\n")
+	commitEverything(t, root)
+
+	r := run(t, "gate", "commit", "pass", "--note", "on trunk")
+	if r.code == 0 {
+		t.Fatal("code added after the review reached trunk")
+	}
+	for _, want := range []string{"not the code that was reviewed", "code_review"} {
+		if !strings.Contains(r.stdout+r.stderr, want) {
+			t.Errorf("the refusal does not say %q:\n%s%s", want, r.stdout, r.stderr)
+		}
+	}
+}
+
+// And the ordinary path is untouched. The subject for both review gates is the
+// whole tree, computed by staging it into a temporary index, so committing the
+// work does not change it -- which is what makes the check above safe.
+func TestCommittingWhatWasReviewedStillPasses(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+	reach(t, root, model.GateCommit)
+	commitEverything(t, root)
+
+	if r := run(t, "gate", "commit", "pass", "--note", "on trunk"); r.code != 0 {
+		t.Fatalf("committing exactly what was reviewed was refused:\n%s%s", r.stdout, r.stderr)
+	}
+}

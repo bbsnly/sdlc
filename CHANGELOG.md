@@ -29,6 +29,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   way out, and it is on the record. The freeze belongs to the iteration: it
   survives `sdlc stop` and a new session, and is lifted when the story
   finishes, so the next story freezes its own tests.
+- The commit gate asks the verifier and the code reviewer about the tree as
+  it is now. Their approvals were checked when their own gates were recorded
+  and never again, so code added after the review and then committed reached
+  trunk unreviewed.
 - Enforcement holds from anywhere in the repository. A session started in a
   subdirectory reports that directory, and the hook looked for the project's
   configuration only there -- so `cd backend && claude` turned every rule off

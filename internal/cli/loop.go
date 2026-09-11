@@ -528,6 +528,9 @@ func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.
 		if err := requireIntactFreeze(s, id); err != nil {
 			return err
 		}
+		if err := requireFreshReviews(ctx, s, id, record); err != nil {
+			return err
+		}
 		return requireCommitted(ctx, s)
 	default:
 		return nil
@@ -575,6 +578,49 @@ func requireIntactFreeze(s *store.Store, id string) error {
 			strings.Join(changed, ", ")+" changed after the freeze was taken")
 	}
 	return nil
+}
+
+// requireFreshReviews re-asks the reviewed gates about the tree as it is now.
+//
+// An approval is stamped with what was in front of it, and that is checked
+// when the gate it belongs to is recorded -- but nothing was checking it
+// again afterwards. Between `code_review pass` and `commit pass` the code
+// could be changed freely: the freeze covers test files, and the commit gate
+// asked only that the tree be committed, not that it be the tree anybody
+// reviewed. Adding a function to a source file after the review and
+// committing it went through without a word.
+//
+// The subject for both review gates is the whole tree, and computing it stages
+// the working tree into a temporary index, so it does not change when the work
+// is committed. A story that goes straight from review to commit passes here
+// untouched; one that was edited in between does not.
+func requireFreshReviews(ctx context.Context, s *store.Store, id string,
+	record *model.Record,
+) error {
+	var stale, why []string
+	for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
+		err := requireReviews(ctx, s, id, gate, record)
+		if err == nil {
+			continue
+		}
+		var known *sdlcerr.Error
+		if !errors.As(err, &known) {
+			return err
+		}
+		stale = append(stale, string(gate))
+		why = append(why, known.Why)
+	}
+	if len(stale) == 0 {
+		return nil
+	}
+	// Both gates, not the first one found: a change to the tree makes every
+	// review of it stale at once, and being sent back twice in a row is worse
+	// than being told the whole of it.
+	return sdlcerr.New(sdlcerr.ReviewsMissing,
+		"the code being committed is not the code that was reviewed",
+		strings.Join(why, "; ")).
+		WithFix("send it back to " + strings.Join(stale, " and ") +
+			": what changed after they approved has been reviewed by nobody")
 }
 
 // requireCommitted holds the commit gate to its own name.
