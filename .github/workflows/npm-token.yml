@@ -1,0 +1,52 @@
+name: npm-token
+
+# The npm token is the one release ingredient a commit cannot check. The
+# release workflow runs on a tag, so a token that turns out to be missing,
+# expired or read-only costs a deleted tag and a re-cut release.
+#
+# This runs the same two questions on demand -- can the token authenticate,
+# and would the package be accepted -- and publishes nothing. Run it from the
+# Actions tab after adding or rotating NPM_TOKEN.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  token:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.21.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Can the token publish?
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "::error::NPM_TOKEN is not set." >&2
+            echo "Add it under Settings -> Secrets and variables -> Actions." >&2
+            exit 1
+          fi
+          if ! who=$(npm whoami 2>&1); then
+            echo "::error::NPM_TOKEN cannot authenticate to npm: ${who}" >&2
+            exit 1
+          fi
+          echo "npm: authenticated as ${who}"
+
+          # The real release copies these in from the build. Here they only
+          # have to exist, so that the dry run reports the file list the
+          # release would publish rather than a shorter one.
+          cp LICENSE npm/LICENSE
+          : > npm/checksums.txt
+
+          # --dry-run stops short of the registry write and still checks the
+          # name, the scope and the token's right to publish there.
+          npm publish ./npm --dry-run --access public
