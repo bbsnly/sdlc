@@ -19,55 +19,51 @@ always green.
 
 All nine gates are built and enforced, and a story can go from the backlog to a
 commit without leaving the loop. **The first release is not tagged yet**, so the
-`curl` line below has nothing to download; the source route does.
+four routes below that download a release have nothing to download yet — until
+it lands, build from source or use `go install`.
 [Watch the repository](https://github.com/bbsnly/sdlc/subscription) to hear when
-it lands.
+it does.
 
 ## Install
 
-**1. The binary.**
+Three parts: the binary that does the enforcing, the plugin that runs the loop,
+and one command in your project.
 
-```console
-$ curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
-```
+**1. The binary.** Any one of these:
 
-Windows PowerShell: `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex`.
-There is also `npx @bbsnly/sdlc install` and `go install`. Every route downloads
-the same native binary and checks it against the release's checksums first — see
+| Route | Command |
+| --- | --- |
+| macOS, Linux | `curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh \| sh` |
+| Windows PowerShell | `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 \| iex` |
+| Node, any platform | `npx @bbsnly/sdlc install` |
+| Go 1.26 or newer | `go install github.com/bbsnly/sdlc/cmd/sdlc@latest` |
+| By hand | the archive for your platform from [Releases](https://github.com/bbsnly/sdlc/releases), checked against `checksums.txt` |
+| From source | `git clone https://github.com/bbsnly/sdlc && cd sdlc && ./task build` |
+
+The first three download the same native binary and check it against the
+release's checksums before it goes anywhere near your `PATH`; the last two
+compile it on your machine. How to verify a download yourself is in
 [Installation](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md).
 
-Until the first release is tagged, build it from source instead:
+Or skip this step entirely: install the plugin, run `/sdlc:next`, and it offers
+to install the binary for you.
 
-```console
-$ git clone https://github.com/bbsnly/sdlc && cd sdlc
-$ ./task build
-$ export PATH="$PWD/dist:$PATH"
-```
+**2. The plugin.**
 
-**2. The plugin**, in Claude Code:
+| Route | Command |
+| --- | --- |
+| Claude Code | `/plugin marketplace add bbsnly/sdlc`, then `/plugin install sdlc@sdlc` |
+| From a clone | `claude --plugin-dir /path/to/sdlc/plugin` |
+| The skill alone, any agent | `npx skills add bbsnly/sdlc` |
 
-```text
-/plugin marketplace add bbsnly/sdlc
-/plugin install sdlc@sdlc
-```
+The repository is its own marketplace, so there is nothing else to add. What
+you get is the `/sdlc:next` skill, eleven agents, and the `PreToolUse` hook.
 
-The repository is its own marketplace, so there is nothing else to add. Working
-from a clone instead? Start the session with
-`claude --plugin-dir /path/to/sdlc/plugin`.
-
-Or, with the [`skills` CLI](https://github.com/vercel-labs/skills):
-
-```console
-$ npx skills add bbsnly/sdlc
-```
-
-That installs the runbook as a plain [Agent Skill](https://agentskills.io), in
-the place every agent that reads them looks. It is the runbook only — the gates
-in order and what each one produces. The binary is what records a gate and the
-plugin's hook is what refuses anything, and neither comes this way, so the skill
-checks for both and stops if they are missing. Use it to read the loop, to run
-it against a different agent, or to pin the runbook in a repository that
-installs the rest some other way.
+The third row is the [Agent Skill](https://agentskills.io) route, and it is the
+runbook only — no binary, no agents, no hook, so nothing is recorded and
+nothing is refused. The skill checks for both and stops if either is missing.
+Use it to read the loop, to run it against a different agent, or to pin the
+runbook in a repository that installs the rest some other way.
 
 **3. Your project**, from its root:
 
@@ -82,13 +78,38 @@ files, and it writes no `.gitignore`: what a project commits is the project's
 decision. `doctor` checks the result and names the command that fixes anything
 it does not like.
 
-Then, in Claude Code:
+## Using it
+
+In Claude Code, one command:
 
 ```text
 /sdlc:next
 ```
 
-That is the whole interface.
+It works the current story to its next gate and stops there. Run it again for
+the next gate, and again until the story is committed and its retro is written.
+Nothing else is needed, and nothing else is the intended way in.
+
+Underneath, everything the skill does is the `sdlc` command, and you can run any
+of it yourself — to see where a story is, to take over a gate, or to script the
+loop from somewhere that is not Claude Code:
+
+| Command | What it is for |
+| --- | --- |
+| `sdlc status` | where the story is, which gate is next, what it has spent |
+| `sdlc story list` | the backlog, and which story is next up |
+| `sdlc start` / `sdlc stop` | begin an iteration, or end one |
+| `sdlc gate GATE pass\|fail` | record a gate, refused unless its evidence is there |
+| `sdlc artifact write NAME` | store a gate's document; `artifact list` says which are in |
+| `sdlc review add GATE ROLE VERDICT` | record a review, stamped with what it reviewed |
+| `sdlc freeze` / `sdlc unfreeze` | lock the acceptance tests by content, or release them |
+| `sdlc cost add --usd` | record what a story has spent against its budget |
+| `sdlc doctor` | check the install, the configuration and the hook, with fixes |
+| `sdlc version` | the version, the commit, and how it was built |
+
+Every one of them takes `--json`, so a skill reads exactly what a person reads.
+[Commands](https://github.com/bbsnly/sdlc/blob/main/docs/commands.md) has every
+flag.
 
 ## What the loop actually does
 
