@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -57,6 +58,14 @@ func newStartCmd() *cobra.Command {
 						"the loop works one story at a time, which is what keeps a diff small "+
 							"enough to review honestly")
 				}
+				finished, err := refuseIfFinished(s, active)
+				if err != nil {
+					return err
+				}
+				if finished != nil {
+					return finished.WithFix(`run "sdlc stop" to end the iteration -- ` +
+						"the story is done, and there is nothing left to resume")
+				}
 				return reportStart(cmd, s, active, true)
 			}
 
@@ -70,6 +79,13 @@ func newStartCmd() *cobra.Command {
 			story, backlog, err := s.Story(id)
 			if err != nil {
 				return err
+			}
+			finished, err := refuseIfFinished(s, id)
+			if err != nil {
+				return err
+			}
+			if finished != nil {
+				return finished
 			}
 			// A story that is already in progress is being picked up again,
 			// whether or not the iteration that started it is still running.
@@ -95,6 +111,31 @@ func newStartCmd() *cobra.Command {
 			return reportStart(cmd, s, id, resume)
 		},
 	}
+}
+
+// refuseIfFinished stops a story whose gates have all passed from being put
+// back to work by starting it. Without this, `sdlc start US-001` would reset a
+// finished story to in_progress with nothing on the record saying why, and the
+// loop would work it a second time -- which is the thing the gate record was
+// made the authority on status to prevent.
+//
+// The way back in is a gate recorded as failed, so that reopening is a decision
+// somebody made and not a side effect of a command.
+//
+// It returns the concrete type so that a caller can aim the fix at its own
+// case; nothing assigns the result to an error before checking it for nil.
+func refuseIfFinished(s *store.Store, id string) (*sdlcerr.Error, error) {
+	record, err := s.Record(id)
+	if err != nil {
+		return nil, err
+	}
+	if _, remaining := record.NextGate(); remaining {
+		return nil, nil
+	}
+	return sdlcerr.New(sdlcerr.StoryAlreadyFinished,
+		quote(id)+" is finished",
+		"every gate on it has passed, so starting it would put work that is "+
+			"already done back in progress"), nil
 }
 
 // nextRunnable picks the story to work on, and explains itself when there is
@@ -124,12 +165,54 @@ func describeWhyNothingRuns(b *model.Backlog) string {
 			waiting++
 		}
 	}
-	desc := fmt.Sprintf("of %d stories, %d are done and %d are blocked",
-		len(b.Stories), counts[model.StatusDone], counts[model.StatusBlocked])
+	total := len(b.Stories)
+	switch {
+	case counts[model.StatusDone] == total:
+		return plural(total, "the one story in the backlog is finished",
+			"every story in the backlog is finished")
+	case counts[model.StatusDone]+counts[model.StatusDropped] == total:
+		// Dropped is abandoned, not finished, and saying "finished" would
+		// credit the loop with work nobody did.
+		return "every story in the backlog is either finished or dropped"
+	}
+	desc := fmt.Sprintf("of %d %s, %d done and %d blocked",
+		total, plural(total, "story", "stories"),
+		counts[model.StatusDone], counts[model.StatusBlocked])
 	if waiting > 0 {
-		desc += fmt.Sprintf(", and %d are waiting on a dependency that is not done", waiting)
+		desc += fmt.Sprintf(", and %d waiting on a dependency that is not done", waiting)
 	}
 	return desc
+}
+
+// nothingLeftToStart separates a backlog the loop has worked through from one
+// it is stuck on. The two want opposite things from the reader -- write the
+// next story, or go and look at what is blocking -- so one sentence for both
+// sends half of them the wrong way.
+func nothingLeftToStart(b *model.Backlog) bool {
+	for i := range b.Stories {
+		switch b.Stories[i].Status {
+		case model.StatusDone, model.StatusDropped:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// writeAStory is the action in both cases where there is nothing to be stuck on.
+const writeAStory = "Add a story to user_stories.json, " +
+	"or ask Claude Code for one with /sdlc:story.\n"
+
+// nothingToStart is what `sdlc status` says when no story can be started.
+func nothingToStart(b *model.Backlog) string {
+	if len(b.Stories) == 0 {
+		return "\nThe backlog is empty. " + writeAStory
+	}
+	said := "\nNothing to start: " + describeWhyNothingRuns(b) + ".\n"
+	if nothingLeftToStart(b) {
+		return said + writeAStory
+	}
+	return said + "`sdlc story list` shows what is holding each story back.\n"
 }
 
 func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool) error {
@@ -163,6 +246,9 @@ type stopPayload struct {
 	OK    bool   `json:"ok"`
 	Story string `json:"story,omitempty"`
 	WasA  bool   `json:"was_active"`
+	// Done distinguishes putting a story down from finishing it, which is the
+	// difference between `sdlc start` picking it up again and moving on.
+	Done bool `json:"done"`
 }
 
 func newStopCmd() *cobra.Command {
@@ -183,6 +269,7 @@ func newStopCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			done := false
 			if active != "" {
 				record, err := s.Record(active)
 				if err != nil {
@@ -192,21 +279,37 @@ func newStopCmd() *cobra.Command {
 				if err := s.SaveRecord(record); err != nil {
 					return err
 				}
+				// The same function that owns the invariant, so that the
+				// sentence stop prints and the backlog cannot disagree.
+				if done, err = settleStory(s, active, record); err != nil {
+					// A story the backlog has lost must not trap the
+					// iteration: stop is the way out of a broken state.
+					var known *sdlcerr.Error
+					if !errors.As(err, &known) || known.Code != sdlcerr.StoryNotFound {
+						return err
+					}
+				}
 			}
 			if err := s.ClearActive(); err != nil {
 				return err
 			}
 
 			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), stopPayload{OK: true, Story: active, WasA: active != ""})
+				return emitJSON(cmd.OutOrStdout(),
+					stopPayload{OK: true, Story: active, WasA: active != "", Done: done})
 			}
-			if active == "" {
+			switch {
+			case active == "":
 				fmt.Fprintln(cmd.OutOrStdout(), "No iteration was running.")
-				return nil
+			case done:
+				fmt.Fprintf(cmd.OutOrStdout(),
+					"Ended the iteration on %s. Every gate passed, so the story is done "+
+						"and `sdlc start` moves on to the next one.\n", active)
+			default:
+				fmt.Fprintf(cmd.OutOrStdout(),
+					"Stopped the iteration on %s. Nothing was recorded; `sdlc start` picks it up again.\n",
+					active)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(),
-				"Stopped the iteration on %s. Nothing was recorded; `sdlc start` picks it up again.\n",
-				active)
 			return nil
 		},
 	}
@@ -220,6 +323,33 @@ type gatePayload struct {
 	Gate   string `json:"gate"`
 	Status string `json:"status"`
 	Note   string `json:"note,omitempty"`
+	// Done reports that this gate was the last one: the story left the backlog.
+	Done bool `json:"done"`
+}
+
+// settleStory keeps the backlog honest about a story whose gates have all
+// passed. Nothing else moves a story to done, and a story that stays
+// in_progress after its retro is one `sdlc start` picks up again forever.
+//
+// The record decides, not the caller: "done" means there is no gate left, and
+// a gate recorded as failed afterwards puts the story back to work.
+//
+// It reads the backlog itself so that every caller gets the write as well as
+// the answer. A caller that worked out "finished" for itself and only printed
+// it would say one thing while the backlog said another.
+func settleStory(s *store.Store, id string, record *model.Record) (bool, error) {
+	story, _, err := s.Story(id)
+	if err != nil {
+		return false, err
+	}
+	_, remaining := record.NextGate()
+	switch {
+	case !remaining && story.Status != model.StatusDone:
+		return true, s.SetStoryStatus(id, model.StatusDone)
+	case remaining && story.Status == model.StatusDone:
+		return false, s.SetStoryStatus(id, model.StatusInProgress)
+	}
+	return !remaining, nil
 }
 
 func newGateCmd() *cobra.Command {
@@ -260,6 +390,12 @@ func newGateCmd() *cobra.Command {
 				}
 			}
 
+			// A gate is recorded against a story in the backlog, and the
+			// backlog is read before anything is written: a mistyped --story
+			// is refused rather than starting a record nothing will ever read.
+			if _, _, err := s.Story(id); err != nil {
+				return err
+			}
 			record, err := s.Record(id)
 			if err != nil {
 				return err
@@ -277,15 +413,22 @@ func newGateCmd() *cobra.Command {
 			if err := s.SaveRecord(record); err != nil {
 				return err
 			}
+			done, err := settleStory(s, id, record)
+			if err != nil {
+				return err
+			}
 
 			if wantJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), gatePayload{
-					OK: true, Story: id, Gate: string(gate), Status: string(status), Note: note,
+					OK: true, Story: id, Gate: string(gate), Status: string(status), Note: note, Done: done,
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n", id, gate, status)
 			if note != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", note)
+			}
+			if done {
+				fmt.Fprintf(cmd.OutOrStdout(), "\n%s is done: every gate has passed.\n", id)
 			}
 			return nil
 		},

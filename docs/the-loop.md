@@ -161,6 +161,12 @@ was deliberately left undone.
 
 **Refused without it:** a pass with the retro missing.
 
+Passing it is also what finishes the story. With no gate left unpassed, the
+story's status becomes `done` and it leaves the backlog. End the iteration with
+`sdlc stop`, and the next `sdlc start` takes the next story rather than
+reopening this one — it refuses to start a finished story at all. Commit the
+backlog change along with the retro.
+
 ## Rework
 
 A gate that fails is recorded as failed, and the loop goes back rather than
@@ -173,6 +179,12 @@ $ sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
 There is no flag that skips a gate, and no way to record one out of order. When
 a reviewer blocks, the way past is the same reviewer looking again — its new
 verdict replaces the old one, and the gate reads the latest.
+
+This holds after the story is finished, too. Recording a gate as failed on a
+story already marked `done` puts it back to `in_progress`: being done is a
+reading of the gate record, not a door that locks behind you. It is also the
+only way back in, which is what keeps reopening a decision somebody made rather
+than a side effect of running a command.
 
 ## Why approvals go stale
 

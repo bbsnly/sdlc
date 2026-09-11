@@ -257,8 +257,12 @@ sdlc gate retro pass --note "<n> deviations, <n> lessons"
 sdlc stop
 ```
 
+Passing this gate finishes the story: no gate is left, so it becomes `done` and leaves the
+backlog. `sdlc stop` says so, and the next `/sdlc:next` takes the next story.
+
 Then tell the user what was built, what deviated from the plan, and what the retro recorded as
-worth doing differently. Commit the retro if the project keeps it.
+worth doing differently. Commit the retro if the project keeps it, along with the backlog file,
+which now records the story as done.
 
 ## Rework, at any gate
 

@@ -42,6 +42,9 @@ Reports the active story, every gate's outcome, the state of the test freeze and
 whether it is still intact, the backlog counts, and what `sdlc start` would pick
 up next. It changes nothing, so it is safe to run at any point.
 
+An active story with no gate left reads as `finished` rather than `in progress`,
+because there is nothing left to work on it: what it wants is `sdlc stop`.
+
 Two fields in `--json` are worth knowing by name, because a skill reads them to
 decide what to do:
 
@@ -74,6 +77,10 @@ $ sdlc start AUTH-3
 Picks up a story already under way, or takes the next runnable one: resume
 first, then priority, then id. Refuses if an iteration is already running.
 
+It also refuses a story whose gates have all passed, rather than putting
+finished work back in progress. The way back into a finished story is to record
+the gate that failed — see [SDLC-E0033](troubleshooting.md#sdlc-e0033).
+
 ## `sdlc stop`
 
 End the current iteration without recording a result.
@@ -84,6 +91,10 @@ $ sdlc stop
 
 Stopping does not undo anything. The gates already recorded stay recorded, the
 story stays in progress, and starting again resumes it.
+
+A story whose gates have all passed is a different case, and `stop` says so: it
+is done, and the next `sdlc start` moves on to the next story instead of
+reopening it.
 
 ## `sdlc gate GATE STATUS`
 
@@ -98,7 +109,7 @@ $ sdlc gate code_review fail --note "AC-2 is untested"
 | Flag | What it does |
 | --- | --- |
 | `--note` | why the gate came out this way, in one line |
-| `--story` | record against this story instead of the one being worked on |
+| `--story` | record against this story instead of the one being worked on. The id has to be in the backlog; a mistyped one is refused rather than starting a record nothing reads |
 | `--security-sensitive` | the story touches a trust boundary, so the security review blocks. Set it at the analysis gate; unset is assumed to mean yes |
 
 Gates: `dor`, `analysis`, `tests_frozen`, `plan`, `design_review`,
@@ -109,6 +120,12 @@ Gates: `dor`, `analysis`, `tests_frozen`, `plan`, `design_review`,
 **pass** that is not true: see [the loop](the-loop.md) for what each gate
 requires. A `fail` is always recordable — a gate can fail precisely because its
 work could not be done, and the loop has to have somewhere to put that.
+
+Recording the last gate is also what finishes the story: when no gate is left
+unpassed, the story's status becomes `done` and it leaves the backlog. That is
+read from the record rather than from the gate's name, so a gate recorded as
+failed afterwards — a code review reopened on work already committed — puts the
+story back to `in_progress`, where the rework belongs.
 
 ## `sdlc artifact list`
 

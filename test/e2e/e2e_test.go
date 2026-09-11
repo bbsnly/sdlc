@@ -480,7 +480,11 @@ func TestAStoryReachesTrunk(t *testing.T) {
 	runTool(t, binary, root, "gate", "retro", "pass", "--note", "no deviations")
 
 	var status struct {
-		Gates map[string]string `json:"gates"`
+		Gates   map[string]string `json:"gates"`
+		Backlog map[string]int    `json:"backlog"`
+		Next    *struct {
+			Story string `json:"story"`
+		} `json:"next"`
 	}
 	if err := json.Unmarshal([]byte(runTool(t, binary, root, "status", "--json")), &status); err != nil {
 		t.Fatal(err)
@@ -490,6 +494,16 @@ func TestAStoryReachesTrunk(t *testing.T) {
 		if status.Gates[gate] != "pass" {
 			t.Errorf("%s = %q at the end of the loop", gate, status.Gates[gate])
 		}
+	}
+
+	// The gates are not the whole of it, and this is the assertion that was
+	// missing: a story that passed every gate and stayed in the backlog is one
+	// the next `sdlc start` picks up again, so the loop works it twice.
+	if status.Backlog["done"] != 1 || status.Backlog["in_progress"] != 0 {
+		t.Errorf("backlog = %v after every gate passed", status.Backlog)
+	}
+	if status.Next != nil {
+		t.Errorf("`sdlc start` would pick %s up again", status.Next.Story)
 	}
 }
 

@@ -35,6 +35,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   whose gate it is. Nobody edits them in place, including the conversation
   running the loop — which is what keeps each gate reviewing work it did not
   shape.
+- Passing the last gate finishes the story: it becomes `done` and leaves the
+  backlog, so the next `sdlc start` takes the next story instead of reopening
+  it. That is read from the gate record rather than from the gate's name, so
+  recording a gate as failed afterwards puts the story back to `in_progress`
+  — which is the only way back into finished work, and says on the record why
+  it came back.
 
 ### The command
 
@@ -45,7 +51,7 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   contract section, git, whether each configured command's program is
   installed, and whether the hooks can find the binary at all. Every problem
   it reports carries the command that fixes it.
-- Error codes `SDLC-E0001` through `SDLC-E0032`, each with a heading in
+- Error codes `SDLC-E0001` through `SDLC-E0033`, each with a heading in
   [the troubleshooting page](https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md).
   Every error says what happened, why, and what to do about it.
 

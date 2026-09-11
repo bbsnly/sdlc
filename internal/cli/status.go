@@ -92,11 +92,20 @@ func newStatusCmd() *cobra.Command {
 				return emitJSON(cmd.OutOrStdout(), payload)
 			}
 
+			// An active story with no gate left is finished but not yet put
+			// down, and calling that "in progress" would invite a session to
+			// carry on working something that has nothing left to work.
+			finished := active != "" && payload.NextGate == ""
+
 			w := cmd.OutOrStdout()
 			if active == "" {
 				fmt.Fprintln(w, "No iteration running.")
 			} else {
-				fmt.Fprintf(w, "%s  in progress  %s\n\n", active, payload.Title)
+				state := "in progress"
+				if finished {
+					state = "finished   "
+				}
+				fmt.Fprintf(w, "%s  %s  %s\n\n", active, state, payload.Title)
 				printGates(w, record)
 				printFreeze(w, payload.Freeze)
 				if payload.NextGate != "" {
@@ -105,6 +114,8 @@ func newStatusCmd() *cobra.Command {
 			}
 			fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))
 			switch {
+			case finished:
+				fmt.Fprint(w, "\nEvery gate has passed. Run `sdlc stop` to end the iteration.\n")
 			case active != "":
 				fmt.Fprint(w, "\nRun /sdlc:next in Claude Code to carry on, "+
 					"or `sdlc stop` to put it down.\n")
@@ -112,8 +123,7 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprintf(w, "  next up  %s  %s\n", payload.Next.Story, payload.Next.Title)
 				fmt.Fprint(w, "\nRun `sdlc start` to begin.\n")
 			default:
-				fmt.Fprint(w, "\nNothing is runnable. `sdlc story list` shows what is holding "+
-					"each story back.\n")
+				fmt.Fprint(w, nothingToStart(backlog))
 			}
 			return nil
 		},

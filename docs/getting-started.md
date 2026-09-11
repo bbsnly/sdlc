@@ -143,7 +143,7 @@ than guessing when the specification does not settle something.
    criteria and hunt for tests that pass without the behaviour being there.
 7. **Gate 7** reviews the diff in a context that never saw the reasoning.
 8. **Gate 8** commits — and not before.
-9. **Gate 9** writes the retro.
+9. **Gate 9** writes the retro, and the story leaves the backlog.
 
 At any point:
 

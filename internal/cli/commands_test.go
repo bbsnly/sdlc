@@ -266,10 +266,28 @@ func TestStartExplainsWhenNothingIsRunnable(t *testing.T) {
 	if r.code == 0 {
 		t.Fatal("start picked a story when none was runnable")
 	}
-	for _, want := range []string{"SDLC-E0010", "3 stories", "1 are done", "1 are blocked", "waiting on a dependency"} {
+	for _, want := range []string{"SDLC-E0010", "3 stories", "1 done", "1 blocked", "waiting on a dependency"} {
 		if !strings.Contains(r.stderr, want) {
 			t.Errorf("stderr is missing %q:\n%s", want, r.stderr)
 		}
+	}
+}
+
+// A backlog that is finished is not a backlog that is stuck, and the sentence
+// has to say which, because the two want opposite things from the reader.
+func TestStartSaysWhenTheBacklogIsSimplyFinished(t *testing.T) {
+	project(t)
+	mustRun(t, "init")
+	writeFile(t, ".", "user_stories.json", `{"stories":[
+	  {"id":"A-1","title":"One","status":"done"},
+	  {"id":"B-2","title":"Two","status":"done"}]}`)
+
+	r := run(t, "start")
+	if r.code == 0 {
+		t.Fatal("start picked a story when every one was done")
+	}
+	if !strings.Contains(r.stderr, "every story in the backlog is finished") {
+		t.Errorf("stderr reads as a blockage rather than a finished backlog:\n%s", r.stderr)
 	}
 }
 

@@ -73,11 +73,11 @@ Run `sdlc story list` to see the ids you can use. Ids are compared exactly, incl
 
 ### SDLC-E0010
 
-Nothing in the backlog can be started right now: every story is finished, blocked, or waiting
-on a dependency that is not done.
+Nothing in the backlog can be started right now. The message says which: every story is
+finished, or some are blocked or waiting on a dependency that is not done.
 
-Run `sdlc story list` — it shows each story's status and what is holding it back — then add a
-story or unblock one.
+A finished backlog is the loop having done its job — write the next story. Otherwise run
+`sdlc story list`, which shows each story's status and what is holding it back.
 
 ### SDLC-E0011
 
@@ -256,3 +256,18 @@ The commit gate cannot pass while there is uncommitted work.
 
 The gate records that this story reached trunk. Commit the change, or stash what does not belong
 to this story, and then record the gate.
+
+### SDLC-E0033
+
+The story you asked to start has passed every gate. Starting it would put work that is already
+done back in progress, with nothing on the record saying why.
+
+If the iteration is still open, `sdlc stop` ends it. If the work genuinely has to come back —
+a review reopened, a bug found after the commit — record the gate that failed:
+
+```console
+$ sdlc gate code_review fail --note "AC-2 turned out to be untested"
+```
+
+That puts the story back to `in_progress` and says on the record why it came back. Being done
+is a reading of the gate record, not a door that locks behind you.

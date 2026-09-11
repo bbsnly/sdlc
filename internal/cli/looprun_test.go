@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -121,5 +124,249 @@ func TestAnyGateCanBeRecordedAsFailedWithNothingDone(t *testing.T) {
 
 	for _, gate := range model.Gates {
 		mustRun(t, "gate", string(gate), "fail", "--note", "not this time")
+	}
+}
+
+// finishedStory is a project whose only story has passed every gate: the state
+// the loop is in when a session ends.
+func finishedStory(t *testing.T) string {
+	t.Helper()
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+	reach(t, root, "")
+	return root
+}
+
+// A story whose gates have all passed has to leave the backlog. Nothing else in
+// the loop moves a story to done, and a real run found out what that costs: the
+// story stayed in_progress after its retro, and `sdlc start` took it as the one
+// already under way, so the next session reopened finished work.
+func TestPassingTheLastGateTakesTheStoryOutOfTheBacklog(t *testing.T) {
+	finishedStory(t)
+	mustRun(t, "stop")
+
+	story := onlyStory(t, decode[storyListPayload](t, mustRun(t, "story", "list", "--json")))
+	if story.Status != string(model.StatusDone) {
+		t.Errorf("%s = %q after every gate passed", story.ID, story.Status)
+	}
+	if story.Next {
+		t.Errorf("`sdlc start` would pick %s up again", story.ID)
+	}
+
+	// The iteration is over, so this is the reading a new session gets.
+	status := decode[statusPayload](t, mustRun(t, "status", "--json"))
+	if status.Next != nil {
+		t.Errorf("status still offers %s as the next story", status.Next.Story)
+	}
+	if status.Backlog[string(model.StatusInProgress)] != 0 {
+		t.Errorf("backlog = %v, with the finished story still counted as in progress", status.Backlog)
+	}
+}
+
+// The gate that finishes a story says so, because the session that recorded it
+// is the one that has to know the loop is over.
+func TestTheLastGateSaysTheStoryIsDone(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+	reach(t, root, model.GateRetro)
+	satisfy(t, root, model.GateRetro)
+
+	// The gate that finishes the story, not a repeat of it: the session that
+	// records the last gate is the one that has to be told the loop is over.
+	if out := mustRun(t, "gate", "retro", "pass").stdout; !strings.Contains(out, "is done") {
+		t.Errorf("the gate that finished the story does not say so:\n%s", out)
+	}
+	// Recording it again is idempotent, and still reports the truth.
+	again := decode[gatePayload](t, mustRun(t, "gate", "retro", "pass", "--json"))
+	if !again.Done {
+		t.Error("re-recording the last gate stopped reporting the story as finished")
+	}
+}
+
+// Done is a reading of the record, not a one-way door. A gate recorded as
+// failed afterwards -- a code review reopened, a verification redone -- puts the
+// story back to work, or the rework would have nowhere to happen.
+func TestAFailureAfterTheLastGateSendsTheStoryBackToWork(t *testing.T) {
+	finishedStory(t)
+
+	mustRun(t, "gate", "code_review", "fail", "--note", "AC-2 turned out to be untested")
+
+	story := onlyStory(t, decode[storyListPayload](t, mustRun(t, "story", "list", "--json")))
+	if story.Status != string(model.StatusInProgress) {
+		t.Errorf("%s = %q after a gate failed on finished work", story.ID, story.Status)
+	}
+	// Back to in_progress is only half the claim: the rework has to have
+	// somewhere to happen, and that means `sdlc start` picking the story up.
+	if !story.Next {
+		t.Errorf("`sdlc start` would not pick %s up to do the rework", story.ID)
+	}
+}
+
+// onlyStory is the one story a scaffolded project has, and fails rather than
+// passing vacuously when the backlog is not what the test thinks it is.
+func onlyStory(t *testing.T, payload storyListPayload) storyRow {
+	t.Helper()
+	if len(payload.Stories) != 1 {
+		t.Fatalf("the backlog has %d stories, not the scaffolded one", len(payload.Stories))
+	}
+	return payload.Stories[0]
+}
+
+// Ending an iteration and finishing a story are different things, and the
+// sentence a session ends on is the only place a person sees which happened.
+func TestStopSaysWhetherTheStoryIsFinished(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+	reach(t, root, model.GatePlan)
+
+	midway := decode[stopPayload](t, mustRun(t, "stop", "--json"))
+	if midway.Done {
+		t.Error("stopping part-way through reported the story as done")
+	}
+
+	// Carry on where the stop left off, rather than from the top: the tests
+	// are already frozen, and the loop is meant to be resumable.
+	mustRun(t, "start")
+	for _, gate := range model.Gates[slices.Index(model.Gates, model.GatePlan):] {
+		satisfy(t, root, gate)
+		mustRun(t, "gate", string(gate), "pass", "--note", "carried on after the stop")
+	}
+
+	out := mustRun(t, "stop").stdout
+	if !strings.Contains(out, "the story is done") {
+		t.Errorf("stopping after every gate passed does not say the story is finished:\n%s", out)
+	}
+	if strings.Contains(out, "picks it up again") {
+		t.Errorf("stopping a finished story offers to resume it:\n%s", out)
+	}
+}
+
+// The two kinds of nothing are not the same. A backlog that is finished is the
+// loop having worked; one that is blocked is a problem to go and look at.
+func TestStatusSaysWhichKindOfNothingIsLeft(t *testing.T) {
+	finishedStory(t)
+	mustRun(t, "stop")
+
+	out := mustRun(t, "status").stdout
+	if !strings.Contains(out, "the one story in the backlog is finished") {
+		t.Errorf("status does not say the backlog is finished:\n%s", out)
+	}
+	if !strings.Contains(out, "Add a story") {
+		t.Errorf("status does not say what to do about a finished backlog:\n%s", out)
+	}
+	if strings.Contains(out, "holding each story back") {
+		t.Errorf("status reports finished work as blocked:\n%s", out)
+	}
+}
+
+// A gate is recorded against a story in the backlog. A mistyped --story used to
+// start a record for a story that does not exist, which nothing would ever read
+// again -- and now that the gate also settles the story's status, a refusal has
+// to come before anything is written.
+func TestAGateCannotBeRecordedAgainstAStoryThatIsNotInTheBacklog(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+
+	r := run(t, "gate", "dor", "pass", "--story", "NOPE-9")
+	if r.code == 0 {
+		t.Fatal("a gate was recorded against a story the backlog has never heard of")
+	}
+	if !strings.Contains(r.stderr, "SDLC-E0009") {
+		t.Errorf("the refusal does not name the story as missing:\n%s", r.stderr)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".sdlc", "stories", "NOPE-9")); !os.IsNotExist(err) {
+		t.Error("the refused gate left a record directory behind")
+	}
+}
+
+// stop is the last thing a session runs, and the sentence it prints has to be
+// true of the backlog afterwards. It settles the story itself rather than
+// working the answer out a second time, so a backlog left behind by anything
+// else -- a crash between two writes, an older build, a hand edit -- is
+// repaired here instead of being contradicted.
+func TestStopRepairsABacklogThatDisagreesWithTheRecord(t *testing.T) {
+	root := finishedStory(t)
+	setStatusOnDisk(t, root, model.StatusDone, model.StatusInProgress)
+
+	if out := mustRun(t, "stop").stdout; !strings.Contains(out, "the story is done") {
+		t.Errorf("stop does not say the story is done:\n%s", out)
+	}
+	story := onlyStory(t, decode[storyListPayload](t, mustRun(t, "story", "list", "--json")))
+	if story.Status != string(model.StatusDone) {
+		t.Errorf("stop said the story was done and left the backlog saying %q", story.Status)
+	}
+}
+
+// A finished story is reopened by recording a gate as failed, not by starting
+// it. Starting it would put work that is already done back in progress with
+// nothing on the record saying why, which is the defect this all exists to fix.
+func TestStartRefusesAStoryThatIsAlreadyFinished(t *testing.T) {
+	finishedStory(t)
+
+	// While the iteration is still open, there is nothing left to resume.
+	open := run(t, "start")
+	if open.code == 0 {
+		t.Fatal("start resumed a story with no gate left to work")
+	}
+	if !strings.Contains(open.stderr, "SDLC-E0033") || !strings.Contains(open.stderr, "sdlc stop") {
+		t.Errorf("the refusal does not point at ending the iteration:\n%s", open.stderr)
+	}
+
+	mustRun(t, "stop")
+	closed := run(t, "start", "US-001")
+	if closed.code == 0 {
+		t.Fatal("start reopened a finished story by name")
+	}
+	for _, want := range []string{"SDLC-E0033", "is finished", "fail"} {
+		if !strings.Contains(closed.stderr, want) {
+			t.Errorf("the refusal is missing %q:\n%s", want, closed.stderr)
+		}
+	}
+
+	// And the refusal changed nothing.
+	story := onlyStory(t, decode[storyListPayload](t, mustRun(t, "story", "list", "--json")))
+	if story.Status != string(model.StatusDone) {
+		t.Errorf("the refused start left the story as %q", story.Status)
+	}
+}
+
+// setStatusOnDisk rewrites the backlog behind the tool's back, which is how a
+// test reaches a state only a crash or an older build could produce.
+func setStatusOnDisk(t *testing.T, root string, from, to model.Status) {
+	t.Helper()
+	path := filepath.Join(root, "user_stories.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := string(raw)
+	after := strings.Replace(before, `"status": "`+string(from)+`"`, `"status": "`+string(to)+`"`, 1)
+	if after == before {
+		t.Fatalf("no story in the backlog had the status %q", from)
+	}
+	if err := os.WriteFile(path, []byte(after), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Between the last gate and `sdlc stop` a story is finished but not yet put
+// down. Calling that "in progress" invites a session to carry on working
+// something that has nothing left to work.
+func TestStatusSaysAStoryIsFinishedBeforeItIsPutDown(t *testing.T) {
+	finishedStory(t)
+
+	out := mustRun(t, "status").stdout
+	if !strings.Contains(out, "finished") {
+		t.Errorf("status does not say the active story is finished:\n%s", out)
+	}
+	if strings.Contains(out, "in progress") {
+		t.Errorf("status calls a story with no gate left in progress:\n%s", out)
+	}
+	if !strings.Contains(out, "`sdlc stop` to end the iteration") {
+		t.Errorf("status does not say how to put a finished story down:\n%s", out)
 	}
 }

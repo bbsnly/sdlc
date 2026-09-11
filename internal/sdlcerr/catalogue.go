@@ -40,13 +40,16 @@ var (
 		`run "sdlc story list" to see the ids you can use`)
 
 	NoRunnableStory = register("SDLC-E0010",
-		`add a story to the backlog, or unblock one — "sdlc story list" shows why each is held back`)
+		`add the next story, or unblock one — "sdlc story list" shows each story's status and what any blocked one is waiting on`)
 
 	NoActiveIteration = register("SDLC-E0011",
 		`run "sdlc start" to begin an iteration on the next story`)
 
 	IterationAlreadyActive = register("SDLC-E0012",
 		`finish the current story, or run "sdlc stop" to end the iteration without recording a result`)
+
+	StoryAlreadyFinished = register("SDLC-E0033",
+		`record a gate as failed to reopen it — "sdlc gate code_review fail --note ..." says on the record why the work came back`)
 
 	UnknownGate = register("SDLC-E0013",
 		`run "sdlc gate --help" to see the gate names this version knows`)

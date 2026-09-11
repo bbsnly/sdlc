@@ -119,5 +119,7 @@ func printStories(cmd *cobra.Command, backlog *model.Backlog, rows []storyRow) {
 			return
 		}
 	}
-	fmt.Fprintf(w, "\nNothing is runnable: %s.\n", describeWhyNothingRuns(backlog))
+	// The table above already shows every status, so this says why without the
+	// fault framing that "nothing is runnable" carries into a finished backlog.
+	fmt.Fprintf(w, "\nNothing to start: %s.\n", describeWhyNothingRuns(backlog))
 }
