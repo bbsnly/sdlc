@@ -18,13 +18,17 @@ type nextUp struct {
 }
 
 type statusPayload struct {
-	OK      bool              `json:"ok"`
-	Active  string            `json:"active,omitempty"`
-	Title   string            `json:"title,omitempty"`
-	Gates   map[string]string `json:"gates,omitempty"`
-	Backlog map[string]int    `json:"backlog"`
-	Next    *nextUp           `json:"next,omitempty"`
-	Freeze  *freezeState      `json:"freeze,omitempty"`
+	OK     bool              `json:"ok"`
+	Active string            `json:"active,omitempty"`
+	Title  string            `json:"title,omitempty"`
+	Gates  map[string]string `json:"gates,omitempty"`
+	// NextGate is where a resumed loop picks up. A skill reads this rather
+	// than working out the gate order for itself, which is the kind of
+	// derivation that drifts from the tool that enforces it.
+	NextGate string         `json:"next_gate,omitempty"`
+	Backlog  map[string]int `json:"backlog"`
+	Next     *nextUp        `json:"next,omitempty"`
+	Freeze   *freezeState   `json:"freeze,omitempty"`
 }
 
 // freezeState is what the freeze looks like from outside: how many acceptance
@@ -74,6 +78,9 @@ func newStatusCmd() *cobra.Command {
 				for gate, result := range record.Gates {
 					payload.Gates[string(gate)] = string(result.Status)
 				}
+				if next, ok := record.NextGate(); ok {
+					payload.NextGate = string(next)
+				}
 				if payload.Freeze, err = describeFreeze(s, active); err != nil {
 					return err
 				}
@@ -92,6 +99,9 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprintf(w, "%s  in progress  %s\n\n", active, payload.Title)
 				printGates(w, record)
 				printFreeze(w, payload.Freeze)
+				if payload.NextGate != "" {
+					fmt.Fprintf(w, "\n  next   %s\n", payload.NextGate)
+				}
 			}
 			fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))
 			switch {

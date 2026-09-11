@@ -319,3 +319,41 @@ func TestAFileNameMatchesWhateverCaseItArrivesIn(t *testing.T) {
 		t.Error("notes.md was taken for a gate's document")
 	}
 }
+
+// Where a resumed loop picks up. The skill reads this from `sdlc status`
+// rather than working the gate order out for itself, so it has to be the same
+// answer the gate ordering rule gives.
+func TestNextGateIsTheFirstOneNotPassed(t *testing.T) {
+	at := time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
+	r := NewRecord("A-1", at)
+
+	if got, ok := r.NextGate(); !ok || got != Gates[0] {
+		t.Errorf("a fresh record resumes at %q, %v; want %q", got, ok, Gates[0])
+	}
+
+	for i, g := range Gates {
+		r.SetGate(g, GatePass, "", at)
+		got, ok := r.NextGate()
+		if i == len(Gates)-1 {
+			if ok {
+				t.Errorf("every gate passed, but NextGate returned %q", got)
+			}
+			continue
+		}
+		if !ok || got != Gates[i+1] {
+			t.Errorf("after %q passed, next = %q, %v; want %q", g, got, ok, Gates[i+1])
+		}
+	}
+}
+
+// A failed gate is where the loop resumes, not something it has moved past.
+func TestAFailedGateIsWhereTheLoopResumes(t *testing.T) {
+	at := time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
+	r := NewRecord("A-1", at)
+	r.SetGate(Gates[0], GatePass, "", at)
+	r.SetGate(Gates[1], GateFail, "open questions", at)
+
+	if got, ok := r.NextGate(); !ok || got != Gates[1] {
+		t.Errorf("next = %q, %v; want the failed gate %q", got, ok, Gates[1])
+	}
+}

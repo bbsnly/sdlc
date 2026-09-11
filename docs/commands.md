@@ -42,6 +42,14 @@ Reports the active story, every gate's outcome, the state of the test freeze and
 whether it is still intact, the backlog counts, and what `sdlc start` would pick
 up next. It changes nothing, so it is safe to run at any point.
 
+Two fields in `--json` are worth knowing by name, because a skill reads them to
+decide what to do:
+
+| Field | What it says |
+| --- | --- |
+| `next_gate` | the gate to work now — the first one that has not passed. Absent when every gate is behind you, or when no story is active |
+| `next` | the story `sdlc start` would pick up. Only present when nothing is active |
+
 ## `sdlc story list`
 
 List the backlog, and say what is holding each story back.

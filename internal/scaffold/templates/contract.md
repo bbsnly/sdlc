@@ -25,7 +25,8 @@
 ### Test conventions (the SDET follows these; the verifier checks them)
 
 - Framework and layout: TBD (e.g. "table-driven tests next to the code, *_test.go; property tests with rapid").
-- Naming: test names contain the acceptance-criterion id (`AC-n`).
+- Naming: every acceptance criterion's id (`AC-n`) appears in the name of the test that
+  covers it, or in a subtest name where the language will not take a hyphen.
 - Determinism: no wall-clock sleeps, no network, fixed seeds.
 
 ### Code conventions

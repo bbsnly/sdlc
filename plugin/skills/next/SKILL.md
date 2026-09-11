@@ -23,7 +23,11 @@ sdlc status --json
 - If it fails with `SDLC-E0002`, this project has not been set up. Tell the user, and offer to
   run `sdlc init`. Stop until they answer.
 - If it fails with `SDLC-E0001`, you are not in a Git repository. Say so and stop.
-- Otherwise read `active`, `gates` and `next` from the output. They tell you where to resume.
+- Otherwise read `active`, `gates` and `next_gate` from the output. `next_gate` is the gate
+  to work now: the loop resumes at the first gate that has not passed, and the tool works
+  that out so you do not have to. Go straight to that section below.
+- With no story active there is no `next_gate`; `next` names the story that would be picked
+  up. Start at Gate 1.
 
 ## Gate 1 — Select the story
 

@@ -594,6 +594,21 @@ func (r *Record) Pass(g Gate) bool {
 	return r.Gates[g].Status == GatePass
 }
 
+// NextGate reports the first gate that has not passed: where a resumed loop
+// picks up. It returns false once every gate is behind it.
+//
+// The loop's own rule is that a gate cannot be recorded before the gates in
+// front of it, so "the first that has not passed" is the only answer, and
+// working it out belongs here rather than in each caller that needs it.
+func (r *Record) NextGate() (Gate, bool) {
+	for _, g := range Gates {
+		if !r.Pass(g) {
+			return g, true
+		}
+	}
+	return "", false
+}
+
 // SetGate records an outcome for a gate.
 func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) {
 	if r.Gates == nil {
