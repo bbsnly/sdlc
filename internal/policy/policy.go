@@ -225,7 +225,7 @@ var Rules = []Rule{
 		Route: "record outcomes with `sdlc gate <name> pass|fail --note \"...\"`; " +
 			"the record is the loop's memory and every later gate reads it",
 		check: func(r Request) string {
-			if !strings.EqualFold(fileAt(r.Story, r.Path), model.RecordFile) {
+			if !strings.EqualFold(fileAt(r.Path), model.RecordFile) {
 				return ""
 			}
 			return model.RecordFile + " is the loop's record of what happened, and a " +
@@ -237,7 +237,7 @@ var Rules = []Rule{
 		Route: "run `sdlc review add <gate> <role> <verdict>` and give it the review; " +
 			"it records who reviewed what, and what they were looking at",
 		check: func(r Request) string {
-			if !pathrules.Under(r.Path, storyDir(r.Story)+"/reviews") {
+			if !inReviews(r.Path) {
 				return ""
 			}
 			return "a review is part of a gate's record: it is written by sdlc, which " +
@@ -250,7 +250,7 @@ var Rules = []Rule{
 		Route: "run `sdlc artifact write <name>` and give it the document -- " +
 			"delegate to the agent whose gate it is rather than writing it yourself",
 		check: func(r Request) string {
-			artifact, ok := artifactAt(r.Story, r.Path)
+			artifact, ok := artifactAt(r.Path)
 			if !ok {
 				return ""
 			}
@@ -324,25 +324,54 @@ func (v Verdict) Message() string {
 // like a report, so "only the researcher may write ANALYSIS.md" is a rule that
 // nobody can satisfy. Going through the tool works for every writer and matches
 // what the loop already does with the rest of its state.
-func artifactAt(story, path string) (model.Artifact, bool) {
-	return model.ArtifactByFile(fileAt(story, path))
+func artifactAt(path string) (model.Artifact, bool) {
+	return model.ArtifactByFile(fileAt(path))
 }
 
-// fileAt is the name of the file this path names directly inside the story's
-// own directory, or "" if it is anywhere else. Anywhere else includes a
+// storySplit says which story a path belongs to and what it names inside it,
+// for any story rather than only the one being worked on.
+//
+// Any story is the point. A finished story's record is the evidence that it
+// finished, and its reviews and documents are what the next story's agents
+// read. Keyed on the active story, the rules below said nothing about the rest
+// of the backlog -- so while A-1 was open, the implementer could rewrite
+// OLD-9's gate record, its plan and its code review, and no rule fired.
+func storySplit(path string) (story, rest string) {
+	if !pathrules.Under(path, storiesDir) {
+		return "", ""
+	}
+	// Case folding cannot change a length, so the prefix Under just matched is
+	// exactly this long however it was spelled.
+	story, rest, found := strings.Cut(strings.TrimPrefix(path[len(storiesDir):], "/"), "/")
+	if !found || story == "" || rest == "" {
+		return "", ""
+	}
+	return story, rest
+}
+
+// fileAt is the name of the file this path names directly inside a story's own
+// directory, or "" if it is anywhere else. Anywhere else includes a
 // subdirectory of it: the gates' own files sit at the top level, and a
 // reviewer's notes underneath are nobody's business but theirs.
-func fileAt(story, path string) string {
-	rest, inStory := strings.CutPrefix(path, storyDir(story)+"/")
-	if !inStory || rest == "" || strings.Contains(rest, "/") {
+func fileAt(path string) string {
+	_, rest := storySplit(path)
+	if strings.Contains(rest, "/") {
 		return ""
 	}
 	return rest
 }
 
+// inReviews reports whether path is inside some story's reviews directory.
+func inReviews(path string) bool {
+	_, rest := storySplit(path)
+	return rest != "" && pathrules.Under(rest, "reviews")
+}
+
+const storiesDir = ".sdlc/stories"
+
 func storyDir(story string) string {
 	if story == "" {
-		return ".sdlc/stories"
+		return storiesDir
 	}
 	return ".sdlc/stories/" + strings.TrimSpace(story)
 }

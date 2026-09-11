@@ -80,6 +80,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   production code in the middle of a design review and a code reviewer could
   fix what it was about to approve. Each keeps its own story directory, and
   the verdict still goes through `sdlc review add`.
+- A story's record, reviews and documents go through the tool for every story
+  in the backlog, not only the one being worked on. While a story was open,
+  any agent — the implementer included — could rewrite a finished story's gate
+  record, its plan and its code review, and nothing refused it. The history
+  the loop keeps is only evidence if a later story cannot edit it.
 - Picking a story up again changes nothing. `sdlc start` on a story already
   under way stamped a fresh timestamp into the backlog, which is a tracked
   file and therefore part of the tree the verifier and the Gate 7 reviewers

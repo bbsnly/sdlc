@@ -105,6 +105,24 @@ func TestEveryRuleNamesASanctionedRoute(t *testing.T) {
 	}
 }
 
+// The backlog's history is evidence, and evidence a later story can rewrite is
+// not evidence. While A-1 was the active story, every one of these was allowed
+// -- to the implementer, the one role that must never touch loop state at all.
+func TestAFinishedStorysLoopStateIsNotWritable(t *testing.T) {
+	for _, path := range []string{
+		".sdlc/stories/OLD-9/gate-record.json",
+		".sdlc/stories/OLD-9/ANALYSIS.md",
+		".sdlc/stories/OLD-9/PLAN.md",
+		".sdlc/stories/OLD-9/RETRO.md",
+		".sdlc/stories/OLD-9/reviews/code_review-code-reviewer-1.md",
+	} {
+		v := Evaluate(Request{Tool: "Write", Agent: "sdlc:implementer", Path: path, Story: "A-1"})
+		if v.Allowed {
+			t.Errorf("%s is another story's loop state and nothing refused the write", path)
+		}
+	}
+}
+
 func TestEachFixtureDeniesAndPermitsWhatItSays(t *testing.T) {
 	for id, f := range fixtures {
 		t.Run(id, func(t *testing.T) {

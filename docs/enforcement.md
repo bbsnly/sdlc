@@ -59,7 +59,9 @@ wrong, the loop's answer is to stop and say so, not to edit it and carry on.
 
 ### `gate-record-is-written-by-the-tool`
 
-Refuses any in-place edit of `gate-record.json`.
+Refuses any in-place edit of `gate-record.json`, in any story's directory and
+not only the one being worked on. A finished story's record is the evidence
+that it finished, and the same is true of its reviews and its documents below.
 
 *Instead:* `sdlc gate <name> pass|fail --note "..."`.
 
