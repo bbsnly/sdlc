@@ -69,7 +69,10 @@ sboms:
     artifacts: archive
 
 snapshot:
-  version_template: '{{ incpatch .Version }}-snapshot'
+  # Named from the last tag rather than bumped past it: the -snapshot suffix
+  # already says this is not a release, and a number that matches the tag it
+  # was built from is easier to reason about than one that does not.
+  version_template: '{{ .Version }}-snapshot'
 
 # The changelog is written by a person, in CHANGELOG.md, and reviewed like
 # anything else. Generating release notes from commit subjects would produce a

@@ -334,11 +334,12 @@ tasks:
         # the builds, the archives, the checksums -- is exactly what a release
         # produces, which is the point of running this before cutting one.
         #
-        # The tag is supplied from the version this repository declares, so a
-        # snapshot produces the exact file names a release would. That is what
-        # makes it useful for trying the install scripts against dist/.
-        GORELEASER_CURRENT_TAG="v$(go run ./internal/tools/release version)" \
-          go run github.com/goreleaser/goreleaser/v2@v{{.GORELEASER_VERSION}} \
+        # A snapshot is named from the last tag: `0.2.0-snapshot` after v0.2.0,
+        # and `0.0.0-snapshot` in a checkout that has never been tagged.
+        # GORELEASER_CURRENT_TAG does not override it -- snapshot mode ignores
+        # that variable -- so the number here is not the one in plugin.json,
+        # and is not meant to be. Everything else is what a release produces.
+        go run github.com/goreleaser/goreleaser/v2@v{{.GORELEASER_VERSION}} \
           release --snapshot --clean --skip=sbom
         echo
         echo "dist/ now holds what a release would publish:"
