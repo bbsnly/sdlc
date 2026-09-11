@@ -138,6 +138,18 @@ reviewer.
   (WSL is not required)
 - **Go** 1.26 or newer, to build from source while there is no release
 
+## Documentation
+
+| Page | What is in it |
+| --- | --- |
+| [Getting started](https://github.com/bbsnly/sdlc/blob/main/docs/getting-started.md) | from nothing to a story going through the loop |
+| [The loop](https://github.com/bbsnly/sdlc/blob/main/docs/the-loop.md) | what each gate is for, what it produces, what is refused without it |
+| [Commands](https://github.com/bbsnly/sdlc/blob/main/docs/commands.md) | every command and flag |
+| [Configuration](https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md) | every setting in `.sdlc/config.json` |
+| [Enforcement](https://github.com/bbsnly/sdlc/blob/main/docs/enforcement.md) | every rule, what it refuses, and what to do instead |
+| [Agents](https://github.com/bbsnly/sdlc/blob/main/docs/agents.md) | who does the work |
+| [Troubleshooting](https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md) | every error code, and what to do about it |
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). A fresh clone needs only Go:
