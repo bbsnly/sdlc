@@ -199,10 +199,10 @@ tasks:
     cmds:
       - |
         # Scope, declared rather than hidden: PowerShell is a large install to
-        # ask of a contributor on macOS or Linux, and install.ps1 runs on
-        # exactly one platform. This leg runs on every commit on the Windows CI
-        # runner, which has PowerShell built in, so the file is never merged
-        # unparsed -- it is just not always parsed here.
+        # ask of a contributor on macOS or Linux. Every CI runner has it --
+        # including the Ubuntu and macOS ones -- so this leg runs on every
+        # commit on all three, and the file is never merged unparsed. It is
+        # just not always parsed on a developer's own machine.
         for shell in pwsh powershell; do
           if command -v "$shell" >/dev/null 2>&1; then
             "$shell" -NoProfile -NonInteractive -Command '

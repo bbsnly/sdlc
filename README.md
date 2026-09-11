@@ -19,7 +19,7 @@ always green.
 
 All nine gates are built and enforced, and a story can go from the backlog to a
 commit without leaving the loop. **The first release is not tagged yet**, so the
-`curl` line below does not work for a few more minutes; the source route does.
+`curl` line below has nothing to download; the source route does.
 [Watch the repository](https://github.com/bbsnly/sdlc/subscription) to hear when
 it lands.
 
