@@ -9,11 +9,14 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -68,6 +71,18 @@ func runTool(t *testing.T, binary, dir string, args ...string) string {
 		t.Fatalf("sdlc %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
 	return stdout.String()
+}
+
+// tool is runTool for a command that is expected to fail: it returns what the
+// command said on both streams, and whether it succeeded.
+func tool(t *testing.T, binary, dir string, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), binary, args...)
+	cmd.Dir = dir
+	var both bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &both, &both
+	err := cmd.Run()
+	return both.String(), err
 }
 
 // runToolWithInput pipes a document in, the way an agent's heredoc reaches the
@@ -566,4 +581,191 @@ func shell(root, agent, cmd string) string {
 	}
 	raw, _ := json.Marshal(e)
 	return string(raw)
+}
+
+// An unattended run is the loop's second promise, after the gates themselves:
+// start a session, work a story, stop, and let the next session take the next
+// one, with nobody in between. Every other test here works one story, and one
+// story is exactly how far the loop got -- the freeze from the first story was
+// never lifted, so the second stopped at Gate 3 and asked for an override.
+//
+// This runs two stories back to back through the real binary and the real
+// launcher, touching nothing by hand between them, and then asks the loop what
+// is left. Anything that needs a person to intervene fails it.
+func TestTwoStoriesRunBackToBackWithNobodyInBetween(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the POSIX launcher does not run here")
+	}
+	binary := build(t)
+	root := project(t, binary)
+	addSecondStory(t, root)
+
+	for _, want := range []string{"US-001", "US-002"} {
+		started := runTool(t, binary, root, "start")
+		if !strings.Contains(started, want) {
+			t.Fatalf("expected %s to be picked up next, got: %s", want, started)
+		}
+		story(t, binary, root, want)
+		runTool(t, binary, root, "stop")
+	}
+
+	var status struct {
+		Active  *string        `json:"active"`
+		Backlog map[string]int `json:"backlog"`
+		Next    *struct {
+			Story string `json:"story"`
+		} `json:"next"`
+	}
+	if err := json.Unmarshal([]byte(runTool(t, binary, root, "status", "--json")), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Backlog["done"] != 2 {
+		t.Errorf("backlog = %v after two stories went through", status.Backlog)
+	}
+	if status.Next != nil {
+		t.Errorf("`sdlc start` would pick %s up again", status.Next.Story)
+	}
+
+	// With the backlog empty the loop has to stop, and say why rather than
+	// starting something. An unattended runner reads this to know it is done.
+	out, err := tool(t, binary, root, "start")
+	if err == nil {
+		t.Fatalf("`sdlc start` invented work from an empty backlog: %s", out)
+	}
+	if !strings.Contains(out, "SDLC-E0010") {
+		t.Errorf("the refusal is not the documented one: %s", out)
+	}
+}
+
+// story is one whole iteration, from the gate after `start` to the retro.
+func story(t *testing.T, binary, root, id string) {
+	t.Helper()
+	analysed(t, binary, root)
+
+	// A test file per story, so the second story's freeze covers a tree that
+	// has genuinely changed since the first one's.
+	name := strings.ToLower(strings.ReplaceAll(id, "-", "_")) + "_test.go"
+	if err := os.WriteFile(filepath.Join(root, name),
+		[]byte("package main\n\n// AC-1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runToolWithInput(t, binary, root, "# Test plan\n", "artifact", "write", "test_plan")
+	runTool(t, binary, root, "freeze")
+	runTool(t, binary, root, "gate", "tests_frozen", "pass", "--note", "1 criterion, 1 failing test")
+
+	runToolWithInput(t, binary, root, "# Plan\n", "artifact", "write", "plan")
+	runTool(t, binary, root, "gate", "plan", "pass", "--note", "one step")
+	review(t, binary, root, "design_review", "architect", "red-team", "security", "perf", "human-advocate")
+	runTool(t, binary, root, "gate", "design_review", "pass", "--note", "architect approved")
+
+	runTool(t, binary, root, "gate", "implementation", "pass", "--note", "frozen tests green")
+
+	runToolWithInput(t, binary, root, "# Verification\n", "artifact", "write", "verification")
+	runTool(t, binary, root, "gate", "verification", "pass", "--note", "all commands green")
+	review(t, binary, root, "verifier_review", "verifier")
+	runTool(t, binary, root, "gate", "verifier_review", "pass", "--note", "no gaming found")
+
+	review(t, binary, root, "code_review", "code-reviewer", "security", "perf", "human-advocate")
+	runTool(t, binary, root, "gate", "code_review", "pass", "--note", "reviewer approved")
+
+	git(t, root, "add", "-A")
+	git(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test",
+		"commit", "--quiet", "-m", id)
+	runTool(t, binary, root, "gate", "commit", "pass", "--note", "on trunk")
+
+	runToolWithInput(t, binary, root, "# Retro\n", "artifact", "write", "retro")
+	runTool(t, binary, root, "gate", "retro", "pass", "--note", "no deviations")
+}
+
+func addSecondStory(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "user_stories.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var backlog struct {
+		Schema  string           `json:"_schema"`
+		Stories []map[string]any `json:"stories"`
+	}
+	if err := json.Unmarshal(raw, &backlog); err != nil {
+		t.Fatal(err)
+	}
+	next := maps.Clone(backlog.Stories[0])
+	next["id"] = "US-002"
+	next["title"] = "The story after the first one"
+	next["priority"] = 2
+	backlog.Stories = append(backlog.Stories, next)
+
+	out, err := json.MarshalIndent(backlog, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The runbook tells the session to delegate the reviewers "in parallel", and
+// every one of them records its verdict with `sdlc review add`. Each of those
+// is a separate process that reads the gate record, adds to it and writes it
+// back, and nothing used to stop them doing that at the same time.
+//
+// The result was not a crash or a corrupt file. Five reviewers approving at
+// once left one review in the record; the other four printed
+// "approve (round 1)", wrote their review file, exited 0, and were gone.
+// `sdlc review list` then said "not reviewed" for four agents that had each
+// reported, the gate refused, and the session ran the whole panel again.
+func TestReviewersRecordingAtTheSameTimeAllLand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the POSIX launcher does not run here")
+	}
+	binary := build(t)
+	root := project(t, binary)
+	runTool(t, binary, root, "start")
+	analysed(t, binary, root)
+
+	roles := []string{"architect", "red-team", "security", "perf", "human-advocate"}
+	var wg sync.WaitGroup
+	errs := make(chan error, len(roles))
+	for _, role := range roles {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cmd := exec.CommandContext(t.Context(), binary,
+				"review", "add", "design_review", role, "approve")
+			cmd.Dir = root
+			cmd.Stdin = strings.NewReader("# " + role + "\n")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				errs <- fmt.Errorf("%s: %w\n%s", role, err, out)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("a reviewer could not record its verdict: %v", err)
+	}
+
+	// What the record kept is the only thing that counts. A command that said
+	// it recorded a review and did not is worse than one that failed.
+	listed := runTool(t, binary, root, "review", "list", "--gate", "design_review")
+	for _, role := range roles {
+		line := lineFor(t, listed, role)
+		if strings.Contains(line, "not reviewed") {
+			t.Errorf("%s reported an approval that was discarded:\n%s", role, listed)
+		}
+	}
+}
+
+// lineFor picks one reviewer's row out of `sdlc review list`.
+func lineFor(t *testing.T, listing, role string) string {
+	t.Helper()
+	for _, line := range strings.Split(listing, "\n") {
+		if strings.Contains(line, " "+role+" ") {
+			return line
+		}
+	}
+	t.Fatalf("%s is not in the listing at all:\n%s", role, listing)
+	return ""
 }

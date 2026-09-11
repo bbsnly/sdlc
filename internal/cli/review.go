@@ -95,10 +95,11 @@ func newReviewAddCmd() *cobra.Command {
 					"a reviewer approves, blocks, or leaves a note")
 			}
 
-			s, _, err := openStore()
+			s, _, unlock, err := openStoreForWriting(cmd)
 			if err != nil {
 				return err
 			}
+			defer unlock()
 			id := storyID
 			if id == "" {
 				if id, err = activeStory(s, "a review belongs to the story being worked on"); err != nil {

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -152,6 +153,31 @@ func openStore() (*store.Store, *config.Project, error) {
 		return nil, nil, err
 	}
 	return store.New(p), p, nil
+}
+
+// openStoreForWriting is openStore for a command that changes loop state: it
+// also takes the project's lock, and returns the function that gives it back.
+//
+// Two sdlc processes reading, changing and writing the record at the same time
+// is not hypothetical -- the runbook tells the session to run the reviewers in
+// parallel, and each of them records a verdict. Without this, four of five
+// concurrent `sdlc review add` calls reported success and were discarded.
+//
+// Reading commands do not take it. A write lands as one atomic file
+// replacement, so a reader never sees half of one; the most it can see is a
+// reading taken a moment before the write, which is what reading concurrently
+// means anywhere.
+func openStoreForWriting(cmd *cobra.Command) (*store.Store, *config.Project, func(), error) {
+	nothing := func() {}
+	s, p, err := openStore()
+	if err != nil {
+		return nil, nil, nothing, err
+	}
+	g, err := store.Lock(p.Root, strings.TrimPrefix(cmd.CommandPath(), "sdlc "))
+	if err != nil {
+		return nil, nil, nothing, err
+	}
+	return s, p, g.Release, nil
 }
 
 func newVersionCmd() *cobra.Command {

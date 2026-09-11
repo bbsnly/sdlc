@@ -43,10 +43,11 @@ func newFreezeCmd() *cobra.Command {
 		Example: "  sdlc freeze\n  sdlc freeze --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, p, err := openStore()
+			s, p, unlock, err := openStoreForWriting(cmd)
 			if err != nil {
 				return err
 			}
+			defer unlock()
 			id, err := activeStory(s, "freeze locks the tests for the story being worked on")
 			if err != nil {
 				return err
@@ -153,10 +154,11 @@ func newUnfreezeCmd() *cobra.Command {
 					"the freeze is what stops an agent editing its way to green, so "+
 						"lifting it belongs on the record")
 			}
-			s, _, err := openStore()
+			s, _, unlock, err := openStoreForWriting(cmd)
 			if err != nil {
 				return err
 			}
+			defer unlock()
 			id, err := activeStory(s, "unfreeze lifts the freeze on the story being worked on")
 			if err != nil {
 				return err

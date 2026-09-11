@@ -38,10 +38,11 @@ func newStartCmd() *cobra.Command {
 		Example: "  sdlc start\n  sdlc start AUTH-3",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, _, err := openStore()
+			s, _, unlock, err := openStoreForWriting(cmd)
 			if err != nil {
 				return err
 			}
+			defer unlock()
 			asked := ""
 			if len(args) == 1 {
 				asked = args[0]
@@ -261,10 +262,11 @@ func newStopCmd() *cobra.Command {
 		Example: "  sdlc stop",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, _, err := openStore()
+			s, _, unlock, err := openStoreForWriting(cmd)
 			if err != nil {
 				return err
 			}
+			defer unlock()
 			active, err := s.Active()
 			if err != nil {
 				return err
@@ -408,10 +410,11 @@ func newGateCmd() *cobra.Command {
 					"a gate either passed, failed, or has not been reached yet")
 			}
 
-			s, _, err := openStore()
+			s, _, unlock, err := openStoreForWriting(cmd)
 			if err != nil {
 				return err
 			}
+			defer unlock()
 			id := storyID
 			if id == "" {
 				if id, err = activeStory(s, "gate records an outcome for the story being worked on"); err != nil {

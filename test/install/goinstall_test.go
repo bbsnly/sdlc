@@ -10,19 +10,22 @@ package install
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
 
-// goInstallVersion is the version the proxy below serves. The module path has
-// no /vN suffix, so Go accepts only v0 and v1 for it; 0.9.9 is high enough
-// never to collide with a real tag.
-const goInstallVersion = "v0.9.9"
+// goInstallBase is the version the proxy below serves, before the content
+// hash is appended. The module path has no /vN suffix, so Go accepts only v0
+// and v1 for it; 0.9.9 is high enough never to collide with a real tag.
+const goInstallBase = "v0.9.9"
 
 // goEnv is the environment every `go install` here runs under. It is built
 // from scratch rather than inherited: GOFLAGS, GOPRIVATE or a GOPROXY set on
@@ -94,15 +97,21 @@ func TestGoInstallFromSourcePutsAWorkingBinaryOnDisk(t *testing.T) {
 // without tagging one.
 func TestGoInstallAtAVersionReportsThatVersion(t *testing.T) {
 	gobin := t.TempDir()
-	proxy := fileProxy(t)
-	// The module cache is keyed on module@version and never revalidated, so
-	// without this the second run of this test on a machine installs the
-	// copy the first run left behind rather than the one just built. That is
-	// not a slow test made fast; it is a test that stops testing. Found by
-	// breaking the version package and watching this still pass.
+	// Everything Go caches about a module is keyed on module@version and
+	// never revalidated, because a real version is immutable. This one is
+	// not: it is built from the working tree, which changes. So the version
+	// carries a hash of what went into it, and a changed tree is a different
+	// version rather than a stale answer.
+	//
+	// Two separate caches had to be beaten. The extracted module and the
+	// download cache live under GOMODCACHE and evictFromModuleCache clears
+	// them; the module *index* lives under GOCACHE and nothing clears it,
+	// which is how this test compiled a version of the tree from ten minutes
+	// earlier and reported a failure that was not real.
 	evictFromModuleCache(t)
+	proxy, version := fileProxy(t)
 
-	pkg := "github.com/bbsnly/sdlc/cmd/sdlc@" + goInstallVersion
+	pkg := "github.com/bbsnly/sdlc/cmd/sdlc@" + version
 	cmd := exec.CommandContext(t.Context(), "go", "install", pkg)
 	// Outside any module: `go install pkg@version` refuses to run in one.
 	cmd.Dir = t.TempDir()
@@ -114,15 +123,19 @@ func TestGoInstallAtAVersionReportsThatVersion(t *testing.T) {
 		t.Fatalf("go install %s failed: %v\n%s", pkg, err, out)
 	}
 
-	if got := goInstalled(t, gobin); got != goInstallVersion {
-		t.Errorf("version = %q, want %q -- a module version installed at a version should report that version", got, goInstallVersion)
+	if got := goInstalled(t, gobin); got != version {
+		t.Errorf("version = %q, want %q -- a module version installed at a version should report that version", got, version)
 	}
 }
 
-// fileProxy writes a module proxy holding this repository at
-// goInstallVersion, and returns its root. The layout is the one `go help
-// goproxy` describes: <module>/@v/<version>.{info,mod,zip}.
-func fileProxy(t *testing.T) string {
+// fileProxy writes a module proxy holding this repository, and returns its
+// root and the version it serves. The layout is the one `go help goproxy`
+// describes: <module>/@v/<version>.{info,mod,zip}.
+//
+// The version ends in a hash of everything that goes into the module, so that
+// a tree which has changed since the last run is a different version and none
+// of Go's caches can answer for it.
+func fileProxy(t *testing.T) (proxy, version string) {
 	t.Helper()
 	root := t.TempDir()
 	dir := filepath.Join(root, "github.com", "bbsnly", "sdlc", "@v")
@@ -131,6 +144,11 @@ func fileProxy(t *testing.T) string {
 	}
 
 	repo := filepath.Join("..", "..")
+	files := moduleFiles(t, repo)
+	// A prerelease identifier: alphanumerics and hyphens, which is what the
+	// hex digest is. It sorts below v0.9.9 and above nothing anyone has.
+	version = goInstallBase + "-0.a" + contentHash(t, repo, files)
+
 	gomod, err := os.ReadFile(filepath.Join(repo, "go.mod"))
 	if err != nil {
 		t.Fatal(err)
@@ -140,19 +158,64 @@ func fileProxy(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	write(goInstallVersion+".mod", gomod)
-	write(goInstallVersion+".info", fmt.Appendf(nil, "{%q:%q,%q:%q}\n", "Version", goInstallVersion, "Time", "2026-01-01T00:00:00Z"))
-	write("list", []byte(goInstallVersion+"\n"))
+	write(version+".mod", gomod)
+	write(version+".info", fmt.Appendf(nil, "{%q:%q,%q:%q}\n", "Version", version, "Time", "2026-01-01T00:00:00Z"))
+	write("list", []byte(version+"\n"))
 
-	writeModuleZip(t, filepath.Join(dir, goInstallVersion+".zip"), repo)
-	return root
+	writeModuleZip(t, filepath.Join(dir, version+".zip"), repo, files, version)
+	return root, version
 }
 
-// writeModuleZip builds the zip the proxy serves. Only what `./cmd/sdlc`
-// needs goes in: a module zip may not contain a nested go.mod, and shipping
-// the whole tree would put every fixture and vendored script in it for no
-// reason.
-func writeModuleZip(t *testing.T, path, repo string) {
+// moduleFiles is everything that goes into the module zip, in a stable order.
+// Only what `./cmd/sdlc` needs: a module zip may not contain a nested go.mod,
+// and shipping the whole tree would put every fixture and vendored script in
+// it for no reason.
+func moduleFiles(t *testing.T, repo string) []string {
+	t.Helper()
+	files := []string{"go.mod"}
+	if _, err := os.Stat(filepath.Join(repo, "go.sum")); err == nil {
+		files = append(files, "go.sum")
+	}
+	for _, tree := range []string{"cmd", "internal"} {
+		err := filepath.WalkDir(filepath.Join(repo, tree), func(p string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			rel, err := filepath.Rel(repo, p)
+			if err != nil {
+				return err
+			}
+			if strings.HasSuffix(p, ".go") || strings.Contains(filepath.ToSlash(rel), "/templates/") {
+				files = append(files, rel)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	sort.Strings(files)
+	return files
+}
+
+// contentHash is what makes the version unique to this tree: every path and
+// every byte that will be in the zip.
+func contentHash(t *testing.T, repo string, files []string) string {
+	t.Helper()
+	sum := sha256.New()
+	for _, rel := range files {
+		body, err := os.ReadFile(filepath.Join(repo, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(sum, "%s %d\n", filepath.ToSlash(rel), len(body))
+		sum.Write(body)
+	}
+	return hex.EncodeToString(sum.Sum(nil))[:12]
+}
+
+// writeModuleZip builds the zip the proxy serves.
+func writeModuleZip(t *testing.T, path, repo string, files []string, version string) {
 	t.Helper()
 	out, err := os.Create(path)
 	if err != nil {
@@ -161,7 +224,7 @@ func writeModuleZip(t *testing.T, path, repo string) {
 	defer out.Close()
 
 	w := zip.NewWriter(out)
-	prefix := "github.com/bbsnly/sdlc@" + goInstallVersion + "/"
+	prefix := "github.com/bbsnly/sdlc@" + version + "/"
 
 	add := func(rel string) {
 		src, err := os.Open(filepath.Join(repo, rel))
@@ -180,50 +243,18 @@ func writeModuleZip(t *testing.T, path, repo string) {
 		}
 	}
 
-	add("go.mod")
-	if _, err := os.Stat(filepath.Join(repo, "go.sum")); err == nil {
-		add("go.sum")
-	}
-	for _, tree := range []string{"cmd", "internal"} {
-		walk(t, repo, tree, add)
+	for _, rel := range files {
+		add(rel)
 	}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// walk calls add for every file under tree that belongs in the module zip:
-// Go source, and the files packages embed.
-func walk(t *testing.T, repo, tree string, add func(string)) {
-	t.Helper()
-	root := filepath.Join(repo, tree)
-	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(repo, p)
-		if err != nil {
-			return err
-		}
-		switch {
-		case strings.HasSuffix(p, ".go"):
-			add(rel)
-		case strings.Contains(filepath.ToSlash(rel), "/templates/"):
-			add(rel)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-// evictFromModuleCache removes this repository at goInstallVersion from the
-// module cache. Only that one entry: the dependencies stay cached, which is
-// what keeps the test off the network.
+// evictFromModuleCache removes every copy of this repository at a test version
+// from the module cache, so that a run does not leave one behind for every
+// change made to the tree. Only this module: the dependencies stay cached,
+// which is what keeps the test off the network.
 func evictFromModuleCache(t *testing.T) {
 	t.Helper()
 	out, err := exec.CommandContext(t.Context(), "go", "env", "GOMODCACHE").Output()
@@ -234,10 +265,12 @@ func evictFromModuleCache(t *testing.T) {
 	if cache == "" {
 		return
 	}
-	for _, p := range []string{
-		filepath.Join(cache, "github.com", "bbsnly", "sdlc@"+goInstallVersion),
-		filepath.Join(cache, "cache", "download", "github.com", "bbsnly", "sdlc", "@v"),
-	} {
+	stale, err := filepath.Glob(filepath.Join(cache, "github.com", "bbsnly", "sdlc@"+goInstallBase+"*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale = append(stale, filepath.Join(cache, "cache", "download", "github.com", "bbsnly", "sdlc", "@v"))
+	for _, p := range stale {
 		// Go writes the cache read-only, and on Windows a read-only file
 		// cannot be unlinked at all, so the permissions come off first.
 		_ = filepath.WalkDir(p, func(name string, _ os.DirEntry, err error) error {

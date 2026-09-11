@@ -29,6 +29,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   way out, and it is on the record. The freeze belongs to the iteration: it
   survives `sdlc stop` and a new session, and is lifted when the story
   finishes, so the next story freezes its own tests.
+- Commands that change loop state take the project's lock first, so that the
+  reviewers a gate runs in parallel all land. Without it, five reviewers
+  approving at once left one verdict in the record and the other four
+  reported success and were discarded.
 - Reviews are recorded against the thing they reviewed. A design review is
   stamped with the hash of the plan it read and a code review with the hash
   of the tree it read, so a review of an older version of the work shows as

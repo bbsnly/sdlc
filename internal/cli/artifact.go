@@ -101,10 +101,11 @@ func newArtifactWriteCmd() *cobra.Command {
 					"this version stores "+model.ArtifactNames())
 			}
 
-			s, _, err := openStore()
+			s, _, unlock, err := openStoreForWriting(cmd)
 			if err != nil {
 				return err
 			}
+			defer unlock()
 			id := storyID
 			if id == "" {
 				if id, err = activeStory(s, "a gate's documents belong to the story being worked on"); err != nil {
