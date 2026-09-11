@@ -1,0 +1,26 @@
+name: Idea
+description: Something the loop should do, or should stop doing
+labels: [idea]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >-
+        The situation, not the solution. The most useful ideas here have
+        started with a story that went through the loop and came out wrong.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you think should happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: Including "nothing, I stopped using it for that" — that is useful to know.

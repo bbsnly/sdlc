@@ -27,7 +27,11 @@
   // own files. They are program data, not documentation of this repository, and
   // a fragment that starts at a `##` heading is not a document with a missing
   // title. Their shape is asserted by the scaffold's tests instead.
+  // The pull request template is a fragment written into a text box, not a
+  // document: a heading above the first section would render as a title
+  // inside every PR body.
   "ignores": [
+    ".github/PULL_REQUEST_TEMPLATE.md",
     "plan/**",
     "test/parity/legacy/**",
     "internal/scaffold/templates/**",
