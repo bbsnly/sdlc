@@ -81,7 +81,17 @@ func Under(rel, dir string) bool {
 	if dir == "" {
 		return true
 	}
-	return rel == dir || strings.HasPrefix(rel, dir+"/")
+	// Case-insensitively, because macOS and Windows are, and on those two the
+	// guard was one capital letter from being off: `.SDLC/state/active`,
+	// `.sdlc/Config.json`, `claude.md` and `.GIT/config` are the same files as
+	// the ones this refuses, and all four were allowed.
+	//
+	// On a case-sensitive filesystem this refuses a genuinely different file
+	// -- a lowercase `claude.md` beside `CLAUDE.md`. That is the right way for
+	// this to be wrong: a refusal that names its rule and can be argued with,
+	// rather than a protection that silently is not there.
+	return strings.EqualFold(rel, dir) ||
+		len(rel) > len(dir) && rel[len(dir)] == '/' && strings.EqualFold(rel[:len(dir)], dir)
 }
 
 // UnderAny reports whether rel is under any of dirs.

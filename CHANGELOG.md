@@ -29,6 +29,15 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   way out, and it is on the record. The freeze belongs to the iteration: it
   survives `sdlc stop` and a new session, and is lifted when the story
   finishes, so the next story freezes its own tests.
+- Enforcement holds from anywhere in the repository. A session started in a
+  subdirectory reports that directory, and the hook looked for the project's
+  configuration only there -- so `cd backend && claude` turned every rule off
+  without saying so.
+- Path rules match the way the filesystem does. macOS and Windows are
+  case-insensitive, and `.SDLC/state/active`, `.sdlc/Config.json` and
+  `claude.md` were writable while the identically-named files were refused.
+  The test freeze held only the exact spelling, so a capital letter took it
+  off the file it was protecting.
 - Commands that change loop state take the project's lock first, so that the
   reviewers a gate runs in parallel all land. Without it, five reviewers
   approving at once left one verdict in the record and the other four

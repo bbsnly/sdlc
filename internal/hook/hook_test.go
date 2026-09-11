@@ -167,6 +167,40 @@ func TestEnforcementCanBeTurnedOffFromTheEnvironment(t *testing.T) {
 	}
 }
 
+// A session started below the repository root reports that directory, and
+// looking for `.sdlc/config.json` only there found nothing and turned every
+// rule off -- silently, which is the worst way for a discipline tool to fail.
+// `cd backend && claude` was enough to do it.
+func TestASessionStartedBelowTheRootIsStillGoverned(t *testing.T) {
+	root := loopProject(t)
+	for _, below := range []string{"backend", "backend/services/api"} {
+		t.Run(below, func(t *testing.T) {
+			deep := filepath.Join(root, filepath.FromSlash(below))
+			if err := os.MkdirAll(deep, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			e := event(deep, "Write", "sdlc-researcher", filepath.Join(root, ".sdlc", "state", "active"))
+			if !denied(call(t, e, noEnv)) {
+				t.Error("loop state was writable from a session started below the root")
+			}
+		})
+	}
+}
+
+// The walk up stops at the repository. A project of its own that happens to
+// sit inside one taking part in the loop is not governed by it.
+func TestTheWalkUpStopsAtTheRepository(t *testing.T) {
+	root := loopProject(t)
+	inner := filepath.Join(root, "vendor", "other")
+	if err := os.MkdirAll(filepath.Join(inner, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e := event(inner, "Write", "sdlc-researcher", filepath.Join(root, ".sdlc", "state", "active"))
+	if denied(call(t, e, noEnv)) {
+		t.Error("a separate repository inside the project was governed by it")
+	}
+}
+
 func TestClaudeProjectDirWinsOverTheReportedDirectory(t *testing.T) {
 	root := loopProject(t)
 	getenv := env(map[string]string{"CLAUDE_PROJECT_DIR": root})

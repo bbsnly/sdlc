@@ -357,3 +357,23 @@ func TestAFailedGateIsWhereTheLoopResumes(t *testing.T) {
 		t.Errorf("next = %q, %v; want the failed gate %q", got, ok, Gates[1])
 	}
 }
+
+// The freeze is the hinge the whole loop turns on, and on a case-insensitive
+// filesystem it came off for anyone who capitalised a letter:
+// `Internal/Invoice_Test.go` is the frozen `internal/invoice_test.go`.
+func TestTheFreezeHoldsWhateverTheCase(t *testing.T) {
+	lock := NewLock("US-1", map[string]string{"internal/invoice_test.go": "abc"}, time.Now())
+	for _, path := range []string{
+		"internal/invoice_test.go",
+		"internal/Invoice_Test.go",
+		"Internal/invoice_test.go",
+		"INTERNAL/INVOICE_TEST.GO",
+	} {
+		if !lock.Holds(path) {
+			t.Errorf("the freeze did not hold %s", path)
+		}
+	}
+	if lock.Holds("internal/other_test.go") {
+		t.Error("the freeze held a file that is not in it")
+	}
+}

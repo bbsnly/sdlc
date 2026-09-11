@@ -133,7 +133,8 @@ func decide(event string, raw []byte, getenv func(string) string) (policy.Verdic
 	// Two files decide whether the loop has any business here: the project
 	// takes part, and a story is being worked on. Outside those, this does
 	// nothing at all.
-	if !exists(filepath.Join(project, ".sdlc", "config.json")) {
+	project, ok := projectRoot(project)
+	if !ok {
 		return policy.Allowed, event, false
 	}
 	story := activeStory(project)
@@ -244,6 +245,40 @@ func activeStory(project string) string {
 		return ""
 	}
 	return id
+}
+
+// projectRoot finds the directory holding `.sdlc/config.json`, starting at the
+// session's own directory and walking up.
+//
+// Walking up is the whole point. A session started anywhere below the
+// repository root -- `cd backend && claude`, a workspace whose folder is a
+// subdirectory, anything at all -- reports that directory, and looking for the
+// configuration only there found nothing and turned every rule off without
+// saying so. A write to `.sdlc/config.json` was refused from the root and
+// allowed from one directory down.
+//
+// The walk stops at the repository, so a project that does not take part never
+// picks up the configuration of one further up the filesystem.
+func projectRoot(start string) (string, bool) {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return "", false
+	}
+	for {
+		if exists(filepath.Join(dir, ".sdlc", "config.json")) {
+			return dir, true
+		}
+		// A repository boundary is as far as this goes: outside it, whatever
+		// is above belongs to somebody else.
+		if exists(filepath.Join(dir, ".git")) {
+			return "", false
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
 }
 
 func exists(path string) bool {

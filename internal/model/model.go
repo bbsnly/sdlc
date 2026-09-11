@@ -329,8 +329,19 @@ func (l *Lock) Holds(path string) bool {
 	if l == nil {
 		return false
 	}
-	_, ok := l.Files[path]
-	return ok
+	if _, ok := l.Files[path]; ok {
+		return true
+	}
+	// macOS and Windows are case-insensitive, so `Internal/Invoice_Test.go` is
+	// the frozen `internal/invoice_test.go` under another spelling. Matching
+	// only exactly meant the freeze -- the hinge the whole loop turns on --
+	// came off for anyone who capitalised a letter.
+	for frozen := range l.Files {
+		if strings.EqualFold(frozen, path) {
+			return true
+		}
+	}
+	return false
 }
 
 // Paths lists the frozen files in a stable order, for a message that has to

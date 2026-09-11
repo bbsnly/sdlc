@@ -78,3 +78,24 @@ func TestNothingIsNotATest(t *testing.T) {
 		}
 	}
 }
+
+// What counts as a test has to be the same question on a case-insensitive
+// filesystem, or the rules about test files quietly stop applying to a file
+// somebody capitalised.
+func TestWhatCountsAsATestIsNotACaseQuestion(t *testing.T) {
+	m := New(config.TestPaths{FileGlobs: []string{"*_test.go"}, Dirs: []string{"spec"}})
+	for _, path := range []string{
+		"internal/invoice_test.go",
+		"internal/Invoice_Test.go",
+		"internal/INVOICE_TEST.GO",
+		"spec/thing.rb",
+		"Spec/thing.rb",
+	} {
+		if !m.Match(path) {
+			t.Errorf("%s was not recognised as a test", path)
+		}
+	}
+	if m.Match("internal/invoice.go") {
+		t.Error("a source file was called a test")
+	}
+}

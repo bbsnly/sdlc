@@ -371,3 +371,30 @@ func TestANewTestAfterTheFreezeFollowsTheProjectsSetting(t *testing.T) {
 		t.Errorf("refused by %s, want implementer-does-not-write-tests", got.Rule)
 	}
 }
+
+// macOS and Windows are case-insensitive, and every protection here was one
+// capital letter from being off. The implementer -- which writes widely by
+// design -- was allowed `.SDLC/state/active`, `.sdlc/Config.json`,
+// `claude.md` and `.GIT/config`, all of which are the same files the rule
+// above refuses.
+func TestAProtectedPathIsProtectedWhateverTheCase(t *testing.T) {
+	for _, path := range []string{
+		".SDLC/state/active",
+		".Sdlc/state/Active",
+		".sdlc/Config.json",
+		"claude.md",
+		"Claude.MD",
+		".GIT/config",
+		".Claude/settings.json",
+	} {
+		t.Run(path, func(t *testing.T) {
+			v := Evaluate(Request{Tool: "Write", Agent: "implementer", Story: "US-1", Path: path})
+			if v.Allowed {
+				t.Errorf("%s was writable; it is the same file as the protected one", path)
+			}
+			if v.Rule != "write-protected-path" {
+				t.Errorf("refused by %q, want write-protected-path", v.Rule)
+			}
+		})
+	}
+}
