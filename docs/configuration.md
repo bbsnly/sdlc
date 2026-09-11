@@ -73,6 +73,19 @@ are installed.
 Any key you add is available to the agents; these are the ones the loop looks
 for by name. A key you leave out is simply not run.
 
+One thing worth knowing about the guessed `coverage` command: it writes a
+coverage profile to `.sdlc/state/cover.out`. That is a build artefact rather
+than loop state, and Gate 8 commits the whole story with `git add -A`, so if
+you would rather it did not land in your history, either send the profile
+somewhere you already ignore or add the one line:
+
+```gitignore
+.sdlc/state/cover.out
+```
+
+Nothing decides that for you — `sdlc init` writes no `.gitignore`, because what
+a project commits is the project's decision.
+
 ## `thresholds`
 
 | Key | What it means |

@@ -28,7 +28,12 @@
 /.sdlc/stories/*/diff.patch
 /.sdlc/stories/*/diff.stat
 /.sdlc/stories/*/logs/
-/.sdlc/state/
+
+# .sdlc/state holds one load-bearing file and two that are not: tests.lock is
+# the freeze itself and belongs in history, while `active` is which story this
+# machine happens to be on and cover.out is a build artefact.
+/.sdlc/state/active
+/.sdlc/state/cover.out
 
 # Scratch paths the launcher and tests use
 /.scratch/
