@@ -20,10 +20,15 @@ Run:
 sdlc status --json
 ```
 
-- If the command is not found at all, you have this runbook without the tool it drives. Say so,
-  give the user the install line for their platform from
-  <https://github.com/bbsnly/sdlc/blob/main/docs/installation.md>, and stop. Nothing below this
-  line works without it, and doing the gates by hand is the failure the loop exists to prevent.
+- If the command is not found at all, you have this runbook without the tool it drives. Offer to
+  install it, and wait for an answer. On macOS or Linux that is
+  `curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh`; on Windows,
+  `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex`. Both check the
+  download against the release's checksums before anything is put on a PATH. If they say yes,
+  run it and then run `sdlc status --json` again. If it is still not found, the binary landed in
+  a directory this session's PATH does not have — say which directory the installer reported and
+  that a new session will see it, and stop. Do not work the gates by hand: a loop with no record
+  behind it is the failure this exists to prevent.
 - If it fails with `SDLC-E0002`, this project has not been set up. Tell the user, and offer to
   run `sdlc init`. Stop until they answer.
 - If it fails with `SDLC-E0001`, you are not in a Git repository. Say so and stop.
