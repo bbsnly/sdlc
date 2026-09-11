@@ -178,3 +178,29 @@ func TestHygieneAllowsVendoredLegacyKit(t *testing.T) {
 		t.Fatalf("the vendored kit is a fixture, got: %v", got)
 	}
 }
+
+// This exact mistake reached trunk once: `go build ./internal/tools/release`
+// leaves an executable called `release` in the working directory, and
+// `git add -A` committed 3.5 MB of it. The check that would have caught it
+// keys on what the file is, not what it is called.
+func TestHygieneRejectsACompiledBinary(t *testing.T) {
+	root := gitRepo(t, map[string]string{
+		"release":      "\x7fELF\x02\x01\x01 and whatever follows\n",
+		"tool.exe":     "MZ\x90\x00 a windows executable\n",
+		"mach":         "\xcf\xfa\xed\xfe a mach-o\n",
+		"task":         "#!/bin/sh\necho a shell script is not a binary\n",
+		"docs/page.md": "# a document\n",
+	})
+	got, err := checkHygiene(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("want 3 findings, got %d: %v", len(got), got)
+	}
+	for _, f := range got {
+		if !strings.Contains(f.msg, "compiled binary") {
+			t.Errorf("unexpected finding: %v", f)
+		}
+	}
+}

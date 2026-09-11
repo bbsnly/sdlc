@@ -3,6 +3,13 @@
 /bin/sdlc
 /bin/sdlc.exe
 
+# `go build ./internal/tools/<name>` drops the executable in the working
+# directory under that name. Ignored here, and the hygiene check refuses to
+# track a compiled binary under any name, because this is easy to sweep into a
+# commit with `git add -A` and hard to notice afterwards.
+/linkcheck
+/release
+
 # Internal working documents. Never committed: this repository carries the
 # product and what a user needs to understand it, and nothing else.
 /plan/

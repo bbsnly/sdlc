@@ -23,6 +23,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -170,6 +171,11 @@ func checkHygiene(root string) ([]finding, error) {
 			findings = append(findings, finding{slash, 0,
 				"looks like a planning document; only test/parity/legacy/ may carry one, as a fixture"})
 		}
+		if compiled(filepath.Join(root, rel)) {
+			findings = append(findings, finding{slash, 0,
+				"is a compiled binary; `go build ./internal/tools/x` leaves one in the working " +
+					"directory and `git add -A` sweeps it in. Delete it and add the name to .gitignore"})
+		}
 	}
 
 	for _, rel := range tracked {
@@ -200,6 +206,33 @@ func checkHygiene(root string) ([]finding, error) {
 		_ = f.Close()
 	}
 	return findings, nil
+}
+
+// compiled reports whether a file starts with an executable's magic number.
+// This repository ships source and text; a tracked Mach-O, ELF or PE file is
+// always a build artefact somebody did not mean to commit.
+func compiled(path string) bool {
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+
+	var head [4]byte
+	if n, err := io.ReadFull(file, head[:]); err != nil || n < 4 {
+		return false
+	}
+	switch {
+	case head == [4]byte{0x7f, 'E', 'L', 'F'}: // ELF
+		return true
+	case head[0] == 'M' && head[1] == 'Z': // PE, and a DOS executable
+		return true
+	case head == [4]byte{0xfe, 0xed, 0xfa, 0xce}, head == [4]byte{0xfe, 0xed, 0xfa, 0xcf},
+		head == [4]byte{0xce, 0xfa, 0xed, 0xfe}, head == [4]byte{0xcf, 0xfa, 0xed, 0xfe},
+		head == [4]byte{0xca, 0xfe, 0xba, 0xbe}: // Mach-O, both byte orders, and a fat binary
+		return true
+	}
+	return false
 }
 
 type linkTarget struct {
