@@ -5,6 +5,13 @@ setlocal enabledelayedexpansion
 set "HERE=%~dp0"
 set "TASKFILE=%HERE%Taskfile.yml"
 
+rem %~dp0 ends in a backslash, and a trailing backslash in front of a closing
+rem quote escapes that quote: --dir "C:\repo\" reaches the program as
+rem C:\repo" and takes the next argument with it. Strip it before anything is
+rem passed on a command line. TASKFILE above is built by concatenation, not
+rem passed as an argument, so it wants the separator and keeps it.
+if "%HERE:~-1%"=="\" set "HERE=%HERE:~0,-1%"
+
 if not exist "%TASKFILE%" (
   echo task: Taskfile.yml not found beside this script 1>&2
   exit /b 1

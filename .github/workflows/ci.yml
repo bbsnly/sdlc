@@ -113,6 +113,16 @@ jobs:
         shell: bash
         run: ./task check
 
+      # The Windows entry point, from the shell Windows users actually type it
+      # in. `task check` above runs the POSIX twin under bash, so task.cmd had
+      # never been executed anywhere -- including the line that passes the
+      # repository directory to task, where a trailing backslash silently ate
+      # the quote after it.
+      - name: task.cmd
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: task.cmd --list
+
   # Every target a release publishes, compiled. `task check` builds only for
   # the runner it is on, so three of the six platforms goreleaser ships were
   # built for the first time during the release itself -- the one run where a
