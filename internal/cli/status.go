@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/store"
 )
@@ -29,6 +30,16 @@ type statusPayload struct {
 	Backlog  map[string]int `json:"backlog"`
 	Next     *nextUp        `json:"next,omitempty"`
 	Freeze   *freezeState   `json:"freeze,omitempty"`
+	Cost     *costState     `json:"cost,omitempty"`
+}
+
+// costState is what the story has cost so far, against what it was expected to.
+// A runner reads this to decide whether to start another iteration; a person
+// reads it to find out before the invoice does.
+type costState struct {
+	SpentUSD  float64 `json:"spent_usd"`
+	BudgetUSD float64 `json:"budget_usd,omitempty"`
+	Fraction  float64 `json:"fraction,omitempty"`
 }
 
 // freezeState is what the freeze looks like from outside: how many acceptance
@@ -52,7 +63,7 @@ func newStatusCmd() *cobra.Command {
 		Example: "  sdlc status\n  sdlc status --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, _, err := openStore()
+			s, p, err := openStore()
 			if err != nil {
 				return err
 			}
@@ -84,6 +95,7 @@ func newStatusCmd() *cobra.Command {
 				if payload.Freeze, err = describeFreeze(s, active); err != nil {
 					return err
 				}
+				payload.Cost = describeCost(p.Config.Budget, record)
 			} else if sel, ok := backlog.Next(); ok {
 				payload.Next = &nextUp{Story: sel.Story.ID, Title: sel.Story.Title}
 			}
@@ -108,6 +120,7 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprintf(w, "%s  %s  %s\n\n", active, state, payload.Title)
 				printGates(w, record)
 				printFreeze(w, payload.Freeze)
+				printCost(w, payload.Cost)
 				if payload.NextGate != "" {
 					fmt.Fprintf(w, "\n  next   %s\n", payload.NextGate)
 				}
@@ -190,4 +203,28 @@ func describeCounts(counts map[string]int) string {
 		return "empty"
 	}
 	return strings.Join(parts, " · ")
+}
+
+// describeCost is nil until something has been spent or a budget is set, so a
+// project that does not track cost never has to look at a line about it.
+func describeCost(b config.Budget, record *model.Record) *costState {
+	spent := record.SpentUSD()
+	if spent == 0 && b.PerStoryUSD <= 0 {
+		return nil
+	}
+	c := &costState{SpentUSD: spent, BudgetUSD: b.PerStoryUSD}
+	if b.PerStoryUSD > 0 {
+		c.Fraction = spent / b.PerStoryUSD
+	}
+	return c
+}
+
+func printCost(w io.Writer, c *costState) {
+	switch {
+	case c == nil:
+	case c.BudgetUSD > 0:
+		fmt.Fprintf(w, "  cost   %s of %s (%s)\n", money(c.SpentUSD), money(c.BudgetUSD), percent(c.Fraction))
+	default:
+		fmt.Fprintf(w, "  cost   %s\n", money(c.SpentUSD))
+	}
 }

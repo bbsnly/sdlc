@@ -157,8 +157,12 @@ setting.
 
 | Key | What it means |
 | --- | --- |
-| `per_story_usd` | what one story is expected to cost |
-| `alert_fractions` | the points along the way to say so |
+| `per_story_usd` | what one story is expected to cost. `0` turns the budget off and still keeps the total |
+| `alert_fractions` | the points along the way to say so, as fractions of the budget |
+
+Spend is recorded with [`sdlc cost add`](commands.md), and shown by `sdlc cost` and
+`sdlc status`. An alert goes to standard error once, on the entry that crosses it. Nothing
+blocks: a story stopped halfway costs more than the overspend.
 
 ## The other half of the contract
 

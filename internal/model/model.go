@@ -548,6 +548,33 @@ type Record struct {
 	Security    *bool               `json:"security_sensitive,omitempty"`
 	Flags       map[string]any      `json:"flags,omitempty"`
 	Metrics     map[string]any      `json:"metrics,omitempty"`
+	Spend       []Spend             `json:"spend,omitempty"`
+}
+
+// Spend is one amount recorded against the story, in US dollars.
+//
+// A loop that runs on its own spends money on its own, and the only honest
+// place to keep that is beside everything else the story did. What it cost is
+// part of what happened.
+type Spend struct {
+	At   string  `json:"at"`
+	USD  float64 `json:"usd"`
+	Note string  `json:"note,omitempty"`
+}
+
+// AddSpend records an amount and returns the running total.
+func (r *Record) AddSpend(usd float64, note string, at time.Time) float64 {
+	r.Spend = append(r.Spend, Spend{At: Timestamp(at), USD: usd, Note: note})
+	return r.SpentUSD()
+}
+
+// SpentUSD is what the story has cost so far.
+func (r *Record) SpentUSD() float64 {
+	var total float64
+	for _, s := range r.Spend {
+		total += s.USD
+	}
+	return total
 }
 
 // SecuritySensitive reports whether the story touches a trust boundary. It

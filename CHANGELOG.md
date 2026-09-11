@@ -29,6 +29,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   way out, and it is on the record. The freeze belongs to the iteration: it
   survives `sdlc stop` and a new session, and is lifted when the story
   finishes, so the next story freezes its own tests.
+- `sdlc cost` keeps what a story spent beside everything else it did.
+  `sdlc cost add --usd` records an amount, `sdlc status` reports the running
+  total, and crossing one of `budget.alert_fractions` says so once, on
+  standard error. Nothing blocks: a story stopped between gates costs more
+  than the overspend. This is what `budget.per_story_usd` was for -- it was
+  written into every project's configuration and read by nothing.
 - The freeze holds against shell commands. Every rule protecting it applied to
   the file-writing tools only, so `Write` to a frozen test was refused and
   `echo cheat > x_test.go` was not. Reading one is still never refused.

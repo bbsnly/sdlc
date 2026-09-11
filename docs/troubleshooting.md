@@ -262,6 +262,14 @@ The commit gate cannot pass while there is uncommitted work.
 The gate records that this story reached trunk. Commit the change, or stash what does not belong
 to this story, and then record the gate.
 
+### SDLC-E0034
+
+A flag was given a value it cannot use.
+
+`sdlc cost add --usd` is the usual one: an amount that arrived from a shell substitution which
+produced nothing is refused rather than recorded as zero, because a story that silently cost
+nothing is the one wrong answer nobody questions. Check the command that produced the value.
+
 ### SDLC-E0033
 
 The story you asked to start has passed every gate. Starting it would put work that is already

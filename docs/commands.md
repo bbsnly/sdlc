@@ -241,6 +241,47 @@ sometimes right — a test encoded the wrong behaviour — and it is also exactl
 the move an agent would make to reach green. Recording why is what tells the two
 apart.
 
+## `sdlc cost`
+
+What the story has cost so far, against what it was expected to.
+
+```console
+$ sdlc cost
+US-001  $12.40 spent of $60.00 (20.7%)
+
+$ sdlc cost add --usd 1.42 --note "gate 4, five reviewers"
+US-001  $13.82 spent of $60.00 (23%)
+```
+
+### `sdlc cost add`
+
+Records one amount against the story being worked on.
+
+| Flag | What it does |
+| --- | --- |
+| `--usd` | the amount, in US dollars. Required |
+| `--note` | what it was spent on |
+
+`budget.per_story_usd` in `.sdlc/config.json` says what one story is expected to cost, and
+`alert_fractions` says where along the way to say so. An alert goes to standard error, once,
+on the entry that crosses it — so a runner reading standard output for the number still sees
+it, and the same warning does not repeat on every entry afterwards.
+
+**Nothing here blocks.** A budget that stops a story halfway leaves the work stranded between
+gates, which costs more than the overspend it prevents. Past the budget the warning says so
+and names `sdlc stop` if that is the call.
+
+Where the number comes from is the runner's business:
+
+```console
+$ cost=$(claude -p "Run /sdlc:next" --output-format json | jq .total_cost_usd)
+$ sdlc cost add --usd "$cost"
+```
+
+An interactive session has `/cost`. An empty or unparseable amount is refused rather than
+recorded as zero, because a story that silently cost nothing is the one wrong answer nobody
+questions.
+
 ## `sdlc doctor`
 
 Check this project and say how to fix what is wrong.

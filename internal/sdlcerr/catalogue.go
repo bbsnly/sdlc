@@ -51,6 +51,9 @@ var (
 	StoryAlreadyFinished = register("SDLC-E0033",
 		`record a gate as failed to reopen it — "sdlc gate code_review fail --note ..." says on the record why the work came back`)
 
+	BadArgument = register("SDLC-E0034",
+		`check the flag's value — "sdlc <command> --help" says what it takes`)
+
 	UnknownGate = register("SDLC-E0013",
 		`run "sdlc gate --help" to see the gate names this version knows`)
 
