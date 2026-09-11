@@ -101,12 +101,18 @@ what the implementer cannot touch.
 
 | Key | What it means |
 | --- | --- |
-| `dirs` | a directory and everything beneath it is tests |
+| `dirs` | a directory and everything beneath it is tests. A bare name — `testdata`, `__snapshots__` — is a directory of that name wherever it is, because that is what projects mean by it; one with a slash in it, like `src/fixtures`, is that directory and no other |
 | `file_globs` | a pattern matched against the whole path *and* against the file's own name, so `*_test.go` finds `internal/store/x_test.go` |
 
-If your project keeps fixtures or helpers somewhere the loop would not
-recognise, add that directory here. The test author is refused when it writes
-outside what this describes, and the refusal says so.
+**Anything that decides whether a test passes belongs here, not only the test
+files.** A frozen test that reads a golden file is frozen only if the golden
+file is too; otherwise the fixture is the way round the freeze. `sdlc init`
+covers the usual ones for the stack it finds — `testdata/` for Go,
+`conftest.py` and `fixtures/` for Python, `__snapshots__/`, `__mocks__/` and
+`*.snap` for Node — and if your project keeps them somewhere else, add it here.
+
+The test author is refused when it writes outside what this describes, and the
+refusal says so.
 
 ## `paths.src`
 

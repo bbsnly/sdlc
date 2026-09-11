@@ -99,3 +99,52 @@ func TestWhatCountsAsATestIsNotACaseQuestion(t *testing.T) {
 		t.Error("a source file was called a test")
 	}
 }
+
+// A frozen test that reads a golden file is only frozen if the golden file is
+// too. The same goes for a jest snapshot, a mock, and the conftest.py that
+// decides what a pytest fixture returns: each one changes whether a test
+// passes, without the test file being touched, and each was outside the
+// freeze.
+func TestWhatATestDependsOnIsATestToo(t *testing.T) {
+	for _, c := range []struct {
+		stack string
+		paths config.TestPaths
+		under []string
+	}{
+		{"Go",
+			config.TestPaths{Dirs: []string{"testdata/"}, FileGlobs: []string{"*_test.go"}},
+			[]string{"testdata/case1.txt", "internal/testdata/golden.json"}},
+		{"Python",
+			config.TestPaths{Dirs: []string{"tests/", "fixtures/"}, FileGlobs: []string{"test_*.py", "conftest.py"}},
+			[]string{"conftest.py", "tests/conftest.py", "fixtures/rows.csv", "app/fixtures/rows.csv"}},
+		{"Node",
+			config.TestPaths{Dirs: []string{"__tests__/", "__snapshots__/", "__mocks__/"}, FileGlobs: []string{"*.test.ts", "*.snap"}},
+			[]string{"src/__snapshots__/x.test.ts.snap", "src/__mocks__/api.ts", "src/__tests__/x.ts"}},
+	} {
+		t.Run(c.stack, func(t *testing.T) {
+			m := New(c.paths)
+			for _, p := range c.under {
+				if !m.Match(p) {
+					t.Errorf("%s is not covered by the freeze; a test's outcome can be changed there", p)
+				}
+			}
+		})
+	}
+}
+
+// A bare name is any directory of that name; one with a slash is that one
+// directory. Without the first, `testdata/` covered only the top-level one and
+// Go's own convention of internal/testdata went uncovered.
+func TestABareDirectoryNameMatchesAtAnyDepth(t *testing.T) {
+	m := New(config.TestPaths{Dirs: []string{"testdata", "src/fixtures"}})
+	for _, p := range []string{"testdata/a", "deep/down/testdata/a", "src/fixtures/a"} {
+		if !m.Match(p) {
+			t.Errorf("%s did not match", p)
+		}
+	}
+	for _, p := range []string{"other/fixtures/a", "testdata", "notestdata/a"} {
+		if m.Match(p) {
+			t.Errorf("%s matched and should not have", p)
+		}
+	}
+}

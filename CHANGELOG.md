@@ -29,6 +29,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   way out, and it is on the record. The freeze belongs to the iteration: it
   survives `sdlc stop` and a new session, and is lifted when the story
   finishes, so the next story freezes its own tests.
+- The freeze covers what a test depends on, not only the test file. A golden
+  file, a jest snapshot, a mock and the `conftest.py` that decides what a
+  pytest fixture returns each change whether a test passes without the test
+  being touched, and each was outside the freeze. `sdlc init` now names the
+  usual ones per stack, and a bare directory name in `paths.tests.dirs`
+  matches such a directory at any depth rather than only at the root.
 - The commit gate asks the verifier and the code reviewer about the tree as
   it is now. Their approvals were checked when their own gates were recorded
   and never again, so code added after the review and then committed reached

@@ -18,7 +18,8 @@ import (
 
 // Matcher decides whether a repository-relative, slash-separated path is a test.
 type Matcher struct {
-	dirs  []string
+	dirs  []string // rooted: "src/fixtures" is that one directory
+	names []string // bare: "testdata" is any directory of that name
 	globs []string
 }
 
@@ -26,8 +27,12 @@ type Matcher struct {
 func New(p config.TestPaths) Matcher {
 	m := Matcher{}
 	for _, d := range p.Dirs {
-		if d = strings.Trim(strings.TrimSpace(d), "/"); d != "" {
+		switch d = strings.Trim(strings.TrimSpace(d), "/"); {
+		case d == "":
+		case strings.Contains(d, "/"):
 			m.dirs = append(m.dirs, d)
+		default:
+			m.names = append(m.names, d)
 		}
 	}
 	for _, g := range p.FileGlobs {
@@ -41,19 +46,30 @@ func New(p config.TestPaths) Matcher {
 // Configured reports whether the project said anything at all. A project that
 // named no test directories and no patterns cannot have its tests frozen, and
 // saying so is better than freezing nothing and calling it done.
-func (m Matcher) Configured() bool { return len(m.dirs) > 0 || len(m.globs) > 0 }
+func (m Matcher) Configured() bool {
+	return len(m.dirs) > 0 || len(m.names) > 0 || len(m.globs) > 0
+}
 
 // Match reports whether this path is a test file.
 //
-// A directory entry matches everything beneath it. A pattern matches either the
-// whole path or the file's own name, so "*_test.go" finds internal/x_test.go
-// without every project having to write "**/*_test.go".
+// A directory entry matches everything beneath it. A plain name -- "testdata",
+// "__snapshots__" -- matches such a directory wherever it is, because that is
+// what a project means by it: Go keeps fixtures in internal/testdata as well as
+// testdata, and jest writes src/__snapshots__. An entry with a slash in it is
+// rooted, so "src/fixtures" means that one and no other.
+//
+// A pattern matches either the whole path or the file's own name, so
+// "*_test.go" finds internal/x_test.go without every project having to write
+// "**/*_test.go".
 func (m Matcher) Match(rel string) bool {
 	rel = strings.TrimPrefix(path.Clean(strings.TrimSpace(rel)), "./")
 	if rel == "" || rel == "." {
 		return false
 	}
 	if pathrules.UnderAny(rel, m.dirs...) {
+		return true
+	}
+	if m.underAnyNamedDirectory(rel) {
 		return true
 	}
 	// Folded, because macOS and Windows are: `Invoice_Test.go` is the same
@@ -69,6 +85,23 @@ func (m Matcher) Match(rel string) bool {
 		}
 		if ok, err := path.Match(g, base); err == nil && ok {
 			return true
+		}
+	}
+	return false
+}
+
+// underAnyNamedDirectory reports whether any segment of rel is one of the
+// bare directory names, which is what puts a fixture under the freeze wherever
+// the project keeps it.
+func (m Matcher) underAnyNamedDirectory(rel string) bool {
+	segments := strings.Split(rel, "/")
+	// The last segment is the file itself, so a directory name only counts if
+	// something is inside it.
+	for _, segment := range segments[:len(segments)-1] {
+		for _, d := range m.names {
+			if strings.EqualFold(segment, d) {
+				return true
+			}
 		}
 	}
 	return false

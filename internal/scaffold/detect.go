@@ -76,6 +76,9 @@ func detectGo(root string) (Stack, bool) {
 			"coverage": "go test ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && " +
 				`go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\.[0-9]+'`,
 		},
+		// testdata as well as the test files: a frozen test that reads a
+		// golden file is only frozen if the golden file is too.
+		TestDirs:  []string{"testdata/"},
 		TestGlobs: []string{"*_test.go"},
 		SrcDirs:   []string{"cmd/", "internal/", "pkg/"},
 	}, true
@@ -95,7 +98,7 @@ func detectRust(root string) (Stack, bool) {
 			"fmt":       "cargo fmt",
 			"fmt_check": "cargo fmt --check",
 		},
-		TestDirs:  []string{"tests/"},
+		TestDirs:  []string{"tests/", "testdata/", "fixtures/"},
 		TestGlobs: []string{"*_test.rs"},
 		SrcDirs:   []string{"src/"},
 	}, true
@@ -155,10 +158,13 @@ func detectNode(root string) (Stack, bool) {
 	}
 
 	return Stack{
-		Name:      "Node",
-		Commands:  cmds,
-		TestDirs:  []string{"tests/", "test/", "__tests__/"},
-		TestGlobs: []string{"*.test.ts", "*.test.js", "*.spec.ts", "*.spec.js"},
+		Name:     "Node",
+		Commands: cmds,
+		// Snapshots and mocks decide whether a test passes as much as the
+		// test does, and `jest -u` rewrites a snapshot without being asked
+		// twice.
+		TestDirs:  []string{"tests/", "test/", "__tests__/", "__snapshots__/", "__mocks__/", "__fixtures__/"},
+		TestGlobs: []string{"*.test.ts", "*.test.js", "*.spec.ts", "*.spec.js", "*.snap"},
 		SrcDirs:   []string{"src/", "lib/"},
 	}, true
 }
@@ -178,8 +184,10 @@ func detectPython(root string) (Stack, bool) {
 			"coverage": "pytest -q --cov --cov-report=term | grep -E '^TOTAL' | " +
 				"grep -Eo '[0-9]+%' | tr -d %",
 		},
-		TestDirs:  []string{"tests/", "test/"},
-		TestGlobs: []string{"test_*.py", "*_test.py"},
+		// conftest.py is where pytest fixtures live, so a test's outcome can
+		// be changed there without touching a test file.
+		TestDirs:  []string{"tests/", "test/", "fixtures/", "testdata/"},
+		TestGlobs: []string{"test_*.py", "*_test.py", "conftest.py"},
 		SrcDirs:   []string{"src/"},
 	}, true
 }
@@ -188,7 +196,7 @@ func unknownStack() Stack {
 	return Stack{
 		Name:      "",
 		Commands:  map[string]string{},
-		TestDirs:  []string{"tests/", "test/"},
+		TestDirs:  []string{"tests/", "test/", "testdata/", "fixtures/"},
 		TestGlobs: []string{},
 		SrcDirs:   []string{"src/"},
 	}
