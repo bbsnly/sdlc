@@ -112,17 +112,15 @@ shows the backlog and says what is holding each story back.
 
 ## Run it
 
-Start Claude Code with the plugin loaded:
-
-```console
-$ claude --plugin-dir /path/to/sdlc/plugin
-```
-
-Then:
+In Claude Code, from the project:
 
 ```text
 /sdlc:next
 ```
+
+That is all, once the plugin is installed. If you are working from a clone
+rather than an installed plugin, start the session with
+`claude --plugin-dir /path/to/sdlc/plugin` instead.
 
 That is the whole interface. The skill picks up the next runnable story, or
 resumes one already under way, and works it through the gates one at a time —

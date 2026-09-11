@@ -62,11 +62,14 @@ and adds the contract section to your `CLAUDE.md`. It never overwrites your own
 files, and it writes no `.gitignore`: what a project commits is the project's
 decision.
 
-Then start Claude Code with the plugin loaded and run `/sdlc:next`:
+Then, in Claude Code:
 
-```console
-$ claude --plugin-dir /path/to/sdlc/plugin
+```text
+/sdlc:next
 ```
+
+Working from a clone instead of an installed plugin? Start the session with
+`claude --plugin-dir /path/to/sdlc/plugin`.
 
 ## What the loop actually does
 
