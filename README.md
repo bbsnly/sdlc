@@ -25,6 +25,8 @@ it lands.
 
 ## Install
 
+**1. The binary.**
+
 ```console
 $ curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
 ```
@@ -34,7 +36,7 @@ There is also `npx @bbsnly/sdlc install` and `go install`. Every route downloads
 the same native binary and checks it against the release's checksums first — see
 [Installation](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md).
 
-From source, which is what to use until the first release is tagged:
+Until the first release is tagged, build it from source instead:
 
 ```console
 $ git clone https://github.com/bbsnly/sdlc && cd sdlc
@@ -42,25 +44,29 @@ $ ./task build
 $ export PATH="$PWD/dist:$PATH"
 ```
 
-Then, in Claude Code:
+**2. The plugin**, in Claude Code:
 
 ```text
 /plugin marketplace add bbsnly/sdlc
 /plugin install sdlc@sdlc
 ```
 
-The repository is its own marketplace, so there is nothing else to add. Then, in
-a project of your own:
+The repository is its own marketplace, so there is nothing else to add. Working
+from a clone instead? Start the session with
+`claude --plugin-dir /path/to/sdlc/plugin`.
+
+**3. Your project**, from its root:
 
 ```console
 $ sdlc init
-$ sdlc status
+$ sdlc doctor
 ```
 
 `init` reads the repository, writes a configuration with commands that match it,
 and adds the contract section to your `CLAUDE.md`. It never overwrites your own
 files, and it writes no `.gitignore`: what a project commits is the project's
-decision.
+decision. `doctor` checks the result and names the command that fixes anything
+it does not like.
 
 Then, in Claude Code:
 
@@ -68,8 +74,7 @@ Then, in Claude Code:
 /sdlc:next
 ```
 
-Working from a clone instead of an installed plugin? Start the session with
-`claude --plugin-dir /path/to/sdlc/plugin`.
+That is the whole interface.
 
 ## What the loop actually does
 
