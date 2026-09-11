@@ -55,10 +55,19 @@ The repository is its own marketplace, so there is nothing else to add. Working
 from a clone instead? Start the session with
 `claude --plugin-dir /path/to/sdlc/plugin`.
 
-`npx skills add bbsnly/sdlc` installs the runbook as a plain
-[Agent Skill](https://agentskills.io), for any agent that reads them. It is the
-runbook only — no binary, no agents, no hook, so nothing is enforced. The plugin
-is what makes the loop a loop.
+Or, with the [`skills` CLI](https://github.com/vercel-labs/skills):
+
+```console
+$ npx skills add bbsnly/sdlc
+```
+
+That installs the runbook as a plain [Agent Skill](https://agentskills.io), in
+the place every agent that reads them looks. It is the runbook only — the gates
+in order and what each one produces. The binary is what records a gate and the
+plugin's hook is what refuses anything, and neither comes this way, so the skill
+checks for both and stops if they are missing. Use it to read the loop, to run
+it against a different agent, or to pin the runbook in a repository that
+installs the rest some other way.
 
 **3. Your project**, from its root:
 
