@@ -185,6 +185,42 @@ var Rules = []Rule{
 		},
 	},
 	{
+		ID: "reviewer-reviews",
+		Route: "record the verdict with `sdlc review add <gate> <role> approve|block`, " +
+			"and say what is wrong rather than fixing it -- a reviewer that " +
+			"changes the work is reviewing its own",
+		check: func(r Request) string {
+			role := NormalizeAgent(r.Agent)
+			if !model.IsReviewRole(role) {
+				return ""
+			}
+			// The story's own directory stays open, the way it is for every
+			// other agent: a reviewer working something out on paper is not a
+			// reviewer changing the work. The review itself still goes through
+			// `sdlc review add`, which the rule below holds it to.
+			if pathrules.UnderAny(r.Path, storyDir(r.Story)) {
+				return ""
+			}
+			return "a reviewer does not write the work it is reviewing: " + role +
+				" says what is wrong and somebody else changes it, which is the " +
+				"separation that makes a review worth having"
+		},
+	},
+	{
+		ID: "bookkeeper-writes-the-retro-and-the-map",
+		Route: "store the retro with `sdlc artifact write retro`; CODEMAP.md is the " +
+			"only other thing this gate produces",
+		check: func(r Request) string {
+			if NormalizeAgent(r.Agent) != "bookkeeper" {
+				return ""
+			}
+			if pathrules.UnderAny(r.Path, storyDir(r.Story), "CODEMAP.md") {
+				return ""
+			}
+			return "the retro records what happened; it does not change it"
+		},
+	},
+	{
 		ID: "gate-record-is-written-by-the-tool",
 		Route: "record outcomes with `sdlc gate <name> pass|fail --note \"...\"`; " +
 			"the record is the loop's memory and every later gate reads it",

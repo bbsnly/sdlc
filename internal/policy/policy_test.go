@@ -58,6 +58,14 @@ var fixtures = map[string]fixture{
 		denies:  Request{Tool: "Write", Agent: "sdlc:architect", Path: ".sdlc/stories/A-1/reviews/design_review-architect-1.md", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc:architect", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
 	},
+	"reviewer-reviews": {
+		denies:  Request{Tool: "Write", Agent: "sdlc:architect", Path: "internal/billing/invoice.go", Story: "A-1"},
+		permits: Request{Tool: "Write", Agent: "sdlc:architect", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
+	},
+	"bookkeeper-writes-the-retro-and-the-map": {
+		denies:  Request{Tool: "Write", Agent: "sdlc:bookkeeper", Path: "internal/billing/invoice.go", Story: "A-1"},
+		permits: Request{Tool: "Write", Agent: "sdlc:bookkeeper", Path: "CODEMAP.md", Story: "A-1"},
+	},
 	"gate-artifact-is-written-by-the-tool": {
 		denies:  Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/ANALYSIS.md", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},

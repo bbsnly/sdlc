@@ -120,6 +120,31 @@ does not recognise, add that directory to `paths.tests`.
 Refuses the analysis agent writing outside its own story directory and
 `CODEMAP.md`.
 
+### `reviewer-reviews`
+
+Refuses any of the eight reviewing agents — architect, security, red-team, perf,
+human-advocate, verifier, code-reviewer, bookkeeper — writing outside the story's
+own directory.
+
+A reviewer that changes the work is reviewing its own, and the independence that
+made the review worth having is gone. The story directory stays open so a
+reviewer can work something out on paper; the verdict itself still goes through
+`sdlc review add`, which the rule above holds it to.
+
+*Instead:* record the verdict with `sdlc review add <gate> <role> approve|block`
+and say what is wrong rather than fixing it.
+
+### `bookkeeper-writes-the-retro-and-the-map`
+
+Refuses the retro agent writing anything but its own story directory and
+`CODEMAP.md`.
+
+The retro records what happened. An agent that can change the code while writing
+up the lessons can also write up lessons it has just made untrue.
+
+*Instead:* `sdlc artifact write retro`; `CODEMAP.md` is the only other thing this
+gate produces.
+
 ### `orchestrator-delegates`
 
 Refuses the main conversation writing code or tests during an iteration.

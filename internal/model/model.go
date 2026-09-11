@@ -432,6 +432,18 @@ var Reviewers = []Reviewer{
 	{Role: "human-advocate", Gate: GateCodeReview},
 }
 
+// IsReviewRole reports whether a role is one of the reviewers. Taken from the
+// roster above, so a reviewer added there is governed without anyone having to
+// remember a second list.
+func IsReviewRole(role string) bool {
+	for _, r := range Reviewers {
+		if r.Role == role {
+			return true
+		}
+	}
+	return false
+}
+
 // ReviewersFor lists the reviews one gate expects.
 func ReviewersFor(g Gate) []Reviewer {
 	var out []Reviewer
