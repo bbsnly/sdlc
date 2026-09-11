@@ -96,6 +96,31 @@ commit you received. The two halves are kept compatible on purpose, and the
 binary is the one that enforces; if they ever disagree, `sdlc doctor` is what
 tells you.
 
+### The skill on its own, with `npx skills add`
+
+The runbook is also an [Agent Skill](https://agentskills.io), so the `skills`
+CLI can install it into any agent that reads them:
+
+```console
+$ npx skills add bbsnly/sdlc
+```
+
+That puts `SKILL.md` in `.claude/skills/next/` (and the equivalent directory for
+every other agent it knows), records it in `skills-lock.json`, and gives you
+`/next` in a session.
+
+Know what that route brings and what it does not. It brings the runbook: the
+order of the gates, what each one produces, what to do when one fails. It does
+**not** bring the binary, the eleven agents, or the hook — so nothing is
+recorded, nothing is frozen, and nothing is refused. The skill checks for the
+tool and for the agents before it does anything and stops if either is missing,
+because a loop with no enforcement behind it is a checklist, and a checklist you
+mark off about your own work is worth nothing.
+
+Use it to read the loop, to run it against a different agent, or to pin the
+runbook in a repository that installs the rest some other way. To actually use
+the loop in Claude Code, install the plugin above.
+
 ## Check it worked
 
 From inside a project:

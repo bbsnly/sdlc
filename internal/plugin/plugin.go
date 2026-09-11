@@ -38,6 +38,14 @@ type Marketplace struct {
 		Name        string `json:"name"`
 		Source      string `json:"source"`
 		Description string `json:"description"`
+		// Skills is not read by Claude Code, which finds a plugin's skills
+		// from its directory. It is read by the `skills` CLI
+		// (`npx skills add bbsnly/sdlc`), which looks at the standard skill
+		// locations first, then at this key, and only then falls back to
+		// searching the whole repository. Declaring it is what keeps that
+		// route from depending on a fallback that any stray SKILL.md would
+		// change.
+		Skills []string `json:"skills"`
 	} `json:"plugins"`
 }
 

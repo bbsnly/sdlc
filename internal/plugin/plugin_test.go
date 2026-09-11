@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -48,6 +49,40 @@ func TestTheManifestAndTheMarketplaceAgree(t *testing.T) {
 	}
 	if manifest.Version == "" || manifest.Description == "" || manifest.Homepage == "" {
 		t.Errorf("manifest = %+v", manifest)
+	}
+}
+
+// The `skills` CLI (`npx skills add bbsnly/sdlc`) installs the skill without
+// the plugin around it. It finds skills by looking at the standard locations,
+// then at what the marketplace declares, and only then by searching the whole
+// repository -- so a skill this file does not declare is installed by a
+// fallback that any stray SKILL.md elsewhere in the tree would change.
+func TestTheMarketplaceDeclaresEverySkill(t *testing.T) {
+	market, err := LoadMarketplace(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	skills, err := Skills(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := market.Plugins[0]
+
+	declared := map[string]bool{}
+	for _, rel := range entry.Skills {
+		declared[path.Clean(rel)] = true
+		at := filepath.Join(repoRoot, entry.Source, filepath.FromSlash(rel), "SKILL.md")
+		if _, err := os.Stat(at); err != nil {
+			t.Errorf("the marketplace declares the skill %q, and there is no SKILL.md there", rel)
+		}
+	}
+	for _, skill := range skills {
+		want := "skills/" + skill.Name
+		if !declared[want] {
+			t.Errorf("the %s skill is not declared in the marketplace: add %q to "+
+				"plugins[0].skills, or `npx skills add` finds it only by searching",
+				skill.Name, "./"+want)
+		}
 	}
 }
 

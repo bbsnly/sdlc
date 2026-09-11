@@ -20,6 +20,10 @@ Run:
 sdlc status --json
 ```
 
+- If the command is not found at all, you have this runbook without the tool it drives. Say so,
+  give the user the install line for their platform from
+  <https://github.com/bbsnly/sdlc/blob/main/docs/installation.md>, and stop. Nothing below this
+  line works without it, and doing the gates by hand is the failure the loop exists to prevent.
 - If it fails with `SDLC-E0002`, this project has not been set up. Tell the user, and offer to
   run `sdlc init`. Stop until they answer.
 - If it fails with `SDLC-E0001`, you are not in a Git repository. Say so and stop.
@@ -28,6 +32,12 @@ sdlc status --json
   that out so you do not have to. Go straight to that section below.
 - With no story active there is no `next_gate`; `next` names the story that would be picked
   up. Start at Gate 1.
+
+Each gate below is delegated to an agent that ships with the plugin. If those agents are not
+available in this session, the plugin is not installed — this runbook is here on its own. Tell
+the user to run `/plugin marketplace add bbsnly/sdlc` and `/plugin install sdlc@sdlc`, and stop.
+Without the agents there is no fresh context per gate and no hook refusing anything, and a loop
+you run yourself from end to end is a checklist you are marking off about your own work.
 
 ## Gate 1 — Select the story
 

@@ -55,6 +55,11 @@ The repository is its own marketplace, so there is nothing else to add. Working
 from a clone instead? Start the session with
 `claude --plugin-dir /path/to/sdlc/plugin`.
 
+`npx skills add bbsnly/sdlc` installs the runbook as a plain
+[Agent Skill](https://agentskills.io), for any agent that reads them. It is the
+runbook only — no binary, no agents, no hook, so nothing is enforced. The plugin
+is what makes the loop a loop.
+
 **3. Your project**, from its root:
 
 ```console
