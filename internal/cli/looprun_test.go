@@ -509,6 +509,41 @@ func TestCodeChangedAfterTheReviewCannotBeCommitted(t *testing.T) {
 // And the ordinary path is untouched. The subject for both review gates is the
 // whole tree, computed by staging it into a temporary index, so committing the
 // work does not change it -- which is what makes the check above safe.
+// One story per session means a story is picked up again, in a new session, at
+// whatever gate it had reached. Starting it again must therefore be the no-op
+// the help says it is -- and it was not: it stamped a fresh timestamp into the
+// backlog, which is a tracked file, which is part of the tree the verifier and
+// every Gate 7 reviewer are stamped against. Resuming sent all five back to
+// re-review work that had not changed.
+func backlogBytes(t *testing.T, root string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(root, "user_stories.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+func TestResumingAStoryDoesNotStaleItsReviews(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+	reach(t, root, model.GateCommit)
+
+	// The session ends and another one picks the story up.
+	mustRun(t, "stop")
+	before := backlogBytes(t, root)
+	mustRun(t, "start")
+	if after := backlogBytes(t, root); after != before {
+		t.Error("starting a story that was already under way rewrote the backlog")
+	}
+
+	commitEverything(t, root)
+	if r := run(t, "gate", "commit", "pass", "--note", "on trunk"); r.code != 0 {
+		t.Fatalf("the commit gate refused work that only changed sessions:\n%s%s", r.stdout, r.stderr)
+	}
+}
+
 func TestCommittingWhatWasReviewedStillPasses(t *testing.T) {
 	root := gitProject(t)
 	mustRun(t, "init")

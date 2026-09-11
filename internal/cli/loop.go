@@ -77,7 +77,7 @@ func newStartCmd() *cobra.Command {
 				}
 			}
 
-			story, backlog, err := s.Story(id)
+			story, _, err := s.Story(id)
 			if err != nil {
 				return err
 			}
@@ -92,9 +92,11 @@ func newStartCmd() *cobra.Command {
 			// whether or not the iteration that started it is still running.
 			resume := story.Status == model.StatusInProgress ||
 				story.Status == model.StatusAwaitingHuman
-			story.Status = model.StatusInProgress
-			story.Updated = model.Timestamp(s.Now())
-			if err := s.SaveBacklog(backlog); err != nil {
+			// Picking a story up again is the no-op the help promises it is:
+			// SetStoryStatus writes nothing when the status is already the one
+			// asked for, which keeps a resume out of the tree the reviewers
+			// were stamped against.
+			if err := s.SetStoryStatus(id, model.StatusInProgress); err != nil {
 				return err
 			}
 			if err := s.SetActive(id); err != nil {

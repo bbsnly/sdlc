@@ -152,10 +152,19 @@ func (s *Store) Story(id string) (*model.Story, *model.Backlog, error) {
 }
 
 // SetStoryStatus moves a story to a new status and saves the backlog.
+//
+// Moving a story to the status it already has is not a move, and this writes
+// nothing. That is not an optimisation. The backlog is a tracked file, and the
+// whole tree is what the verifier's and the code reviewer's approvals are
+// stamped with -- so a write that changed nothing but the timestamp would send
+// both back to re-review work that had not changed.
 func (s *Store) SetStoryStatus(id string, status model.Status) error {
 	found, b, err := s.Story(id)
 	if err != nil {
 		return err
+	}
+	if found.Status == status {
+		return nil
 	}
 	found.Status = status
 	found.Updated = model.Timestamp(s.now())
