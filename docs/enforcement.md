@@ -52,6 +52,11 @@ either can make the record say something that did not happen.
 *Instead:* change configuration by hand outside a running iteration; change loop
 state through the `sdlc` command.
 
+`CLAUDE.md` is in that list for the same reason the test freeze exists. A rule
+the agent can edit is a rule that stopped applying to it, and a contract rewritten
+to get past a gate takes every gate after it with it. If a rule is genuinely
+wrong, the loop's answer is to stop and say so, not to edit it and carry on.
+
 ### `gate-record-is-written-by-the-tool`
 
 Refuses any in-place edit of `gate-record.json`.

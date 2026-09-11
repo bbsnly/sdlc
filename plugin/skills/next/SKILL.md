@@ -276,6 +276,11 @@ Do not pass a gate to keep moving. Do not do a gate's work yourself because dele
 refused. Do not lift the test freeze to make something pass — if a frozen test is genuinely
 wrong, say which acceptance criterion it contradicts and ask the user.
 
+Do not change the contract to get past a gate either. `CLAUDE.md` is refused while a story is
+running for the same reason a frozen test is: a rule you can edit is a rule that stopped
+applying to you. If a rule in the `## SDLC Contract` section is genuinely wrong, say which rule
+blocks which gate, and ask the user to change it.
+
 If the same gate fails three times, stop and show the user. Something upstream is wrong, and a
 fourth attempt will find the same wall.
 
