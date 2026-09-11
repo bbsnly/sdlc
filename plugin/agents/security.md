@@ -1,8 +1,7 @@
 ---
 name: security
 description: Security reviewer for Gates 4 and 7. Blocking whenever the story is security-sensitive — authentication, authorisation, secrets, money, personal data, external input, cryptography, a trust boundary, or model-generated input — and advisory otherwise. Reviews the threat assessment and plan at Gate 4 and the diff at Gate 7. Read-only.
-model: opus
-effort: max
+model: inherit
 tools: Read, Grep, Glob, Bash
 permissionMode: default
 maxTurns: 60

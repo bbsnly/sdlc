@@ -1,8 +1,7 @@
 ---
 name: sdet
 description: Gate 3 test author. Use it to turn a story's acceptance criteria into executable tests that fail for the right reason and are then frozen by content. Fresh context; writes test files and the story's own directory, never production code.
-model: opus
-effort: max
+model: inherit
 tools: Read, Grep, Glob, Bash, Write, Edit
 permissionMode: acceptEdits
 maxTurns: 80

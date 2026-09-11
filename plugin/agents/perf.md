@@ -1,8 +1,7 @@
 ---
 name: perf
 description: Performance reviewer for Gates 4 and 7. Advisory, and blocking only when a stated performance budget in CLAUDE.md is breached. Use it to check algorithmic complexity, allocation, unbounded growth and concurrency hazards in a plan or a diff. Read-only.
-model: opus
-effort: max
+model: inherit
 tools: Read, Grep, Glob, Bash
 permissionMode: default
 maxTurns: 40

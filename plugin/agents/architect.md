@@ -1,8 +1,7 @@
 ---
 name: architect
 description: Blocking design reviewer for Gate 4. Use it to review a story's plan against the acceptance criteria, the architecture rules in CLAUDE.md, and the shape of the existing code, and to approve or block it. Read-only; records its review through the sdlc command.
-model: opus
-effort: max
+model: inherit
 tools: Read, Grep, Glob, Bash
 permissionMode: default
 maxTurns: 60

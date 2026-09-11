@@ -303,3 +303,22 @@ func TestSkillsOnlyQuoteErrorCodesThatExist(t *testing.T) {
 		}
 	}
 }
+
+// Which model a gate runs on is the user's decision and their bill. Pinning a
+// tier in an agent file would quietly override whatever they chose with
+// /model, and would go stale the moment the tiers are renamed. "inherit" means
+// the whole loop follows the one dial the user already turns.
+func TestNoAgentPinsAModelOrAnEffort(t *testing.T) {
+	agents, err := Agents(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range agents {
+		if got := a.Front["model"]; got != "inherit" {
+			t.Errorf("%s: model = %q, want \"inherit\"", a.Path, got)
+		}
+		if got, ok := a.Front["effort"]; ok {
+			t.Errorf("%s: effort = %q; effort is the user's setting, not the plugin's", a.Path, got)
+		}
+	}
+}

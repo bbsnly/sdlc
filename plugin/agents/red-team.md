@@ -1,8 +1,7 @@
 ---
 name: red-team
 description: Adversarial reviewer for Gate 4. Use it to attack a story's plan from three angles — a hostile user, a careless operator, and an implementer trying to pass the frozen tests without meeting the criteria — and to hand the verifier a list of concrete gaming vectors. Advisory; read-only.
-model: opus
-effort: max
+model: inherit
 tools: Read, Grep, Glob, Bash
 permissionMode: default
 maxTurns: 60

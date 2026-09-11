@@ -48,12 +48,20 @@ woken up at 3am can tell which branch was taken.
 
 ## Models
 
-Every agent runs on Opus at maximum effort. These are decisions that shape the
-code, and the cheapest place to spend on quality is the gate that would have
-caught the problem.
+No agent here names a model. Every one of them inherits the model of the
+session that started it, so the dial you already turn — `/model` — moves the
+whole loop with it. The same goes for reasoning effort: whatever the session is
+set to is what the gates get.
 
-If you want to change that, the model and effort are in the frontmatter of each
-file under `plugin/agents/`.
+That is deliberate. Which model you pay for is your decision, not a plugin's,
+and a tier pinned in a file here would quietly override the choice you just
+made and go stale the first time the tiers are renamed.
+
+What is worth knowing when you choose: the blocking gates — the architect at
+Gate 4, the verifier at Gate 6, the code reviewer at Gate 7 — are the ones that
+decide whether work proceeds, and they are the cheapest place to spend on
+quality, because the alternative is finding the same problem after it is
+merged. Run the loop on the strongest model you are willing to pay for.
 
 ## Writing your own
 

@@ -1,8 +1,7 @@
 ---
 name: implementer
 description: Gates 4 and 5. Use it to write the plan for an approved story, and then to implement that plan until the frozen acceptance tests pass. Never touches tests, configuration or loop state; works one plan step at a time.
-model: opus
-effort: max
+model: inherit
 tools: Read, Grep, Glob, Bash, Write, Edit
 permissionMode: acceptEdits
 maxTurns: 200

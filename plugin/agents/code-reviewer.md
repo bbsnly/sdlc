@@ -1,8 +1,7 @@
 ---
 name: code-reviewer
 description: Blocking code reviewer for Gate 7. Use it after verification to review the story's diff for correctness against the plan and the acceptance criteria, for maintainability, conventions, and hidden test-gaming. Fresh context, full read-only access, never the implementer's transcript.
-model: opus
-effort: max
+model: inherit
 tools: Read, Grep, Glob, Bash
 permissionMode: default
 maxTurns: 80

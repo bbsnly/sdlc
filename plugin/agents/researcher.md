@@ -1,8 +1,7 @@
 ---
 name: researcher
 description: Gate 2 analysis agent. Use it to analyse a selected story against the specification, the codebase map and the architecture contract, and to produce the analysis, the threat assessment and a security-sensitivity decision before any tests or plan are written. Fresh context; stores its documents through `sdlc artifact write` and otherwise writes only under .sdlc/stories/<ID>/ and CODEMAP.md.
-model: opus
-effort: max
+model: inherit
 tools: Read, Grep, Glob, Bash, Write
 permissionMode: acceptEdits
 maxTurns: 60
