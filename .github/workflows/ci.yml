@@ -91,6 +91,11 @@ jobs:
           else
             got=$(shasum -a 256 "${RUNNER_TEMP}/${asset}" | awk '{print $1}')
           fi
+          # GNU coreutils escapes a line whose filename contains a backslash by
+          # prefixing the whole line with one. RUNNER_TEMP on the Windows runner
+          # is a D:\a\_temp path, so the hash comes back as \8a4e35... and
+          # compares unequal to an identical hash.
+          got="${got#\\}"
           if [ "${got}" != "${want}" ]; then
             echo "::error::${asset} does not match its pinned checksum" >&2
             echo "expected ${want}" >&2

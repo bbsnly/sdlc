@@ -227,6 +227,9 @@ tasks:
           else
             sum=$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')
           fi
+          # GNU coreutils prefixes the line with a backslash when the filename
+          # contains one, which is what a Windows temporary path looks like.
+          sum="${sum#\\}"
           printf '%s  %s\n' "$sum" "$asset" >> "$tmp/out"
           echo "  $asset  $sum" >&2
         done
