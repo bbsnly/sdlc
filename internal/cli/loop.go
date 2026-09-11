@@ -1,16 +1,20 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
 )
+
+const securityFlag = "security-sensitive"
 
 // ---------------------------------------------------------------- start
 
@@ -220,6 +224,7 @@ type gatePayload struct {
 
 func newGateCmd() *cobra.Command {
 	var note, storyID string
+	var securitySensitive bool
 	cmd := &cobra.Command{
 		Use:   "gate GATE STATUS",
 		Short: "Record the outcome of one gate",
@@ -255,15 +260,17 @@ func newGateCmd() *cobra.Command {
 				}
 			}
 
-			if status == model.GatePass {
-				if err := requireEvidence(s, id, gate); err != nil {
-					return err
-				}
-			}
-
 			record, err := s.Record(id)
 			if err != nil {
 				return err
+			}
+			if status == model.GatePass {
+				if err := requireEvidence(cmd.Context(), s, id, gate, record); err != nil {
+					return err
+				}
+			}
+			if gate == model.GateAnalysis && cmd.Flags().Changed(securityFlag) {
+				record.SetSecuritySensitive(securitySensitive)
 			}
 			record.SetGate(gate, status, note, s.Now())
 			record.Append("gate", string(gate)+" "+string(status), s.Now())
@@ -284,6 +291,9 @@ func newGateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&note, "note", "", "why the gate came out this way, in one line")
+	cmd.Flags().BoolVar(&securitySensitive, securityFlag, false,
+		"the story touches a trust boundary, so the security review blocks "+
+			"(set at the analysis gate; assumed true until it is set)")
 	cmd.Flags().StringVar(&storyID, "story", "",
 		"record against this story instead of the one being worked on")
 	return cmd
@@ -319,14 +329,99 @@ func quote(s string) string { return `"` + s + `"` }
 // first is exactly the instruction this project exists to stop relying on: the
 // hole that started this line of work was a skill saying "do not do this
 // yourself" and the model doing it anyway.
-func requireEvidence(s *store.Store, id string, gate model.Gate) error {
+func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.Gate,
+	record *model.Record,
+) error {
+	if err := requireOrder(gate, record); err != nil {
+		return err
+	}
 	if err := requireDocuments(s, id, gate); err != nil {
 		return err
 	}
-	if gate == model.GateTestsFrozen {
+	if err := requireReviews(ctx, s, id, gate, record); err != nil {
+		return err
+	}
+	switch gate {
+	case model.GateTestsFrozen:
 		return requireFreeze(s, id)
+	case model.GatePlan, model.GateImplementation, model.GateVerification:
+		// The freeze is only worth anything if it is still intact every time
+		// the loop moves. Checking once at Gate 3 would let it be lifted in
+		// silence the moment the implementation got difficult.
+		return requireIntactFreeze(s, id)
+	case model.GateCommit:
+		if err := requireIntactFreeze(s, id); err != nil {
+			return err
+		}
+		return requireCommitted(ctx, s)
+	default:
+		return nil
+	}
+}
+
+// requireOrder keeps the loop a loop.
+//
+// Gates are not a checklist to tick off in any order: each one is done by
+// somebody who could only do it because the one before it happened. Recording
+// a pass out of order is how a story arrives at the commit gate having skipped
+// the one that would have stopped it.
+func requireOrder(gate model.Gate, record *model.Record) error {
+	var missing []string
+	for _, earlier := range gate.Before() {
+		if !record.Pass(earlier) {
+			missing = append(missing, string(earlier))
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return sdlcerr.New(sdlcerr.GateOutOfOrder,
+		string(gate)+" comes after "+strings.Join(missing, ", "),
+		"each gate is done by somebody who could only do it because the one "+
+			"before it happened, so "+plural(len(missing), "that gate has", "those gates have")+
+			" to be recorded first")
+}
+
+// requireIntactFreeze is the freeze, checked again.
+func requireIntactFreeze(s *store.Store, id string) error {
+	lock, err := s.Lock()
+	if err != nil {
+		return err
+	}
+	if lock == nil || lock.Story != id {
+		return sdlcerr.New(sdlcerr.NotFrozen,
+			"the acceptance tests are not frozen for this story",
+			"every gate from here on is measured against them, and a freeze that "+
+				"is not there cannot say whether they changed")
+	}
+	if changed := verifyFreeze(s, lock); len(changed) > 0 {
+		return sdlcerr.New(sdlcerr.FreezeBroken,
+			"the frozen tests are not what was frozen",
+			strings.Join(changed, ", ")+" changed after the freeze was taken")
 	}
 	return nil
+}
+
+// requireCommitted holds the commit gate to its own name.
+func requireCommitted(ctx context.Context, s *store.Store) error {
+	clean, err := gitx.Clean(ctx, s.Root())
+	if err != nil {
+		return err
+	}
+	if !clean {
+		return sdlcerr.New(sdlcerr.TreeNotCommitted,
+			"the commit gate cannot pass while there is uncommitted work",
+			"the gate records that this story reached trunk, and a working tree with "+
+				"changes in it has not")
+	}
+	return nil
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // requireFreeze holds the test gate to the thing it exists for.

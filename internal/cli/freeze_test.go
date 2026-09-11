@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bbsnly/sdlc/internal/model"
 )
 
 // gitProject is a real repository, because the freeze asks git which files are
@@ -41,6 +43,7 @@ func frozenStory(t *testing.T) string {
 	root := gitProject(t)
 	mustRun(t, "init")
 	mustRun(t, "start")
+	reach(t, root, model.GateTestsFrozen)
 	writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// AC-1\n")
 	mustRunWith(t, "# Test plan\n\nAC-1 -> TestRejectsZero\n", "artifact", "write", "test_plan")
 	return root

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bbsnly/sdlc/internal/model"
 )
 
 // storyUnderway is a project with an iteration running, which is the only state
@@ -159,7 +161,8 @@ func TestListNamesEveryDocumentAndWhereItBelongs(t *testing.T) {
 // This is where that is true or it is not: the gates after Gate 2 read the
 // documents, not the summary that said they exist.
 func TestAGateCannotPassUntilItsDocumentsAreStored(t *testing.T) {
-	storyUnderway(t)
+	root := storyUnderway(t)
+	reach(t, root, model.GateAnalysis)
 
 	r := run(t, "gate", "analysis", "pass", "--note", "looks fine to me")
 	if r.code == 0 {

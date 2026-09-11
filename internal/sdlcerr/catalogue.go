@@ -78,6 +78,24 @@ var (
 	ReasonRequired = register("SDLC-E0026",
 		`pass --reason with the one line that explains why the tests have to change`)
 
+	UnknownReviewer = register("SDLC-E0027",
+		`run "sdlc review list" to see which reviews this gate expects`)
+
+	UnknownVerdict = register("SDLC-E0028",
+		`use one of: approve, block, note`)
+
+	ReviewsMissing = register("SDLC-E0029",
+		`delegate to the reviewers this gate expects -- "sdlc review list" shows who is outstanding`)
+
+	ReviewBlocks = register("SDLC-E0030",
+		`fix what the reviewer found, then have the same reviewer look again`)
+
+	GateOutOfOrder = register("SDLC-E0031",
+		`record the earlier gate first -- "sdlc status" shows where this story stands`)
+
+	TreeNotCommitted = register("SDLC-E0032",
+		`commit the work, or stash what does not belong to this story, then record the gate`)
+
 	RepositoryUnreadable = register("SDLC-E0021",
 		`check that git is installed and that this directory is a repository git can read`)
 

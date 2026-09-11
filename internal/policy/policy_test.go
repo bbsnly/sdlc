@@ -52,7 +52,11 @@ var fixtures = map[string]fixture{
 	},
 	"gate-record-is-written-by-the-tool": {
 		denies:  Request{Tool: "Edit", Agent: "", Path: ".sdlc/stories/A-1/gate-record.json", Story: "A-1"},
-		permits: Request{Tool: "Edit", Agent: "", Path: ".sdlc/stories/A-1/reviews/gate-record.json", Story: "A-1"},
+		permits: Request{Tool: "Edit", Agent: "", Path: ".sdlc/stories/A-1/scratch/gate-record.json", Story: "A-1"},
+	},
+	"review-is-written-by-the-tool": {
+		denies:  Request{Tool: "Write", Agent: "sdlc:architect", Path: ".sdlc/stories/A-1/reviews/design_review-architect-1.md", Story: "A-1"},
+		permits: Request{Tool: "Write", Agent: "sdlc:architect", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
 	},
 	"gate-artifact-is-written-by-the-tool": {
 		denies:  Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/ANALYSIS.md", Story: "A-1"},
@@ -276,7 +280,6 @@ func TestTheGateRecordIsNobodysToEdit(t *testing.T) {
 func TestTheArtifactRuleIsNarrow(t *testing.T) {
 	for _, path := range []string{
 		".sdlc/stories/A-1/notes.md",
-		".sdlc/stories/A-1/reviews/ANALYSIS.md",
 		".sdlc/lessons.md",
 	} {
 		if got := Evaluate(Request{Tool: "Write", Agent: "", Path: path, Story: "A-1"}); !got.Allowed {

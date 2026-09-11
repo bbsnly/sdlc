@@ -112,7 +112,7 @@ func newArtifactWriteCmd() *cobra.Command {
 				}
 			}
 
-			content, err := readArtifact(cmd, file)
+			content, err := readDocument(cmd, file)
 			if err != nil {
 				return err
 			}
@@ -130,12 +130,12 @@ func newArtifactWriteCmd() *cobra.Command {
 	return cmd
 }
 
-// readArtifact reads the document from --file or standard input.
+// readDocument reads a gate's document from --file or standard input.
 //
 // The size limit is checked rather than applied. Storing the first megabyte of
 // a longer document would leave every gate after this one reviewing something
 // that stops mid-sentence, which is a worse failure than refusing outright.
-func readArtifact(cmd *cobra.Command, file string) ([]byte, error) {
+func readDocument(cmd *cobra.Command, file string) ([]byte, error) {
 	src, source := cmd.InOrStdin(), "standard input"
 	if file != "" {
 		source = file

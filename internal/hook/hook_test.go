@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bbsnly/sdlc/internal/model"
 )
 
 // noEnv is a project with nothing set, so a test opts in to what it needs.
@@ -363,5 +365,88 @@ func TestABrokenConfigurationStillProtectsWhatItCan(t *testing.T) {
 
 	if !denied(call(t, event(root, "Write", "", ".sdlc/state/active"), noEnv)) {
 		t.Error("loop state became writable because the configuration was broken")
+	}
+}
+
+// ------------------------------------------------------------------ the shell
+
+func command(root, agent, cmd string) string {
+	e := map[string]any{
+		"hook_event_name": "PreToolUse",
+		"tool_name":       "Bash",
+		"cwd":             root,
+		"tool_input":      map[string]string{"command": cmd},
+	}
+	if agent != "" {
+		e["agent_type"] = agent
+	}
+	raw, _ := json.Marshal(e)
+	return string(raw)
+}
+
+// Every other rule in this tool governs the file-writing tools. If the shell is
+// not covered, the whole set of them is one `cat >` away from irrelevant.
+func TestTheShellCannotWriteWhatTheToolsMayNot(t *testing.T) {
+	root := loopProject(t)
+
+	r := call(t, command(root, "sdlc-researcher", "cat x > .sdlc/stories/A-1/ANALYSIS.md"), noEnv)
+	if !denied(r) {
+		t.Fatal("the loop's record was writable through a shell command")
+	}
+	for _, want := range []string{"sdlc artifact write", "loop-state-through-the-tool"} {
+		if !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, want) {
+			t.Errorf("reason is missing %q: %q", want, r.HookSpecificOutput.PermissionDecisionReason)
+		}
+	}
+
+	if denied(call(t, command(root, "sdlc-researcher", "go test ./... -count=1"), noEnv)) {
+		t.Error("an ordinary command was refused")
+	}
+}
+
+// The commit gate is the one the README promises. It stands in front of the
+// commit itself, because by the time a commit has happened the gate has nothing
+// left to protect.
+func TestTheCommitGateStandsInFrontOfGitCommit(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, ".sdlc/stories/A-1/gate-record.json",
+		`{"story":"A-1","gates":{"dor":{"status":"pass","at":"2026-09-10T08:30:00Z"}}}`)
+
+	r := call(t, command(root, "", `git commit -m "done"`), noEnv)
+	if !denied(r) {
+		t.Fatal("a commit went through with the gates unpassed")
+	}
+	if !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "analysis has not passed") {
+		t.Errorf("the refusal does not say what is missing: %q",
+			r.HookSpecificOutput.PermissionDecisionReason)
+	}
+}
+
+func TestOnceEveryGateHasPassedTheCommitGoesThrough(t *testing.T) {
+	root := loopProject(t)
+	gates := map[string]any{}
+	for _, g := range model.GateCommit.Before() {
+		gates[string(g)] = map[string]string{"status": "pass", "at": "2026-09-10T08:30:00Z"}
+	}
+	raw, err := json.Marshal(map[string]any{"story": "A-1", "gates": gates})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, ".sdlc/stories/A-1/gate-record.json", string(raw))
+
+	if denied(call(t, command(root, "", `git commit -m "done"`), noEnv)) {
+		t.Error("the commit gate never opens")
+	}
+}
+
+// A record that cannot be read is not a reason to stand in front of a commit.
+// Blocking work the loop cannot explain is how a tool teaches people to switch
+// it off.
+func TestAnUnreadableRecordDoesNotBlockACommit(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, ".sdlc/stories/A-1/gate-record.json", "{not json")
+
+	if denied(call(t, command(root, "", "git commit -m x"), noEnv)) {
+		t.Error("a broken record blocked a commit")
 	}
 }

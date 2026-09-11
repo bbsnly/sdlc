@@ -197,6 +197,19 @@ var Rules = []Rule{
 		},
 	},
 	{
+		ID: "review-is-written-by-the-tool",
+		Route: "run `sdlc review add <gate> <role> <verdict>` and give it the review; " +
+			"it records who reviewed what, and what they were looking at",
+		check: func(r Request) string {
+			if !pathrules.Under(r.Path, storyDir(r.Story)+"/reviews") {
+				return ""
+			}
+			return "a review is part of a gate's record: it is written by sdlc, which " +
+				"stamps it with the thing that was reviewed so that a later change " +
+				"makes the approval stale instead of silently standing"
+		},
+	},
+	{
 		ID: "gate-artifact-is-written-by-the-tool",
 		Route: "run `sdlc artifact write <name>` and give it the document -- " +
 			"delegate to the agent whose gate it is rather than writing it yourself",

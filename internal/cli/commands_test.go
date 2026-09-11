@@ -176,8 +176,9 @@ func TestAStoryGoesThroughStartGateAndStop(t *testing.T) {
 		t.Fatalf("start = %+v", start)
 	}
 
-	// Gate 2 cannot pass until its documents are stored, so the flow through it
-	// is the flow a real story takes.
+	// Gate 2 comes after Gate 1 and cannot pass until its documents are stored,
+	// so the flow through it is the flow a real story takes.
+	mustRun(t, "gate", "dor", "pass", "--note", "criteria are testable")
 	mustRunWith(t, "# Analysis\n", "artifact", "write", "analysis")
 	mustRunWith(t, "# Threats\n", "artifact", "write", "threats")
 
@@ -331,12 +332,12 @@ func TestGateCanTargetAStoryThatIsNotTheActiveOne(t *testing.T) {
 	  {"id":"B-2","title":"Two","status":"ready","priority":2}]}`)
 	mustRun(t, "start", "A-1")
 
-	got := decode[gatePayload](t, mustRun(t, "gate", "retro", "pass", "--story", "B-2", "--json"))
+	got := decode[gatePayload](t, mustRun(t, "gate", "dor", "pass", "--story", "B-2", "--json"))
 	if got.Story != "B-2" {
 		t.Errorf("gate = %+v", got)
 	}
 	status := decode[statusPayload](t, mustRun(t, "status", "--json"))
-	if status.Active != "A-1" || status.Gates["retro"] == "pass" {
+	if status.Active != "A-1" || status.Gates["dor"] == "pass" {
 		t.Errorf("recording against B-2 changed A-1: %+v", status)
 	}
 }

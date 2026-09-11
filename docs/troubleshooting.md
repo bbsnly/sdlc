@@ -202,3 +202,57 @@ Lifting the freeze needs a reason.
 `--reason` takes one line saying which acceptance criterion the test got wrong. Lifting the
 freeze is sometimes right and is also exactly the move an agent would make to reach green;
 recording why is what tells the two apart.
+
+### SDLC-E0027
+
+That gate does not expect a review from that role.
+
+Reviews are registered per gate: the architect reviews the design, the code reviewer reviews the
+diff, and so on. `sdlc review list` shows which reviews each gate expects and where each has got
+to. If a role you want is not there, it is not part of this gate.
+
+### SDLC-E0028
+
+A reviewer approves, blocks, or leaves a note.
+
+`approve` is what lets a blocking reviewer's gate pass. `block` stops it. `note` records a
+finding that is worth having on the record but does not stand in the way — it is what an
+advisory reviewer usually files.
+
+### SDLC-E0029
+
+The gate's reviews are not in.
+
+Either a reviewer has not reported, or one reported on something that has changed since. The
+second case is the one worth understanding: a review is stamped with what was in front of it —
+the plan's content at the design gate, the whole tree at the code gate — so revising the plan or
+touching the code makes every earlier approval stale. That is deliberate. An approval of a plan
+that has since changed is not an approval.
+
+Send the change back to the reviewers that are outstanding; `sdlc review list` names them.
+
+### SDLC-E0030
+
+A blocking reviewer blocked.
+
+This is the loop working. Fix what the reviewer found, then have the **same** reviewer look
+again — its new verdict replaces the old one, and the gate reads the latest. Recording the gate
+as failed and moving on is not an option the tool offers, because it is the one that would make
+every review optional.
+
+### SDLC-E0031
+
+A gate was recorded out of order.
+
+Each gate is done by somebody who could only do it because the one before it happened: the plan
+is written against frozen tests, the code is written against a reviewed plan, the review reads a
+verified implementation. `sdlc status` shows where the story stands.
+
+If an earlier gate failed, record it again once it genuinely passes. There is no flag to skip it.
+
+### SDLC-E0032
+
+The commit gate cannot pass while there is uncommitted work.
+
+The gate records that this story reached trunk. Commit the change, or stash what does not belong
+to this story, and then record the gate.

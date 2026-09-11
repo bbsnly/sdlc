@@ -12,6 +12,7 @@ import (
 	"github.com/bbsnly/sdlc/internal/cli"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/policy"
+	"github.com/bbsnly/sdlc/internal/shellpolicy"
 )
 
 const (
@@ -133,7 +134,7 @@ func TestTheHookRunsSomethingThatExists(t *testing.T) {
 
 	for _, entry := range entries {
 		for _, tool := range strings.Split(entry.Matcher, "|") {
-			if !policyGoverns(tool) {
+			if !governed(tool) {
 				t.Errorf("the hook matches %q, which the policy does not govern: "+
 					"every tool call it intercepts costs the user latency", tool)
 			}
@@ -187,7 +188,16 @@ func assertExecutableInGit(t *testing.T, repoPath string) {
 	}
 }
 
-func policyGoverns(tool string) bool {
+// governed reports whether a tool this matcher intercepts has rules waiting for
+// it. Every tool call the hook sees costs the user latency, so a matcher naming
+// a tool nothing governs is pure cost.
+func governed(tool string) bool {
+	if tool == "Bash" {
+		// The shell is governed by its own package, because the rules a shell
+		// command needs are not the rules a file path needs.
+		_, refused := shellpolicy.Inspect("rm .sdlc/state/active", shellpolicy.State{CommitReady: true})
+		return refused
+	}
 	return !policy.Evaluate(policy.Request{
 		Tool: tool, Path: ".sdlc/state/active", Story: "A-1",
 	}).Allowed

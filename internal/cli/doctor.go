@@ -121,6 +121,7 @@ func runChecks() []check {
 		return append(out, skipRest("git repository")...)
 	}
 	add(check{Name: "git repository", State: stateOK, Detail: root})
+	add(gitCheck())
 
 	cfg, err := config.Load(root)
 	if err != nil {
@@ -148,7 +149,7 @@ func runChecks() []check {
 // also what skipRest walks, so the report has the same shape whether or not it
 // got all the way through.
 var checkOrder = []string{
-	"git repository", "configuration", "backlog",
+	"git repository", "git command", "configuration", "backlog",
 	"project contract", "commands", "sdlc on PATH",
 }
 
@@ -190,6 +191,20 @@ func backlogCheck(s *store.Store, path, root string) check {
 	}
 	return check{Name: "backlog", State: stateOK, Detail: fmt.Sprintf("%s  (%d %s, %s)",
 		relativeTo(root, path), len(backlog.Stories), noun, runnable)}
+}
+
+// gitCheck asks out loud for the thing two gates depend on. The freeze asks git
+// which files are part of the working tree, and a review is stamped with the
+// hash of what it reviewed -- both fail at the moment they are needed, which is
+// the middle of a story, if git is not on the PATH.
+func gitCheck() check {
+	if _, err := exec.LookPath("git"); err != nil {
+		return check{Name: "git command", State: stateProblem,
+			Detail: "git is not on your PATH",
+			Fix: "install git -- the test freeze and every review are recorded " +
+				"against what git says is in the working tree"}
+	}
+	return check{Name: "git command", State: stateOK, Detail: "found on PATH"}
 }
 
 func contractCheck(root string) check {

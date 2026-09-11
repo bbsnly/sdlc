@@ -255,6 +255,9 @@ var Artifacts = []Artifact{
 	{Name: "analysis", File: "ANALYSIS.md", Gate: GateAnalysis, Role: "researcher"},
 	{Name: "threats", File: "THREATS.md", Gate: GateAnalysis, Role: "researcher"},
 	{Name: "test_plan", File: "TEST-PLAN.md", Gate: GateTestsFrozen, Role: "sdet"},
+	{Name: "plan", File: "PLAN.md", Gate: GatePlan, Role: "implementer"},
+	{Name: "verification", File: "VERIFICATION.md", Gate: GateVerification, Role: "verifier"},
+	{Name: "retro", File: "RETRO.md", Gate: GateRetro, Role: "bookkeeper"},
 }
 
 // ArtifactsFor lists the documents a gate is expected to produce.
@@ -344,6 +347,132 @@ func (l *Lock) Paths() []string {
 	return out
 }
 
+// Before reports the gates a story meets before this one. An earlier gate that
+// has not passed means this one is being recorded out of order, which is how a
+// loop stops being a loop.
+func (g Gate) Before() []Gate {
+	i := slices.Index(Gates, g)
+	if i < 0 {
+		return nil
+	}
+	return Gates[:i]
+}
+
+// ---------------------------------------------------------------- reviews
+
+// Verdict is what a reviewer concluded.
+type Verdict string
+
+// The verdicts a reviewer can reach. A blocking reviewer's approve is what lets
+// a gate pass; a note is a finding worth recording that does not stand in the
+// way.
+const (
+	VerdictApprove Verdict = "approve"
+	VerdictBlock   Verdict = "block"
+	VerdictNote    Verdict = "note"
+)
+
+// Verdicts lists every valid verdict.
+var Verdicts = []Verdict{VerdictApprove, VerdictBlock, VerdictNote}
+
+// Valid reports whether v is a verdict the loop knows.
+func (v Verdict) Valid() bool { return slices.Contains(Verdicts, v) }
+
+// VerdictNames lists them, for a message that has to say.
+func VerdictNames() string {
+	names := make([]string, 0, len(Verdicts))
+	for _, v := range Verdicts {
+		names = append(names, string(v))
+	}
+	return strings.Join(names, ", ")
+}
+
+// Reviewer is one role that reads one gate's work.
+//
+// Blocking and advisory are both real. An advisory reviewer cannot stop a gate,
+// but it still has to report: the point of it is that its findings are on the
+// record, and a reviewer that can be skipped by not running it is not a
+// reviewer at all.
+type Reviewer struct {
+	Role                  string
+	Gate                  Gate
+	Blocking              bool // always blocks
+	WhenSecuritySensitive bool // blocks only when the story touches a trust boundary
+}
+
+// Blocks reports whether this reviewer can refuse the gate for this story.
+func (r Reviewer) Blocks(securitySensitive bool) bool {
+	return r.Blocking || (r.WhenSecuritySensitive && securitySensitive)
+}
+
+// Reviewers is every review the loop expects, by gate.
+var Reviewers = []Reviewer{
+	{Role: "architect", Gate: GateDesignReview, Blocking: true},
+	{Role: "red-team", Gate: GateDesignReview},
+	{Role: "security", Gate: GateDesignReview, WhenSecuritySensitive: true},
+	{Role: "perf", Gate: GateDesignReview},
+	{Role: "human-advocate", Gate: GateDesignReview},
+
+	{Role: "verifier", Gate: GateVerifierReview, Blocking: true},
+
+	{Role: "code-reviewer", Gate: GateCodeReview, Blocking: true},
+	{Role: "security", Gate: GateCodeReview, WhenSecuritySensitive: true},
+	{Role: "perf", Gate: GateCodeReview},
+	{Role: "human-advocate", Gate: GateCodeReview},
+}
+
+// ReviewersFor lists the reviews one gate expects.
+func ReviewersFor(g Gate) []Reviewer {
+	var out []Reviewer
+	for _, r := range Reviewers {
+		if r.Gate == g {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// FindReviewer looks one up by the gate and the role a person types.
+func FindReviewer(g Gate, role string) (Reviewer, bool) {
+	role = strings.ToLower(strings.TrimSpace(role))
+	for _, r := range Reviewers {
+		if r.Gate == g && r.Role == role {
+			return r, true
+		}
+	}
+	return Reviewer{}, false
+}
+
+// ReviewerNames lists the roles one gate expects, for a message that has to say.
+func ReviewerNames(g Gate) string {
+	rs := ReviewersFor(g)
+	names := make([]string, 0, len(rs))
+	for _, r := range rs {
+		names = append(names, r.Role)
+	}
+	if len(names) == 0 {
+		return "no reviewers"
+	}
+	return strings.Join(names, ", ")
+}
+
+// Review is one reviewer's conclusion about one gate.
+//
+// Subject is what was reviewed, by content -- the plan's hash at the design
+// gate, the tree's hash at the code gate. An approval of a plan that has since
+// changed is not an approval, and without recording what was in front of the
+// reviewer there is no way to tell the two apart.
+type Review struct {
+	At      string  `json:"at"`
+	Gate    Gate    `json:"gate"`
+	Role    string  `json:"role"`
+	Verdict Verdict `json:"verdict"`
+	Round   int     `json:"round"`
+	Subject string  `json:"subject,omitempty"`
+	File    string  `json:"file,omitempty"`
+	Note    string  `json:"note,omitempty"`
+}
+
 // GateStatus is the outcome recorded for a gate.
 type GateStatus string
 
@@ -404,8 +533,49 @@ type Record struct {
 	Events      []Event             `json:"events"`
 	Escalations []Escalation        `json:"escalations"`
 	Approvals   []Approval          `json:"approvals"`
+	Reviews     []Review            `json:"reviews,omitempty"`
+	Security    *bool               `json:"security_sensitive,omitempty"`
 	Flags       map[string]any      `json:"flags,omitempty"`
 	Metrics     map[string]any      `json:"metrics,omitempty"`
+}
+
+// SecuritySensitive reports whether the story touches a trust boundary. It
+// decides whether the security reviewer can block, and until Gate 2 has said
+// one way or the other the safe answer is yes.
+func (r *Record) SecuritySensitive() bool { return r.Security == nil || *r.Security }
+
+// SetSecuritySensitive records Gate 2's decision.
+func (r *Record) SetSecuritySensitive(v bool) { r.Security = &v }
+
+// AddReview appends a review and returns it with its round filled in. Reviews
+// are history: a second round does not overwrite the first, because "what did
+// the architect say last time" is a question the next round needs answered.
+func (r *Record) AddReview(rev Review, at time.Time) Review {
+	rev.At = Timestamp(at)
+	rev.Round = r.Round(rev.Gate, rev.Role) + 1
+	r.Reviews = append(r.Reviews, rev)
+	return rev
+}
+
+// Round counts how many times a role has already reviewed a gate.
+func (r *Record) Round(g Gate, role string) int {
+	n := 0
+	for _, rev := range r.Reviews {
+		if rev.Gate == g && rev.Role == role {
+			n++
+		}
+	}
+	return n
+}
+
+// LatestReview is the most recent review of a gate by a role.
+func (r *Record) LatestReview(g Gate, role string) (Review, bool) {
+	for i := len(r.Reviews) - 1; i >= 0; i-- {
+		if r.Reviews[i].Gate == g && r.Reviews[i].Role == role {
+			return r.Reviews[i], true
+		}
+	}
+	return Review{}, false
 }
 
 // NewRecord starts a record for a story.

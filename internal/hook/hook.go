@@ -22,8 +22,10 @@ import (
 	"strings"
 
 	"github.com/bbsnly/sdlc/internal/config"
+	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/policy"
+	"github.com/bbsnly/sdlc/internal/shellpolicy"
 	"github.com/bbsnly/sdlc/internal/store"
 	"github.com/bbsnly/sdlc/internal/testset"
 )
@@ -73,6 +75,7 @@ type payload struct {
 	ToolInput     struct {
 		FilePath     string `json:"file_path"`
 		NotebookPath string `json:"notebook_path"`
+		Command      string `json:"command"`
 	} `json:"tool_input"`
 }
 
@@ -138,6 +141,10 @@ func decide(event string, raw []byte, getenv func(string) string) (policy.Verdic
 		return policy.Allowed, event, false
 	}
 
+	if p.ToolName == "Bash" {
+		return inspectShell(project, story, p), event, true
+	}
+
 	path := p.ToolInput.FilePath
 	if path == "" {
 		path = p.ToolInput.NotebookPath
@@ -155,6 +162,45 @@ func decide(event string, raw []byte, getenv func(string) string) (policy.Verdic
 		Story:   story,
 		Tests:   testState(project, story, rel),
 	}), event, true
+}
+
+// inspectShell applies the shell rules, which exist because every other rule in
+// this tool governs the file-writing tools and a shell command is not one.
+func inspectShell(project, story string, p payload) policy.Verdict {
+	ready, why := commitReady(project, story)
+	slog.Debug("hook considering a command",
+		"agent", p.AgentType, "story", story, "commit_ready", ready, "why", why)
+
+	finding, refused := shellpolicy.Inspect(p.ToolInput.Command,
+		shellpolicy.State{CommitReady: ready, CommitWhy: why})
+	if !refused {
+		return policy.Allowed
+	}
+	return policy.Verdict{Rule: finding.Rule, Reason: finding.Reason, Route: finding.Route}
+}
+
+// commitReady reports whether the story has been through the gates that come
+// before committing, and names the first one that has not.
+//
+// Anything unreadable answers "ready". A story whose record cannot be read is
+// not a story this hook should stand in front of a commit for: the loop would
+// be blocking work it cannot explain, which is the failure mode that teaches
+// people to switch a tool off.
+func commitReady(project, story string) (bool, string) {
+	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "stories", story, model.RecordFile))
+	if err != nil {
+		return true, ""
+	}
+	var record model.Record
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return true, ""
+	}
+	for _, g := range model.GateCommit.Before() {
+		if !record.Pass(g) {
+			return false, string(g) + " has not passed"
+		}
+	}
+	return true, ""
 }
 
 // testState works out what the freeze says about this path.

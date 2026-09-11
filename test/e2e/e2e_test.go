@@ -152,10 +152,7 @@ func TestAStoryReachesTheAnalysisGate(t *testing.T) {
 	}
 
 	runTool(t, binary, root, "start")
-	runTool(t, binary, root, "gate", "dor", "pass", "--note", "criteria are testable")
-	runToolWithInput(t, binary, root, "# Analysis\n", "artifact", "write", "analysis")
-	runToolWithInput(t, binary, root, "# Threats\n", "artifact", "write", "threats")
-	runTool(t, binary, root, "gate", "analysis", "pass", "--note", "not security sensitive")
+	analysed(t, binary, root)
 
 	var after struct {
 		Active string            `json:"active"`
@@ -368,6 +365,7 @@ func TestTheFreezeHoldsThroughTheShippedLauncher(t *testing.T) {
 	binary := build(t)
 	root := project(t, binary)
 	runTool(t, binary, root, "start")
+	analysed(t, binary, root)
 
 	test := filepath.Join(root, "invoice_test.go")
 	if err := os.WriteFile(test, []byte("package main\n\n// AC-1\n"), 0o644); err != nil {
@@ -408,6 +406,7 @@ func TestTheTestGateRefusesAPassOnTestsThatChanged(t *testing.T) {
 	binary := build(t)
 	root := project(t, binary)
 	runTool(t, binary, root, "start")
+	analysed(t, binary, root)
 
 	test := filepath.Join(root, "invoice_test.go")
 	if err := os.WriteFile(test, []byte("package main\n\n// AC-1\n"), 0o644); err != nil {
@@ -432,4 +431,125 @@ func TestTheTestGateRefusesAPassOnTestsThatChanged(t *testing.T) {
 			t.Errorf("the refusal is missing %q:\n%s", want, stderr.String())
 		}
 	}
+}
+
+// TestAStoryReachesTrunk is the whole claim, driven the way a user meets it:
+// the real binary, a real repository, and the shipped launcher standing in
+// front of the commit.
+func TestAStoryReachesTrunk(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the POSIX launcher does not run here")
+	}
+	binary := build(t)
+	root := project(t, binary)
+	runTool(t, binary, root, "start")
+
+	// The commit gate is in front of the commit from the first moment, and it
+	// says which gate is missing rather than just refusing.
+	early := parse(t, launcher(t, binary, root, shell(root, "", `git commit -m "done"`)))
+	if early.HookSpecificOutput.PermissionDecision != "deny" {
+		t.Fatal("a commit went through before any gate had passed")
+	}
+	if !strings.Contains(early.HookSpecificOutput.PermissionDecisionReason, "dor has not passed") {
+		t.Errorf("the refusal does not name the missing gate: %q",
+			early.HookSpecificOutput.PermissionDecisionReason)
+	}
+
+	// And the loop's own record cannot be rewritten through the shell, which is
+	// the one way around every other rule in the tool.
+	shortcut := parse(t, launcher(t, binary, root,
+		shell(root, "sdlc:researcher", "echo pass > .sdlc/stories/US-001/ANALYSIS.md")))
+	if shortcut.HookSpecificOutput.PermissionDecision != "deny" {
+		t.Fatal("the loop's record was writable through a shell command")
+	}
+
+	walk(t, binary, root)
+
+	// Now it goes through.
+	late := parse(t, launcher(t, binary, root, shell(root, "", `git commit -m "done"`)))
+	if late.HookSpecificOutput.PermissionDecision == "deny" {
+		t.Fatalf("the commit gate never opens: %s", late.HookSpecificOutput.PermissionDecisionReason)
+	}
+
+	git(t, root, "add", "-A")
+	git(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test",
+		"commit", "--quiet", "-m", "US-001")
+	runTool(t, binary, root, "gate", "commit", "pass", "--note", "on trunk")
+
+	runToolWithInput(t, binary, root, "# Retro\n", "artifact", "write", "retro")
+	runTool(t, binary, root, "gate", "retro", "pass", "--note", "no deviations")
+
+	var status struct {
+		Gates map[string]string `json:"gates"`
+	}
+	if err := json.Unmarshal([]byte(runTool(t, binary, root, "status", "--json")), &status); err != nil {
+		t.Fatal(err)
+	}
+	for _, gate := range []string{"dor", "analysis", "tests_frozen", "plan", "design_review",
+		"implementation", "verification", "verifier_review", "code_review", "commit", "retro"} {
+		if status.Gates[gate] != "pass" {
+			t.Errorf("%s = %q at the end of the loop", gate, status.Gates[gate])
+		}
+	}
+}
+
+// analysed takes a fresh story through the two gates that come before the
+// freeze, so that a test about Gate 3 starts from a story that got there.
+func analysed(t *testing.T, binary, root string) {
+	t.Helper()
+	runTool(t, binary, root, "gate", "dor", "pass", "--note", "criteria are testable")
+	runToolWithInput(t, binary, root, "# Analysis\n", "artifact", "write", "analysis")
+	runToolWithInput(t, binary, root, "# Threats\n", "artifact", "write", "threats")
+	runTool(t, binary, root, "gate", "analysis", "pass", "--security-sensitive=false")
+}
+
+// walk takes the story from the start up to, but not including, the commit.
+func walk(t *testing.T, binary, root string) {
+	t.Helper()
+	analysed(t, binary, root)
+
+	if err := os.WriteFile(filepath.Join(root, "invoice_test.go"),
+		[]byte("package main\n\n// AC-1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runToolWithInput(t, binary, root, "# Test plan\n", "artifact", "write", "test_plan")
+	runTool(t, binary, root, "freeze")
+	runTool(t, binary, root, "gate", "tests_frozen", "pass", "--note", "1 criterion, 1 failing test")
+
+	runToolWithInput(t, binary, root, "# Plan\n", "artifact", "write", "plan")
+	runTool(t, binary, root, "gate", "plan", "pass", "--note", "one step")
+
+	review(t, binary, root, "design_review", "architect", "red-team", "security", "perf", "human-advocate")
+	runTool(t, binary, root, "gate", "design_review", "pass", "--note", "architect approved")
+
+	runTool(t, binary, root, "gate", "implementation", "pass", "--note", "frozen tests green")
+
+	runToolWithInput(t, binary, root, "# Verification\n", "artifact", "write", "verification")
+	runTool(t, binary, root, "gate", "verification", "pass", "--note", "all commands green")
+	review(t, binary, root, "verifier_review", "verifier")
+	runTool(t, binary, root, "gate", "verifier_review", "pass", "--note", "no gaming found")
+
+	review(t, binary, root, "code_review", "code-reviewer", "security", "perf", "human-advocate")
+	runTool(t, binary, root, "gate", "code_review", "pass", "--note", "reviewer approved")
+}
+
+func review(t *testing.T, binary, root, gate string, roles ...string) {
+	t.Helper()
+	for _, role := range roles {
+		runToolWithInput(t, binary, root, "# "+role+"\n", "review", "add", gate, role, "approve")
+	}
+}
+
+func shell(root, agent, cmd string) string {
+	e := map[string]any{
+		"hook_event_name": "PreToolUse",
+		"tool_name":       "Bash",
+		"cwd":             root,
+		"tool_input":      map[string]string{"command": cmd},
+	}
+	if agent != "" {
+		e["agent_type"] = agent
+	}
+	raw, _ := json.Marshal(e)
+	return string(raw)
 }

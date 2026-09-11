@@ -72,8 +72,14 @@ loop state, and the hook refuses anything else.
 When it returns, read its JSON result and record the gate:
 
 ```bash
-sdlc gate analysis pass --note "<security_sensitive and open_questions, in one clause>"
+sdlc gate analysis pass --security-sensitive --note "<what the threats came to, in one clause>"
 ```
+
+Always pass the flag, one way or the other — `--security-sensitive` when the researcher reported
+`security_sensitive: true`, and `--security-sensitive=false` when it reported false. It is not a
+label: it decides whether the security reviewer can block Gates 4 and 7. Leaving it unset is not
+the same as false; the loop then assumes the answer is yes, which is the safe direction to be
+wrong in but will make you wonder later why security is blocking.
 
 If either document was not stored the gate will refuse to pass, and say which one is missing.
 That is not something to work around: the agent's summary is not the document, and the gates
@@ -127,17 +133,143 @@ never do it to make something pass.
 
 `sdlc status --json` reports the freeze and whether it is still intact.
 
-## What is not built yet
+## Gate 4 — The plan, and its review
 
-Gates 4 to 9 — the plan, implementation, verification, review, commit and retro — are not in
-this version. When gate 3 passes, say so plainly and stop:
+Two gates, recorded separately: the plan, then the review of it.
 
-> The acceptance tests are written, failing and frozen. The rest of the loop is not built yet;
-> `sdlc status` shows where this story stands.
+Delegate to `sdlc:implementer` with the story id and the paths to `story.json`, `ANALYSIS.md`,
+`THREATS.md`, `TEST-PLAN.md` and the frozen tests. Tell it to store the plan with
+`sdlc artifact write plan`, and that this is the plan only — no code yet.
 
-Do not carry on into the later gates by hand. The point of the loop is that each gate is done by
-someone who cannot see the others' reasoning, and doing it in this conversation is exactly what
-it exists to prevent.
+```bash
+sdlc gate plan pass --note "<n> steps, <what it changes>"
+```
+
+Then the review. Delegate to all five, and give each one the story id and the path to `PLAN.md`:
+
+| Agent | Verdict decides the gate? |
+| --- | --- |
+| `sdlc:architect` | yes — always |
+| `sdlc:security` | yes when the story is security-sensitive |
+| `sdlc:red-team` | no, but it must report |
+| `sdlc:perf` | no, but it must report |
+| `sdlc:human-advocate` | no, but it must report |
+
+They can run at the same time; they do not read each other's work, and running them in sequence
+only invites the later ones to agree with the earlier ones. Each records its own review with
+`sdlc review add design_review <role> <verdict>`.
+
+```bash
+sdlc review list --gate design_review
+sdlc gate design_review pass --note "<what the architect said, in one clause>"
+```
+
+The gate refuses until every reviewer has reported and the blocking ones have approved. It also
+refuses an approval of a plan that has since changed: if the plan is revised, the reviewers who
+approved the old one have to look again. Do not edit the plan yourself to satisfy a reviewer —
+send it back to the implementer with the findings.
+
+If a blocking reviewer blocks, that is not a failure to route around:
+
+```bash
+sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
+```
+
+## Gate 5 — Implementation
+
+Delegate to `sdlc:implementer` again, this time to carry out the approved plan. Give it the
+path to `PLAN.md` and tell it the plan is approved.
+
+Do not write any of this code yourself. The frozen tests are what the change is measured
+against, and an implementation shaped by the conversation that will also review it is not
+measured by anything.
+
+When it reports that the frozen tests pass, run the project's own test command and read the
+output. Then:
+
+```bash
+sdlc gate implementation pass --note "<n> files, frozen tests green"
+```
+
+The gate checks the freeze is still intact. If it is not, something edited an acceptance test:
+stop and show the user, rather than freezing again over the top.
+
+## Gate 6 — Independent verification
+
+Delegate to `sdlc:verifier`. Give it the story id and nothing from this conversation beyond the
+paths — the point of it is that it re-derives the criteria from the specification without
+having seen how the code came to be.
+
+It stores `VERIFICATION.md` and records a blocking verdict with
+`sdlc review add verifier_review verifier approve|block`.
+
+```bash
+sdlc gate verification pass --note "all commands green, <n> criteria verified"
+sdlc gate verifier_review pass --note "no gaming found"
+```
+
+If the verifier blocks, send its findings back to `sdlc:implementer` as rework, then have the
+**same** verifier look again. Its verdict is stamped with the tree it reviewed, so an approval
+from before the rework does not count and the gate will say so.
+
+## Gate 7 — Code review
+
+Delegate to `sdlc:code-reviewer`, `sdlc:security`, `sdlc:perf` and `sdlc:human-advocate`, in
+parallel, with the story id. The code reviewer blocks; security blocks when the story is
+security-sensitive; the other two report.
+
+```bash
+sdlc review list --gate code_review
+sdlc gate code_review pass --note "<what the reviewer said, in one clause>"
+```
+
+Rework goes back to `sdlc:implementer`, and then the same reviewers look again — their
+approvals are stamped with the tree, so anything that changed makes them stale.
+
+## Gate 8 — Commit
+
+Only now. Until every gate above has passed, `git commit` is refused by the hook, which will
+tell you which gate is missing.
+
+Commit the whole story as one change: the code, and the loop's own record of how it got there.
+Write the message about the change and why, in the project's own style.
+
+```bash
+git add -A
+git commit -m "<type>: <what changed and why>"
+sdlc gate commit pass --note "<short sha>"
+```
+
+The gate refuses while anything is uncommitted, and refuses if an acceptance test changed since
+the freeze.
+
+## Gate 9 — Retro
+
+Delegate to `sdlc:bookkeeper` with the story id. It reads the gate record and everything under
+the story's directory and stores `RETRO.md`.
+
+```bash
+sdlc gate retro pass --note "<n> deviations, <n> lessons"
+sdlc stop
+```
+
+Then tell the user what was built, what deviated from the plan, and what the retro recorded as
+worth doing differently. Commit the retro if the project keeps it.
+
+## Rework, at any gate
+
+A gate that fails is recorded as failed and the loop goes back, it does not go around:
+
+```bash
+sdlc gate <gate> fail --note "<what went wrong>"
+```
+
+Do not pass a gate to keep moving. Do not do a gate's work yourself because delegating it was
+refused. Do not lift the test freeze to make something pass — if a frozen test is genuinely
+wrong, say which acceptance criterion it contradicts and ask the user.
+
+If the same gate fails three times, stop and show the user. Something upstream is wrong, and a
+fourth attempt will find the same wall.
 
 ## If a command fails
 

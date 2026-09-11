@@ -34,6 +34,7 @@ const (
 	storiesDir = config.Dir + "/stories"
 	activeFile = stateDir + "/active"
 	lockFile   = stateDir + "/tests.lock"
+	reviewsDir = "reviews"
 	recordFile = model.RecordFile
 )
 
@@ -327,6 +328,33 @@ func (s *Store) ArtifactStored(story string, a model.Artifact) bool {
 		return false
 	}
 	return fsx.Exists(filepath.Join(dir, a.File))
+}
+
+// WriteReview stores one reviewer's document inside the story's own reviews
+// directory and returns the path, relative to the repository root.
+//
+// Rounds are kept rather than overwritten: "what did the architect say last
+// time" is a question the next round needs answered.
+func (s *Store) WriteReview(story string, gate model.Gate, role string, round int, content []byte) (string, error) {
+	dir, err := s.StoryDir(story)
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, reviewsDir, reviewName(gate, role, round))
+	if err := s.writeFile(path, content); err != nil {
+		return "", err
+	}
+	return relative(s.root, path), nil
+}
+
+// ReviewPath is where a review lives, relative to the repository root and
+// slash-separated, whether or not it has been written yet.
+func ReviewPath(story string, gate model.Gate, role string, round int) string {
+	return storiesDir + "/" + story + "/" + reviewsDir + "/" + reviewName(gate, role, round)
+}
+
+func reviewName(gate model.Gate, role string, round int) string {
+	return string(gate) + "-" + role + "-" + strconv.Itoa(round) + ".md"
 }
 
 // ArtifactPath is where an artifact lives, relative to the repository root and

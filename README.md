@@ -15,12 +15,11 @@ always green.
 [![ci](https://github.com/bbsnly/sdlc/actions/workflows/ci.yml/badge.svg)](https://github.com/bbsnly/sdlc/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Status: early, and honest about it
+## Status: complete, and not yet released
 
-There is no release, no npm package and no published plugin yet. What exists is
-the first vertical slice: a story can be selected and analysed, with both gates
-recorded and a hook enforcing who may write where while it happens. Gates 3 to 9
-are not built.
+All nine gates are built and enforced, and a story can go from the backlog to a
+commit without leaving the loop. There is no release, no npm package and no
+published plugin yet, so for now it is used from a clone.
 
 [Watch the repository](https://github.com/bbsnly/sdlc/subscription) to hear
 about the first release.
@@ -45,8 +44,7 @@ and adds the contract section to your `CLAUDE.md`. It never overwrites your own
 files, and it writes no `.gitignore`: what a project commits is the project's
 decision.
 
-To use the two gates that exist, start Claude Code with the plugin loaded and
-run `/sdlc:next`:
+Then start Claude Code with the plugin loaded and run `/sdlc:next`:
 
 ```console
 $ claude --plugin-dir /path/to/sdlc/plugin
@@ -57,21 +55,35 @@ $ claude --plugin-dir /path/to/sdlc/plugin
 A story moves through nine gates. Each gate has an owner, and the ones that can
 say no are the point:
 
-| Gate | What happens | Can it block? | Built |
-| --- | --- | --- | --- |
-| 1 · Select | A story is chosen from the backlog and its acceptance criteria agreed | — | Yes |
-| 2 · Analyse | The story is read against the codebase; threats and security sensitivity decided | — | Yes |
-| 3 · Test | Acceptance tests are written from the criteria, and **frozen** — hash-locked | — | Yes |
-| 4 · Plan | The plan is reviewed by an architect, a red team and a security reviewer | **Yes** | Not yet |
-| 5 · Implement | Code is written until the frozen tests pass. Tests cannot be touched | — | Not yet |
-| 6 · Verify | An independent agent re-derives the tests from the spec, hunting test-gaming | **Yes** | Not yet |
-| 7 · Review | The diff is reviewed in a context that never saw the reasoning behind it | **Yes** | Not yet |
-| 8 · Commit | The commit gate checks the tests are still the frozen ones | **Yes** | Not yet |
-| 9 · Retro | Lessons are recorded where the next story will read them | — | Not yet |
+| Gate | What happens | Can it block? |
+| --- | --- | --- |
+| 1 · Select | A story is chosen from the backlog and its acceptance criteria agreed | — |
+| 2 · Analyse | The story is read against the codebase; threats and security sensitivity decided | — |
+| 3 · Test | Acceptance tests are written from the criteria, and **frozen** — hash-locked | — |
+| 4 · Plan | The plan is reviewed by an architect, a red team and a security reviewer | **Yes** |
+| 5 · Implement | Code is written until the frozen tests pass. Tests cannot be touched | — |
+| 6 · Verify | An independent agent re-derives the tests from the spec, hunting test-gaming | **Yes** |
+| 7 · Review | The diff is reviewed in a context that never saw the reasoning behind it | **Yes** |
+| 8 · Commit | The commit gate checks the tests are still the frozen ones | **Yes** |
+| 9 · Retro | Lessons are recorded where the next story will read them | — |
 
 The freeze is what makes the rest mean anything. An agent that can edit its own
 acceptance tests will eventually edit them, and every gate after that is
 theatre.
+
+Four things are checked rather than asked for, and they are the difference
+between a loop and a checklist:
+
+- **A gate cannot pass without what it produces.** No analysis document, no
+  analysis gate. The summary that says the document exists is not the document.
+- **A gate cannot be recorded out of order.** Each one is done by somebody who
+  could only do it because the one before it happened.
+- **An approval goes stale.** A review is stamped with what was in front of it —
+  the plan's content at the design gate, the whole tree at the code gate — so
+  revising the plan or touching the code sends it back to the reviewers who
+  approved the old one.
+- **The commit waits.** `git commit` is refused until every gate before it has
+  passed, and the refusal names the one that has not.
 
 ## How enforcement works
 
@@ -80,14 +92,44 @@ permission block, and the plugin's agents. No git hooks are installed, and
 `sdlc` never writes to `.git/hooks`.
 
 One rule is worth knowing before you first see it fire. A gate's documents — the
-analysis, the threat assessment — are stored with `sdlc artifact write`, not
-written as files by the agent that produced them. They are loop state, the same
-as the gate record, and treating them that way is what stops the conversation
-quietly doing a gate's work and then recording a pass on it.
+analysis, the plan, the reviews — are stored with `sdlc artifact write` and
+`sdlc review add`, not written as files by the agent that produced them. They are
+loop state, the same as the gate record, and treating them that way is what stops
+the conversation quietly doing a gate's work and then recording a pass on it.
+
+Shell commands are covered too, narrowly: a command that would write the loop's
+own record, turn enforcement off, or commit before the gates are done is refused
+and told what to run instead. Everything else — your tests, your build, your
+tooling — is untouched.
 
 That is a deliberate limit worth stating plainly. This is a discipline tool, not
 a sandbox: it constrains an agent that is trying to do the right thing, and it
 does not defend against one that is trying to escape.
+
+## Who does the work
+
+Each gate is run by an agent that starts from a fresh context and can only write
+what its gate produces. None of them sees the others' reasoning, which is the
+whole point: a reviewer that inherited the argument for a change is not a
+reviewer.
+
+| Agent | Gate | Can it block? |
+| --- | --- | --- |
+| `sdlc:researcher` | 2 · analysis and threats | — |
+| `sdlc:sdet` | 3 · acceptance tests | — |
+| `sdlc:implementer` | 4 · the plan, 5 · the code | — |
+| `sdlc:architect` | 4 · design review | **Yes** |
+| `sdlc:security` | 4 and 7 | **Yes**, when the story is security-sensitive |
+| `sdlc:red-team` | 4 · attacks the plan | — |
+| `sdlc:perf` | 4 and 7 | Only against a stated budget |
+| `sdlc:human-advocate` | 4 and 7 | — |
+| `sdlc:verifier` | 6 · independent verification | **Yes** |
+| `sdlc:code-reviewer` | 7 · the diff | **Yes** |
+| `sdlc:bookkeeper` | 9 · retro | — |
+
+Advisory does not mean optional. A gate will not pass until every reviewer it
+expects has reported, because a reviewer you can skip by not running it is not a
+reviewer.
 
 ## Prerequisites
 
