@@ -196,7 +196,10 @@ tasks:
         # The vendored legacy kit under test/parity/legacy is a fixture: the
         # differential tests compare against it byte for byte, so restyling it
         # would break the thing it exists to prove.
-        files=$(git ls-files '*.sh' 'task' 2>/dev/null | grep -v '^test/parity/legacy/' || true)
+        # 'plugin/bin/sdlc-hook' by name: it has no .sh suffix, and it is the
+        # one script that runs on every matching tool call in every session.
+        files=$(git ls-files '*.sh' 'task' 'plugin/bin/sdlc-hook' 2>/dev/null |
+          grep -v '^test/parity/legacy/' || true)
         if [ -n "$files" ]; then
           # shellcheck disable=SC2086
           shellcheck $files

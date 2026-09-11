@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -29,6 +30,40 @@ func page(t *testing.T, name string) string {
 		t.Fatalf("docs/%s: %v", name, err)
 	}
 	return string(raw)
+}
+
+// .claude-code-version was written in the first commit and read by nothing:
+// no CI step installed it, no test asserted it, and CONTRIBUTING.md described
+// a SDLC_ALLOW_CLI_DRIFT flag that did not exist. Meanwhile the README said
+// one version and the installation page said "any recent version". Three
+// statements about the same requirement, none of them checked.
+func TestEveryPageAgreesOnTheClaudeCodeVersion(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", ".claude-code-version"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := strings.TrimSpace(string(raw))
+	if pin == "" {
+		t.Fatal(".claude-code-version is empty")
+	}
+
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := regexp.MustCompile(`Claude Code[^\n|]*?(\d+\.\d+\.\d+)`)
+	for name, body := range map[string]string{
+		"README.md":               string(readme),
+		"docs/installation.md":    page(t, "installation.md"),
+		"docs/getting-started.md": page(t, "getting-started.md"),
+	} {
+		for _, m := range version.FindAllStringSubmatch(body, -1) {
+			if m[1] != pin {
+				t.Errorf("%s says Claude Code %s and .claude-code-version says %s",
+					name, m[1], pin)
+			}
+		}
+	}
 }
 
 // commands walks the real command tree, so a new verb arrives here without

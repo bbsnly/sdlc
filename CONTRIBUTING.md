@@ -34,20 +34,17 @@ Two things Go cannot fetch for you, because they are not Go programs:
 reports success for work it did not do, so every leg either runs or fails with
 an install line.
 
-## A note on the Claude Code version pin
+## A note on the Claude Code version
 
-`.claude-code-version` pins the version that CI installs and that some tests
-assert against. Claude Code updates itself, so **your local copy will drift past
-that pin, and that is not your fault.** When it does, the check fails and names
-the flag that lets you continue:
+`.claude-code-version` is the version this is developed and tested against, and
+it is the one number: the README and the installation page are checked against
+it, so a bump lands everywhere or it fails.
 
-```console
-$ SDLC_ALLOW_CLI_DRIFT=1 ./task check
-```
-
-CI keeps the hard failure, because CI installs the pinned version and a mismatch
-there is a real defect. Locally it is noise, and bumping the pin on trunk is the
-honest fix when the newer version is the one we should be testing against.
+Claude Code updates itself, so your local copy will run ahead of it. That is
+not a problem and nothing fails because of it — the file says what we build
+against, not what you must run. Bump it on trunk when the newer version is the
+one worth testing against, and the test will tell you which pages to bring
+with it.
 
 ## How changes are made
 

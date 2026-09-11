@@ -194,7 +194,7 @@ reviewer.
 
 ## Prerequisites
 
-- **Claude Code** 2.1.263 or newer
+- **Claude Code** 2.1.265 or newer
 - **git**, and on Windows [Git for Windows](https://git-scm.com/download/win)
   (WSL is not required)
 - **Go** 1.26 or newer, to build from source while there is no release

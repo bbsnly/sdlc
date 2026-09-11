@@ -43,8 +43,9 @@
 .DS_Store
 Thumbs.db
 
-# The binary the plugin launcher finds. Built by `task build-plugin`, never committed:
-# the plugin ships from a release archive, not from the repository.
+# The binary the plugin launcher finds if it is there. Never committed: the
+# plugin ships from a release archive, not from the repository, and `./task
+# build` puts the binary in dist/ instead.
 /plugin/bin/sdlc
 /plugin/bin/sdlc.exe
 

@@ -194,7 +194,7 @@ A project's own `.sdlc/` directory is yours; nothing removes it for you.
 
 | | |
 | --- | --- |
-| Claude Code | any recent version |
+| Claude Code | 2.1.265 or newer |
 | git | in the project you run the loop on |
 | an OS | macOS, Linux, or Windows 10 or newer |
 
