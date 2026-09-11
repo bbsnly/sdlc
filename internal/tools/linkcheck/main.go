@@ -272,34 +272,51 @@ func isExternal(target string) bool {
 	return false
 }
 
+// skipped is what a link check has no business walking into. The legacy kit is
+// a byte-for-byte fixture for the differential tests, the scaffold templates
+// are written into somebody else's repository where their links resolve, and
+// the rest is not ours.
+var skipped = map[string]bool{
+	".git":                        true,
+	"node_modules":                true,
+	"dist":                        true,
+	"plan":                        true,
+	"test/parity/legacy":          true,
+	"internal/scaffold/templates": true,
+}
+
+// markdownFiles is every Markdown file in the tree, not only README.md and
+// docs/. CONTRIBUTING.md, SECURITY.md, the skill and the agents all carry
+// links, and until this walked the whole tree a broken one in any of them was
+// nobody's job to notice.
 func markdownFiles(root string) ([]string, error) {
 	var out []string
-	if _, err := os.Stat(filepath.Join(root, "README.md")); err == nil {
-		out = append(out, "README.md")
-	}
-	docs := filepath.Join(root, "docs")
-	if _, err := os.Stat(docs); err != nil {
-		// No docs/ yet is a legitimate state, not a failure: this tool runs
-		// from the first commit and the documentation set lands later.
-		if errors.Is(err, fs.ErrNotExist) {
-			return out, nil
-		}
-		return nil, err
-	}
-	err := filepath.WalkDir(docs, func(p string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
+			// A tree that is being written while this walks is not a broken
+			// link, and this tool runs from the first commit onwards.
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			return relErr
+		}
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			if rel != "." && (skipped[rel] || strings.HasPrefix(d.Name(), ".") && rel != ".github") {
+				return filepath.SkipDir
+			}
 			return nil
 		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return err
+		if strings.HasSuffix(d.Name(), ".md") {
+			out = append(out, rel)
 		}
-		out = append(out, filepath.ToSlash(rel))
 		return nil
 	})
+	sort.Strings(out)
 	return out, err
 }
 

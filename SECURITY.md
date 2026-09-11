@@ -11,6 +11,18 @@ Please do not open a public issue for a vulnerability.
 You should get an acknowledgement within a week. This is a single-maintainer
 project, so please read that as a good-faith commitment rather than an SLA.
 
+## Which versions get fixes
+
+The latest release, and only that. This is a single-maintainer project before
+1.0: there are no maintenance branches, and a fix ships as the next release
+rather than as a patch to an older one.
+
+| Version | Supported |
+| --- | --- |
+| the latest release | yes |
+| anything older | no — upgrade |
+| `main` | yes, and that is where a fix lands first |
+
 ## What is in scope
 
 `sdlc` installs a binary, registers hooks with Claude Code, and decides whether
