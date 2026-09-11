@@ -284,3 +284,31 @@ $ sdlc gate code_review fail --note "AC-2 turned out to be untested"
 
 That puts the story back to `in_progress` and says on the record why it came back. Being done
 is a reading of the gate record, not a door that locks behind you.
+
+## Warnings the hook prints
+
+These are not error codes. They come from the hook, on standard error, and the
+tool call goes through: the hook fails open, always, because a bug in it must
+not be able to stop your session. What it will not do is fail open quietly.
+
+Each one means a rule you are relying on is not running right now.
+
+### `.sdlc/state/active could not be read, so nothing is being enforced`
+
+The file naming the story under way is there but unreadable — a permission, a
+half-written file, a merge conflict left in place. Every rule is off until it
+can be read. `sdlc doctor` says which.
+
+### `.sdlc/config.json could not be read, so the test freeze is not being enforced`
+
+The configuration will not parse, so the loop cannot tell which files are
+tests. Protected paths and write scopes still hold; the freeze does not.
+
+### `.sdlc/state/tests.lock ... so the freeze is not being enforced against shell commands`
+
+The freeze itself will not parse. A `Write` to a frozen test is still refused
+by content, but a shell command that redirects into one is not.
+
+In all three, the fix is the same: run `sdlc doctor`, which reads the same
+files and names the one that is wrong.
+

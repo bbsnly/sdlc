@@ -14,8 +14,10 @@ package hook
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -81,7 +83,7 @@ type payload struct {
 
 // Run dispatches a hook event. args is everything after the `hook` verb, so
 // args[0] is the event name.
-func Run(args []string, stdin io.Reader, stdout io.Writer, getenv func(string) string) int {
+func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
 	// The payload is always drained, even when the answer is already known:
 	// leaving it unread can give the caller a broken pipe.
 	raw, _ := io.ReadAll(io.LimitReader(stdin, maxPayload))
@@ -89,7 +91,20 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, getenv func(string) s
 		return emit(stdout, Allow())
 	}
 
-	verdict, event, ok := decide(args[0], raw, getenv)
+	// Failing open is the right answer and being quiet about it is not. A hook
+	// that has decided to enforce nothing looks exactly like a hook with
+	// nothing to enforce, and the session then reports a freeze that is not
+	// there. Claude Code shows a hook's stderr, which is where this goes.
+	said := map[string]bool{}
+	warn := func(msg string) {
+		if said[msg] {
+			return
+		}
+		said[msg] = true
+		fmt.Fprintln(stderr, "sdlc: "+msg)
+	}
+
+	verdict, event, ok := decide(args[0], raw, getenv, warn)
 	// Why a hook did nothing is the hardest thing to find out from the outside,
 	// so every decision is available at debug level. SDLC_DEBUG_FILE is the way
 	// to see it: a hook's stderr is often invisible.
@@ -107,7 +122,7 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, getenv func(string) s
 
 // decide works out whether this event should be refused. ok is false whenever
 // the answer cannot be reached at all, which is treated exactly like an allow.
-func decide(event string, raw []byte, getenv func(string) string) (policy.Verdict, string, bool) {
+func decide(event string, raw []byte, getenv func(string) string, warn func(string)) (policy.Verdict, string, bool) {
 	// A human who started the session can turn enforcement off. This is read
 	// from the environment, which a session cannot change from the inside.
 	if getenv("SDLC_ENFORCE") == "0" {
@@ -137,13 +152,13 @@ func decide(event string, raw []byte, getenv func(string) string) (policy.Verdic
 	if !ok {
 		return policy.Allowed, event, false
 	}
-	story := activeStory(project)
+	story := activeStory(project, warn)
 	if story == "" {
 		return policy.Allowed, event, false
 	}
 
 	if p.ToolName == "Bash" {
-		return inspectShell(project, story, p), event, true
+		return inspectShell(project, story, p, warn), event, true
 	}
 
 	path := p.ToolInput.FilePath
@@ -161,19 +176,20 @@ func decide(event string, raw []byte, getenv func(string) string) (policy.Verdic
 		Path:    rel,
 		Outside: outside && path != "",
 		Story:   story,
-		Tests:   testState(project, story, rel),
+		Tests:   testState(project, story, rel, warn),
 	}), event, true
 }
 
 // inspectShell applies the shell rules, which exist because every other rule in
 // this tool governs the file-writing tools and a shell command is not one.
-func inspectShell(project, story string, p payload) policy.Verdict {
+func inspectShell(project, story string, p payload, warn func(string)) policy.Verdict {
 	ready, why := commitReady(project, story)
 	slog.Debug("hook considering a command",
 		"agent", p.AgentType, "story", story, "commit_ready", ready, "why", why)
 
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command,
-		shellpolicy.State{CommitReady: ready, CommitWhy: why, Frozen: frozenTests(project, story)})
+		shellpolicy.State{CommitReady: ready, CommitWhy: why,
+			Frozen: frozenTests(project, story, warn)})
 	if !refused {
 		return policy.Allowed
 	}
@@ -183,13 +199,20 @@ func inspectShell(project, story string, p payload) policy.Verdict {
 // frozenTests is what the freeze holds, for the shell rules to refuse writes
 // to. Nothing readable means nothing frozen, which is the same answer as
 // before Gate 3 and leaves the shell as free as it was.
-func frozenTests(project, story string) []string {
+func frozenTests(project, story string, warn func(string)) []string {
 	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "tests.lock"))
 	if err != nil {
+		// No freeze taken yet is the ordinary case before Gate 3.
+		if !errors.Is(err, fs.ErrNotExist) {
+			warn(".sdlc/state/tests.lock could not be read, so the freeze is " +
+				"not being enforced against shell commands. Run `sdlc doctor`.")
+		}
 		return nil
 	}
 	var lock model.Lock
 	if err := json.Unmarshal(raw, &lock); err != nil {
+		warn(".sdlc/state/tests.lock is not readable as JSON, so the freeze is " +
+			"not being enforced against shell commands. Run `sdlc doctor`.")
 		return nil
 	}
 	// A freeze belonging to another story says nothing about this one.
@@ -229,13 +252,15 @@ func commitReady(project, story string) (bool, string) {
 // several, and a project whose configuration will not parse should still have
 // its protected paths and its separation of duties enforced -- doctor is where
 // a broken configuration gets reported, not here.
-func testState(project, story, rel string) policy.Tests {
+func testState(project, story, rel string, warn func(string)) policy.Tests {
 	if rel == "" {
 		return policy.Tests{}
 	}
 	cfg, err := config.Load(project)
 	if err != nil {
 		slog.Debug("hook could not read the configuration", "err", err)
+		warn(".sdlc/config.json could not be read, so the test freeze is not " +
+			"being enforced in this session. Run `sdlc doctor` to see why.")
 		return policy.Tests{}
 	}
 	m := testset.New(cfg.Paths.Tests)
@@ -252,9 +277,16 @@ func testState(project, story, rel string) policy.Tests {
 // activeStory reads the story being worked on, directly rather than through the
 // store: this runs on every tool call, and parsing the configuration to learn
 // something that is not in it would be work for nothing.
-func activeStory(project string) string {
+func activeStory(project string, warn func(string)) string {
 	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "active"))
 	if err != nil {
+		// Not being there is the ordinary case: no iteration is running.
+		// Being there and unreadable turns every rule below off, and looks
+		// identical from the outside.
+		if !errors.Is(err, fs.ErrNotExist) {
+			warn(".sdlc/state/active could not be read, so nothing is being " +
+				"enforced in this session. Run `sdlc doctor` to see why.")
+		}
 		return ""
 	}
 	id := strings.TrimSpace(string(raw))

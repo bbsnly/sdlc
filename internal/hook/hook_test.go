@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,7 +71,7 @@ type reply struct {
 func call(t *testing.T, stdin string, getenv func(string) string) reply {
 	t.Helper()
 	var out bytes.Buffer
-	if code := Run([]string{"PreToolUse"}, strings.NewReader(stdin), &out, getenv); code != 0 {
+	if code := Run([]string{"PreToolUse"}, strings.NewReader(stdin), &out, io.Discard, getenv); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
 	var r reply
@@ -97,7 +98,7 @@ func TestRunAlwaysEmitsExactlyOneJSONObject(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			if code := Run(tc.args, strings.NewReader(tc.stdin), &out, noEnv); code != 0 {
+			if code := Run(tc.args, strings.NewReader(tc.stdin), &out, io.Discard, noEnv); code != 0 {
 				t.Fatalf("exit %d", code)
 			}
 			var d Decision
@@ -117,7 +118,7 @@ func TestRunAlwaysEmitsExactlyOneJSONObject(t *testing.T) {
 func TestOversizedStdinDoesNotHangOrGrowUnbounded(t *testing.T) {
 	var out bytes.Buffer
 	huge := strings.Repeat("x", 4<<20)
-	if code := Run([]string{"PreToolUse"}, strings.NewReader(huge), &out, noEnv); code != 0 {
+	if code := Run([]string{"PreToolUse"}, strings.NewReader(huge), &out, io.Discard, noEnv); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
 	if out.Len() > 200 {
@@ -399,6 +400,63 @@ func TestABrokenConfigurationStillProtectsWhatItCan(t *testing.T) {
 
 	if !denied(call(t, event(root, "Write", "", ".sdlc/state/active"), noEnv)) {
 		t.Error("loop state became writable because the configuration was broken")
+	}
+}
+
+// Failing open is deliberate. Failing open in silence is not: a hook that has
+// decided to enforce nothing is indistinguishable from a hook with nothing to
+// enforce, and the session goes on describing a freeze that is not there.
+func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
+	for _, tc := range []struct {
+		name, file, body, says string
+		// The two failures are on different paths: a file write consults the
+		// configuration to know what a test is, a shell command consults the
+		// freeze itself.
+		shell bool
+	}{
+		{
+			name: "a configuration that will not parse",
+			file: ".sdlc/config.json", body: "{not json",
+			says: "the test freeze is not being enforced",
+		},
+		{
+			name: "a freeze that will not parse",
+			file: ".sdlc/state/tests.lock", body: "{not json",
+			says:  "the freeze is not being enforced against shell commands",
+			shell: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := loopProject(t)
+			write(t, root, tc.file, tc.body)
+
+			var out, errs bytes.Buffer
+			stdin := event(root, "Write", "sdlc:implementer", "invoice_test.go")
+			if tc.shell {
+				stdin = command(root, "sdlc:implementer", "echo hello")
+			}
+			if code := Run([]string{"PreToolUse"}, strings.NewReader(stdin), &out, &errs, noEnv); code != 0 {
+				t.Fatalf("exit %d", code)
+			}
+			if !strings.Contains(errs.String(), tc.says) {
+				t.Errorf("nothing on stderr said enforcement was off:\n%s", errs.String())
+			}
+		})
+	}
+}
+
+// The ordinary states are not warnings. Before Gate 3 there is no freeze, and
+// a hook that cried wolf on every tool call would be turned off by lunchtime.
+func TestTheHookIsQuietWhenNothingIsWrong(t *testing.T) {
+	root := loopProject(t)
+
+	var out, errs bytes.Buffer
+	stdin := command(root, "sdlc:implementer", "echo hello")
+	if code := Run([]string{"PreToolUse"}, strings.NewReader(stdin), &out, &errs, noEnv); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if errs.Len() != 0 {
+		t.Errorf("a project with no freeze yet produced a warning:\n%s", errs.String())
 	}
 }
 
