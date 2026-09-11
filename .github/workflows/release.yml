@@ -173,10 +173,17 @@ jobs:
       - name: Attest the archives
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
+          # Everything the release serves, which includes the two install
+          # scripts: they go out as release assets and the notes link them at
+          # the tag, so they are as downloadable as the archives are. An
+          # unattested installer is the weakest link in a chain that attests
+          # everything it installs.
           subject-path: |
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
+            install.sh
+            install.ps1
 
       # Before npm, because the npm package is the one thing here that cannot
       # be taken back: published versions are immutable and unpublishing is

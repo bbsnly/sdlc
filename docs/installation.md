@@ -149,6 +149,17 @@ release are not ours and are neither attested nor listed in `checksums.txt`.
 $ gh attestation verify sdlc_0.1.0_darwin_arm64.tar.gz --repo bbsnly/sdlc
 ```
 
+The same works on an install script, which is worth doing if you would rather
+read one before running it:
+
+```console
+$ curl -fsSLO https://raw.githubusercontent.com/bbsnly/sdlc/v0.1.0/install.sh
+$ gh attestation verify install.sh --repo bbsnly/sdlc
+```
+
+Fetch it at the tag, not at `main`: the tag is the content that was attested,
+and `main` moves.
+
 Each archive also ships an SBOM (`.sbom.json`) listing everything inside it.
 
 The install scripts verify the checksum for you and refuse to install anything
