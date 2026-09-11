@@ -90,9 +90,14 @@ func documentedCodes(t *testing.T) map[string]string {
 // parseCodeSections splits a Markdown page into its `### ` sections. A `## `
 // heading closes the current section, so prose after the code list is not
 // attributed to the last code.
+// parseCodeSections reads the `### SDLC-Ennnn` sections under "## Error
+// codes", and only those. The page carries other sections -- the warnings the
+// hook prints have no code, because nothing failed -- and a parser that took
+// every `###` on the page would insist those were codes too.
 func parseCodeSections(md string) map[string]string {
 	found := map[string]string{}
 	heading := ""
+	inCodes := false
 	var body strings.Builder
 	flush := func() {
 		if heading != "" {
@@ -104,12 +109,16 @@ func parseCodeSections(md string) map[string]string {
 		trimmed := strings.TrimSpace(line)
 		if h, ok := strings.CutPrefix(trimmed, "### "); ok {
 			flush()
-			heading = strings.TrimSpace(h)
+			heading = ""
+			if inCodes {
+				heading = strings.TrimSpace(h)
+			}
 			continue
 		}
-		if strings.HasPrefix(trimmed, "## ") {
+		if section, ok := strings.CutPrefix(trimmed, "## "); ok {
 			flush()
 			heading = ""
+			inCodes = strings.TrimSpace(section) == "Error codes"
 			continue
 		}
 		body.WriteString(line + "\n")

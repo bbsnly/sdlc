@@ -311,4 +311,3 @@ by content, but a shell command that redirects into one is not.
 
 In all three, the fix is the same: run `sdlc doctor`, which reads the same
 files and names the one that is wrong.
-
