@@ -448,6 +448,16 @@ func installRoutes() []installRoute {
 	return []installRoute{
 		{"shell", []string{"sh", "install.sh"}, skipUnlessPOSIX},
 		{"powershell", []string{"pwsh", "-NoProfile", "-File", "install.ps1"}, skipUnlessWindows},
+		// Windows PowerShell 5.1, which is what is already on a Windows
+		// machine and therefore what most people run this with. It is not
+		// pwsh with an older version number: install.ps1 reads the redirect
+		// that resolves "latest" out of a thrown exception here and out of a
+		// returned response on 7, and only one of those two branches was ever
+		// executed by a test.
+		{"windows powershell", []string{
+			"powershell", "-NoProfile", "-NonInteractive",
+			"-ExecutionPolicy", "Bypass", "-File", "install.ps1",
+		}, skipUnlessWindows},
 		{"npm", []string{"node", "npm/bin/sdlc-install.js"}, skipUnlessNode},
 	}
 }
