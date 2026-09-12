@@ -45,6 +45,7 @@ tasks:
     cmds:
       - task: tools
       - task: fmt-check
+      - task: tidy-check
       - task: vet
       - task: lint
       - task: test
@@ -147,6 +148,20 @@ tasks:
           echo "sdlc: these files are not gofmt-clean:" >&2
           echo "$unformatted" >&2
           echo "      Fix: ./task fmt" >&2
+          exit 1
+        fi
+
+  tidy-check:
+    desc: Fail if go.mod or go.sum is not what `go mod tidy` would write
+    silent: true
+    cmds:
+      # go.mod had cobra and pflag marked `// indirect` while internal/cli
+      # imports both. Nothing was wrong with the build; the file just said
+      # something untrue about the dependency graph, which is the file's one
+      # job. Nothing checked it, so it stayed wrong.
+      - |
+        if ! go mod tidy -diff; then
+          echo "go.mod/go.sum are not tidy. Run: go mod tidy" >&2
           exit 1
         fi
 
@@ -401,9 +416,15 @@ tasks:
         ls -1 dist/*.tar.gz dist/*.zip dist/checksums.txt 2>/dev/null || true
 
   secrets:
-    desc: Scan for committed credentials
+    desc: Scan for credentials, committed and about to be
     cmds:
+      # Two scans, because they answer different questions. `git` reads the
+      # history: a credential committed once is compromised even if the next
+      # commit removed it. `dir` reads the working tree, which is the one that
+      # can still be prevented -- and it is what `./task check` is run for.
+      # With only the first, a token sitting in an uncommitted file passed.
       - "{{.GITLEAKS}} git --no-banner --redact -v"
+      - "{{.GITLEAKS}} dir --no-banner --redact -v ."
 
   no-internal-docs:
     desc: Assert no internal document and no third party's machine path is tracked
