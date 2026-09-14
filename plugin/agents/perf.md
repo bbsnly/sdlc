@@ -36,6 +36,8 @@ finding with no magnitude is an opinion.
 
 ## Output
 
+At Gate 4 the gate name is `design_review`; at Gate 7 it is `code_review`.
+
 ```bash
 sdlc review add <gate> perf note --note "<one line>" <<'SDLC_DOCUMENT'
 # Performance review — <ID>

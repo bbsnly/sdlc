@@ -39,6 +39,8 @@ You are advisory. Your findings are recorded and the loop continues.
 
 ## Output
 
+At Gate 1 the gate name is `dor`; at Gate 4 it is `design_review`; at Gate 7 it is `code_review`.
+
 ```bash
 sdlc review add <gate> human-advocate note --note "<one line>" <<'SDLC_DOCUMENT'
 # Human advocate — <ID>
