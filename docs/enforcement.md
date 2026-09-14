@@ -27,7 +27,12 @@ Nothing is enforced unless **all** of these are true:
 2. A story is being worked on — `.sdlc/state/active` names one.
 3. `SDLC_ENFORCE` is not `0` in the environment the session started with.
 
-Outside those, the hook allows everything and says nothing. It also **fails
+Outside those, the hook allows everything and says nothing, with one exception:
+in a project with `.sdlc/config.json`, `sdlc approve` and `sdlc unfreeze` are
+refused from a tool call whether or not a story is being worked on.
+`sdlc escalate` ends the iteration, so the answer to it always comes after.
+
+The hook also **fails
 open**: an unreadable payload, a missing configuration, a path it cannot
 resolve — an error ends in "carry on", with a message saying what is off. A hook
 that blocks a session because of its own bug is worse than the mistake it was

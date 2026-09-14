@@ -186,6 +186,27 @@ func Inspect(command string, s State) (Finding, bool) {
 	return Finding{}, false
 }
 
+// HumanDecisions reports a command that makes one of the decisions the loop
+// keeps for a person: approving work handed over, or lifting the freeze. These
+// hold with no story being worked on, because `sdlc escalate` ends the
+// iteration and the approval always comes after it -- which is where nothing
+// else was being enforced, so no approval was ever refused.
+func HumanDecisions(command string, powerShell bool) (Finding, bool) {
+	if powerShell {
+		command = strings.ReplaceAll(command, "`", "")
+	}
+	for _, segment := range segments(withoutDocuments(command)) {
+		args := commandWords(segment)
+		if f, ok := checkUnfreeze(args); ok {
+			return f, true
+		}
+		if f, ok := checkApprove(args); ok {
+			return f, true
+		}
+	}
+	return Finding{}, false
+}
+
 // checkEnforcement stops a session turning the loop off from the inside. The
 // switch exists for the person who started the session, and a switch an
 // assistant can reach is not a control.

@@ -247,6 +247,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - The shell rules read a path as the file it is on disk. A link to `.sdlc`,
   `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
   the file in letters no rule matched, and `rm notes/state/active` went through.
+- `sdlc approve` and `sdlc unfreeze` are refused from a tool call with no story
+  being worked on. `sdlc escalate` ends the iteration, and the hook allowed
+  everything once it had, so an agent could hand a story over and approve it
+  in the next command.
 - Refusals no longer send an agent to `sdlc stop`. The main conversation told
   to delegate, and a command that tried to set `SDLC_ENFORCE`, were both
   pointed at ending the iteration, which turns every rule off.

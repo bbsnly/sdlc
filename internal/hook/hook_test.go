@@ -171,6 +171,11 @@ func TestAProjectWithNoConfigIsNotGoverned(t *testing.T) {
 	if denied(r) {
 		t.Error("a project with no .sdlc/config.json was governed")
 	}
+	// Not even the decisions the loop keeps for a person: there is no loop here
+	// to keep them for.
+	if denied(call(t, command(root, "", "sdlc approve A-1"), noEnv)) {
+		t.Error("sdlc approve was refused in a project that does not take part")
+	}
 }
 
 func TestNothingIsEnforcedWhileNoStoryIsBeingWorkedOn(t *testing.T) {
@@ -180,6 +185,16 @@ func TestNothingIsEnforcedWhileNoStoryIsBeingWorkedOn(t *testing.T) {
 	}
 	if denied(call(t, event(root, "Write", "", "internal/x.go"), noEnv)) {
 		t.Error("a write was refused with no iteration running")
+	}
+	if denied(call(t, command(root, "", "git commit -m x"), noEnv)) {
+		t.Error("a commit was refused with no iteration running")
+	}
+	// Except the decisions that are a person's. `sdlc escalate` ends the
+	// iteration, so an approval always came while nothing was enforced.
+	for _, cmd := range []string{"sdlc approve A-1", "sdlc unfreeze --reason x"} {
+		if !denied(call(t, command(root, "sdlc-implementer", cmd), noEnv)) {
+			t.Errorf("%q went through because no story was being worked on", cmd)
+		}
 	}
 }
 

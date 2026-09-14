@@ -199,6 +199,14 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 	// nothing at all.
 	project, story := findLoop(getenv, p, path, warn)
 	if story == "" {
+		// Except the decisions that are a person's, in a project that takes
+		// part: an escalation ends the iteration, so its approval always came
+		// while this allowed everything.
+		if shellpolicy.Tools[p.ToolName] && inLoop(getenv, p) {
+			if f, refused := shellpolicy.HumanDecisions(p.ToolInput.Command, p.ToolName == "PowerShell"); refused {
+				return policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, event, true
+			}
+		}
 		return policy.Allowed, event, false
 	}
 
@@ -574,6 +582,20 @@ func findLoop(getenv func(string) string, p payload, target string, warn func(st
 		}
 	}
 	return "", ""
+}
+
+// inLoop reports whether the session is in a project that takes part in the
+// loop, whether or not a story is being worked on.
+func inLoop(getenv func(string) string, p payload) bool {
+	for _, start := range []string{getenv("CLAUDE_PROJECT_DIR"), p.CWD} {
+		if start == "" {
+			continue
+		}
+		if _, ok := projectRoot(start); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // projectRoot finds the directory holding `.sdlc/config.json`, starting at the
