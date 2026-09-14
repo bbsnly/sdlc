@@ -7,7 +7,9 @@ instead.
 ## What this is, and what it is not
 
 Enforcement uses Claude Code's own surfaces and nothing else: a `PreToolUse`
-hook, a `Stop` hook, the plugin's agents, and the `sdlc` command. No git hooks are installed,
+hook, a `Stop` hook, the plugin's agents, and the `sdlc` command. A
+`PostToolUse` hook runs your [`commands.fmt_file`](configuration.md#commands),
+and refuses nothing. No git hooks are installed,
 and `sdlc` never writes to `.git/hooks`.
 
 **This is a discipline tool, not a sandbox.** It constrains an assistant that is

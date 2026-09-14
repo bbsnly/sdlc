@@ -72,7 +72,7 @@ func detectGo(root string) (Stack, bool) {
 			"lint":      "golangci-lint run",
 			"fmt":       "gofmt -w .",
 			"fmt_check": `test -z "$(gofmt -l .)"`,
-			"fmt_file":  `gofmt -w "$FILE"`,
+			"fmt_file":  `case "$FILE" in *.go) gofmt -w "$FILE" ;; esac`,
 			"coverage": "go test ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && " +
 				`go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\.[0-9]+'`,
 		},
@@ -145,7 +145,7 @@ func detectNode(root string) (Stack, bool) {
 		cmds["fmt"] = "npm run format --silent"
 	case hasDep("prettier"):
 		cmds["fmt"] = "npx prettier --write ."
-		cmds["fmt_file"] = `npx prettier --write "$FILE"`
+		cmds["fmt_file"] = `npx prettier --write --ignore-unknown "$FILE"`
 	}
 	switch {
 	case hasScript("format:check"):
@@ -180,7 +180,7 @@ func detectPython(root string) (Stack, bool) {
 			"lint":      "ruff check .",
 			"fmt":       "ruff format .",
 			"fmt_check": "ruff format --check .",
-			"fmt_file":  `ruff format "$FILE"`,
+			"fmt_file":  `case "$FILE" in *.py) ruff format "$FILE" ;; esac`,
 			"coverage": "pytest -q --cov --cov-report=term | grep -E '^TOTAL' | " +
 				"grep -Eo '[0-9]+%' | tr -d %",
 		},

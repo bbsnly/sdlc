@@ -339,6 +339,7 @@ func commandChecks(cfg config.Config) []check {
 var shellBuiltins = map[string]bool{
 	"test": true, "[": true, "echo": true, "printf": true, "true": true,
 	"false": true, "cd": true, ":": true, "exit": true, "read": true,
+	"esac": true,
 }
 
 // programsIn pulls the program names out of a shell command. It splits on the
@@ -353,6 +354,11 @@ func programsIn(command string) []string {
 	var out []string
 	for _, segment := range strings.Split(replacer.Replace(command), "\n") {
 		fields := strings.Fields(segment)
+		// `case "$FILE" in *.go) gofmt -w "$FILE" ;; esac` runs gofmt, not
+		// case: the program is the word after the pattern.
+		if len(fields) > 0 && fields[0] == "case" {
+			fields = afterCasePattern(fields)
+		}
 		if len(fields) == 0 {
 			continue
 		}
@@ -366,6 +372,17 @@ func programsIn(command string) []string {
 		}
 	}
 	return out
+}
+
+// afterCasePattern is what follows the first pattern of a case command, which
+// is where its first program is.
+func afterCasePattern(fields []string) []string {
+	for i, f := range fields {
+		if i > 0 && strings.HasSuffix(f, ")") {
+			return fields[i+1:]
+		}
+	}
+	return nil
 }
 
 // binaryCheck asks the question the hook asks. A hook that cannot find the

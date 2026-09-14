@@ -13,9 +13,9 @@ import (
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
-// stopReply is what Claude Code reads from a Stop hook. Decision "block" sends
-// the session back to work, and Reason is what it is told.
-type stopReply struct {
+// turnReply is what Claude Code reads from a Stop or PostToolUse hook. Decision
+// "block" sends the session back to work, and Reason is what it is told.
+type turnReply struct {
 	Continue      bool   `json:"continue"`
 	Decision      string `json:"decision,omitempty"`
 	Reason        string `json:"reason,omitempty"`
@@ -34,8 +34,8 @@ type stopReply struct {
 // on it, and when it reaches loop.max_stop_blocks the story goes to a person.
 // Like every other rule here it fails open: anything it cannot read lets the
 // stop through.
-func decideStop(raw []byte, getenv func(string) string, warn func(string)) stopReply {
-	allow := stopReply{Continue: true}
+func decideStop(raw []byte, getenv func(string) string, warn func(string)) turnReply {
+	allow := turnReply{Continue: true}
 	if getenv("SDLC_ENFORCE") == "0" {
 		return allow
 	}
@@ -85,7 +85,7 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string)) stopR
 		slog.Debug("stop guard could not keep its count", "err", err)
 		return allow
 	}
-	return stopReply{Continue: true, Decision: "block", Reason: stopReason(project, story, count.Blocks, limit)}
+	return turnReply{Continue: true, Decision: "block", Reason: stopReason(project, story, count.Blocks, limit)}
 }
 
 // stopReason says what to do instead of stopping, naming the gate to work.
@@ -111,8 +111,8 @@ func stopReason(project, story string, blocks, limit int) string {
 
 // handOver gives a story that keeps stopping to a person, and lets the stop
 // through. Holding the session any longer would not change what it does.
-func handOver(s *store.Store, story string, blocks int) stopReply {
-	reply := stopReply{Continue: true}
+func handOver(s *store.Store, story string, blocks int) turnReply {
+	reply := turnReply{Continue: true}
 	failed := "sdlc: " + story + " kept stopping with nothing recorded, and could not be handed " +
 		"to a person. Run `sdlc doctor` to see why."
 	g, err := store.Lock(s.Root(), "hook Stop")

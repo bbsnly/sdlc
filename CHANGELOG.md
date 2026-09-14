@@ -43,6 +43,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - A session cannot quietly end its turn mid-story. A `Stop` hook sends the stop
   back with what to do instead, and after `loop.max_stop_blocks` stops in a row
   with nothing recorded, hands the story to a person.
+- `commands.fmt_file` runs on each file a tool writes while a story is being
+  worked on, and a formatter that fails is reported to the session. The
+  commands `sdlc init` writes for it name the files their formatter
+  understands.
 - `sdlc cost` keeps what a story spent beside everything else it did.
   `sdlc cost add --usd` records an amount, `sdlc status` reports the running
   total, and crossing one of `budget.alert_fractions` says so once, on

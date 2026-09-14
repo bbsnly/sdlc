@@ -644,13 +644,14 @@ func TestDoctorExitsNonZeroWhenSomethingIsWrong(t *testing.T) {
 
 func TestProgramsInFindsWhatWouldActuallyRun(t *testing.T) {
 	for command, want := range map[string][]string{
-		"go build ./...":                     {"go"},
-		"go build ./... && go vet ./...":     {"go"},
-		`test -z "$(gofmt -l .)"`:            {"gofmt"},
-		"npm run build --silent":             {"npm"},
-		"pytest -q --cov | grep -E '^TOTAL'": {"pytest", "grep"},
-		"":                                   nil,
-		"   ":                                nil,
+		"go build ./...":                                 {"go"},
+		"go build ./... && go vet ./...":                 {"go"},
+		`test -z "$(gofmt -l .)"`:                        {"gofmt"},
+		"npm run build --silent":                         {"npm"},
+		"pytest -q --cov | grep -E '^TOTAL'":             {"pytest", "grep"},
+		`case "$FILE" in *.go) gofmt -w "$FILE" ;; esac`: {"gofmt"},
+		"":    nil,
+		"   ": nil,
 	} {
 		got := programsIn(command)
 		if len(got) != len(want) {

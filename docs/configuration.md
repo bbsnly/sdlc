@@ -64,14 +64,26 @@ are installed.
 | `build` | the verifier, at Gate 6 |
 | `test` | the test author at Gate 3, the implementer after each step, the verifier at Gate 6 |
 | `lint` | the verifier |
-| `fmt` | after an edit, where the project wants it |
+| `fmt` | the implementer, when the frozen tests pass |
 | `fmt_check` | the verifier |
-| `fmt_file` | formatting one file after it is written |
+| `fmt_file` | the hook, on each file a tool writes while a story is being worked on |
 | `coverage` | the verifier, compared against `thresholds.coverage_min` |
 | `smoke` | a fast sanity check |
 
 Any key you add is available to the agents; these are the ones the loop looks
 for by name. A key you leave out is simply not run.
+
+`fmt_file` is run by `sh` from the repository root, with `$FILE` set to the file
+that was written. It runs for every file, so a formatter that understands only
+some should say which — the commands `sdlc init` writes do:
+
+```json
+"fmt_file": "case \"$FILE\" in *.go) gofmt -w \"$FILE\" ;; esac"
+```
+
+A formatter that fails is reported to the session with what it printed, and the
+file stays as it was written. Nothing is refused: the write has already
+happened.
 
 One thing worth knowing about the guessed `coverage` command: it writes a
 coverage profile to `.sdlc/state/cover.out`. That is a build artefact rather

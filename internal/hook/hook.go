@@ -123,9 +123,14 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 		fmt.Fprintln(stderr, "sdlc: "+msg)
 	}
 
-	if args[0] == "Stop" {
-		reply := decideStop(raw, getenv, warn)
-		slog.Debug("hook stop decision", "decision", reply.Decision)
+	if args[0] == "Stop" || args[0] == "PostToolUse" {
+		var reply turnReply
+		if args[0] == "Stop" {
+			reply = decideStop(raw, getenv, warn)
+		} else {
+			reply = formatWritten(raw, getenv, warn)
+		}
+		slog.Debug("hook turn decision", "event", args[0], "decision", reply.Decision)
 		if len(warnings) > 0 {
 			reply.SystemMessage = strings.TrimSpace(reply.SystemMessage + " sdlc: " + strings.Join(warnings, " "))
 		}
