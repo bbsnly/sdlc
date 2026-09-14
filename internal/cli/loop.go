@@ -537,6 +537,15 @@ func newGateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// A passed code review is where the story's own commit is allowed,
+			// so HEAD moved since then is that commit, and a gate reopened on it
+			// measures from there. Held to where the story started, a code review
+			// reopened on work already committed could never pass again.
+			if record.Pass(model.GateCodeReview) {
+				if head, err := gitx.Head(cmd.Context(), s.Root()); err == nil {
+					record.Base = head
+				}
+			}
 			if status == model.GatePass {
 				if err := requireEvidence(cmd.Context(), s, id, gate, record); err != nil {
 					return err

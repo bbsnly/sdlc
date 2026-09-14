@@ -711,3 +711,16 @@ func TestWorkCommittedBeforeTheReviewHoldsTheGatesBack(t *testing.T) {
 	mustRun(t, "start")
 	mustRun(t, "gate", "implementation", "pass", "--note", "trunk moved by a person")
 }
+
+// The story's own commit moves HEAD too. A code review reopened on work already
+// committed was measured from where the story started, and could never pass.
+func TestAGateReopenedAfterTheStorysCommitCanPassAgain(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	reach(t, root, model.GateRetro)
+
+	mustRun(t, "gate", "code_review", "fail", "--note", "AC-2 is untested")
+	satisfy(t, root, model.GateCodeReview)
+	mustRun(t, "gate", "code_review", "pass", "--note", "AC-2 is tested")
+}
