@@ -332,6 +332,32 @@ func TestACommonNameIsNotAFrozenFixtureElsewhere(t *testing.T) {
 	}
 }
 
+// Reading the record is how an agent knows where the story is. sed, perl, awk
+// and an interpreter were taken as writing whatever they were asked to do, so
+// `sed -n 1,40p .sdlc/stories/A-1/PLAN.md` was a write to the plan.
+func TestTheRecordCanBeReadThroughTheShell(t *testing.T) {
+	s := ready
+	s.Backlog = "user_stories.json"
+	for _, command := range []string{
+		"sed -n 1,40p .sdlc/stories/A-1/PLAN.md",
+		"sed -n 1,20p CLAUDE.md",
+		"awk '/A-1/' user_stories.json",
+		"python3 -m json.tool user_stories.json",
+	} {
+		allowed(t, command, s)
+	}
+	for command, rule := range map[string]string{
+		"sed -i 's/a/b/' .sdlc/stories/A-1/PLAN.md":  "loop-state-through-the-tool",
+		"perl -pi -e 's/a/b/' CLAUDE.md":             "protected-path-through-the-tool",
+		"awk -i inplace '{print}' user_stories.json": "protected-path-through-the-tool",
+		`python3 -c "open('user_stories.json','w')"`: "protected-path-through-the-tool",
+	} {
+		refused(t, command, s, rule)
+	}
+	frozen := State{CommitReady: true, Frozen: []string{"internal/x_test.go"}}
+	refused(t, "gawk -i inplace 1 internal/x_test.go", frozen, "frozen-test-through-the-tool")
+}
+
 // The one way around every rule that protects the loop's record is a shell
 // command, so these are the commands that matter most.
 func TestLoopStateCannotBeWrittenThroughTheShell(t *testing.T) {

@@ -124,14 +124,14 @@ var mutating = map[string]bool{
 	"truncate": true, "install": true, "ln": true, "chmod": true,
 	"chown": true, "touch": true, "shred": true, "unlink": true,
 	"rmdir": true, "sponge": true,
-	// Editors that rewrite a file given on the command line. `sed -i` is the
-	// most common way an agent changes a file from a shell, and the record it
-	// would be changing is the loop's own evidence -- unlike a test, nothing
-	// downstream notices afterwards. Named here whether or not the invocation
-	// actually asks for in-place editing: a `sed` that only reads names its
-	// input too, and refusing a read of the gate record costs nothing.
-	"sed": true, "perl": true, "awk": true, "ed": true, "patch": true,
-	"python": true, "python3": true, "ruby": true, "node": true,
+	// Editors that rewrite a file given on the command line. sed, perl and awk
+	// change one only when asked to edit in place, which changesAFile reads:
+	// named here, `sed -n 1,40p` on the plan was a write to it, and reading
+	// the record is how an agent knows where the story is. An interpreter
+	// writes through its program, which runsInlineCode reads; a file named
+	// after it is a script or its input, and `python3 -m pytest
+	// tests/test_x.py` is how the tests run.
+	"ed": true, "patch": true,
 	// Windows spellings, because Bash on Windows is not always a POSIX shell.
 	"del": true, "erase": true, "move": true, "copy": true, "ren": true, "rename": true,
 	"rd": true,
@@ -567,13 +567,9 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 }
 
 // changesAFile reports whether this command, as it is written, exists to
-// change a file.
-//
-// Narrower than the mutating list, and deliberately so. That list names `sed`
-// whether or not the invocation edits in place, because refusing a read of the
-// loop's record costs nothing. A frozen test is different: reading one is how
-// the implementer knows what to implement, and `sed -n 1,20p x_test.go` has to
-// go through.
+// change a file. One that only reads it is left alone: reading a frozen test is
+// how the implementer knows what to implement, and `sed -n 1,20p x_test.go` has
+// to go through.
 func changesAFile(words []string) bool {
 	if len(words) == 0 {
 		return false
@@ -581,14 +577,14 @@ func changesAFile(words []string) bool {
 	switch name := base(words[0]); name {
 	case "sed", "perl":
 		return editsInPlace(words[1:])
-	case "awk", "grep":
-		// Neither writes where it is pointed; both need a redirect, which is
-		// already counted.
-		return false
-	case "python", "python3", "ruby", "node", "deno", "bun", "php":
-		// An interpreter writes through its program, which runsInlineCode
-		// reads. A file named after it is a script or its input, and
-		// `python3 -m pytest tests/test_x.py` is how the tests run.
+	case "awk", "gawk":
+		// gawk rewrites what it reads with its inplace extension loaded;
+		// otherwise it needs a redirect, which is already counted.
+		for _, a := range words[1:] {
+			if strings.Contains(a, "inplace") {
+				return true
+			}
+		}
 		return false
 	case "find":
 		return hasWord(words[1:], "-delete")
@@ -599,21 +595,15 @@ func changesAFile(words []string) bool {
 	}
 }
 
-// changesFiles is changesAFile for the loop's own record, which is broader for
-// the reason the mutating list is: refusing a read of the record costs nothing.
+// changesFiles is changesAFile for the loop's own record, where a find that
+// runs any command on what it finds counts too: the command is out of sight,
+// and nothing needs find to read the record.
 func changesFiles(words []string) bool {
-	if len(words) == 0 {
-		return false
-	}
-	switch name := base(words[0]); name {
-	case "find":
+	if len(words) > 0 && base(words[0]) == "find" {
 		return hasWord(words[1:], "-delete") || hasWord(words[1:], "-exec") ||
 			hasWord(words[1:], "-execdir") || hasWord(words[1:], "-ok") || hasWord(words[1:], "-okdir")
-	case "git":
-		return gitChangesFiles(words[1:])
-	default:
-		return mutating[name]
 	}
+	return changesAFile(words)
 }
 
 // gitChangesFiles reports whether a git command rewrites or removes the files
