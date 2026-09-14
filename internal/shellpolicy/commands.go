@@ -423,3 +423,23 @@ func gitCommand(args []string) (sub, dir string) {
 	}
 	return "", dir
 }
+
+// gitDirOf is the repository a --git-dir in front of git's subcommand names.
+func gitDirOf(args []string) string {
+	gitDir := ""
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--git-dir" && i+1 < len(args):
+			i++
+			gitDir = clean(args[i])
+		case strings.HasPrefix(a, "--git-dir="):
+			gitDir = clean(strings.TrimPrefix(a, "--git-dir="))
+		case a == "-C" || a == "-c" || a == "--work-tree" || a == "--namespace" ||
+			a == "--config-env" || a == "--attr-source":
+			i++
+		case !strings.HasPrefix(a, "-"):
+			return gitDir
+		}
+	}
+	return gitDir
+}

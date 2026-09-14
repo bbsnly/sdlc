@@ -252,6 +252,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `sdlc approve` or the shell a document is handed to went unread, and sdlc is
   now found behind a wrapper the rules do not know. PowerShell's `<# ... #>`
   comment no longer hides the command after it.
+- A commit to the project's own repository made from somewhere else went past
+  the commit gate: `cd /tmp && git --git-dir=/path/to/project/.git commit`, or
+  the same with `GIT_DIR` set. A commit with `GIT_DIR` set is now held to the
+  story's gates, and one with `--git-dir` is held to them when that names the
+  project.
 - A path in your home directory was read as the project's own: `~` was not
   expanded, so `rm ~/.claude/settings.json` was refused as a write to the
   project's `.claude`, and an interpreter given a script under `~/.claude`

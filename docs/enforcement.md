@@ -230,8 +230,8 @@ Which program a command runs is read with its quoting, so a commit message, a
 `--note` or a `--message` that mentions `sdlc approve` or `git commit` is text,
 not a command. A string handed to `bash -c`, `cmd /c`, PowerShell's `-Command`
 or `eval`, and a command inside `$(…)` or backticks, is read for what it runs. A
-commit in another repository, after a `cd` or with `git -C`, is not held to the
-story's gates.
+commit in another repository, after a `cd` or with `git -C` or `--git-dir`, is
+not held to the story's gates. A commit with `GIT_DIR` set is.
 
 This is pattern matching, not a shell. It is deliberately narrow.
 

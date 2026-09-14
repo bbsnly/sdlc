@@ -270,6 +270,13 @@ func checkPrograms(text string, s State) (Finding, bool) {
 		if f, ok := checkReviewer(words, s); ok {
 			return f, true
 		}
+		// GIT_DIR names the repository whatever the directory, and an assignment
+		// to it can be anywhere in the command, or a statement of its own in
+		// PowerShell: `$env:GIT_DIR='C:\project\.git'; cd \; git commit`.
+		// A directory of "" is the project.
+		if strings.Contains(pathrules.Fold(text), "git_dir") {
+			dir = ""
+		}
 		if f, ok := checkCommit(words, dir, s); ok {
 			return f, true
 		}
@@ -469,7 +476,18 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 	// itself resolves to nothing, the same as outside: `cd /path/to/project &&
 	// git commit`, the usual way to spell it, went past the gate. A directory
 	// not followed is "", which is the project.
-	if s.Resolve != nil && s.Resolve(path.Join(dir, ".git")) == "" {
+	repository := path.Join(dir, ".git")
+	switch gitDir := gitDirOf(words[1:]); {
+	case strings.ContainsAny(gitDir, "$~%"):
+		// Wherever the command runs, `--git-dir` can name this repository:
+		// `cd /tmp && git --git-dir="$PROJECT/.git" commit`.
+		repository = ".git"
+	case isAbsolute(gitDir):
+		repository = gitDir
+	case gitDir != "":
+		repository = path.Join(dir, gitDir)
+	}
+	if s.Resolve != nil && s.Resolve(repository) == "" {
 		return Finding{}, false
 	}
 	ready, why := s.CommitReady, s.CommitWhy

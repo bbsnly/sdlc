@@ -135,6 +135,25 @@ func TestACommitInAnotherRepositoryIsNotTheStorys(t *testing.T) {
 	elsewhere := s
 	elsewhere.Dir = "/work/other"
 	allowed(t, "git commit -m x", elsewhere)
+	allowed(t, "git --git-dir=/tmp/fixture/.git --work-tree=/tmp/fixture commit -m x", s)
+	allowed(t, "cd /tmp/fixture && git --git-dir .git commit -m x", s)
+	allowed(t, "git -C /tmp/fixture --work-tree /work/project commit -m x", s)
+	allowed(t, "git --work-tree /work/project --git-dir /tmp/fixture/.git commit -m x", s)
+	refused(t, "git commit -m --git-dir=/tmp/fixture/.git", s, "commit-gate")
+	for _, command := range []string{
+		"git --git-dir=/work/project/.git --work-tree=/work/project commit -am x",
+		"git --git-dir /work/project/.git commit -am x",
+		"git -C /work --git-dir project/.git commit -am x",
+		`git --git-dir="$REPO" commit -am x`,
+		"GIT_DIR=/work/project/.git GIT_WORK_TREE=/work/project git commit -am x",
+		"env GIT_DIR=/work/project/.git git commit -am x",
+		"export GIT_DIR=/work/project/.git; git commit -am x",
+	} {
+		refused(t, command, elsewhere, "commit-gate")
+	}
+	psElsewhere := elsewhere
+	psElsewhere.PowerShell = true
+	refused(t, "$env:git_dir='/work/project/.git'; git commit -am x", psElsewhere, "commit-gate")
 
 	for _, command := range []string{
 		"git commit -m x",
