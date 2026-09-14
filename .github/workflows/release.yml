@@ -126,13 +126,16 @@ jobs:
         with:
           syft-version: v${{ steps.pins.outputs.syft }}
 
+      # Written outside the checkout: goreleaser refuses a tree with an
+      # untracked file in it, so notes written beside the code stopped the
+      # release before anything was built.
       - name: Release notes
         shell: bash
         run: |
           set -euo pipefail
-          go run ./internal/tools/release notes -o release-notes.md
+          go run ./internal/tools/release notes -o "${RUNNER_TEMP}/release-notes.md"
           # An empty file would publish an empty release rather than fail.
-          if [ ! -s release-notes.md ]; then
+          if [ ! -s "${RUNNER_TEMP}/release-notes.md" ]; then
             echo "::error::release-notes.md is empty; CHANGELOG.md has no section for this version." >&2
             exit 1
           fi
@@ -145,7 +148,7 @@ jobs:
         run: |
           set -euo pipefail
           go run "github.com/goreleaser/goreleaser/v2@v${GORELEASER_VERSION}" release \
-            --clean --release-notes release-notes.md
+            --clean --release-notes "${RUNNER_TEMP}/release-notes.md"
 
       # goreleaser reads --release-notes inside its changelog pipe, and several
       # ordinary-looking settings skip that pipe entirely -- in which case the
@@ -159,11 +162,12 @@ jobs:
         run: |
           set -euo pipefail
           gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" \
-            --json body --jq .body > published-body.md
+            --json body --jq .body > "${RUNNER_TEMP}/published-body.md"
           # Compared line by line: the body has a footer appended, so it is a
           # superset of the notes rather than equal to them. Blank lines are
           # dropped because the template joins the parts with its own.
-          missing=$(grep -vxFf published-body.md release-notes.md | grep -v '^[[:space:]]*$' || true)
+          missing=$(grep -vxFf "${RUNNER_TEMP}/published-body.md" "${RUNNER_TEMP}/release-notes.md" |
+            grep -v '^[[:space:]]*$' || true)
           if [ -n "${missing}" ]; then
             echo "::error::the release body is missing lines from release-notes.md" >&2
             printf '%s\n' "${missing}" >&2
