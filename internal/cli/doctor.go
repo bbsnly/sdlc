@@ -121,7 +121,7 @@ func runChecks() []check {
 		add(check{Name: "git repository", State: stateProblem,
 			Detail: "this is not inside a Git repository",
 			Fix:    `run "git init", or change to a directory inside your repository`})
-		return append(out, skipRest("git repository")...)
+		return append(out, skipRest("git repository", "git repository")...)
 	}
 	add(check{Name: "git repository", State: stateOK, Detail: root})
 	add(gitCheck())
@@ -137,7 +137,7 @@ func runChecks() []check {
 		// configuration is when the hook warns about both and sends you here --
 		// so this is the one check that still runs.
 		add(stateCheck(store.New(&config.Project{Root: root, Config: config.Default()})))
-		return append(out, skipRest("loop state")...)
+		return append(out, skipRest("loop state", "configuration")...)
 	}
 	stack, _ := scaffold.Detect(root)
 	detail := config.File
@@ -226,10 +226,14 @@ var checkOrder = []string{
 	"project contract", "commands", "sdlc on PATH",
 }
 
-// skipRest reports the checks that could not run, so that nothing appears to
-// have silently passed. One real problem should not produce a cascade of
-// unrelated ones either.
-func skipRest(after string) []check {
+// skipRest reports the checks after the one named that could not run, so that
+// nothing appears to have silently passed. One real problem should not produce a
+// cascade of unrelated ones either.
+//
+// Where the report stops and why it stopped are not always the same check: a
+// broken configuration still lets loop state be checked, and the checks after
+// it were skipped because of the configuration, not the state that passed.
+func skipRest(after, because string) []check {
 	var out []check
 	seen := false
 	for _, name := range checkOrder {
@@ -238,7 +242,7 @@ func skipRest(after string) []check {
 			continue
 		}
 		out = append(out, check{Name: name, State: stateSkipped,
-			Detail: "not checked: " + after + " has to work first"})
+			Detail: "not checked: " + because + " has to work first"})
 	}
 	return out
 }

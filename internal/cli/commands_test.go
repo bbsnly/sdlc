@@ -582,6 +582,29 @@ func TestDoctorWantsTheContractHeadingNotALookalike(t *testing.T) {
 	t.Fatal("doctor ran no project contract check")
 }
 
+// With the configuration broken, loop state is still checked, and the checks
+// after it are skipped because of the configuration -- not because of the loop
+// state that just passed.
+func TestDoctorBlamesASkipOnWhatActuallyFailed(t *testing.T) {
+	project(t)
+	mustRun(t, "init")
+	writeFile(t, ".", ".sdlc/config.json", `{not json`)
+
+	skipped := 0
+	for _, c := range decode[doctorPayload](t, run(t, "doctor", "--json")).Checks {
+		if c.State != stateSkipped {
+			continue
+		}
+		skipped++
+		if !strings.Contains(c.Detail, "configuration") {
+			t.Errorf("%q was skipped with %q, but the configuration is what failed", c.Name, c.Detail)
+		}
+	}
+	if skipped == 0 {
+		t.Fatal("a broken configuration skipped nothing")
+	}
+}
+
 func TestDoctorNamesAConfiguredProgramThatIsNotInstalled(t *testing.T) {
 	project(t)
 	mustRun(t, "init")
