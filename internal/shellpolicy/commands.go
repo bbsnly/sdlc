@@ -422,6 +422,12 @@ func subcommand(args []string) string {
 // the directory a -C in front of it moves it to. The word `commit` anywhere
 // after git was a commit, so `git log --grep commit` met the commit gate.
 func gitCommand(args []string) (sub, dir string) {
+	sub, dir, _ = gitCall(args)
+	return sub, dir
+}
+
+// gitCall is gitCommand with the arguments written after the subcommand.
+func gitCall(args []string) (sub, dir string, rest []string) {
 	aliases := map[string]string{}
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
@@ -448,12 +454,12 @@ func gitCommand(args []string) (sub, dir string) {
 		default:
 			// `git -c alias.ci=commit ci` runs commit.
 			if value, ok := aliases[strings.ToLower(a)]; ok {
-				return aliasedCommand(value), dir
+				return aliasedCommand(value), dir, args[i+1:]
 			}
-			return a, dir
+			return a, dir, args[i+1:]
 		}
 	}
-	return "", dir
+	return "", dir, nil
 }
 
 // aliasedCommand is the git subcommand an alias runs: `commit -a`, or

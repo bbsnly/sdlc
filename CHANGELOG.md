@@ -225,6 +225,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   command inside it is still read. `rm $(pwd)/.sdlc/state/active` and
   ``rm `git rev-parse --show-toplevel`/.sdlc/config.json`` were split into a
   command called `rm` and one called `/.sdlc/state/active`.
+- Removing or moving a directory is removing or moving the frozen tests in it.
+  `rm -rf internal/calc`, `mv internal/calc /tmp`, `git checkout -- internal`
+  and `find internal -delete` took a frozen test away without naming it. Putting
+  a file into the directory, or copying the directory, is still allowed.
 - The hook's warnings reach the session. They went to standard error, which
   Claude Code sends to its debug log when a hook allows the call, so "nothing
   is being enforced" was said to nobody. They now arrive as a system message,

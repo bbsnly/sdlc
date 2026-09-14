@@ -690,6 +690,13 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 		roots, names, patterns := findArguments(run.words[1:])
 		candidates = append(candidates, foundBy(roots, literals(names), literals(patterns), frozenShapes(s.Frozen))...)
 	}
+	// A directory taken away takes the frozen tests in it along: `rm -rf
+	// internal/calc` removed internal/calc/add_test.go without naming it.
+	for _, c := range m.spell(s, dir, takenAway(run.words)) {
+		if frozen, ok := holding(c, s.Frozen, dir == "" && !lost); ok {
+			return frozenFinding(frozen), true
+		}
+	}
 	spelled := withGlobs(m.spell(s, dir, candidates), func() []string { return frozenShapes(s.Frozen) })
 	for _, c := range spelled {
 		if !m.first(rule, c) {
@@ -711,16 +718,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 			}, true
 		}
 		if ok {
-			return Finding{
-				Rule: "frozen-test-through-the-tool",
-				Reason: frozen + " is a frozen acceptance test, and a shell command is " +
-					"the one way around every rule that protects it",
-				Route: "leave it alone -- it was locked by content when the test gate " +
-					"passed, and every gate after that is measured against it. If it " +
-					"genuinely has to change, say which and why: the person running the " +
-					"session lifts the freeze with `sdlc unfreeze --reason ...`, which puts the " +
-					"reason on the record",
-			}, true
+			return frozenFinding(frozen), true
 		}
 		if w != "" && s.ImplementerTest != nil && s.ImplementerTest(w) {
 			return Finding{
@@ -733,6 +731,19 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 		}
 	}
 	return Finding{}, false
+}
+
+func frozenFinding(frozen string) Finding {
+	return Finding{
+		Rule: "frozen-test-through-the-tool",
+		Reason: frozen + " is a frozen acceptance test, and a shell command is " +
+			"the one way around every rule that protects it",
+		Route: "leave it alone -- it was locked by content when the test gate " +
+			"passed, and every gate after that is measured against it. If it " +
+			"genuinely has to change, say which and why: the person running the " +
+			"session lifts the freeze with `sdlc unfreeze --reason ...`, which puts the " +
+			"reason on the record",
+	}
 }
 
 // changesAFile reports whether this command, as it is written, exists to
