@@ -214,17 +214,20 @@ func nothingLeftToStart(b *model.Backlog) bool {
 }
 
 // writeAStory is the action in both cases where there is nothing to be stuck on.
-const writeAStory = "Add a story to user_stories.json, " +
-	"or ask Claude Code for one with /sdlc:story.\n"
+// It names the backlog the project configured: backlog.path need not be the
+// default, and there is no command that writes a story for you.
+func writeAStory(path string) string {
+	return "Add a story to " + path + " (schema: .sdlc/templates/story.schema.json).\n"
+}
 
 // nothingToStart is what `sdlc status` says when no story can be started.
-func nothingToStart(b *model.Backlog) string {
+func nothingToStart(b *model.Backlog, path string) string {
 	if len(b.Stories) == 0 {
-		return "\nThe backlog is empty. " + writeAStory
+		return "\nThe backlog is empty. " + writeAStory(path)
 	}
 	said := "\nNothing to start: " + describeWhyNothingRuns(b) + ".\n"
 	if nothingLeftToStart(b) {
-		return said + writeAStory
+		return said + writeAStory(path)
 	}
 	return said + "`sdlc story list` shows what is holding each story back.\n"
 }

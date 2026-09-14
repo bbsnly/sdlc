@@ -259,11 +259,35 @@ func TestStatusSaysWhichKindOfNothingIsLeft(t *testing.T) {
 	if !strings.Contains(out, "the one story in the backlog is finished") {
 		t.Errorf("status does not say the backlog is finished:\n%s", out)
 	}
-	if !strings.Contains(out, "Add a story") {
+	if !strings.Contains(out, "Add a story to user_stories.json") {
 		t.Errorf("status does not say what to do about a finished backlog:\n%s", out)
 	}
 	if strings.Contains(out, "holding each story back") {
 		t.Errorf("status reports finished work as blocked:\n%s", out)
+	}
+	if strings.Contains(out, "/sdlc:") && !strings.Contains(out, "/sdlc:next") {
+		t.Errorf("status sends people to a command the plugin does not have:\n%s", out)
+	}
+}
+
+// An empty backlog was answered with "add a story to user_stories.json, or ask
+// for one with /sdlc:story": the default file whatever backlog.path said, and a
+// command the plugin never had.
+func TestAnEmptyBacklogNamesTheFileTheProjectKeeps(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	setConfigOnDisk(t, root, "backlog", map[string]any{"path": "planning/stories.json"})
+	writeFile(t, root, "planning/stories.json", `{"stories": []}`)
+
+	for _, args := range [][]string{{"story", "list"}, {"status"}} {
+		out := mustRun(t, args...).stdout
+		if !strings.Contains(out, "Add a story to planning/stories.json") {
+			t.Errorf("sdlc %s does not name the configured backlog:\n%s", strings.Join(args, " "), out)
+		}
+		if strings.Contains(out, "sdlc:story") || strings.Contains(out, "user_stories.json") {
+			t.Errorf("sdlc %s names a file or command this project does not have:\n%s",
+				strings.Join(args, " "), out)
+		}
 	}
 }
 

@@ -76,17 +76,16 @@ func newStoryListCmd() *cobra.Command {
 			if wantJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), storyListPayload{OK: true, Stories: rows})
 			}
-			printStories(cmd, backlog, rows)
+			printStories(cmd, backlog, s.Config().Backlog.Path, rows)
 			return nil
 		},
 	}
 }
 
-func printStories(cmd *cobra.Command, backlog *model.Backlog, rows []storyRow) {
+func printStories(cmd *cobra.Command, backlog *model.Backlog, path string, rows []storyRow) {
 	w := cmd.OutOrStdout()
 	if len(rows) == 0 {
-		fmt.Fprint(w, "The backlog is empty.\n\nAdd a story to user_stories.json, "+
-			"or ask Claude Code for one with /sdlc:story.\n")
+		fmt.Fprint(w, "The backlog is empty.\n\n"+writeAStory(path))
 		return
 	}
 

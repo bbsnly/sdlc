@@ -161,7 +161,7 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprintf(w, "  next up  %s  %s\n", payload.Next.Story, payload.Next.Title)
 				fmt.Fprint(w, "\nRun `sdlc start` to begin.\n")
 			default:
-				fmt.Fprint(w, nothingToStart(backlog))
+				fmt.Fprint(w, nothingToStart(backlog, s.Config().Backlog.Path))
 			}
 			return nil
 		},
