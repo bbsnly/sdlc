@@ -34,7 +34,7 @@ var (
 		`run "sdlc init" to create the backlog, or point backlog.path in .sdlc/config.json at the file you use`)
 
 	BacklogUnreadable = register("SDLC-E0008",
-		`fix the JSON in your backlog file — every story needs an "id" and a "title"`)
+		`fix the JSON in your backlog file — every story needs an "id", a "title" and a "status" from the schema`)
 
 	StoryNotFound = register("SDLC-E0009",
 		`run "sdlc story list" to see the ids you can use`)

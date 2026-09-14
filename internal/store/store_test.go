@@ -96,6 +96,30 @@ func TestBacklogRejectsBrokenJSON(t *testing.T) {
 	}
 }
 
+// A status the loop does not know was read as no status: the story was never
+// picked, never listed as waiting, and nothing said why.
+func TestBacklogRefusesAStatusTheLoopDoesNotKnow(t *testing.T) {
+	for _, story := range []string{
+		`{"id":"B-2","title":"Two","status":"Ready"}`,
+		`{"id":"B-2","title":"Two"}`,
+	} {
+		s := newStore(t)
+		writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"Fine","status":"ready"},`+story+`]}`)
+		_, err := s.Backlog()
+		if codeOf(t, err) != sdlcerr.BacklogUnreadable {
+			t.Errorf("%s: code = %v, want %s", story, err, sdlcerr.BacklogUnreadable)
+			continue
+		}
+		var e *sdlcerr.Error
+		errors.As(err, &e)
+		for _, want := range []string{"B-2", "ready", "dropped"} {
+			if !strings.Contains(e.What+" "+e.Why, want) {
+				t.Errorf("%s: the refusal does not name %q: %s / %s", story, want, e.What, e.Why)
+			}
+		}
+	}
+}
+
 func TestBacklogNamesTheStoryThatIsMissingAField(t *testing.T) {
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"Fine","status":"ready"},{"id":"B-2","status":"ready"}]}`)
@@ -220,10 +244,11 @@ func TestMovingAStoryChangesOnlyItsStatusAndUpdatedTime(t *testing.T) {
 `,
 		},
 		{
-			name:   "a missing key is added after the last one, spaced like it",
-			before: "{\"stories\": [\n\t{\n\t\t\"id\": \"A-1\",\n\t\t\"title\": \"One\",\n\t\t\"priority\": 10\n\t}\n]}\n",
-			after: "{\"stories\": [\n\t{\n\t\t\"id\": \"A-1\",\n\t\t\"title\": \"One\",\n\t\t\"priority\": 10," +
-				"\n\t\t\"status\": \"in_progress\",\n\t\t\"updated\": \"2026-09-10T08:30:00Z\"\n\t}\n]}\n",
+			name: "a missing key is added after the last one, spaced like it",
+			before: "{\"stories\": [\n\t{\n\t\t\"id\": \"A-1\",\n\t\t\"title\": \"One\",\n\t\t\"status\": \"ready\"," +
+				"\n\t\t\"priority\": 10\n\t}\n]}\n",
+			after: "{\"stories\": [\n\t{\n\t\t\"id\": \"A-1\",\n\t\t\"title\": \"One\",\n\t\t\"status\": \"in_progress\"," +
+				"\n\t\t\"priority\": 10,\n\t\t\"updated\": \"2026-09-10T08:30:00Z\"\n\t}\n]}\n",
 		},
 		{
 			name:   "a compact file stays compact, and gains the newline git wants",
@@ -261,7 +286,7 @@ func TestTheBacklogReadsTheSameForReviewAfterAStoryWaitsAndResumes(t *testing.T)
 	for _, before := range []string{
 		"{\n  \"stories\": [\n    {\n      \"id\": \"A-1\",\n      \"status\": \"ready\",\n" +
 			"      \"title\": \"One\",\n      \"estimate\": 5\n    }\n  ]\n}\n",
-		"{\"stories\": [\n\t{\n\t\t\"id\": \"A-1\",\n\t\t\"title\": \"One\"\n\t}\n]}\n",
+		"{\"stories\": [\n\t{\n\t\t\"id\": \"A-1\",\n\t\t\"title\": \"One\",\n\t\t\"status\": \"todo\"\n\t}\n]}\n",
 		`{"stories":[{"Status":"ready","id":"A-1","title":"One"},{"id":"B-2","title":"Two","status":"ready"}]}`,
 	} {
 		s := newStore(t)

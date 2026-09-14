@@ -68,7 +68,9 @@ stories in.
 ### SDLC-E0008
 
 The backlog exists but could not be parsed, or a story in it is missing a required field.
-Every story needs an `id` and a `title`.
+Every story needs an `id` and a `title`, and a `status` the loop knows: `todo`, `ready`,
+`in_progress`, `awaiting_human`, `blocked`, `done` or `dropped`, spelled exactly so. A story
+with any other status would never be picked, so the whole backlog is refused instead.
 
 Fix the JSON and try again. The message names the story that stopped it.
 

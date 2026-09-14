@@ -168,6 +168,18 @@ func (s *Store) readBacklog() ([]byte, *model.Backlog, error) {
 			return nil, nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
 				"the story "+quote(story.ID)+" has no title",
 				"every story needs a title: it is what the commit message and the retro refer to")
+		case !story.Status.Valid():
+			// A status the loop does not know was read as no status at all:
+			// "Ready" was never picked, never listed as waiting, and nothing
+			// said why.
+			known := make([]string, len(model.Statuses))
+			for i, st := range model.Statuses {
+				known[i] = string(st)
+			}
+			return nil, nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
+				"the story "+quote(story.ID)+" has the status "+quote(string(story.Status)),
+				"a status is one of "+strings.Join(known, ", ")+", and a story with any other "+
+					"is one the loop would never pick")
 		}
 		if err := CheckID(story.ID); err != nil {
 			return nil, nil, err
