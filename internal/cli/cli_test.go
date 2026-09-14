@@ -3,11 +3,15 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
+	"github.com/bbsnly/sdlc/internal/shellpolicy"
 )
 
 func TestVersionPrintsOneLine(t *testing.T) {
@@ -55,6 +59,31 @@ func TestVersionAnswersInJSONWhenAsked(t *testing.T) {
 			t.Errorf("%v printed %v, want %s", tc.args, keys, tc.keys)
 		}
 	}
+}
+
+// The shell rules find the subcommand past the flags, and a flag that takes a
+// value they did not know hid it: `sdlc --reason x unfreeze` ran unfreeze while
+// the rules read `x`. Every flag that takes a value is one they know.
+func TestTheShellRulesKnowEveryFlagThatTakesAValue(t *testing.T) {
+	var walk func(*cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		for _, flags := range []*pflag.FlagSet{cmd.LocalFlags(), cmd.PersistentFlags()} {
+			flags.VisitAll(func(f *pflag.Flag) {
+				if f.Shorthand != "" {
+					t.Errorf("%s -%s: the shell rules read long flags only", cmd.CommandPath(), f.Shorthand)
+				}
+				takesValue := f.NoOptDefVal == ""
+				if takesValue != shellpolicy.ValueFlags["--"+f.Name] {
+					t.Errorf("%s --%s takes a value: %v, and shellpolicy.ValueFlags says %v",
+						cmd.CommandPath(), f.Name, takesValue, !takesValue)
+				}
+			})
+		}
+		for _, sub := range cmd.Commands() {
+			walk(sub)
+		}
+	}
+	walk(New(strings.NewReader(""), io.Discard, io.Discard))
 }
 
 func TestBareInvocationHelpsRatherThanErrors(t *testing.T) {

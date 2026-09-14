@@ -247,6 +247,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - The shell rules read a path as the file it is on disk. A link to `.sdlc`,
   `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
   the file in letters no rule matched, and `rm notes/state/active` went through.
+- A flag before the subcommand no longer hides it from the shell rules.
+  `sdlc --reason x unfreeze`, `sdlc --reject x approve` and
+  `sdlc --note x review add ...` were read as running `x`, and went through.
 - Refusals lead somewhere that works. SDLC-E0033 names the story in the
   `sdlc gate ... fail` it suggests: without `--story` that command is refused
   because no iteration is running, which led back to `sdlc start`. The commit

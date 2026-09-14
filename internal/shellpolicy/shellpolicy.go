@@ -160,13 +160,14 @@ func Inspect(command string, s State) (Finding, bool) {
 		if f, ok := checkEnforcement(assigns); ok {
 			return f, true
 		}
-		if f, ok := checkUnfreeze(words); ok {
+		args := commandWords(segment)
+		if f, ok := checkUnfreeze(args); ok {
 			return f, true
 		}
-		if f, ok := checkApprove(words); ok {
+		if f, ok := checkApprove(args); ok {
 			return f, true
 		}
-		if f, ok := checkReviewer(words, s); ok {
+		if f, ok := checkReviewer(args, s); ok {
 			return f, true
 		}
 		if f, ok := checkCommit(run.words, s); ok {
@@ -297,14 +298,20 @@ func reviewRole(words []string) (string, bool) {
 // runsSubcommand reports whether the command runs sdlc with this subcommand,
 // however sdlc is reached: on PATH, by path, as sdlc.exe, through npx, or with
 // `go run ./cmd/sdlc`. The subcommand is the first word after sdlc that is not
-// a flag, so a note that mentions it is not mistaken for it.
+// a flag or a flag's value, so a note that mentions it is not mistaken for it.
 func runsSubcommand(words []string, sub string) bool {
 	for i, w := range words {
 		if base(w) != "sdlc" {
 			continue
 		}
-		for _, next := range words[i+1:] {
+		for j := i + 1; j < len(words); j++ {
+			next := words[j]
 			if strings.HasPrefix(next, "-") {
+				// A flag's value is not the subcommand. Read as one, `sdlc
+				// --reason x unfreeze` ran unfreeze while this saw `x`.
+				if ValueFlags[next] {
+					j++
+				}
 				continue
 			}
 			return next == sub
@@ -312,6 +319,50 @@ func runsSubcommand(words []string, sub string) bool {
 		return false
 	}
 	return false
+}
+
+// commandWords splits a segment into the words a shell hands the program, as far
+// as finding its subcommand needs: a quoted value is one word, however many
+// spaces it holds. parse splits on every space, and that is enough for the
+// paths it looks for, but `sdlc --reason "the test was wrong" unfreeze` has a
+// value three words long, and skipping one of them left `test` where the
+// subcommand should be. Backslashes are left alone: they are Windows paths as
+// often as escapes.
+func commandWords(segment string) []string {
+	var words []string
+	var word strings.Builder
+	started := false
+	var quote rune
+	for _, r := range segment {
+		switch {
+		case quote != 0 && r == quote:
+			quote = 0
+		case quote != 0:
+			word.WriteRune(r)
+		case r == '"' || r == '\'':
+			quote, started = r, true
+		case strings.ContainsRune(" \t\r\n", r):
+			if started {
+				words = append(words, word.String())
+				word.Reset()
+				started = false
+			}
+		default:
+			word.WriteRune(r)
+			started = true
+		}
+	}
+	if started {
+		words = append(words, word.String())
+	}
+	return words
+}
+
+// ValueFlags are the flags of sdlc that take the next word as their value. The
+// command's own tests hold this to the flags it has.
+var ValueFlags = map[string]bool{
+	"--file": true, "--gate": true, "--message": true, "--note": true,
+	"--reason": true, "--reject": true, "--story": true, "--usd": true,
 }
 
 // checkCommit puts the commit gate in front of the commit.

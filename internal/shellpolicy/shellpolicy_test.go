@@ -663,9 +663,14 @@ func TestUnfreezeIsAHumanDecision(t *testing.T) {
 		"go run ./cmd/sdlc unfreeze --reason x",
 		"sdlc --json unfreeze --reason x",
 		"go test ./... || sdlc unfreeze --reason x",
+		`sdlc --reason "test was wrong" unfreeze`,
+		"sdlc --story A-1 --json unfreeze",
 	} {
 		refused(t, command, ready, "unfreeze-is-a-human-decision")
 	}
+	refused(t, "sdlc --reject x approve A-1", ready, "approval-is-a-human-decision")
+	refused(t, "sdlc --note x review add code_review code-reviewer approve",
+		State{CommitReady: true, Agent: "implementer"}, "review-is-recorded-by-its-reviewer")
 	for _, command := range []string{
 		"sdlc freeze",
 		"sdlc status --json",
