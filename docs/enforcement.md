@@ -195,8 +195,9 @@ to prevent, and it is reached without breaking a single stated rule unless
 something refuses it. Handing the work to a subagent the loop does not know is
 the same failure one step removed.
 
-*Instead:* delegate to the agent whose gate it is, or `sdlc stop` to end the
-iteration and take over yourself.
+*Instead:* delegate to the agent whose gate it is. If none of them fits, say what
+the work is and stop: ending the iteration to do the work outside the loop is
+the person's decision.
 
 ## Rules on shell commands
 

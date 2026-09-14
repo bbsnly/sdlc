@@ -44,6 +44,10 @@ func TestARouteDoesNotLeadRoundTheRule(t *testing.T) {
 	if !strings.Contains(config.Route, "by hand") || strings.Contains(config.Route, "sdlc artifact write") {
 		t.Errorf("the configuration's route is not a change by hand: %s", config.Route)
 	}
+	enforce := refused(t, "SDLC_ENFORCE=0 git commit -m x", ready, "enforcement-stays-on")
+	if strings.Contains(enforce.Route, "sdlc stop") {
+		t.Errorf("the enforcement route ends the iteration: %s", enforce.Route)
+	}
 	state := refused(t, "rm .sdlc/state/active", ready, "loop-state-through-the-tool")
 	if !strings.Contains(state.Route, "sdlc gate") {
 		t.Errorf("loop state's route lost the sdlc command: %s", state.Route)

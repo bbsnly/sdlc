@@ -157,7 +157,7 @@ environment. A command that tries is refused all the same:
 ```text
 SDLC_ENFORCE decides whether the loop is enforced at all, and it is set by the
 person who started the session, not from inside it. Instead: if a rule is wrong,
-say which one and why; `sdlc stop` ends the iteration and hands the work back
+say which one and why, and stop
 [enforcement-stays-on]
 ```
 

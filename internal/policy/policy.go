@@ -292,8 +292,10 @@ var Rules = []Rule{
 	},
 	{
 		ID: "orchestrator-delegates",
-		Route: "delegate the work to the agent whose gate it is, " +
-			"or run `sdlc stop` to end the iteration and take over yourself",
+		// Not `sdlc stop`: ending the iteration turns every rule off, and
+		// naming it here was the way round them all.
+		Route: "delegate the work to the agent whose gate it is; if none of them " +
+			"fits, say what the work is and stop",
 		check: func(r Request) string {
 			// An agent that is not one of the loop's own is the main conversation
 			// by other means. Keyed on the empty name alone, this rule sent the

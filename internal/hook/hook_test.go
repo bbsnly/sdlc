@@ -418,6 +418,9 @@ func TestAGateArtifactIsNotWrittenInPlaceByAnyone(t *testing.T) {
 	}
 }
 
+// The denial used to offer `sdlc stop` and taking the work over as the way
+// out, and ending the iteration turns every rule off: followed, it committed
+// work no gate had passed.
 func TestTheMainConversationIsToldToDelegate(t *testing.T) {
 	root := loopProject(t)
 	r := call(t, event(root, "Edit", "", "internal/billing/invoice.go"), noEnv)
@@ -425,9 +428,12 @@ func TestTheMainConversationIsToldToDelegate(t *testing.T) {
 	if !denied(r) {
 		t.Fatal("the main conversation edited code during an iteration")
 	}
-	if !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "sdlc stop") {
-		t.Errorf("the denial does not offer the way out: %q",
-			r.HookSpecificOutput.PermissionDecisionReason)
+	reason := r.HookSpecificOutput.PermissionDecisionReason
+	if !strings.Contains(reason, "delegate") {
+		t.Errorf("the denial does not name the route: %q", reason)
+	}
+	if strings.Contains(reason, "sdlc stop") {
+		t.Errorf("the denial sends it to end the iteration: %q", reason)
 	}
 }
 

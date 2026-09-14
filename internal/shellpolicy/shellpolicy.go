@@ -197,8 +197,7 @@ func checkEnforcement(assigns []string) (Finding, bool) {
 				Rule: "enforcement-stays-on",
 				Reason: name + " decides whether the loop is enforced at all, and it is " +
 					"set by the person who started the session, not from inside it",
-				Route: "if a rule is wrong, say which one and why; `sdlc stop` ends the " +
-					"iteration and hands the work back",
+				Route: "if a rule is wrong, say which one and why, and stop",
 			}, true
 		}
 	}

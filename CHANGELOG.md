@@ -247,6 +247,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - The shell rules read a path as the file it is on disk. A link to `.sdlc`,
   `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
   the file in letters no rule matched, and `rm notes/state/active` went through.
+- Refusals no longer send an agent to `sdlc stop`. The main conversation told
+  to delegate, and a command that tried to set `SDLC_ENFORCE`, were both
+  pointed at ending the iteration, which turns every rule off.
 - `sdlc init --force` is refused while a story is being worked on
   (SDLC-E0012). Run from an agent's shell, it put the default settings back
   under a running story, which no rule was looking at: a person's pause on
