@@ -137,6 +137,10 @@ id you used contains a path separator, a `..`, or a character that is not safe i
 Rename the story. Ids of letters, digits, dots, dashes and underscores always work — `AUTH-3`,
 `US-001`, `billing.2` — and the backlog schema asks for the `PREFIX-123` shape.
 
+When the message says `.sdlc/state/active does not name a story`, no story is at fault: the file
+naming the story under way holds something `sdlc start` never writes. `sdlc stop` removes it and
+ends the iteration; `sdlc start` then begins again.
+
 ### SDLC-E0016
 
 You asked to store a document the loop does not know about.
@@ -311,11 +315,12 @@ If the iteration is still open, `sdlc stop` ends it. If the work genuinely has t
 a review reopened, a bug found after the commit — record the gate that failed:
 
 ```console
-$ sdlc gate code_review fail --note "AC-2 turned out to be untested"
+$ sdlc gate code_review fail --story US-001 --note "AC-2 turned out to be untested"
 ```
 
-That puts the story back to `in_progress` and says on the record why it came back. Being done
-is a reading of the gate record, not a door that locks behind you.
+`--story` names it because no iteration is running. That puts the story back to `in_progress`
+and says on the record why it came back. Being done is a reading of the gate record, not a door
+that locks behind you.
 
 ### SDLC-E0034
 

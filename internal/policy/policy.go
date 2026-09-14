@@ -187,8 +187,8 @@ var Rules = []Rule{
 		ID: "sdet-writes-tests-only",
 		Route: "write the acceptance tests; the code that makes them pass comes next, " +
 			"from sdlc:implementer. If this project keeps fixtures somewhere the " +
-			"loop does not recognise, add that directory to paths.tests in " +
-			".sdlc/config.json",
+			"loop does not recognise, say which directory and stop: the person running " +
+			"the session adds it to paths.tests in .sdlc/config.json, outside the iteration",
 		check: func(r Request) string {
 			if NormalizeAgent(r.Agent) != "sdet" || r.Tests.IsTest {
 				return ""

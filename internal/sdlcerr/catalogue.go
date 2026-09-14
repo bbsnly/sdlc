@@ -49,7 +49,7 @@ var (
 		`finish the current story, or run "sdlc stop" to end the iteration without recording a result`)
 
 	StoryAlreadyFinished = register("SDLC-E0033",
-		`record a gate as failed to reopen it — "sdlc gate code_review fail --note ..." says on the record why the work came back`)
+		`record a gate as failed to reopen it — "sdlc gate code_review fail --story ID --note ..." says on the record why the work came back`)
 
 	BadArgument = register("SDLC-E0034",
 		`check the flag's value — "sdlc <command> --help" says what it takes`)

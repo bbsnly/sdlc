@@ -247,6 +247,15 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - The shell rules read a path as the file it is on disk. A link to `.sdlc`,
   `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
   the file in letters no rule matched, and `rm notes/state/active` went through.
+- Refusals lead somewhere that works. SDLC-E0033 names the story in the
+  `sdlc gate ... fail` it suggests: without `--story` that command is refused
+  because no iteration is running, which led back to `sdlc start`. The commit
+  gate no longer suggests `sdlc stop`, which turned it off, and was followed to
+  commit work a person was waiting to approve. A shell write to
+  `.sdlc/config.json` and the test author's fixtures route say a person changes
+  the configuration, rather than naming commands or edits the agent is refused.
+  A `.sdlc/state/active` that names no story says to run `sdlc stop`, not to
+  rename a story that does not exist.
 - `sdlc version --json` prints JSON. It printed the prose line whatever it was
   asked, although `--json` is documented for every command.
 - The hook reads a long shell command in time. A command naming the same paths

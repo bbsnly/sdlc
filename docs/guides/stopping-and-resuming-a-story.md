@@ -148,7 +148,9 @@ Ended the iteration on US-001. Every gate passed, so the story is done and `sdlc
 This is the one stop that changes something: the story's freeze is lifted, so
 the next story can take its own. A finished story cannot be started again
 ([SDLC-E0033](../troubleshooting.md#sdlc-e0033)). The way back in is to record a
-gate as failed, which puts the story back to `in_progress`.
+gate as failed, naming the story since no iteration is running —
+`sdlc gate code_review fail --story US-001 --note "..."` — which puts the story
+back to `in_progress`.
 
 ## Getting out of a broken state
 

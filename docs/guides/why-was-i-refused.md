@@ -28,7 +28,7 @@ gets:
 ```text
 this story has not been through the gates that come before committing: dor has
 not passed. Instead: finish the gates -- `sdlc status` shows where this story
-stands -- or `sdlc stop` to end the iteration and commit as yourself
+stands; committing without them is for the person running the session to decide
 [commit-gate]
 ```
 

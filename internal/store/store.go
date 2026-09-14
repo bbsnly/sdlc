@@ -260,8 +260,19 @@ func (s *Store) Active() (string, error) {
 	// An empty file is not one the tool leaves: ending an iteration removes
 	// it. The hook reads an empty one as naming no story and turns every rule
 	// off, so this refuses it too, rather than report that nothing is running.
+	//
+	// Its fix is not CheckID's: there is no story by that name to rename, and
+	// what clears the file is ending the iteration.
 	if err := CheckID(id); err != nil {
-		return "", err
+		shown := id
+		if shown == "" {
+			shown = "nothing"
+		}
+		return "", sdlcerr.New(sdlcerr.UnsafeStoryID,
+			activeFile+" does not name a story",
+			"it holds "+quote(shown)+", and sdlc start only ever writes a story id there").
+			WithFix(`run "sdlc stop" to remove it and end the iteration, then "sdlc start" again`).
+			WithCause(err)
 	}
 	return id, nil
 }

@@ -418,8 +418,14 @@ func TestActiveRefusesATamperedStateFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := s.Active(); err == nil {
+	_, err := s.Active()
+	if err == nil {
 		t.Fatal("Active accepted a traversing id from the state file")
+	}
+	// There is no story by that name to rename; ending the iteration clears it.
+	var e *sdlcerr.Error
+	if !errors.As(err, &e) || !strings.Contains(e.Fix, "sdlc stop") || strings.Contains(e.Fix, "rename") {
+		t.Errorf("the fix does not lead to clearing the file: %v", err)
 	}
 }
 

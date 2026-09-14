@@ -350,7 +350,7 @@ func TestStartRefusesAStoryThatIsAlreadyFinished(t *testing.T) {
 	if closed.code == 0 {
 		t.Fatal("start reopened a finished story by name")
 	}
-	for _, want := range []string{"SDLC-E0033", "is finished", "fail"} {
+	for _, want := range []string{"SDLC-E0033", "is finished", "sdlc gate code_review fail --story US-001"} {
 		if !strings.Contains(closed.stderr, want) {
 			t.Errorf("the refusal is missing %q:\n%s", want, closed.stderr)
 		}
@@ -361,6 +361,10 @@ func TestStartRefusesAStoryThatIsAlreadyFinished(t *testing.T) {
 	if story.Status != string(model.StatusDone) {
 		t.Errorf("the refused start left the story as %q", story.Status)
 	}
+
+	// And the fix it names, followed as printed, reopens the story.
+	mustRun(t, "gate", "code_review", "fail", "--story", "US-001", "--note", "AC-2 is untested")
+	mustRun(t, "start", "US-001")
 }
 
 // setStatusOnDisk rewrites the backlog behind the tool's back, which is how a

@@ -192,10 +192,15 @@ func refuseIfFinished(s *store.Store, id string) (*sdlcerr.Error, error) {
 	if _, remaining := record.NextGate(); remaining {
 		return nil, nil
 	}
+	// The story is named: no iteration runs when this refuses a start, and a
+	// gate recorded without --story is refused for that, which sent whoever
+	// followed the fix back to start and round again.
 	return sdlcerr.New(sdlcerr.StoryAlreadyFinished,
 		quote(id)+" is finished",
 		"every gate on it has passed, so starting it would put work that is "+
-			"already done back in progress"), nil
+			"already done back in progress").
+		WithFix(`record a gate as failed to reopen it -- "sdlc gate code_review fail --story ` + id +
+			` --note ..." says on the record why the work came back`), nil
 }
 
 // nextRunnable picks the story to work on, and explains itself when there is

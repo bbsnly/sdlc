@@ -332,8 +332,10 @@ func checkCommit(words []string, s State) (Finding, bool) {
 	return Finding{
 		Rule:   "commit-gate",
 		Reason: "this story has not been through the gates that come before committing: " + why,
-		Route: "finish the gates -- `sdlc status` shows where this story stands -- " +
-			"or `sdlc stop` to end the iteration and commit as yourself",
+		// Not `sdlc stop`: ending the iteration turns this rule off, so naming
+		// it here told the agent the way round a gate a person was waiting on.
+		Route: "finish the gates -- `sdlc status` shows where this story stands; " +
+			"committing without them is for the person running the session to decide",
 	}, true
 }
 
@@ -366,7 +368,15 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 					"wrong, stop and say what rather than editing it",
 			}, true
 		}
-		if hit, ok := loopState(c); ok {
+		if hit, ok := loopState(c); ok && hit == ".sdlc/config.json" {
+			return Finding{
+				Rule: "loop-state-through-the-tool",
+				Reason: hit + " is the loop's configuration, and a shell command is the one " +
+					"way around every rule that protects it",
+				Route: "configuration is changed by hand, by the person running the session, " +
+					"outside a running iteration; say which setting is wrong and stop",
+			}, true
+		} else if ok {
 			return Finding{
 				Rule: "loop-state-through-the-tool",
 				Reason: hit + " is the loop's own record, and a shell command is the one " +

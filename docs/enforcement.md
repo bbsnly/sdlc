@@ -144,7 +144,8 @@ Refuses the test author writing anything that is not a test, its own story
 directory, or `CODEMAP.md`.
 
 *Instead:* write the tests. If this project keeps fixtures somewhere the loop
-does not recognise, add that directory to `paths.tests`.
+does not recognise, say which directory and stop: the person running the session
+adds it to `paths.tests`, outside the iteration.
 
 ### `researcher-writes-analysis-only`
 
@@ -233,7 +234,9 @@ A scratch file inside a story's directory is not loop state, and reading any of
 it is never refused.
 
 *Instead:* `sdlc artifact write`, `sdlc review add`, `sdlc gate`. The freeze is
-lifted by the person running the session.
+lifted by the person running the session. For `.sdlc/config.json` there is no
+command: the person running the session changes it by hand, outside a running
+iteration.
 
 ### `protected-path-through-the-tool`
 
@@ -329,8 +332,10 @@ the refusal names the file. `sdlc start` always writes one, so either means
 something damaged it. `sdlc stop` still ends the iteration when the record
 cannot be read.
 
-*Instead:* finish the gates — `sdlc status` shows where the story stands — or
-`sdlc stop` to end the iteration and commit as yourself.
+*Instead:* finish the gates — `sdlc status` shows where the story stands.
+Committing without them is for the person running the session to decide: the
+refusal does not name `sdlc stop`, which turns this rule off along with the
+iteration.
 
 ### `enforcement-stays-on`
 

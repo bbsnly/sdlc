@@ -31,6 +31,25 @@ func refused(t *testing.T, command string, s State, wantRule string) Finding {
 	return got
 }
 
+// A refusal's route is what the agent does next. The commit gate's named
+// `sdlc stop`, which turns the gate off, and it was followed to commit work a
+// person was waiting to approve. The configuration's named commands that cannot
+// change configuration.
+func TestARouteDoesNotLeadRoundTheRule(t *testing.T) {
+	commit := refused(t, "git commit -m x", notReady, "commit-gate")
+	if strings.Contains(commit.Route, "sdlc stop") {
+		t.Errorf("the commit gate's route ends the iteration: %s", commit.Route)
+	}
+	config := refused(t, "sed -i s/a/b/ .sdlc/config.json", ready, "loop-state-through-the-tool")
+	if !strings.Contains(config.Route, "by hand") || strings.Contains(config.Route, "sdlc artifact write") {
+		t.Errorf("the configuration's route is not a change by hand: %s", config.Route)
+	}
+	state := refused(t, "rm .sdlc/state/active", ready, "loop-state-through-the-tool")
+	if !strings.Contains(state.Route, "sdlc gate") {
+		t.Errorf("loop state's route lost the sdlc command: %s", state.Route)
+	}
+}
+
 func allowed(t *testing.T, command string, s State) {
 	t.Helper()
 	if got, ok := inspect(t, command, s); ok {
@@ -449,8 +468,8 @@ func TestTheCommitGateStandsInFrontOfTheCommit(t *testing.T) {
 	if !strings.Contains(got.Reason, "code_review") {
 		t.Errorf("the refusal does not say what is missing: %q", got.Reason)
 	}
-	if !strings.Contains(got.Route, "sdlc stop") {
-		t.Errorf("the refusal offers no way out: %q", got.Route)
+	if !strings.Contains(got.Route, "sdlc status") {
+		t.Errorf("the refusal offers no way forward: %q", got.Route)
 	}
 
 	for _, command := range []string{
