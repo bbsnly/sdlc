@@ -162,15 +162,19 @@ jobs:
             *) echo "${EVENT} adds no commits; nothing to check"; exit 0 ;;
           esac
           pattern='^(feat|fix|docs|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9._/-]+\))?!?: [^ ]'
+          # Captured first: a process substitution's exit status is lost even
+          # under pipefail, so a git log that failed checked nothing and passed.
+          log=$(git log --no-merges --format='%H %s' "${range}")
           bad=0
           while IFS= read -r line; do
+            [ -n "${line}" ] || continue
             sha=${line%% *}
             subject=${line#* }
             if ! printf '%s\n' "${subject}" | grep -Eq "${pattern}"; then
               echo "::error::${sha:0:7} \"${subject}\" is not <type>(<scope>): <summary>"
               bad=1
             fi
-          done < <(git log --no-merges --format='%H %s' "${range}")
+          done <<< "${log}"
           if [ "${bad}" -ne 0 ]; then
             echo "types: feat fix docs refactor test chore build ci perf revert; see CONTRIBUTING.md" >&2
           fi
