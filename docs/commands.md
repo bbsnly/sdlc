@@ -247,6 +247,11 @@ vendored code cannot be mistaken for one.
 Refuses if a freeze already exists. Taking a second one over the top would
 quietly bless whatever changed in between.
 
+The one exception is `freeze.allow_new_test_files`. With it on, running
+`sdlc freeze` again on the story's own freeze adds the test files written since,
+provided none of the frozen ones has changed, and lists what it added; `--json`
+names them in `added`.
+
 ## `sdlc unfreeze`
 
 Lift the test freeze, on the record.

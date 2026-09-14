@@ -78,6 +78,9 @@ var (
 	DiffTooLarge = register("SDLC-E0042",
 		`record the gate as failed and hand the story to a person to split — "sdlc escalate story_too_large --message ..." — rather than cutting the change down to fit`)
 
+	UnfrozenTests = register("SDLC-E0043",
+		`remove the test files the freeze does not hold, or have a person run "sdlc unfreeze --reason ..." in their own terminal and freeze again, so they are frozen with the rest`)
+
 	UnknownGate = register("SDLC-E0013",
 		`run "sdlc gate --help" to see the gate names this version knows`)
 

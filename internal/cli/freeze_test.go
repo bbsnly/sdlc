@@ -245,6 +245,86 @@ func TestTheTestGateNoticesAFrozenTestThatVanished(t *testing.T) {
 	}
 }
 
+// A test the freeze does not hold was checked by nothing: it ran at
+// verification as though it had been written before the code, and every gate
+// after the freeze let it through.
+func TestATestTheFreezeDoesNotHoldStopsTheGates(t *testing.T) {
+	root := frozenStory(t)
+	mustRun(t, "freeze")
+	writeFile(t, root, "internal/later_test.go", "package internal\n")
+
+	r := run(t, "gate", "tests_frozen", "pass")
+	if r.code == 0 {
+		t.Fatal("the test gate passed with a test the freeze does not hold")
+	}
+	for _, want := range []string{"SDLC-E0043", "internal/later_test.go", "sdlc unfreeze"} {
+		if !strings.Contains(r.stderr, want) {
+			t.Errorf("the refusal is missing %q:\n%s", want, r.stderr)
+		}
+	}
+
+	// Past Gate 3 too, which is where one would be written to pass.
+	if err := os.Remove(filepath.Join(root, "internal", "later_test.go")); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, "gate", "tests_frozen", "pass", "--note", "1 test, failing")
+	writeFile(t, root, "internal/later_test.go", "package internal\n")
+	mustRunWith(t, "# Plan\n", "artifact", "write", "plan")
+	if r := run(t, "gate", "plan", "pass"); !strings.Contains(r.stderr, "SDLC-E0043") {
+		t.Errorf("the plan gate took a test the freeze does not hold: code %d\n%s", r.code, r.stderr)
+	}
+
+	// Without the setting, freezing again is still a second freeze over the top.
+	if r := run(t, "freeze"); !strings.Contains(r.stderr, "SDLC-E0022") {
+		t.Errorf("a freeze took a new test with new test files not allowed: code %d\n%s", r.code, r.stderr)
+	}
+	if _, held := lockOnDisk(t, root).Files["internal/later_test.go"]; held {
+		t.Error("the freeze holds a test added after it, with new test files not allowed")
+	}
+}
+
+// freeze.allow_new_test_files let the test author write a test after the
+// freeze, and nothing ever froze it. Freezing again adds it, so it is held
+// like the rest from then on.
+func TestAProjectThatAllowsNewTestsFreezesThemToo(t *testing.T) {
+	root := frozenStory(t)
+	setConfigOnDisk(t, root, "freeze", map[string]any{"allow_new_test_files": true})
+	mustRun(t, "freeze")
+	writeFile(t, root, "internal/later_test.go", "package internal\n")
+
+	r := run(t, "gate", "tests_frozen", "pass")
+	if !strings.Contains(r.stderr, "SDLC-E0043") || !strings.Contains(r.stderr, `"sdlc freeze" again`) {
+		t.Errorf("the refusal does not send a project that allows new tests to freeze them: code %d\n%s",
+			r.code, r.stderr)
+	}
+
+	got := decode[freezePayload](t, mustRun(t, "freeze", "--json"))
+	if len(got.Added) != 1 || got.Added[0] != "internal/later_test.go" || got.Count != 2 {
+		t.Errorf("freeze = %+v", got)
+	}
+	lock := lockOnDisk(t, root)
+	if len(lock.Files["internal/later_test.go"]) != 64 || len(lock.Files["internal/invoice_test.go"]) != 64 {
+		t.Errorf("the freeze does not hold both tests by content: %v", lock.Files)
+	}
+	mustRun(t, "gate", "tests_frozen", "pass", "--note", "2 tests, both failing")
+
+	// Nothing new to add is a second freeze over the top.
+	if r := run(t, "freeze"); !strings.Contains(r.stderr, "SDLC-E0022") {
+		t.Errorf("a freeze with nothing to add was not refused: code %d\n%s", r.code, r.stderr)
+	}
+
+	// A frozen test that changed does not go through on the back of a new one.
+	writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// quietly different\n")
+	writeFile(t, root, "internal/third_test.go", "package internal\n")
+	if r := run(t, "freeze"); !strings.Contains(r.stderr, "SDLC-E0025") {
+		t.Errorf("a freeze was extended over a changed test: code %d\n%s", r.code, r.stderr)
+	}
+	if after := lockOnDisk(t, root); after.Files["internal/invoice_test.go"] != lock.Files["internal/invoice_test.go"] ||
+		after.Files["internal/third_test.go"] != "" {
+		t.Errorf("the freeze changed when it was refused: %v", after.Files)
+	}
+}
+
 // A freeze taken for another story is stale, not applicable. Accepting it would
 // let one story's freeze wave the next one through.
 func TestAFreezeFromAnotherStoryDoesNotCount(t *testing.T) {

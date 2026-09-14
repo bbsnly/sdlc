@@ -569,12 +569,12 @@ func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.
 	}
 	switch gate {
 	case model.GateTestsFrozen:
-		return requireFreeze(s, id)
+		return requireFreeze(ctx, s, id)
 	case model.GatePlan, model.GateImplementation, model.GateVerification:
 		// The freeze is only worth anything if it is still intact every time
 		// the loop moves. Checking once at Gate 3 would let it be lifted in
 		// silence the moment the implementation got difficult.
-		if err := requireIntactFreeze(s, id); err != nil {
+		if err := requireIntactFreeze(ctx, s, id); err != nil {
 			return err
 		}
 		if gate == model.GatePlan {
@@ -584,7 +584,7 @@ func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.
 	case model.GateCodeReview:
 		return requireSize(ctx, s)
 	case model.GateCommit:
-		if err := requireIntactFreeze(s, id); err != nil {
+		if err := requireIntactFreeze(ctx, s, id); err != nil {
 			return err
 		}
 		if err := requireFreshReviews(ctx, s, id, record); err != nil {
@@ -670,7 +670,7 @@ func requireApproval(ctx context.Context, s *store.Store, id string, record *mod
 }
 
 // requireIntactFreeze is the freeze, checked again.
-func requireIntactFreeze(s *store.Store, id string) error {
+func requireIntactFreeze(ctx context.Context, s *store.Store, id string) error {
 	lock, err := s.Lock()
 	if err != nil {
 		return err
@@ -681,12 +681,37 @@ func requireIntactFreeze(s *store.Store, id string) error {
 			"every gate from here on is measured against them, and a freeze that "+
 				"is not there cannot say whether they changed")
 	}
+	return requireHeldTests(ctx, s, lock)
+}
+
+// requireHeldTests refuses a freeze that no longer describes the tests: a
+// frozen file that changed or went, or a test file it never held.
+//
+// A test added after the freeze was checked by nothing. The hook refuses one
+// written through an agent's tools, but one that arrived any other way -- or
+// one the test author added with freeze.allow_new_test_files on and nobody
+// froze -- ran at verification as though it had been written before the code,
+// and could have been written to pass.
+func requireHeldTests(ctx context.Context, s *store.Store, lock *model.Lock) error {
 	if changed := verifyFreeze(s, lock); len(changed) > 0 {
-		return sdlcerr.New(sdlcerr.FreezeBroken,
-			"the frozen tests are not what was frozen",
-			strings.Join(changed, ", ")+" changed after the freeze was taken")
+		return brokenFreeze(changed)
 	}
-	return nil
+	unheld, err := unfrozenTests(ctx, s, lock)
+	if err != nil {
+		return err
+	}
+	if len(unheld) == 0 {
+		return nil
+	}
+	refusal := sdlcerr.New(sdlcerr.UnfrozenTests,
+		"there are test files the freeze does not hold",
+		strings.Join(unheld, ", ")+" appeared after the freeze was taken, so nothing says "+
+			"it was written before the code")
+	if s.Config().Freeze.AllowNewTestFiles {
+		return refusal.WithFix(`run "sdlc freeze" again -- freeze.allow_new_test_files is on, ` +
+			"so it adds them to the freeze")
+	}
+	return refusal
 }
 
 // requireFreshReviews re-asks the reviewed gates about the tree as it is now.
@@ -755,7 +780,7 @@ func plural(n int, one, many string) string {
 }
 
 // requireFreeze holds the test gate to the thing it exists for.
-func requireFreeze(s *store.Store, id string) error {
+func requireFreeze(ctx context.Context, s *store.Store, id string) error {
 	lock, err := s.Lock()
 	if err != nil {
 		return err
@@ -772,12 +797,7 @@ func requireFreeze(s *store.Store, id string) error {
 			"a freeze covers one story's acceptance tests, and this one was taken "+
 				"for a different story")
 	}
-	if changed := verifyFreeze(s, lock); len(changed) > 0 {
-		return sdlcerr.New(sdlcerr.FreezeBroken,
-			"the frozen tests are not what was frozen",
-			strings.Join(changed, ", ")+" changed after the freeze was taken")
-	}
-	return nil
+	return requireHeldTests(ctx, s, lock)
 }
 
 // requireDocuments refuses to record a pass for a gate whose documents are not

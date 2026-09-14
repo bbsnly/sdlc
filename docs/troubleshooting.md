@@ -168,6 +168,9 @@ bless whatever changed in between. If the tests genuinely have to change, a pers
 `sdlc unfreeze --reason "..."` in their own terminal first — the reason goes on the record, and
 the hook refuses it from an agent — and then freezes again.
 
+With `freeze.allow_new_test_files` on, `sdlc freeze` on the story's own freeze adds the test
+files written since it was taken, and refuses only when there are none to add.
+
 This is about the story you are working on. A freeze left behind by a story that has since
 finished is not in the way: `sdlc stop` lifts it when the story is done, and `sdlc freeze`
 replaces one that names a finished or dropped story rather than refusing over it.
@@ -414,6 +417,20 @@ $ sdlc escalate story_too_large --message "740 lines against a cap of 500: how s
 
 If the cap is wrong for this project, a person changes it in `.sdlc/config.json`.
 `0` turns it off.
+
+### SDLC-E0043
+
+There are test files the freeze does not hold.
+
+The named files match `paths.tests`, and they were not there when the tests were frozen. A test
+that arrives after the freeze was not written before the code, and nothing says it was not
+written to pass, so every gate the freeze guards — `tests_frozen`, `plan`, `implementation`,
+`verification` and `commit` — refuses while one is in the tree.
+
+If the project has `freeze.allow_new_test_files` on, run `sdlc freeze` again: it adds them to the
+freeze, and from then on they are held like the rest. Otherwise remove them, or — if the story
+really needs them — have a person run `sdlc unfreeze --reason "..."` in their own terminal and
+freeze again.
 
 ## Warnings the hook prints
 

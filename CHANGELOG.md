@@ -27,7 +27,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   implementer cannot edit a test, cannot add a test, and cannot pass the
   verification gate on tests that changed. The implementer writes no test
   file at all, before the freeze or after it, through the file tools or
-  through the shell. `sdlc unfreeze --reason` is the
+  through the shell. A test file the freeze does not hold stops every gate
+  from `tests_frozen` to `commit`; with `freeze.allow_new_test_files` on, the
+  test author can add one and `sdlc freeze` adds it to the freeze. `sdlc unfreeze --reason` is the
   way out, and it is on the record. The freeze belongs to the iteration: it
   survives `sdlc stop` and a new session, and is lifted when the story
   finishes, so the next story freezes its own tests.

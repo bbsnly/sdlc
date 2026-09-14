@@ -168,6 +168,11 @@ does security on a story Gate 2 called security-sensitive.
 Lets the test author add a test file after the freeze has been taken. Off by
 default.
 
+A new file is not frozen by being written. Until `sdlc freeze` is run again,
+which adds it to the freeze, every gate from `tests_frozen` to `commit` refuses
+with [SDLC-E0043](troubleshooting.md#sdlc-e0043); with the setting off, the
+same gates refuse and `sdlc freeze` does not add it.
+
 It is a real loosening — a test written after the implementation can be written
 to pass — and it does **not** let the implementer write one. That rule is not a
 setting.

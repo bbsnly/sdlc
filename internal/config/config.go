@@ -99,7 +99,8 @@ type Reviews struct {
 }
 
 // Freeze configures test freezing. Allowing new test files after the freeze is
-// a real loosening: it lets an implementer add a test that passes.
+// a real loosening: it lets the test author add a test written after the code,
+// which `sdlc freeze` then adds to the freeze. The implementer never writes one.
 type Freeze struct {
 	AllowNewTestFiles bool `json:"allow_new_test_files"`
 }

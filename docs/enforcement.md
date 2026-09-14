@@ -108,9 +108,11 @@ Refuses a new test file once the tests are frozen, unless
 `freeze.allow_new_test_files` is on. A shell command that would create one — a
 redirect, `touch`, `cp` — is refused by the same rule.
 
-*Instead:* put the case in one of the frozen files. If it needs a file of its
-own, say so and stop: the person running the session can unfreeze and freeze
-again so the new file is covered.
+*Instead:* say which case is missing and stop. The frozen files are frozen too,
+so the case cannot go into one of them either: the person running the session
+can unfreeze and freeze again so the new test is covered. With the setting on,
+run `sdlc freeze` after adding the file, or every gate from `tests_frozen` to
+`commit` refuses with `SDLC-E0043`.
 
 ### `implementer-does-not-write-tests`
 
@@ -318,6 +320,7 @@ not actually happen:
 | the change is bigger than `thresholds.diff_size_cap`, at implementation, verification and code review | `SDLC-E0042` |
 | the tests are not frozen, or the freeze belongs to another story | `SDLC-E0023` |
 | a frozen test changed or vanished | `SDLC-E0025` |
+| a test file the freeze does not hold, from `tests_frozen` to `commit` | `SDLC-E0043` |
 | the commit gate, with work still uncommitted | `SDLC-E0032` |
 
 A `fail` is always recordable. A gate can fail precisely because its work could

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -21,6 +22,7 @@ type freezePayload struct {
 	Story string   `json:"story"`
 	Files []string `json:"files"`
 	Count int      `json:"count"`
+	Added []string `json:"added,omitempty"`
 }
 
 type unfreezePayload struct {
@@ -63,6 +65,19 @@ func newFreezeCmd() *cobra.Command {
 					return err
 				}
 				if !stale {
+					// A project that allows new test files after the freeze
+					// takes them into it here, so that from now on they are
+					// held like the rest. With nothing new to add this is a
+					// second freeze over the top, and refused as one.
+					if lock.Story == id && p.Config.Freeze.AllowNewTestFiles {
+						added, err := addToFreeze(cmd.Context(), s, lock)
+						if err != nil {
+							return err
+						}
+						if len(added) > 0 {
+							return sayFrozen(cmd, s, id, lock.Paths(), added)
+						}
+					}
 					refusal := sdlcerr.New(sdlcerr.AlreadyFrozen,
 						"the tests are already frozen",
 						"they were frozen for "+lock.Story+" at "+lock.At+", covering "+
@@ -97,23 +112,59 @@ func newFreezeCmd() *cobra.Command {
 			if err := s.SaveLock(model.NewLock(id, hashes, s.Now())); err != nil {
 				return err
 			}
-			if err := appendEvent(s, id, "freeze", countFiles(len(files))+" frozen"); err != nil {
-				return err
-			}
-
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), freezePayload{
-					OK: true, Story: id, Files: files, Count: len(files),
-				})
-			}
-			w := cmd.OutOrStdout()
-			fmt.Fprintf(w, "%s  %s frozen\n", id, countFiles(len(files)))
-			for _, f := range files {
-				fmt.Fprintf(w, "  %s\n", f)
-			}
-			return nil
+			return sayFrozen(cmd, s, id, files, nil)
 		},
 	}
+}
+
+// sayFrozen puts a freeze on the record and reports it: the files it holds,
+// and, when it was extended rather than taken, the ones just added to it.
+func sayFrozen(cmd *cobra.Command, s *store.Store, id string, files, added []string) error {
+	message, listed := countFiles(len(files))+" frozen", files
+	if len(added) > 0 {
+		message, listed = countFiles(len(added))+" added to the freeze", added
+	}
+	if err := appendEvent(s, id, "freeze", message); err != nil {
+		return err
+	}
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), freezePayload{
+			OK: true, Story: id, Files: files, Count: len(files), Added: added,
+		})
+	}
+	w := cmd.OutOrStdout()
+	fmt.Fprintf(w, "%s  %s\n", id, message)
+	for _, f := range listed {
+		fmt.Fprintf(w, "  %s\n", f)
+	}
+	return nil
+}
+
+// addToFreeze adds the test files written since the freeze was taken to it, and
+// returns them. A freeze whose own files have changed gets nothing added: the
+// new files would go in, and the change would go through with them.
+func addToFreeze(ctx context.Context, s *store.Store, lock *model.Lock) ([]string, error) {
+	if changed := verifyFreeze(s, lock); len(changed) > 0 {
+		return nil, brokenFreeze(changed)
+	}
+	added, err := unfrozenTests(ctx, s, lock)
+	if err != nil {
+		return nil, err
+	}
+	if len(added) == 0 {
+		return nil, nil
+	}
+	for _, f := range added {
+		sum, err := s.HashFile(f)
+		if err != nil {
+			return nil, err
+		}
+		lock.Files[f] = sum
+	}
+	if err := s.SaveLock(lock); err != nil {
+		return nil, err
+	}
+	return added, nil
 }
 
 // freezeIsALeftover reports whether an existing freeze belongs to a story that
@@ -253,6 +304,33 @@ func verifyFreeze(s *store.Store, lock *model.Lock) []string {
 		}
 	}
 	return changed
+}
+
+// brokenFreeze is the refusal for frozen files that are not what was frozen.
+func brokenFreeze(changed []string) error {
+	return sdlcerr.New(sdlcerr.FreezeBroken,
+		"the frozen tests are not what was frozen",
+		strings.Join(changed, ", ")+" changed after the freeze was taken")
+}
+
+// unfrozenTests lists the project's test files that the freeze does not hold,
+// found the way the freeze found the ones it does.
+func unfrozenTests(ctx context.Context, s *store.Store, lock *model.Lock) ([]string, error) {
+	m := testset.New(s.Config().Paths.Tests)
+	if !m.Configured() {
+		return nil, nil
+	}
+	all, err := gitx.Files(ctx, s.Root())
+	if err != nil {
+		return nil, err
+	}
+	var unheld []string
+	for _, f := range m.Filter(all) {
+		if !lock.Holds(f) {
+			unheld = append(unheld, f)
+		}
+	}
+	return unheld, nil
 }
 
 func countFiles(n int) string {

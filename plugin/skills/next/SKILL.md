@@ -175,6 +175,10 @@ next session carries on.
 
 `sdlc status --json` reports the freeze and whether it is still intact.
 
+A test file added after the freeze holds every gate from here to the commit until the freeze
+holds it too (`SDLC-E0043`). Only a project with `freeze.allow_new_test_files` on lets the test
+author add one; run `sdlc freeze` again after it does, and the new file is added to the freeze.
+
 ## Gate 4 — The plan, and its review
 
 Two gates, recorded separately: the plan, then the review of it.
