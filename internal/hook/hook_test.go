@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -224,6 +225,19 @@ func TestAPathInTheHomeDirectoryIsNotTheProjects(t *testing.T) {
 		if r := onDisk(resolver, word); r != word {
 			t.Errorf("the project's %s was %q", word, r)
 		}
+	}
+}
+
+// ~name is that user's home, and the user running the session may be the one
+// named: read as somebody else's, a project under it was not protected.
+func TestAUsersNamedHomeIsWhereTheirProjectIs(t *testing.T) {
+	me, err := user.Current()
+	if err != nil || strings.ContainsAny(me.Username, `\/`) || me.HomeDir == "" {
+		t.Skip("no plain user name to write after ~")
+	}
+	atHome := pathrules.NewResolver(me.HomeDir)
+	if r := onDisk(atHome, "~"+me.Username+"/CLAUDE.md"); r != "CLAUDE.md" {
+		t.Errorf("~%s/CLAUDE.md in a project at that home was %q", me.Username, r)
 	}
 }
 

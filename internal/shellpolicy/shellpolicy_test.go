@@ -931,6 +931,30 @@ func TestCleanKeepsTheStartOfANetworkOrDevicePath(t *testing.T) {
 	}
 }
 
+// ~+ is where the command runs, ~- where it ran before and ~2 a directory on
+// the stack. None of them is the user's home, and each was put outside the
+// project by a lookup that cannot know where they are.
+func TestAShellDirectoryIsNotTheHomeDirectory(t *testing.T) {
+	s := ready
+	s.Resolve = func(word string) string {
+		if strings.HasPrefix(word, "~") || strings.HasPrefix(word, "/") {
+			return ""
+		}
+		return word
+	}
+	for _, command := range []string{
+		"rm ~+/.sdlc/state/active",
+		"rm ~-/.sdlc/state/active",
+		"rm ~2/.sdlc/config.json",
+		"rm ~+1/.sdlc/state/active",
+	} {
+		refused(t, command, s, "loop-state-through-the-tool")
+	}
+	refused(t, "echo x > ~+/CLAUDE.md", s, "protected-path-through-the-tool")
+	allowed(t, "rm ~/.sdlc/state/active", s)
+	allowed(t, "rm ~someone/.sdlc/state/active", s)
+}
+
 func TestTheCommitGateStandsInFrontOfTheCommit(t *testing.T) {
 	got := refused(t, `git commit -m "done"`, notReady, "commit-gate")
 	if !strings.Contains(got.Reason, "code_review") {

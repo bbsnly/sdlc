@@ -1124,6 +1124,19 @@ func (m *memo) outside(s State, word string) bool {
 	if s.Resolve == nil || !isAbsolute(c) && !strings.HasPrefix(c, "~") {
 		return false
 	}
+	// ~+ is the directory the command runs in, ~- the one before it and ~2 one
+	// on the stack. The shell knows where those are and the lookup does not: put
+	// outside, `rm ~+/.sdlc/state/active` was nothing of the project's.
+	if name, _, _ := strings.Cut(c[1:], "/"); c[0] == '~' {
+		switch strings.TrimRight(name, "0123456789") {
+		case "+", "-":
+			return false
+		case "":
+			if name != "" {
+				return false
+			}
+		}
+	}
 	return m.resolve(s, c) == ""
 }
 

@@ -25,6 +25,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
@@ -263,9 +264,14 @@ func onDisk(resolver pathrules.Resolver, word string) string {
 			return ""
 		}
 		word = filepath.ToSlash(home) + rest
-	} else if ok && strings.Contains(rest, "/") {
-		// `~someone/.claude` is someone's home, not the project's.
-		return ""
+	} else if name, after, named := strings.Cut(rest, "/"); ok && named {
+		// `~someone/.claude` is someone's home, not the project's; but the
+		// someone can be the user running the session, with the project in it.
+		u, err := user.Lookup(name)
+		if err != nil || u.HomeDir == "" {
+			return ""
+		}
+		word = filepath.ToSlash(u.HomeDir) + "/" + after
 	}
 	// `C:.sdlc\state` is relative to a working directory on that drive, which
 	// only the shell knows. Read as outside, it was nobody's to protect; read
