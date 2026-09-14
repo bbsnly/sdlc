@@ -72,6 +72,24 @@ func TestOnlyWhatACommandRunsIsReadAsTheCommand(t *testing.T) {
 	refused(t, `bash -c 'git commit -m "a; b"'`, notReady, "commit-gate")
 }
 
+// A document is text however it is handed over. A PowerShell here-string was
+// read as commands, and a note that said "source" made a bash document a script.
+func TestADocumentIsTextHoweverItIsHandedOver(t *testing.T) {
+	plan := "| step | when |\n| git commit | after gate 7 |\nthe retro runs sdlc stop\n"
+	ps := notReady
+	ps.PowerShell = true
+	allowed(t, "@'\n"+plan+"'@ | sdlc artifact write plan", ps)
+	allowed(t, "$plan = @\"\n"+plan+"\"@\n$plan | sdlc artifact write plan", ps)
+	reviewer := State{CommitWhy: "code_review has not passed", Agent: "code-reviewer"}
+	allowed(t, "sdlc review add code_review code-reviewer block --note \"error source is lost\" "+
+		"<<'SDLC_DOCUMENT'\n| git commit | refused |\nSDLC_DOCUMENT", reviewer)
+
+	refused(t, "@'\ngit commit -m x\n'@ | pwsh -Command -", ps, "commit-gate")
+	refused(t, "@'\nlooks right\n'@ | sdlc approve A-1", ps, "approval-is-a-human-decision")
+	refused(t, "cat <<'EOF' | sh\ngit commit -m x\nEOF", notReady, "commit-gate")
+	refused(t, "source <<'EOF'\ngit commit -m x\nEOF", notReady, "commit-gate")
+}
+
 // A commit in another repository is not the story's to hold back: the session
 // was opened in the loop's project, and every commit anywhere met its gate.
 func TestACommitInAnotherRepositoryIsNotTheStorys(t *testing.T) {

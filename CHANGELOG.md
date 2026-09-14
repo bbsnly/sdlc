@@ -247,6 +247,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - The shell rules read a path as the file it is on disk. A link to `.sdlc`,
   `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
   the file in letters no rule matched, and `rm notes/state/active` went through.
+- A document handed over in a PowerShell here-string (`@' ... '@`) is read as
+  text, as a here-document is. A plan or review whose table named `git commit`
+  or `sdlc stop` was refused as that command, and a here-document went to
+  `source` when its `--note` merely said "source". A body handed to a shell or
+  an interpreter is still read for what it runs.
 - Which program a shell command runs is read with its quoting. A commit
   message, a `--note` or a `--message` that mentioned `sdlc approve`, `sdlc stop`
   or `sdlc unfreeze` after a `;` or in backticks was refused as that command,

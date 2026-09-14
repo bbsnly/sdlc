@@ -939,6 +939,30 @@ func withoutDocuments(command string) string {
 	kept := make([]string, 0, len(lines))
 	for i := 0; i < len(lines); i++ {
 		kept = append(kept, lines[i])
+		// PowerShell's here-string, `@'` at the end of a line to `'@` at the
+		// start of one, is a document too. What it goes to is on the closing
+		// line, so that is where to look for something that runs it.
+		//
+		// The markers are taken off either way. Left in, `@'` opened a quoted
+		// word that swallowed the body and the command on the closing line, so
+		// a body that does run, and `'@ | sdlc approve`, were never read.
+		if opener, quote, ok := hereString(lines[i]); ok {
+			end := i + 1
+			for end < len(lines) && !strings.HasPrefix(strings.TrimLeft(lines[end], " \t"), quote+"@") {
+				end++
+			}
+			if end == len(lines) {
+				continue
+			}
+			closer := strings.TrimPrefix(strings.TrimLeft(lines[end], " \t"), quote+"@")
+			kept[len(kept)-1] = opener
+			if runsAScript(opener + " " + closer) {
+				kept = append(kept, lines[i+1:end]...)
+			}
+			kept = append(kept, closer)
+			i = end
+			continue
+		}
 		delimiters := documentDelimiters(lines[i])
 		if len(delimiters) == 0 || runsAScript(lines[i]) {
 			continue
@@ -979,18 +1003,40 @@ func documentDelimiters(line string) []string {
 	}
 }
 
-// runsAScript reports whether anything on this line could run the text it is
+// hereString reports whether a line opens a PowerShell here-string, with the
+// line before the marker and the quote that closes it.
+func hereString(line string) (opener, quote string, ok bool) {
+	trimmed := strings.TrimRight(line, " \t\r")
+	for _, q := range []string{"'", `"`} {
+		if strings.HasSuffix(trimmed, "@"+q) {
+			return strings.TrimSuffix(trimmed, "@"+q), q, true
+		}
+	}
+	return "", "", false
+}
+
+// runsAScript reports whether a command on this line could run the text it is
 // handed, so that a here-document going to it is a program and not a document.
+// The programs are what count, read with their quoting: every word on the line
+// counted, so a review whose note said "the error source is lost" handed its
+// document to `source`, and a table row in it that said `git commit` was a
+// commit.
 func runsAScript(line string) bool {
-	for _, segment := range segments(line) {
-		words, _, _ := parse(segment)
-		for _, w := range words {
-			switch base(w) {
-			case "sh", "bash", "zsh", "dash", "ksh", "fish", "pwsh", "powershell", "cmd",
-				"eval", "source", ".", "xargs",
-				"python", "python3", "perl", "ruby", "node", "deno", "bun", "php":
-				return true
-			}
+	for _, words := range commandsIn(line, false) {
+		for len(words) > 0 && isAssignment(words[0]) {
+			words = words[1:]
+		}
+		run := program(words)
+		if run.shell || run.piped {
+			return true
+		}
+		if len(run.words) == 0 {
+			continue
+		}
+		switch base(run.words[0]) {
+		case "fish", "eval", "source", ".",
+			"python", "python3", "perl", "ruby", "node", "deno", "bun", "php":
+			return true
 		}
 	}
 	return false
