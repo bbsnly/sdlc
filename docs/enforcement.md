@@ -262,6 +262,10 @@ fields `sdlc` writes into the backlog, and a change anywhere else makes them
 stale; the refusal names whose. Measuring the tree takes a moment, so it is done
 only for `git commit`.
 
+A story whose risk tier is in `human_gates.pre_commit_pause_tiers` is also
+refused until a person has approved that same tree with `sdlc approve`. A story
+missing from the backlog is refused too, because its tier cannot be known.
+
 A gate record that is missing or will not parse counts as no gate passed, and
 the refusal names the file. `sdlc start` always writes one, so either means
 something damaged it. `sdlc stop` still ends the iteration when the record

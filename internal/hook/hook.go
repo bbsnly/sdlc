@@ -319,10 +319,11 @@ func commitReady(project, story string) (bool, string) {
 const treeTimeout = 20 * time.Second
 
 // reviewsFresh reports whether the verifier's and the code reviewers' reviews
-// are of the tree as it is now -- the same question `sdlc gate commit pass`
-// asks, asked before the commit instead of after it.
+// are of the tree as it is now, and, for a story whose risk tier waits for a
+// person, whether that person approved this tree -- the same questions
+// `sdlc gate commit pass` asks, asked before the commit instead of after it.
 //
-// It measures the tree only when there is a review to compare it with, and a
+// It measures the tree only when there is something to compare it with, and a
 // tree it cannot measure lets the commit through with a warning: git failing
 // here is git failing for the commit too.
 func reviewsFresh(project, story string, warn func(string)) (bool, string) {
@@ -347,17 +348,32 @@ func reviewsFresh(project, story string, warn func(string)) (bool, string) {
 			}
 		}
 	}
-	if len(reviews) == 0 {
+
+	cfg, err := config.Load(project)
+	if err != nil {
+		if len(reviews) > 0 {
+			slog.Debug("hook could not read the configuration to measure the tree", "err", err)
+			warn(unmeasuredTree)
+		}
+		return true, ""
+	}
+	s := store.New(&config.Project{Root: project, Config: cfg})
+	tier, pauses, err := s.CommitPause(story)
+	if err != nil {
+		slog.Debug("hook could not read the story's risk tier", "err", err)
+		return false, "the story could not be read from the backlog, so there is no telling " +
+			"whether its risk tier waits for a person's approval (`sdlc doctor` says why)"
+	}
+	if len(reviews) == 0 && !pauses {
 		return true, ""
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), treeTimeout)
 	defer cancel()
-	tree, err := reviewSubject(ctx, project)
+	tree, err := s.ReviewSubject(ctx)
 	if err != nil {
 		slog.Debug("hook could not measure the working tree", "err", err)
-		warn("the working tree could not be measured, so this commit was not checked " +
-			"against what was reviewed. `sdlc gate commit pass` will check it afterwards.")
+		warn(unmeasuredTree)
 		return true, ""
 	}
 	var stale []string
@@ -366,13 +382,21 @@ func reviewsFresh(project, story string, warn func(string)) (bool, string) {
 			stale = append(stale, r.role+" ("+string(r.gate)+")")
 		}
 	}
-	if len(stale) == 0 {
-		return true, ""
+	if len(stale) > 0 {
+		return false, "the work has changed since " + strings.Join(stale, ", ") + " reviewed it, " +
+			"so this commit is not what was approved; have the change reviewed again and record " +
+			"those gates again"
 	}
-	return false, "the work has changed since " + strings.Join(stale, ", ") + " reviewed it, " +
-		"so this commit is not what was approved; have the change reviewed again and record " +
-		"those gates again"
+	if why := record.WaitsForApproval(tier, tree); pauses && why != "" {
+		return false, why + "; hand it to a person with " +
+			"`sdlc escalate pre_commit_approval --message \"...\"` and stop"
+	}
+	return true, ""
 }
+
+// unmeasuredTree is the warning for a commit the hook could not check.
+const unmeasuredTree = "the working tree could not be measured, so this commit was not checked " +
+	"against what was reviewed and approved. `sdlc gate commit pass` will check it afterwards."
 
 // testState works out what the freeze says about this path.
 //
@@ -413,17 +437,6 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 	}
 	t.Frozen, t.Locked = true, lock.Holds(rel)
 	return t
-}
-
-// reviewSubject is the store's, so that a commit is checked against exactly
-// what the CLI stamped the reviews with. It parses the configuration, which the
-// rest of the hook avoids; this runs only for a commit, not on every tool call.
-func reviewSubject(ctx context.Context, project string) (string, error) {
-	cfg, err := config.Load(project)
-	if err != nil {
-		return "", err
-	}
-	return store.New(&config.Project{Root: project, Config: cfg}).ReviewSubject(ctx)
 }
 
 // activeStory reads the story being worked on, directly rather than through the

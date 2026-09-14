@@ -67,6 +67,20 @@ func (s *Store) WithClock(now func() time.Time) *Store {
 // Root is the repository root the store writes under.
 func (s *Store) Root() string { return s.root }
 
+// CommitPause reports the story's risk tier, and whether the project holds a
+// story of that tier for a person's approval before it is committed.
+func (s *Store) CommitPause(id string) (string, bool, error) {
+	story, _, err := s.Story(id)
+	if err != nil {
+		return "", false, err
+	}
+	tier := strings.TrimSpace(story.RiskTier)
+	if tier == "" {
+		tier = config.DefaultRiskTier
+	}
+	return tier, s.cfg.HumanGates.PausesBeforeCommit(tier), nil
+}
+
 // Config is the project's configuration, as the store was opened with it.
 func (s *Store) Config() config.Config { return s.cfg }
 

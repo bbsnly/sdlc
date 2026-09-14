@@ -215,3 +215,23 @@ func TestOpenResolvesRootAndConfigTogether(t *testing.T) {
 		t.Errorf("Path = %q, want %q", got, want)
 	}
 }
+
+// A story names its tier in the backlog and the project names the paused tiers
+// in its configuration, and a story that names none is low.
+func TestATierPausesBeforeCommitOnlyWhenTheProjectSaysSo(t *testing.T) {
+	gates := Default().HumanGates
+	for _, c := range []struct {
+		tier string
+		want bool
+	}{{"high", true}, {" High ", true}, {"low", false}, {"", false}, {"medium", false}} {
+		if got := gates.PausesBeforeCommit(c.tier); got != c.want {
+			t.Errorf("PausesBeforeCommit(%q) = %v, want %v", c.tier, got, c.want)
+		}
+	}
+	if (HumanGates{PreCommitPauseTiers: []string{"low"}}).PausesBeforeCommit("") != true {
+		t.Error("a story with no tier is not treated as low")
+	}
+	if (HumanGates{}).PausesBeforeCommit("high") {
+		t.Error("a project that pauses no tier held a high-risk story")
+	}
+}

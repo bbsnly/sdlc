@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/bbsnly/sdlc/internal/config"
-	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/store"
 )
@@ -36,6 +35,9 @@ func loopProject(t *testing.T) string {
 	}
 	write(t, root, ".sdlc/config.json", `{"version":1}`)
 	write(t, root, ".sdlc/state/active", "A-1\n")
+	// `sdlc start` takes a story from the backlog, so the story being worked on
+	// is always in it; the commit gate reads its risk tier there.
+	write(t, root, "user_stories.json", `{"stories":[{"id":"A-1","title":"Invoices","status":"in_progress"}]}`+"\n")
 	return root
 }
 
@@ -668,7 +670,11 @@ func TestACommitOfWorkChangedSinceItWasReviewedIsRefused(t *testing.T) {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
 	write(t, root, "invoice.go", "package invoice\n")
-	tree, err := gitx.TreeHash(t.Context(), root)
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := store.New(&config.Project{Root: root, Config: cfg}).ReviewSubject(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -761,6 +767,71 @@ func TestACommitIsNotRefusedBecauseTheStoryWaitedForAPerson(t *testing.T) {
 		`{"stories":[{"id":"A-1","title":"Invoices, and refunds","status":"in_progress"}]}`+"\n")
 	if !denied(call(t, command(root, "", "git commit -m done"), noEnv)) {
 		t.Error("a story changed after it was reviewed went through to the commit")
+	}
+}
+
+// A story in a tier the project pauses waits for a person before the commit,
+// and the hook asks before it, not only `sdlc gate commit pass` afterwards.
+func TestACommitOfAPausedStoryWaitsForAPersonsApproval(t *testing.T) {
+	root := loopProject(t)
+	t.Setenv("GIT_DIR", filepath.Join(root, ".git"))
+	t.Setenv("GIT_WORK_TREE", root)
+	initRepo := exec.CommandContext(t.Context(), "git", "init", "--quiet")
+	initRepo.Dir = root
+	if out, err := initRepo.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	write(t, root, "invoice.go", "package invoice\n")
+	write(t, root, "user_stories.json",
+		`{"stories":[{"id":"A-1","title":"Refunds","status":"in_progress","risk_tier":"high"}]}`+"\n")
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := store.New(&config.Project{Root: root, Config: cfg}).ReviewSubject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	at := time.Now()
+	record := model.NewRecord("A-1", at)
+	for _, g := range model.GateCommit.Before() {
+		record.SetGate(g, model.GatePass, "", at)
+	}
+	for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
+		for _, r := range model.ReviewersFor(gate) {
+			record.AddReview(model.Review{Gate: gate, Role: r.Role, Verdict: model.VerdictApprove, Subject: tree}, at)
+		}
+	}
+	save := func() {
+		t.Helper()
+		raw, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, root, ".sdlc/stories/A-1/gate-record.json", string(raw))
+	}
+	save()
+
+	r := call(t, command(root, "", "git commit -m done"), noEnv)
+	if !denied(r) {
+		t.Fatal("a high-risk story was committed with nobody asked")
+	}
+	if reason := r.HookSpecificOutput.PermissionDecisionReason; !strings.Contains(reason, "sdlc escalate") {
+		t.Errorf("the refusal does not say how to ask: %q", reason)
+	}
+
+	record.Escalate("pre_commit_approval", "ready?", tree, at)
+	record.Decide(true, "", tree, at)
+	save()
+	if r := call(t, command(root, "", "git commit -m done"), noEnv); denied(r) {
+		t.Fatalf("the work a person approved was refused: %s", r.HookSpecificOutput.PermissionDecisionReason)
+	}
+
+	write(t, root, "user_stories.json",
+		`{"stories":[{"id":"B-2","title":"Someone else's","status":"in_progress"}]}`+"\n")
+	if !denied(call(t, command(root, "", "git commit -m done"), noEnv)) {
+		t.Error("a story whose risk tier cannot be read went through to the commit")
 	}
 }
 

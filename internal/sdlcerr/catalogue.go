@@ -60,6 +60,9 @@ var (
 	AwaitingPerson = register("SDLC-E0036",
 		`a person decides first, in their own terminal: "sdlc approve <ID>", or "sdlc approve <ID> --reject ..." to send the work back`)
 
+	ApprovalRequired = register("SDLC-E0037",
+		`hand it to a person with "sdlc escalate pre_commit_approval --message ..." and stop; once they have run "sdlc approve", commit the work they approved`)
+
 	UnknownGate = register("SDLC-E0013",
 		`run "sdlc gate --help" to see the gate names this version knows`)
 

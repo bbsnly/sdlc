@@ -110,6 +110,25 @@ type HumanGates struct {
 	DoRAdvocateCheck    bool     `json:"dor_advocate_check"`
 }
 
+// DefaultRiskTier is the risk tier of a story that does not name one.
+const DefaultRiskTier = "low"
+
+// PausesBeforeCommit reports whether a story of this risk tier waits for a
+// person's approval before it is committed. Tiers are words a person typed into
+// two different files, so they compare without regard to case.
+func (h HumanGates) PausesBeforeCommit(tier string) bool {
+	tier = strings.TrimSpace(tier)
+	if tier == "" {
+		tier = DefaultRiskTier
+	}
+	for _, t := range h.PreCommitPauseTiers {
+		if strings.EqualFold(strings.TrimSpace(t), tier) {
+			return true
+		}
+	}
+	return false
+}
+
 // Budget caps what one story may cost and when to say so.
 type Budget struct {
 	PerStoryUSD    float64   `json:"per_story_usd"`

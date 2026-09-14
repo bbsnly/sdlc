@@ -158,8 +158,14 @@ now, not as it was when they approved. An approval goes stale the moment the
 code changes, and the window between the code review and the commit is the one
 place that would otherwise not be checked.
 
+A story whose risk tier the project pauses — `high`, by default — waits here for
+a person as well. The conversation hands it over with `sdlc escalate` and stops,
+and the commit is refused until somebody has approved the work as it stands. See
+[`human_gates`](configuration.md#human_gates).
+
 **Refused without it:** a pass while anything is uncommitted, with a broken
-freeze, or with code that has changed since the reviewers saw it.
+freeze, with code that has changed since the reviewers saw it, or, in a paused
+tier, with work no person has approved.
 
 ## Gate 9 — `retro`
 

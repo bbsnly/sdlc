@@ -156,8 +156,15 @@ setting.
 
 | Key | What it means |
 | --- | --- |
-| `pre_commit_pause_tiers` | the story risk tiers that stop for a person before the commit |
+| `pre_commit_pause_tiers` | the story risk tiers that wait for a person's approval before they are committed. Default `["high"]`; `[]` turns the pause off |
 | `dor_advocate_check` | run the human advocate at Gate 1 as well |
+
+A story's tier is its `risk_tier` in the backlog, and a story without one is
+`low`. One in a paused tier reaches Gate 8 and stops: the loop hands it over
+with `sdlc escalate pre_commit_approval`, and both `git commit` and
+`sdlc gate commit pass` refuse until a person has run
+[`sdlc approve`](commands.md#sdlc-approve) in their own terminal. An approval is
+bound to the work as it stands, so a change made after it needs approving again.
 
 ## `budget`
 

@@ -213,6 +213,31 @@ func TestADecisionAnswersTheQuestionThatIsWaiting(t *testing.T) {
 	}
 }
 
+// An approval holds for the work it was given for and nothing else, and the
+// latest word on that work is the one that counts.
+func TestAnApprovalHoldsOnlyForTheWorkItWasGivenFor(t *testing.T) {
+	at := time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
+	r := NewRecord("A-1", at)
+	if why := r.WaitsForApproval("high", "tree-1"); !strings.Contains(why, "risk tier is high") {
+		t.Errorf("never handed over: %q", why)
+	}
+
+	r.Escalate("pre_commit_approval", "commit?", "tree-1", at)
+	r.Decide(true, "", "tree-1", at)
+	if why := r.WaitsForApproval("high", "tree-1"); why != "" {
+		t.Errorf("the approved work is still waiting: %q", why)
+	}
+	if why := r.WaitsForApproval("high", "tree-2"); !strings.Contains(why, "changed since") {
+		t.Errorf("work changed after the approval: %q", why)
+	}
+
+	r.Escalate("pre_commit_approval", "commit?", "tree-1", at)
+	r.Decide(false, "no way back", "tree-1", at)
+	if why := r.WaitsForApproval("high", "tree-1"); !strings.Contains(why, "sent this work back: no way back") {
+		t.Errorf("approved and then sent back: %q", why)
+	}
+}
+
 // The loop goes back rather than around. With every gate through code_review
 // passed, `plan fail` then `plan pass` left design_review passed, so the next
 // gate was code_review and the stale design review was never asked again.

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bbsnly/sdlc/internal/model"
 )
 
 // A question the loop stops to ask is worth nothing if the loop can carry on
@@ -67,6 +69,58 @@ func TestAnEscalatedStoryWaitsForAPersonToAnswer(t *testing.T) {
 	again := decode[startPayload](t, mustRun(t, "start", "--json"))
 	if again.Story != "US-001" || !again.Resume {
 		t.Errorf("start after the answer = %+v", again)
+	}
+}
+
+// human_gates.pre_commit_pause_tiers was written into every configuration and
+// read by nothing, so a high-risk story went to trunk with nobody asked.
+func TestAStoryInAPausedTierIsCommittedOnlyOnceAPersonApprovesIt(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	writeFile(t, root, "user_stories.json", `{"stories":[
+	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"High","priority":1,
+	   "acceptance_criteria":[{"id":"AC-1","given":"a paid invoice","when":"it is refunded","then":"the money goes back"}]}]}`)
+	mustRun(t, "start")
+	reach(t, root, model.GateCommit)
+
+	commitEverything(t, root)
+	r := run(t, "gate", "commit", "pass", "--note", "on trunk")
+	if r.code == 0 || !strings.Contains(r.stderr, "SDLC-E0037") {
+		t.Fatalf("a high-risk story was committed with nobody asked:\n%s", r.stderr)
+	}
+
+	mustRun(t, "escalate", "pre_commit_approval", "--message", "refunds are ready")
+	mustRun(t, "approve", "PAY-1", "--reject", "refunds skip the audit log")
+	mustRun(t, "start")
+	commitEverything(t, root)
+	if r := run(t, "gate", "commit", "pass"); !strings.Contains(r.stderr, "refunds skip the audit log") {
+		t.Errorf("work a person sent back was committed:\n%s", r.stderr)
+	}
+
+	// Asked again about the same work, the latest answer is the one that counts.
+	mustRun(t, "escalate", "pre_commit_approval", "--message", "the audit log is out of scope")
+	mustRun(t, "approve", "PAY-1")
+	mustRun(t, "start")
+	commitEverything(t, root)
+	if r := run(t, "gate", "commit", "pass", "--note", "on trunk"); r.code != 0 {
+		t.Fatalf("the work a person approved was refused:\n%s", r.stderr)
+	}
+}
+
+// And a story in a tier that is not paused is committed as it always was.
+func TestAStoryInATierThatIsNotPausedIsNotHeld(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	setConfigOnDisk(t, root, "human_gates", map[string]any{"pre_commit_pause_tiers": []string{}})
+	writeFile(t, root, "user_stories.json", `{"stories":[
+	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"high","priority":1,
+	   "acceptance_criteria":[{"id":"AC-1","given":"a paid invoice","when":"it is refunded","then":"the money goes back"}]}]}`)
+	mustRun(t, "start")
+	reach(t, root, model.GateCommit)
+	commitEverything(t, root)
+
+	if r := run(t, "gate", "commit", "pass", "--note", "on trunk"); r.code != 0 {
+		t.Fatalf("a project that pauses no tier held the commit:\n%s", r.stderr)
 	}
 }
 

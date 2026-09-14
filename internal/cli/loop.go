@@ -556,6 +556,9 @@ func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.
 		if err := requireFreshReviews(ctx, s, id, record); err != nil {
 			return err
 		}
+		if err := requireApproval(ctx, s, id, record); err != nil {
+			return err
+		}
 		return requireCommitted(ctx, s)
 	default:
 		return nil
@@ -583,6 +586,29 @@ func requireOrder(gate model.Gate, record *model.Record) error {
 		"each gate is done by somebody who could only do it because the one "+
 			"before it happened, so "+plural(len(missing), "that gate has", "those gates have")+
 			" to be recorded first")
+}
+
+// requireApproval holds a story whose risk tier the project pauses for a person
+// until that person has approved the work being committed.
+//
+// It comes before requireCommitted because the loop asks before committing: a
+// story that was never handed over is told that first, not that the tree is
+// dirty.
+func requireApproval(ctx context.Context, s *store.Store, id string, record *model.Record) error {
+	tier, pauses, err := s.CommitPause(id)
+	if err != nil || !pauses {
+		return err
+	}
+	tree, err := s.ReviewSubject(ctx)
+	if err != nil {
+		return err
+	}
+	why := record.WaitsForApproval(tier, tree)
+	if why == "" {
+		return nil
+	}
+	return sdlcerr.New(sdlcerr.ApprovalRequired,
+		quote(id)+" has not been approved by a person for committing", why)
 }
 
 // requireIntactFreeze is the freeze, checked again.

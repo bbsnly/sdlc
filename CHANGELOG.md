@@ -34,7 +34,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `sdlc start` refuses the story until somebody answers with `sdlc approve`,
   or sends the work back with `--reject`. The hook refuses `sdlc approve` from
   a tool call, because an agent that could run it would be approving its own
-  work.
+  work. A story in a risk tier `human_gates.pre_commit_pause_tiers` names —
+  `high`, by default — cannot be committed until a person has approved the
+  work as it stands; a change made after the approval needs approving again.
 - `sdlc cost` keeps what a story spent beside everything else it did.
   `sdlc cost add --usd` records an amount, `sdlc status` reports the running
   total, and crossing one of `budget.alert_fractions` says so once, on

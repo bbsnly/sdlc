@@ -312,6 +312,25 @@ $ sdlc approve US-001 --reject "the migration has no way back"
 
 Either answer lets the story start again, and both go on its record.
 
+### SDLC-E0037
+
+The story's risk tier is one the project holds for a person before it is
+committed, and nobody has approved the work being committed.
+
+`human_gates.pre_commit_pause_tiers` in `.sdlc/config.json` names those tiers —
+`high`, unless it says otherwise — and a story with no `risk_tier` is `low`. The
+loop hands the story over and stops:
+
+```console
+$ sdlc escalate pre_commit_approval --message "ready to commit: what changed, and why"
+```
+
+A person reads the work and runs `sdlc approve` in their own terminal. An
+approval is bound to the work as it stands, so a change made after it needs
+approving again, and work that was sent back stays sent back until it changes.
+The same refusal comes from the hook, before `git commit`, as
+[`commit-gate`](enforcement.md#commit-gate).
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session as a system message, and

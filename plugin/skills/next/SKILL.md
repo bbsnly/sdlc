@@ -252,6 +252,18 @@ approvals are stamped with the tree, so anything that changed makes them stale.
 Only now. Until every gate above has passed, `git commit` is refused by the hook, which will
 tell you which gate is missing.
 
+First, a story whose `risk_tier` is one the project holds for a person — `high`, unless
+`human_gates.pre_commit_pause_tiers` says otherwise — waits for their approval. If nobody has
+approved the work as it stands, hand it over and stop:
+
+```bash
+sdlc escalate pre_commit_approval --message "<what changed, what to look at, and why it is ready>"
+```
+
+The commit is refused until a person has run `sdlc approve`, and an approval holds only for the
+work it was given for: change anything after it, and it needs approving again. Once approved,
+the next `/sdlc:next` resumes here.
+
 Commit the whole story as one change: the code, and the loop's own record of how it got there.
 Write the message about the change and why, in the project's own style.
 

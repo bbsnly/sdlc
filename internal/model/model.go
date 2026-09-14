@@ -688,6 +688,38 @@ func (r *Record) Decide(approved bool, reason, tree string, at time.Time) (Appro
 	return a, true
 }
 
+// DecisionFor is the latest decision a person gave on the work as tree has it.
+// The latest one counts, so work approved and then sent back is sent back.
+func (r *Record) DecisionFor(tree string) (Approval, bool) {
+	for i := len(r.Approvals) - 1; i >= 0; i-- {
+		if r.Approvals[i].TreeHash == tree {
+			return r.Approvals[i], true
+		}
+	}
+	return Approval{}, false
+}
+
+// WaitsForApproval says why the work as tree has it is not approved, or "" when
+// it is. An approval is bound to the work it was given for, so a change made
+// after it needs approving again.
+func (r *Record) WaitsForApproval(tier, tree string) string {
+	if d, ok := r.DecisionFor(tree); ok {
+		if d.Decision == DecisionApproved {
+			return ""
+		}
+		if d.Reason == "" {
+			return "a person sent this work back"
+		}
+		return "a person sent this work back: " + d.Reason
+	}
+	if len(r.Approvals) > 0 {
+		return "the work has changed since a person last decided on it, " +
+			"and a decision holds only for the work it was given for"
+	}
+	return "its risk tier is " + tier + ", and that tier waits for a person's approval " +
+		"before it is committed"
+}
+
 // NewRecord starts a record for a story.
 func NewRecord(story string, at time.Time) *Record {
 	return &Record{
