@@ -125,6 +125,13 @@ func TestACommitInAnotherRepositoryIsNotTheStorys(t *testing.T) {
 	allowed(t, "cd /work/other && git commit -m x", s)
 	allowed(t, "cd ../other && git commit -m x", s)
 	allowed(t, "(ls) && cd /work/other && git commit -m x", s)
+	allowed(t, "(cd /tmp/fixture && git init -q && git commit --allow-empty -m init)", s)
+	allowed(t, `bash -c "cd /tmp/fixture && git commit --allow-empty -m init"`, s)
+	allowed(t, "cd /work/other && (git commit -m x)", s)
+	allowed(t, "eval 'cd /work/other' && git commit -m x", s)
+	refused(t, "cd /work/other && (cd /work/project && git commit -m x)", s, "commit-gate")
+	refused(t, "( (cd /tmp) && git commit -m x )", s, "commit-gate")
+	refused(t, "(cd /tmp && ls) ; git commit -m x", s, "commit-gate")
 	elsewhere := s
 	elsewhere.Dir = "/work/other"
 	allowed(t, "git commit -m x", elsewhere)

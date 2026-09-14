@@ -191,8 +191,9 @@ func Inspect(command string, s State) (Finding, bool) {
 // where anything in the command runs is not known. Followed as a move,
 // `cd internal && (cd /tmp && ls) && cp e x_test.go` wrote /tmp's x_test.go.
 func movesInASubshell(text string, powerShell bool) bool {
-	for _, r := range programsAt(text, powerShell, 0) {
-		if _, ok := changedDir("", r.words); ok && r.nested {
+	runs, _ := programsAt(text, powerShell)
+	for _, r := range runs {
+		if _, ok := changedDir("", r.words); ok && r.group != 0 {
 			return true
 		}
 	}
@@ -203,9 +204,21 @@ func movesInASubshell(text string, powerShell bool) bool {
 // read with its quoting: the sdlc subcommands a person keeps, a review recorded
 // by its reviewer, and the commit gate.
 func checkPrograms(text string, s State) (Finding, bool) {
-	dir := s.Dir
-	for _, r := range programsAt(text, s.PowerShell, 0) {
+	// Where each subshell is. A `cd` moves only the subshell it runs in, and a
+	// subshell starts where the one that opened it was. Followed as a move of
+	// the shell around it, `(cd .. && ls) && git commit` was a commit in another
+	// repository; not followed at all, `(cd /tmp/fixture && git commit)` was a
+	// commit in this one.
+	runs, subshells := programsAt(text, s.PowerShell)
+	dirs := map[int]string{0: s.Dir}
+	for _, r := range runs {
 		words := r.words
+		dir, ok := dirs[r.group]
+		for g := r.group; !ok; {
+			g = subshells.parent[g]
+			dir, ok = dirs[g]
+		}
+		dirs[r.group] = dir
 		if f, ok := checkUnfreeze(words); ok {
 			return f, true
 		}
@@ -222,14 +235,7 @@ func checkPrograms(text string, s State) (Finding, bool) {
 			return f, true
 		}
 		if next, ok := changedDir(dir, words); ok {
-			// A `cd` in a subshell does not move the shell around it, and which
-			// commands after it share the subshell is not followed here: where
-			// they run is not known. Followed, `(cd .. && ls) && git commit`
-			// was a commit in another repository.
-			if r.nested {
-				next = ""
-			}
-			dir = next
+			dirs[r.group] = next
 		}
 	}
 	return Finding{}, false
