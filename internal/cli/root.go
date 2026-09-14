@@ -235,6 +235,9 @@ func openStoreForWriting(cmd *cobra.Command) (*store.Store, *config.Project, fun
 	if err != nil {
 		return nil, nil, nothing, err
 	}
+	// Holding the lock, nothing else is part-way through a write, so what a
+	// killed command left behind can be cleared before it blocks the commit gate.
+	s.ClearInterruptedWrites()
 	return s, p, g.Release, nil
 }
 

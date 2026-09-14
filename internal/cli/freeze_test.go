@@ -2,6 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -238,6 +240,41 @@ func TestAFreezeThatWentMissingIsNotTakenAgain(t *testing.T) {
 	// A person who removed it on purpose says so, and then it can be taken.
 	mustRun(t, "unfreeze", "--reason", "removed the lock by hand to re-freeze")
 	mustRun(t, "freeze")
+}
+
+// A command killed part-way through a write leaves its temporary file beside
+// the one it was replacing. Nothing removed it, and the commit gate refused the
+// tree as uncommitted until somebody found it and deleted it by hand.
+func TestWhatAKilledCommandLeftHalfWrittenIsClearedByTheNext(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	writeFile(t, root, "user_stories.json", `{"stories":[
+	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"low","priority":1,
+	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN a paid invoice is refunded, the money goes back"}]}]}`)
+	kept := []string{".sdlc/state/notes.tmp1", ".env.tmp5"}
+	for _, rel := range kept {
+		writeFile(t, root, rel, "not ours")
+	}
+	commitEverything(t, root)
+	left := []string{
+		".sdlc/stories/PAY-1/.gate-record.json.tmp3230204710",
+		".user_stories.json.tmp118",
+	}
+	for _, rel := range left {
+		writeFile(t, root, rel, "half a record")
+	}
+
+	mustRun(t, "start")
+	for _, rel := range left {
+		if _, err := os.Stat(filepath.Join(root, rel)); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s, left by a killed command, is still there: %v", rel, err)
+		}
+	}
+	for _, rel := range kept {
+		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
+			t.Errorf("%s, which no write of ours makes, was removed: %v", rel, err)
+		}
+	}
 }
 
 // The commit is the last gate a freeze deleted by hand can be caught at: every

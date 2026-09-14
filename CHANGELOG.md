@@ -100,6 +100,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   reviewers a gate runs in parallel all land. Without it, five reviewers
   approving at once left one verdict in the record and the other four
   reported success and were discarded.
+- A lock is broken open only once the process holding it has stopped, not
+  merely because it is old, so a slow command keeps it. The stop guard takes
+  it too, and decides from what is recorded once it has it. A command killed
+  part-way through a write no longer leaves a temporary file that the commit
+  gate refuses as uncommitted work: the next command clears it.
 - Reviews are recorded against the thing they reviewed. A design review is
   stamped with the hash of the plan it read and a code review with the hash
   of the tree it read, so a review of an older version of the work shows as

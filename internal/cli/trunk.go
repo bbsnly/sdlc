@@ -120,12 +120,17 @@ func checkTrunk(cmd *cobra.Command, s *store.Store) error {
 }
 
 // strayChanges drops the changes that belong to the loop rather than to the
-// project: its own state, and the backlog, whose statuses it writes.
+// project: its own state, and the backlog, whose statuses it writes. A write of
+// the backlog that was killed part-way is the loop's too, and the next command
+// that takes the lock clears it away.
 func strayChanges(changes []string, backlog string) []string {
 	backlog = filepath.ToSlash(filepath.Clean(backlog))
 	var stray []string
 	for _, p := range changes {
 		if p == backlog || p == config.Dir+"/" || strings.HasPrefix(p, config.Dir+"/") {
+			continue
+		}
+		if store.InterruptedWriteOf(filepath.Base(p), filepath.Base(backlog)) {
 			continue
 		}
 		stray = append(stray, p)
