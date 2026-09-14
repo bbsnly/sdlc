@@ -79,16 +79,35 @@ func (res Resolver) Rel(p string) (rel string, outside bool) {
 // or `\\?\C:\project\.sdlc\state`, is the project's loop state, and read as
 // outside the project it was nobody's to protect. What it returns is folded,
 // which is how every rule compares a path anyway.
+//
+// The folded text only says where to look. A volume can keep case, and APFS
+// keeps the trailing dot Fold drops, so `proj` beside a project called `Proj`
+// or `proj.` is another directory, and a write there was read as the
+// project's. The part of p that spells the project has to be the project.
 func foldedRel(root, p string) (string, bool) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
 		return "", false
 	}
 	r := strings.TrimSuffix(Fold(filepath.ToSlash(root)), "/")
-	q := strings.TrimPrefix(Fold(filepath.ToSlash(p)), "//?/")
-	if q == r {
-		return "", true
+	spelled := strings.TrimPrefix(filepath.ToSlash(p), "//?/")
+	q := Fold(spelled)
+	rel, inside := "", q == r
+	if !inside {
+		rel, inside = strings.CutPrefix(q, r+"/")
 	}
-	return strings.CutPrefix(q, r+"/")
+	if !inside {
+		return "", false
+	}
+	// Folding keeps every separator, so the project is as many segments of p
+	// as it is of root. What is not there is not the same file either.
+	n := strings.Count(r, "/") + 1
+	ancestor := strings.Join(strings.SplitN(spelled, "/", n+1)[:n], "/")
+	here, _ := os.Stat(filepath.FromSlash(ancestor))
+	project, _ := os.Stat(root)
+	if !os.SameFile(here, project) {
+		return "", false
+	}
+	return rel, true
 }
 
 // Abs makes p absolute against base, as the program that writes it would. ok

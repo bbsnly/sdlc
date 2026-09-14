@@ -66,6 +66,26 @@ func TestRelFoldsCaseWhereTheFilesystemDoes(t *testing.T) {
 	}
 }
 
+// Folded text is not the filesystem's say. APFS keeps the trailing dot Fold
+// drops, so `proj` beside a project called `proj.` is another directory, and a
+// write into it was read as the project's.
+func TestRelDoesNotFoldIntoADirectoryBesideTheProject(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows drops the trailing dot, so the two are one directory")
+	}
+	parent := project(t)
+	root := filepath.Join(parent, "proj.")
+	beside := filepath.Join(parent, "proj")
+	for _, dir := range []string{root, beside} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, outside := Rel(root, filepath.Join(beside, "src", "a.go")); !outside {
+		t.Errorf("a write into %s was inside the project %s as %q", beside, root, got)
+	}
+}
+
 func TestRelReportsPathsThatLeaveTheRepository(t *testing.T) {
 	root := project(t)
 	for _, in := range []string{
