@@ -124,13 +124,10 @@ var mutating = map[string]bool{
 	"truncate": true, "install": true, "ln": true, "chmod": true,
 	"chown": true, "touch": true, "shred": true, "unlink": true,
 	"rmdir": true, "sponge": true,
-	// Editors that rewrite a file given on the command line. sed, perl and awk
-	// change one only when asked to edit in place, which changesAFile reads:
-	// named here, `sed -n 1,40p` on the plan was a write to it, and reading
-	// the record is how an agent knows where the story is. An interpreter
-	// writes through its program, which runsInlineCode reads; a file named
-	// after it is a script or its input, and `python3 -m pytest
-	// tests/test_x.py` is how the tests run.
+	// Editors that rewrite a file given on the command line. sed, perl, awk
+	// and the interpreters are not here: each can write through its program
+	// whatever it is asked to do, which changesFiles counts for the loop's
+	// record, and a frozen test is read with them, which changesAFile allows.
 	"ed": true, "patch": true,
 	// Windows spellings, because Bash on Windows is not always a POSIX shell.
 	"del": true, "erase": true, "move": true, "copy": true, "ren": true, "rename": true,
@@ -628,13 +625,26 @@ func changesAFile(words []string) bool {
 	}
 }
 
-// changesFiles is changesAFile for the loop's own record, where a find that
-// runs any command on what it finds counts too: the command is out of sight,
-// and nothing needs find to read the record.
+// changesFiles is changesAFile for the loop's own record and the protected
+// paths, which is broader: refusing a read of them costs little, since cat,
+// grep, head and the file tools read them, and nothing downstream notices
+// a record rewritten the way the gate notices a frozen test that changed.
+//
+// So a program that can write through what it is given counts whatever it
+// is asked to do. Counted only when editing in place, sed wrote with its `w`
+// command, awk with `print > FILENAME`, `python3 -m json.tool` with its second
+// argument, and every interpreter with a script put in /tmp first.
 func changesFiles(words []string) bool {
-	if len(words) > 0 && base(words[0]) == "find" {
+	if len(words) == 0 {
+		return false
+	}
+	switch base(words[0]) {
+	case "find":
+		// The command find runs is out of sight.
 		return hasWord(words[1:], "-delete") || hasWord(words[1:], "-exec") ||
 			hasWord(words[1:], "-execdir") || hasWord(words[1:], "-ok") || hasWord(words[1:], "-okdir")
+	case "sed", "perl", "awk", "gawk", "python", "python3", "ruby", "node", "deno", "bun", "php":
+		return true
 	}
 	return changesAFile(words)
 }

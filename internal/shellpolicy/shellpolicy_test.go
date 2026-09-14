@@ -405,19 +405,30 @@ func TestACommonNameIsNotAFrozenFixtureElsewhere(t *testing.T) {
 	}
 }
 
-// Reading the record is how an agent knows where the story is. sed, perl, awk
-// and an interpreter were taken as writing whatever they were asked to do, so
-// `sed -n 1,40p .sdlc/stories/A-1/PLAN.md` was a write to the plan.
-func TestTheRecordCanBeReadThroughTheShell(t *testing.T) {
+// The record is read with cat, grep, head and the file tools. A program that
+// can write through what it is given is refused on it whatever it is asked:
+// counted only when it edited in place, each of these wrote the record.
+func TestTheRecordIsNotHandedToAProgramThatCanWrite(t *testing.T) {
 	s := ready
 	s.Backlog = "user_stories.json"
 	for _, command := range []string{
-		"sed -n 1,40p .sdlc/stories/A-1/PLAN.md",
-		"sed -n 1,20p CLAUDE.md",
-		"awk '/A-1/' user_stories.json",
-		"python3 -m json.tool user_stories.json",
+		"cat .sdlc/stories/A-1/PLAN.md",
+		"head -40 CLAUDE.md",
+		"grep A-1 user_stories.json",
 	} {
 		allowed(t, command, s)
+	}
+	for command, rule := range map[string]string{
+		"sed -n 'w .sdlc/config.json' /tmp/evil":                              "loop-state-through-the-tool",
+		"sed 's/a/b/w CLAUDE.md' /tmp/evil":                                   "protected-path-through-the-tool",
+		"awk '{print > FILENAME}' .sdlc/stories/A-1/gate-record.json":         "loop-state-through-the-tool",
+		"python3 -m json.tool /tmp/g.json .sdlc/stories/A-1/gate-record.json": "loop-state-through-the-tool",
+		"python3 /tmp/fix.py .sdlc/state/active":                              "loop-state-through-the-tool",
+		"node /tmp/w.js .claude/settings.json":                                "protected-path-through-the-tool",
+		"ruby /tmp/w.rb .sdlc/config.json":                                    "loop-state-through-the-tool",
+		"gawk -f /tmp/w.awk CLAUDE.md":                                        "protected-path-through-the-tool",
+	} {
+		refused(t, command, s, rule)
 	}
 	for command, rule := range map[string]string{
 		"sed -i 's/a/b/' .sdlc/stories/A-1/PLAN.md":  "loop-state-through-the-tool",

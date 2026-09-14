@@ -243,8 +243,10 @@ or any gate document — by redirection; through `rm`, `mv`, `cp`, `tee`, `dd`,
 `sed -i`, `find -delete`, `git rm`, `git checkout` and their like; or from
 inside a program handed to an interpreter.
 
-A scratch file inside a story's directory is not loop state, and reading any of
-it is never refused.
+A scratch file inside a story's directory is not loop state. Reading the loop's
+files with `cat`, `grep`, `head` or the file tools is never refused; `sed`,
+`awk`, `perl` and interpreters are refused on them whatever they are asked to
+do, because each can write through its own program.
 
 *Instead:* `sdlc artifact write`, `sdlc review add`, `sdlc gate`. The freeze is
 lifted by the person running the session. For `.sdlc/config.json` there is no
@@ -261,8 +263,10 @@ that are not the loop's own state. It matches the way the filesystem does, so
 
 A settings file under `.claude` is where hooks are configured, `CLAUDE.md` is
 the contract every gate reads, and the backlog is the story itself, so a shell
-command that rewrote any of them would take the rules with it. Reading them is
-never refused, and neither is `.gitignore` or `.github/`.
+command that rewrote any of them would take the rules with it. Reading them with
+`cat`, `grep`, `head` or the file tools is never refused, and neither is
+`.gitignore` or `.github/`. As with loop state, `sed`, `awk`, `perl` and
+interpreters are refused on them.
 
 *Instead:* change them by hand outside a running iteration. If what one says is
 wrong, stop and say what.

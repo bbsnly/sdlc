@@ -252,12 +252,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `sdlc approve` or the shell a document is handed to went unread, and sdlc is
   now found behind a wrapper the rules do not know. PowerShell's `<# ... #>`
   comment no longer hides the command after it.
-- Reading the loop's record, `CLAUDE.md` or the backlog through `sed`, `perl`,
-  `awk` or an interpreter is not refused. They were taken as writing whatever
-  they were asked to do, so `sed -n 1,40p` on the plan and `python3 -m
-  json.tool` on the backlog were refused. They count when they edit in place
-  (`sed -i`, `perl -pi`, `gawk -i inplace`) or write from their own code, and
-  `gawk -i inplace` on a frozen test, which went through, is refused.
+- `awk -i inplace` rewrote a frozen test unrefused, and called as `gawk` it
+  rewrote the loop's record and `CLAUDE.md` too.
 - A bare file name is not a frozen file of that name elsewhere. With a fixture
   `testdata/config.json` frozen, `cp config.example.json config.json` at the
   root was refused as a write to a frozen test, and so was `touch main.go` in
