@@ -497,9 +497,9 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 		return Finding{}, false
 	}
 	switch {
-	case strings.ContainsAny(to, "$%"):
-		// `git -C "$OLDPWD"` is somewhere this cannot know, which is not
-		// another repository.
+	case strings.ContainsAny(to, "$%") || shellDirectory(to):
+		// `git -C "$OLDPWD"`, or `git -C ~-`, is somewhere this cannot know,
+		// which is not another repository.
 		dir = ""
 	case isAbsolute(to) || strings.HasPrefix(to, "~"):
 		// The lookup reads ~ as the home it names.
@@ -514,7 +514,7 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 	// not followed is "", which is the project.
 	repository := path.Join(dir, ".git")
 	switch gitDir := gitDirOf(words[1:]); {
-	case strings.ContainsAny(gitDir, "$%"):
+	case strings.ContainsAny(gitDir, "$%") || shellDirectory(gitDir):
 		// Wherever the command runs, `--git-dir` can name this repository:
 		// `cd /tmp && git --git-dir="$PROJECT/.git" commit`.
 		repository = ".git"
@@ -1144,20 +1144,30 @@ func (m *memo) outside(s State, word string) bool {
 	if s.Resolve == nil || !isAbsolute(c) && !strings.HasPrefix(c, "~") {
 		return false
 	}
-	// ~+ is the directory the command runs in, ~- the one before it and ~2 one
-	// on the stack. The shell knows where those are and the lookup does not: put
-	// outside, `rm ~+/.sdlc/state/active` was nothing of the project's.
-	if name, _, _ := strings.Cut(c[1:], "/"); c[0] == '~' {
-		switch strings.TrimRight(name, "0123456789") {
-		case "+", "-":
-			return false
-		case "":
-			if name != "" {
-				return false
-			}
-		}
+	// Put outside, `rm ~+/.sdlc/state/active` was nothing of the project's.
+	if shellDirectory(c) {
+		return false
 	}
 	return m.resolve(s, c) == ""
+}
+
+// shellDirectory reports whether a word starts at ~+, the directory the
+// command runs in, ~- the one before it, or ~2 one on the stack. The shell
+// knows where those are, and the lookup, which knows only the user's home,
+// does not.
+func shellDirectory(word string) bool {
+	rest, ok := strings.CutPrefix(word, "~")
+	if !ok {
+		return false
+	}
+	name, _, _ := strings.Cut(rest, "/")
+	switch strings.TrimRight(name, "0123456789") {
+	case "+", "-":
+		return true
+	case "":
+		return name != ""
+	}
+	return false
 }
 
 // bareDirectory reports whether a word is one of the protected directories

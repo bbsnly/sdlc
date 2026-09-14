@@ -199,7 +199,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - `~+`, `~-` and `~2` in a shell command are directories the shell knows, not
   the user's home, and `~name` is that user's home, which can be yours.
   `rm ~+/.sdlc/state/active` was read as a file outside the project, and so was
-  a project under `~you/`.
+  a project under `~you/`; `git -C ~-` was a commit in another repository, and
+  went past the commit gate.
 - `tar`, `rsync`, `unzip`, `cpio`, `scp`, `curl` and `wget` are read as writing
   the paths they are given, and a short option's value glued to it, as in
   `-C.sdlc` or `-oCLAUDE.md`, is read as that path. `tar -xf e.tar -C .sdlc`,

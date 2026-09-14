@@ -953,6 +953,20 @@ func TestAShellDirectoryIsNotTheHomeDirectory(t *testing.T) {
 	refused(t, "echo x > ~+/CLAUDE.md", s, "protected-path-through-the-tool")
 	allowed(t, "rm ~/.sdlc/state/active", s)
 	allowed(t, "rm ~someone/.sdlc/state/active", s)
+
+	// Read as another repository, a commit there skipped the gate.
+	gated := notReady
+	gated.Resolve = s.Resolve
+	for _, command := range []string{
+		"git -C ~+ commit -m x",
+		"git -C ~- commit -m x",
+		"git -C ~2 commit -m x",
+		"git --git-dir=~+/.git commit -m x",
+		"git --git-dir ~-/.git commit -m x",
+	} {
+		refused(t, command, gated, "commit-gate")
+	}
+	allowed(t, "git -C ~/elsewhere commit -m x", gated)
 }
 
 // A program that unpacks, copies or downloads writes where it is told, and a
