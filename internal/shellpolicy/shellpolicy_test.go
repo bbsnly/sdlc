@@ -202,6 +202,9 @@ func TestAWrapperDoesNotHideWhatItRuns(t *testing.T) {
 		refused(t, command, notReady, "commit-gate")
 	}
 	allowed(t, "docker compose --project-name sdlc stop", ready)
+	for _, command := range []string{"echo next: sdlc stop", "ls sdlc stop", "grep -rn sdlc approve docs"} {
+		allowed(t, command, ready)
+	}
 	allowed(t, "direnv allow . && ls", notReady)
 	allowed(t, `find . -name '*.go' -exec grep -l commit {} \; -print`, notReady)
 	allowed(t, "find . -name git -o -name commit", notReady)

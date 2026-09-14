@@ -298,6 +298,13 @@ func sdlcArgs(words []string) ([]string, bool) {
 	// Behind a wrapper program does not know -- `ssh host`, `watch -n 1`,
 	// `Start-Process` -- sdlc is still a word of its own. A word after a flag
 	// is the flag's value, as in `docker compose -p sdlc stop`.
+	switch base(words[0]) {
+	case "echo", "printf", "print", "write-host", "write-output", "ls", "dir", "cat", "type",
+		"grep", "rg", "head", "tail", "less", "more", "man", "which", "whereis", "file", "stat", "wc":
+		// A command that prints or reads its words only mentions sdlc:
+		// `echo next: sdlc stop` is not a stop.
+		return nil, false
+	}
 	for i := 1; i < len(words); i++ {
 		if isSdlc(words[i]) && !strings.HasPrefix(words[i-1], "-") {
 			return words[i+1:], true
