@@ -213,9 +213,11 @@ background with `&` or run with PowerShell's `&`. They know PowerShell's
 cmdlets and their aliases, a parameter given as `-Path:file`, and a backtick
 used as an escape. They read a relative path from where the command runs:
 after a `cd` earlier in the same command, or where an earlier call left the
-session. The body of a here-document is text, not commands, so a plan
-or a review that mentions `git commit` is not refused for it — unless the text
-goes to a shell or an interpreter, which runs it.
+session. And they read a path as the file it is on disk, so a link to `.sdlc`,
+or a Windows short name such as `SDLC~1`, is the file it reaches. The body of a
+here-document is text, not commands, so a plan or a review that mentions
+`git commit` is not refused for it — unless the text goes to a shell or an
+interpreter, which runs it.
 
 This is pattern matching, not a shell. It is deliberately narrow.
 

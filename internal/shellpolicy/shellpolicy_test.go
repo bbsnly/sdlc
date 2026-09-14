@@ -352,6 +352,26 @@ func TestPowerShellSpellingsMeetTheShellRules(t *testing.T) {
 	allowed(t, "Get-Content -Path:CLAUDE.md", ps)
 }
 
+// A word can name a protected file in letters no rule matches: a link, or a
+// Windows short name. What the file is on disk decides, where that is known.
+func TestAWordIsReadAsTheFileItIsOnDisk(t *testing.T) {
+	s := ready
+	s.Frozen = []string{"internal/x_test.go"}
+	s.Resolve = func(word string) string {
+		return map[string]string{
+			"SDLC~1/state/active": ".sdlc/state/active",
+			"CLAUDE~1":            ".claude",
+			"alias.go":            "internal/x_test.go",
+			"docs/contract.md":    "CLAUDE.md",
+		}[word]
+	}
+	refused(t, "rm SDLC~1/state/active", s, "loop-state-through-the-tool")
+	refused(t, "echo {} > CLAUDE~1", s, "protected-path-through-the-tool")
+	refused(t, "cd docs && rm contract.md", s, "protected-path-through-the-tool")
+	refused(t, "echo cheat > alias.go", s, "frozen-test-through-the-tool")
+	allowed(t, "rm scratch.txt", s)
+}
+
 // Reading is nobody's business here, and neither is anything outside the
 // loop's own files. A rule that refused too much would be turned off.
 func TestReadingAndOrdinaryWorkAreUntouched(t *testing.T) {

@@ -69,6 +69,12 @@ type State struct {
 	// it: empty for the main conversation.
 	Agent string
 
+	// Resolve, when set, gives the file a word of the command is on disk,
+	// repository-relative and slash-separated, or "" when it cannot say. A
+	// link to .sdlc, or on Windows a short name such as SDLC~1, names loop
+	// state in letters no rule matches, and only the filesystem knows it.
+	Resolve func(word string) string
+
 	// PowerShell is whether the command is PowerShell's, where a backtick is an
 	// escape rather than a command substitution: `Remove-Item CLAUDE`.md`
 	// removes CLAUDE.md.
@@ -165,7 +171,7 @@ func Inspect(command string, s State) (Finding, bool) {
 		if f, ok := checkCommit(run.words, s); ok {
 			return f, true
 		}
-		if f, ok := checkLoopState(command, segment, run, redirects, dir, s.Backlog); ok {
+		if f, ok := checkLoopState(command, segment, run, redirects, dir, s); ok {
 			return f, true
 		}
 		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, s); ok {
@@ -331,7 +337,7 @@ func checkCommit(words []string, s State) (Finding, bool) {
 }
 
 // checkLoopState stops the shell being the way around every other rule.
-func checkLoopState(line, segment string, run invocation, redirects []string, dir, backlog string) (Finding, bool) {
+func checkLoopState(line, segment string, run invocation, redirects []string, dir string, s State) (Finding, bool) {
 	candidates := append([]string{}, redirects...)
 	if changesFiles(run.words) {
 		candidates = append(candidates, run.words[1:]...)
@@ -346,8 +352,8 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 		// freeze below.
 		candidates = append(candidates, wordsIn(line)...)
 	}
-	for _, c := range spellings(dir, candidates) {
-		if hit, ok := protectedPath(c, backlog); ok {
+	for _, c := range s.spell(dir, candidates) {
+		if hit, ok := protectedPath(c, s.Backlog); ok {
 			return Finding{
 				Rule: "protected-path-through-the-tool",
 				Reason: hit + " is protected while a story is being worked on, and a shell " +
@@ -404,7 +410,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 			candidates = append(candidates, wordsIn(line)...)
 		}
 	}
-	for _, c := range spellings(dir, candidates) {
+	for _, c := range s.spell(dir, candidates) {
 		frozen, ok := isFrozen(c, s.Frozen)
 		w := strings.TrimPrefix(clean(c), "./")
 		if !ok && w != "" && s.IsTest != nil && s.IsTest(w) {
@@ -730,6 +736,25 @@ func spellings(dir string, words []string) []string {
 			if c := clean(n); c != "" && !isAbsolute(c) {
 				out = append(out, path.Join(dir, c))
 			}
+		}
+	}
+	return out
+}
+
+// spell is spellings, and then the file each spelling is on disk where that is
+// another name: through a link, or a Windows short name.
+func (s State) spell(dir string, words []string) []string {
+	out := spellings(dir, words)
+	if s.Resolve == nil {
+		return out
+	}
+	for _, w := range spellings(dir, words) {
+		c := strings.TrimPrefix(clean(w), "./")
+		if c == "" || strings.HasPrefix(c, "-") {
+			continue
+		}
+		if r := s.Resolve(c); r != "" && r != c {
+			out = append(out, r)
 		}
 	}
 	return out

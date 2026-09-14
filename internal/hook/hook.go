@@ -241,6 +241,18 @@ func backlogPath(project string) string {
 	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(p)))
 }
 
+// onDisk is the file a word of a shell command is on disk, repository-relative:
+// through a link, and on Windows through a short name such as SDLC~1. Empty
+// when it is outside the repository, where the shell rules have nothing to
+// protect.
+func onDisk(project, word string) string {
+	rel, outside := pathrules.Rel(project, filepath.FromSlash(word))
+	if outside {
+		return ""
+	}
+	return rel
+}
+
 // inspectShell applies the shell rules, which exist because every other rule in
 // this tool governs the file-writing tools and a shell command is not one.
 func inspectShell(project, story string, p payload, warn func(string)) policy.Verdict {
@@ -269,7 +281,8 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
 		Backlog: backlogPath(project), PowerShell: p.ToolName == "PowerShell",
-		Fresh: func() (bool, string) { return reviewsFresh(project, story, warn) },
+		Resolve: func(word string) string { return onDisk(project, word) },
+		Fresh:   func() (bool, string) { return reviewsFresh(project, story, warn) },
 	})
 	if !refused {
 		return policy.Allowed

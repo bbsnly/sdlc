@@ -244,6 +244,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `-Path:CLAUDE.md`, the aliases `sc`, `ac`, `clc`, `ren`, `rd` and
   `Tee-Object`, `Push-Location`, `cmd /c`, and a backtick used as an escape
   (``CLAUDE`.md``) each wrote or removed a protected file unrefused.
+- The shell rules read a path as the file it is on disk. A link to `.sdlc`,
+  `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
+  the file in letters no rule matched, and `rm notes/state/active` went through.
 - A new test file cannot be added through the shell after the freeze. The file
   tools refused one; `echo > new_test.go` did not, because the shell was checked
   only against the files the freeze already held.

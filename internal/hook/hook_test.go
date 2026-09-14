@@ -285,6 +285,37 @@ func TestTheBacklogIsNotEditedDuringAnIteration(t *testing.T) {
 	}
 }
 
+// A link made to .sdlc, CLAUDE.md or a frozen test names it in letters no rule
+// matches, as a short name such as SDLC~1 does on Windows. The shell rules read
+// the file a word is on disk.
+func TestAShellCommandThroughALinkIsReadAsTheFileItReaches(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, "CLAUDE.md", "# contract\n")
+	freeze(t, root, "A-1", "internal/x_test.go", "package x\n")
+	for link, target := range map[string]string{
+		"notes":    ".sdlc",
+		"brief.md": "CLAUDE.md",
+		"alias.go": filepath.Join("internal", "x_test.go"),
+	} {
+		if err := os.Symlink(filepath.Join(root, target), filepath.Join(root, link)); err != nil {
+			t.Skipf("symbolic links cannot be made here: %v", err)
+		}
+	}
+	for _, cmd := range []string{
+		"rm notes/state/active",
+		"cd notes && rm state/tests.lock",
+		"echo x > brief.md",
+		"echo cheat > alias.go",
+	} {
+		if !denied(call(t, command(root, "sdlc-implementer", cmd), noEnv)) {
+			t.Errorf("%q went through a link", cmd)
+		}
+	}
+	if denied(call(t, command(root, "sdlc-implementer", "echo x > scratch.txt"), noEnv)) {
+		t.Error("an ordinary write was refused")
+	}
+}
+
 // In PowerShell a backtick escapes the character after it, so the hook reads a
 // PowerShell command with that in mind, and a Bash one without it.
 func TestAPowerShellCommandIsReadAsPowerShell(t *testing.T) {
