@@ -290,6 +290,28 @@ A flag was given a value it cannot use.
 produced nothing is refused rather than recorded as zero, because a story that silently cost
 nothing is the one wrong answer nobody questions. Check the command that produced the value.
 
+### SDLC-E0035
+
+`sdlc approve` was run for a story that is not waiting for anybody.
+
+A story waits for a person only after the loop hands it over with `sdlc escalate`, and a
+decision answers that. There is nothing to approve before it: an approval that answered no
+question is one nobody asked for. `sdlc status` lists the stories that are waiting.
+
+### SDLC-E0036
+
+The story was handed to a person with `sdlc escalate`, and nobody has decided yet.
+
+Starting it again would carry on past the question it stopped to ask. The person reads what
+the escalation says — `sdlc status` shows it — and answers in their own terminal:
+
+```console
+$ sdlc approve US-001
+$ sdlc approve US-001 --reject "the migration has no way back"
+```
+
+Either answer lets the story start again, and both go on its record.
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session as a system message, and

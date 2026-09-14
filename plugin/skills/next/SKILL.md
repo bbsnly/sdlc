@@ -310,6 +310,19 @@ blocks which gate, and ask the user to change it.
 If the same gate fails three times, stop and show the user. Something upstream is wrong, and a
 fourth attempt will find the same wall.
 
+## Handing a decision to a person
+
+Some questions are not yours to answer: acceptance criteria that contradict each other, a frozen
+test that is genuinely wrong, a gate that keeps failing for the same reason. Hand them over:
+
+```bash
+sdlc escalate <type> --message "<the question, and what you found>"
+```
+
+Then stop, and tell the user what you asked. The iteration has ended, and the story waits until
+a person answers with `sdlc approve` in their own terminal. Do not run `sdlc approve` yourself
+— the hook refuses it — and do not start the story again before they have answered.
+
 ## If a command fails
 
 Every failure carries a code, a reason and a fix. Show the user the `error`, `why` and `fix`

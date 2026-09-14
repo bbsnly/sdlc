@@ -45,13 +45,14 @@ up next. It changes nothing, so it is safe to run at any point.
 An active story with no gate left reads as `finished` rather than `in progress`,
 because there is nothing left to work on it: what it wants is `sdlc stop`.
 
-Two fields in `--json` are worth knowing by name, because a skill reads them to
+Three fields in `--json` are worth knowing by name, because a skill reads them to
 decide what to do:
 
 | Field | What it says |
 | --- | --- |
 | `next_gate` | the gate to work now — the first one that has not passed. Absent when every gate is behind you, or when no story is active |
-| `next` | the story `sdlc start` would pick up. Only present when nothing is active |
+| `next` | the story `sdlc start` would pick up. Only present when nothing is active, and absent while a story waits for a person |
+| `waiting` | every story handed to a person with `sdlc escalate` and not yet answered, with the question it asks |
 
 ## `sdlc story list`
 
@@ -242,6 +243,49 @@ The reason is required because that is the whole point. Lifting the freeze is
 sometimes right — a test encoded the wrong behaviour — and it is also exactly
 the move an agent would make to reach green. Recording why is what tells the two
 apart.
+
+## `sdlc escalate`
+
+Hand the story to a person, and end the iteration.
+
+```console
+$ sdlc escalate pre_commit_approval --message "the migration has no down step"
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--message` | what the person is being asked to decide. Required |
+
+The type is a word for the kind of question — `pre_commit_approval`,
+`spec_unclear`, `loop_stalled` — and the message is the question. It goes on the
+story's record, bound to the work as it stands. The story becomes
+`awaiting_human`, and the iteration ends, so the session stops rather than
+carrying on past the question. `sdlc start` refuses the story until somebody
+answers, and `sdlc status` lists it as waiting.
+
+Nothing else starts in the meantime either: `sdlc start` picks up a story
+already under way before a new one, so it picks the waiting story and refuses
+it. That is deliberate. The work waiting for an answer is still in the tree, and
+a second story started on top of it would end up in the same commit.
+
+## `sdlc approve`
+
+A person's answer to an escalation.
+
+```console
+$ sdlc approve US-001
+$ sdlc approve US-001 --reject "the migration has no way back"
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--reject` | send the work back instead, saying why |
+
+Run it in your own terminal: the hook refuses it from a tool call, because an
+agent that could answer would be approving its own work. Without a story id it
+answers for the story being worked on. The answer goes on the record with the
+tree it was given for, the story goes back to `in_progress`, and `sdlc start`
+picks it up again.
 
 ## `sdlc cost`
 

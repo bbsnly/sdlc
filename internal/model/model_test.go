@@ -187,6 +187,32 @@ func TestRecordRecordsGatesAndHistory(t *testing.T) {
 	}
 }
 
+// A decision answers the question that is waiting, and only that: one given
+// with nothing waiting would be an approval nobody asked for.
+func TestADecisionAnswersTheQuestionThatIsWaiting(t *testing.T) {
+	at := time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
+	r := NewRecord("A-1", at)
+
+	if _, ok := r.Decide(true, "", "tree-0", at); ok || len(r.Approvals) != 0 {
+		t.Errorf("a decision was recorded with nothing waiting for one: %+v", r.Approvals)
+	}
+
+	r.Escalate("spec_unclear", "which one?", "tree-1", at)
+	r.Escalate("pre_commit_approval", "commit?", "tree-2", at)
+	if pending, ok := r.PendingEscalation(); !ok || pending.Type != "pre_commit_approval" || pending.Story != "A-1" {
+		t.Errorf("pending = %+v, %v", pending, ok)
+	}
+
+	a, ok := r.Decide(false, "no way back", "tree-3", at)
+	if !ok || a.Decision != DecisionRejected || a.Type != "pre_commit_approval" ||
+		a.Reason != "no way back" || a.TreeHash != "tree-3" {
+		t.Errorf("decision = %+v, %v", a, ok)
+	}
+	if pending, ok := r.PendingEscalation(); ok {
+		t.Errorf("%+v is still waiting after the story was answered", pending)
+	}
+}
+
 // The loop goes back rather than around. With every gate through code_review
 // passed, `plan fail` then `plan pass` left design_review passed, so the next
 // gate was code_review and the stale design review was never asked again.

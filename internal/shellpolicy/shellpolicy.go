@@ -104,6 +104,9 @@ func Inspect(command string, s State) (Finding, bool) {
 		if f, ok := checkUnfreeze(words); ok {
 			return f, true
 		}
+		if f, ok := checkApprove(words); ok {
+			return f, true
+		}
 		if f, ok := checkCommit(words, s); ok {
 			return f, true
 		}
@@ -153,6 +156,24 @@ func checkUnfreeze(words []string) (Finding, bool) {
 		Route: "say which frozen test is wrong and which acceptance criterion it gets " +
 			"wrong, and stop there; the person running the session lifts the freeze with " +
 			"`sdlc unfreeze --reason \"...\"` in their own terminal",
+	}, true
+}
+
+// checkApprove keeps a decision that was handed to a person with that person.
+//
+// `sdlc escalate` stops the loop to ask somebody a question, and an approval is
+// their answer. An agent that could run it would be answering its own question
+// -- approving its own work -- which is the one thing the escalation was for.
+func checkApprove(words []string) (Finding, bool) {
+	if !runsSubcommand(words, "approve") {
+		return Finding{}, false
+	}
+	return Finding{
+		Rule: "approval-is-a-human-decision",
+		Reason: "an approval is a person's answer to a question the loop stopped to ask them, " +
+			"and an agent that gave it would be approving its own work",
+		Route: "hand the question over with `sdlc escalate <type> --message \"...\"` and stop; " +
+			"the person reads the work and runs `sdlc approve` in their own terminal",
 	}, true
 }
 

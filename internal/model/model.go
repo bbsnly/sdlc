@@ -644,6 +644,50 @@ func (r *Record) LatestReview(g Gate, role string) (Review, bool) {
 	return Review{}, false
 }
 
+// The two answers a person can give to an escalation.
+const (
+	DecisionApproved = "approved"
+	DecisionRejected = "rejected"
+)
+
+// Escalate records a point where the loop stopped for a person, bound to the
+// work as it stood when it stopped.
+func (r *Record) Escalate(kind, message, tree string, at time.Time) Escalation {
+	e := Escalation{At: Timestamp(at), Type: kind, Message: message, TreeHash: tree, Story: r.Story}
+	r.Escalations = append(r.Escalations, e)
+	return e
+}
+
+// PendingEscalation is the latest escalation nobody has answered.
+func (r *Record) PendingEscalation() (Escalation, bool) {
+	for i := len(r.Escalations) - 1; i >= 0; i-- {
+		if !r.Escalations[i].Resolved {
+			return r.Escalations[i], true
+		}
+	}
+	return Escalation{}, false
+}
+
+// Decide records a person's answer to what is waiting for one, bound to the
+// tree it was given for, and resolves every escalation it answers. It reports
+// false when nothing is waiting: an answer to no question is not a decision.
+func (r *Record) Decide(approved bool, reason, tree string, at time.Time) (Approval, bool) {
+	pending, ok := r.PendingEscalation()
+	if !ok {
+		return Approval{}, false
+	}
+	for i := range r.Escalations {
+		r.Escalations[i].Resolved = true
+	}
+	decision := DecisionRejected
+	if approved {
+		decision = DecisionApproved
+	}
+	a := Approval{At: Timestamp(at), Decision: decision, Reason: reason, Type: pending.Type, TreeHash: tree}
+	r.Approvals = append(r.Approvals, a)
+	return a, true
+}
+
 // NewRecord starts a record for a story.
 func NewRecord(story string, at time.Time) *Record {
 	return &Record{

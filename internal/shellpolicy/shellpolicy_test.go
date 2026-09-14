@@ -364,6 +364,32 @@ func TestUnfreezeIsAHumanDecision(t *testing.T) {
 	}
 }
 
+// An approval answers a question the loop stopped to ask a person, so an agent
+// that could run it would be answering its own question.
+func TestApprovingIsAHumanDecision(t *testing.T) {
+	for _, command := range []string{
+		"sdlc approve US-001",
+		"/usr/local/bin/sdlc approve",
+		`C:\Users\dev\AppData\Local\sdlc\bin\sdlc.exe approve US-001`,
+		"SDLC approve US-001",
+		"npx @bbsnly/sdlc approve US-001",
+		"go run ./cmd/sdlc approve US-001",
+		"sdlc --json approve US-001",
+		`sdlc approve US-001 --reject "not like this"`,
+		"go test ./... && sdlc approve US-001",
+	} {
+		refused(t, command, ready, "approval-is-a-human-decision")
+	}
+	for _, command := range []string{
+		`sdlc review add code_review code-reviewer approve --note "reads well"`,
+		`sdlc escalate pre_commit_approval --message "approve the commit?"`,
+		"sdlc status --json",
+		"echo approve",
+	} {
+		allowed(t, command, ready)
+	}
+}
+
 // The file tools refused a test file added after the freeze. A shell command
 // was checked only against the files the freeze holds, so `echo > new_test.go`
 // added one, written to pass, and nothing noticed.

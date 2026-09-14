@@ -29,6 +29,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   way out, and it is on the record. The freeze belongs to the iteration: it
   survives `sdlc stop` and a new session, and is lifted when the story
   finishes, so the next story freezes its own tests.
+- A question the loop should not answer for itself goes to a person.
+  `sdlc escalate` puts it on the story's record and ends the iteration, and
+  `sdlc start` refuses the story until somebody answers with `sdlc approve`,
+  or sends the work back with `--reject`. The hook refuses `sdlc approve` from
+  a tool call, because an agent that could run it would be approving its own
+  work.
 - `sdlc cost` keeps what a story spent beside everything else it did.
   `sdlc cost add --usd` records an amount, `sdlc status` reports the running
   total, and crossing one of `budget.alert_fractions` says so once, on

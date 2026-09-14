@@ -178,7 +178,7 @@ iteration and take over yourself.
 
 Every rule above governs the file-writing tools. A shell command is not one of
 them, which would leave `cat > .sdlc/stories/A-1/ANALYSIS.md` walking past all
-of them. These six close that, and nothing else about your shell is touched:
+of them. These seven close that, and nothing else about your shell is touched:
 your tests, your build and your tooling run exactly as before.
 
 This is pattern matching, not a shell. It is deliberately narrow.
@@ -237,6 +237,18 @@ such as `--note "no need to unfreeze"`, is not refused.
 
 *Instead:* say which frozen test is wrong and which acceptance criterion it gets
 wrong, and stop there.
+
+### `approval-is-a-human-decision`
+
+Refuses `sdlc approve` run from a tool call, however `sdlc` is reached.
+
+An approval is a person's answer to a question the loop stopped to ask them:
+`sdlc escalate` hands the story over and ends the iteration. An agent that could
+give the answer would be approving its own work. A reviewer's `approve` verdict,
+given with `sdlc review add`, is a different command and is not refused.
+
+*Instead:* `sdlc escalate <type> --message "..."`, and stop. The person reads the
+work and runs `sdlc approve` in their own terminal.
 
 ### `commit-gate`
 

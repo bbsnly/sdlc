@@ -54,6 +54,12 @@ var (
 	BadArgument = register("SDLC-E0034",
 		`check the flag's value — "sdlc <command> --help" says what it takes`)
 
+	NothingToApprove = register("SDLC-E0035",
+		`only a story handed to a person with "sdlc escalate" waits for a decision — "sdlc status" shows which stories are waiting`)
+
+	AwaitingPerson = register("SDLC-E0036",
+		`a person decides first, in their own terminal: "sdlc approve <ID>", or "sdlc approve <ID> --reject ..." to send the work back`)
+
 	UnknownGate = register("SDLC-E0013",
 		`run "sdlc gate --help" to see the gate names this version knows`)
 

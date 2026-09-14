@@ -31,6 +31,18 @@ type statusPayload struct {
 	Next     *nextUp        `json:"next,omitempty"`
 	Freeze   *freezeState   `json:"freeze,omitempty"`
 	Cost     *costState     `json:"cost,omitempty"`
+	// Waiting is every story handed to a person and not yet answered. The
+	// iteration ended when it was handed over, so nothing else here says so.
+	Waiting []waitingStory `json:"waiting,omitempty"`
+}
+
+// waitingStory is one question the loop stopped to ask a person.
+type waitingStory struct {
+	Story   string `json:"story"`
+	Title   string `json:"title"`
+	Type    string `json:"type"`
+	Message string `json:"message"`
+	At      string `json:"at"`
 }
 
 // costState is what the story has cost so far, against what it was expected to.
@@ -76,7 +88,12 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			payload := statusPayload{OK: true, Active: active, Backlog: countStatuses(backlog)}
+			waiting, err := waitingStories(s, backlog)
+			if err != nil {
+				return err
+			}
+
+			payload := statusPayload{OK: true, Active: active, Backlog: countStatuses(backlog), Waiting: waiting}
 			var record *model.Record
 			if active != "" {
 				if story, ok := backlog.Find(active); ok {
@@ -96,7 +113,9 @@ func newStatusCmd() *cobra.Command {
 					return err
 				}
 				payload.Cost = describeCost(p.Config.Budget, record)
-			} else if sel, ok := backlog.Next(); ok {
+			} else if sel, ok := backlog.Next(); ok && !isWaiting(waiting, sel.Story.ID) {
+				// A waiting story is the one start would pick, and start refuses
+				// it, so offering it as next up would send the reader into a wall.
 				payload.Next = &nextUp{Story: sel.Story.ID, Title: sel.Story.Title}
 			}
 
@@ -126,9 +145,15 @@ func newStatusCmd() *cobra.Command {
 				}
 			}
 			fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))
+			for _, ws := range payload.Waiting {
+				fmt.Fprintf(w, "  waiting  %s  %s: %s\n", ws.Story, ws.Type, ws.Message)
+			}
 			switch {
 			case finished:
 				fmt.Fprint(w, "\nEvery gate has passed. Run `sdlc stop` to end the iteration.\n")
+			case active == "" && payload.Next == nil && len(payload.Waiting) > 0:
+				fmt.Fprintf(w, "\nA person answers first, in their own terminal: `sdlc approve %s`, "+
+					"or `sdlc approve %s --reject \"why\"`.\n", payload.Waiting[0].Story, payload.Waiting[0].Story)
 			case active != "":
 				fmt.Fprint(w, "\nRun /sdlc:next in Claude Code to carry on, "+
 					"or `sdlc stop` to put it down.\n")
@@ -141,6 +166,36 @@ func newStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// waitingStories is every story handed to a person that nobody has answered.
+func waitingStories(s *store.Store, b *model.Backlog) ([]waitingStory, error) {
+	var waiting []waitingStory
+	for i := range b.Stories {
+		story := &b.Stories[i]
+		if story.Status != model.StatusAwaitingHuman {
+			continue
+		}
+		record, err := s.Record(story.ID)
+		if err != nil {
+			return nil, err
+		}
+		if e, ok := record.PendingEscalation(); ok {
+			waiting = append(waiting, waitingStory{
+				Story: story.ID, Title: story.Title, Type: e.Type, Message: e.Message, At: e.At,
+			})
+		}
+	}
+	return waiting, nil
+}
+
+func isWaiting(waiting []waitingStory, id string) bool {
+	for _, ws := range waiting {
+		if ws.Story == id {
+			return true
+		}
+	}
+	return false
 }
 
 // describeFreeze reports the freeze as it applies to this story. A freeze taken

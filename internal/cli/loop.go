@@ -88,6 +88,9 @@ func newStartCmd() *cobra.Command {
 			if finished != nil {
 				return finished
 			}
+			if err := refuseIfWaiting(s, id); err != nil {
+				return err
+			}
 			// A story that is already in progress is being picked up again,
 			// whether or not the iteration that started it is still running.
 			resume := story.Status == model.StatusInProgress ||

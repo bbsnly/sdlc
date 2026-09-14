@@ -55,6 +55,8 @@ func New(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newReviewCmd(),
 		newFreezeCmd(),
 		newUnfreezeCmd(),
+		newEscalateCmd(),
+		newApproveCmd(),
 		newCostCmd(),
 		newDoctorCmd(),
 		newVersionCmd(),
