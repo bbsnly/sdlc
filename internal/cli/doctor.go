@@ -131,7 +131,13 @@ func runChecks() []check {
 		add(check{Name: "configuration", State: stateProblem,
 			Detail: err.Error(),
 			Fix:    `run "sdlc init" in ` + root})
-		return append(out, skipRest("configuration")...)
+		add(check{Name: "backlog", State: stateSkipped,
+			Detail: "not checked: configuration has to work first"})
+		// The loop's state does not come from the configuration, and a broken
+		// configuration is when the hook warns about both and sends you here --
+		// so this is the one check that still runs.
+		add(stateCheck(store.New(&config.Project{Root: root, Config: config.Default()})))
+		return append(out, skipRest("loop state")...)
 	}
 	stack, _ := scaffold.Detect(root)
 	detail := config.File

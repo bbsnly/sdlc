@@ -403,9 +403,29 @@ func TestWhatCountsAsATestComesFromTheProject(t *testing.T) {
 func TestABrokenConfigurationStillProtectsWhatItCan(t *testing.T) {
 	root := loopProject(t)
 	write(t, root, ".sdlc/config.json", "{not json")
+	write(t, root, "invoice_test.go", "package x\n")
+	write(t, root, ".sdlc/state/tests.lock", `{"story":"A-1","files":{"invoice_test.go":"abc"}}`)
 
 	if !denied(call(t, event(root, "Write", "", ".sdlc/state/active"), noEnv)) {
 		t.Error("loop state became writable because the configuration was broken")
+	}
+	// The freeze names its files, so it holds without the configuration. The
+	// session itself has no write scope to be refused by, so only the freeze
+	// can refuse this.
+	if r := call(t, event(root, "Edit", "", "invoice_test.go"), noEnv); !denied(r) ||
+		!strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "frozen-test-is-not-edited") {
+		t.Error("a frozen test became editable because the configuration was broken")
+	}
+	if !denied(call(t, command(root, "sdlc:implementer", "echo x > invoice_test.go"), noEnv)) {
+		t.Error("a frozen test became writable through the shell because the configuration was broken")
+	}
+	// What is a test falls back to the default patterns, so the rules that ask
+	// still have an answer.
+	if !denied(call(t, event(root, "Write", "sdlc:implementer", "billing_test.go"), noEnv)) {
+		t.Error("the implementer wrote a test because the configuration was broken")
+	}
+	if !denied(call(t, command(root, "sdlc:implementer", "echo x > billing_test.go"), noEnv)) {
+		t.Error("a new test went in through the shell because the configuration was broken")
 	}
 }
 
@@ -429,7 +449,7 @@ func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
 		{
 			name:  "a configuration that will not parse",
 			spoil: corrupt(".sdlc/config.json"),
-			says:  "the test freeze is not being enforced",
+			says:  "tests are being recognised by the default patterns",
 		},
 		{
 			name:  "a freeze that will not parse, on a file write",
@@ -449,7 +469,7 @@ func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
 				corrupt(".sdlc/config.json")(t, root)
 			},
 			shell: true,
-			says:  "the freeze is not being enforced against shell commands",
+			says:  "every file the default patterns call a test is being treated as frozen",
 		},
 		{
 			name: "an iteration file that cannot be read",

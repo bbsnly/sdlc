@@ -223,6 +223,16 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 	return policy.Verdict{Rule: finding.Rule, Reason: finding.Reason, Route: finding.Route}
 }
 
+// The warnings for a configuration that will not read. Each names what is still
+// enforced, because "not enforced" was the easy sentence and was not true.
+const (
+	unreadableConfig = ".sdlc/config.json could not be read, so tests are being recognised " +
+		"by the default patterns until it can be. Run `sdlc doctor` to see why."
+	unreadableFreezeAndConfig = ".sdlc/state/tests.lock could not be read, and nor could " +
+		".sdlc/config.json, so every file the default patterns call a test is being treated " +
+		"as frozen. Run `sdlc doctor` to see why."
+)
+
 // frozenTests is what the freeze holds, for the shell rules to refuse writes
 // to. No freeze yet means nothing frozen, which is the ordinary state before
 // Gate 3 and leaves the shell as free as it was.
@@ -230,8 +240,8 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 // A freeze that is there and will not read is not that. Every file the
 // configuration calls a test counts as frozen until it reads, as it does for a
 // file write -- otherwise corrupting tests.lock was the way to `echo` into a
-// frozen test. Only when the configuration will not read either is there no
-// telling what a test is, and then it says so.
+// frozen test. When the configuration will not read either, the default
+// patterns say what a test is, and it says so.
 func frozenTests(project, story string, warn func(string)) (frozen []string, isTest, newTest func(string) bool) {
 	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "tests.lock"))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -244,9 +254,8 @@ func frozenTests(project, story string, warn func(string)) (frozen []string, isT
 	if err != nil {
 		cfg, cfgErr := config.Load(project)
 		if cfgErr != nil {
-			warn(".sdlc/state/tests.lock could not be read, and nor could .sdlc/config.json, " +
-				"so the freeze is not being enforced against shell commands. Run `sdlc doctor`.")
-			return nil, nil, nil
+			warn(unreadableFreezeAndConfig)
+			return nil, testset.New(config.Default().Paths.Tests).Match, nil
 		}
 		warn(".sdlc/state/tests.lock could not be read, so every test file is " +
 			"being treated as frozen until it can be. Run `sdlc doctor` to see why.")
@@ -261,9 +270,8 @@ func frozenTests(project, story string, warn func(string)) (frozen []string, isT
 	// through the file tools.
 	cfg, err := config.Load(project)
 	if err != nil {
-		warn(".sdlc/config.json could not be read, so the test freeze is not " +
-			"being enforced in this session. Run `sdlc doctor` to see why.")
-		return lock.Paths(), nil, nil
+		warn(unreadableConfig)
+		cfg = config.Default()
 	}
 	if !cfg.Freeze.AllowNewTestFiles {
 		m := testset.New(cfg.Paths.Tests)
@@ -378,10 +386,13 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 	}
 	cfg, err := config.Load(project)
 	if err != nil {
+		// Reading no file as a test turned off every rule that asks what a test
+		// is: the implementer could write them, and a frozen one could be
+		// edited. The freeze names its own files, and the defaults are a better
+		// guess at the rest than nothing.
 		slog.Debug("hook could not read the configuration", "err", err)
-		warn(".sdlc/config.json could not be read, so the test freeze is not " +
-			"being enforced in this session. Run `sdlc doctor` to see why.")
-		return policy.Tests{}
+		warn(unreadableConfig)
+		cfg = config.Default()
 	}
 	m := testset.New(cfg.Paths.Tests)
 	t := policy.Tests{IsTest: m.Match(rel), AllowNew: cfg.Freeze.AllowNewTestFiles}

@@ -321,10 +321,14 @@ the file rather than empty it, so it was written some other way. Every rule is
 off until it names a story. `sdlc doctor` names it under "loop state";
 `sdlc stop` removes it and ends the iteration.
 
-### `.sdlc/config.json could not be read, so the test freeze is not being enforced`
+### `.sdlc/config.json could not be read, so tests are being recognised by the default patterns`
 
-The configuration will not parse, so the loop cannot tell which files are
-tests. Protected paths and write scopes still hold; the freeze does not.
+The configuration will not parse, so the loop cannot read your `paths.tests`.
+Until it can, a test is whatever the default patterns call one — `tests/`,
+`test/`, `*_test.go` and the rest listed under
+[`paths.tests`](configuration.md#pathstests) — plus every file the freeze holds. Protected
+paths, write scopes and the freeze all still hold, measured that way; a test
+kept somewhere only your own patterns name is not recognised as one.
 `sdlc doctor` names it under "configuration".
 
 ### `.sdlc/state/tests.lock could not be read, so every test file is being treated as frozen`
@@ -334,9 +338,9 @@ that writes to anything that looks like a test is refused, frozen or not: a
 freeze that cannot be read is not treated as no freeze. `sdlc doctor` names it
 under "loop state".
 
-### `.sdlc/state/tests.lock ... so the freeze is not being enforced against shell commands`
+### `.sdlc/state/tests.lock ... and nor could .sdlc/config.json, so every file the default patterns call a test is being treated as frozen`
 
 The freeze will not parse, and neither will the configuration that says which
-files are tests, so there is nothing to check a shell command against. A
-redirect into a test is not refused until one of the two reads again. `sdlc
-doctor` names both.
+files are tests. Until one of them reads, a shell command that writes to
+anything the default patterns call a test is refused. `sdlc doctor` names both:
+the configuration, and the freeze under "loop state".

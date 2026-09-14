@@ -599,6 +599,31 @@ func TestDoctorNamesTheRecordOfAStoryNobodyIsWorkingOn(t *testing.T) {
 	}
 }
 
+// A broken configuration made doctor skip every check after it, the loop state
+// included. The hook, with both files broken, warns about both and says doctor
+// names them; doctor named one.
+func TestDoctorNamesBrokenLoopStateBehindABrokenConfiguration(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	state := filepath.Join(root, ".sdlc", "state")
+	if err := os.MkdirAll(state, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{filepath.Join(state, "tests.lock"), filepath.Join(root, ".sdlc", "config.json")} {
+		if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	r := run(t, "doctor")
+	if !strings.Contains(r.stdout, "configuration") || !strings.Contains(r.stdout, "tests.lock") {
+		t.Errorf("doctor did not name both the configuration and the freeze:\n%s", r.stdout)
+	}
+	if r.code == 0 {
+		t.Error("doctor exited zero with the configuration and the freeze broken")
+	}
+}
+
 func TestDoctorExitsNonZeroWhenSomethingIsWrong(t *testing.T) {
 	project(t)
 	mustRun(t, "init")
