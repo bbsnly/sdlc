@@ -123,6 +123,59 @@ jobs:
         shell: cmd
         run: task.cmd --list
 
+  # CONTRIBUTING asks for conventional commit subjects, and until this job
+  # nothing checked, so a subject without a type reached trunk. It reads only
+  # the commits this push or pull request adds: trunk is never rewritten, so a
+  # subject already there is not something a later push can fix.
+  commits:
+    name: commit subjects
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Every new subject is a conventional commit
+        shell: bash
+        # Through the environment, not interpolated into the script: a ref
+        # name is attacker-controlled text on a pull request.
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "${EVENT}" in
+            pull_request) range="${BASE}..${HEAD}" ;;
+            push)
+              # A new branch or tag has no "before", and a force push can
+              # leave one that no longer exists. Neither adds a subject to
+              # check against anything.
+              if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+                echo "no earlier commit to compare against; nothing to check"
+                exit 0
+              fi
+              range="${BEFORE}..${AFTER}" ;;
+            *) echo "${EVENT} adds no commits; nothing to check"; exit 0 ;;
+          esac
+          pattern='^(feat|fix|docs|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9._/-]+\))?!?: [^ ]'
+          bad=0
+          while IFS= read -r line; do
+            sha=${line%% *}
+            subject=${line#* }
+            if ! printf '%s\n' "${subject}" | grep -Eq "${pattern}"; then
+              echo "::error::${sha:0:7} \"${subject}\" is not <type>(<scope>): <summary>"
+              bad=1
+            fi
+          done < <(git log --no-merges --format='%H %s' "${range}")
+          if [ "${bad}" -ne 0 ]; then
+            echo "types: feat fix docs refactor test chore build ci perf revert; see CONTRIBUTING.md" >&2
+          fi
+          exit "${bad}"
+
   # The npm package names the oldest Node it supports, and nothing ever ran it
   # there: every job installs 22, so ">=18" was a promise with nothing behind
   # it. The floor is read out of package.json rather than written here, so
@@ -132,6 +185,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Read the floor out of the package
         id: floor

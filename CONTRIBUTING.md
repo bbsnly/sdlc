@@ -53,7 +53,9 @@ with it.
   short-lived branches where they are not. Long-running branches are not used.
 - **Trunk is always green.** `./task check` passes before anything is pushed.
 - **Conventional commits.** `feat:`, `fix:`, `docs:`, `refactor:`, `test:`,
-  `chore:`, with a body that says *why* rather than restating *what*.
+  `chore:`, `build:`, `ci:`, `perf:` or `revert:`, with an optional scope, and
+  a body that says *why* rather than restating *what*. CI checks the subject of
+  every commit a push or pull request adds.
 
 ## Cutting a release
 
