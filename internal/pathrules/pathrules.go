@@ -131,8 +131,12 @@ func Abs(base, p string) (abs string, ok bool) {
 	return filepath.Join(base, p), true
 }
 
-// resolve follows symlinks, falling back to the path itself when it cannot.
+// resolve follows symlinks, and on Windows junctions, falling back to the path
+// itself when it cannot.
 func resolve(p string) string {
+	if out, ok := finalPath(p); ok {
+		return out
+	}
 	if out, err := filepath.EvalSymlinks(p); err == nil {
 		return out
 	}

@@ -133,6 +133,9 @@ var mutating = map[string]bool{
 	// Windows spellings, because Bash on Windows is not always a POSIX shell.
 	"del": true, "erase": true, "move": true, "copy": true, "ren": true, "rename": true,
 	"rd": true,
+	// A link to a protected directory is that directory under a name no rule
+	// knows, and a junction needs no privilege to make.
+	"mklink": true,
 	// PowerShell's cmdlets and their aliases, folded like every other name.
 	"remove-item": true, "move-item": true, "copy-item": true, "rename-item": true,
 	"new-item": true, "set-content": true, "add-content": true, "clear-content": true,
@@ -915,9 +918,13 @@ func program(words []string) invocation {
 			words = words[3:]
 		case "cmd":
 			// cmd's switches start with a slash: `cmd /c del file`, `cmd /s /c`.
+			// Git Bash turns an argument that starts with one slash into a
+			// Windows path, so there they are written with two, `cmd //c`,
+			// which was read as the command and let whatever followed through.
 			run.shell = true
 			words = words[1:]
-			for len(words) > 0 && strings.HasPrefix(words[0], "/") && !strings.Contains(words[0][1:], "/") {
+			for len(words) > 0 && strings.HasPrefix(words[0], "/") &&
+				!strings.Contains(strings.TrimPrefix(words[0][1:], "/"), "/") {
 				words = words[1:]
 			}
 		default:

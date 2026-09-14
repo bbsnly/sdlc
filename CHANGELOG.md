@@ -185,6 +185,13 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   length is still the protected path. `.ſdlc/state/active` (a long s) is
   `.sdlc/state/active` to a case-insensitive filesystem, and the rules compared
   it by byte offset, landed mid-character, and let the write through.
+- A Windows junction to a protected directory is that directory. Go has not
+  followed junctions since 1.23, and making one needs no privilege, so a
+  junction to `.sdlc` or `.git` reached the freeze, the active story and the
+  git hooks under a name no rule knew. Paths are now resolved the way Windows
+  resolves them, and `mklink` has its arguments checked like `ln`. In Git Bash
+  `cmd //c`, the way `cmd /c` has to be written there, is read as `cmd /c`: the
+  doubled slash was taken for the command, and nothing behind it was checked.
 - The hook's warnings reach the session. They went to standard error, which
   Claude Code sends to its debug log when a hook allows the call, so "nothing
   is being enforced" was said to nobody. They now arrive as a system message,

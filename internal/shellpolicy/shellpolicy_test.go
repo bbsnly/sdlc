@@ -786,13 +786,22 @@ func TestPowerShellSpellingsMeetTheShellRules(t *testing.T) {
 		`cmd /s /c "del .sdlc\state\active"`:            "loop-state-through-the-tool",
 		"Remove-Item CLAUDE`.md":                        "protected-path-through-the-tool",
 		"Remove-Item .`s`d`l`c/state/tests.lock":        "loop-state-through-the-tool",
+		// A junction is the directory under a name no rule knows, and needs
+		// no privilege to make.
+		`cmd /c mklink /J j .sdlc`: "loop-state-through-the-tool",
 	} {
 		refused(t, command, ps, rule)
 	}
+	// Git Bash on Windows spells cmd's switches with two slashes.
+	refused(t, "cmd //c mklink //J j .sdlc", ready, "loop-state-through-the-tool")
+	refused(t, `cmd //c del ".sdlc\state\active"`, ready, "loop-state-through-the-tool")
+	refused(t, `cmd //s //c "del .sdlc\state\active"`, ready, "loop-state-through-the-tool")
 
 	commit := notReady
 	commit.PowerShell = true
 	refused(t, "cmd /c git commit -m x", commit, "commit-gate")
+	// A program named by its path is the program, not one of cmd's switches.
+	refused(t, "cmd //c /usr/bin/git commit -m x", notReady, "commit-gate")
 
 	frozen := ps
 	frozen.Frozen = []string{"internal/x_test.go"}
