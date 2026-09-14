@@ -306,7 +306,7 @@ var tooDeep = Finding{
 // or PowerShell's environment drive, as in `$env:GIT_DIR = ` and `Set-Item
 // env:GIT_DIR`. A mention is not one: a commit message that said "unset
 // GIT_DIR" was a commit in the project wherever it was made.
-var setsGitDir = regexp.MustCompile(`(?i)git_dir=|env:git_dir`)
+var setsGitDir = regexp.MustCompile(`(?i)\bgit_dir=|env:git_dir\b`)
 
 // HumanDecisions reports a command that makes one of the decisions the loop
 // keeps for a person: approving work handed over, or lifting the freeze. These

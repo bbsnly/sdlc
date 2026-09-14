@@ -184,6 +184,8 @@ func TestACommitInAnotherRepositoryIsNotTheStorys(t *testing.T) {
 	refused(t, "Set-Item env:GIT_DIR /work/project/.git; git commit -am x", psElsewhere, "commit-gate")
 	allowed(t, `git commit -m "unset GIT_DIR in the hook"`, elsewhere)
 	allowed(t, "grep -rn GIT_DIR . ; git commit --allow-empty -m init", elsewhere)
+	allowed(t, "MY_GIT_DIR=/work/project/.git true; git commit -m x", elsewhere)
+	allowed(t, "$env:GIT_DIR_BACKUP='/work/project/.git'; git commit -m x", psElsewhere)
 
 	for _, command := range []string{
 		"git commit -m x",
