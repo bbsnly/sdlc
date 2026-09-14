@@ -70,9 +70,13 @@ func crash(r any, stack []byte, isHook bool, stdout, stderr io.Writer, withStack
 		// Continue rather than block. A bug in this tool must not be able to
 		// wedge someone's session; the loop's guarantees are worth less than
 		// the user's ability to keep working.
+		//
+		// systemMessage, and exit 0 below: Claude Code reads a hook's JSON only
+		// when it exits 0, and shows a stopReason only when continue is false.
+		// A crash reported any other way reached nobody.
 		b, err := json.Marshal(hook.Decision{
-			Continue:   true,
-			StopReason: msg,
+			Continue:      true,
+			SystemMessage: "sdlc: " + msg + ", so this tool call was not checked. Please report it: " + issues,
 		})
 		if err != nil {
 			fmt.Fprint(stdout, `{"continue":true}`)
@@ -86,6 +90,10 @@ func crash(r any, stack []byte, isHook bool, stdout, stderr io.Writer, withStack
 		fmt.Fprintf(stderr, "\n%s\n", stack)
 	} else {
 		fmt.Fprintf(stderr, "Re-run with %s=1 to include a stack trace in the report.\n", logging.EnvDebug)
+	}
+	if isHook {
+		// So that the reply above is read at all.
+		return 0
 	}
 	return 1
 }

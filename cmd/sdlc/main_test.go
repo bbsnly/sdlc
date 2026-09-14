@@ -40,16 +40,19 @@ func TestPanicNeverLeaksAStackToStdout(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		args []string
+		// A hook exits 0 even when it crashes, because Claude Code reads a
+		// hook's reply only then; the command exits 1 like any failure.
+		code int
 	}{
-		{"cli", []string{"version"}},
-		{"hook", []string{"hook", "PreToolUse"}},
+		{"cli", []string{"version"}, 1},
+		{"hook", []string{"hook", "PreToolUse"}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, errb bytes.Buffer
 			code := run(tc.args, strings.NewReader(""), &out, &errb, boom)
 
-			if code != 1 {
-				t.Errorf("a crash should exit 1, got %d", code)
+			if code != tc.code {
+				t.Errorf("a crash should exit %d, got %d", tc.code, code)
 			}
 			if strings.Contains(out.String(), "goroutine ") || strings.Contains(out.String(), ".go:") {
 				t.Errorf("stack leaked to stdout: %q", out.String())
@@ -66,11 +69,15 @@ func TestPanicNeverLeaksAStackToStdout(t *testing.T) {
 func TestHookCrashStillEmitsParseableJSONAndContinues(t *testing.T) {
 	boom := func(string) string { panic("boom") }
 	var out, errb bytes.Buffer
-	_ = run([]string{"hook", "PreToolUse"}, strings.NewReader(""), &out, &errb, boom)
+	code := run([]string{"hook", "PreToolUse"}, strings.NewReader(""), &out, &errb, boom)
 
+	// Claude Code reads a hook's JSON only when it exits 0.
+	if code != 0 {
+		t.Errorf("a crashed hook exited %d, so its reply is never read", code)
+	}
 	var d struct {
-		Continue   bool   `json:"continue"`
-		StopReason string `json:"stopReason"`
+		Continue      bool   `json:"continue"`
+		SystemMessage string `json:"systemMessage"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &d); err != nil {
 		t.Fatalf("crashed hook stdout is not JSON: %v (%q)", err, out.String())
@@ -78,8 +85,10 @@ func TestHookCrashStillEmitsParseableJSONAndContinues(t *testing.T) {
 	if !d.Continue {
 		t.Error("a crash in the tool must not block the user's action")
 	}
-	if !strings.Contains(d.StopReason, "crashed") {
-		t.Errorf("the reason should say what happened, got %q", d.StopReason)
+	// A stopReason is shown only when continue is false, which it never is
+	// here, so the message has to be the one field that is shown.
+	if !strings.Contains(d.SystemMessage, "crashed") {
+		t.Errorf("the system message should say what happened, got %q", d.SystemMessage)
 	}
 }
 
