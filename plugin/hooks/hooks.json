@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook PreToolUse",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" PreToolUse",
             "timeout": 30
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook PostToolUse",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" PostToolUse",
             "timeout": 30
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook Stop",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" Stop",
             "timeout": 45
           }
         ]

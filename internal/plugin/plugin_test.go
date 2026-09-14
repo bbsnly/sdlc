@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -182,13 +183,20 @@ func TestTheHookRunsSomethingThatExists(t *testing.T) {
 			if h.Timeout <= 0 {
 				t.Error("the hook has no timeout; a hook that hangs hangs the session")
 			}
-			rel, ok := strings.CutPrefix(h.Command, "${CLAUDE_PLUGIN_ROOT}/")
+			// Quoted, because the plugin root is under the user's home directory
+			// and a space in it split the command in two: exit 127, which Claude
+			// Code treats as a hook that did not object.
+			rel, ok := strings.CutPrefix(h.Command, `"${CLAUDE_PLUGIN_ROOT}/`)
 			if !ok {
-				t.Errorf("command %q is not relative to the plugin root, so it "+
+				t.Errorf("command %q does not start with the quoted plugin root, so it "+
 					"depends on where the plugin was installed", h.Command)
 				continue
 			}
-			script := strings.Fields(rel)[0]
+			script, _, quoted := strings.Cut(rel, `"`)
+			if !quoted {
+				t.Errorf("command %q does not close its quote", h.Command)
+				continue
+			}
 			path := filepath.Join(pluginDir, filepath.FromSlash(script))
 			if _, err := os.Stat(path); err != nil {
 				t.Errorf("the hook runs %s, which is not in the repository", script)
@@ -197,6 +205,60 @@ func TestTheHookRunsSomethingThatExists(t *testing.T) {
 			assertExecutableInGit(t, "plugin/"+script)
 			if _, err := os.Stat(path + ".cmd"); err != nil {
 				t.Errorf("%s has no .cmd beside it, so Windows has no launcher", script)
+			}
+		}
+	}
+}
+
+// A command that splits on a space in the plugin root exits 127, and Claude
+// Code takes a hook that failed that way for one with nothing to say: every
+// rule off, and no word about it. The plugin root is under the user's home
+// directory, so each command is run as a shell runs it, from a root with a
+// space in it.
+func TestTheHookCommandSurvivesASpaceInThePluginRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the command string is the same everywhere; this runs it where sh is certain to be")
+	}
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh to run the hook command with")
+	}
+	root := filepath.Join(t.TempDir(), "John Smith", "plugin")
+	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script, err := os.ReadFile(filepath.Join(pluginDir, "bin", "sdlc-hook"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "bin", "sdlc-hook"), script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The binary the launcher finds beside it says what it was handed, so the
+	// event is seen to arrive and not only the launcher to start.
+	stand := "#!/bin/sh\nprintf 'handed: %s\\n' \"$*\"\n"
+	if err := os.WriteFile(filepath.Join(root, "bin", "sdlc"), []byte(stand), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	hooks, err := Hooks(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for event, entries := range hooks {
+		for _, entry := range entries {
+			for _, h := range entry.Hooks {
+				cmd := exec.CommandContext(t.Context(), sh, "-c", h.Command)
+				cmd.Env = []string{"CLAUDE_PLUGIN_ROOT=" + root, "PATH=" + filepath.Dir(sh)}
+				cmd.Stdin = strings.NewReader("{}")
+				out, err := cmd.Output()
+				if err != nil {
+					t.Errorf("%s: %q did not run from %q: %v", event, h.Command, root, err)
+					continue
+				}
+				if got, want := strings.TrimSpace(string(out)), "handed: hook "+event; got != want {
+					t.Errorf("%s: %q handed the binary %q, want %q", event, h.Command, got, want)
+				}
 			}
 		}
 	}
