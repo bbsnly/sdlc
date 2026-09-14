@@ -184,7 +184,7 @@ the argument for a change is not a reviewer.
 | `sdlc:security` | 4 and 7 | **Yes**, when the story is security-sensitive |
 | `sdlc:red-team` | 4 · attacks the plan | — |
 | `sdlc:perf` | 4 and 7 | Only against a stated budget |
-| `sdlc:human-advocate` | 4 and 7 | — |
+| `sdlc:human-advocate` | 4 and 7, and 1 if the project asks | — |
 | `sdlc:verifier` | 6 · independent verification | **Yes** |
 | `sdlc:code-reviewer` | 7 · the diff | **Yes**, unless the project turns on `reviews.gate7_advisory` |
 | `sdlc:bookkeeper` | 9 · retro | — |

@@ -81,6 +81,24 @@ func (s *Store) CommitPause(id string) (string, bool, error) {
 	return tier, s.cfg.HumanGates.PausesBeforeCommit(tier), nil
 }
 
+// StorySubject is the story as a reviewer of it reads it, by content: its entry
+// in the backlog, without the status and updated fields the loop writes as the
+// story moves. Change what the story asks for, and a review of it is stale.
+func (s *Store) StorySubject(id string) (string, error) {
+	story, _, err := s.Story(id)
+	if err != nil {
+		return "", err
+	}
+	subject := *story
+	subject.Status, subject.Updated = "", ""
+	raw, err := json.Marshal(subject)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
 // Config is the project's configuration, as the store was opened with it.
 func (s *Store) Config() config.Config { return s.cfg }
 

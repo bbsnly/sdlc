@@ -74,6 +74,61 @@ func planned(t *testing.T) string {
 	return root
 }
 
+// human_gates.dor_advocate_check was read by nothing. It has the human advocate
+// read the story at Gate 1, and the gate waits for it the way it waits for every
+// reviewer it expects.
+func TestTheHumanAdvocateReadsTheStoryAtGate1WhenTheProjectAsks(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+
+	if listed := decode[reviewListPayload](t, mustRun(t, "review", "list", "--gate", "dor", "--json")); len(listed.Reviews) != 0 {
+		t.Errorf("Gate 1 expects reviews nobody asked for: %+v", listed.Reviews)
+	}
+	if r := runWith(t, "# Human advocate\n", "review", "add", "dor", "human-advocate", "note"); !strings.Contains(r.stderr, "dor_advocate_check") {
+		t.Errorf("a review nobody asked for was recorded:\n%s", r.stderr)
+	}
+
+	setConfigOnDisk(t, root, "human_gates", map[string]any{"pre_commit_pause_tiers": []string{"high"}, "dor_advocate_check": true})
+	if r := run(t, "gate", "dor", "pass"); r.code == 0 || !strings.Contains(r.stderr, "human-advocate") {
+		t.Fatalf("Gate 1 passed without the review the project asked for:\n%s", r.stderr)
+	}
+	listed := decode[reviewListPayload](t, mustRun(t, "review", "list", "--gate", "dor", "--json"))
+	if len(listed.Reviews) != 1 || listed.Reviews[0].Role != "human-advocate" || listed.Reviews[0].Blocking {
+		t.Errorf("reviews = %+v", listed.Reviews)
+	}
+
+	mustRunWith(t, "# Human advocate\n", "review", "add", "dor", "human-advocate", "note", "--note", "reads well")
+
+	// The story changes after the advocate read it.
+	var backlog map[string]any
+	if err := json.Unmarshal([]byte(backlogBytes(t, root)), &backlog); err != nil {
+		t.Fatal(err)
+	}
+	backlog["stories"].([]any)[0].(map[string]any)["title"] = "Something else entirely"
+	changed, err := json.Marshal(backlog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, root, "user_stories.json", string(changed))
+	if r := run(t, "gate", "dor", "pass"); !strings.Contains(r.stderr, "changed since") {
+		t.Errorf("a review of the story before it changed let Gate 1 pass:\n%s", r.stderr)
+	}
+
+	mustRunWith(t, "# Human advocate\n", "review", "add", "dor", "human-advocate", "note")
+
+	// What the advocate found goes to a person, and coming back from them moves
+	// the story's status and time without changing what the advocate read.
+	mustRun(t, "escalate", "spec_unclear", "--message", "the advocate asks who this is for")
+	waiting := decode[reviewListPayload](t, mustRun(t, "review", "list", "--gate", "dor", "--story", "US-001", "--json"))
+	if len(waiting.Reviews) != 1 || waiting.Reviews[0].Stale {
+		t.Errorf("handing the story to a person made the advocate's review stale: %+v", waiting.Reviews)
+	}
+	mustRun(t, "approve", "US-001")
+	mustRun(t, "start")
+	mustRun(t, "gate", "dor", "pass", "--note", "the advocate read it")
+}
+
 func approveAll(t *testing.T, gate model.Gate, except ...string) {
 	t.Helper()
 	for _, r := range model.ReviewersFor(gate) {

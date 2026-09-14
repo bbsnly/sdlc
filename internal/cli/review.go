@@ -113,6 +113,11 @@ func newReviewAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if !reviewer.Expected(reviewPolicy(s, record)) {
+				return sdlcerr.New(sdlcerr.UnknownReviewer,
+					string(gate)+" does not expect a review from "+quote(reviewer.Role)+" in this project",
+					"it does only when human_gates.dor_advocate_check is on in .sdlc/config.json")
+			}
 			subject, err := gateSubject(cmd.Context(), s, id, gate)
 			if err != nil {
 				return err
@@ -183,8 +188,9 @@ func newReviewListCmd() *cobra.Command {
 			}
 
 			infos := make([]reviewInfo, 0, len(model.Reviewers))
+			policy := reviewPolicy(s, record)
 			for _, r := range model.Reviewers {
-				if only != "" && r.Gate != only {
+				if (only != "" && r.Gate != only) || !r.Expected(policy) {
 					continue
 				}
 				subject, err := gateSubject(cmd.Context(), s, id, r.Gate)
@@ -193,7 +199,7 @@ func newReviewListCmd() *cobra.Command {
 				}
 				info := reviewInfo{
 					Gate: string(r.Gate), Role: r.Role,
-					Blocking: r.Blocks(reviewPolicy(s, record)),
+					Blocking: r.Blocks(policy),
 				}
 				if latest, ok := record.LatestReview(r.Gate, r.Role); ok {
 					info.Verdict, info.Round = string(latest.Verdict), latest.Round
@@ -232,12 +238,14 @@ func describeReviewState(i reviewInfo) string {
 
 // gateSubject is what a reviewer of this gate is looking at, by content.
 //
-// The design gate reviews a document, so the document's hash is the subject.
-// The gates that review work review the whole tree, because a change anywhere
-// can invalidate what they concluded. A gate with no reviewers has no subject,
-// and that is not an error.
+// The definition-of-ready gate reviews the story, and the design gate a
+// document, so their content is the subject. The gates that review work review
+// the whole tree, because a change anywhere can invalidate what they concluded.
+// A gate with no reviewers has no subject, and that is not an error.
 func gateSubject(ctx context.Context, s *store.Store, id string, gate model.Gate) (string, error) {
 	switch gate {
+	case model.GateDoR:
+		return s.StorySubject(id)
 	case model.GateDesignReview:
 		// No plan yet is a state, not a failure. It leaves the subject empty,
 		// which makes every review of a plan that is not there stale by
@@ -254,11 +262,13 @@ func gateSubject(ctx context.Context, s *store.Store, id string, gate model.Gate
 	}
 }
 
-// reviewPolicy is what decides who blocks, for this story in this project.
+// reviewPolicy is what decides who is expected and who blocks, for this story
+// in this project.
 func reviewPolicy(s *store.Store, record *model.Record) model.ReviewPolicy {
 	return model.ReviewPolicy{
 		SecuritySensitive:  record.SecuritySensitive(),
 		CodeReviewAdvisory: s.Config().Reviews.Gate7Advisory,
+		DoRAdvocate:        s.Config().HumanGates.DoRAdvocateCheck,
 	}
 }
 
@@ -266,7 +276,13 @@ func reviewPolicy(s *store.Store, record *model.Record) model.ReviewPolicy {
 func requireReviews(ctx context.Context, s *store.Store, id string, gate model.Gate,
 	record *model.Record,
 ) error {
-	reviewers := model.ReviewersFor(gate)
+	policy := reviewPolicy(s, record)
+	var reviewers []model.Reviewer
+	for _, r := range model.ReviewersFor(gate) {
+		if r.Expected(policy) {
+			reviewers = append(reviewers, r)
+		}
+	}
 	if len(reviewers) == 0 {
 		return nil
 	}
@@ -275,7 +291,6 @@ func requireReviews(ctx context.Context, s *store.Store, id string, gate model.G
 		return err
 	}
 
-	policy := reviewPolicy(s, record)
 	var outstanding, blocked []string
 	for _, r := range reviewers {
 		blocking := r.Blocks(policy)

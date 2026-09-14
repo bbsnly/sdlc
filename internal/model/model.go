@@ -415,13 +415,23 @@ type Reviewer struct {
 	// code reviewer is, through reviews.gate7_advisory: a loosening the project
 	// chooses, and not one the verifier or a security review can be given.
 	Advisable bool
+	// WhenDoRAdvocate is a review the gate expects only when the project asks
+	// for it, through human_gates.dor_advocate_check.
+	WhenDoRAdvocate bool
 }
 
-// ReviewPolicy is what decides, beyond the roster, whether a reviewer blocks:
-// the story's security sensitivity, and the loosening the project chose.
+// ReviewPolicy is what decides, beyond the roster, whether a reviewer is
+// expected and whether it blocks: the story's security sensitivity, and what
+// the project chose.
 type ReviewPolicy struct {
 	SecuritySensitive  bool
 	CodeReviewAdvisory bool // reviews.gate7_advisory
+	DoRAdvocate        bool // human_gates.dor_advocate_check
+}
+
+// Expected reports whether the gate waits for this reviewer in this project.
+func (r Reviewer) Expected(p ReviewPolicy) bool {
+	return !r.WhenDoRAdvocate || p.DoRAdvocate
 }
 
 // Blocks reports whether this reviewer can refuse the gate for this story.
@@ -434,6 +444,8 @@ func (r Reviewer) Blocks(p ReviewPolicy) bool {
 
 // Reviewers is every review the loop expects, by gate.
 var Reviewers = []Reviewer{
+	{Role: "human-advocate", Gate: GateDoR, WhenDoRAdvocate: true},
+
 	{Role: "architect", Gate: GateDesignReview, Blocking: true},
 	{Role: "red-team", Gate: GateDesignReview},
 	{Role: "security", Gate: GateDesignReview, WhenSecuritySensitive: true},

@@ -37,6 +37,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   work. A story in a risk tier `human_gates.pre_commit_pause_tiers` names —
   `high`, by default — cannot be committed until a person has approved the
   work as it stands; a change made after the approval needs approving again.
+- `human_gates.dor_advocate_check` has the human advocate read the story at
+  Gate 1, and `sdlc gate dor pass` waits for its review. It is advisory there
+  as everywhere, and it goes stale if the story changes after it.
 - `sdlc cost` keeps what a story spent beside everything else it did.
   `sdlc cost add --usd` records an amount, `sdlc status` reports the running
   total, and crossing one of `budget.alert_fractions` says so once, on

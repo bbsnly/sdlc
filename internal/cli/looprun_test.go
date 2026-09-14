@@ -51,6 +51,9 @@ func satisfy(t *testing.T, root string, gate model.Gate) {
 		commitEverything(t, root)
 	}
 	for _, r := range model.ReviewersFor(gate) {
+		if r.WhenDoRAdvocate {
+			continue // expected only when the project asks, which is its own test
+		}
 		mustRunWith(t, "# "+r.Role+"\n", "review", "add", string(gate), r.Role, "approve")
 	}
 }

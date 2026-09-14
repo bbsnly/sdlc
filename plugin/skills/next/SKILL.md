@@ -65,7 +65,17 @@ record it and ask the user rather than inventing an interpretation:
 sdlc gate dor fail --note "AC-2 describes an implementation, not a behaviour"
 ```
 
-Otherwise:
+A project can ask for the human advocate at this gate too, and then the gate waits for it. Check:
+
+```bash
+sdlc review list --gate dor --json
+```
+
+If it lists `human-advocate`, delegate to `sdlc:human-advocate` with the story id, and read what
+it found before deciding. Its review is advisory, but a story nobody would want built is not
+ready either.
+
+When the story is ready:
 
 ```bash
 sdlc gate dor pass --note "<what made the story ready, in one clause>"

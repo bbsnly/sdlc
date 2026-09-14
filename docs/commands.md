@@ -202,10 +202,11 @@ $ sdlc review add code_review perf note --file /tmp/perf.md
 Verdicts: `approve`, `block`, `note`.
 
 The command stamps the review with what was in front of the reviewer — the
-plan's content at `design_review`, the working tree at `verifier_review` and
-`code_review`. That is what makes an approval go stale when the thing it
-approved changes. The tree leaves out `.sdlc/` and the `status` and `updated`
-fields of the stories in the backlog, which `sdlc` writes itself; see
+story's entry in the backlog at `dor`, the plan's content at `design_review`,
+the working tree at `verifier_review` and `code_review`. That is what makes an
+approval go stale when the thing it approved changes. The story and the tree
+both leave out the `status` and `updated` fields `sdlc` writes into the backlog
+itself, and the tree leaves out `.sdlc/`; see
 [Why approvals go stale](the-loop.md#why-approvals-go-stale).
 
 Rounds are kept rather than overwritten, so "what did the architect say last

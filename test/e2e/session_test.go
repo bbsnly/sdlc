@@ -181,6 +181,9 @@ func (s *session) workGate(gate model.Gate, story string) {
 		s.stores("bookkeeper", "retro", "# Retro\n\nNo deviations.\n")
 	}
 	for _, r := range model.ReviewersFor(gate) {
+		if r.WhenDoRAdvocate {
+			continue // expected only when the project asks for it
+		}
 		s.do(r.Role, "Bash", map[string]any{
 			"command": "sdlc review add " + string(gate) + " " + r.Role + " approve",
 		})

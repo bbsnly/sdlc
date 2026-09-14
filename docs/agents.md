@@ -19,7 +19,7 @@ than the code.
 | `sdlc:security` | 4, 7 | **Yes** when the story is security-sensitive | its review |
 | `sdlc:red-team` | 4 | — | its review |
 | `sdlc:perf` | 4, 7 | Only against a stated budget | its review |
-| `sdlc:human-advocate` | 4, 7 | — | its review |
+| `sdlc:human-advocate` | 4, 7, and 1 with [`human_gates.dor_advocate_check`](configuration.md#human_gates) | — | its review |
 | `sdlc:verifier` | 6 | **Yes** | `VERIFICATION.md`, its verdict |
 | `sdlc:code-reviewer` | 7 | **Yes**, unless [`reviews.gate7_advisory`](configuration.md#reviewsgate7_advisory) is on | its review |
 | `sdlc:bookkeeper` | 9 | — | `RETRO.md`, `CODEMAP.md` |

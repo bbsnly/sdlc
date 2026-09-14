@@ -157,7 +157,7 @@ setting.
 | Key | What it means |
 | --- | --- |
 | `pre_commit_pause_tiers` | the story risk tiers that wait for a person's approval before they are committed. Default `["high"]`; `[]` turns the pause off |
-| `dor_advocate_check` | run the human advocate at Gate 1 as well |
+| `dor_advocate_check` | have the human advocate read the story at Gate 1 as well. `sdlc gate dor pass` then waits for its review, which is advisory there too. Off by default |
 
 A story's tier is its `risk_tier` in the backlog, and a story without one is
 `low`. One in a paused tier reaches Gate 8 and stops: the loop hands it over

@@ -55,6 +55,11 @@ would read them. A criterion that describes an implementation rather than an
 observable behaviour fails the gate here, which is the cheapest place in the
 loop to find out.
 
+With [`human_gates.dor_advocate_check`](configuration.md#human_gates) on,
+`sdlc:human-advocate` reads the story first, as the person it is for would, and
+the gate waits for its review. The review is advisory, and it goes stale if the
+story changes after it.
+
 ## Gate 2 — `analysis`
 
 **Who:** `sdlc:researcher`. **Produces:** `ANALYSIS.md`, `THREATS.md`.
@@ -208,8 +213,9 @@ than a side effect of running a command.
 
 ## Why approvals go stale
 
-A review is stamped with what was in front of it: the plan's content at Gate 4,
-the whole working tree at Gates 6 and 7. Change the plan, or touch a line of
+A review is stamped with what was in front of it: the story's entry in the
+backlog at Gate 1, the plan's content at Gate 4, the whole working tree at Gates
+6 and 7. Change the plan, or touch a line of
 code, and every approval of the old one becomes stale and the gate says so.
 
 The loop's own directory is left out of that tree hash. Recording a review
