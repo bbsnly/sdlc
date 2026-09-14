@@ -489,6 +489,25 @@ func TestDoctorSkipsWhatItCannotCheckYet(t *testing.T) {
 	}
 }
 
+// The hook's warnings about unreadable loop state all say "run sdlc doctor".
+// Doctor did not read either file, so it answered that all was well.
+func TestDoctorNamesLoopStateTheHookCannotRead(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	state := filepath.Join(root, ".sdlc", "state")
+	if err := os.MkdirAll(state, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "tests.lock"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := run(t, "doctor")
+	if out := r.stdout + r.stderr; !strings.Contains(out, "loop state") || !strings.Contains(out, "tests.lock") {
+		t.Errorf("doctor did not name the unreadable freeze:\n%s", out)
+	}
+}
+
 func TestDoctorExitsNonZeroWhenSomethingIsWrong(t *testing.T) {
 	project(t)
 	mustRun(t, "init")

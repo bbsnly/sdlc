@@ -139,17 +139,36 @@ func runChecks() []check {
 
 	project := &config.Project{Root: root, Config: cfg}
 	add(backlogCheck(store.New(project), cfg.BacklogPath(root), root))
+	add(stateCheck(store.New(project)))
 	add(contractCheck(root))
 	out = append(out, commandChecks(cfg)...)
 	add(binaryCheck())
 	return out
 }
 
+// stateCheck reads the two files the hook reads on every tool call. When either
+// is there and cannot be read, the hook fails open, says so, and sends you
+// here -- so this has to be the check that knows which one it is.
+func stateCheck(s *store.Store) check {
+	if _, err := s.Active(); err != nil {
+		return check{Name: "loop state", State: stateProblem, Detail: err.Error(),
+			Fix: "nothing is enforced until .sdlc/state/active reads: fix its " +
+				`permissions, or remove it and run "sdlc start" again`}
+	}
+	if _, err := s.Lock(); err != nil {
+		return check{Name: "loop state", State: stateProblem, Detail: err.Error(),
+			Fix: "every test is treated as frozen until .sdlc/state/tests.lock reads: " +
+				`restore it if you keep a copy, or remove it and run "sdlc freeze", ` +
+				"which freezes the tests as they are now"}
+	}
+	return check{Name: "loop state", State: stateOK, Detail: "the iteration and the test freeze both read"}
+}
+
 // checkOrder is every check doctor makes, in the order it makes them. It is
 // also what skipRest walks, so the report has the same shape whether or not it
 // got all the way through.
 var checkOrder = []string{
-	"git repository", "git command", "configuration", "backlog",
+	"git repository", "git command", "configuration", "backlog", "loop state",
 	"project contract", "commands", "sdlc on PATH",
 }
 

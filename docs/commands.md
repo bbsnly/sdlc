@@ -292,8 +292,9 @@ $ sdlc doctor --json
 ```
 
 Looks at the git repository, the git command itself, the configuration, the
-backlog, the contract in `CLAUDE.md`, the programs your configured commands
-would run, and whether `sdlc` is on your `PATH`. Every problem comes with the
+backlog, the loop's state files the hook reads on every tool call, the contract
+in `CLAUDE.md`, the programs your configured commands would run, and whether
+`sdlc` is on your `PATH`. Every problem comes with the
 command that fixes it. Exits non-zero when something is wrong, so it works in a
 script.
 

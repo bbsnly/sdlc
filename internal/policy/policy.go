@@ -340,13 +340,13 @@ func storySplit(path string) (story, rest string) {
 	if !pathrules.Under(path, storiesDir) {
 		return "", ""
 	}
-	// Case folding cannot change a length, so the prefix Under just matched is
-	// exactly this long however it was spelled.
-	story, rest, found := strings.Cut(strings.TrimPrefix(path[len(storiesDir):], "/"), "/")
-	if !found || story == "" || rest == "" {
+	// By segment, not by byte offset: a spelling that folds to .sdlc/stories
+	// can be longer than it, and an offset into it lands mid-character.
+	parts := strings.SplitN(path, "/", 4) // .sdlc, stories, the story, the rest
+	if len(parts) < 4 || parts[2] == "" || parts[3] == "" {
 		return "", ""
 	}
-	return story, rest
+	return parts[2], parts[3]
 }
 
 // fileAt is the name of the file this path names directly inside a story's own

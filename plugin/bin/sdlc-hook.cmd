@@ -17,7 +17,9 @@ if %ERRORLEVEL% equ 0 (
   exit /b 0
 )
 
-echo {"continue":true}
+rem systemMessage is what reaches the session: stderr from a hook that exits 0
+rem goes to the debug log only. See plugin/bin/sdlc-hook.
+echo {"continue":true,"systemMessage":"sdlc: the sdlc binary was not found, so nothing is being enforced. why: the plugin is installed, but the binary it drives is not on PATH and is not in the bin directory of the plugin. fix: run sdlc doctor in your terminal; if that also fails, reinstall with npx @bbsnly/sdlc install"}
 echo sdlc: the sdlc binary was not found, so nothing is being enforced.>&2
 echo.>&2
 echo   why  the plugin is installed but the binary it drives is not on PATH and>&2

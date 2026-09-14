@@ -48,6 +48,8 @@ type Decision struct {
 	StopReason string `json:"stopReason,omitempty"`
 	// SuppressOutput hides this hook's stdout from the transcript.
 	SuppressOutput bool `json:"suppressOutput,omitempty"`
+	// SystemMessage is how a hook that allowed the call still says something.
+	SystemMessage string `json:"systemMessage,omitempty"`
 }
 
 // Allow is the decision for the overwhelmingly common case.
@@ -66,6 +68,7 @@ type preToolUseOutput struct {
 
 type preToolUseReply struct {
 	HookSpecificOutput preToolUseOutput `json:"hookSpecificOutput"`
+	SystemMessage      string           `json:"systemMessage,omitempty"`
 }
 
 // payload is the part of the hook event this needs.
@@ -94,30 +97,46 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	// Failing open is the right answer and being quiet about it is not. A hook
 	// that has decided to enforce nothing looks exactly like a hook with
 	// nothing to enforce, and the session then reports a freeze that is not
-	// there. Claude Code shows a hook's stderr, which is where this goes.
-	said := map[string]bool{}
+	// there.
+	//
+	// The warning goes out as systemMessage. Stderr from a hook that exits 0
+	// goes to Claude Code's debug log and nowhere else, so a warning written
+	// only there is one nobody reads. It still goes to stderr as well, which
+	// is where the debug log picks it up.
+	var warnings []string
 	warn := func(msg string) {
-		if said[msg] {
-			return
+		for _, w := range warnings {
+			if w == msg {
+				return
+			}
 		}
-		said[msg] = true
+		warnings = append(warnings, msg)
 		fmt.Fprintln(stderr, "sdlc: "+msg)
 	}
 
 	verdict, event, ok := decide(args[0], raw, getenv, warn)
 	// Why a hook did nothing is the hardest thing to find out from the outside,
 	// so every decision is available at debug level. SDLC_DEBUG_FILE is the way
-	// to see it: a hook's stderr is often invisible.
+	// to see it: stderr from a hook that allowed the call is not shown.
 	slog.Debug("hook decision",
 		"event", event, "considered", ok, "allowed", verdict.Allowed, "rule", verdict.Rule)
-	if !ok || verdict.Allowed {
-		return emit(stdout, Allow())
+	message := ""
+	if len(warnings) > 0 {
+		message = "sdlc: " + strings.Join(warnings, " ")
 	}
-	return emit(stdout, preToolUseReply{HookSpecificOutput: preToolUseOutput{
-		HookEventName:            event,
-		PermissionDecision:       "deny",
-		PermissionDecisionReason: verdict.Message(),
-	}})
+	if !ok || verdict.Allowed {
+		d := Allow()
+		d.SystemMessage = message
+		return emit(stdout, d)
+	}
+	return emit(stdout, preToolUseReply{
+		SystemMessage: message,
+		HookSpecificOutput: preToolUseOutput{
+			HookEventName:            event,
+			PermissionDecision:       "deny",
+			PermissionDecisionReason: verdict.Message(),
+		},
+	})
 }
 
 // decide works out whether this event should be refused. ok is false whenever
@@ -267,7 +286,17 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 	t := policy.Tests{IsTest: m.Match(rel), AllowNew: cfg.Freeze.AllowNewTestFiles}
 
 	lock, err := store.New(&config.Project{Root: project, Config: cfg}).Lock()
-	if err != nil || lock == nil || lock.Story != story {
+	if err != nil {
+		// A freeze that is there and cannot be read is not an absent freeze.
+		// Reading it as absent made corrupting tests.lock the way to edit a
+		// frozen test, with nothing said. Until it reads again, every test
+		// is frozen.
+		warn(".sdlc/state/tests.lock could not be read, so every test file is " +
+			"being treated as frozen until it can be. Run `sdlc doctor` to see why.")
+		t.Frozen, t.Locked = true, t.IsTest
+		return t
+	}
+	if lock == nil || lock.Story != story {
 		return t
 	}
 	t.Frozen, t.Locked = true, lock.Holds(rel)

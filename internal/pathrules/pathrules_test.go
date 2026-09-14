@@ -135,6 +135,13 @@ func TestUnderIsDirectoryAware(t *testing.T) {
 		{".sdlc-other", ".sdlc", false},
 		{"internal/x.go", "internal/store", false},
 		{"anything", "", true},
+		// Letters that fold to ASCII at a different byte length. Each of
+		// these is the protected path on APFS, and each was let through.
+		{".ſdlc/state/active", ".sdlc", true},
+		{".sdlc/ſtate/active", ".sdlc/state", true},
+		{".sdlc/stories/A-1/reviewſ/x.md", ".sdlc/stories/A-1/reviews", true},
+		{"internal/Keys/x", "internal/keys", true},
+		{".ſdlcfoo/x", ".sdlc", false},
 	} {
 		if got := Under(tc.rel, tc.dir); got != tc.want {
 			t.Errorf("Under(%q, %q) = %v, want %v", tc.rel, tc.dir, got, tc.want)

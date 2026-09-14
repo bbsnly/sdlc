@@ -41,8 +41,8 @@ and one command in your project.
 | From source | `git clone https://github.com/bbsnly/sdlc && cd sdlc && ./task build` |
 
 The first three download the same native binary and check it against the
-release's checksums before it goes anywhere near your `PATH`; the last two
-compile it on your machine. How to verify a download yourself is in
+release's checksums before it goes anywhere near your `PATH`; `go install` and
+the source build compile it on your machine. How to verify a download yourself is in
 [Installation](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md).
 
 Or skip this step entirely: install the plugin, run `/sdlc:next`, and it offers
@@ -170,9 +170,10 @@ does not defend against one that is trying to escape.
 ## Who does the work
 
 Each gate is run by an agent that starts from a fresh context and can only write
-what its gate produces. None of them sees the others' reasoning, which is the
-whole point: a reviewer that inherited the argument for a change is not a
-reviewer.
+what its gate produces through the file-writing tools; the shell is held to
+narrower rules that guard loop state, the freeze and the commit. None of them
+sees the others' reasoning, which is the whole point: a reviewer that inherited
+the argument for a change is not a reviewer.
 
 | Agent | Gate | Can it block? |
 | --- | --- | --- |

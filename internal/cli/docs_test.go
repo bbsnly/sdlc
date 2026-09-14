@@ -51,16 +51,28 @@ func TestEveryPageAgreesOnTheClaudeCodeVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	version := regexp.MustCompile(`Claude Code[^\n|]*?(\d+\.\d+\.\d+)`)
-	for name, body := range map[string]string{
-		"README.md":               string(readme),
-		"docs/installation.md":    page(t, "installation.md"),
-		"docs/getting-started.md": page(t, "getting-started.md"),
+	// \W*? rather than anything that stops at `|`: the installation page
+	// states it in a table row, and the first version of this test could not
+	// see across the cell border -- so it checked one of the two pages.
+	version := regexp.MustCompile(`Claude Code\W*?(\d+\.\d+\.\d+)`)
+	for _, pg := range []struct {
+		name, body string
+		// Required pages must state the version. A page that says nothing
+		// cannot disagree, which is exactly how "any recent version" passed.
+		required bool
+	}{
+		{"README.md", string(readme), true},
+		{"docs/installation.md", page(t, "installation.md"), true},
+		{"docs/getting-started.md", page(t, "getting-started.md"), false},
 	} {
-		for _, m := range version.FindAllStringSubmatch(body, -1) {
+		found := version.FindAllStringSubmatch(pg.body, -1)
+		if pg.required && len(found) == 0 {
+			t.Errorf("%s states no Claude Code version; it should say %s or newer", pg.name, pin)
+		}
+		for _, m := range found {
 			if m[1] != pin {
 				t.Errorf("%s says Claude Code %s and .claude-code-version says %s",
-					name, m[1], pin)
+					pg.name, m[1], pin)
 			}
 		}
 	}

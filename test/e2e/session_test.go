@@ -170,6 +170,11 @@ func (s *session) workGate(gate model.Gate, story string) {
 		s.stores("verifier", "verification", "# Verification\n\nEvery command green.\n")
 	case model.GateCommit:
 		git(s.t, s.root, "add", "-A")
+		// Past the hook like every other command here. The commit is the one
+		// the hook refuses until the gates in front of it have passed, so a
+		// harness that ran it directly never checked the hook lets it through
+		// at the moment it should.
+		s.do("", "Bash", map[string]any{"command": "git commit -m " + story})
 		git(s.t, s.root, "-c", "user.email=t@example.com", "-c", "user.name=Test",
 			"commit", "--quiet", "-m", story)
 	case model.GateRetro:

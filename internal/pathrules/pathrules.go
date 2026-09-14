@@ -90,8 +90,23 @@ func Under(rel, dir string) bool {
 	// -- a lowercase `claude.md` beside `CLAUDE.md`. That is the right way for
 	// this to be wrong: a refusal that names its rule and can be argued with,
 	// rather than a protection that silently is not there.
-	return strings.EqualFold(rel, dir) ||
-		len(rel) > len(dir) && rel[len(dir)] == '/' && strings.EqualFold(rel[:len(dir)], dir)
+	//
+	// Segment by segment, never by byte offset. A letter can fold to an ASCII
+	// one while taking a different number of bytes -- `ſ` (long s) is two
+	// bytes and folds to `s`, the Kelvin sign is three and folds to `k` -- so
+	// cutting rel at len(dir) landed mid-character and `.ſdlc/state/active`
+	// matched nothing. APFS folds it, and the write reached the real file.
+	relParts := strings.Split(rel, "/")
+	dirParts := strings.Split(dir, "/")
+	if len(relParts) < len(dirParts) {
+		return false
+	}
+	for i, d := range dirParts {
+		if !strings.EqualFold(relParts[i], d) {
+			return false
+		}
+	}
+	return true
 }
 
 // UnderAny reports whether rel is under any of dirs.

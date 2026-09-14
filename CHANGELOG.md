@@ -75,11 +75,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   recording a gate as failed afterwards puts the story back to `in_progress`
   — which is the only way back into finished work, and says on the record why
   it came back.
-- Every agent can write only what its gate produces, reviewers included. The
-  eight reviewing roles had no write scope at all, so an architect could edit
-  production code in the middle of a design review and a code reviewer could
-  fix what it was about to approve. Each keeps its own story directory, and
-  the verdict still goes through `sdlc review add`.
+- The retro agent writes the retro and the codebase map, and nothing else. It
+  has file-writing tools and had no write scope, so it could edit production
+  code while writing up what the story did. The seven reviewing roles are held
+  to their story directory as well, as a backstop: they are given no
+  file-writing tools, and a shell command is outside these rules, which
+  docs/enforcement.md now says instead of leaving it implied.
 - A story's record, reviews and documents go through the tool for every story
   in the backlog, not only the one being worked on. While a story was open,
   any agent — the implementer included — could rewrite a finished story's gate
@@ -122,6 +123,19 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   Agent Skill, for any agent that reads them. It carries no binary, no agents
   and no hook, so the skill checks for the tool and for the agents before it
   does anything and says what to install if either is missing.
+- A protected path spelled with a letter that folds to ASCII at a different
+  length is still the protected path. `.ſdlc/state/active` (a long s) is
+  `.sdlc/state/active` to a case-insensitive filesystem, and the rules compared
+  it by byte offset, landed mid-character, and let the write through.
+- The hook's warnings reach the session. They went to standard error, which
+  Claude Code sends to its debug log when a hook allows the call, so "nothing
+  is being enforced" was said to nobody. They now arrive as a system message,
+  and so does the launcher's "the sdlc binary was not found".
+- A test freeze that cannot be read no longer counts as no freeze. Corrupting
+  `.sdlc/state/tests.lock` made every frozen test editable, quietly; until it
+  reads again, every test file is treated as frozen.
+- `sdlc doctor` checks the loop's state files. Every hook warning about them
+  said to run it, and it did not read either one.
 
 ### Installing
 

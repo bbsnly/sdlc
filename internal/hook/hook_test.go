@@ -60,7 +60,8 @@ func event(root, tool, agent, path string) string {
 }
 
 type reply struct {
-	Continue           bool `json:"continue"`
+	Continue           bool   `json:"continue"`
+	SystemMessage      string `json:"systemMessage"`
 	HookSpecificOutput struct {
 		HookEventName            string `json:"hookEventName"`
 		PermissionDecision       string `json:"permissionDecision"`
@@ -405,43 +406,76 @@ func TestABrokenConfigurationStillProtectsWhatItCan(t *testing.T) {
 
 // Failing open is deliberate. Failing open in silence is not: a hook that has
 // decided to enforce nothing is indistinguishable from a hook with nothing to
-// enforce, and the session goes on describing a freeze that is not there.
+// enforce. The warning has to be in systemMessage, because stderr from a hook
+// that exits 0 goes to Claude Code's debug log and is read by nobody.
 func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
+	corrupt := func(rel string) func(*testing.T, string) {
+		return func(t *testing.T, root string) { write(t, root, rel, "{not json") }
+	}
 	for _, tc := range []struct {
-		name, file, body, says string
-		// The two failures are on different paths: a file write consults the
-		// configuration to know what a test is, a shell command consults the
-		// freeze itself.
+		name  string
+		spoil func(*testing.T, string)
+		// A file write consults the configuration and the freeze; a shell
+		// command consults the freeze alone. Each failure is reached on the
+		// path that reads it.
 		shell bool
+		says  string
 	}{
 		{
-			name: "a configuration that will not parse",
-			file: ".sdlc/config.json", body: "{not json",
-			says: "the test freeze is not being enforced",
+			name:  "a configuration that will not parse",
+			spoil: corrupt(".sdlc/config.json"),
+			says:  "the test freeze is not being enforced",
 		},
 		{
-			name: "a freeze that will not parse",
-			file: ".sdlc/state/tests.lock", body: "{not json",
-			says:  "the freeze is not being enforced against shell commands",
+			name:  "a freeze that will not parse, on a file write",
+			spoil: corrupt(".sdlc/state/tests.lock"),
+			says:  "every test file is being treated as frozen",
+		},
+		{
+			name:  "a freeze that will not parse, on a shell command",
+			spoil: corrupt(".sdlc/state/tests.lock"),
 			shell: true,
+			says:  "the freeze is not being enforced against shell commands",
+		},
+		{
+			name: "an iteration file that cannot be read",
+			spoil: func(t *testing.T, root string) {
+				active := filepath.Join(root, ".sdlc", "state", "active")
+				if err := os.Remove(active); err != nil {
+					t.Fatal(err)
+				}
+				// A directory where the file should be: there, and unreadable
+				// as a file, on every platform.
+				if err := os.MkdirAll(active, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			},
+			says: "nothing is being enforced",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := loopProject(t)
-			write(t, root, tc.file, tc.body)
-
-			var out, errs bytes.Buffer
-			stdin := event(root, "Write", "sdlc:implementer", "invoice_test.go")
+			tc.spoil(t, root)
+			stdin := event(root, "Write", "sdlc:implementer", "invoice.go")
 			if tc.shell {
 				stdin = command(root, "sdlc:implementer", "echo hello")
 			}
-			if code := Run([]string{"PreToolUse"}, strings.NewReader(stdin), &out, &errs, noEnv); code != 0 {
-				t.Fatalf("exit %d", code)
-			}
-			if !strings.Contains(errs.String(), tc.says) {
-				t.Errorf("nothing on stderr said enforcement was off:\n%s", errs.String())
+			if got := call(t, stdin, noEnv).SystemMessage; !strings.Contains(got, tc.says) {
+				t.Errorf("systemMessage does not say enforcement is off: %q", got)
 			}
 		})
+	}
+}
+
+// A freeze that cannot be read is not an absent freeze. Reading it as absent
+// made corrupting tests.lock the way to edit a frozen test, silently.
+func TestAnUnreadableFreezeStillProtectsTheTests(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, "invoice_test.go", "package x\n")
+	write(t, root, ".sdlc/state/tests.lock", "{not json")
+
+	if !denied(call(t, event(root, "Write", "sdlc:sdet", "invoice_test.go"), noEnv)) {
+		t.Error("a test file became editable because the freeze could not be read")
 	}
 }
 
@@ -449,14 +483,13 @@ func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
 // a hook that cried wolf on every tool call would be turned off by lunchtime.
 func TestTheHookIsQuietWhenNothingIsWrong(t *testing.T) {
 	root := loopProject(t)
-
-	var out, errs bytes.Buffer
-	stdin := command(root, "sdlc:implementer", "echo hello")
-	if code := Run([]string{"PreToolUse"}, strings.NewReader(stdin), &out, &errs, noEnv); code != 0 {
-		t.Fatalf("exit %d", code)
-	}
-	if errs.Len() != 0 {
-		t.Errorf("a project with no freeze yet produced a warning:\n%s", errs.String())
+	for name, stdin := range map[string]string{
+		"a file write":    event(root, "Write", "sdlc:implementer", "invoice.go"),
+		"a shell command": command(root, "sdlc:implementer", "echo hello"),
+	} {
+		if got := call(t, stdin, noEnv).SystemMessage; got != "" {
+			t.Errorf("%s in a project with no freeze yet produced a warning: %q", name, got)
+		}
 	}
 }
 

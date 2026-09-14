@@ -287,27 +287,40 @@ is a reading of the gate record, not a door that locks behind you.
 
 ## Warnings the hook prints
 
-These are not error codes. They come from the hook, on standard error, and the
-tool call goes through: the hook fails open, always, because a bug in it must
-not be able to stop your session. What it will not do is fail open quietly.
+These are not error codes. They arrive in the session as a system message, and
+the tool call goes through: the hook fails open, always, because a bug in it
+must not be able to stop your session. What it will not do is fail open
+quietly.
 
-Each one means a rule you are relying on is not running right now.
+Each one means a rule you are relying on is not running as it should.
+
+### `the sdlc binary was not found, so nothing is being enforced`
+
+The plugin is installed and the binary it hands every tool call to is not on
+`PATH` or in the plugin's own `bin` directory. Nothing is refused until it is.
+Install the binary, or run `/sdlc:next`, which offers to.
 
 ### `.sdlc/state/active could not be read, so nothing is being enforced`
 
 The file naming the story under way is there but unreadable — a permission, a
 half-written file, a merge conflict left in place. Every rule is off until it
-can be read. `sdlc doctor` says which.
+reads. `sdlc doctor` names it under "loop state".
 
 ### `.sdlc/config.json could not be read, so the test freeze is not being enforced`
 
 The configuration will not parse, so the loop cannot tell which files are
 tests. Protected paths and write scopes still hold; the freeze does not.
+`sdlc doctor` names it under "configuration".
+
+### `.sdlc/state/tests.lock could not be read, so every test file is being treated as frozen`
+
+The freeze itself will not parse. Until it does, a file write to anything that
+looks like a test is refused, frozen or not: a freeze that cannot be read is
+not treated as no freeze. `sdlc doctor` names it under "loop state".
 
 ### `.sdlc/state/tests.lock ... so the freeze is not being enforced against shell commands`
 
-The freeze itself will not parse. A `Write` to a frozen test is still refused
-by content, but a shell command that redirects into one is not.
-
-In all three, the fix is the same: run `sdlc doctor`, which reads the same
-files and names the one that is wrong.
+The same broken freeze, seen from a shell command. A shell command is checked
+against the list of frozen files, and there is no list to check against, so a
+redirect into a test is not refused until the freeze reads again. `sdlc doctor`
+names it under "loop state".

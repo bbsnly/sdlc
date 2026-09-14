@@ -109,16 +109,24 @@ func TestEveryRuleNamesASanctionedRoute(t *testing.T) {
 // not evidence. While A-1 was the active story, every one of these was allowed
 // -- to the implementer, the one role that must never touch loop state at all.
 func TestAFinishedStorysLoopStateIsNotWritable(t *testing.T) {
-	for _, path := range []string{
-		".sdlc/stories/OLD-9/gate-record.json",
-		".sdlc/stories/OLD-9/ANALYSIS.md",
-		".sdlc/stories/OLD-9/PLAN.md",
-		".sdlc/stories/OLD-9/RETRO.md",
-		".sdlc/stories/OLD-9/reviews/code_review-code-reviewer-1.md",
+	for path, rule := range map[string]string{
+		".sdlc/stories/OLD-9/gate-record.json":                       "gate-record-is-written-by-the-tool",
+		".sdlc/stories/OLD-9/ANALYSIS.md":                            "gate-artifact-is-written-by-the-tool",
+		".sdlc/stories/OLD-9/PLAN.md":                                "gate-artifact-is-written-by-the-tool",
+		".sdlc/stories/OLD-9/RETRO.md":                               "gate-artifact-is-written-by-the-tool",
+		".sdlc/stories/OLD-9/reviews/code_review-code-reviewer-1.md": "review-is-written-by-the-tool",
+		// Spelled the way APFS folds them. Every one of these was allowed.
+		".ſdlc/stories/OLD-9/gate-record.json": "gate-record-is-written-by-the-tool",
+		".sdlc/ſtories/OLD-9/gate-record.json": "gate-record-is-written-by-the-tool",
+		".sdlc/stories/A-1/reviewſ/x.md":       "review-is-written-by-the-tool",
+		".ſdlc/state/active":                   "write-protected-path",
 	} {
 		v := Evaluate(Request{Tool: "Write", Agent: "sdlc:implementer", Path: path, Story: "A-1"})
-		if v.Allowed {
-			t.Errorf("%s is another story's loop state and nothing refused the write", path)
+		// The rule, not just the refusal: a write refused for the wrong reason
+		// passes a test that only asks whether it was refused, and the right
+		// rule is the one that says what to do instead.
+		if v.Rule != rule {
+			t.Errorf("%s: refused by %q, want %q", path, v.Rule, rule)
 		}
 	}
 }

@@ -124,9 +124,15 @@ Refuses the analysis agent writing outside its own story directory and
 
 ### `reviewer-reviews`
 
-Refuses any of the eight reviewing agents — architect, security, red-team, perf,
-human-advocate, verifier, code-reviewer, bookkeeper — writing outside the story's
-own directory.
+Refuses any of the seven reviewing agents — architect, security, red-team, perf,
+human-advocate, verifier and code-reviewer — writing outside the story's own
+directory. The retro agent has a rule of its own, below.
+
+None of the seven is given a file-writing tool, so this is a backstop, not the
+thing keeping them out: it is what still holds if an agent's tool list grows.
+Like every rule on this page, it governs the file-writing tools. A reviewer's
+shell commands meet the shell rules instead, which protect loop state, the
+freeze and the commit, and not your source.
 
 A reviewer that changes the work is reviewing its own, and the independence that
 made the review worth having is gone. The story directory stays open so a
@@ -241,7 +247,8 @@ open an issue and say which one.
 
 ## Seeing what happened
 
-A hook's stderr is usually invisible, which makes "why did nothing happen" the
+A hook that allows a call says nothing unless something is wrong, and its stderr
+goes to Claude Code's debug log, which makes "why did nothing happen" the
 hardest question to answer from outside. Both of these together turn the hook's
 decisions into a log you can read:
 

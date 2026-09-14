@@ -36,8 +36,9 @@ an install line.
 
 ## A note on the Claude Code version
 
-`.claude-code-version` is the version this is developed and tested against, and
-it is the one number: the README and the installation page are checked against
+`.claude-code-version` is the version this is developed against. Nothing in CI
+installs Claude Code, so it is what we build for rather than a pin a job
+enforces. It is also the one number: the README and the installation page are checked against
 it, so a bump lands everywhere or it fails.
 
 Claude Code updates itself, so your local copy will run ahead of it. That is

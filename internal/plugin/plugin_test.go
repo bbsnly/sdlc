@@ -252,8 +252,14 @@ func TestTheLauncherRefusalCarriesTheSameThreeFields(t *testing.T) {
 				t.Errorf("%s: the not-found message is missing %q", name, want)
 			}
 		}
-		if !strings.Contains(text, `{"continue":true}`) {
+		if !strings.Contains(text, `{"continue":true,`) {
 			t.Errorf("%s: a missing binary must not block the tool call", name)
+		}
+		// Stderr from a hook that exits 0 goes to the debug log only. Without
+		// systemMessage the one message a half-installed user most needs is
+		// written somewhere nobody reads.
+		if !strings.Contains(text, `"systemMessage":"sdlc: the sdlc binary was not found`) {
+			t.Errorf("%s: the not-found message is not in systemMessage, so nobody sees it", name)
 		}
 	}
 }
