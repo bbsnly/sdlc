@@ -634,6 +634,30 @@ func TestAFrozenTestIsRefusedThroughTheHook(t *testing.T) {
 	}
 }
 
+// The lookups the rules are built from, asked directly. Through the hook the
+// sdet may edit tests anyway, so a freeze applied to the wrong story, or a held
+// test taken for a new one by its case, passed every test there.
+func TestTheFreezeIsReadForItsOwnStoryAndByFoldedName(t *testing.T) {
+	root := loopProject(t)
+	noWarning := func(string) {}
+	freeze(t, root, "OTHER-1", "internal/invoice_test.go", "package internal\n")
+	if frozen, isTest, newTest := frozenTests(root, "A-1", noWarning); frozen != nil || isTest != nil || newTest != nil {
+		t.Errorf("another story's freeze was applied to A-1: frozen %v", frozen)
+	}
+
+	freeze(t, root, "A-1", "Internal/Invoice_test.go", "package internal\n")
+	_, _, newTest := frozenTests(root, "A-1", noWarning)
+	if newTest == nil {
+		t.Fatal("no new-test rule for a project that does not allow new test files")
+	}
+	if !newTest("internal/refund_test.go") {
+		t.Error("a test file the freeze does not hold was not new")
+	}
+	if newTest("internal/invoice_test.go") {
+		t.Error("a test the freeze holds, named in another case, was taken for a new one")
+	}
+}
+
 // A freeze belongs to one story. Left over from another, it must not lock this
 // one's tests -- and must not be quietly ignored either, which is why the CLI
 // refuses to pass the gate on it.
