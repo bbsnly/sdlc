@@ -182,6 +182,8 @@ func TestACommitInAnotherRepositoryIsNotTheStorys(t *testing.T) {
 	refused(t, "$env:git_dir='/work/project/.git'; git commit -am x", psElsewhere, "commit-gate")
 	refused(t, "$env:GIT_DIR = '/work/project/.git'; git commit -am x", psElsewhere, "commit-gate")
 	refused(t, "Set-Item env:GIT_DIR /work/project/.git; git commit -am x", psElsewhere, "commit-gate")
+	refused(t, `Set-Item -Path Env:\GIT_DIR -Value /work/project/.git; git commit -am x`, psElsewhere, "commit-gate")
+	refused(t, "[Environment]::SetEnvironmentVariable('GIT_DIR', '/work/project/.git'); git commit -am x", psElsewhere, "commit-gate")
 	allowed(t, `git commit -m "unset GIT_DIR in the hook"`, elsewhere)
 	allowed(t, "grep -rn GIT_DIR . ; git commit --allow-empty -m init", elsewhere)
 	allowed(t, "MY_GIT_DIR=/work/project/.git true; git commit -m x", elsewhere)
@@ -484,6 +486,7 @@ func TestAFrozenTestCannotBeWrittenAnyOtherWay(t *testing.T) {
 		"perl -pi.bak -e 's/a/b/' internal/x_test.go",
 		"python3 - <<'EOF'\nopen('internal/x_test.go','w').write('')\nEOF",
 		"python3 <<'EOF'\nopen('internal/x_test.go','w').write('')\nEOF",
+		"py <<'EOF'\nopen('internal/x_test.go','w').write('')\nEOF",
 		`python3 -c "import os; os.remove('internal/x_test.go')"`,
 		"git checkout -- internal/x_test.go",
 		"git -C . checkout -- internal/x_test.go",
@@ -577,6 +580,7 @@ func TestTheRecordIsNotHandedToAProgramThatCanWrite(t *testing.T) {
 		"awk '{print > FILENAME}' .sdlc/stories/A-1/gate-record.json":         "loop-state-through-the-tool",
 		"python3 -m json.tool /tmp/g.json .sdlc/stories/A-1/gate-record.json": "loop-state-through-the-tool",
 		"python3 /tmp/fix.py .sdlc/state/active":                              "loop-state-through-the-tool",
+		"py /tmp/fix.py .sdlc/state/active":                                   "loop-state-through-the-tool",
 		"node /tmp/w.js .claude/settings.json":                                "protected-path-through-the-tool",
 		"ruby /tmp/w.rb .sdlc/config.json":                                    "loop-state-through-the-tool",
 		"gawk -f /tmp/w.awk CLAUDE.md":                                        "protected-path-through-the-tool",

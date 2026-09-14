@@ -252,6 +252,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `sdlc approve` or the shell a document is handed to went unread, and sdlc is
   now found behind a wrapper the rules do not know. PowerShell's `<# ... #>`
   comment no longer hides the command after it.
+- Two ways past the shell rules on Windows: Python's `py` launcher ran a script
+  on loop state as no other interpreter could, and PowerShell set `GIT_DIR` for a
+  commit made elsewhere as `Env:\GIT_DIR` or through
+  `[Environment]::SetEnvironmentVariable('GIT_DIR', ...)`. Both are now read.
 - On macOS and Windows, the project's path spelled in another case was read as
   somewhere else: `rm /OPT/PROJECT/.sdlc/state/active`, or `cd` to it and
   `git commit`, went past the rules on loop state and the commit gate. So did a

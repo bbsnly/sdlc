@@ -142,7 +142,7 @@ var mutating = map[string]bool{
 
 // interpreters run a program that can write any file it is given.
 var interpreters = map[string]bool{
-	"python": true, "python3": true, "ruby": true, "node": true, "deno": true, "bun": true, "php": true,
+	"python": true, "python3": true, "py": true, "ruby": true, "node": true, "deno": true, "bun": true, "php": true,
 }
 
 // Inspect reports the first rule that refuses this command.
@@ -304,9 +304,11 @@ var tooDeep = Finding{
 
 // setsGitDir matches an assignment to GIT_DIR: `GIT_DIR=`, `export GIT_DIR=`,
 // or PowerShell's environment drive, as in `$env:GIT_DIR = ` and `Set-Item
-// env:GIT_DIR`. A mention is not one: a commit message that said "unset
-// GIT_DIR" was a commit in the project wherever it was made.
-var setsGitDir = regexp.MustCompile(`(?i)\bgit_dir=|env:git_dir\b`)
+// env:GIT_DIR`, `Env:\GIT_DIR`, and the name quoted to .NET, as in
+// `[Environment]::SetEnvironmentVariable('GIT_DIR', ...)`. A mention is not
+// one: a commit message that said "unset GIT_DIR" was a commit in the project
+// wherever it was made.
+var setsGitDir = regexp.MustCompile(`(?i)\bgit_dir=|env:[\\/]?git_dir\b|['"]git_dir['"]`)
 
 // HumanDecisions reports a command that makes one of the decisions the loop
 // keeps for a person: approving work handed over, or lifting the freeze. These
@@ -802,7 +804,7 @@ func runsInlineCode(words []string, segment string) bool {
 	var code string // the short options whose argument is a program
 	name := base(words[0])
 	switch name {
-	case "python", "python3":
+	case "python", "python3", "py":
 		code = "c"
 	case "perl", "ruby", "node", "bun":
 		code = "eEp"
