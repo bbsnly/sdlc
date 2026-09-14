@@ -31,6 +31,9 @@ func TestAGlobNamesTheFilesItMatches(t *testing.T) {
 		"rm -rf .sdlc/stories/A-1/revie?s",
 		"rm /home/dev/repo/.sdl[c]/config.json",
 		"cd .sdlc && rm stat?/active",
+		"cd .sdl? && rm state/active",
+		"cd .s* && echo x > config.json",
+		"cd .sdlc/stories/A-? && rm PLAN.md",
 	} {
 		refused(t, command, s, "loop-state-through-the-tool")
 	}
@@ -59,9 +62,25 @@ func TestAGlobNamesTheFilesItMatches(t *testing.T) {
 		"rm -rf node_modules/{a,b}",
 		"find . -name '*.pyc' -exec rm {} +",
 		"rm -rf ${TMPDIR}/build",
+		"cd bui?d && rm -rf *",
 	} {
 		allowed(t, command, s)
 	}
+
+	// A glob can match the project as well as another repository.
+	gated := notReady
+	gated.Resolve = func(word string) string {
+		if rel, ok := strings.CutPrefix(word, "/work/project/"); ok {
+			return rel
+		}
+		if strings.HasPrefix(word, "/") {
+			return ""
+		}
+		return word
+	}
+	refused(t, "cd /work/proj* && git commit -m x", gated, "commit-gate")
+	refused(t, "cd /work/project && cd .gi? && cd .. && git commit -m x", gated, "commit-gate")
+	allowed(t, "cd /work/other && git commit -m x", gated)
 
 	frozen := ready
 	frozen.Frozen = []string{"internal/calc/add_test.go"}
@@ -74,9 +93,16 @@ func TestAGlobNamesTheFilesItMatches(t *testing.T) {
 		"echo x > internal/calc/add_test.{go,}",
 		"cd internal && rm calc/add_te[s]t.go",
 		"rm -f internal/calc/*",
+		// Still unknown, so still matched by name.
+		"cd internal/cal? && rm add_test.go",
+		"cd intern* && cd */ && rm add_test.go",
 	} {
 		refused(t, command, frozen, "frozen-test-through-the-tool")
 	}
+	// A fixture is not named like a test, and `*/testdata` is no shape a glob
+	// can be matched against: the directory is unknown, and the name is enough.
+	frozen.Frozen = append(frozen.Frozen, "internal/load/testdata/config.json")
+	refused(t, "cd */testdata && rm config.json", frozen, "frozen-test-through-the-tool")
 	allowed(t, "rm internal/calc/*.txt", frozen)
 }
 

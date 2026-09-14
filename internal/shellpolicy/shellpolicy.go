@@ -217,8 +217,11 @@ func Inspect(command string, s State) (Finding, bool) {
 		// A script handed to a shell runs in a process of its own, and its cd is
 		// movesInAScript's.
 		if next, ok := changedDir(dir, run.words); ok && !run.shell {
-			// A relative `cd` from somewhere unknown leads somewhere unknown.
-			dir, lost = next, next == "" || lost && !isAbsolute(next)
+			// A relative `cd` from somewhere unknown leads somewhere unknown. So
+			// does a glob, which names whichever directory it matches; it is kept
+			// as written, so that the paths under it are matched as globs too:
+			// dropped, `cd .sdl? && rm state/active` was a file at the root.
+			dir, lost = next, next == "" || strings.ContainsAny(next, "*?[") || lost && !isAbsolute(next)
 		}
 	}
 	return Finding{}, false
@@ -295,6 +298,11 @@ func checkPrograms(text string, s State) (Finding, bool) {
 			return f, true
 		}
 		if next, ok := changedDir(dir, words); ok {
+			// A glob can match this repository as well as any other:
+			// `cd /work/proj* && git commit`.
+			if strings.ContainsAny(next, "*?[") {
+				next = ""
+			}
 			dirs[r.group] = next
 		}
 	}
@@ -992,9 +1000,7 @@ func changedDir(dir string, words []string) (string, bool) {
 	}
 	to := clean(args[0])
 	switch {
-	case to == "" || to == "-" || strings.HasPrefix(to, "~") || strings.HasPrefix(to, "$"),
-		strings.ContainsAny(to, "*?["):
-		// A glob names whichever directory it matches.
+	case to == "" || to == "-" || strings.HasPrefix(to, "~") || strings.HasPrefix(to, "$"):
 		return "", true
 	case isAbsolute(to):
 		return to, true
