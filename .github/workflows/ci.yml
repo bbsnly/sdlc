@@ -156,13 +156,17 @@ jobs:
               # the one push that can put unchecked subjects on trunk. GitHub
               # still serves it by name, and from it the range is exactly what
               # the push rewrote.
-              if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null ||
-                git fetch --no-tags --quiet origin "${BEFORE}" 2>/dev/null; then
+              if [[ "${BEFORE}" =~ ^0+$ ]]; then
+                # A tag, which is how release.yml runs this, has no "before"
+                # at all; pushes run on main, which is never new.
+                echo "no earlier commit to compare against; checking only ${AFTER:0:7}"
+                range=(-1 "${AFTER}")
+              elif git cat-file -e "${BEFORE}^{commit}" 2>/dev/null ||
+                git fetch --no-tags --quiet origin "${BEFORE}"; then
                 range=("${BEFORE}..${AFTER}")
               else
-                # A new branch or tag has no "before" at all.
-                echo "::warning::no earlier commit to compare against; checking only ${AFTER:0:7}"
-                range=(-1 "${AFTER}")
+                echo "::error::could not fetch ${BEFORE:0:7}, the commit this push replaced, so what it rewrote was not checked; re-run the job" >&2
+                exit 1
               fi ;;
             *) echo "${EVENT} adds no commits; nothing to check"; exit 0 ;;
           esac
