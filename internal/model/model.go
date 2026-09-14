@@ -661,8 +661,12 @@ type Approval struct {
 
 // Record is everything known about one story's iteration.
 type Record struct {
-	Story       string              `json:"story"`
-	Created     string              `json:"created"`
+	Story   string `json:"story"`
+	Created string `json:"created"`
+	// Base is the commit HEAD was on when the iteration started. The story's
+	// work is committed at the commit gate, so a HEAD that moves before then is
+	// work that reached trunk past the gates.
+	Base        string              `json:"base,omitempty"`
 	Gates       map[Gate]GateResult `json:"gates"`
 	Events      []Event             `json:"events"`
 	Escalations []Escalation        `json:"escalations"`

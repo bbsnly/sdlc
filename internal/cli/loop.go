@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -119,6 +120,11 @@ func newStartCmd() *cobra.Command {
 			record, err := s.Record(id)
 			if err != nil {
 				return err
+			}
+			// Where trunk is now is where this iteration's work starts from.
+			// Outside a repository there is no trunk to hold it to.
+			if head, err := gitx.Head(cmd.Context(), s.Root()); err == nil {
+				record.Base = head
 			}
 			record.Append("loop_start", "iteration started", s.Now())
 			if err := s.SaveRecord(record); err != nil {
@@ -630,6 +636,11 @@ func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.
 	if err := requireReviews(ctx, s, id, gate, record); err != nil {
 		return err
 	}
+	if slices.Contains(model.GateCommit.Before(), gate) {
+		if err := requireUnmoved(ctx, s, record); err != nil {
+			return err
+		}
+	}
 	switch gate {
 	case model.GateDoR:
 		return requireCriteria(s, id)
@@ -686,6 +697,30 @@ func requireSize(ctx context.Context, s *store.Store) error {
 		"a change bigger than the project trusts one review to read is not made smaller "+
 			"by reviewing it anyway; lines are counted as git diff --numstat counts them "+
 			"against the last commit, tests included, .sdlc/ and the backlog not")
+}
+
+// requireUnmoved holds the gates before the commit to a trunk the story has not
+// moved. The hook refuses the ways to commit that it can read, and git has more:
+// an alias in the user's own configuration, a commit made in a clone and
+// fetched. Work committed that way was on trunk with no gate passed, and every
+// gate after it measured the change against a HEAD that already held it, so the
+// size cap counted none of it and the reviewers were shown a diff without it.
+func requireUnmoved(ctx context.Context, s *store.Store, record *model.Record) error {
+	if record.Base == "" {
+		return nil
+	}
+	head, err := gitx.Head(ctx, s.Root())
+	if err != nil {
+		return err
+	}
+	if head == record.Base {
+		return nil
+	}
+	return sdlcerr.New(sdlcerr.TrunkMoved,
+		fmt.Sprintf("HEAD has moved since the story started, from %s to %s",
+			record.Base[:min(len(record.Base), 12)], head[:min(len(head), 12)]),
+		"the story's work is committed at the commit gate, so a commit before it reached trunk "+
+			"with no gate passed, and the reviewers read the change against a HEAD that holds it")
 }
 
 // requireOrder keeps the loop a loop.

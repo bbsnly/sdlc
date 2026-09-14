@@ -688,3 +688,26 @@ func TestCommittingWhatWasReviewedStillPasses(t *testing.T) {
 		t.Fatalf("committing exactly what was reviewed was refused:\n%s%s", r.stdout, r.stderr)
 	}
 }
+
+// The hook refuses the commits it can read, and git has ways it cannot: an alias
+// in the user's own configuration, a commit fetched from a clone. Work committed
+// that way before the review was on trunk with no gate passed, and measured
+// against a HEAD that held it, the change was empty.
+func TestWorkCommittedBeforeTheReviewHoldsTheGatesBack(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	reach(t, root, model.GateImplementation)
+
+	writeFile(t, root, "internal/invoice.go", "package internal\n")
+	commitEverything(t, root)
+	r := run(t, "gate", "implementation", "pass", "--note", "committed early")
+	if r.code == 0 || !strings.Contains(r.stderr, "SDLC-E0046") {
+		t.Fatalf("work committed before the review passed the implementation gate: code %d\n%s", r.code, r.stderr)
+	}
+
+	// A person who meant the commit to stay picks the story up from there.
+	mustRun(t, "stop")
+	mustRun(t, "start")
+	mustRun(t, "gate", "implementation", "pass", "--note", "trunk moved by a person")
+}

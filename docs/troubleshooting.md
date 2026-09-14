@@ -504,6 +504,26 @@ one, so a single edit fixes them all:
 
 Change the settings and run `sdlc doctor`.
 
+### SDLC-E0046
+
+HEAD has moved since the story started.
+
+The story's work is committed at the commit gate, so a commit before it reached trunk with no
+gate passed. The gates between also measure the change against HEAD: work already committed is
+not in the diff the reviewers read, and not in the lines the size cap counts. The hook refuses
+the ways to commit it can read, and this catches the rest at the next gate before the commit.
+
+Record the gate as failed and hand the story to a person:
+
+```console
+$ sdlc gate implementation fail --note "HEAD moved: work was committed before the review"
+$ sdlc escalate trunk_moved --message "a commit reached trunk before the review: keep it or revert it?"
+```
+
+If the commits are meant to stay, such as a person's own fix or a pull from the remote, a person
+runs `sdlc stop` and `sdlc start` in their own terminal, and the story is picked up from where
+trunk is now. Otherwise they revert the commits first.
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session as a system message, and

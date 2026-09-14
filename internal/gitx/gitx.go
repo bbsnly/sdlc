@@ -111,6 +111,20 @@ func Clean(ctx context.Context, root string) (bool, error) {
 	return strings.TrimSpace(string(out)) == "", nil
 }
 
+// Head is the commit HEAD is on, or "" in a repository with no commits yet.
+func Head(ctx context.Context, root string) (string, error) {
+	out, err := git(ctx, root, nil, "rev-parse", "--verify", "--quiet", "HEAD")
+	if err != nil {
+		// A repository with no commits is still on a branch; a directory that
+		// is not a repository is on none.
+		if _, branchErr := Branch(ctx, root); branchErr == nil {
+			return "", nil
+		}
+		return "", err
+	}
+	return firstLine(string(out)), nil
+}
+
 // Changes lists every path with uncommitted changes, tracked or not, the way git
 // reports them: repository-relative and slash-separated, with a directory in
 // which nothing is tracked reported once, as the directory.

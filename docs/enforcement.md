@@ -351,7 +351,9 @@ refusal names the first one that has not. The git commands that make commits of
 their own are refused the same way: `merge`, `cherry-pick`, `revert`, `am`,
 `rebase` and `commit-tree`, apart from `--abort` or `--quit` on its own. So is an
 alias to one of them set with `git -c` or `git config`; an alias already in your
-git configuration is not read.
+git configuration is not read. A commit made in a way the hook cannot read is
+refused at the next gate instead, which will not pass once HEAD has moved since
+the story started ([`SDLC-E0046`](troubleshooting.md#sdlc-e0046)).
 
 Once they have, it also refuses a commit of work that has changed since the
 verifier and the code reviewers approved it. Their reviews are stamped with the
@@ -419,6 +421,7 @@ not actually happen:
 | a frozen test changed or vanished | `SDLC-E0025` |
 | a test file the freeze does not hold, at `tests_frozen`, `plan`, `implementation`, `verification` and `commit` | `SDLC-E0043` |
 | the commit gate, with work still uncommitted | `SDLC-E0032` |
+| any gate before the commit, once HEAD has moved since `sdlc start` | `SDLC-E0046` |
 
 A `fail` is always recordable. A gate can fail precisely because its work could
 not be done, and refusing to record that would leave the loop with nowhere to
