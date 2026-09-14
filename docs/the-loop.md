@@ -81,7 +81,8 @@ and says why each fails today.
 Then `sdlc freeze` records the sha256 of every test file. From this moment
 nobody edits them — not the implementer, not the agent that wrote them, not the
 conversation. `sdlc unfreeze --reason "..."` lifts it and puts the reason on the
-record.
+record — run by a person in their own terminal, because the hook refuses it from
+an agent.
 
 The freeze belongs to the iteration. It survives `sdlc stop` and a new session,
 so resuming a story finds its tests still locked; it is lifted when the story

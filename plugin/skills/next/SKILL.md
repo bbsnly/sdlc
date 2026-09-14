@@ -145,10 +145,11 @@ sdlc gate tests_frozen pass --note "<n> criteria, <n> failing tests"
 ```
 
 `sdlc freeze` records what every test file contains. From that point the tests cannot be edited
-by anyone, including you and including the agent that wrote them — the hook refuses it and points
-at `sdlc unfreeze`, which asks for a reason and puts it on the record. Lifting the freeze is
-sometimes right and is also exactly the shortcut that makes the rest of the loop meaningless, so
-never do it to make something pass.
+by anyone, including you and including the agent that wrote them. Lifting the freeze is sometimes
+right and is also exactly the shortcut that makes the rest of the loop meaningless, so it is not
+yours to do: the hook refuses `sdlc unfreeze` from you and from every agent. If a frozen test is
+wrong, stop, tell the person which test and which acceptance criterion it gets wrong, and ask them
+to run `sdlc unfreeze --reason "..."` in their own terminal. Carry on once they have.
 
 `sdlc status --json` reports the freeze and whether it is still intact.
 

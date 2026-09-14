@@ -151,6 +151,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   then lifted the first story's freeze and logged it on the second story's
   record. `unfreeze` now refuses another story's freeze, `freeze` names that
   story instead, and marking a story `dropped` releases its freeze.
+- Lifting the freeze is a person's decision in fact. The runbook asked agents
+  not to run `sdlc unfreeze`, and nothing stopped one that did. The hook now
+  refuses it from any tool call, however `sdlc` is reached, and every refusal
+  that used to suggest it says the person running the session lifts the
+  freeze from their own terminal.
 - `sdlc doctor` checks the loop's state files. Every hook warning about them
   said to run it, and it did not read either one.
 

@@ -75,7 +75,8 @@ func TestReadingAndOrdinaryWorkAreUntouched(t *testing.T) {
 		"echo done > /tmp/scratch.md",
 		"sdlc artifact write analysis < /tmp/analysis.md",
 		"sdlc gate analysis pass --note ok",
-		"sdlc unfreeze --reason \"AC-2 was wrong\"",
+		// Not `sdlc unfreeze`: that is a person's decision now, and refused
+		// from a tool call (TestUnfreezeIsAHumanDecision).
 		"echo hi > .sdlc/stories/A-1/notes.md",
 		"npm run build && npm test",
 		"rm -rf node_modules",
@@ -259,6 +260,31 @@ func TestAnUnreadableFreezeFreezesEveryTest(t *testing.T) {
 		if f, refused := Inspect(command, state); refused {
 			t.Errorf("refused %q: %s", command, f.Message())
 		}
+	}
+}
+
+// Lifting the freeze was an instruction in the runbook and nothing more, so an
+// agent failing a test could lift the freeze on it from its own shell.
+func TestUnfreezeIsAHumanDecision(t *testing.T) {
+	for _, command := range []string{
+		`sdlc unfreeze --reason "the test is wrong"`,
+		"/usr/local/bin/sdlc unfreeze --reason x",
+		`C:\Users\dev\AppData\Local\sdlc\bin\sdlc.exe unfreeze --reason x`,
+		"SDLC unfreeze --reason x",
+		"npx @bbsnly/sdlc unfreeze --reason x",
+		"go run ./cmd/sdlc unfreeze --reason x",
+		"sdlc --json unfreeze --reason x",
+		"go test ./... || sdlc unfreeze --reason x",
+	} {
+		refused(t, command, ready, "unfreeze-is-a-human-decision")
+	}
+	for _, command := range []string{
+		"sdlc freeze",
+		"sdlc status --json",
+		`sdlc gate tests_frozen pass --note "no need to unfreeze"`,
+		"echo unfreeze",
+	} {
+		allowed(t, command, ready)
 	}
 }
 

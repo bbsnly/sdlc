@@ -89,6 +89,9 @@ func Inspect(command string, s State) (Finding, bool) {
 		if f, ok := checkEnforcement(assigns); ok {
 			return f, true
 		}
+		if f, ok := checkUnfreeze(words); ok {
+			return f, true
+		}
 		if f, ok := checkCommit(words, s); ok {
 			return f, true
 		}
@@ -119,6 +122,46 @@ func checkEnforcement(assigns []string) (Finding, bool) {
 		}
 	}
 	return Finding{}, false
+}
+
+// checkUnfreeze keeps lifting the freeze a person's decision.
+//
+// The runbook asked agents not to, and nothing else stood in the way: an agent
+// with a shell could lift the freeze on the tests it was failing, which is the
+// shortcut the freeze exists to take away. A person runs it in their own
+// terminal, where this hook is not asked.
+func checkUnfreeze(words []string) (Finding, bool) {
+	if !runsSubcommand(words, "unfreeze") {
+		return Finding{}, false
+	}
+	return Finding{
+		Rule: "unfreeze-is-a-human-decision",
+		Reason: "lifting the test freeze is the move an agent would make to reach green, " +
+			"so it is not one an agent makes",
+		Route: "say which frozen test is wrong and which acceptance criterion it gets " +
+			"wrong, and stop there; the person running the session lifts the freeze with " +
+			"`sdlc unfreeze --reason \"...\"` in their own terminal",
+	}, true
+}
+
+// runsSubcommand reports whether the command runs sdlc with this subcommand,
+// however sdlc is reached: on PATH, by path, as sdlc.exe, through npx, or with
+// `go run ./cmd/sdlc`. The subcommand is the first word after sdlc that is not
+// a flag, so a note that mentions it is not mistaken for it.
+func runsSubcommand(words []string, sub string) bool {
+	for i, w := range words {
+		if base(w) != "sdlc" {
+			continue
+		}
+		for _, next := range words[i+1:] {
+			if strings.HasPrefix(next, "-") {
+				continue
+			}
+			return next == sub
+		}
+		return false
+	}
+	return false
 }
 
 // checkCommit puts the commit gate in front of the commit.
@@ -152,7 +195,7 @@ func checkLoopState(words, redirects []string) (Finding, bool) {
 					"way around every rule that protects it",
 				Route: "the sdlc command owns this: `sdlc artifact write` for a gate's " +
 					"documents, `sdlc review add` for a review, `sdlc gate` for an " +
-					"outcome, `sdlc unfreeze --reason ...` for the freeze",
+					"outcome; the freeze is lifted by the person running the session",
 			}, true
 		}
 	}
@@ -192,7 +235,8 @@ func checkFrozenTests(segment string, words, redirects []string, s State) (Findi
 					"the one way around every rule that protects it",
 				Route: "leave it alone -- it was locked by content when the test gate " +
 					"passed, and every gate after that is measured against it. If it " +
-					"genuinely has to change, `sdlc unfreeze --reason ...` puts the " +
+					"genuinely has to change, say which and why: the person running the " +
+					"session lifts the freeze with `sdlc unfreeze --reason ...`, which puts the " +
 					"reason on the record",
 			}, true
 		}

@@ -96,16 +96,18 @@ is a rule nobody could keep.
 Refuses any edit of a file in the freeze, from any role.
 
 *Instead:* change the code until the test passes. If the test itself is wrong,
-say which acceptance criterion it got wrong and run
-`sdlc unfreeze --reason "..."` so the change is on the record.
+say which acceptance criterion it got wrong and stop. The person running the
+session lifts the freeze with `sdlc unfreeze --reason "..."`, which puts the
+change on the record.
 
 ### `no-new-test-after-the-freeze`
 
 Refuses a new test file once the tests are frozen, unless
 `freeze.allow_new_test_files` is on.
 
-*Instead:* put the case in one of the frozen files, or unfreeze and freeze again
-so the new file is covered.
+*Instead:* put the case in one of the frozen files. If it needs a file of its
+own, say so and stop: the person running the session can unfreeze and freeze
+again so the new file is covered.
 
 ### `implementer-does-not-write-tests`
 
@@ -175,7 +177,7 @@ iteration and take over yourself.
 
 Every rule above governs the file-writing tools. A shell command is not one of
 them, which would leave `cat > .sdlc/stories/A-1/ANALYSIS.md` walking past all
-of them. These four close that, and nothing else about your shell is touched:
+of them. These five close that, and nothing else about your shell is touched:
 your tests, your build and your tooling run exactly as before.
 
 This is pattern matching, not a shell. It is deliberately narrow.
@@ -190,8 +192,8 @@ or any gate document — by redirection, or through `rm`, `mv`, `cp`, `tee`,
 A scratch file inside a story's directory is not loop state, and reading any of
 it is never refused.
 
-*Instead:* `sdlc artifact write`, `sdlc review add`, `sdlc gate`,
-`sdlc unfreeze --reason "..."`.
+*Instead:* `sdlc artifact write`, `sdlc review add`, `sdlc gate`. The freeze is
+lifted by the person running the session.
 
 ### `frozen-test-through-the-tool`
 
@@ -203,8 +205,22 @@ Reading one is never refused — `cat`, `grep`, `sed -n` and the test runner all
 work as they always did, and reading the tests is how the implementer knows
 what to implement. Before the freeze this rule does nothing at all.
 
-*Instead:* leave it alone, or `sdlc unfreeze --reason "..."` if it genuinely
-has to change.
+*Instead:* leave it alone. If it genuinely has to change, say which test and
+why; the person running the session lifts the freeze with
+`sdlc unfreeze --reason "..."`.
+
+### `unfreeze-is-a-human-decision`
+
+Refuses `sdlc unfreeze` run from a tool call, however `sdlc` is reached — on
+`PATH`, by path, through `npx` or `go run`.
+
+Lifting the freeze is sometimes right, and it is also exactly the move an agent
+would make to reach green. So it is a person's decision: they run it in their
+own terminal, where the hook is not asked. A note that only mentions the word,
+such as `--note "no need to unfreeze"`, is not refused.
+
+*Instead:* say which frozen test is wrong and which acceptance criterion it gets
+wrong, and stop there.
 
 ### `commit-gate`
 

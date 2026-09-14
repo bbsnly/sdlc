@@ -164,8 +164,9 @@ vendored code cannot be mistaken for acceptance tests. Check that git is install
 The tests are already frozen.
 
 A freeze covers one story's acceptance tests, and taking a second one over the top would quietly
-bless whatever changed in between. If the tests genuinely have to change, run
-`sdlc unfreeze --reason "..."` first — the reason goes on the record — and freeze again.
+bless whatever changed in between. If the tests genuinely have to change, a person runs
+`sdlc unfreeze --reason "..."` in their own terminal first — the reason goes on the record, and
+the hook refuses it from an agent — and then freezes again.
 
 This is about the story you are working on. A freeze left behind by a story that has since
 finished is not in the way: `sdlc stop` lifts it when the story is done, and `sdlc freeze`
@@ -200,9 +201,9 @@ The named files changed, or are gone, since the freeze was taken. That is the si
 freeze exists to make visible: an agent that can edit its own acceptance tests will eventually
 edit them, and every gate after that is theatre.
 
-Restore them, or — if a test really did encode the wrong behaviour — run
-`sdlc unfreeze --reason "..."` and freeze again, so that the change is a decision somebody can
-review rather than something that happened quietly.
+Restore them, or — if a test really did encode the wrong behaviour — have a person run
+`sdlc unfreeze --reason "..."` in their own terminal and freeze again, so that the change is a
+decision somebody can review rather than something that happened quietly.
 
 ### SDLC-E0026
 

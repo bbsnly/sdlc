@@ -116,8 +116,9 @@ var Rules = []Rule{
 	{
 		ID: "frozen-test-is-not-edited",
 		Route: "change the code until the test passes; if the test itself is wrong, " +
-			"say which acceptance criterion it got wrong and run " +
-			"`sdlc unfreeze --reason \"...\"` so the change is on the record",
+			"say which acceptance criterion it got wrong and stop: the person running " +
+			"the session lifts the freeze with `sdlc unfreeze --reason \"...\"`, which " +
+			"puts the change on the record",
 		check: func(r Request) string {
 			if !r.Tests.Locked {
 				return ""
@@ -129,8 +130,9 @@ var Rules = []Rule{
 	},
 	{
 		ID: "no-new-test-after-the-freeze",
-		Route: "put the case in one of the frozen files, or run " +
-			"`sdlc unfreeze --reason \"...\"` and freeze again so the new file is covered",
+		Route: "put the case in one of the frozen files; if it needs a file of its own, " +
+			"say so and stop -- the person running the session can unfreeze and freeze " +
+			"again so the new file is covered",
 		check: func(r Request) string {
 			if !r.Tests.Frozen || !r.Tests.IsTest || r.Tests.Locked || r.Tests.AllowNew {
 				return ""

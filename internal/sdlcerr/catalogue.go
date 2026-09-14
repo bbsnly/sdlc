@@ -70,7 +70,7 @@ var (
 		`check the path given to --file, or pipe the document in instead`)
 
 	AlreadyFrozen = register("SDLC-E0022",
-		`run "sdlc unfreeze --reason ..." first if the tests really have to change`)
+		`if the tests really have to change, run "sdlc unfreeze --reason ..." in your own terminal first`)
 
 	NotFrozen = register("SDLC-E0023",
 		`run "sdlc freeze" once the acceptance tests are written and failing`)
@@ -79,7 +79,7 @@ var (
 		`write the acceptance tests first, or widen paths.tests in .sdlc/config.json so it finds them`)
 
 	FreezeBroken = register("SDLC-E0025",
-		`restore the frozen tests, or run "sdlc unfreeze --reason ..." and freeze again so the change is on the record`)
+		`restore the frozen tests, or have a person run "sdlc unfreeze --reason ..." in their own terminal and freeze again, so the change is on the record`)
 
 	ReasonRequired = register("SDLC-E0026",
 		`pass --reason with the one line that explains why the tests have to change`)

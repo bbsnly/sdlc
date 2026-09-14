@@ -197,6 +197,7 @@ func shellRules(t *testing.T) []string {
 		"rm .sdlc/state/active",
 		"git commit -m x",
 		"export SDLC_ENFORCE=0",
+		"sdlc unfreeze --reason x",
 	} {
 		f, ok := shellpolicy.Inspect(command, shellpolicy.State{})
 		if !ok {
