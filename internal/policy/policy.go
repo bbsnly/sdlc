@@ -141,9 +141,9 @@ var Rules = []Rule{
 	},
 	{
 		ID: "no-new-test-after-the-freeze",
-		Route: "put the case in one of the frozen files; if it needs a file of its own, " +
-			"say so and stop -- the person running the session can unfreeze and freeze " +
-			"again so the new file is covered",
+		Route: "say which case is missing and stop: the frozen files are frozen too, and " +
+			"the person running the session can unfreeze and freeze again so the new " +
+			"test is covered",
 		check: func(r Request) string {
 			if !r.Tests.Frozen || !r.Tests.IsTest || r.Tests.Locked || r.Tests.AllowNew {
 				return ""

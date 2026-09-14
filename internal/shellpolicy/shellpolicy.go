@@ -400,9 +400,9 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 				Rule: "no-new-test-after-the-freeze",
 				Reason: w + " would be a new test file added after the freeze, which is the " +
 					"freeze with extra steps: a test written now can be written to pass",
-				Route: "put the case in one of the frozen files; if it needs a file of its " +
-					"own, say so and stop -- the person running the session can unfreeze and " +
-					"freeze again so the new file is covered",
+				Route: "say which case is missing and stop: the frozen files are frozen too, " +
+					"and the person running the session can unfreeze and freeze again so the " +
+					"new test is covered",
 			}, true
 		}
 		if ok {
