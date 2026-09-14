@@ -8,15 +8,38 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"runtime/debug"
+	"syscall"
+	"time"
 
 	"github.com/bbsnly/sdlc/internal/cli"
 	"github.com/bbsnly/sdlc/internal/hook"
 	"github.com/bbsnly/sdlc/internal/logging"
+	"github.com/bbsnly/sdlc/internal/store"
 )
 
 func main() {
+	exitOnInterrupt()
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, os.Getenv))
+}
+
+// exitOnInterrupt ends the process on Ctrl+C or a request to terminate, as it
+// would have ended anyway, but gives back the project's lock first. Without it,
+// a command interrupted while it held the lock left every other sdlc command in
+// the project refusing until the lock was old enough to break open.
+func exitOnInterrupt() {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		sig := <-signals
+		store.ReleaseHeld(2 * time.Second)
+		code := 1
+		if s, ok := sig.(syscall.Signal); ok {
+			code = 128 + int(s)
+		}
+		os.Exit(code)
+	}()
 }
 
 // run is main without the process. Everything it needs is passed in so the

@@ -60,9 +60,10 @@ Check that the directory is writable and that the disk is not full.
 
 It is also the code for **another sdlc command is still running**. Every command that writes
 loop state takes a lock first, and waits up to ten seconds for a command that holds it. The
-message names that command and its process id. If nothing is running, the lock was left by a
-command that was killed: it is broken open once it has gone two minutes without its holder
-refreshing it, or delete the directory the message names.
+message names that command and its process id. A command stopped with Ctrl+C gives the lock
+back on its way out. If nothing is running, the lock was left by a command that could not: one
+killed outright, or a machine that went down. It is broken open once it has gone two minutes
+without its holder refreshing it, or delete the directory the message names.
 
 ### SDLC-E0007
 

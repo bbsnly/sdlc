@@ -1,6 +1,7 @@
 package store
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
@@ -60,7 +62,7 @@ const (
 )
 
 // mkdir is os.Mkdir, and a variable only so that a test can make it fail the
-// way Windows does.
+// way Windows does, or put another command in the gap before a break is held.
 var mkdir = os.Mkdir
 
 // guardBeat is how often a held lock says it is still held, by touching its
@@ -73,16 +75,28 @@ var guardBeat = 30 * time.Second
 
 // Guard is a held lock. Release it when the command is done.
 type Guard struct {
-	path string
-	stop chan struct{}
-	done chan struct{}
+	path  string
+	token string
+	stop  chan struct{}
+	done  chan struct{}
+	once  sync.Once
 }
 
 type guardOwner struct {
 	PID  int    `json:"pid"`
 	At   string `json:"at"`
 	What string `json:"what"`
+	// Token is what this holder, and no other, wrote into the lock. A lock is
+	// only ever removed by the holder whose token it still carries.
+	Token string `json:"token"`
 }
+
+// held is every lock this process holds, so that a process interrupted on its
+// way through a command can give them back. See ReleaseHeld.
+var held = struct {
+	sync.Mutex
+	guards map[*Guard]struct{}
+}{guards: map[*Guard]struct{}{}}
 
 // Lock takes the project's loop-state lock, waiting for whoever has it.
 //
@@ -104,9 +118,19 @@ func Lock(root, what string) (*Guard, error) {
 	for {
 		err := mkdir(path, 0o755)
 		if err == nil {
-			g := &Guard{path: path, stop: make(chan struct{}), done: make(chan struct{})}
-			g.describe(what)
+			g := &Guard{path: path, token: rand.Text(), stop: make(chan struct{}), done: make(chan struct{})}
+			// A lock that does not say whose it is could never be let go of: its
+			// holder removes it only on seeing its own token there.
+			if err := g.describe(what); err != nil {
+				_ = os.RemoveAll(path)
+				return nil, sdlcerr.New(sdlcerr.StateUnwritable,
+					"the loop's state could not be locked",
+					path+" could not be written").WithCause(err)
+			}
 			go g.beat()
+			held.Lock()
+			held.guards[g] = struct{}{}
+			held.Unlock()
 			return g, nil
 		}
 		// A denial is waited for rather than failed: on Windows it is how a lock
@@ -139,18 +163,59 @@ func Lock(root, what string) (*Guard, error) {
 	}
 }
 
-// Release gives the lock up. It is safe to call more than once.
+// Release gives the lock up. It is safe to call more than once, and from more
+// than one goroutine.
 func (g *Guard) Release() {
-	if g == nil || g.path == "" {
+	if g == nil {
 		return
 	}
-	close(g.stop)
-	<-g.done
-	_ = os.RemoveAll(g.path)
-	g.path = ""
+	g.once.Do(func() {
+		close(g.stop)
+		<-g.done
+		// Only if it is still this holder's. A command that slept past
+		// guardStale with the lock wakes to find it broken open and taken by
+		// another; removing the directory then would let a third command in
+		// beside the second.
+		if ownedBy(g.path, g.token) {
+			_ = os.RemoveAll(g.path)
+		}
+		held.Lock()
+		delete(held.guards, g)
+		held.Unlock()
+	})
 }
 
-// beat keeps the lock's directory young for as long as it is held.
+// ReleaseHeld gives back every lock this process holds, for a process about to
+// exit on a signal. Left to the default, a command interrupted while it held
+// the lock left every other command in the project waiting out guardStale.
+//
+// A command holding one is given up to wait to finish and release it itself,
+// so that what it was writing is written whole. Whatever is still held after
+// that is released anyway.
+func ReleaseHeld(wait time.Duration) {
+	deadline := time.Now().Add(wait)
+	for {
+		held.Lock()
+		remaining := make([]*Guard, 0, len(held.guards))
+		for g := range held.guards {
+			remaining = append(remaining, g)
+		}
+		held.Unlock()
+		if len(remaining) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			for _, g := range remaining {
+				g.Release()
+			}
+			return
+		}
+		time.Sleep(guardPoll)
+	}
+}
+
+// beat keeps the lock's directory young for as long as it is held, and stops
+// once it is no longer this holder's to keep.
 func (g *Guard) beat() {
 	defer close(g.done)
 	ticker := time.NewTicker(guardBeat)
@@ -160,27 +225,30 @@ func (g *Guard) beat() {
 		case <-g.stop:
 			return
 		case <-ticker.C:
+			if !ownedBy(g.path, g.token) {
+				return
+			}
 			now := time.Now()
 			_ = os.Chtimes(g.path, now, now)
 		}
 	}
 }
 
-// describe records who holds the lock, so that a lock left behind by a crash
-// says what it was and when rather than only that it is there.
-func (g *Guard) describe(what string) {
-	owner := guardOwner{PID: os.Getpid(), At: time.Now().UTC().Format(time.RFC3339), What: what}
+// describe records who holds the lock: the token that makes it this holder's,
+// and, for a lock left behind by a crash, what it was and when.
+func (g *Guard) describe(what string) error {
+	owner := guardOwner{PID: os.Getpid(), At: time.Now().UTC().Format(time.RFC3339), What: what, Token: g.token}
 	raw, err := json.Marshal(owner)
 	if err != nil {
-		return
+		return err
 	}
-	_ = os.WriteFile(filepath.Join(g.path, "owner.json"), append(raw, '\n'), 0o644)
+	return os.WriteFile(filepath.Join(g.path, "owner.json"), append(raw, '\n'), 0o644)
 }
 
 // breakIfStale removes a lock whose holder is long gone, and reports whether it
-// did. A process killed between taking the lock and releasing it would
-// otherwise wedge the project for good, and telling somebody to delete a
-// directory by hand is not a recovery story.
+// is worth trying to take the lock again. A process killed between taking the
+// lock and releasing it would otherwise wedge the project for good, and telling
+// somebody to delete a directory by hand is not a recovery story.
 //
 // The age of the directory is what decides it, not whether the pid is alive: a
 // pid says nothing useful once it has been reused, and on Windows it says less.
@@ -194,7 +262,39 @@ func breakIfStale(path string) bool {
 	if time.Since(info.ModTime()) < guardStale {
 		return false
 	}
+
+	// Broken open by one command at a time. Several can find one lock abandoned
+	// at once, and each removing it where it stood let a later one remove the
+	// lock an earlier one had just taken in its place: both went on to write.
+	// Holding the break, a command looks again, and a lock that is still old
+	// then is the abandoned one: nobody can create a new one while it stands,
+	// and nobody else can remove it while the break is held.
+	breaking := path + ".break"
+	if err := mkdir(breaking, 0o755); err != nil {
+		// Somebody else is breaking it, and is waited for -- unless they died
+		// doing it, which would leave the break standing for good.
+		if b, err := os.Stat(breaking); err == nil && time.Since(b.ModTime()) >= guardStale {
+			_ = os.Remove(breaking)
+		}
+		return false
+	}
+	defer func() { _ = os.Remove(breaking) }()
+
+	info, err = os.Stat(path)
+	if err != nil || time.Since(info.ModTime()) < guardStale {
+		return true
+	}
 	return os.RemoveAll(path) == nil
+}
+
+// ownedBy reports whether the lock at path is still the one token took.
+func ownedBy(path, token string) bool {
+	raw, err := os.ReadFile(filepath.Join(path, "owner.json"))
+	if err != nil {
+		return false
+	}
+	var o guardOwner
+	return json.Unmarshal(raw, &o) == nil && o.Token == token
 }
 
 // heldBy names whoever is holding the lock, for the one message that has to

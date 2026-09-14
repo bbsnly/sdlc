@@ -1,10 +1,12 @@
 package store
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -107,6 +109,7 @@ func TestALockLeftByADeadProcessIsBrokenOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer abandoned.Release()
 	old := time.Now().Add(-2 * guardStale)
 	if err := os.Chtimes(abandoned.path, old, old); err != nil {
 		t.Fatal(err)
@@ -235,5 +238,190 @@ func TestNoChangeIsLostUnderContention(t *testing.T) {
 	}
 	if len(raw) != 1+writers {
 		t.Errorf("%d of %d changes survived", len(raw)-1, writers)
+	}
+}
+
+// A lock is abandoned by a command that was interrupted, which is when the
+// commands waiting on it arrive at it together. Removing it where it stood let
+// one of them remove the lock another had just taken in its place, and two of
+// them wrote at once.
+func TestCommandsBreakingOpenOneAbandonedLockDoNotAllGetIt(t *testing.T) {
+	cacheDir(t)
+	root := t.TempDir()
+
+	for range 50 {
+		abandoned, err := Lock(root, "gate")
+		if err != nil {
+			t.Fatal(err)
+		}
+		old := time.Now().Add(-2 * guardStale)
+		if err := os.Chtimes(abandoned.path, old, old); err != nil {
+			t.Fatal(err)
+		}
+
+		var holding, most atomic.Int32
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for range 5 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				g, err := Lock(root, "review add")
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				n := holding.Add(1)
+				for m := most.Load(); n > m; m = most.Load() {
+					if most.CompareAndSwap(m, n) {
+						break
+					}
+				}
+				time.Sleep(time.Millisecond)
+				holding.Add(-1)
+				g.Release()
+			}()
+		}
+		close(start)
+		wg.Wait()
+		abandoned.Release()
+		if n := most.Load(); n > 1 {
+			t.Fatalf("%d commands held the lock at once after breaking it open", n)
+		}
+	}
+}
+
+// A command that slept past guardStale with the lock wakes to find it broken
+// open and taken by another. Letting go must not remove that one's lock too.
+func TestLettingGoOfALockTakenOverLeavesTheNewHolderAlone(t *testing.T) {
+	cacheDir(t)
+	root := t.TempDir()
+
+	slept, err := Lock(root, "gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * guardStale)
+	if err := os.Chtimes(slept.path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	took, err := Lock(root, "review add")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer took.Release()
+
+	slept.Release()
+	if !ownedBy(took.path, took.token) {
+		t.Error("letting go of a lock that was taken over removed the new holder's")
+	}
+}
+
+// Holding the break, a command looks at the lock again. The one it found
+// abandoned may since have been broken open by the command that held the break
+// before it, and taken afresh -- and that lock is not abandoned.
+func TestALockTakenAfreshBeforeTheBreakIsHeldIsLeftAlone(t *testing.T) {
+	cacheDir(t)
+	root := t.TempDir()
+
+	abandoned, err := Lock(root, "gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer abandoned.Release()
+	old := time.Now().Add(-2 * guardStale)
+	if err := os.Chtimes(abandoned.path, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	var fresh *Guard
+	mkdir = func(path string, perm fs.FileMode) error {
+		mkdir = os.Mkdir
+		// The command before this one, finishing its break in the gap.
+		if err := os.RemoveAll(abandoned.path); err != nil {
+			return err
+		}
+		g, err := Lock(root, "review add")
+		if err != nil {
+			return err
+		}
+		fresh = g
+		return os.Mkdir(path, perm)
+	}
+	t.Cleanup(func() { mkdir = os.Mkdir })
+
+	breakIfStale(abandoned.path)
+	if fresh == nil {
+		t.Fatal("the other command never took the lock")
+	}
+	defer fresh.Release()
+	if !ownedBy(fresh.path, fresh.token) {
+		t.Error("a lock taken afresh was removed as abandoned")
+	}
+}
+
+// A lock is broken open by one command at a time, and one killed while doing
+// it must not leave every command after it waiting on a break that never ends.
+func TestABreakLeftByADeadProcessDoesNotWedgeTheProject(t *testing.T) {
+	cacheDir(t)
+	root := t.TempDir()
+
+	abandoned, err := Lock(root, "gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer abandoned.Release()
+	breaking := abandoned.path + ".break"
+	if err := os.Mkdir(breaking, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * guardStale)
+	for _, path := range []string{abandoned.path, breaking} {
+		if err := os.Chtimes(path, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	g, err := Lock(root, "start")
+	if err != nil {
+		t.Fatalf("an abandoned break kept the lock from being broken open: %v", err)
+	}
+	g.Release()
+}
+
+// An interrupted command gives the lock back on its way out, rather than leave
+// every other command in the project waiting out guardStale.
+func TestAnInterruptedCommandGivesTheLockBack(t *testing.T) {
+	cacheDir(t)
+	root := t.TempDir()
+
+	// One finishing its write is given the time to let go itself.
+	finishing, err := Lock(root, "gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var finished atomic.Bool
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		finished.Store(true)
+		finishing.Release()
+	}()
+	ReleaseHeld(guardWait)
+	if !finished.Load() {
+		t.Error("the lock was taken from a command that was still finishing its write")
+	}
+	if _, err := os.Stat(finishing.path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the process exited before the command let go of the lock: %v", err)
+	}
+
+	// One that does not finish in time has it given back for it.
+	stuck, err := Lock(root, "review add")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ReleaseHeld(10 * time.Millisecond)
+	if _, err := os.Stat(stuck.path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("an interrupted command left the lock held: %v", err)
 	}
 }
