@@ -535,6 +535,23 @@ func TestEveryProblemDoctorReportsCarriesAFix(t *testing.T) {
 	}
 }
 
+func TestDoctorWantsTheContractHeadingNotALookalike(t *testing.T) {
+	project(t)
+	mustRun(t, "init")
+	writeFile(t, ".", "CLAUDE.md", "# Mine\n\n### SDLC Contract\n\n- a subsection, not the section\n")
+
+	got := decode[doctorPayload](t, run(t, "doctor", "--json"))
+	for _, c := range got.Checks {
+		if c.Name == "project contract" {
+			if c.State != stateProblem {
+				t.Errorf("project contract = %s (%s), want a problem", c.State, c.Detail)
+			}
+			return
+		}
+	}
+	t.Fatal("doctor ran no project contract check")
+}
+
 func TestDoctorNamesAConfiguredProgramThatIsNotInstalled(t *testing.T) {
 	project(t)
 	mustRun(t, "init")

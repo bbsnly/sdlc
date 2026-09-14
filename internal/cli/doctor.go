@@ -287,7 +287,7 @@ func contractCheck(root string) check {
 			Detail: "there is no CLAUDE.md",
 			Fix:    `run "sdlc init" -- it writes one without touching anything else`}
 	}
-	if !strings.Contains(string(raw), scaffold.ContractHeading) {
+	if !scaffold.HasContract(string(raw)) {
 		return check{Name: "project contract", State: stateProblem,
 			Detail: `CLAUDE.md has no "` + scaffold.ContractHeading + `" section`,
 			Fix:    `run "sdlc init" -- it appends the section and leaves the rest alone`}

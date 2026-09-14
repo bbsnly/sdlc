@@ -28,6 +28,19 @@ var templates embed.FS
 // part. Its presence is half the contract; .sdlc/config.json is the other half.
 const ContractHeading = "## SDLC Contract"
 
+// HasContract reports whether text has the contract heading on a line of its
+// own. Finding the words anywhere is not enough: "### SDLC Contract" is a
+// subsection of something else, and a sentence that mentions the heading is not
+// the section it names.
+func HasContract(text string) bool {
+	for line := range strings.Lines(text) {
+		if strings.TrimRight(line, " \t\r\n") == ContractHeading {
+			return true
+		}
+	}
+	return false
+}
+
 // Paths this writes, relative to the repository root and slash-separated.
 const (
 	schemaPath   = config.Dir + "/templates/story.schema.json"
@@ -131,7 +144,7 @@ func (r *Result) writeContract(root string) error {
 
 	existing, err := os.ReadFile(path)
 	if err == nil {
-		if strings.Contains(string(existing), ContractHeading) {
+		if HasContract(string(existing)) {
 			r.Kept = append(r.Kept, claudeMDPath)
 			return nil
 		}

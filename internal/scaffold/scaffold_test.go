@@ -414,6 +414,37 @@ func TestInitLeavesAClaudeMDThatAlreadyHasTheContract(t *testing.T) {
 	}
 }
 
+func TestOnlyTheHeadingOnItsOwnLineIsTheContract(t *testing.T) {
+	cases := map[string]bool{
+		"# Mine\n\n## SDLC Contract\n\n- filled in\n": true,
+		"## SDLC Contract":                          true,
+		"# Mine\r\n\r\n## SDLC Contract  \r\n":      true,
+		"# Mine\n\n### SDLC Contract\n":             false,
+		"# Mine\n\n## SDLC Contracts\n":             false,
+		"We will add a ## SDLC Contract section.\n": false,
+		"# Mine\n": false,
+	}
+	for text, want := range cases {
+		if got := HasContract(text); got != want {
+			t.Errorf("HasContract(%q) = %v, want %v", text, got, want)
+		}
+	}
+
+	// A CLAUDE.md with only a lookalike gets the real section appended.
+	root := t.TempDir()
+	touch(t, root, claudeMDPath, "# Mine\n\n### SDLC Contract\n\n- not the section\n")
+	res, err := Init(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(res.Kept, claudeMDPath) {
+		t.Error("a CLAUDE.md with only a subsection of that name was kept as if it had the contract")
+	}
+	if !HasContract(read(t, root, claudeMDPath)) {
+		t.Error("init did not append the contract")
+	}
+}
+
 // ------------------------------------------------------------------ fragments
 
 // The contract is appended to a file the user already has, and markdownlint
