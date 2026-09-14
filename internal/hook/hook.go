@@ -342,9 +342,16 @@ func activeStory(project string, warn func(string)) string {
 		return ""
 	}
 	id := strings.TrimSpace(string(raw))
+	if id == "" {
+		return ""
+	}
 	// The CLI checks this when it writes the file. Checking it again here is
-	// cheap, and this is the one place the value becomes part of a path.
-	if id == "" || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
+	// cheap, and this is the one place the value becomes part of a path. A
+	// value that fails it turns every rule off, so it says so, like a file
+	// that cannot be read.
+	if strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
+		warn(".sdlc/state/active does not name a story, so nothing is being " +
+			"enforced in this session. Run `sdlc doctor` to see why.")
 		return ""
 	}
 	return id

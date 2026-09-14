@@ -54,7 +54,17 @@ func TestEveryPageAgreesOnTheClaudeCodeVersion(t *testing.T) {
 	// \W*? rather than anything that stops at `|`: the installation page
 	// states it in a table row, and the first version of this test could not
 	// see across the cell border -- so it checked one of the two pages.
-	version := regexp.MustCompile(`Claude Code\W*?(\d+\.\d+\.\d+)`)
+	version := regexp.MustCompile(`Claude Code\W*?(?:v|version\s+)?(\d+\.\d+\.\d+)`)
+	// Every way a page has said it, or plausibly will. A spelling this cannot
+	// see is a page this test silently does not check.
+	for _, said := range []string{
+		"Claude Code 1.2.3", "**Claude Code** 1.2.3", "| Claude Code | 1.2.3 or newer |",
+		"Claude Code v1.2.3", "Claude Code version 1.2.3",
+	} {
+		if !version.MatchString(said) {
+			t.Fatalf("the version pattern cannot see %q", said)
+		}
+	}
 	for _, pg := range []struct {
 		name, body string
 		// Required pages must state the version. A page that says nothing

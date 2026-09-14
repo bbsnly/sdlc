@@ -334,7 +334,7 @@ func programsIn(command string) []string {
 }
 
 // binaryCheck asks the question the hook asks. A hook that cannot find the
-// binary allows the tool call and says so on stderr -- which is the right
+// binary allows the tool call and says so in a system message -- which is the right
 // behaviour and easy to miss, so doctor asks it out loud.
 func binaryCheck() check {
 	path, err := exec.LookPath("sdlc")
