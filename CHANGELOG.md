@@ -232,6 +232,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   one under a home directory whose name has a space in it does. The unquoted
   command split in two and failed, which Claude Code treats as a hook with
   nothing to say, so every rule was off without a word.
+- A command after a lone `&` meets the shell rules. `true & git commit` and
+  PowerShell's `& git commit` were read as commands called `true` and `&`, so
+  the commit gate and every rule on loop state let them through.
 - A new test file cannot be added through the shell after the freeze. The file
   tools refused one; `echo > new_test.go` did not, because the shell was checked
   only against the files the freeze already held.

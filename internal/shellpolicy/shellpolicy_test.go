@@ -285,6 +285,35 @@ func TestTheShellDoesNotRewriteTheBacklog(t *testing.T) {
 	allowed(t, "echo {} > planning/backlog.json", ready)
 }
 
+// A lone `&` ends one command and starts the next: the shell's background
+// operator, and PowerShell's call operator. Read as part of a word, both hid
+// the command after them from every rule.
+func TestACommandAfterAnAmpersandIsReadLikeAnyOther(t *testing.T) {
+	for _, command := range []string{
+		"true & git commit -m x",
+		"& git commit -m x",
+		"sleep 1 &git commit -m x",
+	} {
+		refused(t, command, notReady, "commit-gate")
+	}
+	for _, command := range []string{
+		"sleep 1 & rm .sdlc/state/tests.lock",
+		`& Remove-Item .sdlc\state\active`,
+		"make build &> .sdlc/state/active",
+		"echo x >& .sdlc/state/active",
+	} {
+		refused(t, command, ready, "loop-state-through-the-tool")
+	}
+	// A redirect of one stream into another is not a second command.
+	for _, command := range []string{
+		"go test ./... 2>&1 | tail -20",
+		"make build &> build.log",
+		"echo done >&2",
+	} {
+		allowed(t, command, ready)
+	}
+}
+
 // Reading is nobody's business here, and neither is anything outside the
 // loop's own files. A rule that refused too much would be turned off.
 func TestReadingAndOrdinaryWorkAreUntouched(t *testing.T) {

@@ -812,9 +812,16 @@ func runsAScript(line string) bool {
 // make this notice more, never less.
 func segments(command string) []string {
 	// `>|` is a redirect that overwrites, not a pipe, and read as a pipe it
-	// left the file it writes as a command of its own.
+	// left the file it writes as a command of its own. `>&` and `&>` are
+	// redirects too, and are taken as one before a lone `&` is.
+	//
+	// A lone `&` ends a command as `;` does: the shell's background operator,
+	// and PowerShell's call operator in front of one. Neither split, `true &
+	// git commit` was a command called `true`, and `& git commit` one called
+	// `&`, and the commit gate knew neither.
 	replacer := strings.NewReplacer(
-		">|", ">", "&&", "\n", "||", "\n", ";", "\n", "|", "\n", "`", "\n", "$(", "\n", ")", "\n",
+		">|", ">", ">&", ">", "&>", ">",
+		"&&", "\n", "||", "\n", ";", "\n", "|", "\n", "&", "\n", "`", "\n", "$(", "\n", ")", "\n",
 	)
 	var out []string
 	for _, line := range strings.Split(replacer.Replace(command), "\n") {
