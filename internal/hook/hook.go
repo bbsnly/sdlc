@@ -218,7 +218,24 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 		Outside: outside && path != "",
 		Story:   story,
 		Tests:   testState(project, story, rel, warn),
+		Backlog: backlogPath(project),
 	}), event, true
+}
+
+// backlogPath is the backlog file, repository-relative, or empty when the
+// configuration puts it outside the repository, where no write is allowed
+// anyway. A configuration that will not read leaves the backlog where the
+// defaults put it, which is where it most likely is.
+func backlogPath(project string) string {
+	cfg, err := config.Load(project)
+	if err != nil {
+		cfg = config.Default()
+	}
+	rel, outside := pathrules.Rel(project, cfg.BacklogPath(project))
+	if outside {
+		return ""
+	}
+	return rel
 }
 
 // inspectShell applies the shell rules, which exist because every other rule in
@@ -248,7 +265,8 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
-		Fresh: func() (bool, string) { return reviewsFresh(project, story, warn) },
+		Backlog: backlogPath(project),
+		Fresh:   func() (bool, string) { return reviewsFresh(project, story, warn) },
 	})
 	if !refused {
 		return policy.Allowed

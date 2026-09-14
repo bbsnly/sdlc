@@ -68,6 +68,12 @@ type State struct {
 	// Agent is the role running the command, as policy.NormalizeAgent gives
 	// it: empty for the main conversation.
 	Agent string
+
+	// Backlog is the backlog file, repository-relative and slash-separated, or
+	// empty when the configuration puts it outside the repository. It is
+	// protected as CLAUDE.md is, and is not in that list only because the
+	// configuration says where it is.
+	Backlog string
 }
 
 // Finding is a refusal. An empty Rule means nothing objected.
@@ -150,7 +156,7 @@ func Inspect(command string, s State) (Finding, bool) {
 		if f, ok := checkCommit(run.words, s); ok {
 			return f, true
 		}
-		if f, ok := checkLoopState(command, segment, run, redirects, dir); ok {
+		if f, ok := checkLoopState(command, segment, run, redirects, dir, s.Backlog); ok {
 			return f, true
 		}
 		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, s); ok {
@@ -316,7 +322,7 @@ func checkCommit(words []string, s State) (Finding, bool) {
 }
 
 // checkLoopState stops the shell being the way around every other rule.
-func checkLoopState(line, segment string, run invocation, redirects []string, dir string) (Finding, bool) {
+func checkLoopState(line, segment string, run invocation, redirects []string, dir, backlog string) (Finding, bool) {
 	candidates := append([]string{}, redirects...)
 	if changesFiles(run.words) {
 		candidates = append(candidates, run.words[1:]...)
@@ -332,13 +338,13 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 		candidates = append(candidates, wordsIn(line)...)
 	}
 	for _, c := range spellings(dir, candidates) {
-		if hit, ok := protectedPath(c); ok {
+		if hit, ok := protectedPath(c, backlog); ok {
 			return Finding{
 				Rule: "protected-path-through-the-tool",
 				Reason: hit + " is protected while a story is being worked on, and a shell " +
 					"command is the one way around the rule that protects it",
-				Route: "change it by hand outside a running iteration; if a rule in it is " +
-					"wrong, stop and say which one rather than editing it",
+				Route: "change it by hand outside a running iteration; if what it says is " +
+					"wrong, stop and say what rather than editing it",
 			}, true
 		}
 		if hit, ok := loopState(c); ok {
@@ -947,9 +953,9 @@ func loopState(word string) (string, bool) {
 // settings file that turns the hooks off, takes every gate after it with it.
 var protectedShellPaths = []string{".git", ".claude", "CLAUDE.md"}
 
-// protectedPath reports whether a word names one of them, folded as the
-// filesystem folds it.
-func protectedPath(word string) (string, bool) {
+// protectedPath reports whether a word names one of them, or the backlog,
+// folded as the filesystem folds it.
+func protectedPath(word, backlog string) (string, bool) {
 	p := pathrules.Fold(strings.TrimPrefix(clean(word), "./"))
 	if p == "" {
 		return "", false
@@ -958,6 +964,9 @@ func protectedPath(word string) (string, bool) {
 		if at(p, pathrules.Fold(own)) {
 			return own, true
 		}
+	}
+	if backlog != "" && at(p, pathrules.Fold(backlog)) {
+		return backlog, true
 	}
 	return "", false
 }

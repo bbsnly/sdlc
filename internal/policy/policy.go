@@ -23,6 +23,7 @@ type Request struct {
 	Outside bool   // the path resolves outside the repository
 	Story   string // the story the iteration is on
 	Tests   Tests  // what the freeze says about this path
+	Backlog string // the backlog file, as Path is; empty when it is outside the repository
 }
 
 // Tests is the freeze, as it applies to one path. The caller works these out --
@@ -122,6 +123,24 @@ var Rules = []Rule{
 			}
 			return r.Path + " is protected while a story is being worked on: it is either " +
 				"human-owned configuration or the loop's own record of what happened"
+		},
+	},
+	{
+		// The backlog is where the configuration says it is, so it cannot be in
+		// ProtectedPaths. It says what the story must do and how much risk it
+		// carries, and the commit gate reads its risk tier to decide whether a
+		// person approves the commit: a story lowered to `low` mid-iteration
+		// took that pause away.
+		ID: "backlog-is-not-edited",
+		Route: "if a story's acceptance criteria or risk tier are wrong, say which and stop; " +
+			"the backlog is yours to change by hand outside a running iteration, and the " +
+			"sdlc command records a story's status in it",
+		check: func(r Request) string {
+			if r.Backlog == "" || !pathrules.Under(r.Path, r.Backlog) {
+				return ""
+			}
+			return r.Path + " is the backlog, which holds the acceptance criteria the tests are " +
+				"held to and the risk tier that decides whether a person approves the commit"
 		},
 	},
 	{

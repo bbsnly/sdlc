@@ -259,6 +259,32 @@ func TestTheShellProtectsEveryPathTheFileRulesDo(t *testing.T) {
 	}
 }
 
+// The backlog, wherever the configuration puts it, is refused through the
+// shell as the file rules refuse it: `sed -i` lowering a risk tier took away the
+// person who approves the commit.
+func TestTheShellDoesNotRewriteTheBacklog(t *testing.T) {
+	s := ready
+	// Configured in one case and named in another, as macOS and Windows allow.
+	s.Backlog = "Planning/Backlog.json"
+	for _, command := range []string{
+		"echo {} > planning/backlog.json",
+		`sed -i 's/"high"/"low"/' planning/backlog.json`,
+		"cd planning && rm backlog.json",
+		`python3 -c "open('planning/backlog.json', 'w')"`,
+		"touch Planning/BACKLOG.json",
+	} {
+		refused(t, command, s, "protected-path-through-the-tool")
+	}
+	for _, command := range []string{
+		"cat planning/backlog.json",
+		"jq '.stories[0]' planning/backlog.json",
+		"echo {} > user_stories.json",
+	} {
+		allowed(t, command, s)
+	}
+	allowed(t, "echo {} > planning/backlog.json", ready)
+}
+
 // Reading is nobody's business here, and neither is anything outside the
 // loop's own files. A rule that refused too much would be turned off.
 func TestReadingAndOrdinaryWorkAreUntouched(t *testing.T) {

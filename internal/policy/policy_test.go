@@ -27,6 +27,10 @@ var fixtures = map[string]fixture{
 		denies:  Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/state/active", Story: "A-1"},
 		permits: Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
 	},
+	"backlog-is-not-edited": {
+		denies:  Request{Tool: "Edit", Agent: "sdlc-implementer", Path: "user_stories.json", Story: "A-1", Backlog: "user_stories.json"},
+		permits: Request{Tool: "Edit", Agent: "sdlc-implementer", Path: "internal/user_stories.go", Story: "A-1", Backlog: "user_stories.json"},
+	},
 	"frozen-test-is-not-edited": {
 		denies: Request{Tool: "Edit", Agent: "sdlc-implementer", Path: "internal/x_test.go", Story: "A-1",
 			Tests: Tests{IsTest: true, Frozen: true, Locked: true}},
@@ -76,6 +80,30 @@ var fixtures = map[string]fixture{
 		denies:  Request{Tool: "Write", Agent: "", Path: "internal/billing/invoice.go", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
 	},
+}
+
+// The backlog is wherever the configuration puts it, and nobody edits it while
+// a story is being worked on: the commit gate reads a story's risk tier there,
+// so lowering it took away the person who approves the commit.
+func TestTheBacklogIsNotEditedByAnyone(t *testing.T) {
+	for _, agent := range []string{"", "sdlc:researcher", "sdlc:sdet", "sdlc:implementer", "sdlc:bookkeeper"} {
+		for _, path := range []string{"planning/backlog.json", "Planning/BACKLOG.json"} {
+			got := Evaluate(Request{Tool: "Edit", Agent: agent, Path: path, Story: "A-1", Backlog: "planning/backlog.json"})
+			if got.Rule != "backlog-is-not-edited" {
+				t.Errorf("%s editing %s: rule %q, allowed %v", agent, path, got.Rule, got.Allowed)
+			}
+		}
+	}
+	// Moved, the old name is an ordinary file, and no backlog is no rule.
+	for _, r := range []Request{
+		{Tool: "Write", Agent: "sdlc:sdet", Path: "user_stories.json", Story: "A-1", Backlog: "planning/backlog.json",
+			Tests: Tests{IsTest: true}},
+		{Tool: "Write", Agent: "sdlc:sdet", Path: "user_stories.json", Story: "A-1", Tests: Tests{IsTest: true}},
+	} {
+		if got := Evaluate(r); !got.Allowed {
+			t.Errorf("%s with the backlog at %q was refused by %s", r.Path, r.Backlog, got.Rule)
+		}
+	}
 }
 
 func TestEveryRuleHasBothFixtures(t *testing.T) {

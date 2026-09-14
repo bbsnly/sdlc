@@ -214,6 +214,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   already were from the file tools. `echo {} > .claude/settings.local.json` went
   through during an iteration, and a settings file is where hooks are turned
   off. A test now holds the shell rules to every path the file rules protect.
+- The backlog cannot be edited during an iteration, through the file tools or
+  the shell, wherever `backlog.path` puts it. The commit gate reads a story's
+  `risk_tier` there, and an assistant that lowered it took away the person who
+  approves the commit.
 - A new test file cannot be added through the shell after the freeze. The file
   tools refused one; `echo > new_test.go` did not, because the shell was checked
   only against the files the freeze already held.

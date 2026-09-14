@@ -263,6 +263,28 @@ func TestAProtectedPathIsRefusedWithARouteAndARuleID(t *testing.T) {
 	}
 }
 
+// The commit gate reads the story's risk tier from the backlog, and the
+// implementer could lower it there to take away the person who approves the
+// commit. The backlog is protected wherever the configuration puts it.
+func TestTheBacklogIsNotEditedDuringAnIteration(t *testing.T) {
+	root := loopProject(t)
+	r := call(t, event(root, "Edit", "sdlc-implementer", filepath.Join(root, "user_stories.json")), noEnv)
+	if !denied(r) || !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "backlog-is-not-edited") {
+		t.Errorf("the backlog was not refused by its rule: %+v", r.HookSpecificOutput)
+	}
+	if !denied(call(t, command(root, "sdlc-implementer", `sed -i 's/"high"/"low"/' user_stories.json`), noEnv)) {
+		t.Error("the backlog was writable through a shell command")
+	}
+
+	write(t, root, ".sdlc/config.json", `{"version":1,"backlog":{"path":"planning/backlog.json"}}`)
+	if !denied(call(t, event(root, "Write", "sdlc-implementer", "planning/backlog.json"), noEnv)) {
+		t.Error("a backlog the configuration moved was writable")
+	}
+	if !denied(call(t, command(root, "sdlc-implementer", "echo {} > planning/backlog.json"), noEnv)) {
+		t.Error("a backlog the configuration moved was writable through a shell command")
+	}
+}
+
 func TestTheResearcherWorksInItsOwnStoryAndNowhereElse(t *testing.T) {
 	root := loopProject(t)
 

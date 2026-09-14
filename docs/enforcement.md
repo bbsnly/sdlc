@@ -65,6 +65,19 @@ the agent can edit is a rule that stopped applying to it, and a contract rewritt
 to get past a gate takes every gate after it with it. If a rule is genuinely
 wrong, the loop's answer is to stop and say so, not to edit it and carry on.
 
+### `backlog-is-not-edited`
+
+Refuses any write to the backlog file, wherever
+[`backlog.path`](configuration.md#backlogpath) puts it.
+
+The backlog holds the acceptance criteria the tests are held to and each story's
+`risk_tier`, which decides whether a person approves the commit. An assistant
+that lowered a story to `low` mid-iteration would take that pause away. The
+`sdlc` command still records a story's status there as the loop moves it.
+
+*Instead:* if a story's criteria or risk tier are wrong, say which and stop.
+Change the backlog by hand outside a running iteration.
+
 ### `gate-record-is-written-by-the-tool`
 
 Refuses any in-place edit of `gate-record.json`, in any story's directory and
@@ -219,17 +232,18 @@ lifted by the person running the session.
 ### `protected-path-through-the-tool`
 
 Refuses a command that would write or delete `CLAUDE.md`, anything under
-`.claude` or anything under `.git` — the paths `write-protected-path` protects
-from the file tools that are not the loop's own state. It matches the way the
-filesystem does, so `claude.md` is `CLAUDE.md` on macOS and Windows.
+`.claude`, anything under `.git`, or the backlog — the paths
+`write-protected-path` and `backlog-is-not-edited` protect from the file tools
+that are not the loop's own state. It matches the way the filesystem does, so
+`claude.md` is `CLAUDE.md` on macOS and Windows.
 
-A settings file under `.claude` is where hooks are configured, and `CLAUDE.md`
-is the contract every gate reads, so a shell command that rewrote either would
-take the rules with it. Reading them is never refused, and neither is
-`.gitignore` or `.github/`.
+A settings file under `.claude` is where hooks are configured, `CLAUDE.md` is
+the contract every gate reads, and the backlog is the story itself, so a shell
+command that rewrote any of them would take the rules with it. Reading them is
+never refused, and neither is `.gitignore` or `.github/`.
 
-*Instead:* change them by hand outside a running iteration. If a rule is wrong,
-stop and say which one.
+*Instead:* change them by hand outside a running iteration. If what one says is
+wrong, stop and say what.
 
 ### `frozen-test-through-the-tool`
 

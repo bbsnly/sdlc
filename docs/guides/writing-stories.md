@@ -81,6 +81,12 @@ acceptance criteria above all.
 | `decisions` | no | human choices made about the story, as `{at, by, text}` |
 | `created`, `updated` | no | timestamps; the tool sets `updated` when it changes the status |
 
+Edit the backlog between stories. While a story is running, the hook refuses
+any attempt by the assistant to write it
+([`backlog-is-not-edited`](../enforcement.md#backlog-is-not-edited)), so the
+criteria the tests are held to and the tier that decides who approves the commit
+stay the ones the story started with.
+
 ## Acceptance criteria that become tests
 
 At Gate 3 the test author turns every criterion into at least one test that
