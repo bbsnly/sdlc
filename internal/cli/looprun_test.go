@@ -400,6 +400,33 @@ func TestStatusSaysAStoryIsFinishedBeforeItIsPutDown(t *testing.T) {
 	}
 }
 
+// A story taken out of the backlog mid-iteration has no title for status to
+// show, and a blank there reads as a story nobody named rather than a lost one.
+func TestStatusSaysWhenTheActiveStoryHasLeftTheBacklog(t *testing.T) {
+	gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	writeFile(t, ".", "user_stories.json", `{"stories":[]}`)
+
+	out := mustRun(t, "status").stdout
+	for _, want := range []string{
+		"(not in the backlog)",
+		"is not in user_stories.json any more",
+		"`sdlc stop` to end the iteration",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status does not say %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "/sdlc:next") {
+		t.Errorf("status sends a session on towards a commit it will refuse:\n%s", out)
+	}
+
+	if got := decode[statusPayload](t, run(t, "status", "--json")); !got.NotInBacklog {
+		t.Errorf("--json does not say the active story is not in the backlog: %+v", got)
+	}
+}
+
 // addStory appends a second story to the scaffolded backlog, so that a test
 // can be about what happens after the first one is finished.
 func addStory(t *testing.T, root, id string) {

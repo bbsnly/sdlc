@@ -51,6 +51,10 @@ up next. It changes nothing, so it is safe to run at any point.
 An active story with no gate left reads as `finished` rather than `in progress`,
 because there is nothing left to work on it: what it wants is `sdlc stop`.
 
+An active story that has gone from the backlog reads as `(not in the backlog)`,
+with `"not_in_backlog": true` in `--json`. The commit gate refuses such a story,
+so put it back, or run `sdlc stop` to end the iteration.
+
 Three fields in `--json` are worth knowing by name, because a skill reads them to
 decide what to do:
 

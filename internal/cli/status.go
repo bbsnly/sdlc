@@ -19,10 +19,13 @@ type nextUp struct {
 }
 
 type statusPayload struct {
-	OK     bool              `json:"ok"`
-	Active string            `json:"active,omitempty"`
-	Title  string            `json:"title,omitempty"`
-	Gates  map[string]string `json:"gates,omitempty"`
+	OK     bool   `json:"ok"`
+	Active string `json:"active,omitempty"`
+	Title  string `json:"title,omitempty"`
+	// NotInBacklog is set when the active story has gone from the backlog, so
+	// that an empty title is not mistaken for a story with no title.
+	NotInBacklog bool              `json:"not_in_backlog,omitempty"`
+	Gates        map[string]string `json:"gates,omitempty"`
 	// NextGate is where a resumed loop picks up. A skill reads this rather
 	// than working out the gate order for itself, which is the kind of
 	// derivation that drifts from the tool that enforces it.
@@ -98,6 +101,8 @@ func newStatusCmd() *cobra.Command {
 			if active != "" {
 				if story, ok := backlog.Find(active); ok {
 					payload.Title = story.Title
+				} else {
+					payload.NotInBacklog = true
 				}
 				if record, err = s.Record(active); err != nil {
 					return err
@@ -136,7 +141,11 @@ func newStatusCmd() *cobra.Command {
 				if finished {
 					state = "finished   "
 				}
-				fmt.Fprintf(w, "%s  %s  %s\n\n", active, state, payload.Title)
+				title := payload.Title
+				if payload.NotInBacklog {
+					title = "(not in the backlog)"
+				}
+				fmt.Fprintf(w, "%s  %s  %s\n\n", active, state, title)
 				printGates(w, record)
 				printFreeze(w, payload.Freeze)
 				printCost(w, payload.Cost)
@@ -149,6 +158,11 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprintf(w, "  waiting  %s  %s: %s\n", ws.Story, ws.Type, ws.Message)
 			}
 			switch {
+			case payload.NotInBacklog:
+				// Carrying on would end at the commit gate, which refuses a story
+				// whose risk tier it cannot read.
+				fmt.Fprintf(w, "\n%s is not in %s any more, so it cannot be committed. "+
+					"Put it back, or run `sdlc stop` to end the iteration.\n", active, s.Config().Backlog.Path)
 			case finished:
 				fmt.Fprint(w, "\nEvery gate has passed. Run `sdlc stop` to end the iteration.\n")
 			case active == "" && payload.Next == nil && len(payload.Waiting) > 0:
