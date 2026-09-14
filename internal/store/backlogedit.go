@@ -56,6 +56,10 @@ func (s *Store) ReviewSubject(ctx context.Context) (string, error) {
 	return gitx.TreeHash(ctx, s.root, gitx.Override{Path: filepath.ToSlash(rel), Content: normal})
 }
 
+// byteOrderMark is what Windows PowerShell 5 starts a file it saves with. The
+// file is otherwise fine, and the loop reads it as if the mark were not there.
+var byteOrderMark = []byte("\ufeff")
+
 // member is one key of a JSON object, located by its offsets in the file.
 type member struct {
 	key                  string
@@ -72,6 +76,12 @@ type change struct {
 // editStory returns the backlog with the given keys of the story id set, and
 // every other byte as it was.
 func editStory(data []byte, id string, changes ...change) ([]byte, bool) {
+	// Windows PowerShell 5 starts a file it saves with a byte order mark. The edit
+	// is made after it, and the mark is kept.
+	if body, found := bytes.CutPrefix(data, byteOrderMark); found {
+		edited, ok := editStory(body, id, changes...)
+		return append(bytes.Clone(byteOrderMark), edited...), ok
+	}
 	top, ok := objectMembers(data, 0, len(data))
 	if !ok {
 		return nil, false
@@ -119,6 +129,7 @@ func editStory(data []byte, id string, changes ...change) ([]byte, bool) {
 // the bytes that were there before, so a backlog reads the same here before and
 // after sdlc moves a story.
 func withoutStoryFields(data []byte, keys ...string) ([]byte, bool) {
+	data = bytes.TrimPrefix(data, byteOrderMark)
 	out := bytes.Clone(data)
 	for {
 		start, end, found, ok := firstStoryField(out, keys)

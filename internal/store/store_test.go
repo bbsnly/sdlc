@@ -287,6 +287,12 @@ func TestMovingAStoryChangesOnlyItsStatusAndUpdatedTime(t *testing.T) {
 			after: "{\r\n  \"stories\": [\r\n    {\"id\": \"A-1\", \"title\": \"One\", \"status\": \"in_progress\"," +
 				" \"updated\": \"2026-09-10T08:30:00Z\"}\r\n  ]\r\n}\r\n",
 		},
+		{
+			name:   "a file saved with a byte order mark keeps it",
+			before: "\ufeff{\r\n  \"stories\": [{\"id\": \"A-1\", \"title\": \"One\", \"status\": \"ready\"}]\r\n}\r\n",
+			after: "\ufeff{\r\n  \"stories\": [{\"id\": \"A-1\", \"title\": \"One\", \"status\": \"in_progress\"," +
+				" \"updated\": \"2026-09-10T08:30:00Z\"}]\r\n}\r\n",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newStore(t)
@@ -397,6 +403,12 @@ func TestTheBacklogReadsTheSameForReviewAfterAStoryWaitsAndResumes(t *testing.T)
 			storyBookkeeping...)
 		if string(retitled) == string(is) {
 			t.Error("a change to the story itself was left out of what a review sees")
+		}
+
+		// A backlog saved with a byte order mark is read for review as well.
+		marked, ok := withoutStoryFields(append([]byte("\ufeff"), now...), storyBookkeeping...)
+		if !ok || string(marked) != string(is) {
+			t.Errorf("a byte order mark changed what a review sees (read: %v):\n%s", ok, marked)
 		}
 	}
 }

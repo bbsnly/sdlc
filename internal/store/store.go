@@ -8,6 +8,7 @@
 package store
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -153,7 +154,7 @@ func (s *Store) readBacklog() ([]byte, *model.Backlog, error) {
 	}
 
 	var b model.Backlog
-	if err := json.Unmarshal(raw, &b); err != nil {
+	if err := json.Unmarshal(bytes.TrimPrefix(raw, byteOrderMark), &b); err != nil {
 		return nil, nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
 			relative(s.root, path)+" is not valid JSON",
 			"the loop reads every story from this file, so it stops rather than guess").WithCause(err)

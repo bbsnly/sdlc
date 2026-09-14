@@ -953,6 +953,39 @@ func TestDoctorNamesTheSettingsThatAreWrong(t *testing.T) {
 	}
 }
 
+// A backlog that is there and does not read was answered with "run sdlc init
+// to create it", which leaves a file that is already there alone.
+func TestDoctorDoesNotSendABrokenBacklogToInit(t *testing.T) {
+	project(t)
+	mustRun(t, "init")
+	backlog := func() check {
+		t.Helper()
+		for _, c := range decode[doctorPayload](t, run(t, "doctor", "--json")).Checks {
+			if c.Name == "backlog" {
+				return c
+			}
+		}
+		t.Fatal("doctor ran no backlog check")
+		return check{}
+	}
+
+	writeFile(t, ".", "user_stories.json", `{"stories":[{"id":"A-1","title":"One","status":"Ready"}]}`)
+	c := backlog()
+	if c.State != stateProblem || !strings.Contains(c.Detail, `"Ready"`) {
+		t.Errorf("the story the backlog cannot use was not named: %s %q", c.State, c.Detail)
+	}
+	if strings.Contains(c.Fix, "sdlc init") {
+		t.Errorf("the fix for a backlog that is there is to create it: %q", c.Fix)
+	}
+
+	if err := os.Remove("user_stories.json"); err != nil {
+		t.Fatal(err)
+	}
+	if c := backlog(); !strings.Contains(c.Fix, "sdlc init") {
+		t.Errorf("a missing backlog was not sent to sdlc init: %q", c.Fix)
+	}
+}
+
 func TestDoctorExitsNonZeroWhenSomethingIsWrong(t *testing.T) {
 	project(t)
 	mustRun(t, "init")

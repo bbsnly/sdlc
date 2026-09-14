@@ -277,8 +277,14 @@ func skipRest(after, because string) []check {
 func backlogCheck(s *store.Store, path, root string) check {
 	backlog, err := s.Backlog()
 	if err != nil {
-		return check{Name: "backlog", State: stateProblem, Detail: err.Error(),
-			Fix: `run "sdlc init" to create it, or point backlog.path at the file you use`}
+		// "sdlc init" creates a backlog that is not there, and leaves one that is
+		// alone, so it is the fix only for a missing one.
+		fix := "correct " + relativeTo(root, path) + ", or point backlog.path at the file you use"
+		var e *sdlcerr.Error
+		if errors.As(err, &e) && e.Code == sdlcerr.BacklogMissing {
+			fix = `run "sdlc init" to create it, or point backlog.path at the file you use`
+		}
+		return check{Name: "backlog", State: stateProblem, Detail: err.Error(), Fix: fix}
 	}
 	if len(backlog.Stories) == 0 {
 		return check{Name: "backlog", State: stateProblem,

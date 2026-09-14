@@ -238,7 +238,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - `sdlc doctor` names a setting it does not know, such as a misspelled one,
   which was read as no setting at all while doctor called the configuration
   fine. For a configuration that does not load, it names the settings at fault
-  and the fix for them, rather than suggesting `sdlc init`.
+  and the fix for them, rather than suggesting `sdlc init`. So it does for a
+  backlog that is there and does not read: `sdlc init` is the fix only for one
+  that is missing.
+- A backlog saved with a byte order mark, as Windows PowerShell 5 saves one,
+  reads, like the configuration. It was refused as invalid JSON. Moving a story
+  keeps the mark.
 - The plugin's hooks run from a plugin directory with a space in its path, as
   one under a home directory whose name has a space in it does. The unquoted
   command split in two and failed, which Claude Code treats as a hook with
