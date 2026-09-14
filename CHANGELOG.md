@@ -57,6 +57,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - A block from perf stops the gate, as its role always said it would when a
   change breaks a stated performance budget. It still never has to approve,
   and `sdlc review list` shows it as `on budget`.
+- A gate that keeps failing and a reviewer that keeps blocking go to a person.
+  After `loop.max_rework_rounds` failures of one gate, or
+  `loop.max_review_rounds` blocks from one reviewer, the command that recorded
+  the last one hands the story over, counting again once the person answers.
 - `sdlc cost` keeps what a story spent beside everything else it did.
   `sdlc cost add --usd` records an amount, `sdlc status` reports the running
   total, and crossing one of `budget.alert_fractions` says so once, on

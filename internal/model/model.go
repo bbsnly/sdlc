@@ -665,6 +665,34 @@ func (r *Record) LatestReview(g Gate, role string) (Review, bool) {
 	return Review{}, false
 }
 
+// The kinds of event in a record's history that the loop's own limits count.
+const (
+	EventGate     = "gate"
+	EventReview   = "review"
+	EventApproval = "approval"
+)
+
+// GateEvent is how a gate's outcome is written into the record's history.
+func GateEvent(g Gate, s GateStatus) string { return string(g) + " " + string(s) }
+
+// ReviewEvent is how a reviewer's verdict is written into the record's history.
+func ReviewEvent(g Gate, role string, v Verdict) string {
+	return string(g) + " " + role + " " + string(v)
+}
+
+// SinceDecision counts the events of one kind and message since a person last
+// answered for the story. A limit on retries counts from there: somebody who
+// decides the story should carry on has given it a fresh start.
+func (r *Record) SinceDecision(kind, message string) int {
+	n := 0
+	for i := len(r.Events) - 1; i >= 0 && r.Events[i].Type != EventApproval; i-- {
+		if r.Events[i].Type == kind && r.Events[i].Message == message {
+			n++
+		}
+	}
+	return n
+}
+
 // The two answers a person can give to an escalation.
 const (
 	DecisionApproved = "approved"

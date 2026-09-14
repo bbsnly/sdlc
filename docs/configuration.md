@@ -141,8 +141,8 @@ before it writes anything.
 
 | Key | What it means |
 | --- | --- |
-| `max_review_rounds` | how many times a gate's reviewers will be asked again before the loop stops and asks a person |
-| `max_rework_rounds` | how many times a story goes back to the implementer |
+| `max_review_rounds` | how many times one reviewer may block a gate before `sdlc review add` hands the story to a person. A block that cannot stop the gate is not counted |
+| `max_rework_rounds` | how many times one gate may be recorded as failed before `sdlc gate` hands the story to a person |
 | `max_stop_blocks` | how many stops in a row, with nothing recorded on the story, the `Stop` hook sends back before it hands the story to a person. `0` turns it off. See [stopping mid-story](enforcement.md#stopping-mid-story) |
 
 ## `reviews.gate7_advisory`

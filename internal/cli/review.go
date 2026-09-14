@@ -22,6 +22,9 @@ type reviewPayload struct {
 	Round   int    `json:"round"`
 	Path    string `json:"path"`
 	Subject string `json:"subject,omitempty"`
+	// HandedOver is the kind of escalation, when this block was one too many
+	// and the story went to a person.
+	HandedOver string `json:"handed_over,omitempty"`
 }
 
 type reviewListPayload struct {
@@ -135,19 +138,37 @@ func newReviewAddCmd() *cobra.Command {
 				Gate: gate, Role: reviewer.Role, Verdict: verdict,
 				Subject: subject, File: path, Note: note,
 			}, s.Now())
-			record.Append("review", string(gate)+" "+reviewer.Role+" "+string(verdict), s.Now())
+			record.Append(model.EventReview, model.ReviewEvent(gate, reviewer.Role, verdict), s.Now())
 			if err := s.SaveRecord(record); err != nil {
 				return err
+			}
+			// A block that cannot stop the gate is a finding, not a round
+			// the rework lost, so only a block that stops it counts.
+			handedOver, message := "", ""
+			if reviewer.Stops(reviewPolicy(s, record), verdict) {
+				limit := s.Config().Loop.MaxReviewRounds
+				blocks := record.SinceDecision(model.EventReview,
+					model.ReviewEvent(gate, reviewer.Role, model.VerdictBlock))
+				message = fmt.Sprintf("%s has blocked %s %d times, and loop.max_review_rounds is %d, "+
+					"so the rework is not converging on what it asks for. The last note: %s",
+					reviewer.Role, gate, blocks, limit, lastNote(note))
+				if handedOver, err = handOverAt(cmd, s, id, blocks, limit, "review_not_converging", message); err != nil {
+					return err
+				}
 			}
 
 			if wantJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), reviewPayload{
 					OK: true, Story: id, Gate: string(gate), Role: reviewer.Role,
 					Verdict: string(verdict), Round: rev.Round, Path: path, Subject: subject,
+					HandedOver: handedOver,
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s  %s (round %d)\n  %s\n",
 				id, gate, reviewer.Role, verdict, rev.Round, path)
+			if handedOver != "" {
+				sayHandedOver(cmd.OutOrStdout(), id, message)
+			}
 			return nil
 		},
 	}

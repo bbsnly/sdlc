@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -133,7 +134,7 @@ func newApproveCmd() *cobra.Command {
 			if rejected {
 				event += ": " + reject
 			}
-			record.Append("approval", event, s.Now())
+			record.Append(model.EventApproval, event, s.Now())
 			if err := s.SaveRecord(record); err != nil {
 				return err
 			}
@@ -154,6 +155,38 @@ func newApproveCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&reject, "reject", "", "send the work back instead, saying why")
 	return cmd
+}
+
+// handOverAt hands a story to a person when one of the loop's limits is reached:
+// a gate that keeps failing, a reviewer that keeps blocking. Another attempt
+// would meet the same wall, and a person deciding to carry on is what starts
+// the count again. It returns the kind of hand-over, or "" when the limit has
+// not been reached. A limit of zero is no limit.
+//
+// The caller holds the project's lock.
+func handOverAt(cmd *cobra.Command, s *store.Store, id string, count, limit int, kind, message string) (string, error) {
+	if limit <= 0 || count < limit {
+		return "", nil
+	}
+	if _, err := s.Escalate(cmd.Context(), id, kind, message); err != nil {
+		return "", err
+	}
+	return kind, nil
+}
+
+// sayHandedOver is what a command prints after handOverAt handed a story over.
+func sayHandedOver(w io.Writer, id, message string) {
+	fmt.Fprintf(w, "\n%s is handed to a person: %s\n\n"+
+		"A person reads the work and answers in their own terminal:\n"+
+		"  sdlc approve %s\n  sdlc approve %s --reject \"why\"\n", id, message, id, id)
+}
+
+// lastNote is a note for a message that quotes it.
+func lastNote(note string) string {
+	if strings.TrimSpace(note) == "" {
+		return "no note was given"
+	}
+	return note
 }
 
 // refuseIfWaiting keeps a story that was handed to a person with that person

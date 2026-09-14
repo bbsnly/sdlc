@@ -357,9 +357,11 @@ running for the same reason a frozen test is: a rule you can edit is a rule that
 applying to you. If a rule in the `## SDLC Contract` section is genuinely wrong, say which rule
 blocks which gate, and hand it to a person, who can change it.
 
-If the same gate fails three times, hand it to a person with
-`sdlc escalate gate_failing --message "..."`. Something upstream is wrong, and a fourth attempt
-will find the same wall.
+A gate that keeps failing, and a reviewer that keeps blocking, go to a person without you
+deciding it. After `loop.max_rework_rounds` failures of the same gate, or `loop.max_review_rounds`
+blocks from the same reviewer, `sdlc gate` or `sdlc review add` hands the story over, ends the
+iteration, and says so — `handed_over` in its `--json`. Stop there: something upstream is wrong,
+and another attempt would meet the same wall.
 
 ## Handing a decision to a person
 

@@ -209,6 +209,12 @@ There is no flag that skips a gate, and no way to record one out of order. When
 a reviewer blocks, the way past is the same reviewer looking again — its new
 verdict replaces the old one, and the gate reads the latest.
 
+Neither goes round for ever. A gate recorded as failed
+[`loop.max_rework_rounds`](configuration.md#loop) times, or a reviewer that
+blocks `loop.max_review_rounds` times, hands the story to a person: the rework
+is not converging, and another round would meet the same wall. The count starts
+again once the person has answered.
+
 Recording a gate again, pass or fail, reopens every gate after it: each goes
 back to `pending`, with a note saying why, and has to be passed again. A new
 plan cannot inherit the design review of the old one.

@@ -365,6 +365,9 @@ type gatePayload struct {
 	Note   string `json:"note,omitempty"`
 	// Done reports that this gate was the last one: the story left the backlog.
 	Done bool `json:"done"`
+	// HandedOver is the kind of escalation, when this failure was one too many
+	// and the story went to a person.
+	HandedOver string `json:"handed_over,omitempty"`
 }
 
 // settleStory keeps the backlog honest about a story whose gates have all
@@ -474,7 +477,7 @@ func newGateCmd() *cobra.Command {
 				record.SetSecuritySensitive(securitySensitive)
 			}
 			record.SetGate(gate, status, note, s.Now())
-			record.Append("gate", string(gate)+" "+string(status), s.Now())
+			record.Append(model.EventGate, model.GateEvent(gate, status), s.Now())
 			if err := s.SaveRecord(record); err != nil {
 				return err
 			}
@@ -482,10 +485,22 @@ func newGateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			handedOver, message := "", ""
+			if status == model.GateFail {
+				limit := s.Config().Loop.MaxReworkRounds
+				failures := record.SinceDecision(model.EventGate, model.GateEvent(gate, model.GateFail))
+				message = fmt.Sprintf("%s has failed %d times, and loop.max_rework_rounds is %d, "+
+					"so another attempt would meet the same wall. The last note: %s",
+					gate, failures, limit, lastNote(note))
+				if handedOver, err = handOverAt(cmd, s, id, failures, limit, "gate_failing", message); err != nil {
+					return err
+				}
+			}
 
 			if wantJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), gatePayload{
 					OK: true, Story: id, Gate: string(gate), Status: string(status), Note: note, Done: done,
+					HandedOver: handedOver,
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n", id, gate, status)
@@ -494,6 +509,9 @@ func newGateCmd() *cobra.Command {
 			}
 			if done {
 				fmt.Fprintf(cmd.OutOrStdout(), "\n%s is done: every gate has passed.\n", id)
+			}
+			if handedOver != "" {
+				sayHandedOver(cmd.OutOrStdout(), id, message)
 			}
 			return nil
 		},

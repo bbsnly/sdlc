@@ -136,6 +136,11 @@ read from the record rather than from the gate's name, so a gate recorded as
 failed afterwards — a code review reopened on work already committed — puts the
 story back to `in_progress`, where the rework belongs.
 
+A gate recorded as failed `loop.max_rework_rounds` times since a person last
+answered for the story hands the story to that person, as
+[`sdlc escalate`](#sdlc-escalate) `gate_failing` would, and says so —
+`handed_over` in `--json`.
+
 ## `sdlc artifact list`
 
 List the documents this version can store.
@@ -218,6 +223,10 @@ approval go stale when the thing it approved changes. The story and the tree
 both leave out the `status` and `updated` fields `sdlc` writes into the backlog
 itself, and the tree leaves out `.sdlc/`; see
 [Why approvals go stale](the-loop.md#why-approvals-go-stale).
+
+A block that stops the gate, recorded `loop.max_review_rounds` times by the same
+reviewer since a person last answered for the story, hands the story to that
+person as `review_not_converging`, and says so — `handed_over` in `--json`.
 
 Rounds are kept rather than overwritten, so "what did the architect say last
 time" stays answerable.

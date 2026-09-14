@@ -63,8 +63,9 @@ func (s *Store) RecordProgress(id string) (string, error) {
 }
 
 // Escalate hands the story to a person: the question goes on its record, bound
-// to the work as it stands, the story becomes awaiting_human, and the iteration
-// ends. It returns the tree the question was asked about.
+// to the work as it stands, and the story becomes awaiting_human. When it is
+// the story being worked on, the iteration ends; handing over another story
+// leaves the iteration alone. It returns the tree the question was asked about.
 //
 // The caller holds the project's lock.
 func (s *Store) Escalate(ctx context.Context, id, kind, message string) (string, error) {
@@ -84,8 +85,14 @@ func (s *Store) Escalate(ctx context.Context, id, kind, message string) (string,
 	if err := s.SetStoryStatus(id, model.StatusAwaitingHuman); err != nil {
 		return "", err
 	}
-	if err := s.ClearActive(); err != nil {
+	active, err := s.Active()
+	if err != nil {
 		return "", err
+	}
+	if active == id {
+		if err := s.ClearActive(); err != nil {
+			return "", err
+		}
 	}
 	return tree, nil
 }
