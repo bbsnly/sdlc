@@ -16,6 +16,7 @@ package shellpolicy
 import (
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/bbsnly/sdlc/internal/model"
@@ -250,6 +251,11 @@ func checkPrograms(text string, s State) (Finding, bool) {
 	// commit in this one.
 	runs, subshells := programsAt(text, s.PowerShell)
 	dirs := map[int]string{0: s.Dir}
+	// GIT_DIR names the repository whatever the directory, and an assignment to
+	// it can be anywhere in the command, or a statement of its own in
+	// PowerShell: `$env:GIT_DIR='C:\project\.git'; cd \; git commit`. Asked once:
+	// asked for every command in it, a long command took seconds.
+	gitDirSet := setsGitDir.MatchString(text)
 	for _, r := range runs {
 		words := r.words
 		dir, ok := dirs[r.group]
@@ -270,11 +276,8 @@ func checkPrograms(text string, s State) (Finding, bool) {
 		if f, ok := checkReviewer(words, s); ok {
 			return f, true
 		}
-		// GIT_DIR names the repository whatever the directory, and an assignment
-		// to it can be anywhere in the command, or a statement of its own in
-		// PowerShell: `$env:GIT_DIR='C:\project\.git'; cd \; git commit`.
 		// A directory of "" is the project.
-		if strings.Contains(pathrules.Fold(text), "git_dir") {
+		if gitDirSet {
 			dir = ""
 		}
 		if f, ok := checkCommit(words, dir, s); ok {
@@ -286,6 +289,12 @@ func checkPrograms(text string, s State) (Finding, bool) {
 	}
 	return Finding{}, false
 }
+
+// setsGitDir matches an assignment to GIT_DIR: `GIT_DIR=`, `export GIT_DIR=`,
+// or PowerShell's environment drive, as in `$env:GIT_DIR = ` and `Set-Item
+// env:GIT_DIR`. A mention is not one: a commit message that said "unset
+// GIT_DIR" was a commit in the project wherever it was made.
+var setsGitDir = regexp.MustCompile(`(?i)git_dir=|env:git_dir`)
 
 // HumanDecisions reports a command that makes one of the decisions the loop
 // keeps for a person: approving work handed over, or lifting the freeze. These

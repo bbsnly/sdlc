@@ -154,6 +154,10 @@ func TestACommitInAnotherRepositoryIsNotTheStorys(t *testing.T) {
 	psElsewhere := elsewhere
 	psElsewhere.PowerShell = true
 	refused(t, "$env:git_dir='/work/project/.git'; git commit -am x", psElsewhere, "commit-gate")
+	refused(t, "$env:GIT_DIR = '/work/project/.git'; git commit -am x", psElsewhere, "commit-gate")
+	refused(t, "Set-Item env:GIT_DIR /work/project/.git; git commit -am x", psElsewhere, "commit-gate")
+	allowed(t, `git commit -m "unset GIT_DIR in the hook"`, elsewhere)
+	allowed(t, "grep -rn GIT_DIR . ; git commit --allow-empty -m init", elsewhere)
 
 	for _, command := range []string{
 		"git commit -m x",
