@@ -304,11 +304,11 @@ var tooDeep = Finding{
 
 // setsGitDir matches an assignment to GIT_DIR: `GIT_DIR=`, `export GIT_DIR=`,
 // or PowerShell's environment drive, as in `$env:GIT_DIR = ` and `Set-Item
-// env:GIT_DIR`, `Env:\GIT_DIR`, and the name quoted to .NET, as in
+// env:GIT_DIR`, `Env:\GIT_DIR`, and .NET's
 // `[Environment]::SetEnvironmentVariable('GIT_DIR', ...)`. A mention is not
-// one: a commit message that said "unset GIT_DIR" was a commit in the project
-// wherever it was made.
-var setsGitDir = regexp.MustCompile(`(?i)\bgit_dir=|env:[\\/]?git_dir\b|['"]git_dir['"]`)
+// one: a commit message that said "unset GIT_DIR", or `grep 'GIT_DIR'`, was a
+// commit in the project wherever it was made.
+var setsGitDir = regexp.MustCompile(`(?i)\bgit_dir=|env:[\\/]?git_dir\b|setenvironmentvariable\(\s*['"]git_dir['"]`)
 
 // HumanDecisions reports a command that makes one of the decisions the loop
 // keeps for a person: approving work handed over, or lifting the freeze. These
