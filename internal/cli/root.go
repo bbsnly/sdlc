@@ -243,11 +243,16 @@ func newVersionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "version",
 		Short:   "Print the version of sdlc you are running",
-		Example: "  sdlc version\n  sdlc version --short",
+		Example: "  sdlc version\n  sdlc version --short\n  sdlc version --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info := version.Get()
-			if short {
+			switch {
+			case wantJSON(cmd) && short:
+				return emitJSON(cmd.OutOrStdout(), map[string]string{"version": info.Version})
+			case wantJSON(cmd):
+				return emitJSON(cmd.OutOrStdout(), info)
+			case short:
 				_, err := fmt.Fprintln(cmd.OutOrStdout(), info.Version)
 				return err
 			}

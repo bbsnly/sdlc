@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,6 +25,35 @@ func TestShortVersionHasNoDecoration(t *testing.T) {
 	Execute([]string{"version", "--short"}, strings.NewReader(""), &out, &errb)
 	if strings.ContainsAny(out.String(), "()") {
 		t.Errorf("--short should print only the version, got %q", out.String())
+	}
+}
+
+// --json works on every command, and a script reading the version is the first
+// to rely on it: version printed prose whatever it was asked.
+func TestVersionAnswersInJSONWhenAsked(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		keys string
+	}{
+		{[]string{"version", "--json"}, "commit date dirty version"},
+		{[]string{"version", "--short", "--json"}, "version"},
+	} {
+		var out, errb bytes.Buffer
+		if code := Execute(tc.args, strings.NewReader(""), &out, &errb); code != 0 {
+			t.Fatalf("%v: exit %d: %s", tc.args, code, errb.String())
+		}
+		var got map[string]any
+		if err := json.Unmarshal(out.Bytes(), &got); err != nil || got["version"] == "" {
+			t.Errorf("%v printed %q, not JSON with a version: %v", tc.args, out.String(), err)
+		}
+		var keys []string
+		for k := range got {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		if strings.Join(keys, " ") != tc.keys {
+			t.Errorf("%v printed %v, want %s", tc.args, keys, tc.keys)
+		}
 	}
 }
 

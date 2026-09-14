@@ -247,6 +247,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - The shell rules read a path as the file it is on disk. A link to `.sdlc`,
   `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
   the file in letters no rule matched, and `rm notes/state/active` went through.
+- `sdlc version --json` prints JSON. It printed the prose line whatever it was
+  asked, although `--json` is documented for every command.
 - The hook reads a long shell command in time. A command naming the same paths
   in segment after segment was checked, and looked up on disk, word by word
   again for every segment: a hundred `echo ... | xargs rm` took longer than the

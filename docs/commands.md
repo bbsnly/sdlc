@@ -408,11 +408,15 @@ Print the version of sdlc you are running.
 ```console
 $ sdlc version
 $ sdlc version --short
+$ sdlc version --json
 ```
 
 | Flag | What it does |
 | --- | --- |
 | `--short` | print the version alone, with nothing around it |
+
+With `--json` it prints `version`, `commit`, `date` and `dirty`, and with
+`--short` as well, `version` alone.
 
 ## `sdlc hook EVENT`
 

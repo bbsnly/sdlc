@@ -20,13 +20,13 @@ var (
 
 // Info is what this build knows about itself.
 type Info struct {
-	Version string // semver, or "0.0.0-dev" for an untagged build
-	Commit  string // full commit sha, or "" when unknown
+	Version string `json:"version"` // semver, or "0.0.0-dev" for an untagged build
+	Commit  string `json:"commit"`  // full commit sha, or "" when unknown
 	// RFC3339, or "" when unknown. A released build carries the *commit*
 	// date, not the time it was built: a build time would differ on every
 	// rebuild of the same tag and make the binary unreproducible.
-	Date  string
-	Dirty bool // built from a tree with uncommitted changes
+	Date  string `json:"date"`
+	Dirty bool   `json:"dirty"` // built from a tree with uncommitted changes
 }
 
 var (
