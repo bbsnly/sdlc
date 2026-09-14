@@ -10,6 +10,7 @@ package pathrules
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"golang.org/x/text/cases"
@@ -55,16 +56,39 @@ func (res Resolver) Rel(p string) (rel string, outside bool) {
 
 	r, err := filepath.Rel(root, resolved)
 	if err != nil {
+		if folded, inside := foldedRel(root, resolved); inside {
+			return folded, false
+		}
 		return filepath.ToSlash(abs), true
 	}
 	r = filepath.ToSlash(r)
 	if r == ".." || strings.HasPrefix(r, "../") {
+		if folded, inside := foldedRel(root, resolved); inside {
+			return folded, false
+		}
 		return filepath.ToSlash(resolved), true
 	}
 	if r == "." {
 		return "", false
 	}
 	return r, false
+}
+
+// foldedRel is p relative to root where the filesystem folds case, as macOS's
+// and Windows' do and filepath.Rel does not: `/PRIVATE/VAR/.../.sdlc/state`,
+// or `\\?\C:\project\.sdlc\state`, is the project's loop state, and read as
+// outside the project it was nobody's to protect. What it returns is folded,
+// which is how every rule compares a path anyway.
+func foldedRel(root, p string) (string, bool) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		return "", false
+	}
+	r := strings.TrimSuffix(Fold(filepath.ToSlash(root)), "/")
+	q := strings.TrimPrefix(Fold(filepath.ToSlash(p)), "//?/")
+	if q == r {
+		return "", true
+	}
+	return strings.CutPrefix(q, r+"/")
 }
 
 // Abs makes p absolute against base, as the program that writes it would. ok

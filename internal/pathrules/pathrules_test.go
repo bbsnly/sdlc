@@ -43,6 +43,29 @@ func TestRelPutsPathsIntoRepositoryRelativeForm(t *testing.T) {
 	}
 }
 
+// macOS and Windows fold case, and filepath.Rel does not: the project's loop
+// state, named with the project's path in capitals, was outside the project.
+func TestRelFoldsCaseWhereTheFilesystemDoes(t *testing.T) {
+	root := project(t)
+	upper := filepath.Join(strings.ToUpper(root), ".sdlc", "state", "active")
+	got, outside := Rel(root, upper)
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		if !outside {
+			t.Errorf("on a filesystem that keeps case, %s was inside the project as %q", upper, got)
+		}
+		return
+	}
+	if outside || got != ".sdlc/state/active" {
+		t.Errorf("Rel(%s) = %q, outside %v; want .sdlc/state/active inside", upper, got, outside)
+	}
+	if _, outside := Rel(root, strings.ToUpper(root)); outside {
+		t.Error("the project's own path in capitals was outside it")
+	}
+	if _, outside := Rel(root, strings.ToUpper(root)+"-other"); !outside {
+		t.Error("a sibling whose name starts with the project's was inside it")
+	}
+}
+
 func TestRelReportsPathsThatLeaveTheRepository(t *testing.T) {
 	root := project(t)
 	for _, in := range []string{

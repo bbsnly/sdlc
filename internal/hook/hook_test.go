@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -402,6 +403,25 @@ func TestAShellCommandThroughALinkIsReadAsTheFileItReaches(t *testing.T) {
 	}
 	if denied(call(t, command(root, "sdlc-implementer", "echo x > scratch.txt"), noEnv)) {
 		t.Error("an ordinary write was refused")
+	}
+}
+
+// macOS and Windows fold case. Named with the project's path in capitals, the
+// loop's record was outside the project and nobody's to protect, and a commit
+// made there was another repository's.
+func TestTheProjectSpelledInAnotherCaseIsStillTheProject(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		t.Skip("this filesystem keeps case, so the path in capitals is another one")
+	}
+	root := loopProject(t)
+	upper := filepath.ToSlash(strings.ToUpper(root))
+	for _, cmd := range []string{
+		"rm " + upper + "/.sdlc/state/active",
+		"cd " + upper + " && git commit -m x",
+	} {
+		if !denied(call(t, command(root, "sdlc-implementer", cmd), noEnv)) {
+			t.Errorf("%q went through", cmd)
+		}
 	}
 }
 

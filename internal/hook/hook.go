@@ -267,6 +267,12 @@ func onDisk(resolver pathrules.Resolver, word string) string {
 		// `~someone/.claude` is someone's home, not the project's.
 		return ""
 	}
+	// `C:.sdlc\state` is relative to a working directory on that drive, which
+	// only the shell knows. Read as outside, it was nobody's to protect; read
+	// without the drive, it is a name the rules look for wherever it is.
+	if volume := filepath.VolumeName(word); volume != "" && !filepath.IsAbs(word) {
+		return filepath.ToSlash(word[len(volume):])
+	}
 	rel, outside := resolver.Rel(filepath.FromSlash(word))
 	if outside {
 		return ""

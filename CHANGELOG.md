@@ -252,6 +252,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `sdlc approve` or the shell a document is handed to went unread, and sdlc is
   now found behind a wrapper the rules do not know. PowerShell's `<# ... #>`
   comment no longer hides the command after it.
+- On macOS and Windows, the project's path spelled in another case was read as
+  somewhere else: `rm /OPT/PROJECT/.sdlc/state/active`, or `cd` to it and
+  `git commit`, went past the rules on loop state and the commit gate. So did a
+  path relative to a drive's working directory, such as `C:.sdlc\state\active`.
+  Both are now read as the project's.
 - A command nesting `$( )` thousands deep took the hook longer to read than
   Claude Code gives it, and Claude Code then runs the command unchecked: `git
   commit` on the line before went through. A command nested more than 32 deep is
