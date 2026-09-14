@@ -29,6 +29,12 @@ type State struct {
 	CommitReady bool
 	CommitWhy   string
 
+	// Fresh, when set, reports whether the work a commit would record is the
+	// work that was reviewed, and says what changed when it is not. It is asked
+	// only for a commit whose gates have passed, because answering it means
+	// measuring the working tree.
+	Fresh func() (bool, string)
+
 	// Frozen is every acceptance test the freeze holds, repository-relative
 	// and slash-separated. Empty before the freeze, and before then there is
 	// nothing here to protect.
@@ -166,12 +172,22 @@ func runsSubcommand(words []string, sub string) bool {
 
 // checkCommit puts the commit gate in front of the commit.
 func checkCommit(words []string, s State) (Finding, bool) {
-	if s.CommitReady || !isGit(words) || !hasWord(words[1:], "commit") {
+	if !isGit(words) || !hasWord(words[1:], "commit") {
+		return Finding{}, false
+	}
+	ready, why := s.CommitReady, s.CommitWhy
+	// The gates having passed is not the same as the commit being the work
+	// that passed them: code edited after the code review went through here
+	// and was committed, and only `sdlc gate commit pass` noticed, afterwards.
+	if ready && s.Fresh != nil {
+		ready, why = s.Fresh()
+	}
+	if ready {
 		return Finding{}, false
 	}
 	return Finding{
 		Rule:   "commit-gate",
-		Reason: "this story has not been through the gates that come before committing: " + s.CommitWhy,
+		Reason: "this story has not been through the gates that come before committing: " + why,
 		Route: "finish the gates -- `sdlc status` shows where this story stands -- " +
 			"or `sdlc stop` to end the iteration and commit as yourself",
 	}, true

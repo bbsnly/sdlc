@@ -263,6 +263,39 @@ func TestAnUnreadableFreezeFreezesEveryTest(t *testing.T) {
 	}
 }
 
+// The gates having passed is not the same as the commit being what passed them.
+// Code edited after the code review was committed without a word, and only the
+// commit gate, recorded after the commit, noticed.
+func TestACommitWaitsForTheReviewsToBeOfWhatIsCommitted(t *testing.T) {
+	asked := 0
+	stale := State{CommitReady: true, Fresh: func() (bool, string) {
+		asked++
+		return false, "the work has changed since code-reviewer (code_review) reviewed it"
+	}}
+	if f := refused(t, "git commit -m done", stale, "commit-gate"); !strings.Contains(f.Reason, "changed since") {
+		t.Errorf("the refusal does not say what changed: %q", f.Reason)
+	}
+	// Measuring the tree is for a commit, not for every command.
+	allowed(t, "go test ./...", stale)
+	allowed(t, "git status", stale)
+	if asked != 1 {
+		t.Errorf("the tree was measured %d times; only the commit should ask", asked)
+	}
+
+	allowed(t, "git commit -m done", State{CommitReady: true, Fresh: func() (bool, string) { return true, "" }})
+
+	// Gates that have not passed answer first, without measuring anything.
+	asked = 0
+	notYet := State{CommitWhy: "code_review has not passed", Fresh: func() (bool, string) {
+		asked++
+		return true, ""
+	}}
+	refused(t, "git commit -m done", notYet, "commit-gate")
+	if asked != 0 {
+		t.Error("the tree was measured for a story whose gates have not passed")
+	}
+}
+
 // Lifting the freeze was an instruction in the runbook and nothing more, so an
 // agent failing a test could lift the freeze on it from its own shell.
 func TestUnfreezeIsAHumanDecision(t *testing.T) {

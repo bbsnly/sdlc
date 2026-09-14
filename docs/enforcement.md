@@ -227,6 +227,12 @@ wrong, and stop there.
 Refuses `git commit` until every gate before the commit gate has passed. The
 refusal names the first one that has not.
 
+Once they have, it also refuses a commit of work that has changed since the
+verifier and the code reviewers approved it. Their reviews are stamped with the
+working tree as it was, outside `.sdlc/`, and a change anywhere in it makes them
+stale; the refusal names whose. Measuring the tree takes a moment, so it is done
+only for `git commit`.
+
 A gate record that is missing or will not parse counts as no gate passed, and
 the refusal names the file. `sdlc start` always writes one, so either means
 something damaged it. `sdlc stop` still ends the iteration when the record

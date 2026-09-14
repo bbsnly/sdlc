@@ -159,6 +159,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - Recording a gate again reopens every gate after it. After `plan fail` and a
   new `plan pass`, the gates past the plan stayed passed, so the loop went on
   to code review and never asked for a design review of the new plan.
+- The commit gate refuses a commit of work changed since it was reviewed. The
+  hook asked only whether the gates had passed, so code edited after the code
+  review was committed, and `sdlc gate commit pass` found the stale reviews only
+  afterwards. The tree is measured only for `git commit`.
 - `sdlc doctor` checks the loop's state files. Every hook warning about them
   said to run it, and it did not read either one.
 

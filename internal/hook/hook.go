@@ -17,6 +17,7 @@
 package hook
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,8 +27,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/bbsnly/sdlc/internal/config"
+	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/policy"
@@ -211,8 +214,10 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 		"agent", p.AgentType, "story", story, "commit_ready", ready, "why", why)
 
 	frozen, isTest := frozenTests(project, story, warn)
-	finding, refused := shellpolicy.Inspect(p.ToolInput.Command,
-		shellpolicy.State{CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest})
+	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, shellpolicy.State{
+		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest,
+		Fresh: func() (bool, string) { return reviewsFresh(project, story, warn) },
+	})
 	if !refused {
 		return policy.Allowed
 	}
@@ -286,6 +291,67 @@ func commitReady(project, story string) (bool, string) {
 		}
 	}
 	return true, ""
+}
+
+// treeTimeout bounds measuring the working tree for a commit. A repository big
+// enough to take longer than this is one where the hook should say it could not
+// check, not hold the session.
+const treeTimeout = 20 * time.Second
+
+// reviewsFresh reports whether the verifier's and the code reviewers' reviews
+// are of the tree as it is now -- the same question `sdlc gate commit pass`
+// asks, asked before the commit instead of after it.
+//
+// It measures the tree only when there is a review to compare it with, and a
+// tree it cannot measure lets the commit through with a warning: git failing
+// here is git failing for the commit too.
+func reviewsFresh(project, story string, warn func(string)) (bool, string) {
+	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "stories", story, model.RecordFile))
+	if err != nil {
+		return true, "" // commitReady has already refused over this
+	}
+	var record model.Record
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return true, ""
+	}
+	type stamped struct {
+		gate    model.Gate
+		role    string
+		subject string
+	}
+	var reviews []stamped
+	for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
+		for _, r := range model.ReviewersFor(gate) {
+			if latest, ok := record.LatestReview(gate, r.Role); ok {
+				reviews = append(reviews, stamped{gate, r.Role, latest.Subject})
+			}
+		}
+	}
+	if len(reviews) == 0 {
+		return true, ""
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), treeTimeout)
+	defer cancel()
+	tree, err := gitx.TreeHash(ctx, project)
+	if err != nil {
+		slog.Debug("hook could not measure the working tree", "err", err)
+		warn("the working tree could not be measured, so this commit was not checked " +
+			"against what was reviewed. `sdlc gate commit pass` will check it afterwards.")
+		return true, ""
+	}
+	var stale []string
+	for _, r := range reviews {
+		if r.subject != tree {
+			stale = append(stale, r.role+" ("+string(r.gate)+")")
+		}
+	}
+	if len(stale) == 0 {
+		return true, ""
+	}
+	return false, "the work has changed since " + strings.Join(stale, ", ") + " reviewed it, " +
+		"so this commit is not what was approved; have the change reviewed again and record " +
+		"those gates again"
 }
 
 // testState works out what the freeze says about this path.
