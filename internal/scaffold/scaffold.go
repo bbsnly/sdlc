@@ -58,7 +58,21 @@ func Init(root string, force bool) (*Result, error) {
 	stack, alsoSeen := Detect(root)
 	res := &Result{Root: root, Stack: stack.Name, AlsoSeen: alsoSeen}
 
-	cfg, err := renderConfig(stack)
+	// --force restores the settings, and two values in the file are not
+	// settings but facts about the repository: where its stories are and what
+	// its trunk is called. Resetting backlog.path pointed the loop at a fresh
+	// example backlog and left the real one unread, and resetting the trunk
+	// made `sdlc start` refuse every story on a trunk that is not "main". A
+	// configuration too broken to read has nothing to keep.
+	defaults := config.Default()
+	backlogPath, trunk := defaults.Backlog.Path, defaults.Git.TrunkBranch
+	if force {
+		if old, err := config.Load(root); err == nil {
+			backlogPath, trunk = old.Backlog.Path, old.Git.TrunkBranch
+		}
+	}
+
+	cfg, err := renderConfig(stack, backlogPath, trunk)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +92,7 @@ func Init(root string, force bool) (*Result, error) {
 	if err != nil {
 		return nil, embedFailure(err)
 	}
-	if err := res.write(root, config.Default().Backlog.Path, backlog, false); err != nil {
+	if err := res.write(root, backlogPath, backlog, false); err != nil {
 		return nil, err
 	}
 
@@ -149,8 +163,9 @@ func (r *Result) writeRaw(root, rel string, data []byte, note string) error {
 	return nil
 }
 
-// renderConfig fills the configuration template from the detected stack.
-func renderConfig(stack Stack) ([]byte, error) {
+// renderConfig fills the configuration template from the detected stack, with
+// the backlog and trunk the project already has.
+func renderConfig(stack Stack, backlogPath, trunk string) ([]byte, error) {
 	raw, err := templates.ReadFile("templates/config.json.tmpl")
 	if err != nil {
 		return nil, embedFailure(err)
@@ -174,8 +189,8 @@ func renderConfig(stack Stack) ([]byte, error) {
 		TestGlobs   []string
 		SrcDirs     []string
 	}{
-		BacklogPath: defaults.Backlog.Path,
-		TrunkBranch: defaults.Git.TrunkBranch,
+		BacklogPath: backlogPath,
+		TrunkBranch: trunk,
 		StackNote:   stackNote(stack),
 		Commands:    stack.Commands,
 		TestDirs:    orDefault(stack.TestDirs, defaults.Paths.Tests.Dirs),

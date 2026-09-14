@@ -149,7 +149,7 @@ func TestStackNamesListsWhatIsTried(t *testing.T) {
 // what catches them drifting apart.
 func TestRenderedConfigMatchesTheDefaultsForEveryStack(t *testing.T) {
 	for _, stack := range []Stack{unknownStack(), goStack(t), nodeStack(t)} {
-		raw, err := renderConfig(stack)
+		raw, err := renderConfig(stack, config.Default().Backlog.Path, config.Default().Git.TrunkBranch)
 		if err != nil {
 			t.Fatalf("%s: %v", stack.Name, err)
 		}
@@ -188,7 +188,7 @@ func TestRenderedConfigMatchesTheDefaultsForEveryStack(t *testing.T) {
 
 // A command with a quote in it has to survive being written into JSON.
 func TestRenderedConfigEscapesShellQuoting(t *testing.T) {
-	raw, err := renderConfig(goStack(t))
+	raw, err := renderConfig(goStack(t), config.Default().Backlog.Path, config.Default().Git.TrunkBranch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,6 +315,58 @@ func TestInitForceKeepsTheUsersOwnFiles(t *testing.T) {
 	}
 	if cfg.Thresholds.DiffSizeCap != config.Default().Thresholds.DiffSizeCap {
 		t.Error("--force did not restore the default settings")
+	}
+}
+
+// backlog.path and git.trunk_branch are where this repository keeps its stories
+// and what its trunk is called, not settings to restore. --force reset both:
+// the loop read a fresh example backlog instead of the real one, and refused
+// to start on a trunk that is not "main".
+func TestInitForceKeepsWhereTheStoriesAreAndWhatTrunkIs(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Init(root, false); err != nil {
+		t.Fatal(err)
+	}
+	touch(t, root, "planning/stories.json", `{"stories":[{"id":"MINE-1","title":"Mine","status":"ready"}]}`)
+	touch(t, root, config.File, `{"version":1,"backlog":{"path":"planning/stories.json"},`+
+		`"git":{"trunk_branch":"trunk"},"thresholds":{"diff_size_cap":1}}`)
+
+	if _, err := Init(root, true); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Backlog.Path != "planning/stories.json" || cfg.Git.TrunkBranch != "trunk" {
+		t.Errorf("--force reset where the stories are or what trunk is: backlog %q, trunk %q",
+			cfg.Backlog.Path, cfg.Git.TrunkBranch)
+	}
+	if cfg.Thresholds.DiffSizeCap != config.Default().Thresholds.DiffSizeCap {
+		t.Error("--force did not restore the settings it is for")
+	}
+	if !strings.Contains(read(t, root, "planning/stories.json"), "MINE-1") {
+		t.Error("--force overwrote the stories at the configured path")
+	}
+
+	// A configured backlog that is not there yet gets the example where the
+	// configuration will look for it, not at the default path.
+	touch(t, root, config.File, `{"version":1,"backlog":{"path":"later/stories.json"}}`)
+	res, err := Init(root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(res.Created, "later/stories.json") {
+		t.Errorf("Created = %v, want the example backlog at the configured path", res.Created)
+	}
+
+	// A configuration that does not read has nothing to keep.
+	touch(t, root, config.File, `{not json`)
+	if _, err := Init(root, true); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := config.Load(root); err != nil || cfg.Backlog.Path != config.Default().Backlog.Path {
+		t.Errorf("--force over a broken configuration did not restore the defaults: %+v, %v", cfg.Backlog, err)
 	}
 }
 
