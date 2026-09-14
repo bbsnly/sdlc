@@ -174,14 +174,16 @@ right and is also exactly the shortcut that makes the rest of the loop meaningle
 yours to do: the hook refuses `sdlc unfreeze` from you and from every agent. If a frozen test is
 wrong, hand it to a person with
 `sdlc escalate frozen_test_wrong --message "<which test, and the criterion it gets wrong>"` and
-stop. They run `sdlc unfreeze --reason "..."` and `sdlc approve` in their own terminal, and the
-next session carries on.
+stop. In their own terminal they run `sdlc approve`, then `sdlc start` to pick the story back up
+— `sdlc unfreeze` acts on the story being worked on, and the escalation ended the iteration —
+and then `sdlc unfreeze --reason "..."`. The next session carries on.
 
 `sdlc status --json` reports the freeze and whether it is still intact.
 
-A test file added after the freeze holds every gate from here to the commit until the freeze
-holds it too (`SDLC-E0043`). Only a project with `freeze.allow_new_test_files` on lets the test
-author add one; run `sdlc freeze` again after it does, and the new file is added to the freeze.
+A test file added after the freeze stops this gate, `plan`, `implementation`, `verification` and
+`commit` until the freeze holds it too (`SDLC-E0043`). Only a project with
+`freeze.allow_new_test_files` on lets the test author add one; run `sdlc freeze` again after it
+does, and the new file is added to the freeze.
 
 ## Gate 4 — The plan, and its review
 

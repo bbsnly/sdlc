@@ -207,6 +207,7 @@ reviewer.
 | --- | --- |
 | [Installation](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md) | every way to install it, and how to verify a download |
 | [Getting started](https://github.com/bbsnly/sdlc/blob/main/docs/getting-started.md) | from nothing to a story going through the loop |
+| [Guides](https://github.com/bbsnly/sdlc/blob/main/docs/README.md) | how to do one job: set up an existing project, write stories, resume a story, act on a blocked review, and more |
 | [The loop](https://github.com/bbsnly/sdlc/blob/main/docs/the-loop.md) | what each gate is for, what it produces, what is refused without it |
 | [Commands](https://github.com/bbsnly/sdlc/blob/main/docs/commands.md) | every command and flag |
 | [Configuration](https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md) | every setting in `.sdlc/config.json` |

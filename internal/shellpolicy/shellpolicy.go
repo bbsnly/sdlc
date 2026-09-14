@@ -98,7 +98,9 @@ var mutating = map[string]bool{
 //
 // The rules do not depend on who is asking. A shell command that rewrites the
 // loop's record is wrong from every role, including the one whose record it is,
-// for the same reason the file-writing rules refuse it from everyone.
+// for the same reason the file-writing rules refuse it from everyone. The one
+// exception follows the file-writing rules too: the implementer may not create a
+// test file, which is only wrong because of who is creating it.
 func Inspect(command string, s State) (Finding, bool) {
 	for _, segment := range segments(command) {
 		words, redirects, assigns := parse(segment)

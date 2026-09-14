@@ -73,8 +73,9 @@ $ sdlc story list
 $ sdlc story list --json
 ```
 
-Marks the story `sdlc start` would choose, and for every other one says why it
-is waiting: blocked by another story, not ready, or already done.
+Marks the story `sdlc start` would choose and shows every story's status. A
+story waiting on a `depends_on` story that is not done names it, and says when
+that one is dropped or not in the backlog, because then it never will be.
 
 ## `sdlc start`
 

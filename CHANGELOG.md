@@ -27,10 +27,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   implementer cannot edit a test, cannot add a test, and cannot pass the
   verification gate on tests that changed. The implementer writes no test
   file at all, before the freeze or after it, through the file tools or
-  through the shell. A test file the freeze does not hold stops every gate
-  from `tests_frozen` to `commit`; with `freeze.allow_new_test_files` on, the
-  test author can add one and `sdlc freeze` adds it to the freeze. `sdlc unfreeze --reason` is the
-  way out, and it is on the record. The freeze belongs to the iteration: it
+  through the shell. A test file the freeze does not hold stops
+  `tests_frozen`, `plan`, `implementation`, `verification` and `commit`; with
+  `freeze.allow_new_test_files` on, the test author can add one and
+  `sdlc freeze` adds it to the freeze. `sdlc unfreeze --reason` is the way
+  out, and it is on the record. The freeze belongs to the iteration: it
   survives `sdlc stop` and a new session, and is lifted when the story
   finishes, so the next story freezes its own tests.
 - A question the loop should not answer for itself goes to a person.
@@ -138,13 +139,14 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 ### The command
 
 - `sdlc init`, `status`, `story list`, `start`, `stop`, `gate`, `artifact`,
-  `review`, `freeze`, `unfreeze`, `doctor` and `version`. Every one of them
-  takes `--json`, so a skill can read what a person reads.
+  `review`, `freeze`, `unfreeze`, `escalate`, `approve`, `cost`, `doctor` and
+  `version`. Every one of them takes `--json`, so a skill can read what a
+  person reads.
 - `sdlc doctor` checks the repository, the configuration, the backlog, the
   contract section, git, whether each configured command's program is
   installed, and whether the hooks can find the binary at all. Every problem
   it reports carries the command that fixes it.
-- Error codes `SDLC-E0001` through `SDLC-E0034`, each with a heading in
+- Error codes `SDLC-E0001` through `SDLC-E0044`, each with a heading in
   [the troubleshooting page](https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md).
   Every error says what happened, why, and what to do about it.
 
@@ -214,6 +216,14 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   only against the files the freeze already held.
 - `sdlc doctor` checks the loop's state files. Every hook warning about them
   said to run it, and it did not read either one.
+
+### Documentation
+
+- Guides for the jobs people come to the documentation with: adding the loop
+  to an existing project, writing stories, tuning commands, stopping and
+  resuming, a frozen test that is wrong, a reviewer that blocks, the points
+  where a person decides, tracking cost, and reading a refusal. They sit
+  beside the reference pages, indexed from docs/README.md.
 
 ### Installing
 

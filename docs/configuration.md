@@ -179,9 +179,10 @@ Lets the test author add a test file after the freeze has been taken. Off by
 default.
 
 A new file is not frozen by being written. Until `sdlc freeze` is run again,
-which adds it to the freeze, every gate from `tests_frozen` to `commit` refuses
-with [SDLC-E0043](troubleshooting.md#sdlc-e0043); with the setting off, the
-same gates refuse and `sdlc freeze` does not add it.
+which adds it to the freeze, `tests_frozen`, `plan`, `implementation`,
+`verification` and `commit` refuse with
+[SDLC-E0043](troubleshooting.md#sdlc-e0043); with the setting off, the same
+gates refuse and `sdlc freeze` does not add it.
 
 It is a real loosening — a test written after the implementation can be written
 to pass — and it does **not** let the implementer write one. That rule is not a
@@ -215,9 +216,10 @@ stopped halfway costs more than the overspend.
 
 ## The other half of the contract
 
-A project takes part in the loop when it has **both** `.sdlc/config.json` and a
-`## SDLC Contract` section in its `CLAUDE.md`. The hooks do nothing at all in a
-project without them.
+`.sdlc/config.json` is what the hooks look for: in a project without it they do
+nothing at all. The other half is a `## SDLC Contract` section in `CLAUDE.md`,
+on a line of its own. The hooks do not read it, but the agents do, and
+`sdlc doctor` reports a project that has no such section.
 
 The contract is prose, not settings, and it is what the design reviewer and the
 code reviewer hold the work to: architecture rules, phase constraints, test

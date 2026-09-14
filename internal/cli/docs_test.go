@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -407,24 +408,52 @@ func TestTheStoryExampleIsABacklog(t *testing.T) {
 
 // Every page has to be reachable, or it is a page nobody reads.
 func TestEveryPageIsLinkedFromSomewhere(t *testing.T) {
-	entries, err := os.ReadDir(filepath.Join("..", "..", "docs"))
+	docs := filepath.Join("..", "..", "docs")
+	var pages []string
+	err := filepath.WalkDir(docs, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(p, ".md") {
+			return nil
+		}
+		rel, err := filepath.Rel(docs, p)
+		if err != nil {
+			return err
+		}
+		pages = append(pages, filepath.ToSlash(rel))
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var all strings.Builder
-	for _, e := range entries {
-		all.WriteString(page(t, e.Name()))
+	// The guides are a directory down. A walk that stopped at the top would find
+	// nothing wrong with them because it would find none of them.
+	if !strings.Contains(strings.Join(pages, "\n"), "guides/") {
+		t.Fatalf("found no guides under docs/guides: %v", pages)
 	}
+
+	// A link is resolved from the page it is on: "../commands.md" in a guide and
+	// "commands.md" beside it are the same page, and a page linking to itself
+	// does not make it reachable.
+	link := regexp.MustCompile(`\]\(([^)\s#]+)`)
+	linked := map[string]bool{}
+	for _, from := range pages {
+		for _, m := range link.FindAllStringSubmatch(page(t, from), -1) {
+			if to := filepath.ToSlash(filepath.Join(filepath.Dir(from), m[1])); to != from {
+				linked[to] = true
+			}
+		}
+	}
+	// README.md ships where docs/ does not, so it links to the pages by URL.
 	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	all.Write(readme)
 
-	for _, e := range entries {
-		others := strings.ReplaceAll(all.String(), page(t, e.Name()), "")
-		if !strings.Contains(others, "("+e.Name()+")") && !strings.Contains(others, "docs/"+e.Name()+")") {
-			t.Errorf("nothing links to docs/%s", e.Name())
+	for _, p := range pages {
+		if !linked[p] && !strings.Contains(string(readme), "docs/"+p+")") {
+			t.Errorf("nothing links to docs/%s", p)
 		}
 	}
 }
