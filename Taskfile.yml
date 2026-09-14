@@ -321,7 +321,7 @@ tasks:
         rm -f "$bin"
         over=$(awk -v t="$total" -v b="{{.INIT_BUDGET_MS}}" 'BEGIN{print (t>b) ? 1 : 0}')
         if [ "$over" = "1" ]; then
-          echo "sdlc: package init takes ${total} ms, over the ${b:-3} ms budget." >&2
+          echo "sdlc: package init takes ${total} ms, over the {{.INIT_BUDGET_MS}} ms budget." >&2
           echo "      A hook runs on every matching tool call, so this is felt on every" >&2
           echo "      turn of the user's session. Find it with:" >&2
           echo "        go build -o /tmp/sdlc ./cmd/sdlc && GODEBUG=inittrace=1 /tmp/sdlc version" >&2
