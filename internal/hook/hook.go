@@ -199,7 +199,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 		return policy.Allowed, event, false
 	}
 
-	if p.ToolName == "Bash" {
+	if shellpolicy.Tools[p.ToolName] {
 		return inspectShell(project, story, p, warn), event, true
 	}
 

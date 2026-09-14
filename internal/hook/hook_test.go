@@ -637,6 +637,25 @@ func TestTheShellCannotWriteWhatTheToolsMayNot(t *testing.T) {
 	}
 }
 
+// Bash is not the only tool that runs a command. Monitor ran one the hook never
+// looked at, and so would PowerShell on Windows.
+func TestEveryToolThatRunsACommandMeetsTheShellRules(t *testing.T) {
+	root := loopProject(t)
+	for _, tool := range []string{"Bash", "Monitor", "PowerShell"} {
+		e := map[string]any{
+			"hook_event_name": "PreToolUse",
+			"tool_name":       tool,
+			"cwd":             root,
+			"agent_type":      "sdlc:implementer",
+			"tool_input":      map[string]string{"command": "rm .sdlc/state/tests.lock"},
+		}
+		raw, _ := json.Marshal(e)
+		if !denied(call(t, string(raw), noEnv)) {
+			t.Errorf("%s removed the test freeze", tool)
+		}
+	}
+}
+
 // The commit gate is the one the README promises. It stands in front of the
 // commit itself, because by the time a commit has happened the gate has nothing
 // left to protect.

@@ -74,6 +74,16 @@ func (f Finding) Message() string {
 	return f.Reason + ". Instead: " + f.Route + " [" + f.Rule + "]"
 }
 
+// Tools are the Claude Code tools that run a command line, each carrying it in
+// tool_input.command. Bash is the obvious one and not the only one: Monitor
+// runs a command in the background, and PowerShell is the shell on Windows. A
+// rule that looked only at Bash was one tool name away from not applying.
+var Tools = map[string]bool{
+	"Bash":       true,
+	"PowerShell": true,
+	"Monitor":    true,
+}
+
 // mutating commands: the ones that exist to change a file. A command that only
 // reads is nobody's business here, which is why this is a list of verbs rather
 // than a list of everything.
@@ -92,6 +102,10 @@ var mutating = map[string]bool{
 	"python": true, "python3": true, "ruby": true, "node": true,
 	// Windows spellings, because Bash on Windows is not always a POSIX shell.
 	"del": true, "erase": true, "move": true, "copy": true,
+	// PowerShell's cmdlets and their aliases, folded like every other name.
+	"remove-item": true, "move-item": true, "copy-item": true, "rename-item": true,
+	"new-item": true, "set-content": true, "add-content": true, "clear-content": true,
+	"out-file": true, "ri": true, "mi": true, "cpi": true, "rni": true, "ni": true,
 }
 
 // Inspect reports the first rule that refuses this command.

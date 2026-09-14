@@ -157,7 +157,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   security, red-team, perf, human-advocate, verifier, code-reviewer and
   bookkeeper.
 - A `PreToolUse` hook that enforces the rules rather than asking for them. It
-  covers `Write`, `Edit`, `MultiEdit`, `NotebookEdit` and `Bash`: write scopes
+  covers `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, and the tools that run a
+  command — `Bash`, `PowerShell` and `Monitor`: write scopes
   per role, protected configuration and loop state, the test freeze, the
   commit gate, and the shell routes around all of those. Every refusal names
   the rule it applied and the sanctioned way to do the same thing.

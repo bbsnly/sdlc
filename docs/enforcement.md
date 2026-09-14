@@ -192,6 +192,9 @@ against a shell command too. The rest would leave
 that, and nothing else about your shell is touched: your tests, your build and
 your tooling run exactly as before.
 
+They apply to every tool that runs a command: `Bash`, `PowerShell` and
+`Monitor`.
+
 This is pattern matching, not a shell. It is deliberately narrow.
 
 ### `loop-state-through-the-tool`

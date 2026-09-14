@@ -61,6 +61,10 @@ func TestLoopStateCannotBeWrittenThroughTheShell(t *testing.T) {
 		"RM .sdlc/state/tests.lock",
 		"rm.exe .sdlc/state/tests.lock",
 		"echo x > .sdlc/config.json::$DATA",
+		// PowerShell, which is the shell on Windows.
+		"Remove-Item .sdlc/state/tests.lock",
+		"Set-Content -Path .sdlc/stories/A-1/gate-record.json -Value '{}'",
+		`ri -Force .sdlc\state\active`,
 	} {
 		refused(t, command, ready, "loop-state-through-the-tool")
 	}

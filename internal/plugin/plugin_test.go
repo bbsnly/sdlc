@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -201,6 +202,40 @@ func TestTheHookRunsSomethingThatExists(t *testing.T) {
 	}
 }
 
+// The other direction: a tool that runs commands and is missing from the
+// matcher never reaches the hook, and every shell rule is off for it. Monitor
+// was, and `rm .sdlc/state/tests.lock` went through it.
+func TestTheHookSeesEveryToolThatRunsACommand(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(pluginDir, "hooks", "hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Hooks map[string][]struct {
+			Matcher string `json:"matcher"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	matched := map[string]bool{}
+	for _, entry := range cfg.Hooks["PreToolUse"] {
+		for _, tool := range strings.Split(entry.Matcher, "|") {
+			matched[tool] = true
+		}
+	}
+	for tool := range shellpolicy.Tools {
+		if !matched[tool] {
+			t.Errorf("PreToolUse does not match %s, so no shell rule applies to it", tool)
+		}
+	}
+	for _, tool := range []string{"Write", "Edit", "MultiEdit", "NotebookEdit"} {
+		if !matched[tool] {
+			t.Errorf("PreToolUse does not match %s, so no file rule applies to it", tool)
+		}
+	}
+}
+
 // assertExecutableInGit checks the mode recorded in the index rather than on
 // disk. That is the bit that survives a clone -- and on Windows the filesystem
 // carries no permission bits at all, so the working copy cannot answer this.
@@ -227,7 +262,7 @@ func assertExecutableInGit(t *testing.T, repoPath string) {
 // it. Every tool call the hook sees costs the user latency, so a matcher naming
 // a tool nothing governs is pure cost.
 func governed(tool string) bool {
-	if tool == "Bash" {
+	if shellpolicy.Tools[tool] {
 		// The shell is governed by its own package, because the rules a shell
 		// command needs are not the rules a file path needs.
 		_, refused := shellpolicy.Inspect("rm .sdlc/state/active", shellpolicy.State{CommitReady: true})
