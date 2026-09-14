@@ -262,14 +262,6 @@ The commit gate cannot pass while there is uncommitted work.
 The gate records that this story reached trunk. Commit the change, or stash what does not belong
 to this story, and then record the gate.
 
-### SDLC-E0034
-
-A flag was given a value it cannot use.
-
-`sdlc cost add --usd` is the usual one: an amount that arrived from a shell substitution which
-produced nothing is refused rather than recorded as zero, because a story that silently cost
-nothing is the one wrong answer nobody questions. Check the command that produced the value.
-
 ### SDLC-E0033
 
 The story you asked to start has passed every gate. Starting it would put work that is already
@@ -284,6 +276,14 @@ $ sdlc gate code_review fail --note "AC-2 turned out to be untested"
 
 That puts the story back to `in_progress` and says on the record why it came back. Being done
 is a reading of the gate record, not a door that locks behind you.
+
+### SDLC-E0034
+
+A flag was given a value it cannot use.
+
+`sdlc cost add --usd` is the usual one: an amount that arrived from a shell substitution which
+produced nothing is refused rather than recorded as zero, because a story that silently cost
+nothing is the one wrong answer nobody questions. Check the command that produced the value.
 
 ## Warnings the hook prints
 
@@ -305,6 +305,13 @@ Install the binary, or run `/sdlc:next`, which offers to.
 The file naming the story under way is there but unreadable — a permission, a
 half-written file, a merge conflict left in place. Every rule is off until it
 reads. `sdlc doctor` names it under "loop state".
+
+### `.sdlc/state/active does not name a story, so nothing is being enforced`
+
+The file names something that cannot be a story id — a path, or an id with `..`
+in it — so there is no story to hold the session to. `sdlc start` refuses such
+an id, so the file was written some other way. Every rule is off until it names
+a story. `sdlc doctor` names it under "loop state".
 
 ### `.sdlc/config.json could not be read, so the test freeze is not being enforced`
 

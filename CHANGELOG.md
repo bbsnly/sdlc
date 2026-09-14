@@ -102,7 +102,7 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   contract section, git, whether each configured command's program is
   installed, and whether the hooks can find the binary at all. Every problem
   it reports carries the command that fixes it.
-- Error codes `SDLC-E0001` through `SDLC-E0033`, each with a heading in
+- Error codes `SDLC-E0001` through `SDLC-E0034`, each with a heading in
   [the troubleshooting page](https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md).
   Every error says what happened, why, and what to do about it.
 
@@ -140,6 +140,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   past every gate, without a word. The refusal names the file, `sdlc doctor`
   reads it, and `sdlc stop` still ends an iteration whose record is broken, so
   there is always a way out.
+- A story id with `..` in it is refused by `sdlc start` as well as by the hook.
+  The hook refused `A..1` and enforced nothing for that iteration, while the
+  command had accepted it.
+- A crash in the hook tells the session. It exited non-zero with a
+  `stopReason`, and Claude Code reads neither in that case.
+- `name::$DATA`, NTFS's other spelling of a file, is that file to every rule.
 - `sdlc doctor` checks the loop's state files. Every hook warning about them
   said to run it, and it did not read either one.
 

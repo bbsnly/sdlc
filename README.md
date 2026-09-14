@@ -147,8 +147,9 @@ between a loop and a checklist:
 
 ## How enforcement works
 
-Enforcement uses Claude Code's own surfaces and nothing else: hooks, the
-permission block, and the plugin's agents. No git hooks are installed, and
+Enforcement uses Claude Code's own surfaces and the `sdlc` command, and nothing
+else: a hook on tool calls, the plugin's agents, and the checks the command
+makes before it records a gate. No git hooks are installed, and
 `sdlc` never writes to `.git/hooks`.
 
 One rule is worth knowing before you first see it fire. A gate's documents — the
