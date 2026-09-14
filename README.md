@@ -18,11 +18,10 @@ always green.
 ## Status
 
 All nine gates are built and enforced, and a story can go from the backlog to a
-commit without leaving the loop. **The first release is not tagged yet**, so the
-four routes below that download a release have nothing to download yet — until
-it lands, build from source or use `go install`.
-[Watch the repository](https://github.com/bbsnly/sdlc/subscription) to hear when
-it does.
+commit without leaving the loop. Releases are published on the
+[releases page](https://github.com/bbsnly/sdlc/releases); the routes below that
+download a binary take the latest one from there, and `go install` or a source
+build works from any commit.
 
 ## Install
 
@@ -198,7 +197,7 @@ reviewer.
 - **Claude Code** 2.1.265 or newer
 - **git**, and on Windows [Git for Windows](https://git-scm.com/download/win)
   (WSL is not required)
-- **Go** 1.26 or newer, to build from source while there is no release
+- **Go** 1.26 or newer, only to build from source or use `go install`
 
 ## Documentation
 
