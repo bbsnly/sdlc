@@ -69,6 +69,13 @@ func (s *Store) RecordProgress(id string) (string, error) {
 //
 // The caller holds the project's lock.
 func (s *Store) Escalate(ctx context.Context, id, kind, message string) (string, error) {
+	// The backlog is read before anything is written. A story it no longer
+	// holds cannot be marked as waiting for a person, and finding that out
+	// after the record was saved left a question on it that nothing listed,
+	// with the iteration still running.
+	if _, _, err := s.Story(id); err != nil {
+		return "", err
+	}
 	tree, err := s.ReviewSubject(ctx)
 	if err != nil {
 		return "", err

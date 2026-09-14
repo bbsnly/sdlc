@@ -525,6 +525,37 @@ func TestFinishingAStoryLiftsItsFreeze(t *testing.T) {
 	}
 }
 
+// An escalation for a story the backlog has lost saved the question to the
+// record, then failed to mark the story as waiting: the iteration kept running
+// with a question on its record that `sdlc status` never listed.
+func TestEscalatingAStoryThatLeftTheBacklogWritesNothing(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	writeFile(t, root, "user_stories.json", `{"stories":[]}`)
+	recordPath := filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")
+	before, err := os.ReadFile(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := run(t, "escalate", "spec_unclear", "--message", "what does AC-2 mean?")
+	if r.code == 0 {
+		t.Fatal("an escalation was taken for a story that is not in the backlog")
+	}
+	if !strings.Contains(r.stderr, "US-001") {
+		t.Errorf("the refusal does not name the story:\n%s", r.stderr)
+	}
+	after, err := os.ReadFile(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("the refused escalation changed the record:\n%s", after)
+	}
+	mustRun(t, "stop")
+}
+
 // Stopping an unfinished story must not lift its freeze. `sdlc stop` is how a
 // session ends mid-story, and the story is picked up again next time; a freeze
 // that came off here would make `stop`, edit, `start` the way round every gate
