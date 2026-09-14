@@ -192,7 +192,7 @@ func Inspect(command string, s State) (Finding, bool) {
 	}
 	var outer []place
 	ticked := false
-	for _, marked := range markedSegments(text) {
+	for _, marked := range markedSegments(pathText(text, s.PowerShell)) {
 		segment, opens, closes := subshellMarks(marked, &ticked)
 		if !s.PowerShell {
 			for ; closes > 0 && len(outer) > 0; closes-- {
@@ -1038,6 +1038,12 @@ func spellings(dir string, words []string) []string {
 	var out []string
 	for _, w := range words {
 		named := []string{w}
+		// Outside PowerShell a backslash escapes the character after it, and the
+		// shell takes it out: `.sd\lc` is .sdlc. Read as a separator as well, for
+		// the Windows spelling.
+		if strings.Contains(w, `\`) {
+			named = append(named, strings.ReplaceAll(w, `\`, ""))
+		}
 		if _, value, ok := strings.Cut(w, "="); ok && value != "" {
 			named = append(named, value)
 		}
@@ -1392,6 +1398,28 @@ func segments(command string) []string {
 // markedSegments is segments with where each subshell opens and closes left on
 // the front of the segment after it: `(` for a subshell or a `$(`, `)` for its
 // end, and a backtick for either end of a backtick substitution.
+// pathText is a command as the path rules split it. They split it by its text,
+// not by the shell's grammar, so a `(`, `)` or `;` that is an argument, quoted
+// or escaped as find's are, ended the command there: in `find . \( -name active
+// \) -delete` the -delete was a command of its own, and nothing was deleted, as
+// read. A line continued with a backslash is one line. PowerShell escapes with
+// a backtick, which Inspect has already taken out.
+func pathText(text string, powerShell bool) string {
+	if powerShell {
+		return text
+	}
+	return escapedSeparators.Replace(text)
+}
+
+// escapedSeparators are the characters splitSegments ends a command at, as an
+// argument. A `(` is not one of them.
+var escapedSeparators = strings.NewReplacer(
+	"\\\r\n", "", "\\\n", "",
+	`\)`, " ", `\;`, " ", `\|`, " ", `\&`, " ",
+	`')'`, " ", `';'`, " ", `'|'`, " ", `'&'`, " ",
+	`")"`, " ", `";"`, " ", `"|"`, " ", `"&"`, " ",
+)
+
 func markedSegments(command string) []string {
 	return splitSegments(command, true)
 }
@@ -1646,14 +1674,14 @@ func clean(word string) string {
 	return head + strings.TrimSuffix(p, "/")
 }
 
+// unquote is a word as the shell hands it over: without its quotes, wherever
+// they are in it. Only the ends were taken off, so `'.sdlc'/state/active` and
+// `.sd"lc"/state/active` were no path the rules knew. `$'...'` is quoted too.
 func unquote(f string) string {
-	for _, q := range []string{`"`, "'"} {
-		if len(f) >= 2 && strings.HasPrefix(f, q) && strings.HasSuffix(f, q) {
-			return f[1 : len(f)-1]
-		}
-	}
-	return strings.Trim(f, `"'`)
+	return quotes.Replace(f)
 }
+
+var quotes = strings.NewReplacer(`$'`, "", `$"`, "", `"`, "", "'", "")
 
 // base is the command a word runs, folded: on macOS and Windows `RM` and
 // `rm.exe` find the same program as `rm`.

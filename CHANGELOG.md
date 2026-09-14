@@ -215,6 +215,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   record and the freeze. A protected path has to be
   named, so `rm -rf build/*` goes through, and `*` does not match a leading dot,
   as in the shell.
+- A quote or a backslash inside a word in a shell command is taken out, as the
+  shell takes it out, and a line continued with a backslash is one line.
+  `rm '.sdlc'/state/active`, `rm .sd"lc"/state/active`, `rm .sd\lc/state/active`
+  and `rm $'.sdlc/state/active'` reached the loop's files. A quoted or escaped
+  `(`, `)` or `;` is read as an argument: `find . \( -name active \) -delete`
+  was split before its `-delete`.
 - The hook's warnings reach the session. They went to standard error, which
   Claude Code sends to its debug log when a hook allows the call, so "nothing
   is being enforced" was said to nobody. They now arrive as a system message,
