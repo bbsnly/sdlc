@@ -51,6 +51,8 @@ func TestCheckIDRejectsAnythingThatCouldEscapeTheStoriesDirectory(t *testing.T) 
 		"", ".", "..", "../escape", "a/b", `a\b`, "/absolute", "C:\\windows",
 		"has space", "tab\there", "null\x00byte", "-leading-dash",
 		strings.Repeat("x", 65),
+		// Windows drops the trailing dot, so this is A-1's directory.
+		"A-1.", "A-1.-.",
 	} {
 		if err := CheckID(id); err == nil {
 			t.Errorf("CheckID(%q) accepted an unsafe id", id)
@@ -61,7 +63,7 @@ func TestCheckIDRejectsAnythingThatCouldEscapeTheStoriesDirectory(t *testing.T) 
 }
 
 func TestCheckIDAcceptsTheIdsPeopleActuallyUse(t *testing.T) {
-	for _, id := range []string{"US-001", "AUTH-3", "PROJ-12.4", "a", "billing_2", "9LIVES-1"} {
+	for _, id := range []string{"US-001", "AUTH-3", "PROJ-12.4", "a", "billing_2", "9LIVES-1", strings.Repeat("x", 64)} {
 		if err := CheckID(id); err != nil {
 			t.Errorf("CheckID(%q) rejected a reasonable id: %v", id, err)
 		}

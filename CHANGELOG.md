@@ -144,7 +144,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   passed over, and a story whose status is not one the schema lists is
   refused when the backlog is read, rather than silently never picked. So is
   a backlog with two stories of one id, whatever their case: every lookup
-  found the first, so starting the second moved the first.
+  found the first, so starting the second moved the first. A story id no
+  longer ends in a dot, which Windows drops, so `A-1.` was `A-1`'s directory
+  and starting it overwrote that story's record.
 
 ### The command
 

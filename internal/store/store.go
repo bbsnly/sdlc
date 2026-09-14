@@ -42,8 +42,10 @@ const (
 // safeID is what a story id may contain, given that it becomes a directory
 // name. It is deliberately narrower than "what a filesystem accepts": the
 // backlog schema asks for AUTH-3, and anything in this set is safe on Windows,
-// macOS and Linux alike.
-var safeID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+// macOS and Linux alike. It does not end in a dot: Windows drops a trailing
+// dot from a directory name, so `A-1.` and `A-1` were two stories sharing one
+// directory, and starting one overwrote the other's record.
+var safeID = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9_-])?$`)
 
 // Store reads and writes one project's loop state.
 type Store struct {
