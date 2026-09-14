@@ -243,6 +243,9 @@ func TestInitWritesEverythingAProjectNeeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the config it just wrote does not load: %v", err)
 	}
+	if unknown := config.UnknownKeys(root); len(unknown) > 0 {
+		t.Errorf("the config it just wrote has settings sdlc does not know: %v", unknown)
+	}
 	if cfg.Commands["test"] == "" {
 		t.Error("a Go project got no test command")
 	}

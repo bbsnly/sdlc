@@ -224,6 +224,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   and quietly did something else. A setting of the wrong type is named, rather
   than valid JSON being called invalid, and a file saved with a byte order mark
   reads.
+- `sdlc doctor` names a setting it does not know, such as a misspelled one,
+  which was read as no setting at all while doctor called the configuration
+  fine. For a configuration that does not load, it names the settings at fault
+  and the fix for them, rather than suggesting `sdlc init`.
 - A new test file cannot be added through the shell after the freeze. The file
   tools refused one; `echo > new_test.go` did not, because the shell was checked
   only against the files the freeze already held.

@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -294,6 +295,50 @@ func (c Config) validate() error {
 	return sdlcerr.New(sdlcerr.ConfigInvalid,
 		File+" has settings sdlc cannot use",
 		strings.Join(problems, "; "))
+}
+
+// UnknownKeys names every setting in root/.sdlc/config.json that the
+// configuration does not have, dotted as the documentation spells them. A
+// misspelled setting is read as no setting at all and its default applies,
+// with nothing said. A key starting with _ is a comment, and `commands` takes
+// any name. A file that does not load names nothing: Load says why.
+func UnknownKeys(root string) []string {
+	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(File)))
+	if err != nil {
+		return nil
+	}
+	var doc any
+	if json.Unmarshal(bytes.TrimPrefix(raw, []byte("\ufeff")), &doc) != nil {
+		return nil
+	}
+	var unknown []string
+	unknownIn(doc, reflect.TypeFor[Config](), "", &unknown)
+	sort.Strings(unknown)
+	return unknown
+}
+
+func unknownIn(v any, t reflect.Type, prefix string, unknown *[]string) {
+	object, ok := v.(map[string]any)
+	if !ok || t.Kind() != reflect.Struct {
+		return
+	}
+	for key, value := range object {
+		if strings.HasPrefix(key, "_") {
+			continue
+		}
+		// encoding/json matches a field's name without regard to case, so a
+		// key it reads is not one to report.
+		field, found := t.FieldByNameFunc(func(name string) bool {
+			f, _ := t.FieldByName(name)
+			tag, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			return strings.EqualFold(tag, key)
+		})
+		if !found {
+			*unknown = append(*unknown, prefix+key)
+			continue
+		}
+		unknownIn(value, field.Type, prefix+key+".", unknown)
+	}
 }
 
 // kindOf says what a setting takes, in the words of JSON rather than Go.

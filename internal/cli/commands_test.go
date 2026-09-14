@@ -894,6 +894,41 @@ func TestDoctorNamesBrokenLoopStateBehindABrokenConfiguration(t *testing.T) {
 	}
 }
 
+// The configuration's own comment says to run doctor after changing anything,
+// and doctor called a misspelled setting fine. Nor did it say which setting the
+// loop could not use: only that one could not be.
+func TestDoctorNamesTheSettingsThatAreWrong(t *testing.T) {
+	project(t)
+	mustRun(t, "init")
+	configuration := func() check {
+		t.Helper()
+		for _, c := range decode[doctorPayload](t, run(t, "doctor", "--json")).Checks {
+			if c.Name == "configuration" {
+				return c
+			}
+		}
+		t.Fatal("doctor ran no configuration check")
+		return check{}
+	}
+	if c := configuration(); c.State != stateOK {
+		t.Fatalf("the configuration sdlc init wrote is a problem: %s (%s)", c.Detail, c.Fix)
+	}
+
+	writeFile(t, ".", ".sdlc/config.json", `{"version":1,"loop":{"max_stop_block":0}}`)
+	if c := configuration(); c.State != stateProblem || !strings.Contains(c.Detail, "loop.max_stop_block") {
+		t.Errorf("a misspelled setting was not named: %s %q", c.State, c.Detail)
+	}
+
+	writeFile(t, ".", ".sdlc/config.json", `{"version":1,"loop":{"max_stop_blocks":-1}}`)
+	c := configuration()
+	if c.State != stateProblem || !strings.Contains(c.Detail, "loop.max_stop_blocks is -1") {
+		t.Errorf("the setting the loop cannot use was not named: %s %q", c.State, c.Detail)
+	}
+	if strings.Contains(c.Fix, "sdlc init") {
+		t.Errorf("the fix for a file that is there is to create it: %q", c.Fix)
+	}
+}
+
 func TestDoctorExitsNonZeroWhenSomethingIsWrong(t *testing.T) {
 	project(t)
 	mustRun(t, "init")

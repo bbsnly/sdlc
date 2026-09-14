@@ -285,6 +285,26 @@ func TestLoadRefusesSettingsTheLoopCannotHonour(t *testing.T) {
 	}
 }
 
+// A misspelled setting was read as no setting at all, and its default applied
+// with nothing said. Comments and command names are the user's to choose.
+func TestUnknownKeysNamesEveryMisspelledSetting(t *testing.T) {
+	root := repo(t)
+	bom := string([]byte{0xEF, 0xBB, 0xBF})
+	writeConfig(t, root, bom+`{"_doc":["a comment"],"Version":1,
+		"humangates":{"pre_commit_pause_tiers":["high","medium"]},
+		"loop":{"max_stop_block":0,"max_review_rounds":2},
+		"commands":{"my_own_step":"make x"},
+		"paths":{"tests":{"dir":["t/"],"file_globs":["*_t.go"]}}}`)
+	if got, want := strings.Join(UnknownKeys(root), " "), "humangates loop.max_stop_block paths.tests.dir"; got != want {
+		t.Errorf("UnknownKeys = %q, want %q", got, want)
+	}
+
+	writeConfig(t, root, `{not json`)
+	if got := UnknownKeys(root); got != nil {
+		t.Errorf("a file that does not load named %q", got)
+	}
+}
+
 func TestBacklogPathFallsBackWhenTheFileEmptiesIt(t *testing.T) {
 	cfg := Default()
 	cfg.Backlog.Path = ""

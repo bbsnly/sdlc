@@ -390,7 +390,8 @@ $ sdlc doctor
 $ sdlc doctor --json
 ```
 
-Looks at the git repository, the git command itself, the configuration, the
+Looks at the git repository, the git command itself, the configuration —
+including a setting it does not know, such as a misspelled one — the
 backlog, the loop's state files the hook reads on every tool call, the contract
 in `CLAUDE.md`, the programs your configured commands would run, and whether
 `sdlc` is on your `PATH`. Every problem comes with the

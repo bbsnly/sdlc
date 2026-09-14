@@ -16,6 +16,7 @@ import (
 	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/scaffold"
+	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
@@ -128,9 +129,17 @@ func runChecks() []check {
 
 	cfg, err := config.Load(root)
 	if err != nil {
-		add(check{Name: "configuration", State: stateProblem,
-			Detail: err.Error(),
-			Fix:    `run "sdlc init" in ` + root})
+		// The error's own words: its cause alone said nothing of which setting
+		// was wrong, and "sdlc init" does not fix a file that is already there.
+		detail, fix := err.Error(), `run "sdlc init" in `+root
+		var e *sdlcerr.Error
+		if errors.As(err, &e) {
+			detail, fix = e.What, e.Fix
+			if e.Why != "" {
+				detail += ": " + e.Why
+			}
+		}
+		add(check{Name: "configuration", State: stateProblem, Detail: detail, Fix: fix})
 		add(check{Name: "backlog", State: stateSkipped,
 			Detail: "not checked: configuration has to work first"})
 		// The loop's state does not come from the configuration, and a broken
@@ -144,7 +153,15 @@ func runChecks() []check {
 	if stack.Name != "" {
 		detail += "  (" + stack.Name + " project)"
 	}
-	add(check{Name: "configuration", State: stateOK, Detail: detail})
+	if unknown := config.UnknownKeys(root); len(unknown) > 0 {
+		add(check{Name: "configuration", State: stateProblem,
+			Detail: config.File + " has settings sdlc does not know, which change nothing: " +
+				strings.Join(unknown, ", "),
+			Fix: "correct the spelling, or remove them — docs/configuration.md lists every setting, " +
+				"and a key that starts with _ is a comment"})
+	} else {
+		add(check{Name: "configuration", State: stateOK, Detail: detail})
+	}
 
 	project := &config.Project{Root: root, Config: cfg}
 	add(backlogCheck(store.New(project), cfg.BacklogPath(root), root))
