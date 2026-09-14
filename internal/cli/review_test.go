@@ -60,6 +60,15 @@ func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
 			if list := mustRun(t, "review", "list", "--gate", "code_review").stdout; !strings.Contains(list, want) {
 				t.Errorf("review list does not show %q:\n%s", want, list)
 			}
+			// Nobody else: the verifier, and security on a story nobody has
+			// called safe, block whatever the project said about the code
+			// reviewer.
+			for _, r := range decode[reviewListPayload](t, mustRun(t, "review", "list", "--json")).Reviews {
+				key := r.Gate + "/" + r.Role
+				if (key == "verifier_review/verifier" || key == "code_review/security") && !r.Blocking {
+					t.Errorf("%s stopped blocking with gate7_advisory = %v", key, advisory)
+				}
+			}
 		})
 	}
 }
@@ -248,16 +257,32 @@ func TestABlockingReviewerStopsTheGateAndSaysWhy(t *testing.T) {
 		}
 	}
 
+	// A note is not an approval, and a blocking reviewer is waited on to approve.
+	mustRunWith(t, "# Design review\n", "review", "add", "design_review", "architect", "note")
+	if r := run(t, "gate", "design_review", "pass"); r.code == 0 {
+		t.Fatal("the gate passed on a blocking reviewer's note")
+	} else if !strings.Contains(r.stderr, "SDLC-E0029") || !strings.Contains(r.stderr, "architect has not approved") {
+		t.Errorf("the refusal does not say who has not approved:\n%s", r.stderr)
+	}
+
 	// The way past a block is the reviewer looking again, and nothing else.
 	mustRunWith(t, "# Design review\n", "review", "add", "design_review", "architect", "approve")
 	mustRun(t, "gate", "design_review", "pass", "--note", "architect approved on round 2")
 }
 
 // Whether security can block is Gate 2's decision, and it has to be a real one:
-// a flag nobody reads is a label.
+// a flag nobody reads is a label. Until Gate 2 has said, the safe answer is yes.
 func TestSecuritySensitivityDecidesWhetherSecurityBlocks(t *testing.T) {
-	for _, c := range []struct{ sensitive, blocks bool }{{true, true}, {false, false}} {
-		t.Run(map[bool]string{true: "sensitive", false: "not sensitive"}[c.sensitive], func(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		flag   []string
+		blocks bool
+	}{
+		{"sensitive", []string{"--security-sensitive=true"}, true},
+		{"not sensitive", []string{"--security-sensitive=false"}, false},
+		{"never said", nil, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
 			root := gitProject(t)
 			initialised(t)
 			mustRun(t, "start")
@@ -265,12 +290,14 @@ func TestSecuritySensitivityDecidesWhetherSecurityBlocks(t *testing.T) {
 			mustRunWith(t, "# Analysis\n", "artifact", "write", "analysis")
 			mustRunWith(t, "# Threats\n", "artifact", "write", "threats")
 			mustRun(t, "gate", "dor", "pass", "--note", "ready")
-			mustRun(t, "gate", "analysis", "pass",
-				"--security-sensitive="+map[bool]string{true: "true", false: "false"}[c.sensitive])
+			mustRun(t, append([]string{"gate", "analysis", "pass"}, c.flag...)...)
 			for _, gate := range []model.Gate{model.GateTestsFrozen, model.GatePlan} {
 				satisfy(t, root, gate)
 				mustRun(t, "gate", string(gate), "pass")
 			}
+			// Only Gate 2 decides. The flag on any other gate changes nothing.
+			mustRun(t, "gate", "design_review", "fail", "--note", "trying the other answer",
+				"--security-sensitive="+map[bool]string{true: "false", false: "true"}[c.blocks])
 
 			approveAll(t, model.GateDesignReview, "security")
 			mustRunWith(t, "# security\n", "review", "add", "design_review", "security", "block",

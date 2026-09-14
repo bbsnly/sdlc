@@ -379,6 +379,8 @@ func TestAProjectThatAllowsNewTestsFreezesThemToo(t *testing.T) {
 func TestAFreezeFromAnotherStoryDoesNotCount(t *testing.T) {
 	root := frozenStory(t)
 	mustRun(t, "freeze")
+	mustRun(t, "gate", "tests_frozen", "pass", "--note", "frozen")
+	satisfy(t, root, model.GatePlan)
 
 	lock := filepath.Join(root, ".sdlc", "state", "tests.lock")
 	raw, err := os.ReadFile(lock)
@@ -395,6 +397,31 @@ func TestAFreezeFromAnotherStoryDoesNotCount(t *testing.T) {
 	}
 	if !strings.Contains(r.stderr, "OTHER-9") {
 		t.Errorf("the refusal does not say whose freeze it is:\n%s", r.stderr)
+	}
+
+	// Nor at any gate after it, which checks the freeze again every time the
+	// loop moves.
+	if r := run(t, "gate", "plan", "pass"); r.code == 0 || !strings.Contains(r.stderr, "SDLC-E0023") {
+		t.Errorf("another story's freeze passed this story's plan gate: code %d\n%s", r.code, r.stderr)
+	}
+}
+
+// A finished story's freeze is lifted when its iteration ends, and only its
+// own. A freeze naming another story is not this story's to release.
+func TestStoppingAFinishedStoryLeavesAnotherStorysFreezeAlone(t *testing.T) {
+	root := finishedStory(t)
+	lock := filepath.Join(root, ".sdlc", "state", "tests.lock")
+	raw, err := os.ReadFile(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lock, []byte(strings.Replace(string(raw), `"US-001"`, `"OTHER-9"`, 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mustRun(t, "stop")
+	if got := lockOnDisk(t, root).Story; got != "OTHER-9" {
+		t.Errorf("the freeze on disk now belongs to %q", got)
 	}
 }
 

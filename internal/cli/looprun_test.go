@@ -648,8 +648,13 @@ func TestCommittingWhatWasReviewedStillPasses(t *testing.T) {
 	initialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GateCommit)
-	commitEverything(t, root)
 
+	// Reviewed is not committed: the gate records that the work reached trunk.
+	if r := run(t, "gate", "commit", "pass", "--note", "not yet"); r.code == 0 || !strings.Contains(r.stderr, "SDLC-E0032") {
+		t.Errorf("the commit gate passed with the work uncommitted: code %d\n%s", r.code, r.stderr)
+	}
+
+	commitEverything(t, root)
 	if r := run(t, "gate", "commit", "pass", "--note", "on trunk"); r.code != 0 {
 		t.Fatalf("committing exactly what was reviewed was refused:\n%s%s", r.stdout, r.stderr)
 	}

@@ -302,6 +302,26 @@ func TestAnAbsolutePathIsResolvedAgainstTheProject(t *testing.T) {
 	}
 }
 
+// The loop governs what it can review, and nothing outside the repository is
+// that: a settings file in the home directory is where hooks are turned off. A
+// symlink inside the repository leads to the same place by another name.
+func TestAWriteOutsideTheRepositoryIsRefused(t *testing.T) {
+	root := loopProject(t)
+	elsewhere := t.TempDir()
+	if err := os.Symlink(elsewhere, filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		filepath.Join(elsewhere, ".claude", "settings.json"),
+		"link/settings.json",
+	} {
+		r := call(t, event(root, "Write", "sdlc:implementer", path), noEnv)
+		if !denied(r) || !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "write-outside-repository") {
+			t.Errorf("the implementer wrote %s, outside the repository: %+v", path, r)
+		}
+	}
+}
+
 func TestANotebookPathIsGovernedToo(t *testing.T) {
 	root := loopProject(t)
 	e, _ := json.Marshal(map[string]any{
@@ -585,6 +605,19 @@ func TestAnUnreadableFreezeStillProtectsTheTests(t *testing.T) {
 	if denied(call(t, command(root, "sdlc:implementer", "echo fine > invoice.go"), noEnv)) {
 		t.Error("an unreadable freeze froze a file that is not a test")
 	}
+	// The implementer is refused any test through the shell, so the freeze is
+	// only seen doing it for somebody who may otherwise write one -- with the
+	// configuration readable, and without.
+	for _, spoiled := range []bool{false, true} {
+		if spoiled {
+			write(t, root, ".sdlc/config.json", "{not json")
+		}
+		r := call(t, command(root, "sdlc:sdet", "echo cheat > invoice_test.go"), noEnv)
+		if !denied(r) || !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "frozen-test-through-the-tool") {
+			t.Errorf("a test file became writable through the shell because the freeze could not be read "+
+				"(configuration unreadable too: %v): %+v", spoiled, r)
+		}
+	}
 }
 
 // The ordinary states are not warnings. Before Gate 3 there is no freeze, and
@@ -705,6 +738,23 @@ func TestTheCommitGateStandsInFrontOfGitCommit(t *testing.T) {
 	if !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "analysis has not passed") {
 		t.Errorf("the refusal does not say what is missing: %q",
 			r.HookSpecificOutput.PermissionDecisionReason)
+	}
+
+	// Every gate but the last one before the commit is not every gate.
+	gates := map[string]any{}
+	for _, g := range model.GateCommit.Before() {
+		if g != model.GateCodeReview {
+			gates[string(g)] = map[string]string{"status": "pass", "at": "2026-09-10T08:30:00Z"}
+		}
+	}
+	raw, err := json.Marshal(map[string]any{"story": "A-1", "gates": gates})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, ".sdlc/stories/A-1/gate-record.json", string(raw))
+	r = call(t, command(root, "", `git commit -m "done"`), noEnv)
+	if !denied(r) || !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "code_review has not passed") {
+		t.Errorf("a commit went through with the code review unpassed: %+v", r)
 	}
 }
 

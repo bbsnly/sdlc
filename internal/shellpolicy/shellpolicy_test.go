@@ -51,6 +51,9 @@ func TestAWrappedCommandIsStillTheCommand(t *testing.T) {
 		"sudo git commit -m x",
 		"time git commit -m x",
 		"nice -n 10 git commit -m x",
+		"! git commit -m x",
+		"( git commit -m x )",
+		"echo $(git commit -m x)",
 	} {
 		refused(t, command, notReady, "commit-gate")
 	}
@@ -60,6 +63,8 @@ func TestAWrappedCommandIsStillTheCommand(t *testing.T) {
 		"sh -c 'rm .sdlc/state/tests.lock'",
 		"echo .sdlc/state/tests.lock | xargs rm",
 		"find .sdlc/state -name tests.lock -delete",
+		"find .sdlc/state -name tests.lock -exec rm {} +",
+		"git -C . checkout -- .sdlc/state/tests.lock",
 		"dd if=/dev/null of=.sdlc/state/tests.lock",
 		"git rm .sdlc/stories/A-1/gate-record.json",
 		"git checkout -- .sdlc/state/tests.lock",
@@ -170,8 +175,11 @@ func TestAFrozenTestCannotBeWrittenAnyOtherWay(t *testing.T) {
 		"python3 <<'EOF'\nopen('internal/x_test.go','w').write('')\nEOF",
 		`python3 -c "import os; os.remove('internal/x_test.go')"`,
 		"git checkout -- internal/x_test.go",
+		"git -C . checkout -- internal/x_test.go",
+		"git restore internal/x_test.go",
 		"find internal -name x_test.go -delete",
 		"ls internal/x_test.go | xargs rm",
+		"echo x > /repo/internal/x_test.go",
 	} {
 		refused(t, command, frozen, "frozen-test-through-the-tool")
 	}

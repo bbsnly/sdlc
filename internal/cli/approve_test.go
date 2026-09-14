@@ -63,6 +63,10 @@ func TestAnEscalatedStoryWaitsForAPersonToAnswer(t *testing.T) {
 	if answer.Decision != "approved" || answer.Type != "spec_unclear" || answer.Tree == "" {
 		t.Errorf("approve = %+v", answer)
 	}
+	// Answered, the story is back to work, not still waiting in the backlog.
+	if story := onlyStory(t, decode[storyListPayload](t, mustRun(t, "story", "list", "--json"))); story.Status != string(model.StatusInProgress) {
+		t.Errorf("%s = %q after a person answered", story.ID, story.Status)
+	}
 	if r := run(t, "approve", "US-001"); !strings.Contains(r.stderr, "SDLC-E0035") {
 		t.Errorf("one question was answered twice:\n%s", r.stderr)
 	}
