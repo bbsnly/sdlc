@@ -51,6 +51,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   branch, uncommitted work that belongs to no story, a trunk behind `origin`
   when `git.remote` is on, and a trunk that fails `commands.smoke`. A story
   picked up again is not held to it.
+- A change bigger than `thresholds.diff_size_cap` cannot pass implementation,
+  verification or code review. Lines are counted the way `git diff --numstat`
+  counts them, and the loop's own files and the backlog are not counted.
 - `sdlc cost` keeps what a story spent beside everything else it did.
   `sdlc cost add --usd` records an amount, `sdlc status` reports the running
   total, and crossing one of `budget.alert_fractions` says so once, on

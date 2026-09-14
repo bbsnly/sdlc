@@ -75,6 +75,9 @@ var (
 	TrunkBroken = register("SDLC-E0041",
 		`fix trunk, or revert what broke it, then start again — commands.smoke in .sdlc/config.json is the check that failed`)
 
+	DiffTooLarge = register("SDLC-E0042",
+		`record the gate as failed and hand the story to a person to split — "sdlc escalate story_too_large --message ..." — rather than cutting the change down to fit`)
+
 	UnknownGate = register("SDLC-E0013",
 		`run "sdlc gate --help" to see the gate names this version knows`)
 

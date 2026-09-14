@@ -237,6 +237,18 @@ The gate checks the freeze is still intact. If it is not, something edited an ac
 hand it to a person with `sdlc escalate freeze_broken --message "..."`, rather than freezing
 again over the top.
 
+If it fails with `SDLC-E0042`, the change is bigger than `thresholds.diff_size_cap` lets one
+story be. Do not have the implementer squeeze it under the cap: that trades a story too big to
+review for one cramped to fit. Record the gate as failed and hand the split to a person:
+
+```bash
+sdlc gate implementation fail --note "<n> lines against a cap of <cap>"
+sdlc escalate story_too_large --message "<n> lines against a cap of <cap>: how should it be split?"
+```
+
+The same refusal can come at Gate 6 or Gate 7, when rework has grown the change. Handle it the
+same way there.
+
 ## Gate 6 — Independent verification
 
 Delegate to `sdlc:verifier`. Give it the story id and nothing from this conversation beyond the

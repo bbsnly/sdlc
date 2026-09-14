@@ -130,7 +130,8 @@ that has since changed.
 The plan is carried out one step at a time, running the tests after each. The
 implementer cannot touch any test file, and cannot add a new one.
 
-**Refused without it:** a pass when the freeze is gone or broken.
+**Refused without it:** a pass when the freeze is gone or broken, or when the
+change is bigger than [`thresholds.diff_size_cap`](configuration.md#thresholds).
 
 ## Gate 6 — `verification`, then `verifier_review`
 
@@ -143,7 +144,8 @@ implementation that passes them without the behaviour being there. It checks
 every gaming vector the red team named at Gate 4.
 
 **Refused without it:** a pass with the verification document missing, a broken
-freeze, or a verifier that blocked or has not approved the current tree.
+freeze, a change bigger than the cap, or a verifier that blocked or has not
+approved the current tree.
 
 ## Gate 7 — `code_review`
 
@@ -155,7 +157,7 @@ That is the whole value: a reviewer that inherited the justification cannot
 notice what only makes sense if you already knew why.
 
 **Refused without it:** the same conditions as the design review, against the
-tree rather than the plan.
+tree rather than the plan, and a change bigger than the cap.
 
 ## Gate 8 — `commit`
 

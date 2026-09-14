@@ -102,9 +102,11 @@ a project commits is the project's decision.
 
 | Key | What it means |
 | --- | --- |
-| `diff_size_cap` | the size a single story's change should stay under. The analysis gate proposes a split rather than planning something that will be rejected on size |
+| `diff_size_cap` | the most lines one story's change may add and remove, counted by `git diff --numstat` against the last commit — tests included, `.sdlc/` and the backlog not. The analysis gate proposes a split rather than planning past it, and `implementation`, `verification` and `code_review` refuse a pass over it: [SDLC-E0042](troubleshooting.md#sdlc-e0042) |
 | `coverage_min` | the coverage the verifier holds the change to, when `commands.coverage` is configured |
-| `mutation_min` | the mutation score, where a project measures one |
+| `mutation_min` | the mutation score the verifier holds the change to, where a project measures one |
+
+A threshold of `0` is not enforced.
 
 ## `paths.tests`
 

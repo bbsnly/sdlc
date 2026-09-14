@@ -394,6 +394,27 @@ Fix trunk, or revert the commit that broke it, and start again.
 If the check itself is what is wrong — it fails on a trunk that works — change
 `commands.smoke` in `.sdlc/config.json`. Leaving it out turns the check off.
 
+### SDLC-E0042
+
+The story's change is bigger than `thresholds.diff_size_cap`.
+
+The cap is the most lines one story may add and remove, counted the way
+`git diff --numstat` counts them against the last commit: tests included, a
+moved file only for what changed in it, and `.sdlc/` and the backlog not at all.
+`implementation`, `verification` and `code_review` all refuse a pass over it. A
+change bigger than the project trusts one review to read is not made smaller by
+reviewing it anyway, and it is not made better by being squeezed under the cap.
+
+Record the gate as failed, and hand the story to a person to split:
+
+```console
+$ sdlc gate implementation fail --note "740 lines against a cap of 500"
+$ sdlc escalate story_too_large --message "740 lines against a cap of 500: how should it be split?"
+```
+
+If the cap is wrong for this project, a person changes it in `.sdlc/config.json`.
+`0` turns it off.
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session as a system message, and

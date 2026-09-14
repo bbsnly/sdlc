@@ -24,7 +24,7 @@ and the code, in that order.
 - `.sdlc/stories/<ID>/TEST-PLAN.md` and the frozen tests
 - `.sdlc/stories/<ID>/reviews/design_review-red-team-*.md` — the gaming vectors somebody already
   named. Check every one of them by hand.
-- `.sdlc/config.json` → `commands` and `thresholds`
+- `.sdlc/config.json` → `commands` and `thresholds`. A threshold of `0` is not enforced.
 
 ## Procedure
 

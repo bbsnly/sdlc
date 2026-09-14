@@ -171,6 +171,33 @@ func Behind(ctx context.Context, root, remote, branch string) (int, error) {
 	return n, nil
 }
 
+// ChangedLines counts the lines added and removed between HEAD and tree, the
+// way `git diff --numstat` counts them, with renames found so that moving a
+// file is not counted as writing it again. The loop's own directory is left out,
+// as TreeHash leaves it out, and so is every path in exclude. A binary file has
+// no lines, and counts as none.
+func ChangedLines(ctx context.Context, root, tree string, exclude ...string) (int, error) {
+	args := []string{"diff", "--numstat", "--find-renames", "HEAD", tree, "--", ".", ":(exclude).sdlc"}
+	for _, p := range exclude {
+		args = append(args, ":(exclude,literal)"+p)
+	}
+	out, err := git(ctx, root, nil, args...)
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		added, rest, _ := strings.Cut(line, "\t")
+		removed, _, _ := strings.Cut(rest, "\t")
+		for _, n := range []string{added, removed} {
+			if count, err := strconv.Atoi(n); err == nil {
+				total += count
+			}
+		}
+	}
+	return total, nil
+}
+
 // Override is content to hash in place of a file's own; see TreeHash. Path is
 // repository-relative and slash-separated.
 type Override struct {

@@ -313,6 +313,7 @@ not actually happen:
 | the gate's documents are not on disk | `SDLC-E0020` |
 | a reviewer has not reported, or reviewed something that has changed since | `SDLC-E0029` |
 | a blocking reviewer blocked | `SDLC-E0030` |
+| the change is bigger than `thresholds.diff_size_cap`, at implementation, verification and code review | `SDLC-E0042` |
 | the tests are not frozen, or the freeze belongs to another story | `SDLC-E0023` |
 | a frozen test changed or vanished | `SDLC-E0025` |
 | the commit gate, with work still uncommitted | `SDLC-E0032` |

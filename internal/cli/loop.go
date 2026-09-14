@@ -556,7 +556,15 @@ func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.
 		// The freeze is only worth anything if it is still intact every time
 		// the loop moves. Checking once at Gate 3 would let it be lifted in
 		// silence the moment the implementation got difficult.
-		return requireIntactFreeze(s, id)
+		if err := requireIntactFreeze(s, id); err != nil {
+			return err
+		}
+		if gate == model.GatePlan {
+			return nil
+		}
+		return requireSize(ctx, s)
+	case model.GateCodeReview:
+		return requireSize(ctx, s)
 	case model.GateCommit:
 		if err := requireIntactFreeze(s, id); err != nil {
 			return err
@@ -571,6 +579,30 @@ func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.
 	default:
 		return nil
 	}
+}
+
+// requireSize holds a story to thresholds.diff_size_cap from the gate that
+// produces the change to the last one that sees it uncommitted. The agents that
+// size and plan a story read the cap, and nothing checked that the change which
+// came out of them kept to it. Code review is the last gate that can: anything
+// changed after it makes its reviews stale, and the commit is refused for that.
+func requireSize(ctx context.Context, s *store.Store) error {
+	limit := s.Config().Thresholds.DiffSizeCap
+	if limit <= 0 {
+		return nil
+	}
+	size, err := s.ChangeSize(ctx)
+	if err != nil {
+		return err
+	}
+	if size <= limit {
+		return nil
+	}
+	return sdlcerr.New(sdlcerr.DiffTooLarge,
+		fmt.Sprintf("the change is %d lines, and thresholds.diff_size_cap is %d", size, limit),
+		"a change bigger than the project trusts one review to read is not made smaller "+
+			"by reviewing it anyway; lines are counted as git diff --numstat counts them "+
+			"against the last commit, tests included, .sdlc/ and the backlog not")
 }
 
 // requireOrder keeps the loop a loop.
