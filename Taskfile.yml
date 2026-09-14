@@ -318,7 +318,7 @@ tasks:
     silent: true
     cmds:
       - |
-        bin="${TMPDIR:-/tmp}/sdlc-init-$$"
+        bin="${TMPDIR:-/tmp}/sdlc-init-$${{exeExt}}"
         go build -o "$bin" ./cmd/sdlc
         # The first run of a fresh binary pays to page itself in, which on a
         # shared CI runner can be ten times the steady-state cost and has
@@ -327,7 +327,21 @@ tasks:
         # session invokes the binary over and over.
         total=""
         for _ in 1 2 3 4; do
-          run=$(GODEBUG=inittrace=1 "$bin" version 2>&1 >/dev/null \
+          # Captured, not piped into awk: without .exe the binary never started
+          # on Windows, awk found no init lines in its error, and 0 ms passed
+          # the budget on every run there.
+          if ! trace=$(GODEBUG=inittrace=1 "$bin" version 2>&1 >/dev/null); then
+            echo "sdlc: $bin version failed, so init time was not measured:" >&2
+            echo "$trace" >&2
+            rm -f "$bin"
+            exit 1
+          fi
+          if ! echo "$trace" | grep -q '^init '; then
+            echo "sdlc: GODEBUG=inittrace=1 printed no init lines, so init time was not measured." >&2
+            rm -f "$bin"
+            exit 1
+          fi
+          run=$(echo "$trace" \
             | awk '/^init /{for(i=1;i<=NF;i++) if($i=="clock,") s+=$(i-2)} END{printf "%.3f", s+0}')
           total=$(awk -v a="$total" -v b="$run" 'BEGIN{ if (a=="" || b+0 < a+0) print b; else print a }')
         done
