@@ -55,6 +55,8 @@ would read them. A criterion that describes an implementation rather than an
 observable behaviour fails the gate here, which is the cheapest place in the
 loop to find out.
 
+**Refused without it:** a pass for a story with no acceptance criteria.
+
 A new story starts only from a trunk fit to start from. `sdlc start` refuses
 another branch, uncommitted work that belongs to no story, a trunk behind
 `origin` when [`git.remote`](configuration.md#git) is on, and a trunk that

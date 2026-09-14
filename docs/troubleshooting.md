@@ -448,6 +448,18 @@ freeze, and from then on they are held like the rest. Otherwise remove them, or 
 really needs them — have a person run `sdlc unfreeze --reason "..."` in their own terminal and
 freeze again.
 
+### SDLC-E0044
+
+Definition of ready cannot pass for a story with no acceptance criteria.
+
+Gate 3 writes and freezes the tests from the story's `acceptance_criteria`, and every gate after
+it checks the work against them. With none there is nothing to test, so the gate refuses a pass.
+A criterion whose `text` is empty does not count.
+
+Write the criteria in the backlog, each an observable behaviour, and pass the gate again. If it
+is not clear what they should be, record `sdlc gate dor fail` and hand the question to a person
+with `sdlc escalate spec_unclear --message "..."`.
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session as a system message, and

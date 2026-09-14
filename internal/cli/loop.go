@@ -619,6 +619,8 @@ func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.
 		return err
 	}
 	switch gate {
+	case model.GateDoR:
+		return requireCriteria(s, id)
 	case model.GateTestsFrozen:
 		return requireFreeze(ctx, s, id)
 	case model.GatePlan, model.GateImplementation, model.GateVerification:
@@ -876,4 +878,32 @@ func requireDocuments(s *store.Store, id string, gate model.Gate) error {
 		string(gate)+" cannot pass until its documents are stored",
 		"the gates after this one read "+strings.Join(missing, " and ")+
 			", and nothing is there")
+}
+
+// requireCriteria refuses to pass Gate 1 for a story with nothing to test.
+//
+// Reading the criteria as a test author would is the conversation's job, but a
+// story with none gives it nothing to read: Gate 3 would freeze tests for no
+// behaviour, and every gate after it would check the work against an empty
+// spec. A criterion with no text is no criterion.
+func requireCriteria(s *store.Store, id string) error {
+	story, _, err := s.Story(id)
+	if err != nil {
+		return err
+	}
+	for _, ac := range story.AcceptanceCriteria {
+		if strings.TrimSpace(ac.Text) != "" {
+			return nil
+		}
+	}
+	what := "dor cannot pass for " + quote(id) + ", which has no acceptance criteria"
+	if len(story.AcceptanceCriteria) > 0 {
+		// Criteria written in some other shape -- given/when/then, say -- are
+		// there to a person reading the file and empty to the loop, which reads
+		// only "text". Saying "none" would send that person looking for nothing.
+		what = "dor cannot pass for " + quote(id) + ": none of its acceptance criteria has a \"text\""
+	}
+	return sdlcerr.New(sdlcerr.NoAcceptanceCriteria, what,
+		"Gate 3 writes and freezes the tests from them, and with none there is nothing "+
+			"to test and nothing to verify the work against")
 }

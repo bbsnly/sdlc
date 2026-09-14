@@ -235,6 +235,28 @@ func TestStartingTwiceOnTheSameStoryChangesNothing(t *testing.T) {
 	}
 }
 
+// A story with no acceptance criteria gives Gate 3 nothing to write tests from,
+// and every gate after it nothing to check the work against.
+func TestDefinitionOfReadyRefusesAStoryWithNothingToTest(t *testing.T) {
+	gitProject(t)
+	initialised(t)
+	writeFile(t, ".", "user_stories.json", `{"stories":[
+	  {"id":"A-1","title":"a","status":"ready","acceptance_criteria":[{"id":"AC-1","text":" "}]}]}`)
+	mustRun(t, "start")
+
+	r := run(t, "gate", "dor", "pass", "--note", "looks fine")
+	if r.code == 0 || !strings.Contains(r.stderr, "SDLC-E0044") {
+		t.Fatalf("dor passed for a story with nothing to test: exit %d\n%s", r.code, r.stderr)
+	}
+	// It has a criterion, so "none" would send the reader looking for nothing:
+	// what is missing is the one field the loop reads.
+	if !strings.Contains(r.stderr, `"text"`) {
+		t.Errorf("the refusal does not name the field its criteria are missing:\n%s", r.stderr)
+	}
+	// A fail is always recordable: it is how the gate says the story is not ready.
+	mustRun(t, "gate", "dor", "fail", "--note", "no acceptance criteria")
+}
+
 func TestStartingASecondStoryIsRefused(t *testing.T) {
 	gitProject(t)
 	initialised(t)
@@ -444,7 +466,8 @@ func TestGateCanTargetAStoryThatIsNotTheActiveOne(t *testing.T) {
 	initialised(t)
 	writeFile(t, ".", "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"One","status":"ready","priority":1},
-	  {"id":"B-2","title":"Two","status":"ready","priority":2}]}`)
+	  {"id":"B-2","title":"Two","status":"ready","priority":2,
+	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN two is asked for, the system shall return 2"}]}]}`)
 	mustRun(t, "start", "A-1")
 
 	got := decode[gatePayload](t, mustRun(t, "gate", "dor", "pass", "--story", "B-2", "--json"))

@@ -79,7 +79,7 @@ func TestAStoryInAPausedTierIsCommittedOnlyOnceAPersonApprovesIt(t *testing.T) {
 	initialised(t)
 	writeFile(t, root, "user_stories.json", `{"stories":[
 	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"High","priority":1,
-	   "acceptance_criteria":[{"id":"AC-1","given":"a paid invoice","when":"it is refunded","then":"the money goes back"}]}]}`)
+	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN a paid invoice is refunded, the money goes back"}]}]}`)
 	mustRun(t, "start")
 	reach(t, root, model.GateCommit)
 
@@ -114,7 +114,7 @@ func TestAStoryInATierThatIsNotPausedIsNotHeld(t *testing.T) {
 	setConfigOnDisk(t, root, "human_gates", map[string]any{"pre_commit_pause_tiers": []string{}})
 	writeFile(t, root, "user_stories.json", `{"stories":[
 	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"high","priority":1,
-	   "acceptance_criteria":[{"id":"AC-1","given":"a paid invoice","when":"it is refunded","then":"the money goes back"}]}]}`)
+	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN a paid invoice is refunded, the money goes back"}]}]}`)
 	mustRun(t, "start")
 	reach(t, root, model.GateCommit)
 	commitEverything(t, root)

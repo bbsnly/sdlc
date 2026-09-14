@@ -314,6 +314,7 @@ not actually happen:
 | Refused | Code |
 | --- | --- |
 | an earlier gate has not passed | `SDLC-E0031` |
+| definition of ready, for a story with no acceptance criteria | `SDLC-E0044` |
 | the gate's documents are not on disk | `SDLC-E0020` |
 | a reviewer has not reported, or reviewed something that has changed since | `SDLC-E0029` |
 | a blocking reviewer blocked, or perf found a stated performance budget broken | `SDLC-E0030` |

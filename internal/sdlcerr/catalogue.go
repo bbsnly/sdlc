@@ -81,6 +81,9 @@ var (
 	UnfrozenTests = register("SDLC-E0043",
 		`remove the test files the freeze does not hold, or have a person run "sdlc unfreeze --reason ..." in their own terminal and freeze again, so they are frozen with the rest`)
 
+	NoAcceptanceCriteria = register("SDLC-E0044",
+		`write the story's acceptance_criteria in the backlog, each an observable behaviour — or record "sdlc gate dor fail" and hand the question to a person with "sdlc escalate spec_unclear --message ..."`)
+
 	UnknownGate = register("SDLC-E0013",
 		`run "sdlc gate --help" to see the gate names this version knows`)
 
