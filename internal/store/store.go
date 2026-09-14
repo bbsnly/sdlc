@@ -97,46 +97,48 @@ func (s *Store) StoryDir(id string) (string, error) {
 
 // Backlog reads the project's stories.
 func (s *Store) Backlog() (*model.Backlog, error) {
+	_, b, err := s.readBacklog()
+	return b, err
+}
+
+// readBacklog returns the backlog's bytes with the stories read from them, so
+// that an edit is made to the same bytes that were checked.
+func (s *Store) readBacklog() ([]byte, *model.Backlog, error) {
 	path := s.cfg.BacklogPath(s.root)
 	raw, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return nil, sdlcerr.New(sdlcerr.BacklogMissing,
+		return nil, nil, sdlcerr.New(sdlcerr.BacklogMissing,
 			"there is no backlog to read",
 			"backlog.path in "+config.File+" names "+relative(s.root, path)+", which does not exist")
 	case err != nil:
-		return nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
+		return nil, nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
 			relative(s.root, path)+" could not be read",
 			"opening it failed").WithCause(err)
 	}
 
 	var b model.Backlog
 	if err := json.Unmarshal(raw, &b); err != nil {
-		return nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
+		return nil, nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
 			relative(s.root, path)+" is not valid JSON",
 			"the loop reads every story from this file, so it stops rather than guess").WithCause(err)
 	}
 	for i, story := range b.Stories {
 		switch {
 		case story.ID == "":
-			return nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
+			return nil, nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
 				"a story in "+relative(s.root, path)+" has no id",
 				"it is story number "+strconv.Itoa(i+1)+" in the file, and every story needs an id")
 		case story.Title == "":
-			return nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
+			return nil, nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
 				"the story "+quote(story.ID)+" has no title",
 				"every story needs a title: it is what the commit message and the retro refer to")
 		}
 		if err := CheckID(story.ID); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return &b, nil
-}
-
-// SaveBacklog writes the stories back, preserving the file's own fields.
-func (s *Store) SaveBacklog(b *model.Backlog) error {
-	return s.writeJSON(s.cfg.BacklogPath(s.root), b)
+	return raw, &b, nil
 }
 
 // Story reads one story from the backlog.
@@ -147,14 +149,21 @@ func (s *Store) Story(id string) (*model.Story, *model.Backlog, error) {
 	}
 	found, ok := b.Find(id)
 	if !ok {
-		return nil, nil, sdlcerr.New(sdlcerr.StoryNotFound,
-			"no story with the id "+quote(id),
-			describeBacklog(b))
+		return nil, nil, storyNotFound(b, id)
 	}
 	return found, b, nil
 }
 
+func storyNotFound(b *model.Backlog, id string) error {
+	return sdlcerr.New(sdlcerr.StoryNotFound,
+		"no story with the id "+quote(id),
+		describeBacklog(b))
+}
+
 // SetStoryStatus moves a story to a new status and saves the backlog.
+//
+// It edits the status and the updated time of that one story where they are
+// in the file, and leaves every other byte alone (see editStory).
 //
 // Moving a story to the status it already has is not a move, and this writes
 // nothing. That is not an optimisation. The backlog is a tracked file, and the
@@ -162,16 +171,28 @@ func (s *Store) Story(id string) (*model.Story, *model.Backlog, error) {
 // stamped with -- so a write that changed nothing but the timestamp would send
 // both back to re-review work that had not changed.
 func (s *Store) SetStoryStatus(id string, status model.Status) error {
-	found, b, err := s.Story(id)
+	raw, b, err := s.readBacklog()
 	if err != nil {
 		return err
+	}
+	found, ok := b.Find(id)
+	if !ok {
+		return storyNotFound(b, id)
 	}
 	if found.Status == status {
 		return nil
 	}
-	found.Status = status
-	found.Updated = model.Timestamp(s.now())
-	return s.SaveBacklog(b)
+
+	path := s.cfg.BacklogPath(s.root)
+	edited, ok := editStory(raw, id,
+		change{"status", jsonString(string(status))},
+		change{"updated", jsonString(model.Timestamp(s.now()))})
+	if !ok {
+		return sdlcerr.New(sdlcerr.BacklogUnreadable,
+			relative(s.root, path)+" could not be edited in place",
+			"it was read, but the story "+quote(id)+" could not be found in its bytes; this is a bug")
+	}
+	return s.writeFile(path, edited)
 }
 
 // ---------------------------------------------------------------- iteration

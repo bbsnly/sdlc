@@ -173,6 +173,86 @@ func TestSetStoryStatusSurvivesARoundTripAndKeepsUnknownFields(t *testing.T) {
 	}
 }
 
+// The backlog is the user's file. Moving a story changes its status and its
+// updated time, and nothing else: not the fields the tool has no name for, not
+// the order of the keys, not the way the file is laid out.
+func TestMovingAStoryChangesOnlyItsStatusAndUpdatedTime(t *testing.T) {
+	for _, tc := range []struct {
+		name, before, after string
+	}{
+		{
+			name: "fields the tool does not know, and the layout, survive",
+			before: `{
+    "owner": "billing team",
+    "_schema": "x.json",
+    "stories": [
+        {"id": "A-0", "title": "Other", "status": "ready", "estimate": 3},
+        {
+            "id": "A-1",
+            "status": "ready",
+            "title": "Totals & <taxes>",
+            "estimate": 5,
+            "non_goals": ["persistence", "currency"],
+            "acceptance_criteria": [{"id": "AC-1", "text": "WHEN x, y.", "owner": "qa"}],
+            "updated": "2026-01-01T00:00:00Z",
+            "custom": {"b": 1, "a": 2}
+        }
+    ]
+}
+`,
+			after: `{
+    "owner": "billing team",
+    "_schema": "x.json",
+    "stories": [
+        {"id": "A-0", "title": "Other", "status": "ready", "estimate": 3},
+        {
+            "id": "A-1",
+            "status": "in_progress",
+            "title": "Totals & <taxes>",
+            "estimate": 5,
+            "non_goals": ["persistence", "currency"],
+            "acceptance_criteria": [{"id": "AC-1", "text": "WHEN x, y.", "owner": "qa"}],
+            "updated": "2026-09-10T08:30:00Z",
+            "custom": {"b": 1, "a": 2}
+        }
+    ]
+}
+`,
+		},
+		{
+			name:   "a missing key is added after the last one, spaced like it",
+			before: "{\"stories\": [\n\t{\n\t\t\"id\": \"A-1\",\n\t\t\"title\": \"One\",\n\t\t\"priority\": 10\n\t}\n]}\n",
+			after: "{\"stories\": [\n\t{\n\t\t\"id\": \"A-1\",\n\t\t\"title\": \"One\",\n\t\t\"priority\": 10," +
+				"\n\t\t\"status\": \"in_progress\",\n\t\t\"updated\": \"2026-09-10T08:30:00Z\"\n\t}\n]}\n",
+		},
+		{
+			name:   "a compact file stays compact, and gains the newline git wants",
+			before: `{"stories":[{"id":"A-1","title":"One","Status":"ready"}]}`,
+			after:  `{"stories":[{"id":"A-1","title":"One","Status":"in_progress","updated":"2026-09-10T08:30:00Z"}]}` + "\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newStore(t)
+			writeBacklog(t, s, tc.before)
+
+			if err := s.SetStoryStatus("A-1", model.StatusInProgress); err != nil {
+				t.Fatal(err)
+			}
+
+			raw, err := os.ReadFile(s.cfg.BacklogPath(s.root))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != tc.after {
+				t.Errorf("backlog after the move:\n%s\nwant:\n%s", raw, tc.after)
+			}
+			if _, err := s.Backlog(); err != nil {
+				t.Errorf("the edited backlog does not read back: %v", err)
+			}
+		})
+	}
+}
+
 func TestActiveIsEmptyBeforeAnIterationStarts(t *testing.T) {
 	s := newStore(t)
 	id, err := s.Active()
