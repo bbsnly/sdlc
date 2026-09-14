@@ -123,7 +123,7 @@ what the implementer cannot touch.
 | Key | What it means |
 | --- | --- |
 | `dirs` | a directory and everything beneath it is tests. A bare name — `testdata`, `__snapshots__` — is a directory of that name wherever it is, because that is what projects mean by it; one with a slash inside it, like `src/fixtures`, is that directory and no other. A slash at either end does not count: `tests/` is the bare name `tests` |
-| `file_globs` | a pattern matched against the whole path *and* against the file's own name, so `*_test.go` finds `internal/store/x_test.go` |
+| `file_globs` | a pattern matched against the whole path *and* against the file's own name, so `*_test.go` finds `internal/store/x_test.go`. `**` stands for any number of directories, so `src/**/*.spec.ts` finds a spec at any depth under `src/`, and `e2e/**` is everything under `e2e/` |
 
 **Anything that decides whether a test passes belongs here, not only the test
 files.** A frozen test that reads a golden file is frozen only if the golden

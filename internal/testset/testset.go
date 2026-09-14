@@ -80,14 +80,46 @@ func (m Matcher) Match(rel string) bool {
 	base := path.Base(rel)
 	for _, g := range m.globs {
 		g = pathrules.Fold(g)
-		if ok, err := path.Match(g, rel); err == nil && ok {
-			return true
-		}
-		if ok, err := path.Match(g, base); err == nil && ok {
+		if matchGlob(g, rel) || matchGlob(g, base) {
 			return true
 		}
 	}
 	return false
+}
+
+// matchGlob is path.Match with "**" added: a segment of its own that stands for
+// any number of directories. path.Match reads "**" as "*", which stops at a
+// slash, so "src/**/*.spec.ts" found a spec one directory down and not two, and
+// the deeper one was not a test as far as the freeze knew.
+//
+// A trailing "**" needs something beneath it: "e2e/**" is what is inside e2e/,
+// not a file called e2e. A malformed pattern matches nothing, as it did.
+func matchGlob(pattern, rel string) bool {
+	return matchSegments(strings.Split(pattern, "/"), strings.Split(rel, "/"))
+}
+
+func matchSegments(pattern, name []string) bool {
+	for len(pattern) > 0 {
+		if pattern[0] == "**" {
+			if len(pattern) == 1 {
+				return len(name) > 0
+			}
+			for i := 0; i <= len(name); i++ {
+				if matchSegments(pattern[1:], name[i:]) {
+					return true
+				}
+			}
+			return false
+		}
+		if len(name) == 0 {
+			return false
+		}
+		if ok, err := path.Match(pattern[0], name[0]); err != nil || !ok {
+			return false
+		}
+		pattern, name = pattern[1:], name[1:]
+	}
+	return len(name) == 0
 }
 
 // underAnyNamedDirectory reports whether any segment of rel is one of the

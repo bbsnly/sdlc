@@ -149,3 +149,23 @@ func TestABareDirectoryNameMatchesAtAnyDepth(t *testing.T) {
 		}
 	}
 }
+
+// "**" was read as "*", which stops at a slash: "src/**/*.spec.ts" covered a
+// spec one directory down and not two, and the freeze did not hold the deeper
+// one.
+func TestADoubleStarMatchesAnyNumberOfDirectories(t *testing.T) {
+	m := matcher(nil, []string{"src/**/*.spec.ts", "e2e/**"})
+	for _, p := range []string{
+		"src/a.spec.ts", "src/x/a.spec.ts", "src/x/y/z/a.spec.ts",
+		"e2e/run.ts", "e2e/deep/fixtures/data.json",
+	} {
+		if !m.Match(p) {
+			t.Errorf("%s did not match", p)
+		}
+	}
+	for _, p := range []string{"lib/x/a.spec.ts", "src/x/a.ts", "e2e", "e2e.ts", "other/e2e/run.ts"} {
+		if m.Match(p) {
+			t.Errorf("%s matched and should not have", p)
+		}
+	}
+}
