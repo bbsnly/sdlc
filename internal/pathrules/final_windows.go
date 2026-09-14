@@ -27,7 +27,7 @@ func finalPath(p string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	defer syscall.CloseHandle(h)
+	defer func() { _ = syscall.CloseHandle(h) }()
 
 	buf := make([]uint16, syscall.MAX_PATH)
 	for {
