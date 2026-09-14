@@ -147,7 +147,7 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   contract section, git, whether each configured command's program is
   installed, and whether the hooks can find the binary at all. Every problem
   it reports carries the command that fixes it.
-- Error codes `SDLC-E0001` through `SDLC-E0044`, each with a heading in
+- Error codes `SDLC-E0001` through `SDLC-E0046`, each with a heading in
   [the troubleshooting page](https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md).
   Every error says what happened, why, and what to do about it.
 

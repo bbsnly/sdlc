@@ -27,9 +27,11 @@ Nothing is enforced unless **all** of these are true:
 2. A story is being worked on — `.sdlc/state/active` names one.
 3. `SDLC_ENFORCE` is not `0` in the environment the session started with.
 
-Outside those, the hook allows everything and says nothing, with one exception:
+Outside those, the hook allows everything and says nothing, with two exceptions:
 in a project with `.sdlc/config.json`, `sdlc approve` and `sdlc unfreeze` are
-refused from a tool call whether or not a story is being worked on.
+refused from a tool call whether or not a story is being worked on, and so is a
+command nested too deep to read
+([`command-too-deep-to-read`](#command-too-deep-to-read)).
 `sdlc escalate` ends the iteration, so the answer to it always comes after.
 
 The hook also **fails
@@ -406,7 +408,7 @@ A session that ends its turn while a story is being worked on — without handin
 the story to a person or ending the iteration — leaves the story where nobody
 is looking. Finishing a gate is not a place to stop: the next one is waiting.
 The `Stop` hook sends that stop back, with what to do instead: work the next
-gate, `sdlc escalate`, or `sdlc stop`.
+gate or `sdlc escalate`, or, once every gate has passed, `sdlc stop`.
 
 A stop it has already sent back goes through, so a session is never held in a
 loop. The count is kept per story and starts again whenever anything is recorded
