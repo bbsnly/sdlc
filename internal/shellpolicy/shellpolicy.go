@@ -569,7 +569,8 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 		// freeze below.
 		candidates = append(candidates, m.words(line)...)
 	}
-	for _, c := range m.spell(s, dir, candidates) {
+	spelled := withGlobs(m.spell(s, dir, candidates), func() []string { return protectedShapes(s.Backlog) })
+	for _, c := range spelled {
 		if !m.first("loop state", c) || m.outside(s, c) {
 			continue
 		}
@@ -658,7 +659,8 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 	if byName {
 		rule = "freeze by name"
 	}
-	for _, c := range m.spell(s, dir, candidates) {
+	spelled := withGlobs(m.spell(s, dir, candidates), func() []string { return frozenShapes(s.Frozen) })
+	for _, c := range spelled {
 		if !m.first(rule, c) {
 			continue
 		}

@@ -205,6 +205,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   the paths they are given, and a short option's value glued to it, as in
   `-C.sdlc` or `-oCLAUDE.md`, is read as that path. `tar -xf e.tar -C .sdlc`,
   `unzip -d .git/hooks` and `curl -o CLAUDE.md` wrote past every rule.
+- A glob or a brace in a shell command names the files it matches.
+  `rm .sdl?/state/active`, `rm -rf .sdlc/*`, `echo x > CLAUDE.{md,}` and
+  `rm internal/calc/add_tes?.go` reached the loop's files, the protected paths
+  and the frozen tests under words no rule matched. A protected path has to be
+  named, so `rm -rf build/*` goes through, and `*` does not match a leading dot,
+  as in the shell.
 - The hook's warnings reach the session. They went to standard error, which
   Claude Code sends to its debug log when a hook allows the call, so "nothing
   is being enforced" was said to nobody. They now arrive as a system message,
