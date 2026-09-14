@@ -85,8 +85,8 @@ In Claude Code:
 ```
 
 The repository is its own marketplace, so there is nothing else to add. That
-gives you the `/sdlc:next` skill, eleven agents, and the `PreToolUse` hook that
-does the enforcing.
+gives you the `/sdlc:next` skill, eleven agents, and the `PreToolUse`,
+`PostToolUse` and `Stop` hooks that do the enforcing.
 
 Worth knowing: the marketplace serves the repository's default branch, not a
 tag. `/plugin update sdlc@sdlc` therefore gives you the plugin as it is on

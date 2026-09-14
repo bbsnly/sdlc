@@ -56,7 +56,8 @@ to install the binary for you.
 | The skill alone, any agent | `npx skills add bbsnly/sdlc` |
 
 The repository is its own marketplace, so there is nothing else to add. What
-you get is the `/sdlc:next` skill, eleven agents, and the `PreToolUse` hook.
+you get is the `/sdlc:next` skill, eleven agents, and the `PreToolUse`,
+`PostToolUse` and `Stop` hooks.
 
 The third row is the [Agent Skill](https://agentskills.io) route, and it is the
 runbook only — no binary, no agents, no hook, so nothing is recorded and
@@ -107,7 +108,7 @@ loop from somewhere that is not Claude Code:
 | `sdlc freeze` / `sdlc unfreeze` | lock the acceptance tests by content, or release them |
 | `sdlc cost add --usd` | record what a story has spent against its budget |
 | `sdlc doctor` | check the install, the configuration and the hook, with fixes |
-| `sdlc version` | the version, the commit, and how it was built |
+| `sdlc version` | the version, and the commit it was built from |
 
 Every one of them takes `--json`, so a skill reads exactly what a person reads.
 [Commands](https://github.com/bbsnly/sdlc/blob/main/docs/commands.md) has every

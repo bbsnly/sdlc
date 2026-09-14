@@ -487,6 +487,8 @@ one, so a single edit fixes them all:
 - **`version` is higher than this `sdlc` reads.** A newer release wrote the file. Upgrade `sdlc`
   rather than lowering the number: this release would drop whatever it does not know, and a
   setting it drops is one that is not enforced.
+- **`version` is `0` or less.** No release wrote that. Set it to `1`, or leave it out and `1` is
+  what it reads.
 - **`backlog.path` leaves the repository**, as an absolute path or one that climbs out with
   `..`. The backlog is committed with the work and protected while a story runs, and neither
   holds outside the repository. Give the path relative to the repository root.

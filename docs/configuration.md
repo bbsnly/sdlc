@@ -46,7 +46,8 @@ empty for Go:
 
 The configuration format's version, `1`. Leave it alone: it is how a future
 release recognises a file written by this one, and how this one refuses a file
-written by a newer release rather than misread it
+written by a newer release rather than misread it. A version of `0` or less is
+refused too; leaving the key out reads as `1`
 ([SDLC-E0045](troubleshooting.md#sdlc-e0045)).
 
 ## `backlog.path`
