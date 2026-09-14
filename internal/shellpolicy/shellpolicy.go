@@ -664,8 +664,11 @@ func gitChangesFiles(args []string) bool {
 // --in-place. Only a flag spelled `-i...` counted, and `sed -Ei` is common.
 func editsInPlace(args []string) bool {
 	for _, a := range args {
+		name, _, _ := strings.Cut(a, "=")
 		switch {
-		case a == "--in-place" || strings.HasPrefix(a, "--in-place="):
+		case len(name) >= 3 && len(name) <= len("--in-place") && name == "--in-place"[:len(name)]:
+			// GNU sed takes any start of a long option that names only one, and
+			// no other option of sed's starts with --i: `sed --in-pl`.
 			return true
 		case strings.HasPrefix(a, "--") || !strings.HasPrefix(a, "-"):
 			continue
@@ -675,8 +678,10 @@ func editsInPlace(args []string) bool {
 				return true
 			}
 			// What follows one of these is that option's argument, not more
-			// flags: `perl -Mstrict`, `sed -e ...`.
-			if strings.ContainsRune("efIlMmx", r) {
+			// flags: `perl -Mstrict`, `sed -e ...`. Not perl's -l, which takes a
+			// number or nothing and then more flags: read as taking the rest,
+			// `perl -lpi` hid its -i.
+			if strings.ContainsRune("efIMmx", r) {
 				break
 			}
 		}

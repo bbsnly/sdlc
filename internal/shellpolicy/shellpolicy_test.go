@@ -370,8 +370,19 @@ func TestAFrozenTestCannotBeWrittenAnyOtherWay(t *testing.T) {
 		"cd internal && sh -c 'cd ..' && echo x > x_test.go",
 		"cd inter* && cp /tmp/e x_test.go",
 		"cd /d internal && copy /y e.go x_test.go",
+		// In-place editing spelled the other ways sed and perl take it.
+		"sed --in-pl -e s/a/b/ internal/x_test.go",
+		"perl -lpi -e 's/a/b/' internal/x_test.go",
+		"perl -0777pi -e 's/a/b/' internal/x_test.go",
 	} {
 		refused(t, command, frozen, "frozen-test-through-the-tool")
+	}
+	for _, command := range []string{
+		"perl -lne 'print' internal/x_test.go",
+		"sed --line-length=80 -n l internal/x_test.go",
+		"sed -n 1p -- internal/x_test.go",
+	} {
+		allowed(t, command, frozen)
 	}
 }
 
