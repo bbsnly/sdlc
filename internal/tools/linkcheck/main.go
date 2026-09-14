@@ -164,19 +164,10 @@ func checkHygiene(root string) ([]finding, error) {
 		case strings.HasPrefix(slash, "docs/adr/"), strings.HasPrefix(slash, "docs/parity/"):
 			findings = append(findings, finding{slash, 0,
 				"design record is tracked; this repository carries only what a user needs (see plan/adr/)"})
-		case strings.HasPrefix(slash, legacyKit) && strings.HasSuffix(strings.ToLower(slash), ".md") &&
-			!strings.HasPrefix(slash, legacyTemplates):
-			// The kit's own notes -- an eval plan, promoted lessons -- came in
-			// with it and were exempt with it, and no selftest reads them.
-			findings = append(findings, finding{slash, 0,
-				"the legacy kit carries only what its selftest executes, and a document outside " +
-					legacyTemplates + " is not that"})
 		}
 		base := strings.ToLower(path.Base(slash))
-		if strings.Contains(base, "plan") && strings.HasSuffix(base, ".md") &&
-			!strings.HasPrefix(slash, legacyTemplates) {
-			findings = append(findings, finding{slash, 0,
-				"looks like a planning document; only " + legacyTemplates + " may carry one, as a fixture"})
+		if strings.Contains(base, "plan") && strings.HasSuffix(base, ".md") {
+			findings = append(findings, finding{slash, 0, "looks like a planning document; it belongs under plan/"})
 		}
 		if compiled(filepath.Join(root, rel)) {
 			findings = append(findings, finding{slash, 0,
@@ -187,9 +178,6 @@ func checkHygiene(root string) ([]finding, error) {
 
 	for _, rel := range tracked {
 		slash := filepath.ToSlash(rel)
-		if strings.HasPrefix(slash, "test/parity/legacy/") {
-			continue // vendored kit, verified once at import
-		}
 		abs := filepath.Join(root, rel)
 		info, err := os.Stat(abs)
 		if err != nil || info.IsDir() || info.Size() > 4<<20 {
@@ -214,14 +202,6 @@ func checkHygiene(root string) ([]finding, error) {
 	}
 	return findings, nil
 }
-
-// The vendored legacy kit, and the one directory in it the selftest copies
-// document templates from. A PLAN.md there is a fixture the selftest executes;
-// anywhere else it is a planning document.
-const (
-	legacyKit       = "test/parity/legacy/"
-	legacyTemplates = "test/parity/legacy/sdlc/templates/"
-)
 
 // compiled reports whether a file starts with an executable's magic number.
 // This repository ships source and text; a tracked Mach-O, ELF or PE file is
@@ -287,16 +267,14 @@ func isExternal(target string) bool {
 	return false
 }
 
-// skipped is what a link check has no business walking into. The legacy kit is
-// a byte-for-byte fixture for the differential tests, the scaffold templates
-// are written into somebody else's repository where their links resolve, and
-// the rest is not ours.
+// skipped is what a link check has no business walking into. The scaffold
+// templates are written into somebody else's repository where their links
+// resolve, and the rest is not ours.
 var skipped = map[string]bool{
 	".git":                        true,
 	"node_modules":                true,
 	"dist":                        true,
 	"plan":                        true,
-	"test/parity/legacy":          true,
 	"internal/scaffold/templates": true,
 }
 

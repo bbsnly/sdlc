@@ -56,7 +56,6 @@ tasks:
       - task: markdownlint
       - task: linkcheck
       - task: init-time
-      - task: parity-selftest
       - task: release-check
       - task: licenses
       - task: secrets
@@ -203,8 +202,7 @@ tasks:
         #
         # Captured rather than piped. Task's embedded shell has errexit on but
         # pipefail off, so `node --test ... | tail` reported the failure in its
-        # output and still exited 0 -- this leg could not fail. Same shape as
-        # parity-selftest below, for the same reason.
+        # output and still exited 0 -- this leg could not fail.
         out=$(node --test 'npm/test/*.test.js' 2>&1) || {
           echo "$out" >&2
           exit 1
@@ -228,17 +226,13 @@ tasks:
     silent: true
     cmds:
       - |
-        # The vendored legacy kit under test/parity/legacy is kept as it was
-        # vendored, the reference the port was written against, so it is not
-        # restyled here.
         # 'plugin/bin/sdlc-hook' by name: it has no .sh suffix, and it is the
         # one script that runs on every matching tool call in every session.
         # --others --exclude-standard so a script that is written but not yet
         # committed is linted too. `./task check` is what you run before
         # committing, and plain `git ls-files` sees only what is already in.
         files=$(git ls-files --cached --others --exclude-standard \
-          '*.sh' 'task' 'plugin/bin/sdlc-hook' 2>/dev/null |
-          grep -v '^test/parity/legacy/' || true)
+          '*.sh' 'task' 'plugin/bin/sdlc-hook' 2>/dev/null)
         if [ -n "$files" ]; then
           # shellcheck disable=SC2086
           shellcheck $files
@@ -367,54 +361,6 @@ tasks:
           exit 1
         fi
         echo "init: ${total} ms (budget {{.INIT_BUDGET_MS}} ms)"
-
-  parity-selftest:
-    desc: Run the vendored legacy kit's own selftest, against the kit itself and not the port
-    silent: true
-    cmds:
-      - |
-        # Scope, declared rather than skipped: the vendored kit is POSIX shell
-        # and does not pass its own selftest on Windows. It reaches "gate 3
-        # freeze" and dies there under `set -euo pipefail`. That is not a
-        # regression to chase -- it is the baseline. The kit was written for
-        # macOS and Linux, and Windows support is one of the reasons the Go
-        # port exists, so the port's own tests are what run on windows-latest.
-        # If this ever needs revisiting, the evidence is that it fails in the
-        # freeze step's hashing, not in the harness around it.
-        if [ "{{OS}}" = "windows" ]; then
-          echo "parity: not run on Windows -- the legacy shell kit does not support it (by design; see the port's own Windows tests)"
-          exit 0
-        fi
-        if ! command -v jq >/dev/null 2>&1; then
-          echo "sdlc: jq is not installed, and the vendored kit's selftest needs it." >&2
-          echo "      macOS:  brew install jq" >&2
-          echo "      Linux:  apt-get install jq" >&2
-          echo "      This leg runs the reference kit the port was written against," >&2
-          echo "      so it fails rather than skips." >&2
-          exit 1
-        fi
-        # SDLC_KIT points at the *parent* of the kit: the selftest resolves
-        # $SDLC_KIT/sdlc/..., mirroring how the kit installs under ~/.claude.
-        # Without this it silently tests whatever is installed on the machine
-        # rather than the vendored copy -- a false green, and how this leg
-        # first passed locally and failed on all three CI runners.
-        #
-        # The path is computed inside bash, not here. Task's embedded shell
-        # reports pwd as a native Windows path (D:\a\...), and the selftest
-        # puts $SDLC_KIT/sdlc/bin on PATH -- where Git Bash needs a POSIX path
-        # or the `gate` it just added is not found.
-        out=$(bash -c '
-          kit=$(cd test/parity/legacy && pwd)
-          # Git Bash inherits a native PWD from the parent, so pwd yields
-          # D:/a/... rather than /d/a/... . The selftest puts $SDLC_KIT/sdlc/bin
-          # on PATH, and a drive-letter entry there is silently ignored -- every
-          # `gate` call then reports "command not found" on Windows alone.
-          command -v cygpath >/dev/null 2>&1 && kit=$(cygpath -u "$kit")
-          SDLC_KIT="$kit" exec bash "$kit/sdlc/bin/selftest.sh"' 2>&1) || {
-          echo "$out" >&2
-          exit 1
-        }
-        echo "$out" | tail -n 1
 
   licenses:
     desc: Assert every dependency that ships in the binary has a licence we can ship

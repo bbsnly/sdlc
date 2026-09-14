@@ -166,35 +166,19 @@ func TestHygieneAllowsTheSyntheticAccount(t *testing.T) {
 	}
 }
 
-func TestHygieneAllowsVendoredLegacyKit(t *testing.T) {
+// A planning document is one wherever it is tracked, not only under plan/.
+func TestHygieneRejectsAPlanningDocumentAnywhere(t *testing.T) {
 	root := gitRepo(t, map[string]string{
-		"test/parity/legacy/sdlc/templates/PLAN.md": "the legacy kit's own template, executed as a fixture\n",
-		"test/parity/legacy/sdlc/hooks/_lib.sh":     "#!/bin/sh\n",
+		"test/fixtures/PLAN.md":       "a plan beside the tests\n",
+		"docs/release-plan.md":        "what ships when\n",
+		"internal/scaffold/README.md": "fine\n",
 	})
 	got, err := checkHygiene(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 0 {
-		t.Fatalf("the vendored kit is a fixture, got: %v", got)
-	}
-}
-
-// The kit came in with its own eval plan and promoted lessons, and the whole
-// directory was exempt, so neither was ever looked at. Only the templates the
-// selftest copies are fixtures.
-func TestHygieneRejectsTheLegacyKitsOwnNotes(t *testing.T) {
-	root := gitRepo(t, map[string]string{
-		"test/parity/legacy/sdlc/evals/README.md":   "run claude -p against the loop\n",
-		"test/parity/legacy/sdlc/lessons-global.md": "promoted by /sdlc-consolidate\n",
-		"test/parity/legacy/PLAN.md":                "a plan outside the templates\n",
-	})
-	got, err := checkHygiene(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 4 {
-		t.Fatalf("want 4 findings (three notes, one of them also plan-shaped), got %d: %v", len(got), got)
+	if len(got) != 2 {
+		t.Fatalf("want 2 findings, got %d: %v", len(got), got)
 	}
 }
 
