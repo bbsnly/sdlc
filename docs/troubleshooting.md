@@ -67,7 +67,9 @@ loop state takes a lock first, and waits up to ten seconds for a command that ho
 message names that command and its process id. A command stopped with Ctrl+C gives the lock
 back on its way out. If nothing is running, the lock was left by a command that could not: one
 killed outright, or a machine that went down. It is broken open once it has gone two minutes
-without its holder refreshing it, or delete the directory the message names.
+without its holder refreshing it and that process is no longer running, or delete the
+directory the message names. A holder that is still running, however long ago it took the
+lock, is waited for: a laptop asleep in the middle of a command still has a change to write.
 
 ### SDLC-E0007
 

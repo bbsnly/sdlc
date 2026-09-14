@@ -1,9 +1,11 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -20,6 +22,34 @@ func cacheDir(t *testing.T) string {
 	t.Setenv("HOME", dir)           // macOS
 	t.Setenv("LocalAppData", dir)   // Windows
 	return dir
+}
+
+// deadPID is the pid of a process that has exited: this test binary, run to do
+// nothing.
+func deadPID(t *testing.T) int {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	return cmd.ProcessState.Pid()
+}
+
+// abandon makes g's lock look like one left by a process that died holding it:
+// owned by a pid that is no longer running, and older than guardStale.
+func abandon(t *testing.T, g *Guard, pid int) {
+	t.Helper()
+	raw, err := json.Marshal(guardOwner{PID: pid, What: "gate", Token: g.token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(g.path, "owner.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * guardStale)
+	if err := os.Chtimes(g.path, old, old); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // On Windows, creating the lock while another holder is still removing it fails
@@ -110,16 +140,50 @@ func TestALockLeftByADeadProcessIsBrokenOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer abandoned.Release()
-	old := time.Now().Add(-2 * guardStale)
-	if err := os.Chtimes(abandoned.path, old, old); err != nil {
-		t.Fatal(err)
-	}
+	abandon(t, abandoned, deadPID(t))
 
 	g, err := Lock(root, "start")
 	if err != nil {
 		t.Fatalf("a lock older than %s was never broken open: %v", guardStale, err)
 	}
 	g.Release()
+}
+
+// A lock whose owner names no process is judged by its age: there is no holder
+// to wait for.
+func TestAnOldLockThatNamesNoHolderIsBrokenOpen(t *testing.T) {
+	cacheDir(t)
+	abandoned, err := Lock(t.TempDir(), "gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer abandoned.Release()
+	abandon(t, abandoned, 0)
+	if !breakIfStale(abandoned.path) {
+		t.Error("an old lock that names no holder was not broken open")
+	}
+}
+
+// An old lock whose holder is still running is still held. A clock set
+// forward, or a laptop asleep mid-command, ages a lock its holder is about to
+// write under; broken open then, one of the two commands' changes was lost.
+func TestALockIsNotBrokenOpenWhileItsHolderIsRunning(t *testing.T) {
+	cacheDir(t)
+	held, err := Lock(t.TempDir(), "start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+	old := time.Now().Add(-2 * guardStale)
+	if err := os.Chtimes(held.path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if breakIfStale(held.path) {
+		t.Error("a lock was broken open while the process holding it was running")
+	}
+	if _, err := os.Stat(held.path); err != nil {
+		t.Errorf("the lock of a running holder is gone: %v", err)
+	}
 }
 
 // Age is how an abandoned lock is recognised, so a lock that is still held has
@@ -248,16 +312,14 @@ func TestNoChangeIsLostUnderContention(t *testing.T) {
 func TestCommandsBreakingOpenOneAbandonedLockDoNotAllGetIt(t *testing.T) {
 	cacheDir(t)
 	root := t.TempDir()
+	dead := deadPID(t)
 
 	for range 50 {
 		abandoned, err := Lock(root, "gate")
 		if err != nil {
 			t.Fatal(err)
 		}
-		old := time.Now().Add(-2 * guardStale)
-		if err := os.Chtimes(abandoned.path, old, old); err != nil {
-			t.Fatal(err)
-		}
+		abandon(t, abandoned, dead)
 
 		var holding, most atomic.Int32
 		var wg sync.WaitGroup
@@ -292,8 +354,9 @@ func TestCommandsBreakingOpenOneAbandonedLockDoNotAllGetIt(t *testing.T) {
 	}
 }
 
-// A command that slept past guardStale with the lock wakes to find it broken
-// open and taken by another. Letting go must not remove that one's lock too.
+// A holder whose lock was broken open under it -- taken for gone when it was
+// not, as a process in another pid namespace can be -- finds it taken by
+// another. Letting go must not remove that one's lock too.
 func TestLettingGoOfALockTakenOverLeavesTheNewHolderAlone(t *testing.T) {
 	cacheDir(t)
 	root := t.TempDir()
@@ -302,10 +365,7 @@ func TestLettingGoOfALockTakenOverLeavesTheNewHolderAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := time.Now().Add(-2 * guardStale)
-	if err := os.Chtimes(slept.path, old, old); err != nil {
-		t.Fatal(err)
-	}
+	abandon(t, slept, deadPID(t))
 	took, err := Lock(root, "review add")
 	if err != nil {
 		t.Fatal(err)
@@ -330,10 +390,7 @@ func TestALockTakenAfreshBeforeTheBreakIsHeldIsLeftAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer abandoned.Release()
-	old := time.Now().Add(-2 * guardStale)
-	if err := os.Chtimes(abandoned.path, old, old); err != nil {
-		t.Fatal(err)
-	}
+	abandon(t, abandoned, deadPID(t))
 
 	var fresh *Guard
 	mkdir = func(path string, perm fs.FileMode) error {
@@ -376,6 +433,7 @@ func TestABreakLeftByADeadProcessDoesNotWedgeTheProject(t *testing.T) {
 	if err := os.Mkdir(breaking, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	abandon(t, abandoned, deadPID(t))
 	old := time.Now().Add(-2 * guardStale)
 	for _, path := range []string{abandoned.path, breaking} {
 		if err := os.Chtimes(path, old, old); err != nil {

@@ -250,8 +250,12 @@ func (g *Guard) describe(what string) error {
 // lock and releasing it would otherwise wedge the project for good, and telling
 // somebody to delete a directory by hand is not a recovery story.
 //
-// The age of the directory is what decides it, not whether the pid is alive: a
-// pid says nothing useful once it has been reused, and on Windows it says less.
+// Age alone is not enough. An old lock says its holder stopped touching it,
+// which a clock set forward, or a laptop asleep mid-command, also does: broken
+// open then, the holder carried on and wrote back what it had read before, and
+// the other command's change was gone. So its holder has to be gone as well. A
+// pid can be reused, and a lock that really was abandoned is then waited on and
+// explained rather than broken, which loses nothing.
 func breakIfStale(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -259,7 +263,7 @@ func breakIfStale(path string) bool {
 		// contended lock is released. Retrying is the right move.
 		return errors.Is(err, fs.ErrNotExist)
 	}
-	if time.Since(info.ModTime()) < guardStale {
+	if time.Since(info.ModTime()) < guardStale || holderAlive(path) {
 		return false
 	}
 
@@ -285,6 +289,22 @@ func breakIfStale(path string) bool {
 		return true
 	}
 	return os.RemoveAll(path) == nil
+}
+
+// holderAlive reports whether the process that took the lock is still running.
+// A lock that does not say whose it is -- taken a moment ago and not yet
+// described, or described by a process that died doing it -- is judged by its
+// age alone.
+func holderAlive(path string) bool {
+	raw, err := os.ReadFile(filepath.Join(path, "owner.json"))
+	if err != nil {
+		return false
+	}
+	var o guardOwner
+	if json.Unmarshal(raw, &o) != nil {
+		return false
+	}
+	return processAlive(o.PID)
 }
 
 // ownedBy reports whether the lock at path is still the one token took.
