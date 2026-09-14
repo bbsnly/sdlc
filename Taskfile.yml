@@ -318,7 +318,10 @@ tasks:
     silent: true
     cmds:
       - |
-        bin="${TMPDIR:-/tmp}/sdlc-init-$${{exeExt}}"
+        # In dist/, as `build` does, not /tmp: on Windows go build and this
+        # shell read /tmp as two different places, and the binary was not found.
+        mkdir -p dist
+        bin="dist/sdlc-init-$${{exeExt}}"
         go build -o "$bin" ./cmd/sdlc
         # The first run of a fresh binary pays to page itself in, which on a
         # shared CI runner can be ten times the steady-state cost and has
