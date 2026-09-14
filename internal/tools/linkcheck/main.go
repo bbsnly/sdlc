@@ -164,12 +164,19 @@ func checkHygiene(root string) ([]finding, error) {
 		case strings.HasPrefix(slash, "docs/adr/"), strings.HasPrefix(slash, "docs/parity/"):
 			findings = append(findings, finding{slash, 0,
 				"design record is tracked; this repository carries only what a user needs (see plan/adr/)"})
+		case strings.HasPrefix(slash, legacyKit) && strings.HasSuffix(strings.ToLower(slash), ".md") &&
+			!strings.HasPrefix(slash, legacyTemplates):
+			// The kit's own notes -- an eval plan, promoted lessons -- came in
+			// with it and were exempt with it, and no selftest reads them.
+			findings = append(findings, finding{slash, 0,
+				"the legacy kit carries only what its selftest executes, and a document outside " +
+					legacyTemplates + " is not that"})
 		}
 		base := strings.ToLower(path.Base(slash))
 		if strings.Contains(base, "plan") && strings.HasSuffix(base, ".md") &&
-			!strings.HasPrefix(slash, "test/parity/legacy/") {
+			!strings.HasPrefix(slash, legacyTemplates) {
 			findings = append(findings, finding{slash, 0,
-				"looks like a planning document; only test/parity/legacy/ may carry one, as a fixture"})
+				"looks like a planning document; only " + legacyTemplates + " may carry one, as a fixture"})
 		}
 		if compiled(filepath.Join(root, rel)) {
 			findings = append(findings, finding{slash, 0,
@@ -207,6 +214,14 @@ func checkHygiene(root string) ([]finding, error) {
 	}
 	return findings, nil
 }
+
+// The vendored legacy kit, and the one directory in it the selftest copies
+// document templates from. A PLAN.md there is a fixture the selftest executes;
+// anywhere else it is a planning document.
+const (
+	legacyKit       = "test/parity/legacy/"
+	legacyTemplates = "test/parity/legacy/sdlc/templates/"
+)
 
 // compiled reports whether a file starts with an executable's magic number.
 // This repository ships source and text; a tracked Mach-O, ELF or PE file is
