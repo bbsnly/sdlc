@@ -192,6 +192,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   resolves them, and `mklink` has its arguments checked like `ln`. In Git Bash
   `cmd //c`, the way `cmd /c` has to be written there, is read as `cmd /c`: the
   doubled slash was taken for the command, and nothing behind it was checked.
+- A path in a shell command written with a doubled separator, or a `.` between
+  two, is the path it names. `rm .sdlc//state//active`, `rm .sdlc/./state/active`
+  and Git Bash's `del .sdlc\\state\\active` reached the loop's own files on every
+  platform, because each was compared as it was spelled.
 - The hook's warnings reach the session. They went to standard error, which
   Claude Code sends to its debug log when a hook allows the call, so "nothing
   is being enforced" was said to nobody. They now arrive as a system message,

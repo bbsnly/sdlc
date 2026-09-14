@@ -1552,7 +1552,24 @@ func cutAt(p, want string) (string, bool) {
 }
 
 func clean(word string) string {
-	return strings.TrimSuffix(strings.ReplaceAll(unquote(word), "\\", "/"), "/")
+	p := strings.ReplaceAll(unquote(word), "\\", "/")
+	// A leading `\\` is a network path, and `\\?\` or `\\.\` a Windows device
+	// path. Collapsed, `\\?\C:\proj` would name a directory on the current drive,
+	// and the project's own files in it would pass for files outside it.
+	head := ""
+	if rest, ok := strings.CutPrefix(p, "//"); ok {
+		head, p = "//", rest
+	}
+	// A doubled separator, or a `.` between two, is the same path to every
+	// filesystem: `.sdlc//config.json` and `.sdlc/./state/active` are the loop's
+	// own files. Compared as they were spelled, they matched no rule.
+	for strings.Contains(p, "//") {
+		p = strings.ReplaceAll(p, "//", "/")
+	}
+	for strings.Contains(p, "/./") {
+		p = strings.ReplaceAll(p, "/./", "/")
+	}
+	return head + strings.TrimSuffix(p, "/")
 }
 
 func unquote(f string) string {

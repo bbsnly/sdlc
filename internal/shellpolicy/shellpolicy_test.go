@@ -885,21 +885,49 @@ func TestReadingAndOrdinaryWorkAreUntouched(t *testing.T) {
 // The rule is about the loop's own files, not about the directory they sit in.
 // A scratch file inside a story's directory is the story's business; every
 // story's gate documents are the loop's, including the ones nobody is working
-// on, and an absolute path or a Windows separator is the same file.
+// on, and an absolute path, a Windows separator or a doubled one is the same
+// file.
 func TestTheRuleFollowsTheFileNotTheDirectory(t *testing.T) {
 	for _, command := range []string{
 		"echo x > .sdlc/stories/B-2/ANALYSIS.md",
 		"rm /home/dev/repo/.sdlc/stories/B-2/gate-record.json",
 		`del .sdlc\stories\A-1\PLAN.md`,
+		// Compared as spelled, each of these matched no rule.
+		"rm .sdlc//state//active",
+		"rm .sdlc/./state/active",
+		"cp notes .sdlc//config.json",
+		"echo x > .sdlc//state//active",
+		`del .sdlc\\stories\\A-1\\PLAN.md`,
 	} {
 		refused(t, command, ready, "loop-state-through-the-tool")
 	}
+	ps := ready
+	ps.PowerShell = true
+	refused(t, "Remove-Item .sdlc//state//active", ps, "loop-state-through-the-tool")
+	refused(t, "cp notes .git//config", ready, "protected-path-through-the-tool")
 	for _, command := range []string{
 		"echo hi > .sdlc/stories/A-1/notes.md",
 		"echo hi > .sdlc/stories/A-1/scratch/draft.md",
 		"rm .sdlc/stories/A-1/notes.md",
+		"echo hi > .sdlc/stories/A-1//notes.md",
 	} {
 		allowed(t, command, ready)
+	}
+}
+
+// The start of a network or device path is not a doubled separator: collapsed,
+// it names another place, which Resolve then calls outside the project.
+func TestCleanKeepsTheStartOfANetworkOrDevicePath(t *testing.T) {
+	for word, want := range map[string]string{
+		`\\?\C:\proj\.sdlc\state\active`:       "//?/C:/proj/.sdlc/state/active",
+		`\\.\C:\proj\.sdlc`:                    "//./C:/proj/.sdlc",
+		`\\wsl.localhost\Ubuntu\\proj\.sdlc\\`: "//wsl.localhost/Ubuntu/proj/.sdlc",
+		"//server/share/./.git":                "//server/share/.git",
+		".sdlc//state/./active":                ".sdlc/state/active",
+	} {
+		if got := clean(word); got != want {
+			t.Errorf("clean(%q) = %q, want %q", word, got, want)
+		}
 	}
 }
 
