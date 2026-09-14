@@ -192,6 +192,55 @@ func TestLiftingAFreezeThatIsNotThereSaysSo(t *testing.T) {
 	}
 }
 
+// Deleting the freeze and taking it again over edited tests was the whole of the
+// way past it: every later check compares the tests against the freeze, and the
+// freeze would say whatever they say now.
+func TestAFreezeThatWentMissingIsNotTakenAgain(t *testing.T) {
+	root := frozenStory(t)
+	mustRun(t, "freeze")
+	mustRun(t, "gate", "tests_frozen", "pass", "--note", "frozen")
+	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "tests.lock")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// quietly different\n")
+
+	r := run(t, "freeze")
+	if r.code == 0 {
+		t.Fatal("a freeze that went missing was taken again over the edited tests")
+	}
+	for _, want := range []string{"SDLC-E0025", "sdlc unfreeze", "freeze_broken"} {
+		if !strings.Contains(r.stderr, want) {
+			t.Errorf("the refusal is missing %q:\n%s", want, r.stderr)
+		}
+	}
+
+	// A person who removed it on purpose says so, and then it can be taken.
+	mustRun(t, "unfreeze", "--reason", "removed the lock by hand to re-freeze")
+	mustRun(t, "freeze")
+}
+
+// A freeze that will not read is lifted on the record, the same as one that
+// does: freezing again is refused until it is.
+func TestAnUnreadableFreezeIsLiftedOnTheRecord(t *testing.T) {
+	root := frozenStory(t)
+	mustRun(t, "freeze")
+	writeFile(t, root, ".sdlc/state/tests.lock", "not json")
+
+	const why = "tests.lock was truncated by a crash"
+	mustRun(t, "unfreeze", "--reason", why)
+	if _, err := os.Stat(filepath.Join(root, ".sdlc", "state", "tests.lock")); err == nil {
+		t.Error("the unreadable freeze is still on disk")
+	}
+	record, err := os.ReadFile(filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(record), why) {
+		t.Errorf("the reason is not on the record:\n%s", record)
+	}
+	mustRun(t, "freeze")
+}
+
 // ------------------------------------------------------------------ the gate
 
 func TestTheTestGateCannotPassWithoutAFreeze(t *testing.T) {

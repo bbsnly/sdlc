@@ -207,8 +207,8 @@ func stateCheck(s *store.Store) check {
 	}
 	if _, err := s.Lock(); err != nil {
 		problem(err.Error(), "every test is treated as frozen until .sdlc/state/tests.lock reads: "+
-			`restore it if you keep a copy, or remove it and run "sdlc freeze", `+
-			"which freezes the tests as they are now")
+			`restore it if you keep a copy, or lift it on the record with "sdlc unfreeze --reason ..." `+
+			`in your own terminal and run "sdlc freeze", which freezes the tests as they are now`)
 	}
 	if len(details) > 0 {
 		return check{Name: "loop state", State: stateProblem,

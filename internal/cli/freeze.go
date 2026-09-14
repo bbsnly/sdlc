@@ -59,6 +59,11 @@ func newFreezeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if lock == nil {
+				if err := refuseALostFreeze(s, id); err != nil {
+					return err
+				}
+			}
 			if lock != nil {
 				stale, err := freezeIsALeftover(s, lock, id)
 				if err != nil {
@@ -167,6 +172,46 @@ func addToFreeze(ctx context.Context, s *store.Store, lock *model.Lock) ([]strin
 	return added, nil
 }
 
+// refuseALostFreeze refuses to freeze a story whose freeze was taken and is
+// gone without ever being lifted.
+//
+// Freezing again would lock the tests as they are now, whatever happened to
+// them since. Removing .sdlc/state/tests.lock and running `sdlc freeze` was the
+// whole of the way to edit a frozen test and have every later gate agree: the
+// check that notices a changed test compares it against the freeze, and the
+// freeze had just been taken again.
+func refuseALostFreeze(s *store.Store, id string) error {
+	record, err := s.Record(id)
+	if err != nil {
+		return err
+	}
+	at, standing := standingFreeze(record)
+	if !standing {
+		return nil
+	}
+	return sdlcerr.New(sdlcerr.FreezeBroken,
+		"the tests for "+id+" were frozen and the freeze is gone",
+		"it was taken at "+at+" and never lifted, and a freeze taken now would hold the "+
+			"tests as they are today, whatever happened to them since").
+		WithFix(`if a person removed it on purpose, they lift it on the record with ` +
+			`"sdlc unfreeze --reason ..." in their own terminal, and then run "sdlc freeze"; ` +
+			`otherwise hand it over with "sdlc escalate freeze_broken --message ..."`)
+}
+
+// standingFreeze reports when this story's tests were last frozen, if nothing
+// has lifted that freeze since.
+func standingFreeze(r *model.Record) (string, bool) {
+	for i := len(r.Events) - 1; i >= 0; i-- {
+		switch r.Events[i].Type {
+		case "unfreeze":
+			return "", false
+		case "freeze":
+			return r.Events[i].At, true
+		}
+	}
+	return "", false
+}
+
 // freezeIsALeftover reports whether an existing freeze belongs to a story that
 // has finished, which makes it this story's to replace rather than to refuse
 // over.
@@ -227,20 +272,31 @@ func newUnfreezeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// A freeze that will not read, or one that went missing without
+			// being lifted, is lifted here like any other. Freezing again is
+			// refused over both, and this is the one way past them that puts a
+			// reason on the record.
 			lock, err := s.Lock()
-			if err != nil {
+			var unreadable *sdlcerr.Error
+			if err != nil && (!errors.As(err, &unreadable) || unreadable.Code != sdlcerr.StateUnreadable) {
 				return err
 			}
-			if lock == nil {
-				return sdlcerr.New(sdlcerr.NotFrozen,
-					"there is no freeze to lift",
-					"the acceptance tests have not been frozen for this story")
+			if err == nil && lock == nil {
+				record, err := s.Record(id)
+				if err != nil {
+					return err
+				}
+				if _, standing := standingFreeze(record); !standing {
+					return sdlcerr.New(sdlcerr.NotFrozen,
+						"there is no freeze to lift",
+						"the acceptance tests have not been frozen for this story")
+				}
 			}
 			// The freeze belongs to the story it was taken for. Lifting another
 			// story's freeze from this one put the event on the wrong record and
 			// left that story's tests editable when it was picked up again --
 			// and "already frozen" on this story used to send people here.
-			if lock.Story != "" && lock.Story != id {
+			if lock != nil && lock.Story != "" && lock.Story != id {
 				return sdlcerr.New(sdlcerr.NotFrozen,
 					"there is no freeze on "+quote(id)+" to lift",
 					"the tests are frozen for "+lock.Story+", which is not the story being worked on").
@@ -253,14 +309,18 @@ func newUnfreezeCmd() *cobra.Command {
 			if err := appendEvent(s, id, "unfreeze", reason); err != nil {
 				return err
 			}
+			held := 0
+			if lock != nil {
+				held = len(lock.Files)
+			}
 
 			if wantJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), unfreezePayload{
-					OK: true, Story: id, Reason: reason, Count: len(lock.Files),
+					OK: true, Story: id, Reason: reason, Count: held,
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  freeze lifted on %s\n  %s\n",
-				id, countFiles(len(lock.Files)), reason)
+				id, countFiles(held), reason)
 			return nil
 		},
 	}

@@ -462,12 +462,19 @@ func settleStory(s *store.Store, id string, record *model.Record) (bool, error) 
 //
 // Only the finished story's own freeze is lifted. One that names a different
 // story is not this story's to release.
+//
+// It goes on the record like any other lifting. `sdlc freeze` refuses a story
+// whose freeze is gone without one, and a finished story can be put back in
+// progress by re-recording a gate.
 func releaseFreeze(s *store.Store, id string) error {
 	lock, err := s.Lock()
 	if err != nil || lock == nil || lock.Story != id {
 		return err
 	}
-	return s.ClearLock()
+	if err := s.ClearLock(); err != nil {
+		return err
+	}
+	return appendEvent(s, id, "unfreeze", "the story is finished, so its freeze is lifted")
 }
 
 func newGateCmd() *cobra.Command {

@@ -509,6 +509,20 @@ func TestFinishingAStoryLiftsItsFreeze(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, ".sdlc", "state", "tests.lock")); !os.IsNotExist(err) {
 		t.Errorf("the freeze outlived the story it was taken for: %v", err)
 	}
+
+	// On the record, too. `sdlc freeze` refuses a story whose freeze is gone
+	// without being lifted, and a finished story can be put back in progress.
+	raw, err := os.ReadFile(filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record model.Record
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	if at, standing := standingFreeze(&record); standing {
+		t.Errorf("the record still shows the freeze taken at %s, so the story could never be frozen again", at)
+	}
 }
 
 // Stopping an unfinished story must not lift its freeze. `sdlc stop` is how a

@@ -224,6 +224,11 @@ Restore them, or — if a test really did encode the wrong behaviour — have a 
 `sdlc unfreeze --reason "..."` in their own terminal and freeze again, so that the change is a
 decision somebody can review rather than something that happened quietly.
 
+`sdlc freeze` refuses with this code too, when the story's tests were frozen and
+`.sdlc/state/tests.lock` is gone without the freeze ever being lifted. Freezing again would
+lock the tests as they are now, whatever happened to them since. If the file was removed on
+purpose, lift the freeze on the record with `sdlc unfreeze` first.
+
 ### SDLC-E0026
 
 Lifting the freeze needs a reason.
@@ -507,6 +512,11 @@ The freeze itself will not parse. Until it does, a file write or a shell command
 that writes to anything that looks like a test is refused, frozen or not: a
 freeze that cannot be read is not treated as no freeze. `sdlc doctor` names it
 under "loop state".
+
+Restore it if you keep a copy. Otherwise lift it with
+`sdlc unfreeze --reason "..."` in your own terminal and run `sdlc freeze` again.
+Deleting the file is not enough: `sdlc freeze` refuses a freeze that went
+missing without being lifted.
 
 ### `.sdlc/state/tests.lock ... and nor could .sdlc/config.json, so every file the default patterns call a test is being treated as frozen`
 
