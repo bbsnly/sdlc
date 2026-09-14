@@ -45,8 +45,8 @@ const maxPayload = 1 << 20
 // a hook says when it has nothing specific to add, and what the crash handler
 // falls back to.
 type Decision struct {
-	// Continue false stops the action. Omitted when true, because the common
-	// case should be the smallest payload.
+	// Continue false stops the action. It is written either way, true
+	// included, so a reply never leaves the host to assume what it meant.
 	Continue bool `json:"continue"`
 	// StopReason is shown to the user when Continue is false. It must say what
 	// happened and what to do instead; a denial that explains nothing trains
