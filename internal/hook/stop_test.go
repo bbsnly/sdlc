@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/store"
 )
 
 type stopOutcome struct {
@@ -162,6 +163,80 @@ func TestRecordingAnythingStartsTheCountAgain(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
 		t.Error("a story that was making progress was handed to a person")
+	}
+}
+
+// stopWhileLocked stops a story that has already been sent back to the limit,
+// while another command holds the lock and does what during does, and returns
+// the stop guard's answer once that command lets go.
+func stopWhileLocked(t *testing.T, during func(root string)) (string, stopOutcome) {
+	t.Helper()
+	root := storyUnderWay(t)
+	for range 3 {
+		stop(t, root, false, noEnv)
+	}
+
+	g, err := store.Lock(root, "review add")
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := json.Marshal(map[string]any{"hook_event_name": "Stop", "cwd": root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan []byte, 1)
+	go func() {
+		var out bytes.Buffer
+		Run([]string{"Stop"}, bytes.NewReader(event), &out, io.Discard, noEnv)
+		done <- out.Bytes()
+	}()
+	time.Sleep(300 * time.Millisecond)
+	during(root)
+	g.Release()
+
+	var r stopOutcome
+	if err := json.Unmarshal(<-done, &r); err != nil {
+		t.Fatal(err)
+	}
+	return root, r
+}
+
+// The count is read once the lock is held. Read before it, a stop that arrived
+// while a reviewer was recording its verdict handed the story to a person the
+// moment after the story moved.
+func TestAStopThatWaitedOnProgressBeingRecordedIsNotHandedOver(t *testing.T) {
+	root, r := stopWhileLocked(t, func(root string) {
+		recordGates(t, root, model.GateDoR, model.GateAnalysis)
+	})
+	if r.Decision != "block" {
+		t.Errorf("a stop that waited on progress being recorded was not sent back: %+v", r)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
+		t.Error("a story was handed to a person just after progress was recorded on it")
+	}
+}
+
+// Nor is one that waited on the iteration being ended: by the time it can act,
+// no story is being worked on.
+func TestAStopThatWaitedOnTheIterationEndingHandsNothingOver(t *testing.T) {
+	root, r := stopWhileLocked(t, func(root string) {
+		if err := os.Remove(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
+			t.Error(err)
+		}
+	})
+	if r.Decision != "" || r.SystemMessage != "" {
+		t.Errorf("a stop after the iteration ended was acted on: %+v", r)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".sdlc", "stories", "A-1", model.RecordFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record model.Record
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := record.PendingEscalation(); ok {
+		t.Error("a story whose iteration had ended was handed to a person")
 	}
 }
 

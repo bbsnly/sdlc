@@ -57,6 +57,19 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string)) turnR
 		return allow
 	}
 	s := store.New(&config.Project{Root: project, Config: cfg})
+	// Decided from what is there once the lock is held. Read before it, a stop
+	// that arrived while a command was recording progress counted the record as
+	// it was, and handed the story to a person the moment after it moved; two
+	// sessions stopping at once each kept a count the other overwrote.
+	g, err := store.Lock(project, "hook Stop")
+	if err != nil {
+		slog.Debug("stop guard could not take the lock", "err", err)
+		return allow
+	}
+	defer g.Release()
+	if active, err := s.Active(); err != nil || active != story {
+		return allow
+	}
 	progress, err := s.RecordProgress(story)
 	if err != nil {
 		slog.Debug("stop guard could not read the record", "err", err)
@@ -99,18 +112,12 @@ func stopReason(project, story string, blocks, limit int) string {
 }
 
 // handOver gives a story that keeps stopping to a person, and lets the stop
-// through. Holding the session any longer would not change what it does.
+// through. Holding the session any longer would not change what it does. The
+// caller holds the project's lock.
 func handOver(s *store.Store, story string, blocks int) turnReply {
 	reply := turnReply{Continue: true}
 	failed := "sdlc: " + story + " kept stopping with nothing recorded, and could not be handed " +
 		"to a person. Run `sdlc doctor` to see why."
-	g, err := store.Lock(s.Root(), "hook Stop")
-	if err != nil {
-		slog.Debug("stop guard could not take the lock", "err", err)
-		reply.SystemMessage = failed
-		return reply
-	}
-	defer g.Release()
 
 	ctx, cancel := context.WithTimeout(context.Background(), treeTimeout)
 	defer cancel()
