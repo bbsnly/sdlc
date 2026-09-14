@@ -478,6 +478,20 @@ func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
 			},
 			says: "does not name a story",
 		},
+		{
+			name: "an iteration file left empty",
+			spoil: func(t *testing.T, root string) {
+				write(t, root, ".sdlc/state/active", "")
+			},
+			says: "does not name a story",
+		},
+		{
+			name: "an iteration file holding only a newline",
+			spoil: func(t *testing.T, root string) {
+				write(t, root, ".sdlc/state/active", " \n")
+			},
+			says: "does not name a story",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := loopProject(t)

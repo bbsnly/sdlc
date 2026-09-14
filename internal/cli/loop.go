@@ -270,7 +270,17 @@ func newStopCmd() *cobra.Command {
 			}
 			defer unlock()
 			active, err := s.Active()
-			if err != nil {
+			var unusable *sdlcerr.Error
+			switch {
+			case errors.As(err, &unusable) &&
+				(unusable.Code == sdlcerr.UnsafeStoryID || unusable.Code == sdlcerr.StateUnreadable):
+				// While the file names no story the hook enforces nothing, and
+				// doctor sends you here. Stop is the way out of a broken state,
+				// so it ends the iteration rather than refuse over the file.
+				fmt.Fprintln(cmd.ErrOrStderr(), "sdlc: .sdlc/state/active does not name a story, "+
+					"so this stop removes it without writing to any record.")
+				active = ""
+			case err != nil:
 				return err
 			}
 			done := false

@@ -308,15 +308,18 @@ Install the binary, or run `/sdlc:next`, which offers to.
 ### `.sdlc/state/active could not be read, so nothing is being enforced`
 
 The file naming the story under way is there but unreadable — a permission, a
-half-written file, a merge conflict left in place. Every rule is off until it
-reads. `sdlc doctor` names it under "loop state".
+directory where the file should be. Every rule is off until it reads.
+`sdlc doctor` names it under "loop state"; `sdlc stop` removes it and ends the
+iteration.
 
 ### `.sdlc/state/active does not name a story, so nothing is being enforced`
 
-The file names something that cannot be a story id — a path, or an id with `..`
-in it — so there is no story to hold the session to. `sdlc start` refuses such
-an id, so the file was written some other way. Every rule is off until it names
-a story. `sdlc doctor` names it under "loop state".
+The file is empty, or names something that cannot be a story id — a path, an id
+with `..` in it, a merge conflict left in place — so there is no story to hold
+the session to. `sdlc start` never writes such a file, and `sdlc stop` removes
+the file rather than empty it, so it was written some other way. Every rule is
+off until it names a story. `sdlc doctor` names it under "loop state";
+`sdlc stop` removes it and ends the iteration.
 
 ### `.sdlc/config.json could not be read, so the test freeze is not being enforced`
 

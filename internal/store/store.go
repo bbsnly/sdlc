@@ -210,9 +210,9 @@ func (s *Store) Active() (string, error) {
 			activeFile+" exists but could not be opened").WithCause(err)
 	}
 	id := strings.TrimSpace(string(raw))
-	if id == "" {
-		return "", nil
-	}
+	// An empty file is not one the tool leaves: ending an iteration removes
+	// it. The hook reads an empty one as naming no story and turns every rule
+	// off, so this refuses it too, rather than report that nothing is running.
 	if err := CheckID(id); err != nil {
 		return "", err
 	}

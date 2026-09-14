@@ -254,6 +254,32 @@ func TestStoppingWhenNothingIsRunningIsNotAnError(t *testing.T) {
 	}
 }
 
+// An empty iteration file turns every rule off, and doctor's fix for it is to
+// stop. So stop has to end the iteration over it rather than refuse.
+func TestStopRemovesAnIterationFileThatNamesNoStory(t *testing.T) {
+	root := project(t)
+	mustRun(t, "init")
+	active := filepath.Join(root, ".sdlc", "state", "active")
+	if err := os.MkdirAll(filepath.Dir(active), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(active, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if r := run(t, "status"); r.code == 0 {
+		t.Errorf("status read an empty iteration file as nothing running:\n%s", r.stdout)
+	}
+	r := mustRun(t, "stop")
+	if !strings.Contains(r.stderr, "does not name a story") {
+		t.Errorf("stop did not say why it removed the file: %q", r.stderr)
+	}
+	if _, err := os.Stat(active); !os.IsNotExist(err) {
+		t.Errorf("the empty iteration file is still there after stop: %v", err)
+	}
+	mustRun(t, "status")
+}
+
 func TestStartExplainsWhenNothingIsRunnable(t *testing.T) {
 	project(t)
 	mustRun(t, "init")

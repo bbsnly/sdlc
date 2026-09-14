@@ -163,8 +163,8 @@ func stateCheck(s *store.Store) check {
 	}
 	active, err := s.Active()
 	if err != nil {
-		problem(err.Error(), "nothing is enforced until .sdlc/state/active reads: fix its "+
-			`permissions, or remove it and run "sdlc start" again`)
+		problem(err.Error(), "nothing is enforced until .sdlc/state/active names a story: "+
+			`run "sdlc stop" to remove it, then "sdlc start" to begin again`)
 	} else if active != "" {
 		// Record starts a fresh record when there is none, which is right for
 		// the command and wrong here: `sdlc start` always writes one, so a

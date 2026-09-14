@@ -300,6 +300,25 @@ func TestActiveRefusesATamperedStateFile(t *testing.T) {
 	}
 }
 
+// Ending an iteration removes the file; nothing leaves it empty. The hook reads
+// an empty one as naming no story and enforces nothing, so reading it here as
+// "no iteration" would have doctor report all well while nothing was enforced.
+func TestActiveRefusesAnEmptyStateFile(t *testing.T) {
+	for _, body := range []string{"", "\n", "  \n"} {
+		s := newStore(t)
+		path := filepath.Join(s.root, filepath.FromSlash(activeFile))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Active(); err == nil {
+			t.Errorf("Active read a state file holding %q as no iteration", body)
+		}
+	}
+}
+
 func TestRecordStartsFreshAndThenPersists(t *testing.T) {
 	s := newStore(t)
 
