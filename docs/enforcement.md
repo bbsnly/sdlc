@@ -170,12 +170,15 @@ gate produces.
 
 ### `orchestrator-delegates`
 
-Refuses the main conversation writing code or tests during an iteration.
+Refuses the main conversation writing code or tests during an iteration, and
+any subagent that is not one of the loop's own — Claude Code's general-purpose
+agent, or one of yours.
 
 The gates exist so that each is done by an agent that cannot see the others'
 reasoning. The conversation doing the work itself is the failure the loop exists
 to prevent, and it is reached without breaking a single stated rule unless
-something refuses it.
+something refuses it. Handing the work to a subagent the loop does not know is
+the same failure one step removed.
 
 *Instead:* delegate to the agent whose gate it is, or `sdlc stop` to end the
 iteration and take over yourself.

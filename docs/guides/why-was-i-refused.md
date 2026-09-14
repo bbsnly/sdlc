@@ -124,7 +124,8 @@ time=2026-09-14T08:58:05.911+02:00 level=DEBUG msg="hook decision" event=PreTool
 ```
 
 `role` is the agent name with its `sdlc:` or `sdlc-` prefix removed, which is
-what the rules match on. An empty `agent` is the main conversation. `considered`
+what the rules match on. An empty `agent` is the main conversation, and a
+subagent that is not one of the loop's own is held to the same rules. `considered`
 is `false` when the hook never got as far as the rules. `rule` names the rule
 that refused. A shell command logs `hook considering a command` instead, with
 `commit_ready` and the reason a commit would be refused.

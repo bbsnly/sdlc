@@ -53,6 +53,17 @@ func NormalizeAgent(name string) string {
 	return name
 }
 
+// IsLoopRole reports whether an agent is one of the loop's own, under any of
+// the names NormalizeAgent accepts. The main conversation is not.
+func IsLoopRole(agent string) bool {
+	switch role := NormalizeAgent(agent); role {
+	case "researcher", "sdet", "implementer", "bookkeeper":
+		return true
+	default:
+		return model.IsReviewRole(role)
+	}
+}
+
 // Verdict is the answer. An allowed verdict carries nothing else: there is
 // nothing to say about a write that is fine.
 type Verdict struct {
@@ -265,15 +276,19 @@ var Rules = []Rule{
 		Route: "delegate the work to the agent whose gate it is, " +
 			"or run `sdlc stop` to end the iteration and take over yourself",
 		check: func(r Request) string {
-			if NormalizeAgent(r.Agent) != "" {
+			// An agent that is not one of the loop's own is the main conversation
+			// by other means. Keyed on the empty name alone, this rule sent the
+			// conversation to Claude Code's general-purpose subagent, which no
+			// rule here names, and the code got written anyway.
+			if IsLoopRole(r.Agent) {
 				return ""
 			}
 			if pathrules.UnderAny(r.Path, ".sdlc", "CODEMAP.md") {
 				return ""
 			}
-			return "the main conversation does not write code or tests during an " +
-				"iteration; the gates exist so that each is done by an agent that " +
-				"cannot see the others' reasoning"
+			return "neither the main conversation nor an agent outside the loop writes " +
+				"code or tests during an iteration; the gates exist so that each is done " +
+				"by an agent that cannot see the others' reasoning"
 		},
 	},
 }

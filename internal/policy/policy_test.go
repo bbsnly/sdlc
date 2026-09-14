@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -217,6 +219,50 @@ func TestAnAgentWithNoRuleOfItsOwnIsNotGoverned(t *testing.T) {
 	got := Evaluate(Request{Tool: "Write", Agent: "sdlc-implementer", Path: "internal/billing/invoice.go", Story: "A-1"})
 	if !got.Allowed {
 		t.Errorf("sdlc-implementer was refused by %s: %s", got.Rule, got.Reason)
+	}
+}
+
+// Refused in the main conversation, the next move is Claude Code's own
+// general-purpose subagent. Every rule keyed on a role name missed it, and the
+// code was written by an agent the loop never heard of.
+func TestAnAgentOutsideTheLoopIsHeldToTheMainConversationsRules(t *testing.T) {
+	for _, agent := range []string{"general-purpose", "Explore", "my-helper", "other:implementer", "sdlc:"} {
+		got := Evaluate(Request{Tool: "Write", Agent: agent, Path: "internal/billing/invoice.go", Story: "A-1"})
+		if got.Rule != "orchestrator-delegates" {
+			t.Errorf("%q writing code was refused by %q, want orchestrator-delegates", agent, got.Rule)
+		}
+		if notes := Evaluate(Request{Tool: "Write", Agent: agent, Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"}); !notes.Allowed {
+			t.Errorf("%q writing notes was refused by %s", agent, notes.Rule)
+		}
+	}
+}
+
+// Every agent the plugin ships is one the loop knows. One that was not would be
+// refused every write as though it were the main conversation.
+func TestEveryAgentThePluginShipsIsALoopRole(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "plugin", "agents", "*.md"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no agents found: %v", err)
+	}
+	for _, f := range files {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := ""
+		for line := range strings.Lines(string(raw)) {
+			if rest, ok := strings.CutPrefix(line, "name:"); ok {
+				name = strings.TrimSpace(rest)
+				break
+			}
+		}
+		if name == "" {
+			t.Errorf("%s has no name", f)
+			continue
+		}
+		if !IsLoopRole("sdlc:" + name) {
+			t.Errorf("%s ships agent %q, which the rules do not know", f, name)
+		}
 	}
 }
 
