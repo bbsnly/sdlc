@@ -125,6 +125,11 @@ var mutating = map[string]bool{
 	"truncate": true, "install": true, "ln": true, "chmod": true,
 	"chown": true, "touch": true, "shred": true, "unlink": true,
 	"rmdir": true, "sponge": true,
+	// What unpacks, copies or downloads into a path it is given: `tar -xf e.tar
+	// -C .sdlc`, `unzip -d .git/hooks`, `curl -o CLAUDE.md`. Counted whatever
+	// they are asked, like cp, since what they read is named the same way.
+	"tar": true, "rsync": true, "unzip": true, "cpio": true, "scp": true,
+	"curl": true, "wget": true,
 	// Editors that rewrite a file given on the command line. sed, perl, awk
 	// and the interpreters are not here: each can write through its program
 	// whatever it is asked to do, which changesFiles counts for the loop's
@@ -1012,6 +1017,15 @@ func spellings(dir string, words []string) []string {
 				named = append(named, value)
 			}
 		}
+		// A short option takes its value without a space, after it and any
+		// flags bundled before it: `-C.sdlc`, `-oCLAUDE.md`, `-sSLo.sdlc/x`.
+		// Only after letters, which options are: every spelling is looked up on
+		// disk, and `curl -d{...}` is not thousands of paths.
+		if len(w) > 2 && w[0] == '-' && w[1] != '-' {
+			for i := 2; i < len(w) && isLetter(w[i-1]); i++ {
+				named = append(named, w[i:])
+			}
+		}
 		out = append(out, named...)
 		if dir == "" || dir == "." {
 			continue
@@ -1023,6 +1037,12 @@ func spellings(dir string, words []string) []string {
 		}
 	}
 	return out
+}
+
+// isLetter reports whether b can be a short option: `-x`, not the `.` or `/`
+// that starts a path.
+func isLetter(b byte) bool {
+	return 'a' <= b && b <= 'z' || 'A' <= b && b <= 'Z'
 }
 
 // memo is what one Inspect has already worked out. A long command names the

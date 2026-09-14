@@ -955,6 +955,54 @@ func TestAShellDirectoryIsNotTheHomeDirectory(t *testing.T) {
 	allowed(t, "rm ~someone/.sdlc/state/active", s)
 }
 
+// A program that unpacks, copies or downloads writes where it is told, and a
+// short option's value can be glued to it. Neither tar -C nor curl -o was a
+// write, and `cp -t.sdlc/state` named a directory no rule saw.
+func TestWhatUnpacksOrDownloadsWritesWhereItIsTold(t *testing.T) {
+	for _, command := range []string{
+		"tar -xf e.tar -C .sdlc",
+		"tar -xf e.tar -C.sdlc",
+		"tar xf e.tar .sdlc/state/active",
+		"rsync -a /tmp/e/ .sdlc/state/",
+		"cpio -idm -D .sdlc",
+		"scp host:active .sdlc/state/active",
+		"curl -sSLo.sdlc/config.json https://example.com/c",
+		"wget -P .sdlc/state https://example.com/active",
+		"cp -t.sdlc/state active",
+	} {
+		refused(t, command, ready, "loop-state-through-the-tool")
+	}
+	for _, command := range []string{
+		"unzip -o e.zip -d.git/hooks",
+		"curl -oCLAUDE.md https://example.com/c",
+		"wget --output-document=CLAUDE.md https://example.com/c",
+	} {
+		refused(t, command, ready, "protected-path-through-the-tool")
+	}
+	for _, command := range []string{
+		"curl -fsSL https://example.com",
+		"tar -czf /tmp/b.tgz internal",
+		"tar -xf e.tar -C build",
+		"unzip -l e.zip",
+		"wget -q https://example.com/y.tgz",
+	} {
+		allowed(t, command, ready)
+	}
+
+	// Each spelling is looked up on disk, so a long value is not read as a path
+	// starting at every character of it.
+	lookups := 0
+	s := ready
+	s.Resolve = func(word string) string {
+		lookups++
+		return word
+	}
+	allowed(t, `curl -d{"note":"`+strings.Repeat("x", 4000)+`"} https://example.com`, s)
+	if lookups > 10 {
+		t.Errorf("a 4 KB request body was %d lookups", lookups)
+	}
+}
+
 func TestTheCommitGateStandsInFrontOfTheCommit(t *testing.T) {
 	got := refused(t, `git commit -m "done"`, notReady, "commit-gate")
 	if !strings.Contains(got.Reason, "code_review") {

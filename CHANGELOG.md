@@ -200,6 +200,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   the user's home, and `~name` is that user's home, which can be yours.
   `rm ~+/.sdlc/state/active` was read as a file outside the project, and so was
   a project under `~you/`.
+- `tar`, `rsync`, `unzip`, `cpio`, `scp`, `curl` and `wget` are read as writing
+  the paths they are given, and a short option's value glued to it, as in
+  `-C.sdlc` or `-oCLAUDE.md`, is read as that path. `tar -xf e.tar -C .sdlc`,
+  `unzip -d .git/hooks` and `curl -o CLAUDE.md` wrote past every rule.
 - The hook's warnings reach the session. They went to standard error, which
   Claude Code sends to its debug log when a hook allows the call, so "nothing
   is being enforced" was said to nobody. They now arrive as a system message,
