@@ -48,8 +48,8 @@ $ npx @bbsnly/sdlc install
 
 Same download and destination. It installs the release the package was
 published with, and checks it against the checksums the package carries, which
-nobody can change after publishing. `npx` fetches the newest package, so that
-is the newest release. What ends up on your
+nobody can change after publishing. `--version` or `SDLC_VERSION` installs
+another release. What ends up on your
 `PATH` is the native binary, not a Node wrapper around it: sdlc runs as a hook
 on every matching tool call, and a Node process start costs more than
 everything else in the loop put together.

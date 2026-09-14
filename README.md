@@ -19,9 +19,9 @@ always green.
 
 All nine gates are built and enforced, and a story can go from the backlog to a
 commit without leaving the loop. Releases are published on the
-[releases page](https://github.com/bbsnly/sdlc/releases); the routes below that
-download a binary take the latest one from there, and `go install` or a source
-build works from any commit.
+[releases page](https://github.com/bbsnly/sdlc/releases); the install scripts
+below take the latest one from there, the npm package takes the release it was
+published with, and `go install` or a source build works from any commit.
 
 ## Install
 

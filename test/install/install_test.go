@@ -414,6 +414,20 @@ func TestThePublishedNpmPackageInstallsTheReleaseItCarriesChecksumsFor(t *testin
 	if strings.Contains(out, "being fetched") {
 		t.Errorf("the package fetched checksums it carries:\n%s", out)
 	}
+
+	// Pins for another release, as a checksums.txt left in a checkout is, say
+	// nothing about the package's own version, which may not exist.
+	stale := regexp.MustCompile(`"version":\s*"[^"]*"`).ReplaceAll(raw, []byte(`"version": "0.0.1"`))
+	if err := os.WriteFile(manifest, stale, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	again := t.TempDir()
+	out, err = runResolvingLatest(t, serve(t, dir), again,
+		"node", filepath.Join(pkg, "bin", "sdlc-install.js"), "install")
+	if err != nil {
+		t.Fatalf("a package carrying another release's checksums did not install the latest: %v\n%s", err, out)
+	}
+	installed(t, again)
 }
 
 // Scope, declared rather than hidden: install.sh is for macOS and Linux and

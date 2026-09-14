@@ -103,9 +103,16 @@ async function download(url, into) {
 // the network which one is newest could name another -- from an older cached
 // `npx`, or while a release is open and its npm publish failed -- and the pins
 // for that one would come from the same place as the download.
+//
+// Only pins that list this machine's archive for the package's version count.
+// A checksums.txt left in a checkout by another release describes none of its
+// archives, and is no reason to install a version nobody asked for.
 function packagedVersion() {
-  if (!fs.existsSync(path.join(__dirname, '..', 'checksums.txt'))) return ''
-  return require('../package.json').version
+  const embedded = path.join(__dirname, '..', 'checksums.txt')
+  if (!fs.existsSync(embedded)) return ''
+  const version = require('../package.json').version
+  const { archive } = assetFor(process.platform, process.arch, version)
+  return parseChecksums(fs.readFileSync(embedded, 'utf8')).has(archive) ? version : ''
 }
 
 // The "latest" lookup is the sibling of the download path, so a mirror that
