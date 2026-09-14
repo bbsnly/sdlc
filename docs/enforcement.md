@@ -350,7 +350,9 @@ verdict.
 Refuses `git commit` until every gate before the commit gate has passed. The
 refusal names the first one that has not. The git commands that make commits of
 their own are refused the same way: `merge`, `cherry-pick`, `revert`, `am`,
-`rebase` and `commit-tree`, apart from `--abort` or `--quit` on its own. So is an
+`rebase` and `commit-tree`, apart from `--abort` or `--quit` on its own, and a
+`--no-commit`, `merge --squash` or `cherry-pick -n` that leaves the change in the
+working tree for `git commit`. So is an
 alias to one of them set with `git -c` or `git config`; an alias already in your
 git configuration is not read. A commit made in a way the hook cannot read is
 refused at the next gate instead, which will not pass once HEAD has moved since

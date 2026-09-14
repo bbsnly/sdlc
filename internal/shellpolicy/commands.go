@@ -453,6 +453,33 @@ var makesCommits = map[string]bool{
 	"am": true, "rebase": true,
 }
 
+// gitValueFlags take the next word as their value, so a flag's name there is
+// not the flag: `git merge -m --no-commit wip` commits, with that message.
+var gitValueFlags = map[string]bool{
+	"-m": true, "--message": true, "-F": true, "--file": true, "-s": true, "--strategy": true,
+	"-X": true, "--strategy-option": true, "--into-name": true, "--cleanup": true, "--mainline": true,
+}
+
+// leavesItUncommitted reports whether a merge, cherry-pick or revert brings its
+// change into the working tree and stops there, as `git cherry-pick -n` and
+// `git merge --squash` do. The change is committed later by `git commit`, which
+// meets the gate itself.
+func leavesItUncommitted(words []string, sub string) bool {
+	uncommitted := false
+	for i := 1; i < len(words); i++ {
+		switch w := words[i]; {
+		case gitValueFlags[words[i-1]]:
+		case w == "--commit":
+			return false
+		case w == "--no-commit" && (sub == "merge" || sub == "cherry-pick" || sub == "revert"),
+			w == "--squash" && sub == "merge",
+			w == "-n" && (sub == "cherry-pick" || sub == "revert"):
+			uncommitted = true
+		}
+	}
+	return uncommitted
+}
+
 // makesACommit reports whether a git command, running sub, makes a commit.
 // Held to `git commit` alone, a branch committed in a worktree elsewhere went
 // onto trunk past the gate with `git merge`, and so did `git commit-tree`.
@@ -466,7 +493,7 @@ func makesACommit(words []string, sub string) bool {
 		}
 		return false
 	}
-	if !makesCommits[sub] {
+	if !makesCommits[sub] || leavesItUncommitted(words, sub) {
 		return false
 	}
 	// Backing out of one part-way commits nothing. Only the flag on its own is
