@@ -252,6 +252,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `sdlc approve` or the shell a document is handed to went unread, and sdlc is
   now found behind a wrapper the rules do not know. PowerShell's `<# ... #>`
   comment no longer hides the command after it.
+- A path in your home directory was read as the project's own: `~` was not
+  expanded, so `rm ~/.claude/settings.json` was refused as a write to the
+  project's `.claude`, and an interpreter given a script under `~/.claude`
+  was refused too. A path outside the project is no longer protected.
 - `sed --in-pl` and `perl -lpi` rewrote a frozen test unrefused: GNU sed takes a
   shortened long option, and perl's `-l` in front hid the `-i`.
 - `awk -i inplace` rewrote a frozen test unrefused, and called as `gawk` it

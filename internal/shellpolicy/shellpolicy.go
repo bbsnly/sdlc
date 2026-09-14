@@ -139,6 +139,11 @@ var mutating = map[string]bool{
 	"ni": true, "sc": true, "ac": true, "clc": true,
 }
 
+// interpreters run a program that can write any file it is given.
+var interpreters = map[string]bool{
+	"python": true, "python3": true, "ruby": true, "node": true, "deno": true, "bun": true, "php": true,
+}
+
 // Inspect reports the first rule that refuses this command.
 //
 // The rules do not depend on who is asking. A shell command that rewrites the
@@ -491,7 +496,14 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 func checkLoopState(line, segment string, run invocation, redirects []string, dir string, s State, m *memo) (Finding, bool) {
 	candidates := append([]string{}, redirects...)
 	if changesFiles(run.words) {
-		candidates = append(candidates, run.words[1:]...)
+		for _, w := range run.words[1:] {
+			// A whole directory given to an interpreter is a setting of the
+			// program it runs, as in `python3 -m pytest --ignore .sdlc`, not a
+			// file for it to write.
+			if !interpreters[base(run.words[0])] || !bareDirectory(w) {
+				candidates = append(candidates, w)
+			}
+		}
 		if run.piped {
 			// `echo .sdlc/state/tests.lock | xargs rm` names the file in
 			// another segment altogether.
@@ -504,7 +516,7 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 		candidates = append(candidates, m.words(line)...)
 	}
 	for _, c := range m.spell(s, dir, candidates) {
-		if !m.first("loop state", c) {
+		if !m.first("loop state", c) || m.outside(s, c) {
 			continue
 		}
 		if hit, ok := protectedPath(c, s.Backlog); ok {
@@ -683,7 +695,10 @@ func changesFiles(words []string) bool {
 		// The command find runs is out of sight.
 		return hasWord(words[1:], "-delete") || hasWord(words[1:], "-exec") ||
 			hasWord(words[1:], "-execdir") || hasWord(words[1:], "-ok") || hasWord(words[1:], "-okdir")
-	case "sed", "perl", "awk", "gawk", "python", "python3", "ruby", "node", "deno", "bun", "php":
+	case "sed", "perl", "awk", "gawk":
+		return true
+	}
+	if interpreters[base(words[0])] {
 		return true
 	}
 	return changesAFile(words)
@@ -1030,16 +1045,43 @@ func (m *memo) spell(s State, dir string, words []string) []string {
 		if c == "" || strings.HasPrefix(c, "-") {
 			continue
 		}
-		r, ok := m.resolved[c]
-		if !ok {
-			r = s.Resolve(c)
-			m.resolved[c] = r
-		}
-		if r != "" && r != c {
+		if r := m.resolve(s, c); r != "" && r != c {
 			out = append(out, r)
 		}
 	}
 	return out
+}
+
+func (m *memo) resolve(s State, c string) string {
+	r, ok := m.resolved[c]
+	if !ok {
+		r = s.Resolve(c)
+		m.resolved[c] = r
+	}
+	return r
+}
+
+// outside reports whether a word names a path the lookup puts outside the
+// project, where there is no loop state and nothing of the project's to
+// protect: the user's own ~/.claude, or a plugin under it, is not the
+// project's .claude.
+func (m *memo) outside(s State, word string) bool {
+	// Not ./~, which is a directory called ~ in the project.
+	c := clean(word)
+	if s.Resolve == nil || !isAbsolute(c) && !strings.HasPrefix(c, "~") {
+		return false
+	}
+	return m.resolve(s, c) == ""
+}
+
+// bareDirectory reports whether a word is one of the protected directories
+// themselves, with nothing inside named.
+func bareDirectory(word string) bool {
+	switch pathrules.Fold(strings.TrimPrefix(clean(word), "./")) {
+	case ".git", ".sdlc", ".claude":
+		return true
+	}
+	return false
 }
 
 func isAbsolute(p string) bool {

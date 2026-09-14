@@ -16,6 +16,7 @@ import (
 
 	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
@@ -200,6 +201,20 @@ func TestNothingIsEnforcedWhileNoStoryIsBeingWorkedOn(t *testing.T) {
 
 // A session opened in the loop's project can commit in another repository, and
 // that commit met this story's gate.
+func TestAPathInTheHomeDirectoryIsNotTheProjects(t *testing.T) {
+	resolver := pathrules.NewResolver(loopProject(t))
+	for _, word := range []string{"~", "~/.claude/skills/check.py"} {
+		if r := onDisk(resolver, word); r != "" {
+			t.Errorf("%s was the project's, as %q", word, r)
+		}
+	}
+	for _, word := range []string{"CLAUDE.md", "~CLAUDE.md"} {
+		if r := onDisk(resolver, word); r != word {
+			t.Errorf("the project's %s was %q", word, r)
+		}
+	}
+}
+
 func TestACommitInAnotherRepositoryIsNotHeldToTheStory(t *testing.T) {
 	root := loopProject(t)
 	other := t.TempDir()

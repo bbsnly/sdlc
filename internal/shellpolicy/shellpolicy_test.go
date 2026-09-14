@@ -490,6 +490,38 @@ func TestTheRecordIsNotHandedToAProgramThatCanWrite(t *testing.T) {
 	} {
 		refused(t, command, s, rule)
 	}
+	// Outside the project there is nothing of the project's to protect.
+	outside := s
+	outside.Resolve = func(word string) string {
+		if rel, ok := strings.CutPrefix(word, "/work/project/"); ok {
+			return rel
+		}
+		if strings.HasPrefix(word, "/") || strings.HasPrefix(word, "~") {
+			return ""
+		}
+		return word
+	}
+	for _, command := range []string{
+		"python3 ~/.claude/skills/context-engineering/scripts/check-skill.py",
+		"node /Users/dev/.claude/plugins/cache/x/bin/tool.js",
+		"python3 -m pytest --ignore .sdlc",
+		"python3 -m flake8 --exclude .git/",
+		"python3 -m pytest --ignore ./.Claude",
+		"rm -rf /tmp/fixture/.sdlc",
+	} {
+		allowed(t, command, outside)
+	}
+	for command, rule := range map[string]string{
+		"rm /work/project/.sdlc/state/active":       "loop-state-through-the-tool",
+		"rm ./~/.sdlc/state/active":                 "loop-state-through-the-tool",
+		"python3 /tmp/w.py /work/project/CLAUDE.md": "protected-path-through-the-tool",
+		"python3 ~/.claude/x.py CLAUDE.md":          "protected-path-through-the-tool",
+		"python3 /tmp/w.py .sdlc/state":             "loop-state-through-the-tool",
+		"rm -rf .sdlc":                              "loop-state-through-the-tool",
+	} {
+		refused(t, command, outside, rule)
+	}
+
 	frozen := State{CommitReady: true, Frozen: []string{"internal/x_test.go"}}
 	refused(t, "gawk -i inplace 1 internal/x_test.go", frozen, "frozen-test-through-the-tool")
 }

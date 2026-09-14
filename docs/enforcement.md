@@ -266,7 +266,9 @@ the contract every gate reads, and the backlog is the story itself, so a shell
 command that rewrote any of them would take the rules with it. Reading them with
 `cat`, `grep`, `head` or the file tools is never refused, and neither is
 `.gitignore` or `.github/`. As with loop state, `sed`, `awk`, `perl` and
-interpreters are refused on them.
+interpreters are refused on them, though not for naming a whole directory, as
+`python3 -m pytest --ignore .sdlc` does. A path outside the project, such as
+your own `~/.claude`, is not the project's and is not protected.
 
 *Instead:* change them by hand outside a running iteration. If what one says is
 wrong, stop and say what.
