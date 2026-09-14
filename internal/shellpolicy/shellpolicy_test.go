@@ -642,6 +642,8 @@ func TestLoopStateCannotBeWrittenThroughTheShell(t *testing.T) {
 		"echo pass >> .sdlc/stories/A-1/gate-record.json",
 		"rm .sdlc/state/tests.lock",
 		"rm -rf .sdlc/state",
+		"rm -rf .sdlc/stories/US-001",
+		"rm -rf .sdlc/stories",
 		"mv /tmp/x.md .sdlc/stories/A-1/reviews/design_review-architect-1.md",
 		"cp /tmp/plan.md ./.sdlc/stories/A-1/PLAN.md",
 		"tee .sdlc/state/active < /dev/null",
@@ -1090,6 +1092,8 @@ func TestUnfreezeIsAHumanDecision(t *testing.T) {
 		"SDLC unfreeze --reason x",
 		"npx @bbsnly/sdlc unfreeze --reason x",
 		"go run ./cmd/sdlc unfreeze --reason x",
+		// A flag's value is not read as sdlc, so only knowing go finds it here.
+		"go run -mod=mod ./cmd/sdlc unfreeze --reason x",
 		"sdlc --json unfreeze --reason x",
 		"go test ./... || sdlc unfreeze --reason x",
 		`sdlc --reason "test was wrong" unfreeze`,
@@ -1120,11 +1124,22 @@ func TestApprovingIsAHumanDecision(t *testing.T) {
 		"SDLC approve US-001",
 		"npx @bbsnly/sdlc approve US-001",
 		"go run ./cmd/sdlc approve US-001",
+		"go run -mod=mod ./cmd/sdlc approve US-001",
 		"sdlc --json approve US-001",
 		`sdlc approve US-001 --reject "not like this"`,
 		"go test ./... && sdlc approve US-001",
 	} {
 		refused(t, command, ready, "approval-is-a-human-decision")
+	}
+	// With no story, where only these checks run: `sdlc escalate` ends the
+	// iteration, and the approval always comes after it.
+	for command, powerShell := range map[string]bool{
+		"go run -mod=mod ./cmd/sdlc approve US-001": false,
+		"s`dlc approve US-001":                      true,
+	} {
+		if f, ok := HumanDecisions(command, powerShell); !ok || f.Rule != "approval-is-a-human-decision" {
+			t.Errorf("HumanDecisions(%q) = %q, %v; want approval-is-a-human-decision", command, f.Rule, ok)
+		}
 	}
 	for _, command := range []string{
 		`sdlc review add code_review code-reviewer approve --note "reads well"`,
