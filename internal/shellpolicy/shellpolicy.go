@@ -204,6 +204,15 @@ func checkLoopState(words, redirects []string) (Finding, bool) {
 		candidates = append(candidates, words[1:]...)
 	}
 	for _, c := range candidates {
+		if hit, ok := protectedPath(c); ok {
+			return Finding{
+				Rule: "protected-path-through-the-tool",
+				Reason: hit + " is protected while a story is being worked on, and a shell " +
+					"command is the one way around the rule that protects it",
+				Route: "change it by hand outside a running iteration; if a rule in it is " +
+					"wrong, stop and say which one rather than editing it",
+			}, true
+		}
 		if hit, ok := loopState(c); ok {
 			return Finding{
 				Rule: "loop-state-through-the-tool",
@@ -455,7 +464,7 @@ func loopState(word string) (string, bool) {
 	if p == "" {
 		return "", false
 	}
-	for _, own := range []string{".sdlc/state", ".sdlc/config.json", ".sdlc/claude-progress.json", ".git/hooks"} {
+	for _, own := range []string{".sdlc/state", ".sdlc/config.json", ".sdlc/claude-progress.json"} {
 		if at(p, own) {
 			return own, true
 		}
@@ -483,6 +492,28 @@ func loopState(word string) (string, bool) {
 	}
 	if _, ok := model.ArtifactByFile(tail); ok {
 		return p, true
+	}
+	return "", false
+}
+
+// protectedShellPaths are the human-owned paths the file-writing rules protect
+// and loopState does not cover. Between the two, the shell refuses every path
+// in policy.ProtectedPaths, and a test holds it to that: `Write` to CLAUDE.md was
+// refused and `echo > CLAUDE.md` was not, and a rewritten contract, or a
+// settings file that turns the hooks off, takes every gate after it with it.
+var protectedShellPaths = []string{".git", ".claude", "CLAUDE.md"}
+
+// protectedPath reports whether a word names one of them, folded as the
+// filesystem folds it.
+func protectedPath(word string) (string, bool) {
+	p := pathrules.Fold(strings.TrimPrefix(clean(word), "./"))
+	if p == "" {
+		return "", false
+	}
+	for _, own := range protectedShellPaths {
+		if at(p, pathrules.Fold(own)) {
+			return own, true
+		}
 	}
 	return "", false
 }

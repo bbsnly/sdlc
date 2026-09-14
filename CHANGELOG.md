@@ -163,6 +163,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   hook asked only whether the gates had passed, so code edited after the code
   review was committed, and `sdlc gate commit pass` found the stale reviews only
   afterwards. The tree is measured only for `git commit`.
+- `CLAUDE.md`, `.claude` and `.git` are protected from shell commands, as they
+  already were from the file tools. `echo {} > .claude/settings.local.json` went
+  through during an iteration, and a settings file is where hooks are turned
+  off. A test now holds the shell rules to every path the file rules protect.
 - `sdlc doctor` checks the loop's state files. Every hook warning about them
   said to run it, and it did not read either one.
 

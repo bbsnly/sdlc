@@ -74,10 +74,10 @@ type Rule struct {
 	check func(Request) string
 }
 
-// Protected paths. Configuration is the human's, and loop state is the CLI's:
+// ProtectedPaths are the paths nobody writes during an iteration. Configuration is the human's, and loop state is the CLI's:
 // an assistant editing either can make the record say something that did not
 // happen.
-var protectedPaths = []string{
+var ProtectedPaths = []string{
 	".git",
 	".claude",
 	"CLAUDE.md",
@@ -106,7 +106,7 @@ var Rules = []Rule{
 		Route: "configuration is yours to change by hand outside a running iteration, " +
 			"and loop state changes through the sdlc command",
 		check: func(r Request) string {
-			if !pathrules.UnderAny(r.Path, protectedPaths...) {
+			if !pathrules.UnderAny(r.Path, ProtectedPaths...) {
 				return ""
 			}
 			return r.Path + " is protected while a story is being worked on: it is either " +

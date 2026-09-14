@@ -3,6 +3,8 @@ package shellpolicy
 import (
 	"strings"
 	"testing"
+
+	"github.com/bbsnly/sdlc/internal/policy"
 )
 
 var ready = State{CommitReady: true}
@@ -61,6 +63,47 @@ func TestLoopStateCannotBeWrittenThroughTheShell(t *testing.T) {
 		"echo x > .sdlc/config.json::$DATA",
 	} {
 		refused(t, command, ready, "loop-state-through-the-tool")
+	}
+}
+
+// The file-writing rules protected CLAUDE.md, .claude and .git, and the shell
+// rules did not: `echo {} > .claude/settings.local.json` went through during an
+// iteration, and a settings file is where hooks are turned off.
+func TestHumanOwnedConfigurationCannotBeWrittenThroughTheShell(t *testing.T) {
+	for _, command := range []string{
+		`echo "the rules are gone" > CLAUDE.md`,
+		"echo x > claude.md",
+		"sed -i '' s/TBD/done/ CLAUDE.md",
+		"echo {} > .claude/settings.local.json",
+		"rm -rf .claude",
+		"cp /tmp/hook .git/hooks/pre-commit",
+		"rm -rf .git",
+	} {
+		refused(t, command, ready, "protected-path-through-the-tool")
+	}
+	for _, command := range []string{
+		"cat CLAUDE.md",
+		"grep -n Contract CLAUDE.md",
+		"echo node_modules >> .gitignore",
+		"echo x > .github/workflows/extra.yml",
+		"git add -A",
+	} {
+		allowed(t, command, ready)
+	}
+}
+
+// Every path the file-writing rules protect is refused through the shell too,
+// by one rule or the other. A path added to one list and not the other is the
+// gap this closes, reopened.
+func TestTheShellProtectsEveryPathTheFileRulesDo(t *testing.T) {
+	for _, protected := range policy.ProtectedPaths {
+		command := "touch " + protected + "/x"
+		if strings.HasSuffix(protected, ".md") || strings.HasSuffix(protected, ".json") {
+			command = "touch " + protected
+		}
+		if _, ok := Inspect(command, ready); !ok {
+			t.Errorf("%q is protected from Write and not from %q", protected, command)
+		}
 	}
 }
 

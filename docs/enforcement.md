@@ -177,7 +177,7 @@ iteration and take over yourself.
 
 Every rule above governs the file-writing tools. A shell command is not one of
 them, which would leave `cat > .sdlc/stories/A-1/ANALYSIS.md` walking past all
-of them. These five close that, and nothing else about your shell is touched:
+of them. These six close that, and nothing else about your shell is touched:
 your tests, your build and your tooling run exactly as before.
 
 This is pattern matching, not a shell. It is deliberately narrow.
@@ -194,6 +194,21 @@ it is never refused.
 
 *Instead:* `sdlc artifact write`, `sdlc review add`, `sdlc gate`. The freeze is
 lifted by the person running the session.
+
+### `protected-path-through-the-tool`
+
+Refuses a command that would write or delete `CLAUDE.md`, anything under
+`.claude` or anything under `.git` — the paths `write-protected-path` protects
+from the file tools that are not the loop's own state. It matches the way the
+filesystem does, so `claude.md` is `CLAUDE.md` on macOS and Windows.
+
+A settings file under `.claude` is where hooks are configured, and `CLAUDE.md`
+is the contract every gate reads, so a shell command that rewrote either would
+take the rules with it. Reading them is never refused, and neither is
+`.gitignore` or `.github/`.
+
+*Instead:* change them by hand outside a running iteration. If a rule is wrong,
+stop and say which one.
 
 ### `frozen-test-through-the-tool`
 
