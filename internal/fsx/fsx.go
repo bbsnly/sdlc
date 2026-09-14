@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // WriteFileAtomic writes data to path so that a reader sees either the previous
@@ -48,10 +49,32 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
 	if err := os.Chmod(tmp, perm); err != nil {
 		return fmt.Errorf("set permissions on %s: %w", tmp, err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := replace(tmp, path); err != nil {
 		return fmt.Errorf("move %s into place at %s: %w", tmp, path, err)
 	}
 	return nil
+}
+
+// How long a replacement waits for a reader to let go of the file it replaces.
+// Only Windows makes it wait: a file another process has open cannot be renamed
+// over there, and the hook reads the loop's state on every tool call. A command
+// writing that state met a reader sooner or later, and failed part-way through
+// the files it was changing.
+const (
+	replaceWait = 2 * time.Second
+	replacePoll = 10 * time.Millisecond
+)
+
+// replace renames tmp over path, waiting out a reader that has path open.
+func replace(tmp, path string) error {
+	deadline := time.Now().Add(replaceWait)
+	for {
+		err := os.Rename(tmp, path)
+		if err == nil || !inUse(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(replacePoll)
+	}
 }
 
 // Exists reports whether path is there. It says nothing about whether it can be

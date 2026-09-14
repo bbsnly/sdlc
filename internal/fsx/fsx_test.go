@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWriteFileAtomicCreatesMissingParents(t *testing.T) {
@@ -70,6 +71,34 @@ func TestWriteFileAtomicSetsPermissions(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Errorf("mode = %o, want 600", got)
+	}
+}
+
+// On Windows a file another process has open cannot be renamed over, and the
+// hook reads the loop's state on every tool call. The write waits for the
+// reader to let go rather than failing part-way through a command.
+func TestWriteFileAtomicWaitsForAReaderToLetGo(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gate-record.json")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		time.Sleep(100 * time.Millisecond)
+		_ = reader.Close()
+	}()
+	defer func() { <-closed }()
+
+	if err := WriteFileAtomic(path, []byte("new"), 0o644); err != nil {
+		t.Fatalf("a write failed because somebody was reading the file: %v", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "new" {
+		t.Errorf("contents = %q, want the new value", got)
 	}
 }
 
