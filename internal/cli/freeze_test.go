@@ -240,6 +240,32 @@ func TestAFreezeThatWentMissingIsNotTakenAgain(t *testing.T) {
 	mustRun(t, "freeze")
 }
 
+// The commit is the last gate a freeze deleted by hand can be caught at: every
+// gate after tests_frozen compared the tests against a freeze that was no
+// longer there to compare against.
+func TestAStoryIsNotCommittedOnceItsFreezeIsGone(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	setConfigOnDisk(t, root, "human_gates", map[string]any{"pre_commit_pause_tiers": []string{}})
+	writeFile(t, root, "user_stories.json", `{"stories":[
+	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"high","priority":1,
+	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN a paid invoice is refunded, the money goes back"}]}]}`)
+	mustRun(t, "start")
+	reach(t, root, model.GateCommit)
+	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "tests.lock")); err != nil {
+		t.Fatal(err)
+	}
+	commitEverything(t, root)
+
+	r := run(t, "gate", "commit", "pass", "--note", "on trunk")
+	if r.code == 0 {
+		t.Fatal("a story whose freeze was deleted was committed")
+	}
+	if !strings.Contains(r.stderr, "not frozen for this story") {
+		t.Errorf("the refusal did not say the freeze is gone:\n%s", r.stderr)
+	}
+}
+
 // A freeze that will not read is lifted on the record, the same as one that
 // does: freezing again is refused until it is.
 func TestAnUnreadableFreezeIsLiftedOnTheRecord(t *testing.T) {
