@@ -891,6 +891,29 @@ func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) {
 	prev.Note = note
 	r.Gates[g] = prev
 
+	if reopened := r.reopenAfter(g, "reopened when "+string(g)+" was recorded "+string(status), at); len(reopened) > 0 {
+		r.Append("gates_reopened", strings.Join(reopened, ", ")+" reopened: "+
+			string(g)+" was recorded "+string(status), at)
+	}
+}
+
+// Reopen puts a gate that had passed back to pending, with every gate after it,
+// because what it passed on no longer holds -- the freeze Gate 3 took can be
+// lifted without the gate being recorded again. It returns the gates it
+// reopened, and reopens nothing if the gate had not passed.
+func (r *Record) Reopen(g Gate, why string, at time.Time) []string {
+	if !r.Pass(g) {
+		return nil
+	}
+	note := "reopened: " + why
+	r.Gates[g] = GateResult{Status: GatePending, At: Timestamp(at), Note: note}
+	reopened := append([]string{string(g)}, r.reopenAfter(g, note, at)...)
+	r.Append("gates_reopened", strings.Join(reopened, ", ")+" reopened: "+why, at)
+	return reopened
+}
+
+// reopenAfter puts every passed gate after g back to pending, and returns them.
+func (r *Record) reopenAfter(g Gate, note string, at time.Time) []string {
 	var reopened []string
 	after := false
 	for _, later := range Gates {
@@ -901,17 +924,10 @@ func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) {
 		if !after || r.Gates[later].Status != GatePass {
 			continue
 		}
-		r.Gates[later] = GateResult{
-			Status: GatePending,
-			At:     Timestamp(at),
-			Note:   "reopened when " + string(g) + " was recorded " + string(status),
-		}
+		r.Gates[later] = GateResult{Status: GatePending, At: Timestamp(at), Note: note}
 		reopened = append(reopened, string(later))
 	}
-	if len(reopened) > 0 {
-		r.Append("gates_reopened", strings.Join(reopened, ", ")+" reopened: "+
-			string(g)+" was recorded "+string(status), at)
-	}
+	return reopened
 }
 
 // Append adds an event to the story's history.

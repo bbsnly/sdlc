@@ -328,6 +328,36 @@ func TestRecordingAGateReopensEveryGateAfterIt(t *testing.T) {
 	}
 }
 
+// A gate can also stop standing without being recorded again: the freeze Gate 3
+// passed on can be lifted. It goes back then, with everything after it, and
+// nothing before it.
+func TestAGateWhoseGroundWentIsReopened(t *testing.T) {
+	at := time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
+	r := NewRecord("A-1", at)
+	for _, g := range GateDesignReview.Before() {
+		r.SetGate(g, GatePass, "", at)
+	}
+
+	got := r.Reopen(GateTestsFrozen, "the freeze was lifted", at)
+	if want := []string{"tests_frozen", "plan"}; !slices.Equal(got, want) {
+		t.Errorf("reopened %v, want %v", got, want)
+	}
+	if next, _ := r.NextGate(); next != GateTestsFrozen {
+		t.Errorf("the next gate is %s, want %s", next, GateTestsFrozen)
+	}
+	for _, g := range GateTestsFrozen.Before() {
+		if !r.Pass(g) {
+			t.Errorf("%s, which comes before the tests, was reopened", g)
+		}
+	}
+	if last := r.Events[len(r.Events)-1]; last.Type != "gates_reopened" || !strings.Contains(last.Message, "the freeze was lifted") {
+		t.Errorf("reopening, and why, is not on the record: %+v", last)
+	}
+	if again := r.Reopen(GateTestsFrozen, "again", at); again != nil {
+		t.Errorf("a gate that had not passed was reopened: %v", again)
+	}
+}
+
 // A record written by the shell kit must still load, and one written here must
 // still be readable by it.
 func TestRecordRoundTripsTheOnDiskShape(t *testing.T) {

@@ -31,7 +31,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `tests_frozen`, `plan`, `implementation`, `verification` and `commit`; with
   `freeze.allow_new_test_files` on, the test author can add one and
   `sdlc freeze` adds it to the freeze. `sdlc unfreeze --reason` is the way
-  out, and it is on the record. The freeze belongs to the iteration: it
+  out: it is on the record, and it sends the story back to Gate 3. The freeze
+  belongs to the iteration: it
   survives `sdlc stop` and a new session, and is lifted when the story
   finishes, so the next story freezes its own tests.
 - A question the loop should not answer for itself goes to a person.

@@ -143,6 +143,9 @@ Delegate to the `sdlc:sdet` agent. Give it a brief containing:
 - that `paths.tests` and `commands.test` in `.sdlc/config.json` say where tests live and how to
   run them
 - that it stores its test plan with `sdlc artifact write test_plan`
+- if this gate is open again because a person lifted the freeze: the reason they gave, which is
+  the latest `unfreeze` event in `.sdlc/stories/<ID>/gate-record.json`, and that the job is to
+  correct the test it names, not to write the tests again
 
 Do not write the tests yourself, and do not adjust them afterwards. The tests are what every
 later gate measures against, and a test shaped by the conversation that will also shape the
@@ -174,9 +177,10 @@ right and is also exactly the shortcut that makes the rest of the loop meaningle
 yours to do: the hook refuses `sdlc unfreeze` from you and from every agent. If a frozen test is
 wrong, hand it to a person with
 `sdlc escalate frozen_test_wrong --message "<which test, and the criterion it gets wrong>"` and
-stop. In their own terminal they run `sdlc approve`, then `sdlc start` to pick the story back up
-— `sdlc unfreeze` acts on the story being worked on, and the escalation ended the iteration —
-and then `sdlc unfreeze --reason "..."`. The next session carries on.
+stop. In their own terminal they run `sdlc approve <ID>`, then `sdlc start <ID>` to pick the
+story back up — `sdlc unfreeze` acts on the story being worked on, and the escalation ended the
+iteration — and then `sdlc unfreeze --reason "..."`. That sends the story back to this gate:
+`tests_frozen` and every gate after it are open again, and the next session starts here.
 
 `sdlc status --json` reports the freeze and whether it is still intact.
 
@@ -308,7 +312,7 @@ approved the work as it stands, hand it over and stop:
 sdlc escalate pre_commit_approval --message "<what changed, what to look at, and why it is ready>"
 ```
 
-The commit is refused until a person has run `sdlc approve`, and an approval holds only for the
+The commit is refused until a person has run `sdlc approve <ID>`, and an approval holds only for the
 work it was given for: change anything after it, and it needs approving again. Once approved,
 the next `/sdlc:next` resumes here.
 
@@ -384,7 +388,7 @@ sdlc escalate <type> --message "<the question, and what you found>"
 ```
 
 Then stop, and tell the user what you asked. The iteration has ended, and the story waits until
-a person answers with `sdlc approve` in their own terminal. Do not run `sdlc approve` yourself
+a person answers with `sdlc approve <ID>` in their own terminal. Do not run `sdlc approve` yourself
 — the hook refuses it — and do not start the story again before they have answered.
 
 Do not end your turn mid-story any other way. While a story is being worked on, the plugin's

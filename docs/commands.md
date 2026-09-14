@@ -288,6 +288,10 @@ sometimes right — a test encoded the wrong behaviour — and it is also exactl
 the move an agent would make to reach green. Recording why is what tells the two
 apart.
 
+It also sends the story back to Gate 3. The tests are about to change, so
+`tests_frozen`, and every gate passed after it, go back to `pending` with the
+reason as their note. They are listed under `reopened`, in `--json` as well.
+
 ## `sdlc escalate`
 
 Hand the story to a person, and end the iteration.

@@ -26,10 +26,11 @@ type freezePayload struct {
 }
 
 type unfreezePayload struct {
-	OK     bool   `json:"ok"`
-	Story  string `json:"story"`
-	Reason string `json:"reason"`
-	Count  int    `json:"count"`
+	OK       bool     `json:"ok"`
+	Story    string   `json:"story"`
+	Reason   string   `json:"reason"`
+	Count    int      `json:"count"`
+	Reopened []string `json:"reopened,omitempty"`
 }
 
 func newFreezeCmd() *cobra.Command {
@@ -306,7 +307,18 @@ func newUnfreezeCmd() *cobra.Command {
 			if err := s.ClearLock(); err != nil {
 				return err
 			}
-			if err := appendEvent(s, id, "unfreeze", reason); err != nil {
+			// The tests are about to change, so Gate 3 no longer stands, and
+			// nor does anything passed on top of it. Left passed, the loop
+			// carried on from where it was: nobody was sent back to change the
+			// test, the design review passed on tests nobody had frozen, and the
+			// first gate to notice said to freeze the wrong test again.
+			record, err := s.Record(id)
+			if err != nil {
+				return err
+			}
+			record.Append("unfreeze", reason, s.Now())
+			reopened := record.Reopen(model.GateTestsFrozen, "the freeze was lifted: "+reason, s.Now())
+			if err := s.SaveRecord(record); err != nil {
 				return err
 			}
 			held := 0
@@ -316,11 +328,14 @@ func newUnfreezeCmd() *cobra.Command {
 
 			if wantJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), unfreezePayload{
-					OK: true, Story: id, Reason: reason, Count: held,
+					OK: true, Story: id, Reason: reason, Count: held, Reopened: reopened,
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  freeze lifted on %s\n  %s\n",
 				id, countFiles(held), reason)
+			if len(reopened) > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "  reopened: %s\n", strings.Join(reopened, ", "))
+			}
 			return nil
 		},
 	}

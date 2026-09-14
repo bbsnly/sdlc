@@ -181,6 +181,27 @@ func TestLiftingTheFreezeNeedsAReasonAndRecordsIt(t *testing.T) {
 	}
 }
 
+// A lifted freeze takes Gate 3 back with it, and every gate passed on top of it.
+// Left passed, the loop carried on from where it was: nobody was sent back to
+// change the test, and the first gate to notice the missing freeze said to
+// freeze the wrong test again.
+func TestLiftingTheFreezeSendsTheLoopBackToTheTests(t *testing.T) {
+	root := frozenStory(t)
+	mustRun(t, "freeze")
+	mustRun(t, "gate", "tests_frozen", "pass", "--note", "frozen")
+	satisfy(t, root, model.GatePlan)
+	mustRun(t, "gate", "plan", "pass")
+
+	out := decode[unfreezePayload](t, mustRun(t, "unfreeze", "--json",
+		"--reason", "AC-2's test asserted the old error message"))
+	if got := strings.Join(out.Reopened, ", "); got != "tests_frozen, plan" {
+		t.Errorf("reopened %q, want tests_frozen and plan", got)
+	}
+	if next := decode[statusPayload](t, mustRun(t, "status", "--json")).NextGate; next != string(model.GateTestsFrozen) {
+		t.Errorf("after the freeze was lifted the next gate is %q, want %s", next, model.GateTestsFrozen)
+	}
+}
+
 func TestLiftingAFreezeThatIsNotThereSaysSo(t *testing.T) {
 	frozenStory(t)
 	r := run(t, "unfreeze", "--reason", "no reason at all")

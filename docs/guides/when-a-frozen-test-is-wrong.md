@@ -101,6 +101,7 @@ sdlc: lifting the freeze needs a reason
 $ sdlc unfreeze --reason "AC-1's test expects 42; the criterion says Draft state"
 US-001  freeze lifted on 1 test file
   AC-1's test expects 42; the criterion says Draft state
+  reopened: tests_frozen, plan, design_review, implementation
 ```
 
 The reason becomes an `unfreeze` event in the story's gate record, next to the
@@ -113,12 +114,15 @@ may never write a test file, and the main conversation writes no code or tests
 during an iteration. Either delegate the change to `sdlc:sdet`, or `sdlc stop`,
 edit the test yourself, and `sdlc start` again.
 
-Then freeze again, with the story active:
+Then freeze again, with the story active, and pass the gate the unfreeze
+reopened:
 
 ```console
 $ sdlc freeze
 US-001  1 test file frozen
   internal/invoice/invoice_test.go
+
+$ sdlc gate tests_frozen pass --note "AC-1's test corrected"
 ```
 
 The new freeze covers every file `paths.tests` matches at that moment, including
@@ -129,44 +133,26 @@ first.
 
 ## What it costs later gates
 
-`tests_frozen` stays recorded as passed. Nothing re-runs Gate 3 for you, and
-`sdlc status` still shows the same next gate. It also shows `tests  not frozen`
-until you freeze again, and until then every gate that checks the freeze
-refuses:
+Lifting the freeze sends the story back to Gate 3. The tests are about to
+change, so `tests_frozen` no longer stands, and nor does any gate passed on top
+of it: each goes back to `pending` with your reason as its note, and
+`sdlc unfreeze` lists them under `reopened`. `sdlc status` shows `tests_frozen`
+as the next gate, so the next `/sdlc:next` starts there, gives the test author
+your reason, and freezes again once the test is corrected.
 
-```console
-$ sdlc gate verification pass
-sdlc: the acceptance tests are not frozen for this story
+The gates after it have to pass again, in order. Not all of their work has to
+be done again:
 
-  why  every gate from here on is measured against them, and a freeze that is not there cannot say whether they changed
-  fix  run "sdlc freeze" once the acceptance tests are written and failing
-
-  SDLC-E0023  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0023
-```
-
-After you freeze again:
-
+- **Design review approvals stand**, as long as `PLAN.md` does not change. They
+  are stamped with the plan, not with the tests, so `design_review` passes again
+  on the reviews it already has.
 - **Verifier and code review approvals go stale.** They are stamped with the
   working tree, and a changed test file changes it. Both gates need their
   reviewers again, and both the hook and the commit gate check that before a
   commit goes through.
-- **Design review approvals stand.** They are stamped with `PLAN.md`, not with
-  the tests.
-- **Gates already passed stay passed until you record one again.** If the
-  corrected test changes what the plan has to do, record `plan` as failed.
-  Recording a gate, pass or fail, reopens every gate after it: each goes back to
-  `pending` with a note saying why, so `design_review` and everything after it
-  have to pass again against the revised plan:
-
-  ```console
-  $ sdlc gate plan fail --note "AC-1 test corrected; plan step 2 no longer fits"
-  US-001  plan  fail
-    AC-1 test corrected; plan step 2 no longer fits
-  ```
-
-  If only the code has to change, record `implementation` as failed instead,
-  which reopens verification and the reviews after it. Do not re-record a gate
-  that still stands just to check it: a pass reopens the gates after it too.
+- **A corrected test that changes what the plan has to do** needs a new plan.
+  Change `PLAN.md` before `plan` passes again, and the design reviewers look at
+  the new one.
 
 ## Allowing new test files after the freeze
 
