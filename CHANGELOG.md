@@ -221,6 +221,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   and `rm $'.sdlc/state/active'` reached the loop's files. A quoted or escaped
   `(`, `)` or `;` is read as an argument: `find . \( -name active \) -delete`
   was split before its `-delete`.
+- A command substitution written into a word is part of that word, and the
+  command inside it is still read. `rm $(pwd)/.sdlc/state/active` and
+  ``rm `git rev-parse --show-toplevel`/.sdlc/config.json`` were split into a
+  command called `rm` and one called `/.sdlc/state/active`.
 - The hook's warnings reach the session. They went to standard error, which
   Claude Code sends to its debug log when a hook allows the call, so "nothing
   is being enforced" was said to nobody. They now arrive as a system message,

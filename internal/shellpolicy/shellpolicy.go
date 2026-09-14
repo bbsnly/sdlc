@@ -1395,9 +1395,6 @@ func segments(command string) []string {
 	return splitSegments(command, false)
 }
 
-// markedSegments is segments with where each subshell opens and closes left on
-// the front of the segment after it: `(` for a subshell or a `$(`, `)` for its
-// end, and a backtick for either end of a backtick substitution.
 // pathText is a command as the path rules split it. They split it by its text,
 // not by the shell's grammar, so a `(`, `)` or `;` that is an argument, quoted
 // or escaped as find's are, ended the command there: in `find . \( -name active
@@ -1405,10 +1402,73 @@ func segments(command string) []string {
 // read. A line continued with a backslash is one line. PowerShell escapes with
 // a backtick, which Inspect has already taken out.
 func pathText(text string, powerShell bool) string {
-	if powerShell {
-		return text
+	if !powerShell {
+		text = escapedSeparators.Replace(text)
 	}
-	return escapedSeparators.Replace(text)
+	return glued(text)
+}
+
+// glued is a command with each substitution taken out of the word it is written
+// in, and read after the command as a subshell of its own. Split where it
+// stands, `rm $(pwd)/.sdlc/state/active` was a command called `rm` and one
+// called `/.sdlc/state/active`. At the start of a word it leaves `$SUB`, which is somewhere, not the root of the disk; inside a word,
+// nothing. PowerShell's backticks are gone by now, so there only `$(` is one.
+func glued(text string) string {
+	var b strings.Builder
+	var inner []string
+	for i := 0; i < len(text); {
+		body, end := substitutionAt(text, i)
+		if end < 0 {
+			b.WriteByte(text[i])
+			i++
+			continue
+		}
+		if i == 0 || startsAWord(text[i-1]) || isQuote(text[i-1]) && (i == 1 || startsAWord(text[i-2])) {
+			b.WriteString("$SUB")
+		}
+		inner = append(inner, glued(body))
+		i = end
+	}
+	for _, in := range inner {
+		b.WriteString("\n(" + in + ")")
+	}
+	return b.String()
+}
+
+// substitutionAt is the command inside a `$(...)` or a backquoted one that
+// starts at i, and where the substitution ends; -1 when none starts there or it
+// is never closed.
+func substitutionAt(text string, i int) (string, int) {
+	switch {
+	case strings.HasPrefix(text[i:], "$("):
+		depth := 0
+		for j := i + 1; j < len(text); j++ {
+			switch text[j] {
+			case '(':
+				depth++
+			case ')':
+				if depth--; depth == 0 {
+					return text[i+2 : j], j + 1
+				}
+			}
+		}
+	case text[i] == '`':
+		if j := strings.IndexByte(text[i+1:], '`'); j >= 0 {
+			return text[i+1 : i+1+j], i + j + 2
+		}
+	}
+	return "", -1
+}
+
+// startsAWord reports whether what follows c is the start of a word. An option's
+// value glued to its name, as in `of=$(pwd)/x`, needs nothing of its own: the
+// whole word is a spelling, and the path in it is found where it ends.
+func startsAWord(c byte) bool {
+	return strings.IndexByte(" \t\r\n;&|()<>", c) >= 0
+}
+
+func isQuote(c byte) bool {
+	return c == '"' || c == '\''
 }
 
 // escapedSeparators are the characters splitSegments ends a command at, as an
@@ -1420,6 +1480,9 @@ var escapedSeparators = strings.NewReplacer(
 	`")"`, " ", `";"`, " ", `"|"`, " ", `"&"`, " ",
 )
 
+// markedSegments is segments with where each subshell opens and closes left on
+// the front of the segment after it: `(` for a subshell or a `$(`, `)` for its
+// end, and a backtick for either end of a backtick substitution.
 func markedSegments(command string) []string {
 	return splitSegments(command, true)
 }
