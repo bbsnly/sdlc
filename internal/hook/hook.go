@@ -534,8 +534,12 @@ func activeStory(project string, warn func(string)) string {
 // directory the loop is not in, and every rule was off for every file in the
 // loop project -- while `sdlc`, run from inside it, carried on with the story.
 func findLoop(getenv func(string) string, p payload, target string, warn func(string)) (project, story string) {
-	if target != "" && !filepath.IsAbs(target) && p.CWD != "" {
-		target = filepath.Join(p.CWD, target)
+	if target != "" && p.CWD != "" {
+		if abs, ok := pathrules.Abs(p.CWD, target); ok {
+			target = abs
+		} else {
+			target = ""
+		}
 	}
 	for _, start := range []string{getenv("CLAUDE_PROJECT_DIR"), p.CWD, target} {
 		if start == "" {

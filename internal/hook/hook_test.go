@@ -285,6 +285,20 @@ func TestTheBacklogIsNotEditedDuringAnIteration(t *testing.T) {
 	}
 }
 
+// Claude Code on Windows writes `\repo\CLAUDE.md` to the project's own
+// CLAUDE.md, and the hook read it as `repo/CLAUDE.md`, a file nothing protects.
+func TestAPathRootedWithoutADriveIsGovernedOnWindows(t *testing.T) {
+	root := loopProject(t)
+	volume := filepath.VolumeName(root)
+	if volume == "" {
+		t.Skip("only Windows has a path that is rooted and not absolute")
+	}
+	r := call(t, event(root, "Write", "sdlc-implementer", root[len(volume):]+`\CLAUDE.md`), noEnv)
+	if !denied(r) || !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "write-protected-path") {
+		t.Errorf("CLAUDE.md, named without its drive, was not refused as protected: %+v", r.HookSpecificOutput)
+	}
+}
+
 // A backlog linked in from outside the repository resolved outside it, and was
 // left unprotected: the shell edited it through the link.
 func TestABacklogLinkedInFromElsewhereIsStillProtected(t *testing.T) {

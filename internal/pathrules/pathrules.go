@@ -27,9 +27,9 @@ func Rel(project, p string) (rel string, outside bool) {
 	if p == "" {
 		return "", false
 	}
-	abs := p
-	if !filepath.IsAbs(abs) {
-		abs = filepath.Join(project, abs)
+	abs, ok := Abs(project, p)
+	if !ok {
+		return filepath.ToSlash(p), true
 	}
 	abs = filepath.Clean(abs)
 
@@ -48,6 +48,27 @@ func Rel(project, p string) (rel string, outside bool) {
 		return "", false
 	}
 	return r, false
+}
+
+// Abs makes p absolute against base, as the program that writes it would. ok
+// is false for a path whose place cannot be known from here.
+//
+// On Windows two kinds of path are neither absolute nor relative to base, and
+// filepath.IsAbs calls both relative. `\repo\CLAUDE.md` is rooted on the
+// current drive: joined onto the project, it became `repo/CLAUDE.md`, a file
+// no rule protects, while the tool wrote the project's own CLAUDE.md. And
+// `C:repo\CLAUDE.md` is relative to a working directory on that drive, which
+// only the writing process knows.
+func Abs(base, p string) (abs string, ok bool) {
+	switch {
+	case filepath.IsAbs(p):
+		return p, true
+	case filepath.VolumeName(p) != "":
+		return p, false
+	case strings.HasPrefix(p, `\`) || strings.HasPrefix(p, "/"):
+		return filepath.VolumeName(base) + p, true
+	}
+	return filepath.Join(base, p), true
 }
 
 // resolve follows symlinks, falling back to the path itself when it cannot.

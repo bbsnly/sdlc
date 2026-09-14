@@ -235,6 +235,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - A command after a lone `&` meets the shell rules. `true & git commit` and
   PowerShell's `& git commit` were read as commands called `true` and `&`, so
   the commit gate and every rule on loop state let them through.
+- On Windows, a path rooted without a drive, such as `\repo\CLAUDE.md`, is read
+  as the file it names. It was joined onto the project as `repo/CLAUDE.md`, a
+  file no rule protects, while the tool wrote the project's own `CLAUDE.md`. A
+  path relative to a drive's working directory, such as `C:CLAUDE.md`, is
+  refused as outside the repository, since only the writer knows where it is.
 - A new test file cannot be added through the shell after the freeze. The file
   tools refused one; `echo > new_test.go` did not, because the shell was checked
   only against the files the freeze already held.

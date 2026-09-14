@@ -116,6 +116,41 @@ func TestRelReportsASymlinkOutOfTheRepository(t *testing.T) {
 	}
 }
 
+func TestAbsJoinsOnlyWhatIsRelative(t *testing.T) {
+	base := project(t)
+	if got, ok := Abs(base, "a/b.go"); !ok || got != filepath.Join(base, "a", "b.go") {
+		t.Errorf("Abs(relative) = %q, %v", got, ok)
+	}
+	inside := filepath.Join(base, "c.go")
+	if got, ok := Abs(base, inside); !ok || got != inside {
+		t.Errorf("Abs(absolute) = %q, %v", got, ok)
+	}
+}
+
+// On Windows a path can be rooted without a drive, and filepath.IsAbs calls it
+// relative. Joined onto the project, `\repo\CLAUDE.md` became `repo/CLAUDE.md`,
+// which no rule protects, while the tool wrote the project's own CLAUDE.md.
+func TestAPathRootedWithoutADriveIsOnTheProjectsDrive(t *testing.T) {
+	root := project(t)
+	volume := filepath.VolumeName(root)
+	if volume == "" {
+		t.Skip("only Windows has a path that is rooted and not absolute")
+	}
+	rooted := root[len(volume):]
+	for in, want := range map[string]string{
+		rooted + `\CLAUDE.md`:                            "CLAUDE.md",
+		filepath.ToSlash(rooted) + "/.sdlc/state/active": ".sdlc/state/active",
+	} {
+		if got, outside := Rel(root, in); outside || got != want {
+			t.Errorf("Rel(%q) = %q, outside %v; want %q", in, got, outside, want)
+		}
+	}
+	// Relative to a working directory on that drive, which only the writer knows.
+	if got, outside := Rel(root, volume+"CLAUDE.md"); !outside {
+		t.Errorf("Rel(%q) = %q, inside; a drive-relative path cannot be placed", volume+"CLAUDE.md", got)
+	}
+}
+
 func TestRelOnAnEmptyPath(t *testing.T) {
 	got, outside := Rel(project(t), "")
 	if got != "" || outside {
