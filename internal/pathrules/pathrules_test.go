@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 )
 
 func project(t *testing.T) string {
@@ -148,6 +150,25 @@ func TestAPathRootedWithoutADriveIsOnTheProjectsDrive(t *testing.T) {
 	// Relative to a working directory on that drive, which only the writer knows.
 	if got, outside := Rel(root, volume+"CLAUDE.md"); !outside {
 		t.Errorf("Rel(%q) = %q, inside; a drive-relative path cannot be placed", volume+"CLAUDE.md", got)
+	}
+}
+
+// The file being written usually does not exist yet, and a path tens of
+// thousands of levels deep fits in one tool call. Looking it up a level at a
+// time from the far end took longer than the hook is given.
+func TestADeepPathThatIsNotThereResolvesQuickly(t *testing.T) {
+	root := project(t)
+	if err := os.MkdirAll(filepath.Join(root, "a", "b"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	deep := filepath.Join(root, "a", "b", strings.Repeat("x"+string(filepath.Separator), 40000)+"f.go")
+	start := time.Now()
+	rel, outside := Rel(root, deep)
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("a path 40,000 levels deep took %s", took)
+	}
+	if outside || !strings.HasPrefix(rel, "a/b/x/x/") || !strings.HasSuffix(rel, "/f.go") {
+		t.Errorf("Rel = %.40q..., outside %v", rel, outside)
 	}
 }
 

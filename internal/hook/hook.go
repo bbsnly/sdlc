@@ -245,8 +245,8 @@ func backlogPath(project string) string {
 // through a link, and on Windows through a short name such as SDLC~1. Empty
 // when it is outside the repository, where the shell rules have nothing to
 // protect.
-func onDisk(project, word string) string {
-	rel, outside := pathrules.Rel(project, filepath.FromSlash(word))
+func onDisk(resolver pathrules.Resolver, word string) string {
+	rel, outside := resolver.Rel(filepath.FromSlash(word))
 	if outside {
 		return ""
 	}
@@ -273,15 +273,16 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 	}
 	// Where the command runs from. The Bash tool keeps a `cd` from one call to
 	// the next, and the payload's cwd is where that left it.
+	resolver := pathrules.NewResolver(project)
 	dir := ""
-	if rel, outside := pathrules.Rel(project, p.CWD); p.CWD != "" && !outside && rel != "." {
+	if rel, outside := resolver.Rel(p.CWD); p.CWD != "" && !outside && rel != "." {
 		dir = rel
 	}
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
 		Backlog: backlogPath(project), PowerShell: p.ToolName == "PowerShell",
-		Resolve: func(word string) string { return onDisk(project, word) },
+		Resolve: func(word string) string { return onDisk(resolver, word) },
 		Fresh:   func() (bool, string) { return reviewsFresh(project, story, warn) },
 	})
 	if !refused {
@@ -341,8 +342,14 @@ func frozenTests(project, story string, warn func(string)) (frozen []string, isT
 		cfg = config.Default()
 	}
 	if !cfg.Freeze.AllowNewTestFiles {
+		// Folded once: Lock.Holds folds the whole freeze for each path it is
+		// not holding exactly, and the shell rules ask about every word.
 		m := testset.New(cfg.Paths.Tests)
-		newTest = func(p string) bool { return m.Match(p) && !lock.Holds(p) }
+		held := make(map[string]bool, len(lock.Files))
+		for path := range lock.Files {
+			held[pathrules.Fold(path)] = true
+		}
+		newTest = func(p string) bool { return m.Match(p) && !held[pathrules.Fold(p)] }
 	}
 	return lock.Paths(), nil, newTest
 }

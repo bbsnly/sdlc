@@ -1,6 +1,7 @@
 package shellpolicy
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -350,6 +351,33 @@ func TestPowerShellSpellingsMeetTheShellRules(t *testing.T) {
 	// In bash a backtick substitutes a command, and nothing here is PowerShell's.
 	allowed(t, "echo `date` > notes.txt", ready)
 	allowed(t, "Get-Content -Path:CLAUDE.md", ps)
+}
+
+// A long command names the same words in segment after segment. Each was looked
+// up on disk again for every segment, and a hundred of these took longer than
+// the hook is given. Once per command is enough.
+func TestEachWordIsLookedUpOncePerCommand(t *testing.T) {
+	var paths []string
+	for i := range 20 {
+		paths = append(paths, fmt.Sprintf("build/out%d.o", i))
+	}
+	command := strings.Repeat("echo "+strings.Join(paths, " ")+" | xargs rm; ", 100)
+	lookups := map[string]int{}
+	s := ready
+	s.Frozen = []string{"internal/x_test.go"}
+	s.Resolve = func(word string) string {
+		lookups[word]++
+		return ""
+	}
+	allowed(t, command, s)
+	for word, n := range lookups {
+		if n > 1 {
+			t.Errorf("%s was looked up %d times in one command", word, n)
+		}
+	}
+	if len(lookups) == 0 {
+		t.Error("nothing was looked up, so this measured nothing")
+	}
 }
 
 // A word can name a protected file in letters no rule matches: a link, or a

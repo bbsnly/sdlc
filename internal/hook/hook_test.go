@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -282,6 +283,28 @@ func TestTheBacklogIsNotEditedDuringAnIteration(t *testing.T) {
 	}
 	if !denied(call(t, command(root, "sdlc-implementer", "echo {} > planning/backlog.json"), noEnv)) {
 		t.Error("a backlog the configuration moved was writable through a shell command")
+	}
+}
+
+// Claude Code gives the hook thirty seconds and lets a call through, without a
+// word, when it takes longer. A command naming the same paths in segment after
+// segment took that long, checked word by word again for every segment.
+func TestALongCommandIsReadWellInsideTheHooksTime(t *testing.T) {
+	root := loopProject(t)
+	freeze(t, root, "A-1", "internal/x_test.go", "package x\n")
+	var paths []string
+	for i := range 20 {
+		paths = append(paths, fmt.Sprintf("internal/pkg/file%d.go", i))
+	}
+	long := strings.Repeat("echo "+strings.Join(paths, " ")+" | xargs rm; ", 100)
+
+	start := time.Now()
+	r := call(t, command(root, "sdlc-implementer", long), noEnv)
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("a %d KB command took %s", len(long)>>10, took)
+	}
+	if denied(r) {
+		t.Errorf("an ordinary command was refused: %s", r.HookSpecificOutput.PermissionDecisionReason)
 	}
 }
 

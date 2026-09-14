@@ -24,16 +24,33 @@ import (
 // of the path that exists, because the file being written usually does not
 // exist yet -- a check that only resolved whole paths would see nothing.
 func Rel(project, p string) (rel string, outside bool) {
+	return NewResolver(project).Rel(p)
+}
+
+// A Resolver is Rel for one project, with the project itself resolved once.
+// The shell rules ask it about every word of a command, and resolving the
+// project again for each was most of the cost of a long one.
+type Resolver struct {
+	project, root string
+}
+
+// NewResolver resolves the project's own path, once.
+func NewResolver(project string) Resolver {
+	return Resolver{project: project, root: resolve(project)}
+}
+
+// Rel is Rel(project, p).
+func (res Resolver) Rel(p string) (rel string, outside bool) {
 	if p == "" {
 		return "", false
 	}
-	abs, ok := Abs(project, p)
+	abs, ok := Abs(res.project, p)
 	if !ok {
 		return filepath.ToSlash(p), true
 	}
 	abs = filepath.Clean(abs)
 
-	root := resolve(project)
+	root := res.root
 	resolved := resolveExisting(abs)
 
 	r, err := filepath.Rel(root, resolved)
@@ -82,20 +99,28 @@ func resolve(p string) string {
 // resolveExisting follows symlinks on the longest existing prefix of p and
 // rejoins the rest. Writing to "link/config" where link points at .git must
 // resolve to .git/config even though .git/config was never named.
+//
+// p is absolute and clean. The walk goes down from the root and stops at the
+// first part that is not there, since nothing can exist below it. Walking up
+// from the far end cost a lookup per level, and a path tens of thousands of
+// levels deep, which fits in one tool call, took longer than the hook is given.
 func resolveExisting(p string) string {
-	rest := []string{}
-	cur := p
-	for {
-		if _, err := os.Lstat(cur); err == nil {
-			return filepath.Join(append([]string{resolve(cur)}, rest...)...)
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			return p
-		}
-		rest = append([]string{filepath.Base(cur)}, rest...)
-		cur = parent
+	if _, err := os.Lstat(p); err == nil {
+		return resolve(p)
 	}
+	sep := string(filepath.Separator)
+	volume := filepath.VolumeName(p)
+	parts := strings.Split(strings.TrimPrefix(p[len(volume):], sep), sep)
+	existing := volume + sep
+	i := 0
+	for ; i < len(parts); i++ {
+		next := filepath.Join(existing, parts[i])
+		if _, err := os.Lstat(next); err != nil {
+			break
+		}
+		existing = next
+	}
+	return filepath.Join(append([]string{resolve(existing)}, parts[i:]...)...)
 }
 
 // Under reports whether rel is dir itself or something inside it. Both are

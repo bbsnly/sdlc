@@ -150,6 +150,7 @@ func Inspect(command string, s State) (Finding, bool) {
 	if s.PowerShell {
 		command = strings.ReplaceAll(command, "`", "")
 	}
+	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}}
 	for _, segment := range segments(withoutDocuments(command)) {
 		words, redirects, assigns := parse(segment)
 		if len(words) == 0 && len(assigns) == 0 {
@@ -171,10 +172,10 @@ func Inspect(command string, s State) (Finding, bool) {
 		if f, ok := checkCommit(run.words, s); ok {
 			return f, true
 		}
-		if f, ok := checkLoopState(command, segment, run, redirects, dir, s); ok {
+		if f, ok := checkLoopState(command, segment, run, redirects, dir, s, m); ok {
 			return f, true
 		}
-		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, s); ok {
+		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, s, m); ok {
 			return f, true
 		}
 		if next, ok := changedDir(dir, run.words); ok {
@@ -337,22 +338,25 @@ func checkCommit(words []string, s State) (Finding, bool) {
 }
 
 // checkLoopState stops the shell being the way around every other rule.
-func checkLoopState(line, segment string, run invocation, redirects []string, dir string, s State) (Finding, bool) {
+func checkLoopState(line, segment string, run invocation, redirects []string, dir string, s State, m *memo) (Finding, bool) {
 	candidates := append([]string{}, redirects...)
 	if changesFiles(run.words) {
 		candidates = append(candidates, run.words[1:]...)
 		if run.piped {
 			// `echo .sdlc/state/tests.lock | xargs rm` names the file in
 			// another segment altogether.
-			candidates = append(candidates, wordsIn(line)...)
+			candidates = append(candidates, m.words(line)...)
 		}
 	}
 	if runsInlineCode(run.words, segment) {
 		// The file a program opens is inside a string, as it is for the
 		// freeze below.
-		candidates = append(candidates, wordsIn(line)...)
+		candidates = append(candidates, m.words(line)...)
 	}
-	for _, c := range s.spell(dir, candidates) {
+	for _, c := range m.spell(s, dir, candidates) {
+		if !m.first("loop state", c) {
+			continue
+		}
 		if hit, ok := protectedPath(c, s.Backlog); ok {
 			return Finding{
 				Rule: "protected-path-through-the-tool",
@@ -382,7 +386,7 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 // shell command went straight past them: `Write` to `x_test.go` was refused as
 // a frozen acceptance test, and `echo cheat > x_test.go` was allowed. One
 // redirect was the whole way round the hinge the loop turns on.
-func checkFrozenTests(line, segment string, run invocation, redirects []string, dir string, s State) (Finding, bool) {
+func checkFrozenTests(line, segment string, run invocation, redirects []string, dir string, s State, m *memo) (Finding, bool) {
 	if len(s.Frozen) == 0 && s.IsTest == nil && s.NewTest == nil && s.ImplementerTest == nil {
 		return Finding{}, false
 	}
@@ -398,7 +402,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 		// read, as in `perl -ne 'print' x_test.go`, and reading a frozen test
 		// is never refused.
 		plain := plainArguments(segment)
-		for _, w := range wordsIn(line) {
+		for _, w := range m.words(line) {
 			if !plain[w] {
 				candidates = append(candidates, w)
 			}
@@ -407,11 +411,14 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 	if changesAFile(run.words) {
 		candidates = append(candidates, run.words[1:]...)
 		if run.piped {
-			candidates = append(candidates, wordsIn(line)...)
+			candidates = append(candidates, m.words(line)...)
 		}
 	}
-	for _, c := range s.spell(dir, candidates) {
-		frozen, ok := isFrozen(c, s.Frozen)
+	for _, c := range m.spell(s, dir, candidates) {
+		if !m.first("freeze", c) {
+			continue
+		}
+		frozen, ok := m.frozen(c, s.Frozen)
 		w := strings.TrimPrefix(clean(c), "./")
 		if !ok && w != "" && s.IsTest != nil && s.IsTest(w) {
 			frozen, ok = w, true
@@ -449,27 +456,6 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 		}
 	}
 	return Finding{}, false
-}
-
-// isFrozen matches a word from a command line against the frozen set, allowing
-// for the spellings the same file arrives under: as written, with a ./ in
-// front, or as an absolute path.
-func isFrozen(word string, frozen []string) (string, bool) {
-	word = strings.TrimPrefix(filepath.ToSlash(clean(word)), "./")
-	if word == "" {
-		return "", false
-	}
-	word = pathrules.Fold(word)
-	for _, f := range frozen {
-		folded := pathrules.Fold(f)
-		switch {
-		case word == folded,
-			strings.HasSuffix(word, "/"+folded),
-			strings.HasSuffix(folded, "/"+word):
-			return f, true
-		}
-	}
-	return "", false
 }
 
 // changesAFile reports whether this command, as it is written, exists to
@@ -741,19 +727,84 @@ func spellings(dir string, words []string) []string {
 	return out
 }
 
+// memo is what one Inspect has already worked out. A long command names the
+// same words in segment after segment, and each was matched against the whole
+// freeze and looked up on disk again for every segment it appeared in: a
+// hundred `echo ... | xargs rm` took longer than Claude Code gives the hook,
+// which then let the command through without a word.
+type memo struct {
+	checked  map[string]bool   // a rule and a spelling it has found nothing in
+	resolved map[string]string // what Resolve said of a word
+	folded   []string          // the freeze, folded
+	line     []string          // the words of the whole command
+	split    bool
+}
+
+// first reports whether this is the first time a rule looks at a spelling in
+// this command. A spelling that was looked at before found nothing, or the
+// command would have been refused then.
+func (m *memo) first(rule, spelling string) bool {
+	key := rule + "\x00" + spelling
+	if m.checked[key] {
+		return false
+	}
+	m.checked[key] = true
+	return true
+}
+
+// words is wordsIn(line), worked out once: line is the whole command.
+func (m *memo) words(line string) []string {
+	if !m.split {
+		m.line, m.split = wordsIn(line), true
+	}
+	return m.line
+}
+
+// frozen matches a word from a command line against the frozen set, allowing
+// for the spellings the same file arrives under: as written, with a ./ in
+// front, or as an absolute path. The freeze is folded once, not for every word.
+func (m *memo) frozen(word string, frozen []string) (string, bool) {
+	word = strings.TrimPrefix(filepath.ToSlash(clean(word)), "./")
+	if word == "" {
+		return "", false
+	}
+	if m.folded == nil {
+		m.folded = make([]string, len(frozen))
+		for i, f := range frozen {
+			m.folded[i] = pathrules.Fold(f)
+		}
+	}
+	word = pathrules.Fold(word)
+	for i, folded := range m.folded {
+		switch {
+		case word == folded,
+			strings.HasSuffix(word, "/"+folded),
+			strings.HasSuffix(folded, "/"+word):
+			return frozen[i], true
+		}
+	}
+	return "", false
+}
+
 // spell is spellings, and then the file each spelling is on disk where that is
-// another name: through a link, or a Windows short name.
-func (s State) spell(dir string, words []string) []string {
+// another name: through a link, or a Windows short name. Each word is looked up
+// once per command.
+func (m *memo) spell(s State, dir string, words []string) []string {
 	out := spellings(dir, words)
 	if s.Resolve == nil {
 		return out
 	}
-	for _, w := range spellings(dir, words) {
+	for _, w := range out[:len(out):len(out)] {
 		c := strings.TrimPrefix(clean(w), "./")
 		if c == "" || strings.HasPrefix(c, "-") {
 			continue
 		}
-		if r := s.Resolve(c); r != "" && r != c {
+		r, ok := m.resolved[c]
+		if !ok {
+			r = s.Resolve(c)
+			m.resolved[c] = r
+		}
+		if r != "" && r != c {
 			out = append(out, r)
 		}
 	}
