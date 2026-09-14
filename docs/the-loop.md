@@ -190,6 +190,10 @@ There is no flag that skips a gate, and no way to record one out of order. When
 a reviewer blocks, the way past is the same reviewer looking again — its new
 verdict replaces the old one, and the gate reads the latest.
 
+Recording a gate again, pass or fail, reopens every gate after it: each goes
+back to `pending`, with a note saying why, and has to be passed again. A new
+plan cannot inherit the design review of the old one.
+
 This holds after the story is finished, too. Recording a gate as failed on a
 story already marked `done` puts it back to `in_progress`: being done is a
 reading of the gate record, not a door that locks behind you. It is also the

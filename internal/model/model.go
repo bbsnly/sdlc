@@ -661,7 +661,13 @@ func (r *Record) NextGate() (Gate, bool) {
 	return "", false
 }
 
-// SetGate records an outcome for a gate.
+// SetGate records an outcome for a gate, and reopens every gate after it.
+//
+// Recording a gate again means the work behind it changed, so nothing that was
+// passed on top of the old work still stands. Leaving those passes in place let
+// the loop go around rather than back: after `plan fail` and a new `plan pass`,
+// the next gate was code_review, and the design review of the old plan -- every
+// one of its reviews stale -- was never asked about the new one.
 func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) {
 	if r.Gates == nil {
 		r.Gates = map[Gate]GateResult{}
@@ -671,6 +677,28 @@ func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) {
 	prev.At = Timestamp(at)
 	prev.Note = note
 	r.Gates[g] = prev
+
+	var reopened []string
+	after := false
+	for _, later := range Gates {
+		if later == g {
+			after = true
+			continue
+		}
+		if !after || r.Gates[later].Status != GatePass {
+			continue
+		}
+		r.Gates[later] = GateResult{
+			Status: GatePending,
+			At:     Timestamp(at),
+			Note:   "reopened when " + string(g) + " was recorded " + string(status),
+		}
+		reopened = append(reopened, string(later))
+	}
+	if len(reopened) > 0 {
+		r.Append("gates_reopened", strings.Join(reopened, ", ")+" reopened: "+
+			string(g)+" was recorded "+string(status), at)
+	}
 }
 
 // Append adds an event to the story's history.

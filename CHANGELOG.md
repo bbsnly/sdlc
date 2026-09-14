@@ -156,6 +156,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   refuses it from any tool call, however `sdlc` is reached, and every refusal
   that used to suggest it says the person running the session lifts the
   freeze from their own terminal.
+- Recording a gate again reopens every gate after it. After `plan fail` and a
+  new `plan pass`, the gates past the plan stayed passed, so the loop went on
+  to code review and never asked for a design review of the new plan.
 - `sdlc doctor` checks the loop's state files. Every hook warning about them
   said to run it, and it did not read either one.
 

@@ -187,6 +187,40 @@ func TestRecordRecordsGatesAndHistory(t *testing.T) {
 	}
 }
 
+// The loop goes back rather than around. With every gate through code_review
+// passed, `plan fail` then `plan pass` left design_review passed, so the next
+// gate was code_review and the stale design review was never asked again.
+func TestRecordingAGateReopensEveryGateAfterIt(t *testing.T) {
+	at := time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
+	r := NewRecord("A-1", at)
+	for _, g := range GateCodeReview.Before() {
+		r.SetGate(g, GatePass, "", at)
+	}
+	r.SetGate(GateCodeReview, GatePass, "", at)
+
+	r.SetGate(GatePlan, GateFail, "AC-3 has no step", at)
+	if next, _ := r.NextGate(); next != GatePlan {
+		t.Fatalf("after plan failed the next gate is %s", next)
+	}
+	r.SetGate(GatePlan, GatePass, "AC-3 covered", at)
+	if next, _ := r.NextGate(); next != GateDesignReview {
+		t.Errorf("after the plan passed again the next gate is %s, want %s", next, GateDesignReview)
+	}
+	for _, g := range []Gate{GateDesignReview, GateImplementation, GateVerifierReview, GateCodeReview} {
+		if r.Pass(g) {
+			t.Errorf("%s stayed passed on top of a plan that changed", g)
+		}
+	}
+	for _, g := range GatePlan.Before() {
+		if !r.Pass(g) {
+			t.Errorf("%s, which comes before the plan, was reopened", g)
+		}
+	}
+	if last := r.Events[len(r.Events)-1]; last.Type != "gates_reopened" {
+		t.Errorf("reopening is not on the record: %+v", last)
+	}
+}
+
 // A record written by the shell kit must still load, and one written here must
 // still be readable by it.
 func TestRecordRoundTripsTheOnDiskShape(t *testing.T) {
