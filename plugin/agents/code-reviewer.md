@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Blocking code reviewer for Gate 7. Use it after verification to review the story's diff for correctness against the plan and the acceptance criteria, for maintainability, conventions, and hidden test-gaming. Fresh context, full read-only access, never the implementer's transcript.
+description: Code reviewer for Gate 7, blocking unless the project turns on reviews.gate7_advisory. Use it after verification to review the story's diff for correctness against the plan and the acceptance criteria, for maintainability, conventions, and hidden test-gaming. Fresh context, full read-only access, never the implementer's transcript.
 model: inherit
 tools: Read, Grep, Glob, Bash
 permissionMode: default

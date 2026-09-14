@@ -193,7 +193,7 @@ func newReviewListCmd() *cobra.Command {
 				}
 				info := reviewInfo{
 					Gate: string(r.Gate), Role: r.Role,
-					Blocking: r.Blocks(record.SecuritySensitive()),
+					Blocking: r.Blocks(reviewPolicy(s, record)),
 				}
 				if latest, ok := record.LatestReview(r.Gate, r.Role); ok {
 					info.Verdict, info.Round = string(latest.Verdict), latest.Round
@@ -254,6 +254,14 @@ func gateSubject(ctx context.Context, s *store.Store, id string, gate model.Gate
 	}
 }
 
+// reviewPolicy is what decides who blocks, for this story in this project.
+func reviewPolicy(s *store.Store, record *model.Record) model.ReviewPolicy {
+	return model.ReviewPolicy{
+		SecuritySensitive:  record.SecuritySensitive(),
+		CodeReviewAdvisory: s.Config().Reviews.Gate7Advisory,
+	}
+}
+
 // requireReviews holds a reviewed gate to what being reviewed means.
 func requireReviews(ctx context.Context, s *store.Store, id string, gate model.Gate,
 	record *model.Record,
@@ -267,9 +275,10 @@ func requireReviews(ctx context.Context, s *store.Store, id string, gate model.G
 		return err
 	}
 
+	policy := reviewPolicy(s, record)
 	var outstanding, blocked []string
 	for _, r := range reviewers {
-		blocking := r.Blocks(record.SecuritySensitive())
+		blocking := r.Blocks(policy)
 		latest, ok := record.LatestReview(gate, r.Role)
 		switch {
 		case !ok:

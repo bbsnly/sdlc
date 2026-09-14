@@ -67,6 +67,9 @@ func (s *Store) WithClock(now func() time.Time) *Store {
 // Root is the repository root the store writes under.
 func (s *Store) Root() string { return s.root }
 
+// Config is the project's configuration, as the store was opened with it.
+func (s *Store) Config() config.Config { return s.cfg }
+
 // CheckID rejects a story id that cannot safely become a directory name.
 func CheckID(id string) error {
 	// ".." anywhere, not only on its own: the hook refuses such an id and

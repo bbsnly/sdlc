@@ -411,11 +411,25 @@ type Reviewer struct {
 	Gate                  Gate
 	Blocking              bool // always blocks
 	WhenSecuritySensitive bool // blocks only when the story touches a trust boundary
+	// Advisable is a blocking reviewer the project can make advisory. Only the
+	// code reviewer is, through reviews.gate7_advisory: a loosening the project
+	// chooses, and not one the verifier or a security review can be given.
+	Advisable bool
+}
+
+// ReviewPolicy is what decides, beyond the roster, whether a reviewer blocks:
+// the story's security sensitivity, and the loosening the project chose.
+type ReviewPolicy struct {
+	SecuritySensitive  bool
+	CodeReviewAdvisory bool // reviews.gate7_advisory
 }
 
 // Blocks reports whether this reviewer can refuse the gate for this story.
-func (r Reviewer) Blocks(securitySensitive bool) bool {
-	return r.Blocking || (r.WhenSecuritySensitive && securitySensitive)
+func (r Reviewer) Blocks(p ReviewPolicy) bool {
+	if r.Advisable && p.CodeReviewAdvisory {
+		return false
+	}
+	return r.Blocking || (r.WhenSecuritySensitive && p.SecuritySensitive)
 }
 
 // Reviewers is every review the loop expects, by gate.
@@ -428,7 +442,7 @@ var Reviewers = []Reviewer{
 
 	{Role: "verifier", Gate: GateVerifierReview, Blocking: true},
 
-	{Role: "code-reviewer", Gate: GateCodeReview, Blocking: true},
+	{Role: "code-reviewer", Gate: GateCodeReview, Blocking: true, Advisable: true},
 	{Role: "security", Gate: GateCodeReview, WhenSecuritySensitive: true},
 	{Role: "perf", Gate: GateCodeReview},
 	{Role: "human-advocate", Gate: GateCodeReview},

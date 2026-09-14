@@ -186,7 +186,7 @@ the argument for a change is not a reviewer.
 | `sdlc:perf` | 4 and 7 | Only against a stated budget |
 | `sdlc:human-advocate` | 4 and 7 | — |
 | `sdlc:verifier` | 6 · independent verification | **Yes** |
-| `sdlc:code-reviewer` | 7 · the diff | **Yes** |
+| `sdlc:code-reviewer` | 7 · the diff | **Yes**, unless the project turns on `reviews.gate7_advisory` |
 | `sdlc:bookkeeper` | 9 · retro | — |
 
 Advisory does not mean optional. A gate will not pass until every reviewer it

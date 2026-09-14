@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,60 @@ import (
 
 	"github.com/bbsnly/sdlc/internal/model"
 )
+
+// setConfigOnDisk sets one top-level key of the scaffolded configuration.
+func setConfigOnDisk(t *testing.T, root, key string, value any) {
+	t.Helper()
+	path := filepath.Join(root, ".sdlc", "config.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg[key] = value
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// reviews.gate7_advisory was read by nothing: the code reviewer blocked whatever
+// the project said. It makes that one reviewer advisory -- still expected to
+// report, no longer able to stop the gate -- and nobody else.
+func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
+	for _, advisory := range []bool{false, true} {
+		name := map[bool]string{false: "blocking by default", true: "advisory when configured"}[advisory]
+		t.Run(name, func(t *testing.T) {
+			root := gitProject(t)
+			mustRun(t, "init")
+			if advisory {
+				setConfigOnDisk(t, root, "reviews", map[string]any{"gate7_advisory": true})
+			}
+			mustRun(t, "start")
+			reach(t, root, model.GateCodeReview)
+
+			approveAll(t, model.GateCodeReview, "code-reviewer")
+			mustRunWith(t, "# code review\n", "review", "add", "code_review", "code-reviewer", "block",
+				"--note", "the names do not say what they hold")
+
+			r := run(t, "gate", "code_review", "pass")
+			if passed := r.code == 0; passed != advisory {
+				t.Errorf("code_review passed over the code reviewer's block = %v, want %v:\n%s",
+					passed, advisory, r.stderr)
+			}
+			want := "code-reviewer   " + map[bool]string{false: "blocking", true: "advisory"}[advisory]
+			if list := mustRun(t, "review", "list", "--gate", "code_review").stdout; !strings.Contains(list, want) {
+				t.Errorf("review list does not show %q:\n%s", want, list)
+			}
+		})
+	}
+}
 
 // planned is a story that has reached the design review with a plan in place.
 func planned(t *testing.T) string {

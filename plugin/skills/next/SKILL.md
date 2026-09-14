@@ -235,8 +235,9 @@ from before the rework does not count and the gate will say so.
 ## Gate 7 — Code review
 
 Delegate to `sdlc:code-reviewer`, `sdlc:security`, `sdlc:perf` and `sdlc:human-advocate`, in
-parallel, with the story id. The code reviewer blocks; security blocks when the story is
-security-sensitive; the other two report.
+parallel, with the story id. The code reviewer blocks, unless the project turned on
+`reviews.gate7_advisory`; security blocks when the story is security-sensitive; the other two
+report. `sdlc review list` says which is which for this story.
 
 ```bash
 sdlc review list --gate code_review

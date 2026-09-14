@@ -21,7 +21,7 @@ than the code.
 | `sdlc:perf` | 4, 7 | Only against a stated budget | its review |
 | `sdlc:human-advocate` | 4, 7 | — | its review |
 | `sdlc:verifier` | 6 | **Yes** | `VERIFICATION.md`, its verdict |
-| `sdlc:code-reviewer` | 7 | **Yes** | its review |
+| `sdlc:code-reviewer` | 7 | **Yes**, unless [`reviews.gate7_advisory`](configuration.md#reviewsgate7_advisory) is on | its review |
 | `sdlc:bookkeeper` | 9 | — | `RETRO.md`, `CODEMAP.md` |
 
 Advisory does not mean optional. A gate will not pass until every reviewer it

@@ -137,6 +137,12 @@ Makes the code reviewer advisory rather than blocking. Off by default, and
 turning it on is a real loosening: Gate 7 is the last thing between a change and
 trunk.
 
+Advisory is not skipped. `code_review` still waits for the code reviewer's
+report on the change as it stands — a missing or stale review holds the gate as
+it always does — but a `block` from it no longer stops the gate.
+`sdlc review list` shows it as advisory. The verifier stays blocking, and so
+does security on a story Gate 2 called security-sensitive.
+
 ## `freeze.allow_new_test_files`
 
 Lets the test author add a test file after the freeze has been taken. Off by
