@@ -364,3 +364,18 @@ func TestADocumentCannotEscapeTheStoriesDirectory(t *testing.T) {
 		t.Errorf("code = %s, want %s", got, sdlcerr.UnsafeStoryID)
 	}
 }
+
+// The hook refuses an id with ".." in it and enforces nothing for that
+// iteration. `sdlc start A..1` succeeded, so the loop ran with every rule off.
+func TestAStoryIDWithTwoDotsIsRefusedLikeTheHookRefusesIt(t *testing.T) {
+	for _, id := range []string{"A..1", "..", "A-1/..", "..A"} {
+		if CheckID(id) == nil {
+			t.Errorf("CheckID accepted %q, which the hook refuses", id)
+		}
+	}
+	for _, id := range []string{"A-1", "US-001", "billing.2", "a.b.c"} {
+		if err := CheckID(id); err != nil {
+			t.Errorf("CheckID refused %q: %v", id, err)
+		}
+	}
+}

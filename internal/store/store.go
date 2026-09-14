@@ -69,7 +69,10 @@ func (s *Store) Root() string { return s.root }
 
 // CheckID rejects a story id that cannot safely become a directory name.
 func CheckID(id string) error {
-	if safeID.MatchString(id) && id != "." && id != ".." {
+	// ".." anywhere, not only on its own: the hook refuses such an id and
+	// turns every rule off, so an id the CLI accepted and the hook did not was
+	// an iteration that ran with nothing enforced.
+	if safeID.MatchString(id) && !strings.Contains(id, "..") {
 		return nil
 	}
 	shown := id
