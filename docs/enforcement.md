@@ -226,6 +226,13 @@ here-document is text, not commands, so a plan or a review that mentions
 `git commit` is not refused for it — unless the text goes to a shell or an
 interpreter, which runs it.
 
+Which program a command runs is read with its quoting, so a commit message, a
+`--note` or a `--message` that mentions `sdlc approve` or `git commit` is text,
+not a command. A string handed to `bash -c`, `cmd /c`, PowerShell's `-Command`
+or `eval`, and a command inside `$(…)` or backticks, is read for what it runs. A
+commit in another repository, after a `cd` or with `git -C`, is not held to the
+story's gates.
+
 This is pattern matching, not a shell. It is deliberately narrow.
 
 ### `loop-state-through-the-tool`

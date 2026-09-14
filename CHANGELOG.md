@@ -247,6 +247,15 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - The shell rules read a path as the file it is on disk. A link to `.sdlc`,
   `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
   the file in letters no rule matched, and `rm notes/state/active` went through.
+- Which program a shell command runs is read with its quoting. A commit
+  message, a `--note` or a `--message` that mentioned `sdlc approve`, `sdlc stop`
+  or `sdlc unfreeze` after a `;` or in backticks was refused as that command,
+  including the runbook's own `sdlc escalate`; `git log --grep commit` and
+  `git stash push -m "wip before commit"` met the commit gate; and
+  `docker compose -p sdlc stop` was a stop. A string handed to `bash -c`,
+  `cmd /c`, `-Command` or `eval`, and a command in `$(...)` or backticks, is
+  still read for what it runs. A commit in another repository is not held to
+  the story's gates.
 - `sdlc stop` is refused from a tool call while the story still has a gate to
   pass (`stop-is-a-human-decision`). Every rule holds only while a story is
   being worked on, so ending it part-way was the way round all of them at

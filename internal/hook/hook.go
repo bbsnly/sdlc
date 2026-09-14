@@ -281,10 +281,17 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 	}
 	// Where the command runs from. The Bash tool keeps a `cd` from one call to
 	// the next, and the payload's cwd is where that left it.
+	// A session in another directory altogether keeps that directory, so that a
+	// commit made there is known to be another repository's.
 	resolver := pathrules.NewResolver(project)
 	dir := ""
-	if rel, outside := resolver.Rel(p.CWD); p.CWD != "" && !outside && rel != "." {
-		dir = rel
+	if p.CWD != "" {
+		switch rel, outside := resolver.Rel(p.CWD); {
+		case outside:
+			dir = filepath.ToSlash(p.CWD)
+		case rel != ".":
+			dir = rel
+		}
 	}
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,

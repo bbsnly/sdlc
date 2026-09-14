@@ -151,36 +151,28 @@ var mutating = map[string]bool{
 // a test file, as the file-writing rules have it, and a review recorded by
 // anyone but the reviewer it names.
 func Inspect(command string, s State) (Finding, bool) {
-	dir := s.Dir
 	if s.PowerShell {
 		command = strings.ReplaceAll(command, "`", "")
 	}
+	text := withoutDocuments(command)
+	for _, segment := range segments(text) {
+		if _, _, assigns := parse(segment); len(assigns) > 0 {
+			if f, ok := checkEnforcement(assigns); ok {
+				return f, true
+			}
+		}
+	}
+	if f, ok := checkPrograms(text, s); ok {
+		return f, true
+	}
+	dir := s.Dir
 	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}}
-	for _, segment := range segments(withoutDocuments(command)) {
-		words, redirects, assigns := parse(segment)
-		if len(words) == 0 && len(assigns) == 0 {
+	for _, segment := range segments(text) {
+		words, redirects, _ := parse(segment)
+		if len(words) == 0 {
 			continue
 		}
 		run := program(words)
-		if f, ok := checkEnforcement(assigns); ok {
-			return f, true
-		}
-		args := commandWords(segment)
-		if f, ok := checkUnfreeze(args); ok {
-			return f, true
-		}
-		if f, ok := checkApprove(args); ok {
-			return f, true
-		}
-		if f, ok := checkStop(args, s); ok {
-			return f, true
-		}
-		if f, ok := checkReviewer(args, s); ok {
-			return f, true
-		}
-		if f, ok := checkCommit(run.words, s); ok {
-			return f, true
-		}
 		if f, ok := checkLoopState(command, segment, run, redirects, dir, s, m); ok {
 			return f, true
 		}
@@ -188,6 +180,34 @@ func Inspect(command string, s State) (Finding, bool) {
 			return f, true
 		}
 		if next, ok := changedDir(dir, run.words); ok {
+			dir = next
+		}
+	}
+	return Finding{}, false
+}
+
+// checkPrograms applies the rules that turn on which program a command runs,
+// read with its quoting: the sdlc subcommands a person keeps, a review recorded
+// by its reviewer, and the commit gate.
+func checkPrograms(text string, s State) (Finding, bool) {
+	dir := s.Dir
+	for _, words := range programsIn(text, s.PowerShell) {
+		if f, ok := checkUnfreeze(words); ok {
+			return f, true
+		}
+		if f, ok := checkApprove(words); ok {
+			return f, true
+		}
+		if f, ok := checkStop(words, s); ok {
+			return f, true
+		}
+		if f, ok := checkReviewer(words, s); ok {
+			return f, true
+		}
+		if f, ok := checkCommit(words, dir, s); ok {
+			return f, true
+		}
+		if next, ok := changedDir(dir, words); ok {
 			dir = next
 		}
 	}
@@ -203,12 +223,11 @@ func HumanDecisions(command string, powerShell bool) (Finding, bool) {
 	if powerShell {
 		command = strings.ReplaceAll(command, "`", "")
 	}
-	for _, segment := range segments(withoutDocuments(command)) {
-		args := commandWords(segment)
-		if f, ok := checkUnfreeze(args); ok {
+	for _, words := range programsIn(withoutDocuments(command), powerShell) {
+		if f, ok := checkUnfreeze(words); ok {
 			return f, true
 		}
-		if f, ok := checkApprove(args); ok {
+		if f, ok := checkApprove(words); ok {
 			return f, true
 		}
 	}
@@ -321,20 +340,19 @@ func checkReviewer(words []string, s State) (Finding, bool) {
 // pair the loop knows, rather than by position, so a note given before them
 // cannot move the role somewhere else.
 func reviewRole(words []string) (string, bool) {
-	if !runsSubcommand(words, "review") || !hasWord(words, "add") {
+	args, ok := sdlcArgs(words)
+	if !ok || subcommand(args) != "review" || !hasWord(args, "add") {
 		return "", false
 	}
 	var positional []string
-	seen := false
-	for i := 0; i < len(words); i++ {
-		w := words[i]
-		switch {
-		case !seen:
-			seen = base(w) == "sdlc"
-		case strings.HasPrefix(w, "-"):
-		default:
-			positional = append(positional, w)
+	for i := 0; i < len(args); i++ {
+		if strings.HasPrefix(args[i], "-") {
+			if ValueFlags[args[i]] {
+				i++
+			}
+			continue
 		}
+		positional = append(positional, args[i])
 	}
 	for i := 0; i+1 < len(positional); i++ {
 		if r, ok := model.FindReviewer(model.Gate(positional[i]), positional[i+1]); ok {
@@ -344,67 +362,11 @@ func reviewRole(words []string) (string, bool) {
 	return "", false
 }
 
-// runsSubcommand reports whether the command runs sdlc with this subcommand,
-// however sdlc is reached: on PATH, by path, as sdlc.exe, through npx, or with
-// `go run ./cmd/sdlc`. The subcommand is the first word after sdlc that is not
-// a flag or a flag's value, so a note that mentions it is not mistaken for it.
+// runsSubcommand reports whether a command -- one from programsIn -- runs sdlc
+// with this subcommand.
 func runsSubcommand(words []string, sub string) bool {
-	for i, w := range words {
-		if base(w) != "sdlc" {
-			continue
-		}
-		for j := i + 1; j < len(words); j++ {
-			next := words[j]
-			if strings.HasPrefix(next, "-") {
-				// A flag's value is not the subcommand. Read as one, `sdlc
-				// --reason x unfreeze` ran unfreeze while this saw `x`.
-				if ValueFlags[next] {
-					j++
-				}
-				continue
-			}
-			return next == sub
-		}
-		return false
-	}
-	return false
-}
-
-// commandWords splits a segment into the words a shell hands the program, as far
-// as finding its subcommand needs: a quoted value is one word, however many
-// spaces it holds. parse splits on every space, and that is enough for the
-// paths it looks for, but `sdlc --reason "the test was wrong" unfreeze` has a
-// value three words long, and skipping one of them left `test` where the
-// subcommand should be. Backslashes are left alone: they are Windows paths as
-// often as escapes.
-func commandWords(segment string) []string {
-	var words []string
-	var word strings.Builder
-	started := false
-	var quote rune
-	for _, r := range segment {
-		switch {
-		case quote != 0 && r == quote:
-			quote = 0
-		case quote != 0:
-			word.WriteRune(r)
-		case r == '"' || r == '\'':
-			quote, started = r, true
-		case strings.ContainsRune(" \t\r\n", r):
-			if started {
-				words = append(words, word.String())
-				word.Reset()
-				started = false
-			}
-		default:
-			word.WriteRune(r)
-			started = true
-		}
-	}
-	if started {
-		words = append(words, word.String())
-	}
-	return words
+	args, ok := sdlcArgs(words)
+	return ok && subcommand(args) == sub
 }
 
 // ValueFlags are the flags of sdlc that take the next word as their value. The
@@ -414,9 +376,24 @@ var ValueFlags = map[string]bool{
 	"--reason": true, "--reject": true, "--story": true, "--usd": true,
 }
 
-// checkCommit puts the commit gate in front of the commit.
-func checkCommit(words []string, s State) (Finding, bool) {
-	if !isGit(words) || !hasWord(words[1:], "commit") {
+// checkCommit puts the commit gate in front of the commit, for a commit in this
+// repository: dir is where the command runs, and a commit made in another
+// repository -- by `cd`, `git -C`, or a session opened elsewhere -- is not this
+// story's to hold back.
+func checkCommit(words []string, dir string, s State) (Finding, bool) {
+	if !isGit(words) {
+		return Finding{}, false
+	}
+	sub, to := gitCommand(words[1:])
+	if sub != "commit" {
+		return Finding{}, false
+	}
+	if isAbsolute(to) {
+		dir = to
+	} else if to != "" {
+		dir = path.Join(dir, to)
+	}
+	if dir != "" && s.Resolve != nil && s.Resolve(dir) == "" {
 		return Finding{}, false
 	}
 	ready, why := s.CommitReady, s.CommitWhy
@@ -621,14 +598,9 @@ func changesFiles(words []string) bool {
 // gitChangesFiles reports whether a git command rewrites or removes the files
 // named after it: `git rm`, `git mv`, `git checkout -- path`, `git restore`.
 func gitChangesFiles(args []string) bool {
-	for i := 0; i < len(args); i++ {
-		switch a := args[i]; {
-		case a == "-C" || a == "-c":
-			i++ // the option's own argument
-		case strings.HasPrefix(a, "-"):
-		default:
-			return a == "rm" || a == "mv" || a == "checkout" || a == "restore"
-		}
+	switch sub, _ := gitCommand(args); sub {
+	case "rm", "mv", "checkout", "restore":
+		return true
 	}
 	return false
 }
@@ -725,6 +697,7 @@ func plainArguments(segment string) map[string]bool {
 type invocation struct {
 	words []string // the program and its arguments
 	piped bool     // its arguments also arrive on standard input, through xargs
+	shell bool     // a shell was taken off the front, so the words are a script it runs
 }
 
 // program takes off the front of a segment whatever only runs the command after
@@ -745,8 +718,15 @@ func program(words []string) invocation {
 		case "xargs":
 			run.piped = true
 			words = skipOptions(words[1:])
-		case "env", "command", "builtin", "exec", "nohup", "sudo", "doas", "nice", "stdbuf",
-			"sh", "bash", "zsh", "dash", "ksh", "pwsh", "powershell":
+		case "env":
+			words = skipOptions(words[1:])
+			for len(words) > 0 && isAssignment(words[0]) {
+				words = words[1:]
+			}
+		case "command", "builtin", "exec", "nohup", "sudo", "doas", "nice", "stdbuf":
+			words = skipOptions(words[1:])
+		case "sh", "bash", "zsh", "dash", "ksh", "pwsh", "powershell":
+			run.shell = true
 			words = skipOptions(words[1:])
 		case "timeout":
 			words = skipOptions(words[1:])
@@ -755,6 +735,7 @@ func program(words []string) invocation {
 			}
 		case "cmd":
 			// cmd's switches start with a slash: `cmd /c del file`, `cmd /s /c`.
+			run.shell = true
 			words = words[1:]
 			for len(words) > 0 && strings.HasPrefix(words[0], "/") && !strings.Contains(words[0][1:], "/") {
 				words = words[1:]

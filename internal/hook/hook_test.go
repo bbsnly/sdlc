@@ -198,6 +198,29 @@ func TestNothingIsEnforcedWhileNoStoryIsBeingWorkedOn(t *testing.T) {
 	}
 }
 
+// A session opened in the loop's project can commit in another repository, and
+// that commit met this story's gate.
+func TestACommitInAnotherRepositoryIsNotHeldToTheStory(t *testing.T) {
+	root := loopProject(t)
+	other := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(other); err == nil {
+		other = resolved
+	}
+	raw, err := json.Marshal(map[string]any{
+		"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": other,
+		"tool_input": map[string]string{"command": "git commit -m x"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := call(t, string(raw), env(map[string]string{"CLAUDE_PROJECT_DIR": root})); denied(r) {
+		t.Errorf("a commit in another repository was refused: %s", r.HookSpecificOutput.PermissionDecisionReason)
+	}
+	if !denied(call(t, command(root, "", "git commit -m x"), noEnv)) {
+		t.Error("a commit in the project went past its gates")
+	}
+}
+
 // A human who started the session can turn enforcement off. A session cannot
 // set this from the inside, which is what makes it an escape hatch rather than
 // a hole.

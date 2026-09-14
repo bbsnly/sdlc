@@ -31,6 +31,69 @@ func refused(t *testing.T, command string, s State, wantRule string) Finding {
 	return got
 }
 
+// Which program a command runs is read the way the shell reads it. Split on
+// every `;` and backtick, an escalation whose message mentioned `sdlc approve`
+// was an approval, and `git log --grep commit` was a commit.
+func TestOnlyWhatACommandRunsIsReadAsTheCommand(t *testing.T) {
+	for _, command := range []string{
+		`sdlc escalate frozen_test_wrong --message "TestAdd asserts 0; AC-1 says 3. Please sdlc approve US-001, then sdlc unfreeze"`,
+		`sdlc gate implementation pass --note 'green; sdlc stop comes after the retro'`,
+		"git commit -m 'docs: say that `sdlc approve` is run by a person'",
+		"git commit -m \"docs: approvals\n\nsdlc approve is run by a person; sdlc stop too\"",
+		`gh pr create --body 'Escalations wait; a person runs sdlc unfreeze'`,
+		"docker compose -p sdlc stop",
+		"go test ./... # then sdlc stop",
+	} {
+		allowed(t, command, ready)
+	}
+	for _, command := range []string{
+		`git stash push -m "wip before commit"`,
+		"git log --grep commit",
+		"git log --format='%h commit %s'",
+	} {
+		allowed(t, command, notReady)
+	}
+	for command, rule := range map[string]string{
+		`bash -c "sdlc approve A-1"`:                  "approval-is-a-human-decision",
+		`sh -c 'true; sdlc unfreeze --reason x'`:      "unfreeze-is-a-human-decision",
+		`echo "$(sdlc approve A-1)"`:                  "approval-is-a-human-decision",
+		"echo `sdlc stop`":                            "stop-is-a-human-decision",
+		`eval "sdlc approve A-1"`:                     "approval-is-a-human-decision",
+		"env FOO=1 sdlc approve A-1":                  "approval-is-a-human-decision",
+		`pwsh -NoProfile -Command "sdlc approve A-1"`: "approval-is-a-human-decision",
+		"cmd /c sdlc approve A-1":                     "approval-is-a-human-decision",
+		"npx @bbsnly/sdlc@latest approve A-1":         "approval-is-a-human-decision",
+		"sdlc \\\n  approve A-1":                      "approval-is-a-human-decision",
+		"true 2>&1; sdlc stop":                        "stop-is-a-human-decision",
+	} {
+		refused(t, command, ready, rule)
+	}
+	refused(t, `git -C . -c user.name=x commit -m "x"`, notReady, "commit-gate")
+	refused(t, `bash -c 'git commit -m "a; b"'`, notReady, "commit-gate")
+}
+
+// A commit in another repository is not the story's to hold back: the session
+// was opened in the loop's project, and every commit anywhere met its gate.
+func TestACommitInAnotherRepositoryIsNotTheStorys(t *testing.T) {
+	s := notReady
+	s.Resolve = func(word string) string {
+		if strings.HasPrefix(word, "/") || strings.HasPrefix(word, "..") {
+			return ""
+		}
+		return word
+	}
+	allowed(t, "git -C /work/other commit -m x", s)
+	allowed(t, "cd /work/other && git commit -m x", s)
+	allowed(t, "cd ../other && git commit -m x", s)
+	elsewhere := s
+	elsewhere.Dir = "/work/other"
+	allowed(t, "git commit -m x", elsewhere)
+
+	refused(t, "cd internal && git commit -m x", s, "commit-gate")
+	refused(t, "git -C internal commit -m x", s, "commit-gate")
+	refused(t, "cd /work/other && cd - && git commit -m x", s, "commit-gate")
+}
+
 // Every rule holds only while a story is being worked on, so ending it part-way
 // was the way round all of them at once.
 func TestEndingAStoryPartWayIsAHumanDecision(t *testing.T) {
