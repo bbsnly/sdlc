@@ -252,6 +252,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `sdlc approve` or the shell a document is handed to went unread, and sdlc is
   now found behind a wrapper the rules do not know. PowerShell's `<# ... #>`
   comment no longer hides the command after it.
+- A command nesting `$( )` thousands deep took the hook longer to read than
+  Claude Code gives it, and Claude Code then runs the command unchecked: `git
+  commit` on the line before went through. A command nested more than 32 deep is
+  now refused as `command-too-deep-to-read`.
 - Work committed before the review, in a way the hook cannot read, went on
   through the gates: an alias in your own git configuration, or a commit made in
   a clone and fetched. Every gate after it measured the change against a HEAD

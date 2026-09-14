@@ -250,6 +250,9 @@ func checkPrograms(text string, s State) (Finding, bool) {
 	// repository; not followed at all, `(cd /tmp/fixture && git commit)` was a
 	// commit in this one.
 	runs, subshells := programsAt(text, s.PowerShell)
+	if subshells.tooDeep {
+		return tooDeep, true
+	}
 	dirs := map[int]string{0: s.Dir}
 	// GIT_DIR names the repository whatever the directory, and an assignment to
 	// it can be anywhere in the command, or a statement of its own in
@@ -290,6 +293,15 @@ func checkPrograms(text string, s State) (Finding, bool) {
 	return Finding{}, false
 }
 
+// tooDeep refuses a command that nests substitutions further than they are
+// read, because what runs past that point was not checked.
+var tooDeep = Finding{
+	Rule: "command-too-deep-to-read",
+	Reason: "the command nests $( ) or backticks deeper than the rules read, so what runs " +
+		"inside was not checked",
+	Route: "write it as separate commands; nothing a person writes nests this deep",
+}
+
 // setsGitDir matches an assignment to GIT_DIR: `GIT_DIR=`, `export GIT_DIR=`,
 // or PowerShell's environment drive, as in `$env:GIT_DIR = ` and `Set-Item
 // env:GIT_DIR`. A mention is not one: a commit message that said "unset
@@ -305,7 +317,11 @@ func HumanDecisions(command string, powerShell bool) (Finding, bool) {
 	if powerShell {
 		command = strings.ReplaceAll(command, "`", "")
 	}
-	for _, words := range programsIn(withoutDocuments(command), powerShell) {
+	text := withoutDocuments(command)
+	if _, subshells := programsAt(text, powerShell); subshells.tooDeep {
+		return tooDeep, true
+	}
+	for _, words := range programsIn(text, powerShell) {
 		if f, ok := checkUnfreeze(words); ok {
 			return f, true
 		}

@@ -389,6 +389,17 @@ session. A switch an assistant can reach is not a control.
 
 *Instead:* if a rule is wrong, say which one and why.
 
+### `command-too-deep-to-read`
+
+Refuses a command that nests `$( )` or backticks more than 32 deep.
+
+Every level is read for the commands it runs, and a line nested thousands deep
+took longer to read than Claude Code gives the hook, which then lets the command
+run unchecked. Nothing a person writes nests that deep. It is refused whether or
+not a story is being worked on, because an approval could be buried in it too.
+
+*Instead:* write it as separate commands.
+
 ## Stopping mid-story
 
 A session that ends its turn while a story is being worked on — without handing

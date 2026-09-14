@@ -203,6 +203,7 @@ func shellRules(t *testing.T) []string {
 		"sdlc approve US-1",
 		"echo x > CLAUDE.md",
 		"sdlc review add code_review code-reviewer approve",
+		"echo " + strings.Repeat("$(", 100),
 	} {
 		f, ok := shellpolicy.Inspect(command, shellpolicy.State{})
 		if !ok {

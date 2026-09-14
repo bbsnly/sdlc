@@ -32,11 +32,20 @@ func lex(line string, powerShell bool) *lexer {
 // lexIn reads a line that runs in the subshell numbered group, numbering the
 // subshells it opens in t.
 func lexIn(line string, powerShell bool, t *subshells, group int) *lexer {
-	l := &lexer{powerShell: powerShell, subshells: t, open: []int{group}}
+	return lexAt(line, powerShell, t, group, 0)
+}
+
+// lexAt is lexIn for a line substituted depth levels inside another.
+func lexAt(line string, powerShell bool, t *subshells, group, depth int) *lexer {
+	l := &lexer{powerShell: powerShell, subshells: t, open: []int{group}, depth: depth}
 	l.read([]rune(line))
 	l.endCommand()
 	return l
 }
+
+// maxNesting is how deep substitutions are read. Nothing a person writes comes
+// near it.
+const maxNesting = 32
 
 // subshells numbers the subshells a line opens, from 1, and records which each
 // was opened in and which are scripts handed to another shell. 0 is the shell
@@ -44,6 +53,9 @@ func lexIn(line string, powerShell bool, t *subshells, group int) *lexer {
 type subshells struct {
 	parent []int
 	script []bool
+	// tooDeep is set when the line nests substitutions past maxNesting, where
+	// what they run is not read.
+	tooDeep bool
 }
 
 func newSubshells() *subshells {
@@ -77,6 +89,7 @@ type lexer struct {
 	word       strings.Builder
 	started    bool // a word has begun, even an empty quoted one
 	target     bool // the word being read is where a redirection goes
+	depth      int  // the substitutions this line is inside
 }
 
 func (l *lexer) endWord() {
@@ -111,11 +124,18 @@ func (l *lexer) group() int {
 // substitute reads the text inside `$(...)` or backticks as the commands it
 // runs, which happen whatever the word around them is for.
 func (l *lexer) substitute(inner []rune) {
-	sub := lexIn(string(inner), l.powerShell, l.subshells, l.subshells.start(l.group()))
+	l.started = true
+	if l.depth >= maxNesting {
+		// Each level is read again from where it opens, so a line nested
+		// thousands deep took longer than Claude Code gives the hook, and a
+		// command the hook has not answered in time runs unchecked.
+		l.subshells.tooDeep = true
+		return
+	}
+	sub := lexAt(string(inner), l.powerShell, l.subshells, l.subshells.start(l.group()), l.depth+1)
 	l.commands = append(l.commands, sub.commands...)
 	l.groups = append(l.groups, sub.groups...)
 	l.writes = append(l.writes, sub.writes...)
-	l.started = true
 }
 
 func (l *lexer) read(rs []rune) {

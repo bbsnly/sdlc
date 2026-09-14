@@ -5,6 +5,7 @@ import (
 	"path"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bbsnly/sdlc/internal/policy"
 )
@@ -71,6 +72,26 @@ func TestOnlyWhatACommandRunsIsReadAsTheCommand(t *testing.T) {
 	}
 	refused(t, `git -C . -c user.name=x commit -m "x"`, notReady, "commit-gate")
 	refused(t, `bash -c 'git commit -m "a; b"'`, notReady, "commit-gate")
+}
+
+// Each `$(` was read again from where it opens, so a line nested thousands deep
+// took longer than Claude Code gives the hook, and a command it has not answered
+// in time runs unchecked.
+func TestACommandNestedTooDeepToReadIsRefused(t *testing.T) {
+	nested := func(n int, inner string) string {
+		return "echo " + strings.Repeat("$(", n) + inner + strings.Repeat(")", n)
+	}
+	allowed(t, nested(maxNesting, "date"), notReady)
+	refused(t, nested(maxNesting+1, "date"), ready, "command-too-deep-to-read")
+	if f, ok := HumanDecisions(nested(maxNesting+1, "sdlc approve A-1"), false); !ok || f.Rule != "command-too-deep-to-read" {
+		t.Errorf("an approval nested too deep to read was %+v", f)
+	}
+
+	start := time.Now()
+	refused(t, "git commit -m x\necho "+strings.Repeat("$(", 60_000), ready, "command-too-deep-to-read")
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("a 120 KB nested command took %s", took)
+	}
 }
 
 // A document is text however it is handed over. A PowerShell here-string was
