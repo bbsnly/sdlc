@@ -302,6 +302,36 @@ func TestAFrozenTestCannotBeWrittenAnyOtherWay(t *testing.T) {
 	}
 }
 
+// A frozen fixture's name is a common name. Matched against the end of every
+// frozen path, `config.json` at the root was the fixture, and so was `main.go`
+// in another package.
+func TestACommonNameIsNotAFrozenFixtureElsewhere(t *testing.T) {
+	frozen := State{CommitReady: true, Frozen: []string{
+		"internal/load/testdata/config.json", "internal/gen/testdata/main.go",
+	}}
+	allowed(t, "cp config.example.json config.json", frozen)
+	app := frozen
+	app.Dir = "cmd/app"
+	allowed(t, "touch main.go", app)
+	allowed(t, "sed -i '' 's/a/b/' main.go", app)
+
+	// Where the directory is the fixture's, or cannot be known, the name is
+	// still the fixture.
+	for _, command := range []string{
+		"cd internal/load/testdata && rm config.json",
+		`cd "$ROOT/internal/load/testdata" && rm config.json`,
+		"cd $HOME && cd load/testdata && rm config.json",
+		"cd internal/load && pushd /tmp && popd && rm testdata/config.json",
+		"find . -name config.json -delete",
+		"touch config.json && find . -name config.json -delete",
+		"find internal -name config.json | xargs rm",
+		"git -C internal/load/testdata checkout -- config.json",
+		`python3 -c "import os; os.chdir('internal/load/testdata'); os.remove('config.json')"`,
+	} {
+		refused(t, command, frozen, "frozen-test-through-the-tool")
+	}
+}
+
 // The one way around every rule that protects the loop's record is a shell
 // command, so these are the commands that matter most.
 func TestLoopStateCannotBeWrittenThroughTheShell(t *testing.T) {

@@ -165,7 +165,7 @@ func Inspect(command string, s State) (Finding, bool) {
 	if f, ok := checkPrograms(text, s); ok {
 		return f, true
 	}
-	dir := s.Dir
+	dir, lost := s.Dir, false
 	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}}
 	for _, segment := range segments(text) {
 		words, redirects, _ := parse(segment)
@@ -176,11 +176,12 @@ func Inspect(command string, s State) (Finding, bool) {
 		if f, ok := checkLoopState(command, segment, run, redirects, dir, s, m); ok {
 			return f, true
 		}
-		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, s, m); ok {
+		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, lost, s, m); ok {
 			return f, true
 		}
 		if next, ok := changedDir(dir, run.words); ok {
-			dir = next
+			// A relative `cd` from somewhere unknown leads somewhere unknown.
+			dir, lost = next, next == "" || lost && !isAbsolute(next)
 		}
 	}
 	return Finding{}, false
@@ -473,12 +474,28 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 // shell command went straight past them: `Write` to `x_test.go` was refused as
 // a frozen acceptance test, and `echo cheat > x_test.go` was allowed. One
 // redirect was the whole way round the hinge the loop turns on.
-func checkFrozenTests(line, segment string, run invocation, redirects []string, dir string, s State, m *memo) (Finding, bool) {
+func checkFrozenTests(line, segment string, run invocation, redirects []string, dir string, lost bool, s State, m *memo) (Finding, bool) {
 	if len(s.Frozen) == 0 && s.IsTest == nil && s.NewTest == nil && s.ImplementerTest == nil {
 		return Finding{}, false
 	}
+	// A bare name is the end of a frozen path only where the directory it is
+	// read from is not known: after a `cd` this cannot follow, and for the
+	// names find, xargs, `git -C` and a program's own code work with. Taken
+	// that way everywhere, a fixture's config.json made `cp config.example.json
+	// config.json` at the root a write to a frozen test.
+	inline := runsInlineCode(run.words, segment)
+	byName := lost || inline || run.piped
+	if len(run.words) > 0 {
+		switch base(run.words[0]) {
+		case "find":
+			byName = true
+		case "git":
+			_, moved := gitCommand(run.words[1:])
+			byName = byName || moved != ""
+		}
+	}
 	candidates := append([]string{}, redirects...)
-	if runsInlineCode(run.words, segment) {
+	if inline {
 		// `python3 -c '...'` is a program, not a list of arguments, and the
 		// file it opens is inside a string. There is no parsing this without
 		// being an interpreter, so the whole of it is searched instead: a
@@ -501,11 +518,15 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 			candidates = append(candidates, m.words(line)...)
 		}
 	}
+	rule := "freeze"
+	if byName {
+		rule = "freeze by name"
+	}
 	for _, c := range m.spell(s, dir, candidates) {
-		if !m.first("freeze", c) {
+		if !m.first(rule, c) {
 			continue
 		}
-		frozen, ok := m.frozen(c, s.Frozen)
+		frozen, ok := m.frozen(c, s.Frozen, byName)
 		w := strings.TrimPrefix(clean(c), "./")
 		if !ok && w != "" && s.IsTest != nil && s.IsTest(w) {
 			frozen, ok = w, true
@@ -763,14 +784,16 @@ func skipOptions(words []string) []string {
 
 // changedDir follows a `cd`, so that a relative path after it is read from where
 // the command actually is. A directory it cannot follow -- home, `-`, a
-// variable -- starts again from the root, which only loses the prefix: every
-// word is still read as it was written as well.
+// variable, where popd goes back to -- is "", and from there on a bare name is
+// read as the name a frozen path ends in.
 func changedDir(dir string, words []string) (string, bool) {
 	if len(words) == 0 {
 		return dir, false
 	}
 	switch base(words[0]) {
 	case "cd", "pushd", "chdir", "set-location", "sl", "push-location":
+	case "popd", "pop-location":
+		return "", true
 	default:
 		return dir, false
 	}
@@ -853,8 +876,9 @@ func (m *memo) words(line string) []string {
 
 // frozen matches a word from a command line against the frozen set, allowing
 // for the spellings the same file arrives under: as written, with a ./ in
-// front, or as an absolute path. The freeze is folded once, not for every word.
-func (m *memo) frozen(word string, frozen []string) (string, bool) {
+// front, or as an absolute path; and, byName, as the name a frozen path ends
+// in. The freeze is folded once, not for every word.
+func (m *memo) frozen(word string, frozen []string, byName bool) (string, bool) {
 	word = strings.TrimPrefix(filepath.ToSlash(clean(word)), "./")
 	if word == "" {
 		return "", false
@@ -870,7 +894,7 @@ func (m *memo) frozen(word string, frozen []string) (string, bool) {
 		switch {
 		case word == folded,
 			strings.HasSuffix(word, "/"+folded),
-			strings.HasSuffix(folded, "/"+word):
+			byName && strings.HasSuffix(folded, "/"+word):
 			return frozen[i], true
 		}
 	}

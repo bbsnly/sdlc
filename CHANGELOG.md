@@ -247,6 +247,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - The shell rules read a path as the file it is on disk. A link to `.sdlc`,
   `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
   the file in letters no rule matched, and `rm notes/state/active` went through.
+- A bare file name is not a frozen file of that name elsewhere. With a fixture
+  `testdata/config.json` frozen, `cp config.example.json config.json` at the
+  root was refused as a write to a frozen test, and so was `touch main.go` in
+  another package. A name is still read that way where its directory cannot be
+  known: after a `cd` to a variable, home or `-`, after `popd`, and in `find`,
+  `xargs`, `git -C` and a program's own code.
 - A document handed over in a PowerShell here-string (`@' ... '@`) is read as
   text, as a here-document is. A plan or review whose table named `git commit`
   or `sdlc stop` was refused as that command, and a here-document went to
