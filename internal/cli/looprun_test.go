@@ -712,6 +712,24 @@ func TestWorkCommittedBeforeTheReviewHoldsTheGatesBack(t *testing.T) {
 	mustRun(t, "gate", "implementation", "pass", "--note", "trunk moved by a person")
 }
 
+// A new project's first story can start before anything is committed, and a
+// HEAD that did not exist yet was no HEAD to hold the gates to.
+func TestWorkCommittedInANewRepositorysFirstStoryHoldsTheGatesBack(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	// A story starts from a tree with nothing uncommitted, which with no
+	// commits is a tree whose files git does not track.
+	writeFile(t, root, ".git/info/exclude", "CLAUDE.md\n")
+	mustRun(t, "start")
+	reach(t, root, model.GateImplementation)
+
+	commitEverything(t, root)
+	r := run(t, "gate", "implementation", "pass", "--note", "committed early")
+	if r.code == 0 || !strings.Contains(r.stderr, "SDLC-E0046") {
+		t.Fatalf("the first commit of a new repository passed the implementation gate: code %d\n%s", r.code, r.stderr)
+	}
+}
+
 // And the way out the refusal names works: the story handed over, and picked up
 // again once a person has answered, from where trunk is then.
 func TestAStoryHeldForAMovedHEADGoesOnOnceAPersonAnswers(t *testing.T) {

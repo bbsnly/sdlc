@@ -111,14 +111,20 @@ func Clean(ctx context.Context, root string) (bool, error) {
 	return strings.TrimSpace(string(out)) == "", nil
 }
 
-// Head is the commit HEAD is on, or "" in a repository with no commits yet.
+// NoCommits stands for HEAD in a repository with no commits yet, as git's
+// all-zero object name stands for a ref that does not exist.
+const NoCommits = "0000000000000000000000000000000000000000"
+
+// Head is the commit HEAD is on, or NoCommits in a repository with no commits
+// yet. Read as "", which a record from before HEAD was kept also holds, the
+// first story of a new project was held to no HEAD at all.
 func Head(ctx context.Context, root string) (string, error) {
 	out, err := git(ctx, root, nil, "rev-parse", "--verify", "--quiet", "HEAD")
 	if err != nil {
 		// A repository with no commits is still on a branch; a directory that
 		// is not a repository is on none.
 		if _, branchErr := Branch(ctx, root); branchErr == nil {
-			return "", nil
+			return NoCommits, nil
 		}
 		return "", err
 	}
