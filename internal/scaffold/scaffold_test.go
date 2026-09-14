@@ -398,12 +398,19 @@ func TestContractFragmentIsWellFormedMarkdown(t *testing.T) {
 
 // The fragment names commands the user will type. A rename that misses it
 // leaves the assistant reading instructions for a command that is gone.
+//
+// It also stays out of what .sdlc/config.json decides. A "Gate overrides"
+// section restated the review rounds, the diff cap and a pr_mode that does not
+// exist, read by nothing, and free to disagree with the configuration that is.
 func TestContractFragmentNamesOnlyCommandsThatExist(t *testing.T) {
 	raw, err := templates.ReadFile("templates/contract.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, stale := range []string{"/sdlc-loop", "/sdlc-init", "/sdlc-approve", "gate loop"} {
+	for _, stale := range []string{
+		"/sdlc-loop", "/sdlc-init", "/sdlc-approve", "gate loop",
+		"sdlc-security", "sdlc-perf", "pr_mode", "Gate overrides",
+	} {
 		if strings.Contains(string(raw), stale) {
 			t.Errorf("the contract still refers to %q, which this version does not provide", stale)
 		}

@@ -39,21 +39,15 @@
 
 - TBD term — definition
 
-### Performance budgets (optional; sdlc-perf blocks only when one is breached)
+### Performance budgets (optional; sdlc:perf blocks only when one is breached)
 
 - none
 
-### Security and data rules (sdlc-security uses these)
+### Security and data rules (sdlc:security uses these)
 
 - Data classes present: TBD (e.g. "PII: none in this phase").
 - Anything that touches: TBD list (auth, money, secrets…) is `risk_tier: high`.
 
-### Gate overrides (optional; defaults live in .sdlc/config.json)
-
-- Human pre-commit pause for tiers: high
-- Review rounds max: 2 · Rework rounds max: 3 · Diff cap: 500 changed lines
-- Trunk-only: every commit goes to `main`; no branches; `pr_mode: off`
-
 ### Story source
 
-- `user_stories.json` (schema: `.sdlc/templates/story.schema.json`)
+- The backlog named by `backlog.path` in `.sdlc/config.json` (schema: `.sdlc/templates/story.schema.json`).
