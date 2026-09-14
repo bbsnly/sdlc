@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook PreToolUse",
-            "timeout": 10
+            "timeout": 30
           }
         ]
       }
@@ -30,7 +30,7 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook Stop",
-            "timeout": 30
+            "timeout": 45
           }
         ]
       }

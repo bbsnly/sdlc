@@ -758,6 +758,46 @@ func TestTheCommitGateStandsInFrontOfGitCommit(t *testing.T) {
 	}
 }
 
+// Claude Code kills a hook that outlasts the timeout hooks.json gives it, and a
+// killed hook decides nothing: a commit it was checking goes through unchecked,
+// with no message. Each of the hook's own limits has to run out first.
+func TestClaudeCodeWaitsLongerThanTheHookDoes(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "plugin", "hooks", "hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Timeout float64 `json:"timeout"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	// The longest each event can take: measuring the tree for a commit, a
+	// formatter, and for Stop the ten seconds store.Lock waits for the lock
+	// before the tree it measures to hand the story over.
+	longest := map[string]time.Duration{
+		"PreToolUse":  treeTimeout,
+		"PostToolUse": formatTimeout,
+		"Stop":        10*time.Second + treeTimeout,
+	}
+	for event, bound := range longest {
+		if len(cfg.Hooks[event]) == 0 {
+			t.Errorf("hooks.json has no %s hook", event)
+		}
+		for _, entry := range cfg.Hooks[event] {
+			for _, h := range entry.Hooks {
+				if given := time.Duration(h.Timeout * float64(time.Second)); given <= bound {
+					t.Errorf("hooks.json gives %s %s, and the hook can take %s", event, given, bound)
+				}
+			}
+		}
+	}
+}
+
 func TestOnceEveryGateHasPassedTheCommitGoesThrough(t *testing.T) {
 	root := loopProject(t)
 	gates := map[string]any{}

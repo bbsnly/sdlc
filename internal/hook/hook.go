@@ -349,7 +349,9 @@ func commitReady(project, story string) (bool, string) {
 
 // treeTimeout bounds measuring the working tree for a commit. A repository big
 // enough to take longer than this is one where the hook should say it could not
-// check, not hold the session.
+// check, not hold the session. hooks.json has to give the hook longer than this:
+// Claude Code kills a hook that outlasts its timeout, and a killed hook says
+// nothing -- the commit it was checking goes through unchecked.
 const treeTimeout = 20 * time.Second
 
 // reviewsFresh reports whether the verifier's and the code reviewers' reviews
