@@ -205,7 +205,7 @@ var Rules = []Rule{
 		ID: "researcher-writes-analysis-only",
 		Route: "keep to the story's own directory and CODEMAP.md, and persist the " +
 			"analysis with `sdlc artifact write`; the tests come next, from " +
-			"sdlc-sdet, and the code after that",
+			"sdlc:sdet, and the code after that",
 		check: func(r Request) string {
 			if NormalizeAgent(r.Agent) != "researcher" {
 				return ""
