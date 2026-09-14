@@ -189,7 +189,10 @@ $ sdlc review list --gate design_review --json
 
 Says, for every expected review, whether it can block the gate, what the latest
 verdict was, and whether it is **stale** — the reviewer looked at something that
-has changed since.
+has changed since. A `blocking` reviewer has to approve; an `advisory` one only
+has to report; perf is `on budget`: it never has to approve, and its block
+stops the gate, because it blocks only on a performance budget the contract
+states.
 
 ## `sdlc review add GATE ROLE VERDICT`
 

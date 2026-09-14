@@ -312,7 +312,7 @@ not actually happen:
 | an earlier gate has not passed | `SDLC-E0031` |
 | the gate's documents are not on disk | `SDLC-E0020` |
 | a reviewer has not reported, or reviewed something that has changed since | `SDLC-E0029` |
-| a blocking reviewer blocked | `SDLC-E0030` |
+| a blocking reviewer blocked, or perf found a stated performance budget broken | `SDLC-E0030` |
 | the change is bigger than `thresholds.diff_size_cap`, at implementation, verification and code review | `SDLC-E0042` |
 | the tests are not frozen, or the freeze belongs to another story | `SDLC-E0023` |
 | a frozen test changed or vanished | `SDLC-E0025` |

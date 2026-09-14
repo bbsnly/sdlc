@@ -37,9 +37,12 @@ type reviewInfo struct {
 	Gate     string `json:"gate"`
 	Role     string `json:"role"`
 	Blocking bool   `json:"blocking"`
-	Verdict  string `json:"verdict,omitempty"`
-	Round    int    `json:"round,omitempty"`
-	Stale    bool   `json:"stale,omitempty"`
+	// BlocksOnBreach is a reviewer that need not approve, and whose block
+	// still stops the gate: perf, on a stated performance budget.
+	BlocksOnBreach bool   `json:"blocks_on_breach,omitempty"`
+	Verdict        string `json:"verdict,omitempty"`
+	Round          int    `json:"round,omitempty"`
+	Stale          bool   `json:"stale,omitempty"`
 }
 
 func newReviewCmd() *cobra.Command {
@@ -199,7 +202,8 @@ func newReviewListCmd() *cobra.Command {
 				}
 				info := reviewInfo{
 					Gate: string(r.Gate), Role: r.Role,
-					Blocking: r.Blocks(policy),
+					Blocking:       r.Blocks(policy),
+					BlocksOnBreach: !r.Blocks(policy) && r.BlocksOnBreach,
 				}
 				if latest, ok := record.LatestReview(r.Gate, r.Role); ok {
 					info.Verdict, info.Round = string(latest.Verdict), latest.Round
@@ -214,8 +218,7 @@ func newReviewListCmd() *cobra.Command {
 			w := cmd.OutOrStdout()
 			for _, i := range infos {
 				fmt.Fprintf(w, "  %-15s %-15s %-9s %s\n", i.Gate, i.Role,
-					map[bool]string{true: "blocking", false: "advisory"}[i.Blocking],
-					describeReviewState(i))
+					describeReviewPower(i), describeReviewState(i))
 			}
 			return nil
 		},
@@ -223,6 +226,17 @@ func newReviewListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&gateName, "gate", "", "only this gate's reviews")
 	cmd.Flags().StringVar(&storyID, "story", "", "for this story instead of the one being worked on")
 	return cmd
+}
+
+func describeReviewPower(i reviewInfo) string {
+	switch {
+	case i.Blocking:
+		return "blocking"
+	case i.BlocksOnBreach:
+		return "on budget"
+	default:
+		return "advisory"
+	}
 }
 
 func describeReviewState(i reviewInfo) string {
@@ -300,7 +314,7 @@ func requireReviews(ctx context.Context, s *store.Store, id string, gate model.G
 			outstanding = append(outstanding, r.Role+" has not reviewed")
 		case latest.Subject != subject:
 			outstanding = append(outstanding, r.Role+" reviewed something that has changed since")
-		case blocking && latest.Verdict == model.VerdictBlock:
+		case r.Stops(policy, latest.Verdict):
 			blocked = append(blocked, r.Role+" blocked"+describeNote(latest.Note))
 		case blocking && latest.Verdict != model.VerdictApprove:
 			outstanding = append(outstanding, r.Role+" has not approved")

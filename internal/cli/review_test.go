@@ -318,15 +318,45 @@ func TestReviewListSaysWhoBlocksAndWhoHasReported(t *testing.T) {
 	if a := seen["design_review/architect"]; !a.Blocking || a.Verdict != "approve" || a.Stale {
 		t.Errorf("architect = %+v", a)
 	}
-	if p := seen["design_review/perf"]; p.Blocking || p.Verdict != "" {
+	if p := seen["design_review/perf"]; p.Blocking || !p.BlocksOnBreach || p.Verdict != "" {
 		t.Errorf("perf = %+v", p)
+	}
+	if h := seen["design_review/human-advocate"]; h.Blocking || h.BlocksOnBreach {
+		t.Errorf("human-advocate = %+v", h)
 	}
 	if _, ok := seen["code_review/code-reviewer"]; !ok {
 		t.Error("the list does not reach the later gates")
 	}
+	if p := seen["code_review/perf"]; p.Blocking || !p.BlocksOnBreach {
+		t.Errorf("perf at code review = %+v", p)
+	}
 
 	if out := mustRun(t, "review", "list").stdout; !strings.Contains(out, "not reviewed") ||
-		!strings.Contains(out, "blocking") {
+		!strings.Contains(out, "blocking") || !strings.Contains(out, "on budget") {
 		t.Errorf("the prose does not say where things stand:\n%s", out)
 	}
+}
+
+// Perf is advisory, and blocks only when a change breaks a performance budget
+// the contract states. Its block was recorded and then ignored, so a budget
+// was a line in CLAUDE.md and nothing more.
+func TestPerfStopsTheGateWhenItBlocksWithoutHavingToApprove(t *testing.T) {
+	planned(t)
+	approveAll(t, model.GateDesignReview, "perf")
+	mustRunWith(t, "# perf\n", "review", "add", "design_review", "perf", "block",
+		"--note", "p99 is 400ms against a 200ms budget")
+
+	r := run(t, "gate", "design_review", "pass")
+	if r.code == 0 {
+		t.Fatal("the gate passed over a broken performance budget")
+	}
+	for _, want := range []string{"SDLC-E0030", "perf blocked", "200ms budget"} {
+		if !strings.Contains(r.stderr, want) {
+			t.Errorf("the refusal is missing %q:\n%s", want, r.stderr)
+		}
+	}
+
+	// A note is all perf has to say otherwise: it is not waited on to approve.
+	mustRunWith(t, "# perf\n", "review", "add", "design_review", "perf", "note")
+	mustRun(t, "gate", "design_review", "pass", "--note", "within budget")
 }

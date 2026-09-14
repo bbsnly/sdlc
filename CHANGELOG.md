@@ -54,6 +54,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - A change bigger than `thresholds.diff_size_cap` cannot pass implementation,
   verification or code review. Lines are counted the way `git diff --numstat`
   counts them, and the loop's own files and the backlog are not counted.
+- A block from perf stops the gate, as its role always said it would when a
+  change breaks a stated performance budget. It still never has to approve,
+  and `sdlc review list` shows it as `on budget`.
 - `sdlc cost` keeps what a story spent beside everything else it did.
   `sdlc cost add --usd` records an amount, `sdlc status` reports the running
   total, and crossing one of `budget.alert_fractions` says so once, on

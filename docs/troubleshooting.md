@@ -243,7 +243,7 @@ Send the change back to the reviewers that are outstanding; `sdlc review list` n
 
 ### SDLC-E0030
 
-A blocking reviewer blocked.
+A blocking reviewer blocked — or perf did, on a performance budget the contract states.
 
 This is the loop working. Fix what the reviewer found, then have the **same** reviewer look
 again — its new verdict replaces the old one, and the gate reads the latest. Recording the gate

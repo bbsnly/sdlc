@@ -194,7 +194,7 @@ Then the review. Delegate to all five, and give each one the story id and the pa
 | `sdlc:architect` | yes — always |
 | `sdlc:security` | yes when the story is security-sensitive |
 | `sdlc:red-team` | no, but it must report |
-| `sdlc:perf` | no, but it must report |
+| `sdlc:perf` | only by blocking, on a performance budget the contract states |
 | `sdlc:human-advocate` | no, but it must report |
 
 They can run at the same time; they do not read each other's work, and running them in sequence
@@ -206,12 +206,14 @@ sdlc review list --gate design_review
 sdlc gate design_review pass --note "<what the architect said, in one clause>"
 ```
 
-The gate refuses until every reviewer has reported and the blocking ones have approved. It also
+The gate refuses until every reviewer has reported and the blocking ones have approved, and a
+block from perf refuses it too — perf never has to approve, but it blocks when the change breaks
+a stated performance budget. It also
 refuses an approval of a plan that has since changed: if the plan is revised, the reviewers who
 approved the old one have to look again. Do not edit the plan yourself to satisfy a reviewer —
 send it back to the implementer with the findings.
 
-If a blocking reviewer blocks, that is not a failure to route around:
+If a blocking reviewer blocks, or perf does, that is not a failure to route around:
 
 ```bash
 sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
@@ -271,8 +273,9 @@ from before the rework does not count and the gate will say so.
 
 Delegate to `sdlc:code-reviewer`, `sdlc:security`, `sdlc:perf` and `sdlc:human-advocate`, in
 parallel, with the story id. The code reviewer blocks, unless the project turned on
-`reviews.gate7_advisory`; security blocks when the story is security-sensitive; the other two
-report. `sdlc review list` says which is which for this story.
+`reviews.gate7_advisory`; security blocks when the story is security-sensitive; perf blocks only
+when the change breaks a stated performance budget; the human advocate reports. `sdlc review list`
+says which is which for this story.
 
 ```bash
 sdlc review list --gate code_review

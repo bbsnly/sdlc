@@ -418,6 +418,10 @@ type Reviewer struct {
 	// WhenDoRAdvocate is a review the gate expects only when the project asks
 	// for it, through human_gates.dor_advocate_check.
 	WhenDoRAdvocate bool
+	// BlocksOnBreach is an advisory reviewer whose block still stops the gate.
+	// It never has to approve, and it blocks only on something the contract
+	// states: perf, on a performance budget the change breaks.
+	BlocksOnBreach bool
 }
 
 // ReviewPolicy is what decides, beyond the roster, whether a reviewer is
@@ -442,6 +446,11 @@ func (r Reviewer) Blocks(p ReviewPolicy) bool {
 	return r.Blocking || (r.WhenSecuritySensitive && p.SecuritySensitive)
 }
 
+// Stops reports whether this verdict from this reviewer refuses the gate.
+func (r Reviewer) Stops(p ReviewPolicy, v Verdict) bool {
+	return v == VerdictBlock && (r.Blocks(p) || r.BlocksOnBreach)
+}
+
 // Reviewers is every review the loop expects, by gate.
 var Reviewers = []Reviewer{
 	{Role: "human-advocate", Gate: GateDoR, WhenDoRAdvocate: true},
@@ -449,14 +458,14 @@ var Reviewers = []Reviewer{
 	{Role: "architect", Gate: GateDesignReview, Blocking: true},
 	{Role: "red-team", Gate: GateDesignReview},
 	{Role: "security", Gate: GateDesignReview, WhenSecuritySensitive: true},
-	{Role: "perf", Gate: GateDesignReview},
+	{Role: "perf", Gate: GateDesignReview, BlocksOnBreach: true},
 	{Role: "human-advocate", Gate: GateDesignReview},
 
 	{Role: "verifier", Gate: GateVerifierReview, Blocking: true},
 
 	{Role: "code-reviewer", Gate: GateCodeReview, Blocking: true, Advisable: true},
 	{Role: "security", Gate: GateCodeReview, WhenSecuritySensitive: true},
-	{Role: "perf", Gate: GateCodeReview},
+	{Role: "perf", Gate: GateCodeReview, BlocksOnBreach: true},
 	{Role: "human-advocate", Gate: GateCodeReview},
 }
 
