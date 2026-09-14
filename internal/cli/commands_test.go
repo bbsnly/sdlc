@@ -251,6 +251,10 @@ func TestStartingASecondStoryIsRefused(t *testing.T) {
 func TestANamedStoryStartsOnlyWhenItCouldBePicked(t *testing.T) {
 	for _, tc := range []struct{ name, story, want string }{
 		{"waiting on a dependency", `{"id":"B-2","title":"Two","status":"ready","depends_on":["A-1"]}`, "waits on A-1"},
+		{
+			"waiting on a story that is not there", `{"id":"B-2","title":"Two","status":"ready","depends_on":["Z-9"]}`,
+			"Z-9 (not in the backlog)",
+		},
 		{"dropped", `{"id":"B-2","title":"Two","status":"dropped"}`, "is dropped"},
 		{"blocked", `{"id":"B-2","title":"Two","status":"blocked"}`, "is blocked"},
 		{"marked done", `{"id":"B-2","title":"Two","status":"done"}`, "is marked done"},
@@ -284,6 +288,23 @@ func TestANamedStoryStartsOnlyWhenItCouldBePicked(t *testing.T) {
 	  {"id":"C-3","title":"Three","status":"todo","priority":0}]}`)
 	if got := decode[startPayload](t, mustRun(t, "start", "B-2", "--json")); got.Story != "B-2" {
 		t.Errorf("a story whose dependency is done, named over a higher priority, did not start: %+v", got)
+	}
+}
+
+func TestStoryListSaysWhenADependencyWillNeverBeDone(t *testing.T) {
+	project(t)
+	mustRun(t, "init")
+	writeFile(t, ".", "user_stories.json", `{"stories":[
+	  {"id":"A-1","title":"One","status":"dropped"},
+	  {"id":"B-2","title":"Two","status":"ready","depends_on":["A-1"]}]}`)
+
+	out := mustRun(t, "story", "list").stdout
+	if !strings.Contains(out, "(waiting on A-1 (dropped))") {
+		t.Errorf("story list does not say the dependency is dropped:\n%s", out)
+	}
+	rows := decode[storyListPayload](t, mustRun(t, "story", "list", "--json"))
+	if got := rows.Stories[1].BlockedBy; len(got) != 1 || got[0] != "A-1" {
+		t.Errorf("--json blocked_by is not the ids a script looks up: %v", got)
 	}
 }
 

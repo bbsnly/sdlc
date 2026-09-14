@@ -171,6 +171,36 @@ func (b *Backlog) BlockedBy(s *Story) []string {
 	return out
 }
 
+// Waiting is BlockedBy for a reader: each dependency that is not done, with the
+// reason when finishing it is not what would unblock s. A dropped story and an
+// id the backlog does not have are never done, and "waiting on A-1" alone left
+// a story blocked for good with nothing saying so.
+func (b *Backlog) Waiting(s *Story) []string {
+	var out []string
+	for _, dep := range b.BlockedBy(s) {
+		switch found, ok := b.Find(dep); {
+		case !ok:
+			out = append(out, dep+" (not in the backlog)")
+		case found.Status == StatusDropped:
+			out = append(out, dep+" (dropped)")
+		default:
+			out = append(out, dep)
+		}
+	}
+	return out
+}
+
+// NeverDone reports whether a dependency of s is one that will never be done:
+// dropped, or not in the backlog at all.
+func (b *Backlog) NeverDone(s *Story) bool {
+	for _, dep := range s.DependsOn {
+		if found, ok := b.Find(dep); !ok || found.Status == StatusDropped {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *Backlog) dependenciesMet(s *Story, done map[string]bool) bool {
 	for _, dep := range s.DependsOn {
 		if !done[dep] {

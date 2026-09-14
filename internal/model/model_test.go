@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -119,6 +120,30 @@ func TestBlockedByNamesTheUnfinishedDependencies(t *testing.T) {
 	got := b.BlockedBy(&b.Stories[0])
 	if len(got) != 1 || got[0] != "C-3" {
 		t.Errorf("BlockedBy = %v, want only the unfinished C-3", got)
+	}
+}
+
+// A dependency on a dropped story, or on an id the backlog does not have, is
+// never done. Named only by id, it read like one to finish, and the story
+// behind it stayed blocked for good.
+func TestWaitingSaysWhyADependencyWillNeverBeDone(t *testing.T) {
+	b := &Backlog{Stories: []Story{
+		story("A-1", StatusReady, p(1), "B-2", "C-3", "Z-9", "D-4"),
+		story("B-2", StatusDropped, p(2)),
+		story("C-3", StatusTodo, p(3)),
+		story("D-4", StatusDone, p(4)),
+	}}
+
+	got := b.Waiting(&b.Stories[0])
+	want := []string{"B-2 (dropped)", "C-3", "Z-9 (not in the backlog)"}
+	if !slices.Equal(got, want) {
+		t.Errorf("Waiting = %v, want %v", got, want)
+	}
+	if !b.NeverDone(&b.Stories[0]) {
+		t.Error("NeverDone missed a dropped and a missing dependency")
+	}
+	if b.NeverDone(&b.Stories[2]) || b.NeverDone(&Story{ID: "E-5", DependsOn: []string{"C-3"}}) {
+		t.Error("NeverDone reported a dependency that can still be done")
 	}
 }
 

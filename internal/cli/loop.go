@@ -149,14 +149,19 @@ func refuseIfNotRunnable(b *model.Backlog, story *model.Story) error {
 			"the backlog says it is finished, though its gate record does not").
 			WithFix("set its status back to ready in the backlog if the work is not finished")
 	}
-	if waiting := b.BlockedBy(story); len(waiting) > 0 {
-		return sdlcerr.New(sdlcerr.NoRunnableStory,
-			quote(id)+" waits on "+strings.Join(waiting, ", "),
-			"a story starts once every story in its depends_on is done").
-			WithFix("finish " + strings.Join(waiting, ", ") + " first, or take " +
-				plural(len(waiting), "it", "them") + " out of " + id + "'s depends_on")
+	blocked := b.BlockedBy(story)
+	if len(blocked) == 0 {
+		return nil
 	}
-	return nil
+	refusal := sdlcerr.New(sdlcerr.NoRunnableStory,
+		quote(id)+" waits on "+strings.Join(b.Waiting(story), ", "),
+		"a story starts once every story in its depends_on is done")
+	if b.NeverDone(story) {
+		return refusal.WithFix("take the dropped or missing story out of " + id + "'s depends_on " +
+			"-- it will never be done, so nothing else unblocks this one")
+	}
+	return refusal.WithFix("finish " + strings.Join(blocked, ", ") + " first, or take " +
+		plural(len(blocked), "it", "them") + " out of " + id + "'s depends_on")
 }
 
 // resuming is whether starting a story in this status picks it up again rather

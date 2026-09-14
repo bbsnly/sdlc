@@ -17,6 +17,9 @@ type storyRow struct {
 	Priority  *int     `json:"priority,omitempty"`
 	BlockedBy []string `json:"blocked_by,omitempty"`
 	Next      bool     `json:"next,omitempty"`
+	// waiting is BlockedBy as a person reads it, with the reason a dependency
+	// will never be done. --json keeps the ids a script can look up.
+	waiting []string
 }
 
 type storyListPayload struct {
@@ -69,6 +72,7 @@ func newStoryListCmd() *cobra.Command {
 					Status:    string(story.Status),
 					Priority:  story.Priority,
 					BlockedBy: backlog.BlockedBy(story),
+					waiting:   backlog.Waiting(story),
 					Next:      story.ID == nextID,
 				})
 			}
@@ -106,8 +110,8 @@ func printStories(cmd *cobra.Command, backlog *model.Backlog, path string, rows 
 		}
 		line := fmt.Sprintf("%s%-*s  %-*s  %s  %s",
 			marker, idWidth, r.ID, statusWidth, r.Status, priority, r.Title)
-		if len(r.BlockedBy) > 0 {
-			line += "  (waiting on " + strings.Join(r.BlockedBy, ", ") + ")"
+		if len(r.waiting) > 0 {
+			line += "  (waiting on " + strings.Join(r.waiting, ", ") + ")"
 		}
 		fmt.Fprintln(w, line)
 	}
