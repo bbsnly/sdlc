@@ -29,6 +29,12 @@ commands that already match it, a backlog with one example story, the story
 schema, and a `## SDLC Contract` section appended to `CLAUDE.md`. It never
 overwrites a file you wrote, and it writes no `.gitignore`.
 
+It recognises Go (`go.mod`), Rust (`Cargo.toml`), Node (`package.json`) and
+Python (`pyproject.toml`, `setup.py` or `requirements.txt`), tried in that order
+at the root of the repository, so a Go service with a `package.json` for its
+front-end tooling is a Go project. Anything else gets no commands and the
+common test directories, for you to fill in.
+
 ## `sdlc status`
 
 Show what the loop is working on and where it has got to.

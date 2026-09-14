@@ -16,6 +16,7 @@ import (
 	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/policy"
+	"github.com/bbsnly/sdlc/internal/scaffold"
 	"github.com/bbsnly/sdlc/internal/shellpolicy"
 )
 
@@ -273,6 +274,17 @@ func TestThePluginNamesOnlyStoryFilesTheLoopKeeps(t *testing.T) {
 			if !kept[m[1]] {
 				t.Errorf("%s names stories/<ID>/%s, which the loop does not keep", filepath.Base(f), m[1])
 			}
+		}
+	}
+}
+
+// Rust was detected and written a whole set of commands, and no page said so:
+// a reader with a Cargo.toml had no way to know init would recognise it.
+func TestEveryStackInitRecognisesIsDocumented(t *testing.T) {
+	doc := page(t, "commands.md")
+	for _, name := range scaffold.StackNames() {
+		if !strings.Contains(doc, name+" (`") {
+			t.Errorf("docs/commands.md does not say init recognises %s, or by which file", name)
 		}
 	}
 }

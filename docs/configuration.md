@@ -121,9 +121,12 @@ what the implementer cannot touch.
 **Anything that decides whether a test passes belongs here, not only the test
 files.** A frozen test that reads a golden file is frozen only if the golden
 file is too; otherwise the fixture is the way round the freeze. `sdlc init`
-covers the usual ones for the stack it finds — `testdata/` for Go,
-`conftest.py` and `fixtures/` for Python, `__snapshots__/`, `__mocks__/` and
-`*.snap` for Node — and if your project keeps them somewhere else, add it here.
+covers the usual ones for the stack it finds — `testdata/` for Go, `tests/`
+and `fixtures/` for Rust, `conftest.py` and `fixtures/` for Python,
+`__snapshots__/`, `__mocks__/` and `*.snap` for Node — and if your project
+keeps them somewhere else, add it here. A Rust unit test inside a source file,
+under `#[cfg(test)]`, is in no test file, so the freeze cannot hold it: put the
+acceptance tests under `tests/`.
 
 The test author is refused when it writes outside what this describes, and the
 refusal says so.
