@@ -514,6 +514,24 @@ func TestAnUnreadableRecordHasAWayOut(t *testing.T) {
 	}
 }
 
+// The hook refuses a commit when the record is missing and sends you to doctor,
+// and doctor, reading through Record, saw a fresh record and said all was well.
+func TestDoctorNamesAMissingRecord(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+	if err := os.Remove(filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")); err != nil {
+		t.Fatal(err)
+	}
+	r := run(t, "doctor")
+	if !strings.Contains(r.stdout, "gate-record.json is missing") {
+		t.Errorf("doctor did not name the missing record:\n%s", r.stdout)
+	}
+	if r.code == 0 {
+		t.Error("doctor exited zero with the gate record missing")
+	}
+}
+
 // The hook's warnings about unreadable loop state all say "run sdlc doctor".
 // Doctor did not read either file, so it answered that all was well.
 func TestDoctorNamesLoopStateTheHookCannotRead(t *testing.T) {

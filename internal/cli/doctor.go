@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -155,23 +157,33 @@ func runChecks() []check {
 // hid a broken freeze behind it, and a second run of doctor to find it.
 func stateCheck(s *store.Store) check {
 	var details, fixes []string
-	problem := func(err error, fix string) {
-		details = append(details, err.Error())
+	problem := func(detail, fix string) {
+		details = append(details, detail)
 		fixes = append(fixes, fix)
 	}
 	active, err := s.Active()
 	if err != nil {
-		problem(err, "nothing is enforced until .sdlc/state/active reads: fix its "+
+		problem(err.Error(), "nothing is enforced until .sdlc/state/active reads: fix its "+
 			`permissions, or remove it and run "sdlc start" again`)
 	} else if active != "" {
+		// Record starts a fresh record when there is none, which is right for
+		// the command and wrong here: `sdlc start` always writes one, so a
+		// missing record mid-iteration is damage, and the hook refuses the
+		// commit over it and sends people to this check.
+		if dir, err := s.StoryDir(active); err == nil {
+			if _, statErr := os.Stat(filepath.Join(dir, model.RecordFile)); errors.Is(statErr, fs.ErrNotExist) {
+				problem(".sdlc/stories/"+active+"/"+model.RecordFile+" is missing", "no commit goes through without it: restore it if you keep a copy, or run "+
+					`"sdlc stop" to end the iteration and commit as yourself`)
+			}
+		}
 		if _, err := s.Record(active); err != nil {
-			problem(err, "no commit goes through while .sdlc/stories/"+active+"/"+
+			problem(err.Error(), "no commit goes through while .sdlc/stories/"+active+"/"+
 				model.RecordFile+` cannot be read: restore it if you keep a copy, or run "sdlc stop" `+
 				"to end the iteration and commit as yourself")
 		}
 	}
 	if _, err := s.Lock(); err != nil {
-		problem(err, "every test is treated as frozen until .sdlc/state/tests.lock reads: "+
+		problem(err.Error(), "every test is treated as frozen until .sdlc/state/tests.lock reads: "+
 			`restore it if you keep a copy, or remove it and run "sdlc freeze", `+
 			"which freezes the tests as they are now")
 	}
