@@ -167,6 +167,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   already were from the file tools. `echo {} > .claude/settings.local.json` went
   through during an iteration, and a settings file is where hooks are turned
   off. A test now holds the shell rules to every path the file rules protect.
+- A new test file cannot be added through the shell after the freeze. The file
+  tools refused one; `echo > new_test.go` did not, because the shell was checked
+  only against the files the freeze already held.
 - `sdlc doctor` checks the loop's state files. Every hook warning about them
   said to run it, and it did not read either one.
 

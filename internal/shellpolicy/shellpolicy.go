@@ -44,6 +44,12 @@ type State struct {
 	// Every file it calls a test then counts as frozen: a freeze nobody can
 	// read is not no freeze, or breaking it would be the way round it.
 	IsTest func(path string) bool
+
+	// NewTest, when set, reports whether a path would be a test file added
+	// after the freeze -- one the freeze does not hold, in a project that does
+	// not allow new test files. The file tools refused adding one, and a
+	// redirect or a `touch` did not.
+	NewTest func(path string) bool
 }
 
 // Finding is a refusal. An empty Rule means nothing objected.
@@ -234,7 +240,7 @@ func checkLoopState(words, redirects []string) (Finding, bool) {
 // a frozen acceptance test, and `echo cheat > x_test.go` was allowed. One
 // redirect was the whole way round the hinge the loop turns on.
 func checkFrozenTests(segment string, words, redirects []string, s State) (Finding, bool) {
-	if len(s.Frozen) == 0 && s.IsTest == nil {
+	if len(s.Frozen) == 0 && s.IsTest == nil && s.NewTest == nil {
 		return Finding{}, false
 	}
 	candidates := redirects
@@ -250,8 +256,19 @@ func checkFrozenTests(segment string, words, redirects []string, s State) (Findi
 	}
 	for _, c := range candidates {
 		frozen, ok := isFrozen(c, s.Frozen)
-		if w := strings.TrimPrefix(clean(c), "./"); !ok && w != "" && s.IsTest != nil && s.IsTest(w) {
+		w := strings.TrimPrefix(clean(c), "./")
+		if !ok && w != "" && s.IsTest != nil && s.IsTest(w) {
 			frozen, ok = w, true
+		}
+		if !ok && w != "" && s.NewTest != nil && s.NewTest(w) {
+			return Finding{
+				Rule: "no-new-test-after-the-freeze",
+				Reason: w + " would be a new test file added after the freeze, which is the " +
+					"freeze with extra steps: a test written now can be written to pass",
+				Route: "put the case in one of the frozen files; if it needs a file of its " +
+					"own, say so and stop -- the person running the session can unfreeze and " +
+					"freeze again so the new file is covered",
+			}, true
 		}
 		if ok {
 			return Finding{

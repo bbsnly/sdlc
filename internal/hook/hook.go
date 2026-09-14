@@ -213,9 +213,9 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 	slog.Debug("hook considering a command",
 		"agent", p.AgentType, "story", story, "commit_ready", ready, "why", why)
 
-	frozen, isTest := frozenTests(project, story, warn)
+	frozen, isTest, newTest := frozenTests(project, story, warn)
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, shellpolicy.State{
-		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest,
+		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		Fresh: func() (bool, string) { return reviewsFresh(project, story, warn) },
 	})
 	if !refused {
@@ -233,10 +233,10 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 // file write -- otherwise corrupting tests.lock was the way to `echo` into a
 // frozen test. Only when the configuration will not read either is there no
 // telling what a test is, and then it says so.
-func frozenTests(project, story string, warn func(string)) ([]string, func(string) bool) {
+func frozenTests(project, story string, warn func(string)) (frozen []string, isTest, newTest func(string) bool) {
 	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "tests.lock"))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	var lock model.Lock
 	if err == nil {
@@ -247,17 +247,30 @@ func frozenTests(project, story string, warn func(string)) ([]string, func(strin
 		if cfgErr != nil {
 			warn(".sdlc/state/tests.lock could not be read, and nor could .sdlc/config.json, " +
 				"so the freeze is not being enforced against shell commands. Run `sdlc doctor`.")
-			return nil, nil
+			return nil, nil, nil
 		}
 		warn(".sdlc/state/tests.lock could not be read, so every test file is " +
 			"being treated as frozen until it can be. Run `sdlc doctor` to see why.")
-		return nil, testset.New(cfg.Paths.Tests).Match
+		return nil, testset.New(cfg.Paths.Tests).Match, nil
 	}
 	// A freeze belonging to another story says nothing about this one.
 	if lock.Story != story {
-		return nil, nil
+		return nil, nil, nil
 	}
-	return lock.Paths(), nil
+	// A test file the freeze does not hold is a new one, and adding one after
+	// the freeze is refused unless the project allows it -- through the shell as
+	// through the file tools.
+	cfg, err := config.Load(project)
+	if err != nil {
+		warn(".sdlc/config.json could not be read, so the test freeze is not " +
+			"being enforced in this session. Run `sdlc doctor` to see why.")
+		return lock.Paths(), nil, nil
+	}
+	if !cfg.Freeze.AllowNewTestFiles {
+		m := testset.New(cfg.Paths.Tests)
+		newTest = func(p string) bool { return m.Match(p) && !lock.Holds(p) }
+	}
+	return lock.Paths(), nil, newTest
 }
 
 // commitReady reports whether the story has been through the gates that come

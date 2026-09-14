@@ -493,6 +493,28 @@ func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
 	}
 }
 
+// A test file added after the freeze was refused from Write and allowed from a
+// redirect, and a test written after the implementation can be written to pass.
+func TestANewTestFileIsRefusedThroughTheShellUnlessTheProjectAllowsIt(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, "invoice_test.go", "package x\n")
+	write(t, root, ".sdlc/state/tests.lock", `{"story":"A-1","files":{"invoice_test.go":"abc"}}`)
+
+	r := call(t, command(root, "sdlc:implementer", "echo 'package x' > other_test.go"), noEnv)
+	if !denied(r) {
+		t.Fatal("a new test file was added through the shell after the freeze")
+	}
+	if !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "no-new-test-after-the-freeze") {
+		t.Errorf("refused for the wrong reason: %q", r.HookSpecificOutput.PermissionDecisionReason)
+	}
+
+	write(t, root, ".sdlc/config.json", `{"version":1,"freeze":{"allow_new_test_files":true}}`)
+	if r := call(t, command(root, "sdlc:implementer", "echo 'package x' > other_test.go"), noEnv); denied(r) {
+		t.Errorf("a project that allows new test files was refused one: %q",
+			r.HookSpecificOutput.PermissionDecisionReason)
+	}
+}
+
 // A freeze that cannot be read is not an absent freeze. Reading it as absent
 // made corrupting tests.lock the way to edit a frozen test, silently.
 func TestAnUnreadableFreezeStillProtectsTheTests(t *testing.T) {

@@ -364,6 +364,28 @@ func TestUnfreezeIsAHumanDecision(t *testing.T) {
 	}
 }
 
+// The file tools refused a test file added after the freeze. A shell command
+// was checked only against the files the freeze holds, so `echo > new_test.go`
+// added one, written to pass, and nothing noticed.
+func TestANewTestCannotBeAddedThroughTheShellAfterTheFreeze(t *testing.T) {
+	state := State{
+		CommitReady: true,
+		Frozen:      []string{"x_test.go"},
+		NewTest:     func(p string) bool { return strings.HasSuffix(p, "_test.go") && p != "x_test.go" },
+	}
+	for _, command := range []string{
+		"echo 'package x' > y_test.go",
+		"touch internal/new_test.go",
+		"cp /tmp/passing.go ./z_test.go",
+	} {
+		refused(t, command, state, "no-new-test-after-the-freeze")
+	}
+	refused(t, "echo cheat > x_test.go", state, "frozen-test-through-the-tool")
+	for _, command := range []string{"echo x > y.go", "go test ./...", "cat y_test.go"} {
+		allowed(t, command, state)
+	}
+}
+
 // Before the freeze there is nothing to protect, and the sdet writes these
 // files for a living.
 func TestBeforeTheFreezeTheShellIsAsFreeAsItWas(t *testing.T) {

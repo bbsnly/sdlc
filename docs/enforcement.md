@@ -103,7 +103,8 @@ change on the record.
 ### `no-new-test-after-the-freeze`
 
 Refuses a new test file once the tests are frozen, unless
-`freeze.allow_new_test_files` is on.
+`freeze.allow_new_test_files` is on. A shell command that would create one — a
+redirect, `touch`, `cp` — is refused by the same rule.
 
 *Instead:* put the case in one of the frozen files. If it needs a file of its
 own, say so and stop: the person running the session can unfreeze and freeze
