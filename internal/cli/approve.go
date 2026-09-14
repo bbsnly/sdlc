@@ -59,23 +59,8 @@ func newEscalateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tree, err := s.ReviewSubject(cmd.Context())
+			tree, err := s.Escalate(cmd.Context(), id, kind, message)
 			if err != nil {
-				return err
-			}
-			record, err := s.Record(id)
-			if err != nil {
-				return err
-			}
-			record.Escalate(kind, message, tree, s.Now())
-			record.Append("escalate", kind+": "+message, s.Now())
-			if err := s.SaveRecord(record); err != nil {
-				return err
-			}
-			if err := s.SetStoryStatus(id, model.StatusAwaitingHuman); err != nil {
-				return err
-			}
-			if err := s.ClearActive(); err != nil {
 				return err
 			}
 

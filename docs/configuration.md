@@ -129,7 +129,7 @@ before it writes anything.
 | --- | --- |
 | `max_review_rounds` | how many times a gate's reviewers will be asked again before the loop stops and asks a person |
 | `max_rework_rounds` | how many times a story goes back to the implementer |
-| `max_stop_blocks` | how many times the loop will insist on finishing before it lets go |
+| `max_stop_blocks` | how many stops in a row, with nothing recorded on the story, the `Stop` hook sends back before it hands the story to a person. `0` turns it off. See [stopping mid-story](enforcement.md#stopping-mid-story) |
 
 ## `reviews.gate7_advisory`
 

@@ -83,7 +83,10 @@ type payload struct {
 	ToolName      string `json:"tool_name"`
 	AgentType     string `json:"agent_type"`
 	CWD           string `json:"cwd"`
-	ToolInput     struct {
+	// StopHookActive is set on a Stop event when the session is already
+	// carrying on because a stop hook sent it back.
+	StopHookActive bool `json:"stop_hook_active"`
+	ToolInput      struct {
 		FilePath     string `json:"file_path"`
 		NotebookPath string `json:"notebook_path"`
 		Command      string `json:"command"`
@@ -118,6 +121,15 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 		}
 		warnings = append(warnings, msg)
 		fmt.Fprintln(stderr, "sdlc: "+msg)
+	}
+
+	if args[0] == "Stop" {
+		reply := decideStop(raw, getenv, warn)
+		slog.Debug("hook stop decision", "decision", reply.Decision)
+		if len(warnings) > 0 {
+			reply.SystemMessage = strings.TrimSpace(reply.SystemMessage + " sdlc: " + strings.Join(warnings, " "))
+		}
+		return emit(stdout, reply)
 	}
 
 	verdict, event, ok := decide(args[0], raw, getenv, warn)

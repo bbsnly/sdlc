@@ -40,6 +40,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - `human_gates.dor_advocate_check` has the human advocate read the story at
   Gate 1, and `sdlc gate dor pass` waits for its review. It is advisory there
   as everywhere, and it goes stale if the story changes after it.
+- A session cannot quietly end its turn mid-story. A `Stop` hook sends the stop
+  back with what to do instead, and after `loop.max_stop_blocks` stops in a row
+  with nothing recorded, hands the story to a person.
 - `sdlc cost` keeps what a story spent beside everything else it did.
   `sdlc cost add --usd` records an amount, `sdlc status` reports the running
   total, and crossing one of `budget.alert_fractions` says so once, on

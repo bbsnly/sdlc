@@ -59,10 +59,11 @@ This picks up a story already under way, or takes the next runnable one. If it f
 Read the story from the backlog file named by `backlog.path` in `.sdlc/config.json`. Check its
 acceptance criteria are testable: each one names an observable behaviour, not an implementation.
 If a criterion cannot be turned into a failing test, that is a Definition-of-Ready problem —
-record it and ask the user rather than inventing an interpretation:
+record it, and hand the question to a person rather than inventing an interpretation:
 
 ```bash
 sdlc gate dor fail --note "AC-2 describes an implementation, not a behaviour"
+sdlc escalate spec_unclear --message "AC-2 describes an implementation: what should a user see?"
 ```
 
 A project can ask for the human advocate at this gate too, and then the gate waits for it. Check:
@@ -112,14 +113,16 @@ wrong in but will make you wonder later why security is blocking.
 
 If either document was not stored the gate will refuse to pass, and say which one is missing.
 That is not something to work around: the agent's summary is not the document, and the gates
-after this one read the document. Show the user what the researcher reported and stop.
+after this one read the document. Hand it to a person with what the researcher reported —
+`sdlc escalate analysis_incomplete --message "..."` — and stop.
 
 If the agent reports `open_questions` above zero, or `split_recommended`, do not pass the gate.
-Record it as a failure with the reason, show the user the open questions, and stop. Guessing an
+Record it as a failure with the reason, and hand the open questions to a person. Guessing an
 answer here is the single most expensive mistake in the loop: everything downstream is built on it.
 
 ```bash
 sdlc gate analysis fail --note "<n> open questions the specification does not settle"
+sdlc escalate spec_unclear --message "<the open questions>"
 ```
 
 ## Gate 3 — Acceptance tests, then frozen
@@ -135,12 +138,13 @@ Do not write the tests yourself, and do not adjust them afterwards. The tests ar
 later gate measures against, and a test shaped by the conversation that will also shape the
 implementation measures nothing.
 
-If the agent reports anything in `untestable`, stop. A criterion nobody can test is a
-Definition-of-Ready problem that reached Gate 3, and writing something adjacent to it is worse
-than saying so:
+If the agent reports anything in `untestable`, hand it to a person. A criterion nobody can test
+is a Definition-of-Ready problem that reached Gate 3, and writing something adjacent to it is
+worse than saying so:
 
 ```bash
 sdlc gate tests_frozen fail --note "AC-3 cannot be observed from outside"
+sdlc escalate untestable --message "AC-3 cannot be observed from outside: <why>"
 ```
 
 Otherwise run the project's own test command — `commands.test` from `.sdlc/config.json` — and
@@ -158,8 +162,10 @@ sdlc gate tests_frozen pass --note "<n> criteria, <n> failing tests"
 by anyone, including you and including the agent that wrote them. Lifting the freeze is sometimes
 right and is also exactly the shortcut that makes the rest of the loop meaningless, so it is not
 yours to do: the hook refuses `sdlc unfreeze` from you and from every agent. If a frozen test is
-wrong, stop, tell the person which test and which acceptance criterion it gets wrong, and ask them
-to run `sdlc unfreeze --reason "..."` in their own terminal. Carry on once they have.
+wrong, hand it to a person with
+`sdlc escalate frozen_test_wrong --message "<which test, and the criterion it gets wrong>"` and
+stop. They run `sdlc unfreeze --reason "..."` and `sdlc approve` in their own terminal, and the
+next session carries on.
 
 `sdlc status --json` reports the freeze and whether it is still intact.
 
@@ -222,7 +228,8 @@ sdlc gate implementation pass --note "<n> files, frozen tests green"
 ```
 
 The gate checks the freeze is still intact. If it is not, something edited an acceptance test:
-stop and show the user, rather than freezing again over the top.
+hand it to a person with `sdlc escalate freeze_broken --message "..."`, rather than freezing
+again over the top.
 
 ## Gate 6 — Independent verification
 
@@ -322,15 +329,16 @@ sdlc gate <gate> fail --note "<what went wrong>"
 
 Do not pass a gate to keep moving. Do not do a gate's work yourself because delegating it was
 refused. Do not lift the test freeze to make something pass — if a frozen test is genuinely
-wrong, say which acceptance criterion it contradicts and ask the user.
+wrong, say which acceptance criterion it contradicts, and hand that to a person.
 
 Do not change the contract to get past a gate either. `CLAUDE.md` is refused while a story is
 running for the same reason a frozen test is: a rule you can edit is a rule that stopped
 applying to you. If a rule in the `## SDLC Contract` section is genuinely wrong, say which rule
-blocks which gate, and ask the user to change it.
+blocks which gate, and hand it to a person, who can change it.
 
-If the same gate fails three times, stop and show the user. Something upstream is wrong, and a
-fourth attempt will find the same wall.
+If the same gate fails three times, hand it to a person with
+`sdlc escalate gate_failing --message "..."`. Something upstream is wrong, and a fourth attempt
+will find the same wall.
 
 ## Handing a decision to a person
 
@@ -344,6 +352,11 @@ sdlc escalate <type> --message "<the question, and what you found>"
 Then stop, and tell the user what you asked. The iteration has ended, and the story waits until
 a person answers with `sdlc approve` in their own terminal. Do not run `sdlc approve` yourself
 — the hook refuses it — and do not start the story again before they have answered.
+
+Do not end your turn mid-story any other way. While a story is being worked on, the plugin's
+Stop hook sends a stop back until it is one of three things: the gate finished, the story handed
+to a person, or the iteration ended with `sdlc stop`. After `loop.max_stop_blocks` stops in a row
+with nothing recorded, it hands the story to a person itself.
 
 ## If a command fails
 

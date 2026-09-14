@@ -7,7 +7,7 @@ instead.
 ## What this is, and what it is not
 
 Enforcement uses Claude Code's own surfaces and nothing else: a `PreToolUse`
-hook, the plugin's agents, and the `sdlc` command. No git hooks are installed,
+hook, a `Stop` hook, the plugin's agents, and the `sdlc` command. No git hooks are installed,
 and `sdlc` never writes to `.git/hooks`.
 
 **This is a discipline tool, not a sandbox.** It constrains an assistant that is
@@ -282,6 +282,23 @@ The switch that turns enforcement off belongs to the person who started the
 session. A switch an assistant can reach is not a control.
 
 *Instead:* if a rule is wrong, say which one and why.
+
+## Stopping mid-story
+
+A session that ends its turn while a story is being worked on — without
+finishing the gate, handing the story to a person, or ending the iteration —
+leaves the story where nobody is looking. The `Stop` hook sends that stop back,
+with what to do instead: work the next gate, `sdlc escalate`, or `sdlc stop`.
+
+A stop it has already sent back goes through, so a session is never held in a
+loop. The count is kept per story and starts again whenever anything is recorded
+on it. Once [`loop.max_stop_blocks`](configuration.md#loop) stops in a row have
+been sent back with nothing recorded — three, by default — the next one hands
+the story to a person with a `loop_stalled` escalation and ends the iteration.
+`sdlc status` lists it as waiting, and `sdlc approve` lets it start again.
+
+In an interactive session this is felt: a reply that ends mid-story is sent back.
+`"max_stop_blocks": 0` turns the guard off, and so does `SDLC_ENFORCE=0`.
 
 ## Rules the command enforces
 
