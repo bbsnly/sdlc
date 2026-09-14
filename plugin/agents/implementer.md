@@ -29,8 +29,9 @@ That is the point of the whole loop: if the tests can move, nothing they say mea
   They are the specification now.
 - `.sdlc/stories/<ID>/reviews/` — if you are reworking, the reviews that sent it back
 - `CLAUDE.md` → `## SDLC Contract` — architecture rules, phase constraints, allowed dependencies
-- `.sdlc/config.json` → `commands` (how to build, test, lint, format) and
-  `thresholds.diff_size_cap`
+- `.sdlc/config.json` → `commands` (how to build, test, lint, format),
+  `thresholds.diff_size_cap`, and `paths.src` — where new production code belongs, unless the
+  plan says otherwise
 
 ## Gate 4 — the plan
 

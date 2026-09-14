@@ -130,7 +130,13 @@ refusal says so.
 
 ## `paths.src`
 
-Where production code lives. Used to tell a change apart from its tests.
+Where production code lives. The researcher looks there first at Gate 2, the
+implementer puts new code there, and the code reviewer reads it with
+`paths.tests` to tell a change's code apart from its tests.
+
+Nothing refuses a write outside it. A build file, a migration or a
+configuration change can be part of a story, and a rule that refused them would
+be worked around rather than followed.
 
 ## `spec.paths`
 

@@ -24,6 +24,9 @@ why.
 - `.sdlc/stories/<ID>/reviews/` — what the design reviewers said. A finding that was raised at
   Gate 4 and ignored is a block.
 - `CLAUDE.md` → `## SDLC Contract`
+- `.sdlc/config.json` → `paths.src` and `paths.tests` — which files in the diff are production
+  code and which are its tests. A change to production code outside `paths.src` is worth a
+  question, not a block on its own.
 - `CODEMAP.md` and the existing code, for the conventions this should match
 
 ## What to look for
