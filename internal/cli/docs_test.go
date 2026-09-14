@@ -337,6 +337,31 @@ func TestTheConfigurationExampleIsAConfiguration(t *testing.T) {
 	}
 }
 
+// The story a new reader copies was not a backlog: it carried a "schema" field
+// no backlog has, where the real one is "_schema". Decoded strictly, a field
+// the loop would silently ignore is a failure here.
+func TestTheStoryExampleIsABacklog(t *testing.T) {
+	_, rest, ok := strings.Cut(page(t, "getting-started.md"), "## Write a story")
+	if !ok {
+		t.Fatal("docs/getting-started.md no longer shows how to write a story")
+	}
+	_, rest, ok = strings.Cut(rest, "```json\n")
+	if !ok {
+		t.Fatal("docs/getting-started.md shows no example story")
+	}
+	body, _, _ := strings.Cut(rest, "```")
+
+	dec := json.NewDecoder(strings.NewReader(body))
+	dec.DisallowUnknownFields()
+	var backlog model.Backlog
+	if err := dec.Decode(&backlog); err != nil {
+		t.Fatalf("the example is not a backlog: %v\n%s", err, body)
+	}
+	if len(backlog.Stories) == 0 || len(backlog.Stories[0].AcceptanceCriteria) == 0 {
+		t.Errorf("the example is missing the story a reader would copy it for: %+v", backlog)
+	}
+}
+
 // Every page has to be reachable, or it is a page nobody reads.
 func TestEveryPageIsLinkedFromSomewhere(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join("..", "..", "docs"))

@@ -36,7 +36,7 @@ $ sdlc init
 | --- | --- |
 | `.sdlc/config.json` | the loop's settings, with commands that already match your project |
 | `user_stories.json` | your backlog, with one example story in it |
-| `.sdlc/story.schema.json` | what a story may contain |
+| `.sdlc/templates/story.schema.json` | what a story may contain |
 | `CLAUDE.md` | a `## SDLC Contract` section appended, if it is not already there |
 
 It never overwrites your own files, and it writes no `.gitignore`: what a
@@ -50,8 +50,8 @@ $ sdlc doctor
 ```
 
 `doctor` looks at the handful of things that actually stop the loop working —
-git, the configuration, the backlog, the contract, the commands your config
-names, and whether `sdlc` is on your `PATH`. Every problem it reports comes with
+git, the configuration, the backlog, the loop's own state, the contract, the
+commands your config names, and whether `sdlc` is on your `PATH`. Every problem it reports comes with
 the command that fixes it.
 
 ## Fill in the contract
@@ -80,7 +80,7 @@ Stories live in the file named by `backlog.path` in `.sdlc/config.json`, which
 
 ```json
 {
-  "schema": "sdlc/story/1",
+  "_schema": ".sdlc/templates/story.schema.json",
   "stories": [
     {
       "id": "AUTH-3",
@@ -110,8 +110,10 @@ not how the code does it. If a criterion cannot be turned into a failing test,
 the first gate will say so and stop, which is the cheapest place in the whole
 loop to find out.
 
-`status` is `todo`, `ready`, `in_progress`, `blocked`, `awaiting_human` or
-`done`. `priority` is lowest-first, and a story with no priority goes last.
+`status` is `todo`, `ready`, `in_progress`, `blocked`, `awaiting_human`, `done`
+or `dropped`. `sdlc start` picks from the `todo` and `ready` stories whose
+`depends_on` are all `done`: lowest `priority` first, `0` ahead of everything,
+then by id. A story with no priority counts as `999`.
 
 ```console
 $ sdlc story list
