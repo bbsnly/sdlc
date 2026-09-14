@@ -257,6 +257,22 @@ jobs:
             GOOS="${os}" go vet ./...
           done
 
+      # The release runs the pinned GoReleaser with this same Go, and nothing
+      # else did before a tag was pushed. Its go.mod once asked for a newer Go
+      # than go.mod pinned, which only a tag -- and tags here cannot be moved or
+      # deleted -- would have found. Building it here, and checking the config it
+      # reads, puts both on every commit.
+      - name: Check the release configuration with the pinned GoReleaser
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin=$(sed -n 's/^ *GORELEASER_VERSION: *//p' Taskfile.yml)
+          if [ -z "${pin}" ]; then
+            echo "::error::could not read GORELEASER_VERSION out of Taskfile.yml" >&2
+            exit 1
+          fi
+          go run "github.com/goreleaser/goreleaser/v2@v${pin}" check
+
   # The architectures no `check` runner covers. A release publishes six
   # platforms; until this job existed, three of them -- linux/arm64,
   # darwin/amd64, windows/arm64 -- had never run the binary they ship, let

@@ -68,9 +68,13 @@ jobs:
             echo "Add it under Settings -> Secrets and variables -> Actions, then re-run." >&2
             exit 1
           fi
-          # Not just that the token exists: that it can publish. An expired or
-          # read-only token passes a non-empty check and fails at the last
-          # step of the run, which is the one place failing is expensive.
+          # Not just that the token exists: that it authenticates. An expired
+          # or revoked token passes a non-empty check and would fail at the
+          # last step of the run, which is the one place failing is expensive.
+          # This does not prove the token may publish @bbsnly/sdlc: whoami
+          # succeeds for a read-only token too. That one still fails at
+          # `npm publish`, after the GitHub release is out -- replace the
+          # token and re-run the job.
           if ! who=$(npm whoami 2>&1); then
             echo "::error::NPM_TOKEN cannot authenticate to npm: ${who}" >&2
             exit 1

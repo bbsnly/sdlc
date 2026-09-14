@@ -51,6 +51,8 @@ jobs:
           cp LICENSE npm/LICENSE
           : > npm/checksums.txt
 
-          # --dry-run stops short of the registry write and still checks the
-          # name, the scope and the token's right to publish there.
+          # --dry-run checks the package name and the files a release would
+          # publish. It never asks the registry for a write, so it cannot tell a
+          # token that may publish from one that may only read: this job proves
+          # the token is set and authenticates, not that publishing will work.
           npm publish ./npm --dry-run --access public
