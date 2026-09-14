@@ -135,7 +135,7 @@ sdlc escalate spec_unclear --message "<the open questions>"
 
 Delegate to the `sdlc:sdet` agent. Give it a brief containing:
 
-- the story id, and the paths to `story.json`, `ANALYSIS.md` and `THREATS.md`
+- the story id, the backlog file it is in, and the paths to `ANALYSIS.md` and `THREATS.md`
 - that `paths.tests` and `commands.test` in `.sdlc/config.json` say where tests live and how to
   run them
 - that it stores its test plan with `sdlc artifact write test_plan`
@@ -183,8 +183,8 @@ author add one; run `sdlc freeze` again after it does, and the new file is added
 
 Two gates, recorded separately: the plan, then the review of it.
 
-Delegate to `sdlc:implementer` with the story id and the paths to `story.json`, `ANALYSIS.md`,
-`THREATS.md`, `TEST-PLAN.md` and the frozen tests. Tell it to store the plan with
+Delegate to `sdlc:implementer` with the story id, the backlog file it is in, and the paths to
+`ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md` and the frozen tests. Tell it to store the plan with
 `sdlc artifact write plan`, and that this is the plan only — no code yet.
 
 ```bash

@@ -23,7 +23,8 @@ That is the point of the whole loop: if the tests can move, nothing they say mea
 
 ## Inputs
 
-- `.sdlc/stories/<ID>/story.json` — the story and its acceptance criteria
+- the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names — and its
+  acceptance criteria
 - `.sdlc/stories/<ID>/ANALYSIS.md`, `THREATS.md` — Gate 2's facts, with `file:line`
 - `.sdlc/stories/<ID>/TEST-PLAN.md` and the frozen tests themselves — read them before you plan.
   They are the specification now.

@@ -20,7 +20,8 @@ why.
 
 - the diff: `git diff` against the trunk branch in `.sdlc/config.json`, and the whole of every
   file it touches. A diff read without its surroundings misses the thing it broke.
-- `.sdlc/stories/<ID>/story.json`, `PLAN.md`, `TEST-PLAN.md`, `VERIFICATION.md`
+- the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names
+- `.sdlc/stories/<ID>/PLAN.md`, `TEST-PLAN.md`, `VERIFICATION.md`
 - `.sdlc/stories/<ID>/reviews/` — what the design reviewers said. A finding that was raised at
   Gate 4 and ignored is a block.
 - `CLAUDE.md` → `## SDLC Contract`

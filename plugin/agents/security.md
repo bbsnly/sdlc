@@ -19,7 +19,8 @@ stops the gate; if not, your findings are recorded and the loop continues. Eithe
 
 - `.sdlc/stories/<ID>/THREATS.md` — Gate 2's threat pass. Start here, and say where it was wrong.
 - `PLAN.md` at Gate 4; the diff (`git diff`) and the changed files at Gate 7
-- `story.json`, `ANALYSIS.md`, the frozen tests
+- the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names;
+  `ANALYSIS.md`; the frozen tests
 - `CLAUDE.md` → `## SDLC Contract`
 
 ## What to look for

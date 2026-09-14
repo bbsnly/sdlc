@@ -20,7 +20,8 @@ are worth more when they were not shaped by an implementation you had already st
 
 Paths come from the brief you were given.
 
-- `.sdlc/stories/<ID>/story.json` — the story with its EARS acceptance criteria (AC-1..n)
+- the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names — with its
+  EARS acceptance criteria (AC-1..n)
 - `CODEMAP.md` — read this FIRST; it is the cheapest way to find the right modules
 - `CLAUDE.md` → `## SDLC Contract` — architecture rules, phase constraints, glossary
 - `.sdlc/config.json` → `spec.paths` — where this project's specifications live — and

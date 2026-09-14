@@ -244,6 +244,39 @@ func TestEveryRoleThatOwnsWorkHasAnAgent(t *testing.T) {
 	}
 }
 
+// Every agent was told to read .sdlc/stories/<ID>/story.json, and nothing ever
+// wrote one: the story is in the backlog. An agent sent to a file that is not
+// there guesses at the acceptance criteria instead.
+func TestThePluginNamesOnlyStoryFilesTheLoopKeeps(t *testing.T) {
+	kept := map[string]bool{model.RecordFile: true, "reviews": true}
+	for _, a := range model.Artifacts {
+		kept[a.File] = true
+	}
+	files, err := filepath.Glob(filepath.Join("..", "..", "plugin", "agents", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	skills, err := filepath.Glob(filepath.Join("..", "..", "plugin", "skills", "*", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inStory := regexp.MustCompile("stories/<ID>/([A-Za-z0-9_.-]+)")
+	for _, f := range append(files, skills...) {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "story.json") {
+			t.Errorf("%s sends an agent to story.json, which the loop never writes", filepath.Base(f))
+		}
+		for _, m := range inStory.FindAllStringSubmatch(string(raw), -1) {
+			if !kept[m[1]] {
+				t.Errorf("%s names stories/<ID>/%s, which the loop does not keep", filepath.Base(f), m[1])
+			}
+		}
+	}
+}
+
 // A setting nobody documented is a setting nobody can use.
 func TestEverySettingIsDocumented(t *testing.T) {
 	doc := page(t, "configuration.md")

@@ -18,7 +18,8 @@ written, not what somebody meant.
 ## Inputs
 
 - `.sdlc/stories/<ID>/PLAN.md` — what you are reviewing
-- `.sdlc/stories/<ID>/story.json`, `ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md`
+- the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names
+- `.sdlc/stories/<ID>/ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md`
 - the frozen acceptance tests — they are the specification the plan has to satisfy
 - `CLAUDE.md` → `## SDLC Contract` — architecture rules, phase constraints, layering
 - `CODEMAP.md` and the code the plan touches

@@ -15,7 +15,8 @@ is one nobody looks for.
 
 ## Inputs
 
-- `.sdlc/stories/<ID>/PLAN.md`, `story.json`, `ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md`
+- `.sdlc/stories/<ID>/PLAN.md`, `ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md`
+- the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names
 - the frozen acceptance tests — read them as an attacker would
 - the code the plan touches
 

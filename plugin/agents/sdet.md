@@ -23,7 +23,8 @@ beside its implementation tests the implementation, not the criterion.
 
 Paths come from the brief you were given.
 
-- `.sdlc/stories/<ID>/story.json` — the story and its acceptance criteria (AC-1..n)
+- the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names — and its
+  acceptance criteria (AC-1..n)
 - `.sdlc/stories/<ID>/ANALYSIS.md` and `THREATS.md` — Gate 2's findings, including the exact
   current behaviour with `file:line`. Read them before you read the code.
 - `CODEMAP.md` and the existing tests. Match their idiom; a suite of two styles is a suite
