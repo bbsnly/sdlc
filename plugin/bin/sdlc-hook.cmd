@@ -3,7 +3,8 @@ rem Hand a hook event to the sdlc binary, wherever it happens to live.
 rem Mirrors plugin/bin/sdlc-hook; see that file for why this never blocks.
 setlocal
 
-if defined SDLC_BIN if exist "%SDLC_BIN%" (
+rem A trailing backslash exists only for a directory, which is not a program.
+if defined SDLC_BIN if exist "%SDLC_BIN%" if not exist "%SDLC_BIN%\" (
   "%SDLC_BIN%" hook %1
   exit /b 0
 )

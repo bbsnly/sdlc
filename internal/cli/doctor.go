@@ -393,12 +393,25 @@ func afterCasePattern(fields []string) []string {
 // SDLC_BIN points at is one the hooks find. The plugin's own bin directory is
 // the launcher's other place to look, and only a hook knows where that is.
 func binaryCheck() check {
-	if bin := os.Getenv("SDLC_BIN"); bin != "" {
+	bin := os.Getenv("SDLC_BIN")
+	if bin != "" {
 		if path, err := exec.LookPath(bin); err == nil {
 			return check{Name: "sdlc on PATH", State: stateOK, Detail: "SDLC_BIN: " + path}
 		}
 	}
 	path, err := exec.LookPath("sdlc")
+	if bin != "" {
+		// The hooks pass over an SDLC_BIN that names nothing runnable and run
+		// whatever else they find, so a build being tried out is quietly not
+		// the one enforcing. Only doctor is in a position to say so.
+		instead := "find no sdlc at all, so nothing is enforced"
+		if err == nil {
+			instead = "run " + path + " instead"
+		}
+		return check{Name: "sdlc on PATH", State: stateProblem,
+			Detail: "SDLC_BIN names " + bin + ", which is not a program, so the hooks " + instead,
+			Fix:    "point SDLC_BIN at the sdlc binary, or unset it"}
+	}
 	if err != nil {
 		return check{Name: "sdlc on PATH", State: stateProblem,
 			Detail: "the hooks cannot find sdlc, so nothing is enforced",

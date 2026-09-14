@@ -639,6 +639,15 @@ func TestDoctorLooksForTheBinaryWhereTheHookDoes(t *testing.T) {
 	if c := binaryCheckIn(); c.State != stateOK || !strings.Contains(c.Detail, bin) {
 		t.Errorf("a binary SDLC_BIN points at, which the hook would run, was not found: %+v", c)
 	}
+
+	// The hooks pass over an SDLC_BIN that names nothing runnable, so a build
+	// being tried out would quietly not be the one enforcing.
+	for _, broken := range []string{filepath.Join(t.TempDir(), "gone", name), t.TempDir()} {
+		t.Setenv("SDLC_BIN", broken)
+		if c := binaryCheckIn(); c.State != stateProblem || !strings.Contains(c.Detail, "SDLC_BIN") {
+			t.Errorf("SDLC_BIN=%s names nothing runnable and doctor said nothing: %+v", broken, c)
+		}
+	}
 }
 
 // A failure early on must not produce a cascade of unrelated failures.

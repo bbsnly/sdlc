@@ -14,12 +14,15 @@ set -eu
 
 event="${1:-}"
 
+# -x alone is true of a directory, and exec'ing one ends this script with no
+# reply at all. An SDLC_BIN that names nothing runnable is passed over quietly,
+# because this is the hot path; "sdlc doctor" is what reports it.
 find_binary() {
-  if [ -n "${SDLC_BIN:-}" ] && [ -x "${SDLC_BIN}" ]; then
+  if [ -n "${SDLC_BIN:-}" ] && [ -f "${SDLC_BIN}" ] && [ -x "${SDLC_BIN}" ]; then
     printf '%s' "${SDLC_BIN}"
     return 0
   fi
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/bin/sdlc" ]; then
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/bin/sdlc" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/bin/sdlc" ]; then
     printf '%s' "${CLAUDE_PLUGIN_ROOT}/bin/sdlc"
     return 0
   fi
