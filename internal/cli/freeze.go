@@ -186,7 +186,7 @@ func refuseALostFreeze(s *store.Store, id string) error {
 	if err != nil {
 		return err
 	}
-	at, standing := standingFreeze(record)
+	at, standing := record.StandingFreeze()
 	if !standing {
 		return nil
 	}
@@ -197,20 +197,6 @@ func refuseALostFreeze(s *store.Store, id string) error {
 		WithFix(`if a person removed it on purpose, they lift it on the record with ` +
 			`"sdlc unfreeze --reason ..." in their own terminal, and then run "sdlc freeze"; ` +
 			`otherwise hand it over with "sdlc escalate freeze_broken --message ..."`)
-}
-
-// standingFreeze reports when this story's tests were last frozen, if nothing
-// has lifted that freeze since.
-func standingFreeze(r *model.Record) (string, bool) {
-	for i := len(r.Events) - 1; i >= 0; i-- {
-		switch r.Events[i].Type {
-		case "unfreeze":
-			return "", false
-		case "freeze":
-			return r.Events[i].At, true
-		}
-	}
-	return "", false
 }
 
 // freezeIsALeftover reports whether an existing freeze belongs to a story that
@@ -287,7 +273,7 @@ func newUnfreezeCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if _, standing := standingFreeze(record); !standing {
+				if _, standing := record.StandingFreeze(); !standing {
 					return sdlcerr.New(sdlcerr.NotFrozen,
 						"there is no freeze to lift",
 						"the acceptance tests have not been frozen for this story")

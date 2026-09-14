@@ -939,6 +939,20 @@ func (r *Record) Append(kind, message string, at time.Time) {
 	r.Events = append(r.Events, Event{At: Timestamp(at), Type: kind, Message: message})
 }
 
+// StandingFreeze reports when this story's tests were last frozen, if nothing
+// has lifted that freeze since.
+func (r *Record) StandingFreeze() (string, bool) {
+	for i := len(r.Events) - 1; i >= 0; i-- {
+		switch r.Events[i].Type {
+		case "unfreeze":
+			return "", false
+		case "freeze":
+			return r.Events[i].At, true
+		}
+	}
+	return "", false
+}
+
 // Timestamp is the one time format the loop writes: UTC, to the second, so that
 // two records written on different machines sort and compare.
 func Timestamp(t time.Time) string {

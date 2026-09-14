@@ -847,6 +847,30 @@ func TestDoctorNamesLoopStateTheHookCannotRead(t *testing.T) {
 	}
 }
 
+// A freeze the record holds and tests.lock does not has the hook treating every
+// test as frozen, and sending people here. Doctor said the freeze all read.
+func TestDoctorNamesAFreezeTheLockNoLongerHolds(t *testing.T) {
+	root := frozenStory(t)
+	// Before the freeze, there is none for tests.lock to hold.
+	if r := run(t, "doctor"); strings.Contains(r.stdout, "no longer holds") {
+		t.Errorf("doctor named a freeze before one was taken:\n%s", r.stdout)
+	}
+	mustRun(t, "freeze")
+	lock := filepath.Join(root, ".sdlc", "state", "tests.lock")
+	for _, body := range []string{"{}", `{"story":"OTHER-1","files":{}}`} {
+		if err := os.WriteFile(lock, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r := run(t, "doctor")
+		if !strings.Contains(r.stdout, "tests.lock no longer holds that freeze") {
+			t.Errorf("doctor did not name the freeze tests.lock lost to %s:\n%s", body, r.stdout)
+		}
+		if r.code == 0 {
+			t.Errorf("doctor exited zero with a freeze that tests.lock (%s) no longer holds", body)
+		}
+	}
+}
+
 // Doctor read only the active story's record. A stopped story's record that no
 // longer reads was reported as fine, and the next start on it failed with an
 // error calling itself a bug.

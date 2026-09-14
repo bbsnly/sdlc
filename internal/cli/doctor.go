@@ -222,10 +222,20 @@ func stateCheck(s *store.Store) check {
 				" reads: restore it if you keep a copy, or remove it to take the story through its gates again")
 		}
 	}
-	if _, err := s.Lock(); err != nil {
+	lock, err := s.Lock()
+	if err != nil {
 		problem(err.Error(), "every test is treated as frozen until .sdlc/state/tests.lock reads: "+
 			`restore it if you keep a copy, or lift it on the record with "sdlc unfreeze --reason ..." `+
 			`in your own terminal and run "sdlc freeze", which freezes the tests as they are now`)
+	} else if active != "" && (lock == nil || lock.Story != active) {
+		// The hook treats every test as frozen over this, and sends people here.
+		if record, err := s.Record(active); err == nil {
+			if at, standing := record.StandingFreeze(); standing {
+				problem("the tests for "+active+" were frozen at "+at+", and .sdlc/state/tests.lock no longer holds that freeze",
+					"every test is treated as frozen until it does: restore it if you keep a copy, or lift the "+
+						`freeze on the record with "sdlc unfreeze --reason ..." in your own terminal and run "sdlc freeze"`)
+			}
+		}
 	}
 	if len(details) > 0 {
 		return check{Name: "loop state", State: stateProblem,

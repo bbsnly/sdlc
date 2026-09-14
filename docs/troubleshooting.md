@@ -587,6 +587,19 @@ Restore it if you keep a copy. Otherwise lift it with
 Deleting the file is not enough: `sdlc freeze` refuses a freeze that went
 missing without being lifted.
 
+### `.sdlc/state/tests.lock does not hold the freeze ... record says its tests are under`
+
+The story's record says its tests were frozen and nothing has lifted that, but
+`tests.lock` is gone, or names another story, or names none. Until it holds the
+freeze again, a file write or a shell command that writes to anything that looks
+like a test is refused, as it is for a freeze that will not read: taking the
+freeze out of `tests.lock` does not take it off the tests. `sdlc doctor` names it
+under "loop state".
+
+Restore it if you keep a copy. Otherwise a person lifts the freeze on the record
+with `sdlc unfreeze --reason "..."` in their own terminal and runs `sdlc freeze`
+again.
+
 ### `.sdlc/state/tests.lock ... and nor could .sdlc/config.json, so every file the default patterns call a test is being treated as frozen`
 
 The freeze will not parse, and neither will the configuration that says which

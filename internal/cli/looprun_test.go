@@ -549,7 +549,7 @@ func TestFinishingAStoryLiftsItsFreeze(t *testing.T) {
 	if err := json.Unmarshal(raw, &record); err != nil {
 		t.Fatal(err)
 	}
-	if at, standing := standingFreeze(&record); standing {
+	if at, standing := record.StandingFreeze(); standing {
 		t.Errorf("the record still shows the freeze taken at %s, so the story could never be frozen again", at)
 	}
 }

@@ -334,7 +334,32 @@ const (
 	unreadableFreezeAndConfig = ".sdlc/state/tests.lock could not be read, and nor could " +
 		".sdlc/config.json, so every file the default patterns call a test is being treated " +
 		"as frozen. Run `sdlc doctor` to see why."
+	unreadableFreeze = ".sdlc/state/tests.lock could not be read, so every test file is " +
+		"being treated as frozen until it can be. Run `sdlc doctor` to see why."
 )
+
+func lostFreeze(story string) string {
+	return ".sdlc/state/tests.lock does not hold the freeze " + story + "'s record says its tests " +
+		"are under, so every test file is being treated as frozen until it does. Run `sdlc doctor` to see why."
+}
+
+// freezeRecorded reports whether the story's record says its tests are frozen
+// and nothing has lifted that since. It is asked only when tests.lock holds no
+// freeze for the story: deleting tests.lock, or writing another story's name
+// or none into it, was otherwise the way to unfreeze the tests. A record that
+// does not read says nothing here; the commit is refused over it anyway.
+func freezeRecorded(project, story string) bool {
+	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "stories", story, model.RecordFile))
+	if err != nil {
+		return false
+	}
+	var record model.Record
+	if json.Unmarshal(raw, &record) != nil {
+		return false
+	}
+	_, standing := record.StandingFreeze()
+	return standing
+}
 
 // frozenTests is what the freeze holds, for the shell rules to refuse writes
 // to. No freeze yet means nothing frozen, which is the ordinary state before
@@ -344,27 +369,31 @@ const (
 // configuration calls a test counts as frozen until it reads, as it does for a
 // file write -- otherwise corrupting tests.lock was the way to `echo` into a
 // frozen test. When the configuration will not read either, the default
-// patterns say what a test is, and it says so.
+// patterns say what a test is, and it says so. So is a freeze that went while
+// the story's record still holds it.
 func frozenTests(project, story string, warn func(string)) (frozen []string, isTest, newTest func(string) bool) {
 	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "tests.lock"))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil, nil
-	}
 	var lock model.Lock
-	if err == nil {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		err = nil
+	case err == nil:
 		err = json.Unmarshal(raw, &lock)
 	}
-	if err != nil {
+	// A freeze belonging to another story says nothing about this one.
+	if gone := lock.Story != story && freezeRecorded(project, story); err != nil || gone {
 		cfg, cfgErr := config.Load(project)
 		if cfgErr != nil {
 			warn(unreadableFreezeAndConfig)
 			return nil, testset.New(config.Default().Paths.Tests).Match, nil
 		}
-		warn(".sdlc/state/tests.lock could not be read, so every test file is " +
-			"being treated as frozen until it can be. Run `sdlc doctor` to see why.")
+		if err != nil {
+			warn(unreadableFreeze)
+		} else {
+			warn(lostFreeze(story))
+		}
 		return nil, testset.New(cfg.Paths.Tests).Match, nil
 	}
-	// A freeze belonging to another story says nothing about this one.
 	if lock.Story != story {
 		return nil, nil, nil
 	}
@@ -553,12 +582,17 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 		// Reading it as absent made corrupting tests.lock the way to edit a
 		// frozen test, with nothing said. Until it reads again, every test
 		// is frozen.
-		warn(".sdlc/state/tests.lock could not be read, so every test file is " +
-			"being treated as frozen until it can be. Run `sdlc doctor` to see why.")
+		warn(unreadableFreeze)
 		t.Frozen, t.Locked = true, t.IsTest
 		return t
 	}
 	if lock == nil || lock.Story != story {
+		// Nor is one that went, or that was rewritten to name another story or
+		// none, while the story's record still holds it.
+		if freezeRecorded(project, story) {
+			warn(lostFreeze(story))
+			t.Frozen, t.Locked = true, t.IsTest
+		}
 		return t
 	}
 	t.Frozen, t.Locked = true, lock.Holds(rel)
