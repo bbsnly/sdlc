@@ -637,6 +637,23 @@ func TestTheShellCannotWriteWhatTheToolsMayNot(t *testing.T) {
 	}
 }
 
+// The Bash tool keeps a cd from one call to the next, and the payload's cwd is
+// where it left the session. A relative path is read from there.
+func TestAShellCommandIsReadFromTheSessionsDirectory(t *testing.T) {
+	root := loopProject(t)
+	e := map[string]any{
+		"hook_event_name": "PreToolUse",
+		"tool_name":       "Bash",
+		"cwd":             filepath.Join(root, ".sdlc", "state"),
+		"agent_type":      "sdlc:implementer",
+		"tool_input":      map[string]string{"command": "rm tests.lock"},
+	}
+	raw, _ := json.Marshal(e)
+	if !denied(call(t, string(raw), noEnv)) {
+		t.Error("the freeze was removed by a relative path from inside .sdlc/state")
+	}
+}
+
 // Bash is not the only tool that runs a command. Monitor ran one the hook never
 // looked at, and so would PowerShell on Windows.
 func TestEveryToolThatRunsACommandMeetsTheShellRules(t *testing.T) {

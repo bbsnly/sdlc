@@ -37,6 +37,102 @@ func allowed(t *testing.T, command string, s State) {
 	}
 }
 
+// What only wraps a command is not the command. Every one of these went
+// through, because the rules read the first word and the first word was `env`,
+// `(git` or `sh`.
+func TestAWrappedCommandIsStillTheCommand(t *testing.T) {
+	for _, command := range []string{
+		"env git commit -m x",
+		"(git commit -m x)",
+		"sh -c 'git commit -m x'",
+		`bash -lc "git commit -m x"`,
+		"if true; then git commit -m x; fi",
+		"(cd sub && git commit -m x)",
+		"sudo git commit -m x",
+		"time git commit -m x",
+		"nice -n 10 git commit -m x",
+	} {
+		refused(t, command, notReady, "commit-gate")
+	}
+	for _, command := range []string{
+		"(rm .sdlc/state/tests.lock)",
+		"env rm .sdlc/state/tests.lock",
+		"sh -c 'rm .sdlc/state/tests.lock'",
+		"echo .sdlc/state/tests.lock | xargs rm",
+		"find .sdlc/state -name tests.lock -delete",
+		"dd if=/dev/null of=.sdlc/state/tests.lock",
+		"git rm .sdlc/stories/A-1/gate-record.json",
+		"git checkout -- .sdlc/state/tests.lock",
+		`python3 -c "open('.sdlc/state/tests.lock','w').write('{}')"`,
+		`python3 -c "import os; os.remove('.sdlc/state/tests.lock')"`,
+		"for f in x; do rm .sdlc/state/tests.lock; done",
+		// A relative path, after a cd earlier in the same command.
+		"cd .sdlc/stories/A-1 && echo {} > gate-record.json",
+		"cd .sdlc/state && rm tests.lock",
+		"cd .sdlc && cd state && rm tests.lock",
+	} {
+		refused(t, command, ready, "loop-state-through-the-tool")
+	}
+	refused(t, "cd .claude && echo {} > settings.local.json", ready, "protected-path-through-the-tool")
+	refused(t, "(sdlc unfreeze --reason x)", ready, "unfreeze-is-a-human-decision")
+}
+
+// The Bash tool keeps its directory between calls, so the cd can be in an
+// earlier one. The session's directory is where the relative path starts.
+func TestARelativePathIsReadFromWhereTheCommandRuns(t *testing.T) {
+	inState := State{CommitReady: true, Dir: ".sdlc/state"}
+	refused(t, "rm tests.lock", inState, "loop-state-through-the-tool")
+	refused(t, "echo {} > ../stories/A-1/gate-record.json", inState, "loop-state-through-the-tool")
+	allowed(t, "rm scratch.txt", State{CommitReady: true, Dir: "internal"})
+
+	frozen := State{CommitReady: true, Frozen: []string{"internal/x_test.go"}, Dir: "internal"}
+	refused(t, "echo cheat > x_test.go", frozen, "frozen-test-through-the-tool")
+}
+
+// Reading through the wrappers must not make ordinary work look like writing.
+func TestWrappedOrdinaryWorkIsStillOrdinary(t *testing.T) {
+	frozen := State{CommitReady: false, CommitWhy: "code_review has not passed",
+		Frozen: []string{"internal/x_test.go"}}
+	for _, command := range []string{
+		"cd internal && go test ./...",
+		"(cd web && npm test)",
+		"env GOFLAGS=-mod=mod go build ./...",
+		"sh -c 'go test ./...'",
+		"find . -name '*.go'",
+		"find internal -name x_test.go",
+		"git checkout main",
+		"git diff internal/x_test.go",
+		"sed -n 1,20p internal/x_test.go",
+		"perl -ne 'print' internal/x_test.go",
+		"python3 -m pytest -c setup.cfg internal/x_test.go",
+		"python3 -m pytest internal/x_test.go",
+		"ruby -Itest internal/x_test.go",
+		"cat .sdlc/stories/A-1/PLAN.md",
+		"xargs -n1 echo < files.txt",
+	} {
+		allowed(t, command, frozen)
+	}
+}
+
+// Ways to write a frozen test that the shell rules read past: an overwriting
+// redirect, a bundled -i, a program on standard input, and git.
+func TestAFrozenTestCannotBeWrittenAnyOtherWay(t *testing.T) {
+	frozen := State{CommitReady: true, Frozen: []string{"internal/x_test.go"}}
+	for _, command := range []string{
+		"echo x >| internal/x_test.go",
+		"sed -Ei 's/a/b/' internal/x_test.go",
+		"perl -pi.bak -e 's/a/b/' internal/x_test.go",
+		"python3 - <<'EOF'\nopen('internal/x_test.go','w').write('')\nEOF",
+		"python3 <<'EOF'\nopen('internal/x_test.go','w').write('')\nEOF",
+		`python3 -c "import os; os.remove('internal/x_test.go')"`,
+		"git checkout -- internal/x_test.go",
+		"find internal -name x_test.go -delete",
+		"ls internal/x_test.go | xargs rm",
+	} {
+		refused(t, command, frozen, "frozen-test-through-the-tool")
+	}
+}
+
 // The one way around every rule that protects the loop's record is a shell
 // command, so these are the commands that matter most.
 func TestLoopStateCannotBeWrittenThroughTheShell(t *testing.T) {

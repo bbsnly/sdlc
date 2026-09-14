@@ -193,7 +193,10 @@ that, and nothing else about your shell is touched: your tests, your build and
 your tooling run exactly as before.
 
 They apply to every tool that runs a command: `Bash`, `PowerShell` and
-`Monitor`.
+`Monitor`. They read past what only wraps a command — `( … )`, `env`, `sudo`,
+`sh -c`, `xargs` and their like — and read a relative path from where the
+command runs: after a `cd` earlier in the same command, or where an earlier call
+left the session.
 
 This is pattern matching, not a shell. It is deliberately narrow.
 
@@ -201,8 +204,9 @@ This is pattern matching, not a shell. It is deliberately narrow.
 
 Refuses a command that would write or delete the loop's own files: `.sdlc/state`,
 `.sdlc/config.json`, any story's `gate-record.json`, any `reviews/` directory,
-or any gate document — by redirection, or through `rm`, `mv`, `cp`, `tee`,
-`sed -i` and their like.
+or any gate document — by redirection; through `rm`, `mv`, `cp`, `tee`, `dd`,
+`sed -i`, `find -delete`, `git rm`, `git checkout` and their like; or from
+inside a program handed to an interpreter.
 
 A scratch file inside a story's directory is not loop state, and reading any of
 it is never refused.
@@ -228,8 +232,13 @@ stop and say which one.
 ### `frozen-test-through-the-tool`
 
 Refuses a command that would write, rewrite or delete a frozen acceptance test:
-by redirection, through `rm`, `mv`, `cp`, `tee`, `sed -i` and their like, or
-from inside a program handed to an interpreter with `-c` or `-e`.
+by redirection; through `rm`, `mv`, `cp`, `tee`, `sed -i`, `find -delete`,
+`git checkout` and their like; or from inside a program handed to an
+interpreter with `-c` or `-e`, or on standard input.
+
+A patch applied with `git apply` or `patch` names its files inside the patch,
+where this cannot see them. `sdlc gate` still refuses a frozen test that
+changed, with `SDLC-E0025`.
 
 Reading one is never refused — `cat`, `grep`, `sed -n` and the test runner all
 work as they always did, and reading the tests is how the implementer knows

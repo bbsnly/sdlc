@@ -14,6 +14,7 @@
 package shellpolicy
 
 import (
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -57,6 +58,12 @@ type State struct {
 	// redirect did not, before the freeze and whenever new test files were
 	// allowed after it.
 	ImplementerTest func(path string) bool
+
+	// Dir is where the command starts, repository-relative and slash-separated,
+	// or empty for the repository root. The Bash tool keeps its directory from
+	// one call to the next, so `cd .sdlc/state` in one call and `rm tests.lock`
+	// in the next named the freeze in a word that did not say so.
+	Dir string
 }
 
 // Finding is a refusal. An empty Rule means nothing objected.
@@ -116,11 +123,13 @@ var mutating = map[string]bool{
 // exception follows the file-writing rules too: the implementer may not create a
 // test file, which is only wrong because of who is creating it.
 func Inspect(command string, s State) (Finding, bool) {
+	dir := s.Dir
 	for _, segment := range segments(command) {
 		words, redirects, assigns := parse(segment)
 		if len(words) == 0 && len(assigns) == 0 {
 			continue
 		}
+		run := program(words)
 		if f, ok := checkEnforcement(assigns); ok {
 			return f, true
 		}
@@ -130,14 +139,17 @@ func Inspect(command string, s State) (Finding, bool) {
 		if f, ok := checkApprove(words); ok {
 			return f, true
 		}
-		if f, ok := checkCommit(words, s); ok {
+		if f, ok := checkCommit(run.words, s); ok {
 			return f, true
 		}
-		if f, ok := checkLoopState(words, redirects); ok {
+		if f, ok := checkLoopState(command, segment, run, redirects, dir); ok {
 			return f, true
 		}
-		if f, ok := checkFrozenTests(segment, words, redirects, s); ok {
+		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, s); ok {
 			return f, true
+		}
+		if next, ok := changedDir(dir, run.words); ok {
+			dir = next
 		}
 	}
 	return Finding{}, false
@@ -244,16 +256,22 @@ func checkCommit(words []string, s State) (Finding, bool) {
 }
 
 // checkLoopState stops the shell being the way around every other rule.
-func checkLoopState(words, redirects []string) (Finding, bool) {
-	writes := len(redirects) > 0 || (len(words) > 0 && mutating[base(words[0])])
-	if !writes {
-		return Finding{}, false
+func checkLoopState(line, segment string, run invocation, redirects []string, dir string) (Finding, bool) {
+	candidates := append([]string{}, redirects...)
+	if changesFiles(run.words) {
+		candidates = append(candidates, run.words[1:]...)
+		if run.piped {
+			// `echo .sdlc/state/tests.lock | xargs rm` names the file in
+			// another segment altogether.
+			candidates = append(candidates, wordsIn(line)...)
+		}
 	}
-	candidates := redirects
-	if len(words) > 0 && mutating[base(words[0])] {
-		candidates = append(candidates, words[1:]...)
+	if runsInlineCode(run.words, segment) {
+		// The file a program opens is inside a string, as it is for the
+		// freeze below.
+		candidates = append(candidates, wordsIn(line)...)
 	}
-	for _, c := range candidates {
+	for _, c := range spellings(dir, candidates) {
 		if hit, ok := protectedPath(c); ok {
 			return Finding{
 				Rule: "protected-path-through-the-tool",
@@ -283,22 +301,35 @@ func checkLoopState(words, redirects []string) (Finding, bool) {
 // shell command went straight past them: `Write` to `x_test.go` was refused as
 // a frozen acceptance test, and `echo cheat > x_test.go` was allowed. One
 // redirect was the whole way round the hinge the loop turns on.
-func checkFrozenTests(segment string, words, redirects []string, s State) (Finding, bool) {
+func checkFrozenTests(line, segment string, run invocation, redirects []string, dir string, s State) (Finding, bool) {
 	if len(s.Frozen) == 0 && s.IsTest == nil && s.NewTest == nil && s.ImplementerTest == nil {
 		return Finding{}, false
 	}
-	candidates := redirects
-	switch {
-	case runsInlineCode(words):
+	candidates := append([]string{}, redirects...)
+	if runsInlineCode(run.words, segment) {
 		// `python3 -c '...'` is a program, not a list of arguments, and the
 		// file it opens is inside a string. There is no parsing this without
 		// being an interpreter, so the whole of it is searched instead: a
-		// frozen path appearing anywhere in code that runs is enough.
-		candidates = append(candidates, wordsIn(segment)...)
-	case changesAFile(words):
-		candidates = append(candidates, words[1:]...)
+		// frozen path appearing anywhere in code that runs is enough. The whole
+		// command line, because a `;` inside the program splits it into
+		// segments, and a here-document puts the program on lines of its own.
+		// A plain argument is left out: it is a file the program is given to
+		// read, as in `perl -ne 'print' x_test.go`, and reading a frozen test
+		// is never refused.
+		plain := plainArguments(segment)
+		for _, w := range wordsIn(line) {
+			if !plain[w] {
+				candidates = append(candidates, w)
+			}
+		}
 	}
-	for _, c := range candidates {
+	if changesAFile(run.words) {
+		candidates = append(candidates, run.words[1:]...)
+		if run.piped {
+			candidates = append(candidates, wordsIn(line)...)
+		}
+	}
+	for _, c := range spellings(dir, candidates) {
 		frozen, ok := isFrozen(c, s.Frozen)
 		w := strings.TrimPrefix(clean(c), "./")
 		if !ok && w != "" && s.IsTest != nil && s.IsTest(w) {
@@ -374,38 +405,250 @@ func changesAFile(words []string) bool {
 	}
 	switch name := base(words[0]); name {
 	case "sed", "perl":
-		return hasFlagPrefix(words[1:], "-i", "--in-place")
+		return editsInPlace(words[1:])
 	case "awk", "grep":
 		// Neither writes where it is pointed; both need a redirect, which is
 		// already counted.
 		return false
+	case "python", "python3", "ruby", "node", "deno", "bun", "php":
+		// An interpreter writes through its program, which runsInlineCode
+		// reads. A file named after it is a script or its input, and
+		// `python3 -m pytest tests/test_x.py` is how the tests run.
+		return false
+	case "find":
+		return hasWord(words[1:], "-delete")
+	case "git":
+		return gitChangesFiles(words[1:])
 	default:
 		return mutating[name]
 	}
 }
 
-// runsInlineCode reports whether this is an interpreter being handed a program
-// on the command line, where the files it touches are not arguments at all.
-func runsInlineCode(words []string) bool {
+// changesFiles is changesAFile for the loop's own record, which is broader for
+// the reason the mutating list is: refusing a read of the record costs nothing.
+func changesFiles(words []string) bool {
 	if len(words) == 0 {
 		return false
 	}
-	switch base(words[0]) {
-	case "python", "python3", "perl", "ruby", "node", "deno", "bun", "php":
-		return hasFlagPrefix(words[1:], "-c", "-e", "--eval", "--print")
+	switch name := base(words[0]); name {
+	case "find":
+		return hasWord(words[1:], "-delete") || hasWord(words[1:], "-exec") ||
+			hasWord(words[1:], "-execdir") || hasWord(words[1:], "-ok") || hasWord(words[1:], "-okdir")
+	case "git":
+		return gitChangesFiles(words[1:])
+	default:
+		return mutating[name]
+	}
+}
+
+// gitChangesFiles reports whether a git command rewrites or removes the files
+// named after it: `git rm`, `git mv`, `git checkout -- path`, `git restore`.
+func gitChangesFiles(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "-C" || a == "-c":
+			i++ // the option's own argument
+		case strings.HasPrefix(a, "-"):
+		default:
+			return a == "rm" || a == "mv" || a == "checkout" || a == "restore"
+		}
 	}
 	return false
 }
 
-func hasFlagPrefix(words []string, prefixes ...string) bool {
-	for _, w := range words {
-		for _, p := range prefixes {
-			if strings.HasPrefix(w, p) {
+// editsInPlace reports whether sed or perl was asked to rewrite the files it
+// reads: -i on its own, bundled with other flags (`-Ei`, `-pi.bak`), or
+// --in-place. Only a flag spelled `-i...` counted, and `sed -Ei` is common.
+func editsInPlace(args []string) bool {
+	for _, a := range args {
+		switch {
+		case a == "--in-place" || strings.HasPrefix(a, "--in-place="):
+			return true
+		case strings.HasPrefix(a, "--") || !strings.HasPrefix(a, "-"):
+			continue
+		}
+		for _, r := range a[1:] {
+			if r == 'i' {
 				return true
+			}
+			// What follows one of these is that option's argument, not more
+			// flags: `perl -Mstrict`, `sed -e ...`.
+			if strings.ContainsRune("efIlMmx", r) {
+				break
 			}
 		}
 	}
 	return false
+}
+
+// runsInlineCode reports whether this is an interpreter being handed a program
+// on the command line or on standard input, where the files it touches are not
+// arguments at all.
+//
+// Only the interpreter's own options are read. Everything from the script or
+// the module on belongs to it, so `python3 -m pytest -c setup.cfg` runs tests
+// rather than a program called setup.cfg.
+func runsInlineCode(words []string, segment string) bool {
+	if len(words) == 0 {
+		return false
+	}
+	var code string // the short options whose argument is a program
+	name := base(words[0])
+	switch name {
+	case "python", "python3":
+		code = "c"
+	case "perl", "ruby", "node", "bun":
+		code = "eEp"
+	case "php":
+		code = "r"
+	case "deno":
+	default:
+		return false
+	}
+	// A here-document is a program on standard input: `python3 - <<'EOF'`.
+	if strings.Contains(segment, "<<") {
+		return true
+	}
+	for _, a := range words[1:] {
+		switch {
+		case a == "-":
+			return true
+		case a == "--eval" || a == "--print" ||
+			strings.HasPrefix(a, "--eval=") || strings.HasPrefix(a, "--print="):
+			return true
+		case strings.HasPrefix(a, "--"):
+		case strings.HasPrefix(a, "-"):
+			if strings.HasPrefix(a, "-m") && code == "c" {
+				return false
+			}
+			if strings.ContainsAny(a[1:], code) && code != "" {
+				return true
+			}
+		default:
+			return name == "deno" && a == "eval"
+		}
+	}
+	return false
+}
+
+// plainArguments are the words of a segment written as bare arguments: not an
+// option, and with no quote or bracket in them, so not a piece of a program.
+func plainArguments(segment string) map[string]bool {
+	plain := map[string]bool{}
+	for _, f := range strings.Fields(segment)[1:] {
+		if !strings.HasPrefix(f, "-") && !strings.ContainsAny(f, `'"()[]{};`) {
+			plain[f] = true
+		}
+	}
+	return plain
+}
+
+// invocation is the program a segment runs, once what only wraps it is taken
+// off the front.
+type invocation struct {
+	words []string // the program and its arguments
+	piped bool     // its arguments also arrive on standard input, through xargs
+}
+
+// program takes off the front of a segment whatever only runs the command after
+// it: `(`, `then`, `env`, `sudo`, `sh -c`, `xargs` and their like. Read as the
+// first word, `(git commit)`, `env git commit` and `sh -c 'git commit'` were
+// commands called `(git`, `env` and `sh`, and no rule knew any of them.
+func program(words []string) invocation {
+	var run invocation
+	for len(words) > 0 {
+		first := strings.TrimLeft(words[0], "({!")
+		if first == "" {
+			words = words[1:]
+			continue
+		}
+		switch base(first) {
+		case "if", "then", "else", "elif", "do", "while", "until", "time":
+			words = words[1:]
+		case "xargs":
+			run.piped = true
+			words = skipOptions(words[1:])
+		case "env", "command", "builtin", "exec", "nohup", "sudo", "doas", "nice", "stdbuf",
+			"sh", "bash", "zsh", "dash", "ksh", "pwsh", "powershell":
+			words = skipOptions(words[1:])
+		case "timeout":
+			words = skipOptions(words[1:])
+			if len(words) > 0 {
+				words = words[1:] // the duration
+			}
+		default:
+			run.words = append([]string{first}, words[1:]...)
+			return run
+		}
+	}
+	return run
+}
+
+// skipOptions drops the flags a wrapper takes before the command it runs, and
+// the numbers some of them take (`nice -n 10`).
+func skipOptions(words []string) []string {
+	for len(words) > 0 {
+		w := words[0]
+		if !strings.HasPrefix(w, "-") && strings.Trim(w, "0123456789") != "" {
+			break
+		}
+		words = words[1:]
+	}
+	return words
+}
+
+// changedDir follows a `cd`, so that a relative path after it is read from where
+// the command actually is. A directory it cannot follow -- home, `-`, a
+// variable -- starts again from the root, which only loses the prefix: every
+// word is still read as it was written as well.
+func changedDir(dir string, words []string) (string, bool) {
+	if len(words) == 0 {
+		return dir, false
+	}
+	switch base(words[0]) {
+	case "cd", "pushd", "chdir", "set-location", "sl":
+	default:
+		return dir, false
+	}
+	args := skipOptions(words[1:])
+	if len(args) == 0 {
+		return "", true
+	}
+	to := clean(args[0])
+	switch {
+	case to == "" || to == "-" || strings.HasPrefix(to, "~") || strings.HasPrefix(to, "$"):
+		return "", true
+	case isAbsolute(to):
+		return to, true
+	}
+	return path.Join(dir, to), true
+}
+
+// spellings are the ways the words of a command can name a file: as written;
+// as the value given to an option, like `dd of=path` or `--output=path`; and
+// relative to the directory the command is in.
+func spellings(dir string, words []string) []string {
+	var out []string
+	for _, w := range words {
+		named := []string{w}
+		if _, value, ok := strings.Cut(w, "="); ok && value != "" {
+			named = append(named, value)
+		}
+		out = append(out, named...)
+		if dir == "" || dir == "." {
+			continue
+		}
+		for _, n := range named {
+			if c := clean(n); c != "" && !isAbsolute(c) {
+				out = append(out, path.Join(dir, c))
+			}
+		}
+	}
+	return out
+}
+
+func isAbsolute(p string) bool {
+	return strings.HasPrefix(p, "/") || (len(p) >= 2 && p[1] == ':')
 }
 
 // wordsIn pulls every path-shaped run of characters out of a piece of text, so
@@ -434,8 +677,10 @@ func inAPath(r rune) bool {
 // separator hidden inside quotes makes one segment out of two, which can only
 // make this notice more, never less.
 func segments(command string) []string {
+	// `>|` is a redirect that overwrites, not a pipe, and read as a pipe it
+	// left the file it writes as a command of its own.
 	replacer := strings.NewReplacer(
-		"&&", "\n", "||", "\n", ";", "\n", "|", "\n", "`", "\n", "$(", "\n", ")", "\n",
+		">|", ">", "&&", "\n", "||", "\n", ";", "\n", "|", "\n", "`", "\n", "$(", "\n", ")", "\n",
 	)
 	var out []string
 	for _, line := range strings.Split(replacer.Replace(command), "\n") {
@@ -636,5 +881,6 @@ func base(word string) string {
 	if i := strings.LastIndex(word, "/"); i >= 0 {
 		word = word[i+1:]
 	}
-	return strings.TrimSuffix(word, ".exe")
+	// `(sdlc unfreeze)` runs sdlc, whatever the parenthesis is stuck to.
+	return strings.TrimSuffix(strings.TrimLeft(word, "({!"), ".exe")
 }

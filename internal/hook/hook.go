@@ -240,10 +240,16 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 		}
 		implementerTest = testset.New(cfg.Paths.Tests).Match
 	}
+	// Where the command runs from. The Bash tool keeps a `cd` from one call to
+	// the next, and the payload's cwd is where that left it.
+	dir := ""
+	if rel, outside := pathrules.Rel(project, p.CWD); p.CWD != "" && !outside && rel != "." {
+		dir = rel
+	}
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
-		ImplementerTest: implementerTest,
-		Fresh:           func() (bool, string) { return reviewsFresh(project, story, warn) },
+		ImplementerTest: implementerTest, Dir: dir,
+		Fresh: func() (bool, string) { return reviewsFresh(project, story, warn) },
 	})
 	if !refused {
 		return policy.Allowed
