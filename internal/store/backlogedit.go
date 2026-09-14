@@ -2,9 +2,15 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+
+	"github.com/bbsnly/sdlc/internal/gitx"
 )
 
 // The backlog belongs to the people who write it. The tool changes two fields
@@ -18,6 +24,37 @@ import (
 // Every function here reports failure as false rather than as an error. Backlog
 // has already refused anything that is not an object with a stories array, so
 // a false is a bug, and the caller says so.
+
+// storyBookkeeping is what sdlc writes into a story as the loop moves it along.
+var storyBookkeeping = []string{"status", "updated"}
+
+// ReviewSubject is what a review of the work is stamped with, and what a commit
+// is checked against: the working tree, less the loop's own directory, and less
+// the status and updated time of every story in the backlog.
+//
+// Those two are the loop's bookkeeping, written by sdlc as a story starts,
+// waits for a person, resumes and finishes. None of that is the work a
+// reviewer approved, and counting it sent both reviewers back to work that had
+// not changed. Everything else in the backlog -- the acceptance criteria above
+// all -- still counts.
+func (s *Store) ReviewSubject(ctx context.Context) (string, error) {
+	path := s.cfg.BacklogPath(s.root)
+	rel, err := filepath.Rel(s.root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return gitx.TreeHash(ctx, s.root)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return gitx.TreeHash(ctx, s.root)
+	}
+	// A backlog that does not parse is hashed as it is. That is still the same
+	// answer every time for the same bytes, which is all a subject has to be.
+	normal, ok := withoutStoryFields(raw, storyBookkeeping...)
+	if !ok {
+		return gitx.TreeHash(ctx, s.root)
+	}
+	return gitx.TreeHash(ctx, s.root, gitx.Override{Path: filepath.ToSlash(rel), Content: normal})
+}
 
 // member is one key of a JSON object, located by its offsets in the file.
 type member struct {
@@ -67,6 +104,65 @@ func editStory(data []byte, id string, changes ...change) ([]byte, bool) {
 		return edited, true
 	}
 	return nil, false
+}
+
+// withoutStoryFields returns the backlog with the given keys taken out of every
+// story.
+//
+// It is the inverse of editStory in the one way that matters: a value replaced
+// in place and a key added after the last one both come out again as exactly
+// the bytes that were there before, so a backlog reads the same here before and
+// after sdlc moves a story.
+func withoutStoryFields(data []byte, keys ...string) ([]byte, bool) {
+	out := bytes.Clone(data)
+	for {
+		start, end, found, ok := firstStoryField(out, keys)
+		if !ok {
+			return nil, false
+		}
+		if !found {
+			return out, true
+		}
+		out = append(out[:start:start], out[end:]...)
+	}
+}
+
+// firstStoryField locates the first member of any story that keys names, as
+// the span removing it takes out: the member, and the comma that joins it to
+// the member before it -- or, for a first member, to the one after.
+func firstStoryField(data []byte, keys []string) (start, end int, found, ok bool) {
+	top, ok := objectMembers(data, 0, len(data))
+	if !ok {
+		return 0, 0, false, false
+	}
+	stories, ok := lastMember(top, "stories")
+	if !ok {
+		return 0, 0, false, false
+	}
+	elements, ok := arrayElements(data, stories.valueStart, stories.valueEnd)
+	if !ok {
+		return 0, 0, false, false
+	}
+	for _, el := range elements {
+		members, ok := objectMembers(data, el[0], el[1])
+		if !ok {
+			return 0, 0, false, false
+		}
+		for i, m := range members {
+			if !slices.ContainsFunc(keys, func(k string) bool { return strings.EqualFold(k, m.key) }) {
+				continue
+			}
+			switch {
+			case i > 0:
+				return members[i-1].valueEnd, m.valueEnd, true, true
+			case len(members) > 1:
+				return m.keyStart, members[1].keyStart, true, true
+			default:
+				return m.keyStart, m.valueEnd, true, true
+			}
+		}
+	}
+	return 0, 0, false, true
 }
 
 // applyChanges replaces the value of every key a change names, and adds the

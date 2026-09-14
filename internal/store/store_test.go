@@ -253,6 +253,61 @@ func TestMovingAStoryChangesOnlyItsStatusAndUpdatedTime(t *testing.T) {
 	}
 }
 
+// What a review is stamped with leaves out what sdlc writes as a story moves,
+// so that waiting for a person and resuming does not make every review stale.
+// It leaves out nothing else.
+func TestTheBacklogReadsTheSameForReviewAfterAStoryWaitsAndResumes(t *testing.T) {
+	later := func() time.Time { return fixedTime.Add(48 * time.Hour) }
+	for _, before := range []string{
+		"{\n  \"stories\": [\n    {\n      \"id\": \"A-1\",\n      \"status\": \"ready\",\n" +
+			"      \"title\": \"One\",\n      \"estimate\": 5\n    }\n  ]\n}\n",
+		"{\"stories\": [\n\t{\n\t\t\"id\": \"A-1\",\n\t\t\"title\": \"One\"\n\t}\n]}\n",
+		`{"stories":[{"Status":"ready","id":"A-1","title":"One"},{"id":"B-2","title":"Two","status":"ready"}]}`,
+	} {
+		s := newStore(t)
+		writeBacklog(t, s, before)
+		path := s.cfg.BacklogPath(s.root)
+
+		// Reviews happen after the story has started, so that is the backlog
+		// they see.
+		if err := s.SetStoryStatus("A-1", model.StatusInProgress); err != nil {
+			t.Fatal(err)
+		}
+		reviewed, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resumed := s.WithClock(later)
+		for _, status := range []model.Status{model.StatusAwaitingHuman, model.StatusInProgress} {
+			if err := resumed.SetStoryStatus("A-1", status); err != nil {
+				t.Fatal(err)
+			}
+		}
+		now, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(now) == string(reviewed) {
+			t.Fatal("the round trip changed nothing on disk, so it proves nothing")
+		}
+
+		was, ok := withoutStoryFields(reviewed, storyBookkeeping...)
+		is, ok2 := withoutStoryFields(now, storyBookkeeping...)
+		if !ok || !ok2 {
+			t.Fatalf("a valid backlog could not be read for review:\n%s", now)
+		}
+		if string(was) != string(is) {
+			t.Errorf("waiting and resuming changed what a review sees:\nbefore:\n%s\nafter:\n%s", was, is)
+		}
+
+		retitled, _ := withoutStoryFields([]byte(strings.Replace(string(now), `"One"`, `"Changed"`, 1)),
+			storyBookkeeping...)
+		if string(retitled) == string(is) {
+			t.Error("a change to the story itself was left out of what a review sees")
+		}
+	}
+}
+
 func TestActiveIsEmptyBeforeAnIterationStarts(t *testing.T) {
 	s := newStore(t)
 	id, err := s.Active()

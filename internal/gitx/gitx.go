@@ -56,7 +56,11 @@ func Files(ctx context.Context, root string) ([]string, error) {
 // and a gate record, both under .sdlc/, so a hash that included them would make
 // every review stale the instant it was filed. What a reviewer of code is
 // looking at is the code.
-func TreeHash(ctx context.Context, root string) (string, error) {
+//
+// An override hashes a file as other content than it has on disk, which is how
+// a caller leaves out what in a file is not the work. It stands in only for a
+// file the tree already has: one git ignores, or one under .sdlc/, stays out.
+func TreeHash(ctx context.Context, root string, overrides ...Override) (string, error) {
 	// The directory is created, the index file inside it is not: git writes the
 	// index itself and refuses to read an empty file as one.
 	dir, err := os.MkdirTemp("", "sdlc-index-")
@@ -70,6 +74,24 @@ func TreeHash(ctx context.Context, root string) (string, error) {
 	env := append(os.Environ(), "GIT_INDEX_FILE="+filepath.Join(dir, "index"))
 	if _, err := git(ctx, root, env, "add", "-A", "--", ".", ":(exclude).sdlc"); err != nil {
 		return "", err
+	}
+	for _, o := range overrides {
+		staged, err := git(ctx, root, env, "ls-files", "--stage", "--", ":(literal)"+o.Path)
+		if err != nil {
+			return "", err
+		}
+		mode, _, inTree := strings.Cut(firstLine(string(staged)), " ")
+		if !inTree {
+			continue
+		}
+		blob, err := gitInput(ctx, root, env, o.Content, "hash-object", "-w", "--stdin", "--path="+o.Path)
+		if err != nil {
+			return "", err
+		}
+		if _, err := git(ctx, root, env, "update-index", "--cacheinfo",
+			mode+","+firstLine(string(blob))+","+o.Path); err != nil {
+			return "", err
+		}
 	}
 	out, err := git(ctx, root, env, "write-tree")
 	if err != nil {
@@ -88,10 +110,25 @@ func Clean(ctx context.Context, root string) (bool, error) {
 	return strings.TrimSpace(string(out)) == "", nil
 }
 
+// Override is content to hash in place of a file's own; see TreeHash. Path is
+// repository-relative and slash-separated.
+type Override struct {
+	Path    string
+	Content []byte
+}
+
 func git(ctx context.Context, root string, env []string, args ...string) ([]byte, error) {
+	return gitInput(ctx, root, env, nil, args...)
+}
+
+// gitInput is git with something on its standard input.
+func gitInput(ctx context.Context, root string, env []string, stdin []byte, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = root
 	cmd.Env = env
+	if stdin != nil {
+		cmd.Stdin = strings.NewReader(string(stdin))
+	}
 
 	var stderr strings.Builder
 	cmd.Stderr = &stderr

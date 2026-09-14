@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/bbsnly/sdlc/internal/config"
-	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/policy"
@@ -346,7 +345,7 @@ func reviewsFresh(project, story string, warn func(string)) (bool, string) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), treeTimeout)
 	defer cancel()
-	tree, err := gitx.TreeHash(ctx, project)
+	tree, err := reviewSubject(ctx, project)
 	if err != nil {
 		slog.Debug("hook could not measure the working tree", "err", err)
 		warn("the working tree could not be measured, so this commit was not checked " +
@@ -403,6 +402,17 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 	}
 	t.Frozen, t.Locked = true, lock.Holds(rel)
 	return t
+}
+
+// reviewSubject is the store's, so that a commit is checked against exactly
+// what the CLI stamped the reviews with. It parses the configuration, which the
+// rest of the hook avoids; this runs only for a commit, not on every tool call.
+func reviewSubject(ctx context.Context, project string) (string, error) {
+	cfg, err := config.Load(project)
+	if err != nil {
+		return "", err
+	}
+	return store.New(&config.Project{Root: project, Config: cfg}).ReviewSubject(ctx)
 }
 
 // activeStory reads the story being worked on, directly rather than through the

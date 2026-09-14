@@ -203,7 +203,9 @@ Verdicts: `approve`, `block`, `note`.
 The command stamps the review with what was in front of the reviewer — the
 plan's content at `design_review`, the working tree at `verifier_review` and
 `code_review`. That is what makes an approval go stale when the thing it
-approved changes.
+approved changes. The tree leaves out `.sdlc/` and the `status` and `updated`
+fields of the stories in the backlog, which `sdlc` writes itself; see
+[Why approvals go stale](the-loop.md#why-approvals-go-stale).
 
 Rounds are kept rather than overwritten, so "what did the architect say last
 time" stays answerable.

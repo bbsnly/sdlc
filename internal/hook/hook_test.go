@@ -13,8 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/store"
 )
 
 // noEnv is a project with nothing set, so a test opts in to what it needs.
@@ -680,6 +682,65 @@ func TestACommitOfWorkChangedSinceItWasReviewedIsRefused(t *testing.T) {
 	if !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "code-reviewer") {
 		t.Errorf("the refusal does not say whose review is stale: %q",
 			r.HookSpecificOutput.PermissionDecisionReason)
+	}
+}
+
+// Waiting for a person puts a story in awaiting_human, and resuming puts it
+// back: two writes to the tracked backlog that change nothing a reviewer
+// approved. The commit was refused as if the work had changed. A change to the
+// story itself still is.
+func TestACommitIsNotRefusedBecauseTheStoryWaitedForAPerson(t *testing.T) {
+	root := loopProject(t)
+	t.Setenv("GIT_DIR", filepath.Join(root, ".git"))
+	t.Setenv("GIT_WORK_TREE", root)
+	initRepo := exec.CommandContext(t.Context(), "git", "init", "--quiet")
+	initRepo.Dir = root
+	if out, err := initRepo.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	write(t, root, "invoice.go", "package invoice\n")
+	write(t, root, "user_stories.json", `{"stories":[{"id":"A-1","title":"Invoices","status":"in_progress"}]}`+"\n")
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := store.New(&config.Project{Root: root, Config: cfg})
+	tree, err := s.ReviewSubject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	at := time.Now()
+	record := model.NewRecord("A-1", at)
+	for _, g := range model.GateCommit.Before() {
+		record.SetGate(g, model.GatePass, "", at)
+	}
+	for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
+		for _, r := range model.ReviewersFor(gate) {
+			record.AddReview(model.Review{Gate: gate, Role: r.Role, Verdict: model.VerdictApprove, Subject: tree}, at)
+		}
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, ".sdlc/stories/A-1/gate-record.json", string(raw))
+
+	later := s.WithClock(func() time.Time { return at.Add(time.Hour) })
+	for _, status := range []model.Status{model.StatusAwaitingHuman, model.StatusInProgress} {
+		if err := later.SetStoryStatus("A-1", status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if r := call(t, command(root, "", "git commit -m done"), noEnv); denied(r) {
+		t.Fatalf("a story that waited for a person had its reviews called stale: %s",
+			r.HookSpecificOutput.PermissionDecisionReason)
+	}
+
+	write(t, root, "user_stories.json",
+		`{"stories":[{"id":"A-1","title":"Invoices, and refunds","status":"in_progress"}]}`+"\n")
+	if !denied(call(t, command(root, "", "git commit -m done"), noEnv)) {
+		t.Error("a story changed after it was reviewed went through to the commit")
 	}
 }
 

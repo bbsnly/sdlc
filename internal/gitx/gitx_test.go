@@ -75,6 +75,47 @@ func TestTheWorkingTreeIsTrackedFilesPlusWhatIsNotIgnored(t *testing.T) {
 	}
 }
 
+// An override hashes a file as other content, and stands in only for a file the
+// tree already has: it must not bring in one git ignores or the loop leaves out.
+func TestAnOverrideStandsInOnlyForAFileTheTreeHas(t *testing.T) {
+	root := repo(t)
+	write(t, root, ".gitignore", "*.log\n")
+	write(t, root, "main.go", "package main\n")
+	write(t, root, "debug.log", "noise")
+	write(t, root, ".sdlc/state/active", "A-1\n")
+
+	plain, err := TreeHash(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overridden, err := TreeHash(t.Context(), root, Override{Path: "main.go", Content: []byte("package other\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overridden == plain {
+		t.Fatal("the override changed nothing")
+	}
+	write(t, root, "main.go", "package other\n")
+	onDisk, err := TreeHash(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overridden != onDisk {
+		t.Error("an override does not hash the same as that content on disk")
+	}
+
+	write(t, root, "main.go", "package main\n")
+	for _, path := range []string{"debug.log", ".sdlc/state/active", "absent.go"} {
+		got, err := TreeHash(t.Context(), root, Override{Path: path, Content: []byte("x")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != plain {
+			t.Errorf("an override for %s, which is not in the tree, changed the hash", path)
+		}
+	}
+}
+
 func TestOutsideARepositoryTheFailureExplainsItself(t *testing.T) {
 	_, err := Files(t.Context(), t.TempDir())
 	if err == nil {

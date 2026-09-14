@@ -245,7 +245,8 @@ refusal names the first one that has not.
 
 Once they have, it also refuses a commit of work that has changed since the
 verifier and the code reviewers approved it. Their reviews are stamped with the
-working tree as it was, outside `.sdlc/`, and a change anywhere in it makes them
+working tree as it was, outside `.sdlc/` and without the `status` and `updated`
+fields `sdlc` writes into the backlog, and a change anywhere else makes them
 stale; the refusal names whose. Measuring the tree takes a moment, so it is done
 only for `git commit`.
 

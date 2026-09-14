@@ -209,3 +209,9 @@ code, and every approval of the old one becomes stale and the gate says so.
 The loop's own directory is left out of that tree hash. Recording a review
 writes a file under `.sdlc/`, so counting it would make every review stale the
 instant it was filed.
+
+So are the `status` and `updated` fields of each story in the backlog. `sdlc`
+writes them as a story starts, waits for a person and resumes, and none of that
+is the work a reviewer approved. Everything else in the backlog counts: change a
+story's title or its acceptance criteria after the review, and the review is
+stale.

@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
@@ -249,7 +248,7 @@ func gateSubject(ctx context.Context, s *store.Store, id string, gate model.Gate
 		}
 		return s.HashFile(store.ArtifactPath(id, plan))
 	case model.GateVerifierReview, model.GateCodeReview:
-		return gitx.TreeHash(ctx, s.Root())
+		return s.ReviewSubject(ctx)
 	default:
 		return "", nil
 	}
