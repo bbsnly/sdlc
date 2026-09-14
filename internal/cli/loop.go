@@ -80,7 +80,7 @@ func newStartCmd() *cobra.Command {
 				}
 			}
 
-			story, _, err := s.Story(id)
+			story, backlog, err := s.Story(id)
 			if err != nil {
 				return err
 			}
@@ -93,6 +93,11 @@ func newStartCmd() *cobra.Command {
 			}
 			if err := refuseIfWaiting(s, id); err != nil {
 				return err
+			}
+			if !resuming(story.Status) {
+				if err := refuseIfNotRunnable(backlog, story); err != nil {
+					return err
+				}
 			}
 			// A story that is already in progress is being picked up again,
 			// whether or not the iteration that started it is still running.
@@ -119,6 +124,39 @@ func newStartCmd() *cobra.Command {
 			return reportStart(cmd, s, id, resume)
 		},
 	}
+}
+
+// refuseIfNotRunnable holds a story named to `sdlc start` to what picking one
+// would. Naming a story chooses it over the priority order; it did not mean
+// starting one that was dropped, blocked, marked done, or waiting on a story
+// that is not done -- and all four started without a word.
+func refuseIfNotRunnable(b *model.Backlog, story *model.Story) error {
+	id := story.ID
+	switch story.Status {
+	case model.StatusDropped:
+		return sdlcerr.New(sdlcerr.NoRunnableStory,
+			quote(id)+" is dropped",
+			"the backlog marks it dropped, and nobody is coming back to a dropped story").
+			WithFix("set its status to ready in the backlog if it is wanted after all")
+	case model.StatusBlocked:
+		return sdlcerr.New(sdlcerr.NoRunnableStory,
+			quote(id)+" is blocked",
+			"the backlog marks it blocked, so something has to change before it can be worked").
+			WithFix("set its status back to ready once what blocked it is dealt with")
+	case model.StatusDone:
+		return sdlcerr.New(sdlcerr.NoRunnableStory,
+			quote(id)+" is marked done",
+			"the backlog says it is finished, though its gate record does not").
+			WithFix("set its status back to ready in the backlog if the work is not finished")
+	}
+	if waiting := b.BlockedBy(story); len(waiting) > 0 {
+		return sdlcerr.New(sdlcerr.NoRunnableStory,
+			quote(id)+" waits on "+strings.Join(waiting, ", "),
+			"a story starts once every story in its depends_on is done").
+			WithFix("finish " + strings.Join(waiting, ", ") + " first, or take " +
+				plural(len(waiting), "it", "them") + " out of " + id + "'s depends_on")
+	}
+	return nil
 }
 
 // resuming is whether starting a story in this status picks it up again rather

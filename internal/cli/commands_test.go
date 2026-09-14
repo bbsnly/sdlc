@@ -245,6 +245,48 @@ func TestStartingASecondStoryIsRefused(t *testing.T) {
 	}
 }
 
+// Naming a story chose it over the priority order and skipped every other
+// reason it would not have been picked: a dropped story, a blocked one, one
+// marked done, or one waiting on a dependency all started.
+func TestANamedStoryStartsOnlyWhenItCouldBePicked(t *testing.T) {
+	for _, tc := range []struct{ name, story, want string }{
+		{"waiting on a dependency", `{"id":"B-2","title":"Two","status":"ready","depends_on":["A-1"]}`, "waits on A-1"},
+		{"dropped", `{"id":"B-2","title":"Two","status":"dropped"}`, "is dropped"},
+		{"blocked", `{"id":"B-2","title":"Two","status":"blocked"}`, "is blocked"},
+		{"marked done", `{"id":"B-2","title":"Two","status":"done"}`, "is marked done"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gitProject(t)
+			initialised(t)
+			writeFile(t, ".", "user_stories.json",
+				`{"stories":[{"id":"A-1","title":"One","status":"ready","priority":1},`+tc.story+`]}`)
+
+			r := run(t, "start", "B-2")
+			if r.code == 0 {
+				t.Fatal("the story started")
+			}
+			for _, want := range []string{"SDLC-E0010", tc.want} {
+				if !strings.Contains(r.stderr, want) {
+					t.Errorf("the refusal is missing %q:\n%s", want, r.stderr)
+				}
+			}
+			if active := decode[statusPayload](t, mustRun(t, "status", "--json")).Active; active != "" {
+				t.Errorf("the refused story is running anyway: %q", active)
+			}
+		})
+	}
+
+	gitProject(t)
+	initialised(t)
+	writeFile(t, ".", "user_stories.json", `{"stories":[
+	  {"id":"A-1","title":"One","status":"done","priority":1},
+	  {"id":"B-2","title":"Two","status":"ready","depends_on":["A-1"]},
+	  {"id":"C-3","title":"Three","status":"todo","priority":0}]}`)
+	if got := decode[startPayload](t, mustRun(t, "start", "B-2", "--json")); got.Story != "B-2" {
+		t.Errorf("a story whose dependency is done, named over a higher priority, did not start: %+v", got)
+	}
+}
+
 func TestStoppingWhenNothingIsRunningIsNotAnError(t *testing.T) {
 	project(t)
 	mustRun(t, "init")

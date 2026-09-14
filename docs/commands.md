@@ -84,6 +84,11 @@ $ sdlc start AUTH-3
 Picks up a story already under way, or takes the next runnable one: resume
 first, then priority, then id. Refuses if an iteration is already running.
 
+Naming a story chooses it over the priority order, and nothing else: a story
+that is `dropped`, `blocked` or marked `done`, or that waits on a `depends_on`
+story that is not done, is refused as it would be passed over —
+[SDLC-E0010](troubleshooting.md#sdlc-e0010).
+
 It also refuses a story whose gates have all passed, rather than putting
 finished work back in progress. The way back into a finished story is to record
 the gate that failed — see [SDLC-E0033](troubleshooting.md#sdlc-e0033).

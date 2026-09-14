@@ -88,6 +88,12 @@ finished, or some are blocked or waiting on a dependency that is not done.
 A finished backlog is the loop having done its job — write the next story. Otherwise run
 `sdlc story list`, which shows each story's status and what is holding it back.
 
+The same code refuses a story you named to `sdlc start` that could not have been picked: one
+that is `dropped`, `blocked` or marked `done` in the backlog, or one whose `depends_on` names a
+story that is not done. Naming a story puts it ahead of the priority order; it does not start
+work the backlog says cannot start. Change the backlog if it is wrong, or finish the dependency
+first.
+
 ### SDLC-E0011
 
 The command you ran acts on the story currently being worked on, and no iteration is active.
