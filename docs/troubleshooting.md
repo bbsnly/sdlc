@@ -314,11 +314,14 @@ is a reading of the gate record, not a door that locks behind you.
 
 ### SDLC-E0034
 
-A flag was given a value it cannot use.
+A flag was given a value it cannot use, or the command line did not parse at all.
 
 `sdlc cost add --usd` is the usual one: an amount that arrived from a shell substitution which
 produced nothing is refused rather than recorded as zero, because a story that silently cost
 nothing is the one wrong answer nobody questions. Check the command that produced the value.
+
+An unknown command, an unknown flag, or the wrong number of arguments carries this code too, and
+`sdlc <command> --help` says what the command takes.
 
 ### SDLC-E0035
 

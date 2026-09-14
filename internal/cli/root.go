@@ -61,7 +61,61 @@ func New(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newDoctorCmd(),
 		newVersionCmd(),
 	)
+	explainUsageErrors(root)
 	return root
+}
+
+// explainUsageErrors gives a command line that does not parse the same shape
+// as every other failure: a code, what was wrong, and what to do. Cobra's own
+// errors carried only the message, so `--json` came back with no code to act
+// on, and prose said nothing about --help.
+func explainUsageErrors(root *cobra.Command) {
+	root.SetFlagErrorFunc(usageError) // inherited by every subcommand
+	root.Args = func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return usage(cmd, "unknown command "+quote(args[0])+" for "+quote(cmd.CommandPath()))
+		}
+		return nil
+	}
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			if check := sub.Args; check != nil {
+				sub.Args = func(cmd *cobra.Command, args []string) error {
+					if err := check(cmd, args); err != nil {
+						return usageError(cmd, err)
+					}
+					return nil
+				}
+			}
+			walk(sub)
+		}
+	}
+	walk(root)
+}
+
+func usageError(cmd *cobra.Command, err error) error {
+	return usage(cmd, err.Error())
+}
+
+func usage(cmd *cobra.Command, what string) error {
+	return sdlcerr.New(sdlcerr.BadArgument, what,
+		"`"+cmd.CommandPath()+"` did not understand its command line").
+		WithFix(`run "` + cmd.CommandPath() + ` --help" to see what it takes`)
+}
+
+// askedForJSON reports whether the command line asks for --json, for a failure
+// that came before the flags were parsed. It stops where a `--` ends the flags.
+func askedForJSON(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "--":
+			return false
+		case "--" + jsonFlag, "--" + jsonFlag + "=true":
+			return true
+		}
+	}
+	return false
 }
 
 // Execute builds and runs the tree, returning a process exit code.
@@ -79,8 +133,9 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return quiet.code
 	}
 	// The flag is read after the fact because cobra parses it during Execute,
-	// and a failure before parsing still has to print something.
-	if machine, _ := root.PersistentFlags().GetBool(jsonFlag); machine {
+	// and a failure before parsing still has to print something -- in JSON, if
+	// the command line asked for it, whether or not it got as far as saying so.
+	if machine, _ := root.PersistentFlags().GetBool(jsonFlag); machine || askedForJSON(args) {
 		_ = emitJSON(stdout, newErrorPayload(err))
 		return 1
 	}

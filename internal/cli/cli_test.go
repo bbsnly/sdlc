@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -43,6 +44,46 @@ func TestUnknownCommandFailsWithAMessage(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "nope") {
 		t.Errorf("the error should name what was not understood, got %q", errb.String())
+	}
+}
+
+// --json promises a failure in JSON with a code to act on. A command line that
+// did not parse came back as prose on standard error, or as JSON carrying only
+// cobra's message.
+func TestACommandLineThatDoesNotParseFailsLikeEverythingElse(t *testing.T) {
+	for _, args := range [][]string{
+		{"gate", "dor", "pass", "--bogus"},
+		{"nosuch"},
+		{"gate", "dor"},
+		{"review", "add", "code_review"},
+	} {
+		name := strings.Join(args, " ")
+
+		var out, errb bytes.Buffer
+		if code := Execute(append(args, "--json"), strings.NewReader(""), &out, &errb); code == 0 {
+			t.Errorf("sdlc %s --json succeeded", name)
+		}
+		var got struct {
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+			Code  string `json:"code"`
+			Fix   string `json:"fix"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+			t.Errorf("sdlc %s --json did not fail in JSON: %v\nstdout: %q\nstderr: %q",
+				name, err, out.String(), errb.String())
+			continue
+		}
+		if got.OK || got.Error == "" || got.Code != "SDLC-E0034" || !strings.Contains(got.Fix, "--help") {
+			t.Errorf("sdlc %s --json = %+v", name, got)
+		}
+
+		out.Reset()
+		errb.Reset()
+		Execute(args, strings.NewReader(""), &out, &errb)
+		if !strings.Contains(errb.String(), "SDLC-E0034") || !strings.Contains(errb.String(), "--help") {
+			t.Errorf("sdlc %s says nothing a person can act on:\n%s", name, errb.String())
+		}
 	}
 }
 
