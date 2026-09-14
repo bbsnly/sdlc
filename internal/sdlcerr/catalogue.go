@@ -148,7 +148,7 @@ var (
 		`change the settings the message names in .sdlc/config.json — docs/configuration.md says what each one takes; for a newer version, upgrade sdlc`)
 
 	TrunkMoved = register("SDLC-E0046",
-		`hand the story to a person with "sdlc escalate" and stop; if the commits are meant to stay, a person runs "sdlc stop" and "sdlc start" in their own terminal to pick the story up from where trunk is now`)
+		`record the gate as failed, hand the story to a person with "sdlc escalate", and stop; a person keeps the commits or reverts them, and answers with "sdlc approve", after which "sdlc start" picks the story up from where trunk is then`)
 )
 
 // entry is one row of the catalogue.

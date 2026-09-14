@@ -520,9 +520,17 @@ $ sdlc gate implementation fail --note "HEAD moved: work was committed before th
 $ sdlc escalate trunk_moved --message "a commit reached trunk before the review: keep it or revert it?"
 ```
 
-If the commits are meant to stay, such as a person's own fix or a pull from the remote, a person
-runs `sdlc stop` and `sdlc start` in their own terminal, and the story is picked up from where
-trunk is now. Otherwise they revert the commits first.
+The person keeps the commits, such as their own fix or a pull from the remote, or reverts them,
+and answers in their own terminal. `sdlc start` then picks the story up from where trunk is:
+
+```console
+$ sdlc approve US-001
+$ sdlc start US-001
+```
+
+If nobody escalated, because the person moved trunk themselves, `sdlc stop` and then `sdlc start`
+in their own terminal do the same. A story's own commit, made once its code review has passed,
+is not a move: a gate reopened after it measures from that commit.
 
 ## Warnings the hook prints
 

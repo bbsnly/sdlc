@@ -712,6 +712,23 @@ func TestWorkCommittedBeforeTheReviewHoldsTheGatesBack(t *testing.T) {
 	mustRun(t, "gate", "implementation", "pass", "--note", "trunk moved by a person")
 }
 
+// And the way out the refusal names works: the story handed over, and picked up
+// again once a person has answered, from where trunk is then.
+func TestAStoryHeldForAMovedHEADGoesOnOnceAPersonAnswers(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	reach(t, root, model.GateImplementation)
+	writeFile(t, root, "internal/invoice.go", "package internal\n")
+	commitEverything(t, root)
+
+	mustRun(t, "gate", "implementation", "fail", "--note", "HEAD moved")
+	mustRun(t, "escalate", "trunk_moved", "--message", "a commit reached trunk before the review: keep it?")
+	mustRun(t, "approve", "US-001")
+	mustRun(t, "start", "US-001")
+	mustRun(t, "gate", "implementation", "pass", "--note", "the person kept the commit")
+}
+
 // The story's own commit moves HEAD too. A code review reopened on work already
 // committed was measured from where the story started, and could never pass.
 func TestAGateReopenedAfterTheStorysCommitCanPassAgain(t *testing.T) {
