@@ -134,6 +134,31 @@ func TestBacklogNamesTheStoryThatIsMissingAField(t *testing.T) {
 	}
 }
 
+// A second story with an id was never read: every lookup found the first, so
+// starting the backlog moved the other one, and doctor called the backlog fine.
+func TestBacklogRefusesTwoStoriesWithOneID(t *testing.T) {
+	for _, second := range []string{"A-1", "a-1"} {
+		s := newStore(t)
+		writeBacklog(t, s, `{"stories":[{"id":"B-0","title":"Other","status":"ready"},`+
+			`{"id":"A-1","title":"First copy","status":"done"},`+
+			`{"id":"`+second+`","title":"Second copy","status":"ready"}]}`)
+
+		_, err := s.Backlog()
+		if err == nil {
+			t.Errorf("the backlog was read with A-1 and %s in it", second)
+			continue
+		}
+		if got := codeOf(t, err); got != sdlcerr.BacklogUnreadable {
+			t.Errorf("%s: code = %s, want %s", second, got, sdlcerr.BacklogUnreadable)
+		}
+		var e *sdlcerr.Error
+		errors.As(err, &e)
+		if !strings.Contains(e.What, second) || !strings.Contains(e.Why, "2 and 3") {
+			t.Errorf("%s: the refusal does not say which stories share it: %s / %s", second, e.What, e.Why)
+		}
+	}
+}
+
 func TestBacklogRejectsAStoryWhoseIDWouldEscape(t *testing.T) {
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[{"id":"../../oops","title":"Sneaky","status":"ready"}]}`)

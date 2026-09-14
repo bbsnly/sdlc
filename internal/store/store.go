@@ -158,6 +158,10 @@ func (s *Store) readBacklog() ([]byte, *model.Backlog, error) {
 			relative(s.root, path)+" is not valid JSON",
 			"the loop reads every story from this file, so it stops rather than guess").WithCause(err)
 	}
+	// Ids are compared as a case-insensitive filesystem compares them: each one
+	// becomes a directory name, and on macOS and Windows two ids that differ only
+	// in case are one directory.
+	seen := make(map[string]int, len(b.Stories))
 	for i, story := range b.Stories {
 		switch {
 		case story.ID == "":
@@ -184,6 +188,17 @@ func (s *Store) readBacklog() ([]byte, *model.Backlog, error) {
 		if err := CheckID(story.ID); err != nil {
 			return nil, nil, err
 		}
+		// A second story with an id was never read: every lookup found the first,
+		// so starting it moved the other one, and doctor called the backlog fine.
+		if first, ok := seen[strings.ToLower(story.ID)]; ok {
+			return nil, nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
+				"two stories in "+relative(s.root, path)+" have the id "+quote(story.ID),
+				"they are stories number "+strconv.Itoa(first+1)+" and "+strconv.Itoa(i+1)+" in the file, "+
+					"and every story needs an id of its own, whatever its case: the loop would work on one "+
+					"and move the other").
+				WithFix("give one of them another id")
+		}
+		seen[strings.ToLower(story.ID)] = i
 	}
 	return raw, &b, nil
 }

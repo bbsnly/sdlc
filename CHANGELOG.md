@@ -142,7 +142,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   nothing more. A story that is dropped, blocked or marked done, or that
   waits on a dependency that is not done, is refused as it would have been
   passed over, and a story whose status is not one the schema lists is
-  refused when the backlog is read, rather than silently never picked.
+  refused when the backlog is read, rather than silently never picked. So is
+  a backlog with two stories of one id, whatever their case: every lookup
+  found the first, so starting the second moved the first.
 
 ### The command
 
