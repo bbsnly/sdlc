@@ -120,6 +120,8 @@ func TestAFinishedStorysLoopStateIsNotWritable(t *testing.T) {
 		".sdlc/ſtories/OLD-9/gate-record.json": "gate-record-is-written-by-the-tool",
 		".sdlc/stories/A-1/reviewſ/x.md":       "review-is-written-by-the-tool",
 		".ſdlc/state/active":                   "write-protected-path",
+		".sdlc/ﬆories/OLD-9/gate-record.json":  "gate-record-is-written-by-the-tool",
+		".sdlc/conﬁg.json":                     "write-protected-path",
 	} {
 		v := Evaluate(Request{Tool: "Write", Agent: "sdlc:implementer", Path: path, Story: "A-1"})
 		// The rule, not just the refusal: a write refused for the wrong reason

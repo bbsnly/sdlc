@@ -11,6 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 )
 
 // Rel puts p into repository-relative, slash-separated form.
@@ -96,18 +99,45 @@ func Under(rel, dir string) bool {
 	// bytes and folds to `s`, the Kelvin sign is three and folds to `k` -- so
 	// cutting rel at len(dir) landed mid-character and `.ſdlc/state/active`
 	// matched nothing. APFS folds it, and the write reached the real file.
-	relParts := strings.Split(rel, "/")
-	dirParts := strings.Split(dir, "/")
+	relParts := strings.Split(Fold(rel), "/")
+	dirParts := strings.Split(Fold(dir), "/")
 	if len(relParts) < len(dirParts) {
 		return false
 	}
 	for i, d := range dirParts {
-		if !strings.EqualFold(relParts[i], d) {
+		if relParts[i] != d {
 			return false
 		}
 	}
 	return true
 }
+
+// Fold is a path as a case-insensitive filesystem reads it, for comparing two
+// spellings of one. Every rule that matches a path matches it through this.
+//
+// strings.EqualFold is not enough. It folds one letter to one letter, and APFS
+// folds `ﬆ` to `st` and `ﬁ` to `fi`, so `.sdlc/ﬆate/active` and
+// `invoice_teﬆ.go` reached the protected files while matching nothing. This is
+// full Unicode case folding, over a canonically decomposed string so that `é`
+// written either way is one letter, which is how APFS also compares.
+//
+// A trailing dot or space is dropped from each segment, because Windows drops
+// it: `.sdlc.` is `.sdlc` there. On a filesystem that keeps them, this refuses
+// a name that is genuinely different, which is the safe way to be wrong.
+func Fold(p string) string {
+	folded := norm.NFC.String(cases.Fold().String(norm.NFD.String(p)))
+	parts := strings.Split(folded, "/")
+	for i, part := range parts {
+		if trimmed := strings.TrimRight(part, ". "); trimmed != "" {
+			parts[i] = trimmed
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
+// SameName reports whether a and b are one path to a filesystem that folds
+// case.
+func SameName(a, b string) bool { return Fold(a) == Fold(b) }
 
 // UnderAny reports whether rel is under any of dirs.
 func UnderAny(rel string, dirs ...string) bool {

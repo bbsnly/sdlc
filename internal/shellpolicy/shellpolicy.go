@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/pathrules"
 )
 
 // State is what the loop knows, worked out by the caller. Keeping it out here
@@ -198,11 +199,13 @@ func isFrozen(word string, frozen []string) (string, bool) {
 	if word == "" {
 		return "", false
 	}
+	word = pathrules.Fold(word)
 	for _, f := range frozen {
+		folded := pathrules.Fold(f)
 		switch {
-		case strings.EqualFold(word, f),
-			strings.HasSuffix(strings.ToLower(word), "/"+strings.ToLower(f)),
-			strings.HasSuffix(strings.ToLower(f), "/"+strings.ToLower(word)):
+		case word == folded,
+			strings.HasSuffix(word, "/"+folded),
+			strings.HasSuffix(folded, "/"+word):
 			return f, true
 		}
 	}
@@ -269,6 +272,10 @@ func inAPath(r rune) bool {
 	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
 		return true
 	case r == '.', r == '/', r == '_', r == '-':
+		return true
+	case r >= 0x80:
+		// A name spelled with a ligature is still that name to the
+		// filesystem, so a letter outside ASCII cannot end a path here.
 		return true
 	}
 	return false
@@ -372,7 +379,10 @@ func hasWord(words []string, want string) bool {
 // rules already allow those, and a shell rule that disagreed with them would be
 // a rule nobody could follow.
 func loopState(word string) (string, bool) {
-	p := strings.TrimPrefix(clean(word), "./")
+	// Folded, as the file-writing rules are: `.SDLC/state/active` and
+	// `.sdlc/ﬆate/active` are the same file on macOS and Windows, and every
+	// comparison below is against a lower-case name.
+	p := pathrules.Fold(strings.TrimPrefix(clean(word), "./"))
 	if p == "" {
 		return "", false
 	}
@@ -449,10 +459,12 @@ func unquote(f string) string {
 	return strings.Trim(f, `"'`)
 }
 
+// base is the command a word runs, folded: on macOS and Windows `RM` and
+// `rm.exe` find the same program as `rm`.
 func base(word string) string {
-	word = clean(word)
+	word = pathrules.Fold(clean(word))
 	if i := strings.LastIndex(word, "/"); i >= 0 {
-		return word[i+1:]
+		word = word[i+1:]
 	}
-	return word
+	return strings.TrimSuffix(word, ".exe")
 }

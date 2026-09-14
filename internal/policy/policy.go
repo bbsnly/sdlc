@@ -225,7 +225,7 @@ var Rules = []Rule{
 		Route: "record outcomes with `sdlc gate <name> pass|fail --note \"...\"`; " +
 			"the record is the loop's memory and every later gate reads it",
 		check: func(r Request) string {
-			if !strings.EqualFold(fileAt(r.Path), model.RecordFile) {
+			if !pathrules.SameName(fileAt(r.Path), model.RecordFile) {
 				return ""
 			}
 			return model.RecordFile + " is the loop's record of what happened, and a " +

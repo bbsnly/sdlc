@@ -368,6 +368,7 @@ func TestTheFreezeHoldsWhateverTheCase(t *testing.T) {
 		"internal/Invoice_Test.go",
 		"Internal/invoice_test.go",
 		"INTERNAL/INVOICE_TEST.GO",
+		"internal/invoice_teﬆ.go",
 	} {
 		if !lock.Holds(path) {
 			t.Errorf("the freeze did not hold %s", path)
@@ -375,5 +376,12 @@ func TestTheFreezeHoldsWhateverTheCase(t *testing.T) {
 	}
 	if lock.Holds("internal/other_test.go") {
 		t.Error("the freeze held a file that is not in it")
+	}
+
+	// APFS does not care whether é arrives as one code point or two, and git
+	// reports whichever one the file was created with.
+	accented := NewLock("US-1", map[string]string{"internal/caf\u00e9_test.go": "abc"}, time.Now())
+	if !accented.Holds("internal/cafe\u0301_test.go") {
+		t.Error("the freeze did not hold a file whose é was spelled decomposed")
 	}
 }

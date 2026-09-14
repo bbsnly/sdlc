@@ -142,6 +142,13 @@ func TestUnderIsDirectoryAware(t *testing.T) {
 		{".sdlc/stories/A-1/reviewſ/x.md", ".sdlc/stories/A-1/reviews", true},
 		{"internal/Keys/x", "internal/keys", true},
 		{".ſdlcfoo/x", ".sdlc", false},
+		// Letters that fold to more than one letter. strings.EqualFold does
+		// not fold these at all, and APFS does.
+		{".sdlc/ﬆate/active", ".sdlc/state", true},
+		{".sdlc/conﬁg.json", ".sdlc/config.json", true},
+		// Windows drops a trailing dot or space from a name.
+		{".sdlc./state/active", ".sdlc/state", true},
+		{".sdlc /config.json", ".sdlc/config.json", true},
 	} {
 		if got := Under(tc.rel, tc.dir); got != tc.want {
 			t.Errorf("Under(%q, %q) = %v, want %v", tc.rel, tc.dir, got, tc.want)

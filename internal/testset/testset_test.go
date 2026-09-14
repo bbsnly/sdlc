@@ -88,6 +88,7 @@ func TestWhatCountsAsATestIsNotACaseQuestion(t *testing.T) {
 		"internal/invoice_test.go",
 		"internal/Invoice_Test.go",
 		"internal/INVOICE_TEST.GO",
+		"internal/invoice_teﬆ.go",
 		"spec/thing.rb",
 		"Spec/thing.rb",
 	} {

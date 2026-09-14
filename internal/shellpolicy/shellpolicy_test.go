@@ -49,6 +49,15 @@ func TestLoopStateCannotBeWrittenThroughTheShell(t *testing.T) {
 		"true && printf pass > .sdlc/state/active",
 		"touch .sdlc/config.json",
 		`echo x > ".sdlc/state/active"`,
+		// The same files, spelled the way macOS and Windows also find them.
+		// The file-writing rules folded case and these did not.
+		"echo x > .SDLC/state/active",
+		"rm .sdlc/Stories/A-1/gate-record.json",
+		"echo {} > .sdlc/Config.json",
+		"rm -rf .SDLC",
+		"echo x > .sdlc/ﬆate/active",
+		"RM .sdlc/state/tests.lock",
+		"rm.exe .sdlc/state/tests.lock",
 	} {
 		refused(t, command, ready, "loop-state-through-the-tool")
 	}
@@ -199,6 +208,10 @@ func TestAFrozenTestCannotBeWrittenThroughTheShell(t *testing.T) {
 		"tee x_test.go < /dev/null",
 		"python3 -c 'open(\"x_test.go\",\"w\")' && echo done",
 		"true; echo cheat > x_test.go",
+		"echo cheat > X_TEST.GO",
+		"echo cheat > x_teﬆ.go",
+		"RM internal/invoice_test.go",
+		"python3 -c 'open(\"x_teﬆ.go\",\"w\")'",
 	} {
 		t.Run(command, func(t *testing.T) {
 			f, refused := Inspect(command, state)

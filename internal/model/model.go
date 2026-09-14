@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/bbsnly/sdlc/internal/pathrules"
 )
 
 // Status is where a story stands in the backlog.
@@ -284,7 +286,7 @@ func FindArtifact(name string) (Artifact, bool) {
 // ArtifactByFile looks one up by its file name, for a rule that has a path.
 func ArtifactByFile(file string) (Artifact, bool) {
 	for _, a := range Artifacts {
-		if strings.EqualFold(a.File, file) {
+		if pathrules.SameName(a.File, file) {
 			return a, true
 		}
 	}
@@ -337,7 +339,7 @@ func (l *Lock) Holds(path string) bool {
 	// only exactly meant the freeze -- the hinge the whole loop turns on --
 	// came off for anyone who capitalised a letter.
 	for frozen := range l.Files {
-		if strings.EqualFold(frozen, path) {
+		if pathrules.SameName(frozen, path) {
 			return true
 		}
 	}

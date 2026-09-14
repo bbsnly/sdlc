@@ -76,10 +76,10 @@ func (m Matcher) Match(rel string) bool {
 	// file as `invoice_test.go`, and a pattern that missed it meant the rules
 	// about test files did not apply to it. Matching one more file than a
 	// case-sensitive filesystem strictly has is the safe way to be wrong here.
-	rel = strings.ToLower(rel)
+	rel = pathrules.Fold(rel)
 	base := path.Base(rel)
 	for _, g := range m.globs {
-		g = strings.ToLower(g)
+		g = pathrules.Fold(g)
 		if ok, err := path.Match(g, rel); err == nil && ok {
 			return true
 		}
@@ -99,7 +99,7 @@ func (m Matcher) underAnyNamedDirectory(rel string) bool {
 	// something is inside it.
 	for _, segment := range segments[:len(segments)-1] {
 		for _, d := range m.names {
-			if strings.EqualFold(segment, d) {
+			if pathrules.SameName(segment, d) {
 				return true
 			}
 		}
