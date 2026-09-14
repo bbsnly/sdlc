@@ -22,15 +22,21 @@ import (
 // an escaped character inside double quotes in a POSIX shell, are read as the
 // shell reads them.
 func commandsIn(line string, powerShell bool) [][]string {
-	l := lexer{powerShell: powerShell}
+	return lex(line, powerShell).commands
+}
+
+func lex(line string, powerShell bool) *lexer {
+	l := &lexer{powerShell: powerShell}
 	l.read([]rune(line))
 	l.endCommand()
-	return l.commands
+	return l
 }
 
 type lexer struct {
 	powerShell bool
 	commands   [][]string
+	nested     []bool // each command runs in a subshell or a substitution
+	depth      int    // the parentheses open around the command being read
 	words      []string
 	word       strings.Builder
 	started    bool // a word has begun, even an empty quoted one
@@ -55,6 +61,7 @@ func (l *lexer) endCommand() {
 	l.target = false
 	if len(l.words) > 0 {
 		l.commands = append(l.commands, l.words)
+		l.nested = append(l.nested, l.depth > 0)
 		l.words = nil
 	}
 }
@@ -62,7 +69,10 @@ func (l *lexer) endCommand() {
 // substitute reads the text inside `$(...)` or backticks as the commands it
 // runs, which happen whatever the word around them is for.
 func (l *lexer) substitute(inner []rune) {
-	l.commands = append(l.commands, commandsIn(string(inner), l.powerShell)...)
+	for _, words := range commandsIn(string(inner), l.powerShell) {
+		l.commands = append(l.commands, words)
+		l.nested = append(l.nested, true)
+	}
 	l.started = true
 }
 
@@ -100,7 +110,13 @@ func (l *lexer) read(rs []rune) {
 			i = l.redirect(rs, i)
 		case r == ' ' || r == '\t' || r == '\r':
 			l.endWord()
-		case strings.ContainsRune("\n;&|(){}", r):
+		case r == '(':
+			l.endCommand()
+			l.depth++
+		case r == ')':
+			l.endCommand()
+			l.depth = max(l.depth-1, 0)
+		case strings.ContainsRune("\n;&|{}", r):
 			l.endCommand()
 		default:
 			l.word.WriteRune(r)
@@ -188,12 +204,25 @@ func closing(rs []rune, i int) int {
 // A shell handed a string, `cmd /c`, PowerShell's -Command and `eval` run that
 // string, so it is read in turn for the commands it runs.
 func programsIn(line string, powerShell bool) [][]string {
-	return programsAt(line, powerShell, 0)
+	var out [][]string
+	for _, r := range programsAt(line, powerShell, 0) {
+		out = append(out, r.words)
+	}
+	return out
 }
 
-func programsAt(line string, powerShell bool, depth int) [][]string {
-	var out [][]string
-	for _, words := range commandsIn(line, powerShell) {
+// ran is a command a line runs, and whether it runs somewhere a `cd` does not
+// move the shell around it: a subshell, a substitution, or a script handed to
+// another shell or to eval, which is counted with them to be safe.
+type ran struct {
+	words  []string
+	nested bool
+}
+
+func programsAt(line string, powerShell bool, depth int) []ran {
+	var out []ran
+	l := lex(line, powerShell)
+	for i, words := range l.commands {
 		for len(words) > 0 && isAssignment(words[0]) {
 			words = words[1:]
 		}
@@ -205,7 +234,7 @@ func programsAt(line string, powerShell bool, depth int) [][]string {
 		if !run.shell && base(script[0]) == "eval" {
 			script = script[1:]
 		} else if !run.shell {
-			out = append(out, run.words)
+			out = append(out, ran{run.words, depth > 0 || l.nested[i]})
 			continue
 		}
 		if depth < 4 {
@@ -270,7 +299,10 @@ func gitCommand(args []string) (sub, dir string) {
 			} else {
 				dir = path.Join(dir, to)
 			}
-		case a == "-c" || a == "--git-dir" || a == "--work-tree" || a == "--namespace" || a == "--config-env":
+		case a == "-c" || a == "--git-dir" || a == "--work-tree" || a == "--namespace" ||
+			a == "--config-env" || a == "--attr-source":
+			// Read as the subcommand, the value hid it: `git --attr-source HEAD
+			// commit` was a command called HEAD.
 			i++
 		case strings.HasPrefix(a, "-"):
 		default:

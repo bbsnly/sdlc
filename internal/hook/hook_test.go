@@ -216,8 +216,10 @@ func TestACommitInAnotherRepositoryIsNotHeldToTheStory(t *testing.T) {
 	if r := call(t, string(raw), env(map[string]string{"CLAUDE_PROJECT_DIR": root})); denied(r) {
 		t.Errorf("a commit in another repository was refused: %s", r.HookSpecificOutput.PermissionDecisionReason)
 	}
-	if !denied(call(t, command(root, "", "git commit -m x"), noEnv)) {
-		t.Error("a commit in the project went past its gates")
+	for _, line := range []string{"git commit -m x", `cd "` + filepath.ToSlash(root) + `" && git commit -m x`} {
+		if !denied(call(t, command(root, "", line), noEnv)) {
+			t.Errorf("a commit in the project went past its gates: %s", line)
+		}
 	}
 }
 

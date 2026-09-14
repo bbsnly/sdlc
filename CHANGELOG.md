@@ -271,8 +271,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `git stash push -m "wip before commit"` met the commit gate; and
   `docker compose -p sdlc stop` was a stop. A string handed to `bash -c`,
   `cmd /c`, `-Command` or `eval`, and a command in `$(...)` or backticks, is
-  still read for what it runs. A commit in another repository is not held to
-  the story's gates.
+  still read for what it runs. A commit in another repository, reached by a
+  `cd` or `git -C` the rules can follow out of the project, is not held to the
+  story's gates.
 - `sdlc stop` is refused from a tool call while the story still has a gate to
   pass (`stop-is-a-human-decision`). Every rule holds only while a story is
   being worked on, so ending it part-way was the way round all of them at

@@ -2,6 +2,7 @@ package shellpolicy
 
 import (
 	"fmt"
+	"path"
 	"strings"
 	"testing"
 
@@ -94,22 +95,44 @@ func TestADocumentIsTextHoweverItIsHandedOver(t *testing.T) {
 // was opened in the loop's project, and every commit anywhere met its gate.
 func TestACommitInAnotherRepositoryIsNotTheStorys(t *testing.T) {
 	s := notReady
+	// As the hook's lookup does: the project at /work/project, whose own root is
+	// named by nothing, as a path outside it is.
 	s.Resolve = func(word string) string {
-		if strings.HasPrefix(word, "/") || strings.HasPrefix(word, "..") {
+		if !strings.HasPrefix(word, "/") {
+			word = path.Join("/work/project", word)
+		}
+		rel, _ := strings.CutPrefix(word, "/work/project/")
+		if rel == word {
 			return ""
 		}
-		return word
+		return rel
 	}
 	allowed(t, "git -C /work/other commit -m x", s)
 	allowed(t, "cd /work/other && git commit -m x", s)
 	allowed(t, "cd ../other && git commit -m x", s)
+	allowed(t, "(ls) && cd /work/other && git commit -m x", s)
 	elsewhere := s
 	elsewhere.Dir = "/work/other"
 	allowed(t, "git commit -m x", elsewhere)
 
-	refused(t, "cd internal && git commit -m x", s, "commit-gate")
-	refused(t, "git -C internal commit -m x", s, "commit-gate")
-	refused(t, "cd /work/other && cd - && git commit -m x", s, "commit-gate")
+	for _, command := range []string{
+		"git commit -m x",
+		"cd internal && git commit -m x",
+		"git -C internal commit -m x",
+		"cd /work/other && cd - && git commit -m x",
+		"cd /work/project && git commit -m x",
+		"cd . && git commit -m x",
+		"cd internal && cd .. && git commit -m x",
+		"git -C /work/project commit -m x",
+		"git -C ../project commit -m x",
+		"(cd .. && ls) && git commit -m x",
+		"echo $(cd /work/other) && git commit -m x",
+		"sh -c 'cd /tmp' && git commit -m x",
+		`cd /tmp && git -C "$OLDPWD" commit -m x`,
+		"git --attr-source HEAD commit -m x",
+	} {
+		refused(t, command, s, "commit-gate")
+	}
 }
 
 // Every rule holds only while a story is being worked on, so ending it part-way

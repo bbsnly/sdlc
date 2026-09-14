@@ -192,7 +192,8 @@ func Inspect(command string, s State) (Finding, bool) {
 // by its reviewer, and the commit gate.
 func checkPrograms(text string, s State) (Finding, bool) {
 	dir := s.Dir
-	for _, words := range programsIn(text, s.PowerShell) {
+	for _, r := range programsAt(text, s.PowerShell, 0) {
+		words := r.words
 		if f, ok := checkUnfreeze(words); ok {
 			return f, true
 		}
@@ -209,6 +210,13 @@ func checkPrograms(text string, s State) (Finding, bool) {
 			return f, true
 		}
 		if next, ok := changedDir(dir, words); ok {
+			// A `cd` in a subshell does not move the shell around it, and which
+			// commands after it share the subshell is not followed here: where
+			// they run is not known. Followed, `(cd .. && ls) && git commit`
+			// was a commit in another repository.
+			if r.nested {
+				next = ""
+			}
 			dir = next
 		}
 	}
@@ -389,12 +397,22 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 	if sub != "commit" {
 		return Finding{}, false
 	}
-	if isAbsolute(to) {
+	switch {
+	case strings.ContainsAny(to, "$~%"):
+		// `git -C "$OLDPWD"` is somewhere this cannot know, which is not
+		// another repository.
+		dir = ""
+	case isAbsolute(to):
 		dir = to
-	} else if to != "" {
+	case to != "":
 		dir = path.Join(dir, to)
 	}
-	if dir != "" && s.Resolve != nil && s.Resolve(dir) == "" {
+	// Another repository is a directory outside the project. Its .git is
+	// asked about rather than the directory, which for the project root
+	// itself resolves to nothing, the same as outside: `cd /path/to/project &&
+	// git commit`, the usual way to spell it, went past the gate. A directory
+	// not followed is "", which is the project.
+	if s.Resolve != nil && s.Resolve(path.Join(dir, ".git")) == "" {
 		return Finding{}, false
 	}
 	ready, why := s.CommitReady, s.CommitWhy
