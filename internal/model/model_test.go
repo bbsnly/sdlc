@@ -79,6 +79,37 @@ func TestNextBreaksTiesByIDSoTheChoiceIsStable(t *testing.T) {
 	}
 }
 
+// Compared as text, A-10 comes before A-2, and a backlog numbered past nine
+// would start its tenth story ahead of its second.
+func TestNextReadsTheNumbersInAnIDAsNumbers(t *testing.T) {
+	b := &Backlog{Stories: []Story{
+		story("A-10", StatusReady, p(2)),
+		story("A-2", StatusReady, p(2)),
+	}}
+	if got, _ := b.Next(); got.Story.ID != "A-2" {
+		t.Errorf("Next = %s, want A-2 ahead of A-10", got.Story.ID)
+	}
+
+	for _, c := range []struct {
+		a, b string
+		want int
+	}{
+		{"A-2", "A-10", -1},
+		{"A-10", "A-2", 1},
+		{"A-9", "B-1", -1},
+		{"A", "A-1", -1},
+		{"A-2", "A-2", 0},
+		{"A-02", "A-2", -1},
+		{"A-2", "A-02", 1},
+		{"v1.9", "v1.10", -1},
+		{"A-1", "A-01x", -1}, // the same story number, and the longer id after it
+	} {
+		if got := compareIDs(c.a, c.b); got != c.want {
+			t.Errorf("compareIDs(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
+		}
+	}
+}
+
 func TestNextSkipsAStoryWithAnUnfinishedDependency(t *testing.T) {
 	b := &Backlog{Stories: []Story{
 		story("A-1", StatusReady, p(1), "B-2"),

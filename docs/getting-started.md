@@ -113,7 +113,8 @@ loop to find out.
 `status` is `todo`, `ready`, `in_progress`, `blocked`, `awaiting_human`, `done`
 or `dropped`. `sdlc start` picks from the `todo` and `ready` stories whose
 `depends_on` are all `done`: lowest `priority` first, `0` ahead of everything,
-then by id. A story with no priority counts as `999`.
+then by id, reading the numbers in it as numbers, so `A-2` comes before `A-10`.
+A story with no priority counts as `999`.
 
 ```console
 $ sdlc story list

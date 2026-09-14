@@ -7,6 +7,7 @@
 package model
 
 import (
+	"cmp"
 	"slices"
 	"sort"
 	"strings"
@@ -148,10 +149,53 @@ func (b *Backlog) Next() (Selection, bool) {
 		if pi != pj {
 			return pi < pj
 		}
-		return runnable[i].ID < runnable[j].ID
+		return compareIDs(runnable[i].ID, runnable[j].ID) < 0
 	})
 	return Selection{Story: runnable[0]}, true
 }
+
+// compareIDs orders story ids the way a person reads them: the numbers in them
+// as numbers, so A-2 comes before A-10, and the rest as text. Ids that differ
+// only in leading zeros fall back to plain text, so no two ids ever tie.
+func compareIDs(a, b string) int {
+	ca, cb := idChunks(a), idChunks(b)
+	for k := 0; k < len(ca) && k < len(cb); k++ {
+		x, y := ca[k], cb[k]
+		if !isDigit(x[0]) || !isDigit(y[0]) {
+			if c := strings.Compare(x, y); c != 0 {
+				return c
+			}
+			continue
+		}
+		nx, ny := strings.TrimLeft(x, "0"), strings.TrimLeft(y, "0")
+		if c := cmp.Compare(len(nx), len(ny)); c != 0 {
+			return c
+		}
+		if c := strings.Compare(nx, ny); c != 0 {
+			return c
+		}
+	}
+	if c := cmp.Compare(len(ca), len(cb)); c != 0 {
+		return c
+	}
+	return strings.Compare(a, b)
+}
+
+// idChunks splits an id into runs of digits and runs of everything else.
+func idChunks(id string) []string {
+	var out []string
+	for start := 0; start < len(id); {
+		end := start + 1
+		for end < len(id) && isDigit(id[end]) == isDigit(id[start]) {
+			end++
+		}
+		out = append(out, id[start:end])
+		start = end
+	}
+	return out
+}
+
+func isDigit(c byte) bool { return '0' <= c && c <= '9' }
 
 // BlockedBy lists the dependencies of s that are not done yet, so that "nothing
 // is runnable" can say why rather than just refusing.
