@@ -116,6 +116,54 @@ func Check(root, tag string) ([]Problem, error) {
 		problems = append(problems, Problem{"",
 			fmt.Sprintf("tag %s does not match version %s from %s; tags are v-prefixed", tag, version, Source)})
 	}
+	if tag != "" {
+		found, err := prereleaseClaims(root)
+		if err != nil {
+			return nil, err
+		}
+		problems = append(problems, found...)
+	}
+	return problems, nil
+}
+
+// prereleaseWording is what the pages say while nothing has been released, and
+// what stops being true the moment something is. The README goes into every
+// archive, so a release cut without rewriting it ships a document saying the
+// release does not exist.
+//
+// Checked only when a tag is being cut: until then the sentences are right.
+var prereleaseWording = []string{
+	"not tagged yet",
+	"nothing to download yet",
+	"while there is no release",
+}
+
+// prereleaseClaims finds that wording in the README and the documentation.
+func prereleaseClaims(root string) ([]Problem, error) {
+	pages, err := filepath.Glob(filepath.Join(root, "docs", "*.md"))
+	if err != nil {
+		return nil, err
+	}
+	pages = append([]string{filepath.Join(root, "README.md")}, pages...)
+	var problems []Problem
+	for _, page := range pages {
+		body, err := os.ReadFile(page)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		// Prose wraps, so a phrase can be split across a line break.
+		text := strings.Join(strings.Fields(string(body)), " ")
+		rel, _ := filepath.Rel(root, page)
+		for _, phrase := range prereleaseWording {
+			if strings.Contains(text, phrase) {
+				problems = append(problems, Problem{filepath.ToSlash(rel),
+					fmt.Sprintf("still says %q; rewrite it for the release before tagging", phrase)})
+			}
+		}
+	}
 	return problems, nil
 }
 

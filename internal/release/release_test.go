@@ -105,6 +105,31 @@ func TestATagThatDoesNotMatchTheVersionIsReported(t *testing.T) {
 
 // A tag is checked only when one is being cut. `task check` runs on every
 // commit, where there is no tag and nothing to compare.
+// The README goes into every archive. Cutting a release without rewriting the
+// sentence that says there is no release ships a README that denies it exists.
+func TestAReleaseCannotShipPagesThatSayThereIsNoRelease(t *testing.T) {
+	root := fixture(t, "1.2.3", oneRelease)
+	write(t, root, "README.md", "**The first release is not\ntagged yet**, so build from source.\n")
+	write(t, root, "docs/installation.md", "Use Go while there is no release.\n")
+
+	problems, err := Check(root, "v1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, p := range problems {
+		files = append(files, p.File)
+	}
+	if got := strings.Join(files, ","); got != "README.md,docs/installation.md" {
+		t.Errorf("want a problem for each page, got %v", problems)
+	}
+
+	// Before a tag the same sentences are true, and nothing complains.
+	if problems, err := Check(root, ""); err != nil || len(problems) != 0 {
+		t.Errorf("an ordinary check objected to pre-release wording: %v %v", problems, err)
+	}
+}
+
 func TestNoTagMeansNoTagCheck(t *testing.T) {
 	problems, err := Check(fixture(t, "1.2.3", oneRelease), "")
 	if err != nil {
