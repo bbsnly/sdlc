@@ -221,12 +221,14 @@ async function install(options = {}) {
     log('')
     log(`  ${dir} is not on your PATH. Add it:`)
     log('')
+    // Not `setx PATH "...;%PATH%"`: that writes the machine PATH into the user
+    // PATH and truncates the result at 1024 characters.
     log(process.platform === 'win32'
-      ? `    setx PATH "${dir};%PATH%"`
+      ? `    [Environment]::SetEnvironmentVariable('Path', "${dir};" + [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')`
       : `    export PATH="${dir}:$PATH"`)
     log('')
     log(process.platform === 'win32'
-      ? '  and open a new terminal for it to take effect.'
+      ? '  in PowerShell, and open a new terminal for it to take effect.'
       : '  and put that line in your shell profile (~/.zshrc, ~/.bashrc) to keep it.')
   }
   log('')
