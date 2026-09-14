@@ -209,8 +209,9 @@ bound to the work as it stands, so a change made after it needs approving again.
 | `alert_fractions` | the points along the way to say so, as fractions of the budget |
 
 Spend is recorded with [`sdlc cost add`](commands.md), and shown by `sdlc cost` and
-`sdlc status`. An alert goes to standard error once, on the entry that crosses it. Nothing
-blocks: a story stopped halfway costs more than the overspend.
+`sdlc status`. An alert goes to standard error once, on the entry that crosses it, and the
+entry that uses up the budget says so whichever fractions are set. Nothing blocks: a story
+stopped halfway costs more than the overspend.
 
 ## The other half of the contract
 

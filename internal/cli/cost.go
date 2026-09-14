@@ -11,6 +11,7 @@ import (
 
 	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
+	"github.com/bbsnly/sdlc/internal/store"
 )
 
 type costPayload struct {
@@ -24,6 +25,7 @@ type costPayload struct {
 }
 
 func newCostCmd() *cobra.Command {
+	var story string
 	cmd := &cobra.Command{
 		Use:   "cost",
 		Short: "What the story has cost so far",
@@ -36,14 +38,14 @@ func newCostCmd() *cobra.Command {
 			"Nothing here blocks. A budget that stops a story halfway leaves the work\n" +
 			"stranded between gates, which is worse than the overspend it prevents.",
 		Example: "  sdlc cost\n  sdlc cost add --usd 1.42\n" +
-			`  sdlc cost add --usd "$(claude -p ... --output-format json | jq .total_cost_usd)"`,
+			`  sdlc cost add --story US-001 --usd "$(claude -p ... --output-format json | jq .total_cost_usd)"`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, p, err := openStore()
 			if err != nil {
 				return err
 			}
-			id, err := activeStory(s, "cost is kept per story")
+			id, err := costStory(s, story, "cost is kept per story")
 			if err != nil {
 				return err
 			}
@@ -51,23 +53,26 @@ func newCostCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return reportCost(cmd, p.Config.Budget, id, 0, record.SpentUSD(), nil)
+			spent := record.SpentUSD()
+			return reportCost(cmd, p.Config.Budget, id, 0, spent, spent, nil)
 		},
 	}
+	cmd.Flags().StringVar(&story, "story", "", "the story to report on, when it is not the one being worked on")
 	cmd.AddCommand(newCostAddCmd())
 	return cmd
 }
 
 func newCostAddCmd() *cobra.Command {
-	var usd string
-	var note string
+	var usd, note, story string
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Record an amount spent on this story",
 		Long: "add puts one amount on the story's record, in US dollars.\n\n" +
 			"Where the number comes from is the runner's business. A headless\n" +
 			"iteration reports its own: `claude -p --output-format json` ends with\n" +
-			"total_cost_usd. An interactive session has /cost.",
+			"total_cost_usd, but only once the session is over, and by then the\n" +
+			"iteration it ran may have ended: name its story with --story. An\n" +
+			"interactive session has /cost.",
 		Example: `  sdlc cost add --usd 1.42 --note "gate 4, five reviewers"`,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -80,7 +85,7 @@ func newCostAddCmd() *cobra.Command {
 				return err
 			}
 			defer unlock()
-			id, err := activeStory(s, "cost is recorded against the story being worked on")
+			id, err := costStory(s, story, "cost is recorded against the story being worked on")
 			if err != nil {
 				return err
 			}
@@ -99,13 +104,38 @@ func newCostAddCmd() *cobra.Command {
 			if err := s.SaveRecord(record); err != nil {
 				return err
 			}
-			return reportCost(cmd, budget, id, amount, after, alerts)
+			return reportCost(cmd, budget, id, amount, before, after, alerts)
 		},
 	}
 	cmd.Flags().StringVar(&usd, "usd", "", "the amount spent, in US dollars")
 	cmd.Flags().StringVar(&note, "note", "", "what it was spent on")
+	cmd.Flags().StringVar(&story, "story", "", "the story it was spent on, when no iteration is running on it")
 	_ = cmd.MarkFlagRequired("usd")
 	return cmd
+}
+
+// costStory is the story an amount belongs to: the one named, or else the one
+// being worked on. A headless runner learns what an iteration cost only once
+// the session is over, and by then the iteration it ran has usually ended.
+func costStory(s *store.Store, named, what string) (string, error) {
+	if named != "" {
+		if _, _, err := s.Story(named); err != nil {
+			return "", err
+		}
+		return named, nil
+	}
+	id, err := s.Active()
+	if err != nil {
+		return "", err
+	}
+	if id == "" {
+		return "", sdlcerr.New(sdlcerr.NoActiveIteration,
+			"there is no story being worked on",
+			what+", and no iteration is running").
+			WithFix("name the story with --story -- a runner that records the cost once a session " +
+				"is over has to, because the iteration has ended by then")
+	}
+	return id, nil
 }
 
 // parseUSD is deliberately strict. An amount that arrives as an empty string
@@ -154,12 +184,28 @@ func crossed(b config.Budget, before, after float64) []string {
 }
 
 func reportCost(cmd *cobra.Command, b config.Budget, id string,
-	added, spent float64, alerts []string,
+	added, before, spent float64, alerts []string,
 ) error {
 	var fraction float64
 	if b.PerStoryUSD > 0 {
 		fraction = spent / b.PerStoryUSD
 	}
+	// The alerts go to stderr, --json or not, so that a runner reading stdout
+	// for the number still sees them, and a person watching the terminal
+	// cannot miss them.
+	errw := cmd.ErrOrStderr()
+	for _, a := range alerts {
+		fmt.Fprintf(errw, "sdlc: %s\n", a)
+	}
+	// Using up the budget is said on the entry that does it, whatever
+	// alert_fractions holds: a project alerting only at a half would otherwise
+	// overspend without a word.
+	if b.PerStoryUSD > 0 && before < b.PerStoryUSD && spent >= b.PerStoryUSD {
+		fmt.Fprintf(errw, "sdlc: this story has spent its whole %s budget, and nothing is blocked -- "+
+			"stopping a story between gates costs more than the overspend. "+
+			"`sdlc stop` ends the iteration if that is the call.\n", money(b.PerStoryUSD))
+	}
+
 	if wantJSON(cmd) {
 		return emitJSON(cmd.OutOrStdout(), costPayload{
 			OK: true, Story: id, AddedUSD: added, SpentUSD: spent,
@@ -172,16 +218,6 @@ func reportCost(cmd *cobra.Command, b config.Budget, id string,
 		fmt.Fprintf(w, "%s  %s spent of %s (%s)\n", id, money(spent), money(b.PerStoryUSD), percent(fraction))
 	} else {
 		fmt.Fprintf(w, "%s  %s spent; no budget is set for this project\n", id, money(spent))
-	}
-	// The alert goes to stderr so that a runner reading stdout for the number
-	// still sees it, and a person watching the terminal cannot miss it.
-	for _, a := range alerts {
-		fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s\n", a)
-	}
-	if len(alerts) > 0 && fraction >= 1 {
-		fmt.Fprintln(cmd.ErrOrStderr(),
-			"      nothing is blocked -- stopping a story between gates costs more than "+
-				"the overspend. `sdlc stop` ends the iteration if that is the call.")
 	}
 	return nil
 }

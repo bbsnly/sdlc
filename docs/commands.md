@@ -341,27 +341,32 @@ US-001  $13.82 spent of $60.00 (23%)
 
 ### `sdlc cost add`
 
-Records one amount against the story being worked on.
+Records one amount against the story being worked on, or the one `--story` names.
 
 | Flag | What it does |
 | --- | --- |
 | `--usd` | the amount, in US dollars. Required |
 | `--note` | what it was spent on |
+| `--story` | the story it was spent on, when no iteration is running on it. `sdlc cost` takes it too |
 
 `budget.per_story_usd` in `.sdlc/config.json` says what one story is expected to cost, and
 `alert_fractions` says where along the way to say so. An alert goes to standard error, once,
-on the entry that crosses it — so a runner reading standard output for the number still sees
-it, and the same warning does not repeat on every entry afterwards.
+on the entry that crosses it, with `--json` as well as without — so a runner reading standard
+output for the number still sees it, and the same warning does not repeat on every entry
+afterwards.
 
 **Nothing here blocks.** A budget that stops a story halfway leaves the work stranded between
-gates, which costs more than the overspend it prevents. Past the budget the warning says so
-and names `sdlc stop` if that is the call.
+gates, which costs more than the overspend it prevents. The entry that uses up the budget says
+so, whatever `alert_fractions` holds, and names `sdlc stop` if that is the call.
 
-Where the number comes from is the runner's business:
+Where the number comes from is the runner's business. A headless session reports its cost only
+once it is over, and by then the iteration it ran may have ended, so the runner notes the story
+first and names it:
 
 ```console
+$ story=$(sdlc status --json | jq -r '.active // .next.story')
 $ cost=$(claude -p "Run /sdlc:next" --output-format json | jq .total_cost_usd)
-$ sdlc cost add --usd "$cost"
+$ sdlc cost add --story "$story" --usd "$cost"
 ```
 
 An interactive session has `/cost`. An empty or unparseable amount is refused rather than

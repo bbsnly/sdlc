@@ -323,6 +323,15 @@ the freeze.
 Delegate to `sdlc:bookkeeper` with the story id. It reads the gate record and everything under
 the story's directory and stores `RETRO.md`.
 
+If the session knows what it has cost, record it now, while the story is still the one being
+worked on, so its record says what it cost as well as what it did:
+
+```bash
+sdlc cost add --usd <amount>
+```
+
+Then pass the gate and end the iteration:
+
 ```bash
 sdlc gate retro pass --note "<n> deviations, <n> lessons"
 sdlc stop
@@ -332,15 +341,7 @@ Passing this gate finishes the story: no gate is left, so it becomes `done` and 
 backlog, the test freeze it was holding is lifted, and the next `/sdlc:next` takes the next
 story.
 
-If the session knows what it has cost — `/cost` in an interactive session, `total_cost_usd`
-in the output of a headless one — record it before stopping, so the story's record says what
-it cost as well as what it did:
-
-```bash
-sdlc cost add --usd <amount>
-```
-
-Then tell the user what was built, what deviated from the plan, and what the retro recorded as
+Tell the user what was built, what deviated from the plan, and what the retro recorded as
 worth doing differently. Commit the retro if the project keeps it, along with the backlog file,
 which now records the story as done.
 

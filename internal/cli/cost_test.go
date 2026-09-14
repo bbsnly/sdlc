@@ -72,6 +72,69 @@ func TestAnAlertFiresOnceWhenItIsCrossed(t *testing.T) {
 	}
 }
 
+// A runner that asks for --json still has a person watching its terminal, and
+// the warning is for them.
+func TestAnAlertReachesStandardErrorWithJSONToo(t *testing.T) {
+	gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+
+	r := mustRun(t, "cost", "add", "--usd", "35", "--json")
+	if !strings.Contains(r.stderr, "50%") {
+		t.Errorf("with --json the alert did not reach standard error: %q", r.stderr)
+	}
+	if p := decode[costPayload](t, r); len(p.Alerts) != 1 {
+		t.Errorf("alerts = %v, want the one crossed", p.Alerts)
+	}
+}
+
+// A project that alerts only at a half would otherwise run past its budget
+// without a word.
+func TestUsingUpTheBudgetIsSaidWhateverTheAlertsAre(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	setConfigOnDisk(t, root, "budget", map[string]any{"per_story_usd": 10, "alert_fractions": []float64{0.5}})
+	mustRun(t, "start")
+
+	mustRun(t, "cost", "add", "--usd", "6")
+	r := mustRun(t, "cost", "add", "--usd", "5")
+	for _, want := range []string{"whole $10.00 budget", "`sdlc stop`"} {
+		if !strings.Contains(r.stderr, want) {
+			t.Errorf("using up the budget did not say %q: %q", want, r.stderr)
+		}
+	}
+	if again := mustRun(t, "cost", "add", "--usd", "1"); strings.Contains(again.stderr, "whole") {
+		t.Errorf("the budget being used up was said again: %q", again.stderr)
+	}
+}
+
+// A headless runner learns what an iteration cost only once the session is
+// over, and a session that finished its story has ended the iteration by then.
+// Recording only against the story being worked on refused every one of them.
+func TestARunnerRecordsCostAfterTheIterationHasEnded(t *testing.T) {
+	gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	id := decode[statusPayload](t, mustRun(t, "status", "--json")).Active
+	mustRun(t, "stop")
+
+	r := run(t, "cost", "add", "--usd", "1.50")
+	if r.code == 0 {
+		t.Fatal("with no iteration running and no story named, the amount was recorded")
+	}
+	if !strings.Contains(r.stderr, "--story") {
+		t.Errorf("the refusal does not say how to name the story: %s", r.stderr)
+	}
+
+	mustRun(t, "cost", "add", "--story", id, "--usd", "1.50")
+	if p := decode[costPayload](t, mustRun(t, "cost", "--story", id, "--json")); p.Story != id || p.SpentUSD != 1.5 {
+		t.Errorf("cost --story %s = %+v, want 1.50 spent on it", id, p)
+	}
+	if r := run(t, "cost", "add", "--story", "NOPE-1", "--usd", "1"); r.code == 0 {
+		t.Error("an amount was recorded against a story that is not in the backlog")
+	}
+}
+
 // An amount that arrives empty from a shell substitution that produced nothing
 // would otherwise be recorded as a free story -- the one wrong answer nobody
 // would question.

@@ -66,10 +66,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `loop.max_review_rounds` blocks from one reviewer, the command that recorded
   the last one hands the story over, counting again once the person answers.
 - `sdlc cost` keeps what a story spent beside everything else it did.
-  `sdlc cost add --usd` records an amount, `sdlc status` reports the running
-  total, and crossing one of `budget.alert_fractions` says so once, on
-  standard error. Nothing blocks: a story stopped between gates costs more
-  than the overspend. This is what `budget.per_story_usd` was for -- it was
+  `sdlc cost add --usd` records an amount, `--story` names the story once a
+  headless session is over, `sdlc status` reports the running total, and
+  crossing one of `budget.alert_fractions` says so once, on standard error, as
+  does using up the budget. Nothing blocks: a story stopped between gates
+  costs more than the overspend. This is what `budget.per_story_usd` was for -- it was
   written into every project's configuration and read by nothing.
 - The freeze holds against shell commands. Every rule protecting it applied to
   the file-writing tools only, so `Write` to a frozen test was refused and

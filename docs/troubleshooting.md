@@ -98,7 +98,8 @@ first.
 
 The command you ran acts on the story currently being worked on, and no iteration is active.
 
-Run `sdlc start` to begin one on the next runnable story.
+Run `sdlc start` to begin one on the next runnable story. `sdlc cost` and `sdlc cost add` also
+take `--story`, which is how a runner records what a session cost after its iteration ended.
 
 ### SDLC-E0012
 
