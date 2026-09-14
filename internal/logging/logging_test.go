@@ -69,6 +69,25 @@ func TestSetupWritesToTheDebugFileWhenAsked(t *testing.T) {
 	}
 }
 
+// The hook logs its decisions at debug level, so a file asked for without
+// SDLC_DEBUG used to be created and stay empty -- a log that looks broken.
+func TestADebugFileOnItsOwnGetsTheDebugLog(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sdlc.log")
+	closer := Setup(Options{File: path}, &bytes.Buffer{})
+
+	slog.Debug("a decision")
+	if err := closer(); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "a decision") {
+		t.Errorf("log file is %q, want the debug line", body)
+	}
+}
+
 func TestAnUnwritableDebugFileDoesNotFailTheCommand(t *testing.T) {
 	// Failing to write a debug log is not a reason to fail the work the user
 	// asked for.

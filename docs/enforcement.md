@@ -350,12 +350,12 @@ open an issue and say which one.
 
 A hook that allows a call says nothing unless something is wrong, and its stderr
 goes to Claude Code's debug log, which makes "why did nothing happen" the
-hardest question to answer from outside. Both of these together turn the hook's
-decisions into a log you can read:
+hardest question to answer from outside. This turns the hook's decisions into a
+log you can read:
 
 ```console
-$ export SDLC_DEBUG=1
 $ export SDLC_DEBUG_FILE=/tmp/sdlc-hook.log
 ```
 
-`SDLC_DEBUG_FILE` on its own produces nothing.
+`SDLC_DEBUG=1` without a file writes the same log to stderr. `SDLC_TRACE=1` adds
+how long each stage of a call took, which is where to look when a hook is slow.

@@ -19,8 +19,9 @@ import (
 const (
 	// EnvDebug turns on debug-level logging when set to a true-ish value.
 	EnvDebug = "SDLC_DEBUG"
-	// EnvDebugFile sends logs to a file instead of stderr. A hook's stderr is
-	// often invisible, so this is how you see what a hook did.
+	// EnvDebugFile sends logs to a file instead of stderr, at debug level. A
+	// hook's stderr is often invisible, so this is how you see what a hook did,
+	// and asking for a log file is asking for the log.
 	EnvDebugFile = "SDLC_DEBUG_FILE"
 	// EnvTrace adds per-stage timings at debug level.
 	EnvTrace = "SDLC_TRACE"
@@ -62,8 +63,10 @@ func truthy(v string) bool {
 func Setup(opts Options, stderr io.Writer) (closer func() error) {
 	closer = func() error { return nil }
 
+	// A file on its own means debug too: the hook logs every decision at debug
+	// level, so at info a requested log file stayed empty and looked broken.
 	level := slog.LevelInfo
-	if opts.Debug || opts.Trace {
+	if opts.Debug || opts.Trace || opts.File != "" {
 		level = slog.LevelDebug
 	}
 
