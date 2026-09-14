@@ -415,18 +415,20 @@ func TestInitLeavesAClaudeMDThatAlreadyHasTheContract(t *testing.T) {
 }
 
 func TestOnlyTheHeadingOnItsOwnLineIsTheContract(t *testing.T) {
-	cases := map[string]bool{
-		"# Mine\n\n## SDLC Contract\n\n- filled in\n": true,
-		"## SDLC Contract":                          true,
-		"# Mine\r\n\r\n## SDLC Contract  \r\n":      true,
-		"# Mine\n\n### SDLC Contract\n":             false,
-		"# Mine\n\n## SDLC Contracts\n":             false,
-		"We will add a ## SDLC Contract section.\n": false,
-		"# Mine\n": false,
-	}
-	for text, want := range cases {
-		if got := HasContract(text); got != want {
-			t.Errorf("HasContract(%q) = %v, want %v", text, got, want)
+	for _, c := range []struct {
+		text string
+		want bool
+	}{
+		{"# Mine\n\n## SDLC Contract\n\n- filled in\n", true},
+		{"## SDLC Contract", true},
+		{"# Mine\r\n\r\n## SDLC Contract  \r\n", true},
+		{"# Mine\n\n### SDLC Contract\n", false},
+		{"# Mine\n\n## SDLC Contracts\n", false},
+		{"We will add a ## SDLC Contract section.\n", false},
+		{"# Mine\n", false},
+	} {
+		if got := HasContract(c.text); got != c.want {
+			t.Errorf("HasContract(%q) = %v, want %v", c.text, got, c.want)
 		}
 	}
 

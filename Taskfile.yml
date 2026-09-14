@@ -134,16 +134,29 @@ tasks:
         echo "  claude --plugin-dir $(pwd)/plugin"
 
   fmt:
-    desc: Format Go source
+    desc: Format Go source, with the gofmt of the toolchain go.mod pins
     cmds:
-      - go fmt ./...
+      - |
+        toolchain=$(awk '/^toolchain /{print $2; exit}' go.mod)
+        GOTOOLCHAIN="${toolchain:-local}" go fmt ./...
 
   fmt-check:
     desc: Fail if any Go source is unformatted
     silent: true
     cmds:
       - |
-        unformatted=$(gofmt -l . 2>/dev/null)
+        # gofmt's layout changes between Go releases, and CI formats with the
+        # toolchain go.mod pins. Checking with whatever Go is installed here
+        # once passed a file that failed on every CI runner.
+        gofmt=gofmt
+        toolchain=$(awk '/^toolchain /{print $2; exit}' go.mod)
+        goroot=$(GOTOOLCHAIN="${toolchain:-local}" go env GOROOT 2>/dev/null)
+        if [ -n "$goroot" ] && [ -x "$goroot/bin/gofmt{{exeExt}}" ]; then
+          gofmt="$goroot/bin/gofmt{{exeExt}}"
+        else
+          echo "sdlc: could not get Go ${toolchain}; checking with the gofmt on PATH, which CI may disagree with" >&2
+        fi
+        unformatted=$("$gofmt" -l . 2>/dev/null)
         if [ -n "$unformatted" ]; then
           echo "sdlc: these files are not gofmt-clean:" >&2
           echo "$unformatted" >&2
