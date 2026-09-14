@@ -209,6 +209,13 @@ tasks:
           echo "$out" >&2
           exit 1
         }
+        # A glob that matches nothing is zero tests and exit 0, which passed a
+        # renamed test file as a green leg.
+        if ! echo "$out" | grep -q '^# tests [1-9]'; then
+          echo "$out" >&2
+          echo "sdlc: node ran no tests from npm/test/*.test.js" >&2
+          exit 1
+        fi
         echo "$out" | tail -n 8
 
   actionlint:
@@ -221,9 +228,9 @@ tasks:
     silent: true
     cmds:
       - |
-        # The vendored legacy kit under test/parity/legacy is a fixture: the
-        # differential tests compare against it byte for byte, so restyling it
-        # would break the thing it exists to prove.
+        # The vendored legacy kit under test/parity/legacy is kept as it was
+        # vendored, the reference the port was written against, so it is not
+        # restyled here.
         # 'plugin/bin/sdlc-hook' by name: it has no .sh suffix, and it is the
         # one script that runs on every matching tool call in every session.
         # --others --exclude-standard so a script that is written but not yet
@@ -362,7 +369,7 @@ tasks:
         echo "init: ${total} ms (budget {{.INIT_BUDGET_MS}} ms)"
 
   parity-selftest:
-    desc: Run the vendored legacy kit's own selftest, which is the parity contract
+    desc: Run the vendored legacy kit's own selftest, against the kit itself and not the port
     silent: true
     cmds:
       - |
@@ -382,7 +389,7 @@ tasks:
           echo "sdlc: jq is not installed, and the vendored kit's selftest needs it." >&2
           echo "      macOS:  brew install jq" >&2
           echo "      Linux:  apt-get install jq" >&2
-          echo "      This leg proves the port still matches the shell kit it replaces," >&2
+          echo "      This leg runs the reference kit the port was written against," >&2
           echo "      so it fails rather than skips." >&2
           exit 1
         fi
