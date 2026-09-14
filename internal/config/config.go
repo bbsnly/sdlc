@@ -9,11 +9,14 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -26,6 +29,10 @@ const Dir = ".sdlc"
 
 // File is the configuration file, relative to the repository root.
 const File = Dir + "/config.json"
+
+// FormatVersion is the version of the configuration format this release reads
+// and writes.
+const FormatVersion = 1
 
 // Config is the machine-readable half of a project's contract. The human half
 // lives in CLAUDE.md; nothing here describes a language or a framework, only
@@ -141,7 +148,7 @@ type Budget struct {
 // file keeps its documented value rather than becoming zero.
 func Default() Config {
 	return Config{
-		Version:    1,
+		Version:    FormatVersion,
 		Backlog:    Backlog{Path: "user_stories.json"},
 		Git:        Git{TrunkBranch: "main"},
 		Commands:   map[string]string{},
@@ -222,13 +229,113 @@ func Load(root string) (Config, error) {
 			File+" could not be read",
 			"opening it failed").WithCause(err)
 	}
+	// Windows PowerShell 5 saves a file with a byte order mark, and the file is
+	// otherwise fine.
+	raw = bytes.TrimPrefix(raw, []byte("\ufeff"))
 	cfg := Default()
 	if err := json.Unmarshal(raw, &cfg); err != nil {
+		// A setting of the wrong type is valid JSON, and a JSON checker finds
+		// nothing wrong with it, so the message names the setting instead.
+		var typ *json.UnmarshalTypeError
+		if errors.As(err, &typ) && typ.Field != "" {
+			return Config{}, sdlcerr.New(sdlcerr.ConfigUnreadable,
+				File+" has a setting of the wrong type",
+				typ.Field+" should be "+kindOf(typ.Type)+", not "+valueOf(typ.Value)+
+					", at "+position(raw, typ.Offset)).WithCause(err)
+		}
 		return Config{}, sdlcerr.New(sdlcerr.ConfigUnreadable,
 			File+" is not valid JSON",
 			describeJSONError(raw, err)).WithCause(err)
 	}
+	if err := cfg.validate(); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+// validate refuses the settings the loop cannot honour, every one of them in
+// one message. Each was accepted once and quietly did something else: a file
+// from a newer release had what this one did not know dropped, a backlog
+// outside the repository was neither committed with the work nor protected
+// while a story ran, and a negative limit was a limit turned off.
+func (c Config) validate() error {
+	var problems []string
+	switch {
+	case c.Version > FormatVersion:
+		problems = append(problems, fmt.Sprintf("version is %d, and this sdlc reads version %d: "+
+			"a newer sdlc wrote the file, so upgrade sdlc", c.Version, FormatVersion))
+	case c.Version < 1:
+		problems = append(problems, fmt.Sprintf("version is %d, and the format is version %d",
+			c.Version, FormatVersion))
+	}
+	if p := c.Backlog.Path; p != "" && !filepath.IsLocal(filepath.FromSlash(p)) {
+		problems = append(problems, fmt.Sprintf("backlog.path is %q, which leaves the repository: "+
+			"give it relative to the repository root", p))
+	}
+	for _, n := range []struct {
+		name  string
+		value float64
+	}{
+		{"thresholds.diff_size_cap", float64(c.Thresholds.DiffSizeCap)},
+		{"thresholds.coverage_min", c.Thresholds.CoverageMin},
+		{"thresholds.mutation_min", c.Thresholds.MutationMin},
+		{"loop.max_review_rounds", float64(c.Loop.MaxReviewRounds)},
+		{"loop.max_rework_rounds", float64(c.Loop.MaxReworkRounds)},
+		{"loop.max_stop_blocks", float64(c.Loop.MaxStopBlocks)},
+		{"budget.per_story_usd", c.Budget.PerStoryUSD},
+	} {
+		if n.value < 0 {
+			problems = append(problems, fmt.Sprintf("%s is %v, and 0 is how it is turned off", n.name, n.value))
+		}
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return sdlcerr.New(sdlcerr.ConfigInvalid,
+		File+" has settings sdlc cannot use",
+		strings.Join(problems, "; "))
+}
+
+// kindOf says what a setting takes, in the words of JSON rather than Go.
+func kindOf(t reflect.Type) string {
+	switch t.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "a whole number"
+	case reflect.Float32, reflect.Float64:
+		return "a number"
+	case reflect.String:
+		return "a string"
+	case reflect.Bool:
+		return "true or false"
+	case reflect.Slice, reflect.Array:
+		return "a list"
+	default:
+		return "an object"
+	}
+}
+
+// valueOf says what was found instead. encoding/json names a number that does
+// not fit with the number itself, "number 1.5".
+func valueOf(v string) string {
+	kind, number, _ := strings.Cut(v, " ")
+	switch kind {
+	case "number":
+		if number != "" {
+			return number
+		}
+		return "a number"
+	case "string":
+		return "a string"
+	case "bool":
+		return "true or false"
+	case "array":
+		return "a list"
+	case "object":
+		return "an object"
+	default:
+		return v
+	}
 }
 
 // Project is a repository that takes part in the loop, already resolved.
@@ -272,9 +379,14 @@ func describeJSONError(raw []byte, err error) string {
 	if offset < 0 || offset > int64(len(raw)) {
 		return err.Error()
 	}
+	return "the JSON stops making sense at " + position(raw, offset)
+}
+
+// position is a byte offset as a line and column.
+func position(raw []byte, offset int64) string {
+	offset = min(max(offset, 0), int64(len(raw)))
 	before := string(raw[:offset])
 	line := strings.Count(before, "\n") + 1
 	col := offset - int64(strings.LastIndex(before, "\n"))
-	return "the JSON stops making sense at line " + strconv.Itoa(line) +
-		", column " + strconv.FormatInt(col, 10)
+	return "line " + strconv.Itoa(line) + ", column " + strconv.FormatInt(col, 10)
 }

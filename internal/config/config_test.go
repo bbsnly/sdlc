@@ -186,6 +186,105 @@ func TestLoadPointsAtTheLineThatBrokeTheJSON(t *testing.T) {
 	}
 }
 
+// Windows PowerShell 5 saves a file with a byte order mark.
+func TestLoadReadsAFileWithAByteOrderMark(t *testing.T) {
+	root := repo(t)
+	writeConfig(t, root, "\ufeff{\"version\":1,\"git\":{\"trunk_branch\":\"trunk\"}}\r\n")
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Git.TrunkBranch != "trunk" {
+		t.Errorf("TrunkBranch = %q, want the file's", cfg.Git.TrunkBranch)
+	}
+}
+
+// A setting of the wrong type is valid JSON, so a JSON checker finds nothing
+// wrong with it. The message has to name the setting.
+func TestLoadNamesTheSettingOfTheWrongType(t *testing.T) {
+	for body, want := range map[string][]string{
+		"{\n  \"loop\": {\"max_stop_blocks\": \"3\"}\n}\n": {"loop.max_stop_blocks", "a whole number", "a string", "line 2"},
+		`{"thresholds":{"diff_size_cap":1.5}}`:             {"thresholds.diff_size_cap", "a whole number", "1.5"},
+		`{"paths":{"tests":{"dirs":"tests/"}}}`:            {"paths.tests.dirs", "a list", "a string"},
+		`{"freeze":{"allow_new_test_files":"yes"}}`:        {"freeze.allow_new_test_files", "true or false"},
+	} {
+		root := repo(t)
+		writeConfig(t, root, body)
+		_, err := Load(root)
+		if err == nil {
+			t.Fatalf("Load accepted %s", body)
+		}
+		if got := codeOf(t, err); got != sdlcerr.ConfigUnreadable {
+			t.Errorf("%s: code = %s, want %s", body, got, sdlcerr.ConfigUnreadable)
+		}
+		if strings.Contains(err.Error(), "not valid JSON") {
+			t.Errorf("%s: valid JSON was called invalid: %v", body, err)
+		}
+		var e *sdlcerr.Error
+		errors.As(err, &e)
+		for _, w := range want {
+			if !strings.Contains(e.Why, w) {
+				t.Errorf("%s: why = %q, want it to say %q", body, e.Why, w)
+			}
+		}
+	}
+}
+
+// A setting the loop cannot honour is refused when the file is read. Each of
+// these was accepted, and quietly did something other than what it said.
+func TestLoadRefusesSettingsTheLoopCannotHonour(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"version":2}`:                               "upgrade sdlc",
+		`{"version":-1}`:                              "version is -1",
+		`{"backlog":{"path":"../stories.json"}}`:      "backlog.path",
+		`{"backlog":{"path":"/srv/stories.json"}}`:    "backlog.path",
+		`{"backlog":{"path":"stories/../../x.json"}}`: "backlog.path",
+		`{"thresholds":{"diff_size_cap":-5}}`:         "thresholds.diff_size_cap is -5",
+		`{"thresholds":{"coverage_min":-1}}`:          "thresholds.coverage_min",
+		`{"thresholds":{"mutation_min":-1}}`:          "thresholds.mutation_min",
+		`{"loop":{"max_review_rounds":-1}}`:           "loop.max_review_rounds",
+		`{"loop":{"max_rework_rounds":-1}}`:           "loop.max_rework_rounds",
+		`{"loop":{"max_stop_blocks":-1}}`:             "loop.max_stop_blocks",
+		`{"budget":{"per_story_usd":-60}}`:            "budget.per_story_usd",
+	} {
+		root := repo(t)
+		writeConfig(t, root, body)
+		_, err := Load(root)
+		if err == nil {
+			t.Errorf("Load accepted %s", body)
+			continue
+		}
+		if got := codeOf(t, err); got != sdlcerr.ConfigInvalid {
+			t.Errorf("%s: code = %s, want %s", body, got, sdlcerr.ConfigInvalid)
+		}
+		var e *sdlcerr.Error
+		errors.As(err, &e)
+		if !strings.Contains(e.Why, want) {
+			t.Errorf("%s: why = %q, want it to say %q", body, e.Why, want)
+		}
+	}
+
+	root := repo(t)
+	writeConfig(t, root, `{"version":2,"loop":{"max_stop_blocks":-1}}`)
+	var e *sdlcerr.Error
+	if _, err := Load(root); !errors.As(err, &e) ||
+		!strings.Contains(e.Why, "version") || !strings.Contains(e.Why, "max_stop_blocks") {
+		t.Errorf("not every setting was named at once: %v", err)
+	}
+
+	for _, body := range []string{
+		`{"version":1,"backlog":{"path":"./stories/backlog.json"}}`,
+		`{"backlog":{"path":"stories/../user_stories.json"}}`,
+		`{"loop":{"max_stop_blocks":0},"thresholds":{"diff_size_cap":0},"budget":{"per_story_usd":0}}`,
+	} {
+		root := repo(t)
+		writeConfig(t, root, body)
+		if _, err := Load(root); err != nil {
+			t.Errorf("Load refused %s: %v", body, err)
+		}
+	}
+}
+
 func TestBacklogPathFallsBackWhenTheFileEmptiesIt(t *testing.T) {
 	cfg := Default()
 	cfg.Backlog.Path = ""

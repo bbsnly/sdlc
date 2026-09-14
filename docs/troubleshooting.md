@@ -35,6 +35,10 @@ If you meant to change something, edit that file directly. If you want the defau
 `.sdlc/config.json` exists but could not be parsed. Usually this is a trailing comma or an
 unquoted key left behind by a hand edit.
 
+It is also the code for a setting of the wrong type — `"3"` where a number belongs, or a
+string where a list does. That is valid JSON, so a JSON checker finds nothing wrong with it; the
+message names the setting, what it takes, and the line it is on.
+
 Fix the JSON, or delete the file and run `sdlc init` again to get a fresh one.
 
 ### SDLC-E0005
@@ -474,6 +478,21 @@ A criterion whose `text` is empty does not count.
 Write the criteria in the backlog, each an observable behaviour, and pass the gate again. If it
 is not clear what they should be, record `sdlc gate dor fail` and hand the question to a person
 with `sdlc escalate spec_unclear --message "..."`.
+
+### SDLC-E0045
+
+`.sdlc/config.json` reads, and a setting in it is one `sdlc` cannot use. The message names every
+one, so a single edit fixes them all:
+
+- **`version` is higher than this `sdlc` reads.** A newer release wrote the file. Upgrade `sdlc`
+  rather than lowering the number: this release would drop whatever it does not know, and a
+  setting it drops is one that is not enforced.
+- **`backlog.path` leaves the repository**, as an absolute path or one that climbs out with
+  `..`. The backlog is committed with the work and protected while a story runs, and neither
+  holds outside the repository. Give the path relative to the repository root.
+- **A limit, threshold or budget is negative.** `0` is how each of them is turned off.
+
+Change the settings and run `sdlc doctor`.
 
 ## Warnings the hook prints
 

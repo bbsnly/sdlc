@@ -143,6 +143,9 @@ var (
 
 	UnsafeStoryID = register("SDLC-E0015",
 		`rename the story so its id is letters, digits, dots, dashes and underscores -- for example AUTH-3`)
+
+	ConfigInvalid = register("SDLC-E0045",
+		`change the settings the message names in .sdlc/config.json — docs/configuration.md says what each one takes; for a newer version, upgrade sdlc`)
 )
 
 // entry is one row of the catalogue.

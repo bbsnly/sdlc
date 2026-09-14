@@ -70,9 +70,8 @@ type State struct {
 	Agent string
 
 	// Backlog is the backlog file, repository-relative and slash-separated, or
-	// empty when the configuration puts it outside the repository. It is
-	// protected as CLAUDE.md is, and is not in that list only because the
-	// configuration says where it is.
+	// empty for none. It is protected as CLAUDE.md is, and is not in that list
+	// only because the configuration says where it is.
 	Backlog string
 }
 

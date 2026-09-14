@@ -285,6 +285,26 @@ func TestTheBacklogIsNotEditedDuringAnIteration(t *testing.T) {
 	}
 }
 
+// A backlog linked in from outside the repository resolved outside it, and was
+// left unprotected: the shell edited it through the link.
+func TestABacklogLinkedInFromElsewhereIsStillProtected(t *testing.T) {
+	root := loopProject(t)
+	elsewhere := filepath.Join(t.TempDir(), "stories.json")
+	if err := os.WriteFile(elsewhere, []byte(`{"stories":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(root, "linked.json")); err != nil {
+		t.Skipf("symbolic links cannot be made here: %v", err)
+	}
+	write(t, root, ".sdlc/config.json", `{"version":1,"backlog":{"path":"linked.json"}}`)
+	if !denied(call(t, command(root, "sdlc-implementer", "echo x >> linked.json"), noEnv)) {
+		t.Error("the backlog was edited through its link")
+	}
+	if !denied(call(t, event(root, "Edit", "sdlc-implementer", filepath.Join(root, "linked.json")), noEnv)) {
+		t.Error("the backlog was edited through its link with a file tool")
+	}
+}
+
 func TestTheResearcherWorksInItsOwnStoryAndNowhereElse(t *testing.T) {
 	root := loopProject(t)
 

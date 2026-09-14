@@ -68,7 +68,8 @@ wrong, the loop's answer is to stop and say so, not to edit it and carry on.
 ### `backlog-is-not-edited`
 
 Refuses any write to the backlog file, wherever
-[`backlog.path`](configuration.md#backlogpath) puts it.
+[`backlog.path`](configuration.md#backlogpath) puts it. A backlog linked in from
+elsewhere is protected under the name the configuration gives it.
 
 The backlog holds the acceptance criteria the tests are held to and each story's
 `risk_tier`, which decides whether a person approves the commit. An assistant

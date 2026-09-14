@@ -222,20 +222,23 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 	}), event, true
 }
 
-// backlogPath is the backlog file, repository-relative, or empty when the
-// configuration puts it outside the repository, where no write is allowed
-// anyway. A configuration that will not read leaves the backlog where the
-// defaults put it, which is where it most likely is.
+// backlogPath is the backlog file as the configuration names it,
+// repository-relative. The name, and not where a link by that name leads: a
+// backlog linked in from elsewhere resolved outside the repository, and
+// protecting nothing there left `echo >> linked.json` free. The configuration
+// refuses a name that itself leaves the repository. One that will not read
+// leaves the backlog where the defaults put it, which is where it most likely
+// is.
 func backlogPath(project string) string {
 	cfg, err := config.Load(project)
 	if err != nil {
 		cfg = config.Default()
 	}
-	rel, outside := pathrules.Rel(project, cfg.BacklogPath(project))
-	if outside {
-		return ""
+	p := cfg.Backlog.Path
+	if p == "" {
+		p = config.Default().Backlog.Path
 	}
-	return rel
+	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(p)))
 }
 
 // inspectShell applies the shell rules, which exist because every other rule in

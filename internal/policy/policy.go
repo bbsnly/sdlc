@@ -23,7 +23,7 @@ type Request struct {
 	Outside bool   // the path resolves outside the repository
 	Story   string // the story the iteration is on
 	Tests   Tests  // what the freeze says about this path
-	Backlog string // the backlog file, as Path is; empty when it is outside the repository
+	Backlog string // the backlog file, as Path is; empty for none
 }
 
 // Tests is the freeze, as it applies to one path. The caller works these out --

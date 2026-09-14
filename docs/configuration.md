@@ -44,13 +44,19 @@ empty for Go:
 
 ## `version`
 
-The configuration format's version. Leave it alone; it is how a future release
-recognises a file written by this one.
+The configuration format's version, `1`. Leave it alone: it is how a future
+release recognises a file written by this one, and how this one refuses a file
+written by a newer release rather than misread it
+([SDLC-E0045](troubleshooting.md#sdlc-e0045)).
 
 ## `backlog.path`
 
 Where your stories live, relative to the repository root. Default
 `user_stories.json`.
+
+It has to be inside the repository, because the backlog is committed with the
+work and protected while a story runs. An absolute path, or one that climbs out
+with `..`, is refused.
 
 ## `git`
 
@@ -113,7 +119,7 @@ a project commits is the project's decision.
 | `coverage_min` | the coverage the verifier holds the change to, when `commands.coverage` is configured |
 | `mutation_min` | the mutation score the verifier holds the change to, where a project measures one |
 
-A threshold of `0` is not enforced.
+A threshold of `0` is not enforced, and a negative one is refused.
 
 ## `paths.tests`
 
@@ -159,7 +165,10 @@ before it writes anything.
 | --- | --- |
 | `max_review_rounds` | how many times one reviewer may block a gate before `sdlc review add` hands the story to a person. A block that cannot stop the gate is not counted |
 | `max_rework_rounds` | how many times one gate may be recorded as failed before `sdlc gate` hands the story to a person |
-| `max_stop_blocks` | how many stops in a row, with nothing recorded on the story, the `Stop` hook sends back before it hands the story to a person. `0` turns it off. See [stopping mid-story](enforcement.md#stopping-mid-story) |
+| `max_stop_blocks` | how many stops in a row, with nothing recorded on the story, the `Stop` hook sends back before it hands the story to a person. See [stopping mid-story](enforcement.md#stopping-mid-story) |
+
+A limit of `0` turns that limit off, for all three, and a negative one is
+refused.
 
 ## `reviews.gate7_advisory`
 
@@ -206,7 +215,7 @@ bound to the work as it stands, so a change made after it needs approving again.
 
 | Key | What it means |
 | --- | --- |
-| `per_story_usd` | what one story is expected to cost. `0` turns the budget off and still keeps the total |
+| `per_story_usd` | what one story is expected to cost. `0` turns the budget off and still keeps the total; a negative one is refused |
 | `alert_fractions` | the points along the way to say so, as fractions of the budget |
 
 Spend is recorded with [`sdlc cost add`](commands.md), and shown by `sdlc cost` and

@@ -218,6 +218,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   the shell, wherever `backlog.path` puts it. The commit gate reads a story's
   `risk_tier` there, and an assistant that lowered it took away the person who
   approves the commit.
+- `.sdlc/config.json` is checked when it is read. A `version` newer than this
+  release reads, a `backlog.path` outside the repository, and a negative limit,
+  threshold or budget are refused together with `SDLC-E0045`; each was accepted
+  and quietly did something else. A setting of the wrong type is named, rather
+  than valid JSON being called invalid, and a file saved with a byte order mark
+  reads.
 - A new test file cannot be added through the shell after the freeze. The file
   tools refused one; `echo > new_test.go` did not, because the shell was checked
   only against the files the freeze already held.
