@@ -239,7 +239,7 @@ func (s *Store) SetStoryStatus(id string, status model.Status) error {
 			relative(s.root, path)+" could not be edited in place",
 			"it was read, but the story "+quote(id)+" could not be found in its bytes; this is a bug")
 	}
-	return s.writeFile(path, edited)
+	return s.replaceBacklog(path, edited)
 }
 
 // ---------------------------------------------------------------- iteration
@@ -489,6 +489,28 @@ func (s *Store) writeJSON(path string, v any) error {
 // and believe it.
 func (s *Store) writeFile(path string, data []byte) error {
 	if err := fsx.WriteFileAtomic(path, data, 0o644); err != nil {
+		return sdlcerr.New(sdlcerr.StateUnwritable,
+			relative(s.root, path)+" could not be written",
+			"its directory may not be writable, or the disk may be full").WithCause(err)
+	}
+	return nil
+}
+
+// replaceBacklog is writeFile for the one file that is the user's rather than
+// the loop's. Replacing it changes its bytes and nothing else about it. A
+// backlog that is a link is written where the link points: renaming over the
+// link replaced it with a copy, and the file it pointed to never changed. And
+// it keeps the permissions it was given, rather than becoming readable by
+// everybody.
+func (s *Store) replaceBacklog(path string, data []byte) error {
+	target, perm := path, fs.FileMode(0o644)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		target = resolved
+	}
+	if info, err := os.Stat(target); err == nil {
+		perm = info.Mode().Perm()
+	}
+	if err := fsx.WriteFileAtomic(target, data, perm); err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			relative(s.root, path)+" could not be written",
 			"its directory may not be writable, or the disk may be full").WithCause(err)

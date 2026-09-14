@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -255,6 +256,12 @@ func TestMovingAStoryChangesOnlyItsStatusAndUpdatedTime(t *testing.T) {
 			before: `{"stories":[{"id":"A-1","title":"One","Status":"ready"}]}`,
 			after:  `{"stories":[{"id":"A-1","title":"One","Status":"in_progress","updated":"2026-09-10T08:30:00Z"}]}` + "\n",
 		},
+		{
+			name:   "a file written with CRLF keeps its line endings",
+			before: "{\r\n  \"stories\": [\r\n    {\"id\": \"A-1\", \"title\": \"One\", \"status\": \"ready\"}\r\n  ]\r\n}",
+			after: "{\r\n  \"stories\": [\r\n    {\"id\": \"A-1\", \"title\": \"One\", \"status\": \"in_progress\"," +
+				" \"updated\": \"2026-09-10T08:30:00Z\"}\r\n  ]\r\n}\r\n",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newStore(t)
@@ -269,12 +276,48 @@ func TestMovingAStoryChangesOnlyItsStatusAndUpdatedTime(t *testing.T) {
 				t.Fatal(err)
 			}
 			if string(raw) != tc.after {
-				t.Errorf("backlog after the move:\n%s\nwant:\n%s", raw, tc.after)
+				t.Errorf("backlog after the move:\n%q\nwant:\n%q", raw, tc.after)
 			}
 			if _, err := s.Backlog(); err != nil {
 				t.Errorf("the edited backlog does not read back: %v", err)
 			}
 		})
+	}
+}
+
+// Nor what kind of file it is, or who may read it. A backlog kept elsewhere
+// and linked into the project was replaced by a copy, leaving the file it
+// pointed to as it was; a private one became readable by everybody.
+func TestMovingAStoryKeepsTheBacklogALinkWithItsPermissions(t *testing.T) {
+	s := newStore(t)
+	target := filepath.Join(t.TempDir(), "stories.json")
+	if err := os.WriteFile(target, []byte(`{"stories":[{"id":"A-1","title":"One","status":"ready"}]}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := s.cfg.BacklogPath(s.root)
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.SetStoryStatus("A-1", model.StatusInProgress); err != nil {
+		t.Fatal(err)
+	}
+
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the backlog is no longer a link: %v", err)
+	}
+	raw, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"in_progress"`) {
+		t.Errorf("the file the backlog links to was not changed:\n%s", raw)
+	}
+	if runtime.GOOS == "windows" {
+		return // Windows does not carry Unix permission bits
+	}
+	if info, err := os.Stat(target); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("the backlog's permissions changed: %v %v", info.Mode().Perm(), err)
 	}
 }
 

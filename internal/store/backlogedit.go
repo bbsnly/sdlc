@@ -98,7 +98,12 @@ func editStory(data []byte, id string, changes ...change) ([]byte, bool) {
 			continue
 		}
 		edited := applyChanges(data, members, changes)
+		// Ended the way the file's lines already end: a bare newline after a
+		// file written with CRLF is a line ending nobody wrote.
 		if !bytes.HasSuffix(edited, []byte("\n")) {
+			if bytes.Contains(data, []byte("\r\n")) {
+				edited = append(edited, '\r')
+			}
 			edited = append(edited, '\n')
 		}
 		return edited, true
