@@ -123,14 +123,31 @@ func TestRunAlwaysEmitsExactlyOneJSONObject(t *testing.T) {
 	}
 }
 
-func TestOversizedStdinDoesNotHangOrGrowUnbounded(t *testing.T) {
+// A call too large to read whole cannot be checked. The hook still answers, and
+// small, and says the call went unchecked: in silence, a Write to loop state cut
+// off at the bound looked like a call with nothing in it to check.
+func TestOversizedStdinIsNotCheckedAndSaysSo(t *testing.T) {
+	root := loopProject(t)
+	quoted, err := json.Marshal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	huge := `{"hook_event_name":"PreToolUse","tool_name":"Write","cwd":` + string(quoted) +
+		`,"tool_input":{"file_path":".sdlc/state/active","content":"` + strings.Repeat("x", maxPayload) + `"}}`
+
 	var out bytes.Buffer
-	huge := strings.Repeat("x", 4<<20)
 	if code := Run([]string{"PreToolUse"}, strings.NewReader(huge), &out, io.Discard, noEnv); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	if out.Len() > 200 {
+	if out.Len() > 400 {
 		t.Errorf("output should stay small, got %d bytes", out.Len())
+	}
+	var r reply
+	if err := json.Unmarshal(out.Bytes(), &r); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.SystemMessage, "not checked") {
+		t.Errorf("a call too large to read went through without saying it was not checked: %q", out.String())
 	}
 }
 
@@ -197,16 +214,21 @@ func TestASessionStartedBelowTheRootIsStillGoverned(t *testing.T) {
 }
 
 // The walk up stops at the repository. A project of its own that happens to
-// sit inside one taking part in the loop is not governed by it.
+// sit inside one taking part in the loop is not governed by it -- though the
+// loop's own files still are, wherever the session writing them sits.
 func TestTheWalkUpStopsAtTheRepository(t *testing.T) {
 	root := loopProject(t)
 	inner := filepath.Join(root, "vendor", "other")
 	if err := os.MkdirAll(filepath.Join(inner, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	e := event(inner, "Write", "sdlc-researcher", filepath.Join(root, ".sdlc", "state", "active"))
+	e := event(inner, "Write", "sdlc-researcher", filepath.Join(inner, "README.md"))
 	if denied(call(t, e, noEnv)) {
 		t.Error("a separate repository inside the project was governed by it")
+	}
+	e = event(inner, "Write", "sdlc-researcher", filepath.Join(root, ".sdlc", "state", "active"))
+	if !denied(call(t, e, noEnv)) {
+		t.Error("the loop's state was writable from a session in a repository inside the project")
 	}
 }
 
@@ -319,6 +341,24 @@ func TestAWriteOutsideTheRepositoryIsRefused(t *testing.T) {
 		if !denied(r) || !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "write-outside-repository") {
 			t.Errorf("the implementer wrote %s, outside the repository: %+v", path, r)
 		}
+	}
+}
+
+// Claude Code's project directory is not always the loop project: a session can
+// be opened above the repository, or add it as another directory. The rules
+// still apply to what a tool call does inside it.
+func TestTheLoopIsFoundWhereTheToolCallActs(t *testing.T) {
+	root := loopProject(t)
+	above := filepath.Dir(root)
+	session := env(map[string]string{"CLAUDE_PROJECT_DIR": above})
+
+	// A file tool, from a session still sitting above the repository.
+	if r := call(t, event(above, "Write", "", filepath.Join(root, ".sdlc", "state", "active")), session); !denied(r) {
+		t.Errorf("loop state was writable from a session opened above the repository: %+v", r)
+	}
+	// A command, run from inside it.
+	if r := call(t, command(root, "", "rm .sdlc/state/tests.lock"), session); !denied(r) {
+		t.Errorf("the freeze could be removed from a session opened above the repository: %+v", r)
 	}
 }
 

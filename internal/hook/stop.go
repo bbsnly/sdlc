@@ -43,18 +43,7 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string)) turnR
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return allow
 	}
-	project := getenv("CLAUDE_PROJECT_DIR")
-	if project == "" {
-		project = p.CWD
-	}
-	if project == "" {
-		return allow
-	}
-	project, ok := projectRoot(project)
-	if !ok {
-		return allow
-	}
-	story := activeStory(project, warn)
+	project, story := findLoop(getenv, p, "", warn)
 	if story == "" || p.StopHookActive {
 		return allow
 	}

@@ -39,15 +39,11 @@ func formatWritten(raw []byte, getenv func(string) string, warn func(string)) tu
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return reply
 	}
-	project := getenv("CLAUDE_PROJECT_DIR")
-	if project == "" {
-		project = p.CWD
-	}
-	if project == "" || p.ToolInput.FilePath == "" {
+	if p.ToolInput.FilePath == "" {
 		return reply
 	}
-	project, ok := projectRoot(project)
-	if !ok || activeStory(project, warn) == "" {
+	project, story := findLoop(getenv, p, p.ToolInput.FilePath, warn)
+	if story == "" {
 		return reply
 	}
 	rel, outside := pathrules.Rel(project, p.ToolInput.FilePath)

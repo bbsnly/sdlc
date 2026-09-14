@@ -94,6 +94,16 @@ func TestAStopMidStoryIsSentBackWithWhatToDoInstead(t *testing.T) {
 	}
 }
 
+// The session's project directory can be above the repository the story is in.
+// The stop is still one made mid-story.
+func TestAStopFromASessionOpenedAboveTheRepositoryIsStillSentBack(t *testing.T) {
+	root := storyUnderWay(t)
+	above := env(map[string]string{"CLAUDE_PROJECT_DIR": filepath.Dir(root)})
+	if r := stop(t, root, false, above); r.Decision != "block" {
+		t.Error("a session opened above the repository stopped mid-story without a word")
+	}
+}
+
 func TestAStoryThatKeepsStoppingIsHandedToAPerson(t *testing.T) {
 	root := storyUnderWay(t)
 	for i := 1; i <= 3; i++ {

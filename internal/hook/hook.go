@@ -38,8 +38,10 @@ import (
 	"github.com/bbsnly/sdlc/internal/testset"
 )
 
-// maxPayload bounds the read. A hook that reads forever hangs the session.
-const maxPayload = 1 << 20
+// maxPayload bounds the read, so a hook that is never sent the end of its input
+// cannot hold the session for good. It is far above what a model can put into
+// one tool call: a call cut off at the bound will not parse, and goes unchecked.
+const maxPayload = 64 << 20
 
 // Decision is the generic reply: keep going, or stop with a reason. It is what
 // a hook says when it has nothing specific to add, and what the crash handler
@@ -96,9 +98,10 @@ type payload struct {
 // Run dispatches a hook event. args is everything after the `hook` verb, so
 // args[0] is the event name.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
-	// The payload is always drained, even when the answer is already known:
-	// leaving it unread can give the caller a broken pipe.
-	raw, _ := io.ReadAll(io.LimitReader(stdin, maxPayload))
+	// The payload is read even when the answer is already known: leaving it
+	// unread can give the caller a broken pipe. One byte past the bound is read,
+	// so that a payload cut off there is known to be one.
+	raw, _ := io.ReadAll(io.LimitReader(stdin, maxPayload+1))
 	if len(args) == 0 {
 		return emit(stdout, Allow())
 	}
@@ -173,28 +176,28 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 
 	var p payload
 	if err := json.Unmarshal(raw, &p); err != nil {
+		// A call that cannot be read cannot be checked, and letting it through
+		// in silence looks exactly like a call there was nothing to check in.
+		why := "it is not valid JSON"
+		if len(raw) > maxPayload {
+			why = fmt.Sprintf("it is larger than the %d MiB the hook reads", maxPayload>>20)
+		}
+		warn("a tool call could not be read, because " + why + ", so it was not checked.")
 		return policy.Allowed, event, false
 	}
 	if p.HookEventName != "" {
 		event = p.HookEventName
 	}
 
-	project := getenv("CLAUDE_PROJECT_DIR")
-	if project == "" {
-		project = p.CWD
-	}
-	if project == "" {
-		return policy.Allowed, event, false
+	path := p.ToolInput.FilePath
+	if path == "" {
+		path = p.ToolInput.NotebookPath
 	}
 
 	// Two files decide whether the loop has any business here: the project
 	// takes part, and a story is being worked on. Outside those, this does
 	// nothing at all.
-	project, ok := projectRoot(project)
-	if !ok {
-		return policy.Allowed, event, false
-	}
-	story := activeStory(project, warn)
+	project, story := findLoop(getenv, p, path, warn)
 	if story == "" {
 		return policy.Allowed, event, false
 	}
@@ -203,10 +206,6 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 		return inspectShell(project, story, p, warn), event, true
 	}
 
-	path := p.ToolInput.FilePath
-	if path == "" {
-		path = p.ToolInput.NotebookPath
-	}
 	rel, outside := pathrules.Rel(project, path)
 	slog.Debug("hook considering",
 		"tool", p.ToolName, "agent", p.AgentType, "role", policy.NormalizeAgent(p.AgentType),
@@ -504,8 +503,36 @@ func activeStory(project string, warn func(string)) string {
 	return id
 }
 
+// findLoop finds the loop project a tool call acts in, and the story being
+// worked on there: the first of Claude Code's project directory, the directory
+// the call runs in, and the file it writes that is in a project with a story
+// running.
+//
+// The project directory alone is not enough. A session opened above the
+// repository, or one that added it as another directory, has a project
+// directory the loop is not in, and every rule was off for every file in the
+// loop project -- while `sdlc`, run from inside it, carried on with the story.
+func findLoop(getenv func(string) string, p payload, target string, warn func(string)) (project, story string) {
+	if target != "" && !filepath.IsAbs(target) && p.CWD != "" {
+		target = filepath.Join(p.CWD, target)
+	}
+	for _, start := range []string{getenv("CLAUDE_PROJECT_DIR"), p.CWD, target} {
+		if start == "" {
+			continue
+		}
+		root, ok := projectRoot(start)
+		if !ok {
+			continue
+		}
+		if story := activeStory(root, warn); story != "" {
+			return root, story
+		}
+	}
+	return "", ""
+}
+
 // projectRoot finds the directory holding `.sdlc/config.json`, starting at the
-// session's own directory and walking up.
+// given directory and walking up.
 //
 // Walking up is the whole point. A session started anywhere below the
 // repository root -- `cd backend && claude`, a workspace whose folder is a
