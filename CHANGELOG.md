@@ -133,7 +133,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   and so does the launcher's "the sdlc binary was not found".
 - A test freeze that cannot be read no longer counts as no freeze. Corrupting
   `.sdlc/state/tests.lock` made every frozen test editable, quietly; until it
-  reads again, every test file is treated as frozen.
+  reads again, every test file is treated as frozen, whether the write comes
+  from a file tool or a shell command.
 - A gate record that is missing or will not parse no longer opens the commit
   gate. Deleting `.sdlc/stories/<id>/gate-record.json` was the way to commit
   past every gate, without a word. The refusal names the file, `sdlc doctor`

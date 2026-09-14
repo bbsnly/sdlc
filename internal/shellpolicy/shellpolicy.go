@@ -33,6 +33,11 @@ type State struct {
 	// and slash-separated. Empty before the freeze, and before then there is
 	// nothing here to protect.
 	Frozen []string
+
+	// IsTest stands in for Frozen when a freeze exists and cannot be read.
+	// Every file it calls a test then counts as frozen: a freeze nobody can
+	// read is not no freeze, or breaking it would be the way round it.
+	IsTest func(path string) bool
 }
 
 // Finding is a refusal. An empty Rule means nothing objected.
@@ -161,7 +166,7 @@ func checkLoopState(words, redirects []string) (Finding, bool) {
 // a frozen acceptance test, and `echo cheat > x_test.go` was allowed. One
 // redirect was the whole way round the hinge the loop turns on.
 func checkFrozenTests(segment string, words, redirects []string, s State) (Finding, bool) {
-	if len(s.Frozen) == 0 {
+	if len(s.Frozen) == 0 && s.IsTest == nil {
 		return Finding{}, false
 	}
 	candidates := redirects
@@ -176,7 +181,11 @@ func checkFrozenTests(segment string, words, redirects []string, s State) (Findi
 		candidates = append(candidates, words[1:]...)
 	}
 	for _, c := range candidates {
-		if frozen, ok := isFrozen(c, s.Frozen); ok {
+		frozen, ok := isFrozen(c, s.Frozen)
+		if w := strings.TrimPrefix(clean(c), "./"); !ok && w != "" && s.IsTest != nil && s.IsTest(w) {
+			frozen, ok = w, true
+		}
+		if ok {
 			return Finding{
 				Rule: "frozen-test-through-the-tool",
 				Reason: frozen + " is a frozen acceptance test, and a shell command is " +

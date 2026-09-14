@@ -246,6 +246,21 @@ func TestOrdinaryCommandsAreStillFineAfterTheFreeze(t *testing.T) {
 	}
 }
 
+// A freeze that exists and cannot be read hands over a test matcher instead of
+// a list, and everything the matcher calls a test is frozen. Treating it as no
+// freeze made corrupting tests.lock the way to `echo` into a frozen test.
+func TestAnUnreadableFreezeFreezesEveryTest(t *testing.T) {
+	state := State{CommitReady: true, IsTest: func(p string) bool { return strings.HasSuffix(p, "_test.go") }}
+	if _, refused := Inspect("echo cheat > ./x_test.go", state); !refused {
+		t.Error("a test file was writable through the shell while the freeze could not be read")
+	}
+	for _, command := range []string{"echo hi > x.go", "go test ./...", "cat x_test.go"} {
+		if f, refused := Inspect(command, state); refused {
+			t.Errorf("refused %q: %s", command, f.Message())
+		}
+	}
+}
+
 // Before the freeze there is nothing to protect, and the sdet writes these
 // files for a living.
 func TestBeforeTheFreezeTheShellIsAsFreeAsItWas(t *testing.T) {

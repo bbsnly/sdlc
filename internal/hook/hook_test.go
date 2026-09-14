@@ -435,6 +435,15 @@ func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
 			name:  "a freeze that will not parse, on a shell command",
 			spoil: corrupt(".sdlc/state/tests.lock"),
 			shell: true,
+			says:  "every test file is being treated as frozen",
+		},
+		{
+			name: "a freeze and a configuration that will not parse, on a shell command",
+			spoil: func(t *testing.T, root string) {
+				corrupt(".sdlc/state/tests.lock")(t, root)
+				corrupt(".sdlc/config.json")(t, root)
+			},
+			shell: true,
 			says:  "the freeze is not being enforced against shell commands",
 		},
 		{
@@ -476,6 +485,13 @@ func TestAnUnreadableFreezeStillProtectsTheTests(t *testing.T) {
 
 	if !denied(call(t, event(root, "Write", "sdlc:sdet", "invoice_test.go"), noEnv)) {
 		t.Error("a test file became editable because the freeze could not be read")
+	}
+	// And through the shell, which was the half 0ef7050 left open.
+	if !denied(call(t, command(root, "sdlc:implementer", "echo cheat > invoice_test.go"), noEnv)) {
+		t.Error("a test file became writable through the shell because the freeze could not be read")
+	}
+	if denied(call(t, command(root, "sdlc:implementer", "echo fine > invoice.go"), noEnv)) {
+		t.Error("an unreadable freeze froze a file that is not a test")
 	}
 }
 

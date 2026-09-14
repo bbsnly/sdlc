@@ -210,9 +210,9 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 	slog.Debug("hook considering a command",
 		"agent", p.AgentType, "story", story, "commit_ready", ready, "why", why)
 
+	frozen, isTest := frozenTests(project, story, warn)
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command,
-		shellpolicy.State{CommitReady: ready, CommitWhy: why,
-			Frozen: frozenTests(project, story, warn)})
+		shellpolicy.State{CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest})
 	if !refused {
 		return policy.Allowed
 	}
@@ -220,29 +220,39 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 }
 
 // frozenTests is what the freeze holds, for the shell rules to refuse writes
-// to. Nothing readable means nothing frozen, which is the same answer as
-// before Gate 3 and leaves the shell as free as it was.
-func frozenTests(project, story string, warn func(string)) []string {
+// to. No freeze yet means nothing frozen, which is the ordinary state before
+// Gate 3 and leaves the shell as free as it was.
+//
+// A freeze that is there and will not read is not that. Every file the
+// configuration calls a test counts as frozen until it reads, as it does for a
+// file write -- otherwise corrupting tests.lock was the way to `echo` into a
+// frozen test. Only when the configuration will not read either is there no
+// telling what a test is, and then it says so.
+func frozenTests(project, story string, warn func(string)) ([]string, func(string) bool) {
 	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "tests.lock"))
-	if err != nil {
-		// No freeze taken yet is the ordinary case before Gate 3.
-		if !errors.Is(err, fs.ErrNotExist) {
-			warn(".sdlc/state/tests.lock could not be read, so the freeze is " +
-				"not being enforced against shell commands. Run `sdlc doctor`.")
-		}
-		return nil
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
 	}
 	var lock model.Lock
-	if err := json.Unmarshal(raw, &lock); err != nil {
-		warn(".sdlc/state/tests.lock is not readable as JSON, so the freeze is " +
-			"not being enforced against shell commands. Run `sdlc doctor`.")
-		return nil
+	if err == nil {
+		err = json.Unmarshal(raw, &lock)
+	}
+	if err != nil {
+		cfg, cfgErr := config.Load(project)
+		if cfgErr != nil {
+			warn(".sdlc/state/tests.lock could not be read, and nor could .sdlc/config.json, " +
+				"so the freeze is not being enforced against shell commands. Run `sdlc doctor`.")
+			return nil, nil
+		}
+		warn(".sdlc/state/tests.lock could not be read, so every test file is " +
+			"being treated as frozen until it can be. Run `sdlc doctor` to see why.")
+		return nil, testset.New(cfg.Paths.Tests).Match
 	}
 	// A freeze belonging to another story says nothing about this one.
 	if lock.Story != story {
-		return nil
+		return nil, nil
 	}
-	return lock.Paths()
+	return lock.Paths(), nil
 }
 
 // commitReady reports whether the story has been through the gates that come

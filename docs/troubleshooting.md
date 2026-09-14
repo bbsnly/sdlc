@@ -314,13 +314,14 @@ tests. Protected paths and write scopes still hold; the freeze does not.
 
 ### `.sdlc/state/tests.lock could not be read, so every test file is being treated as frozen`
 
-The freeze itself will not parse. Until it does, a file write to anything that
-looks like a test is refused, frozen or not: a freeze that cannot be read is
-not treated as no freeze. `sdlc doctor` names it under "loop state".
+The freeze itself will not parse. Until it does, a file write or a shell command
+that writes to anything that looks like a test is refused, frozen or not: a
+freeze that cannot be read is not treated as no freeze. `sdlc doctor` names it
+under "loop state".
 
 ### `.sdlc/state/tests.lock ... so the freeze is not being enforced against shell commands`
 
-The same broken freeze, seen from a shell command. A shell command is checked
-against the list of frozen files, and there is no list to check against, so a
-redirect into a test is not refused until the freeze reads again. `sdlc doctor`
-names it under "loop state".
+The freeze will not parse, and neither will the configuration that says which
+files are tests, so there is nothing to check a shell command against. A
+redirect into a test is not refused until one of the two reads again. `sdlc
+doctor` names both.
