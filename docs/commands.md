@@ -87,6 +87,8 @@ $ sdlc start AUTH-3
 
 Picks up a story already under way, or takes the next runnable one: resume
 first, then priority, then id. Refuses if an iteration is already running.
+With `--json` it reports `resume` and `next_gate`, the first gate that has not
+passed, so a session picking a story back up carries on from there.
 
 Naming a story chooses it over the priority order, and nothing else: a story
 that is `dropped`, `blocked` or marked `done`, or that waits on a `depends_on`

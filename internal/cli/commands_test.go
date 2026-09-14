@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/bbsnly/sdlc/internal/model"
 )
 
 // project makes an empty Git repository, changes into it, and returns its path.
@@ -173,8 +175,8 @@ func TestAStoryGoesThroughStartGateAndStop(t *testing.T) {
 	initialised(t)
 
 	start := decode[startPayload](t, mustRun(t, "start", "--json"))
-	if start.Story != "US-001" || start.Resume {
-		t.Fatalf("start = %+v", start)
+	if start.Story != "US-001" || start.Resume || start.NextGate != string(model.GateDoR) {
+		t.Fatalf("start = %+v, want US-001 fresh at %s", start, model.GateDoR)
 	}
 
 	// Gate 2 comes after Gate 1 and cannot pass until its documents are stored,
@@ -214,6 +216,11 @@ func TestAStoryGoesThroughStartGateAndStop(t *testing.T) {
 	again := decode[startPayload](t, mustRun(t, "start", "--json"))
 	if !again.Resume {
 		t.Error("starting again on an unfinished story did not report a resume")
+	}
+	// A session told only that it resumed would work Gate 1 over again.
+	if again.NextGate != string(model.GateTestsFrozen) {
+		t.Errorf("next_gate = %q on resuming, want %s: dor and analysis already passed",
+			again.NextGate, model.GateTestsFrozen)
 	}
 }
 

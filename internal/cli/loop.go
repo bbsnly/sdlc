@@ -24,6 +24,9 @@ type startPayload struct {
 	Story  string `json:"story"`
 	Title  string `json:"title"`
 	Resume bool   `json:"resume"`
+	// NextGate is the gate to work now. A resumed story has passed some gates
+	// already, and a session told only that it resumed starts again at Gate 1.
+	NextGate string `json:"next_gate,omitempty"`
 }
 
 func newStartCmd() *cobra.Command {
@@ -280,10 +283,16 @@ func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool) err
 	if err != nil {
 		return err
 	}
+	record, err := s.Record(id)
+	if err != nil {
+		return err
+	}
 	if wantJSON(cmd) {
-		return emitJSON(cmd.OutOrStdout(), startPayload{
-			OK: true, Story: id, Title: story.Title, Resume: resume,
-		})
+		payload := startPayload{OK: true, Story: id, Title: story.Title, Resume: resume}
+		if next, ok := record.NextGate(); ok {
+			payload.NextGate = string(next)
+		}
+		return emitJSON(cmd.OutOrStdout(), payload)
 	}
 	w := cmd.OutOrStdout()
 	verb := "Started"
@@ -291,10 +300,6 @@ func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool) err
 		verb = "Resumed"
 	}
 	fmt.Fprintf(w, "%s %s  %s\n\n", verb, id, story.Title)
-	record, err := s.Record(id)
-	if err != nil {
-		return err
-	}
 	printGates(w, record)
 	fmt.Fprint(w, "\nNext: run /sdlc:next in Claude Code to work the story.\n")
 	return nil

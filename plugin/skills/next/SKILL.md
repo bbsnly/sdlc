@@ -36,7 +36,7 @@ sdlc status --json
   to work now: the loop resumes at the first gate that has not passed, and the tool works
   that out so you do not have to. Go straight to that section below.
 - With no story active there is no `next_gate`; `next` names the story that would be picked
-  up. Start at Gate 1.
+  up. Start at Gate 1, which may resume a story put down part of the way through.
 
 Each gate below is delegated to an agent that ships with the plugin. If those agents are not
 available in this session, the plugin is not installed — this runbook is here on its own. Tell
@@ -55,6 +55,10 @@ sdlc start --json
 This picks up a story already under way, or takes the next runnable one. If it fails with
 `SDLC-E0010` there is nothing to work on: show the user the `why` field from the error, run
 `sdlc story list` so they can see the backlog, and stop.
+
+If the output has `"resume": true`, the story was put down part of the way through and its
+earlier gates stand. Go straight to the section for the `next_gate` it reports, not on through
+this one.
 
 If it fails with `SDLC-E0038`, `SDLC-E0039`, `SDLC-E0040` or `SDLC-E0041`, trunk is not somewhere
 a new story can start from: HEAD is on another branch, there is uncommitted work that belongs to
