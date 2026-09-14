@@ -26,7 +26,7 @@ func commandsIn(line string, powerShell bool) [][]string {
 }
 
 func lex(line string, powerShell bool) *lexer {
-	return lexIn(line, powerShell, &subshells{parent: []int{0}}, 0)
+	return lexIn(line, powerShell, newSubshells(), 0)
 }
 
 // lexIn reads a line that runs in the subshell numbered group, numbering the
@@ -39,20 +39,38 @@ func lexIn(line string, powerShell bool, t *subshells, group int) *lexer {
 }
 
 // subshells numbers the subshells a line opens, from 1, and records which each
-// was opened in. 0 is the shell the line starts in.
+// was opened in and which are scripts handed to another shell. 0 is the shell
+// the line starts in.
 type subshells struct {
 	parent []int
+	script []bool
+}
+
+func newSubshells() *subshells {
+	return &subshells{parent: []int{0}, script: []bool{false}}
 }
 
 func (t *subshells) start(in int) int {
 	t.parent = append(t.parent, in)
+	t.script = append(t.script, false)
 	return len(t.parent) - 1
+}
+
+// scriptOf is the innermost script handed to a shell that a subshell is part
+// of, or 0 for none.
+func (t *subshells) scriptOf(g int) int {
+	for g != 0 && !t.script[g] {
+		g = t.parent[g]
+	}
+	return g
 }
 
 type lexer struct {
 	powerShell bool
 	commands   [][]string
-	groups     []int // the subshell each command runs in
+	groups     []int  // the subshell each command runs in
+	writes     []bool // each command sends its output to a file
+	redirected bool   // the command being read does
 	subshells  *subshells
 	open       []int // the subshells open around the command being read, innermost last
 	words      []string
@@ -80,8 +98,10 @@ func (l *lexer) endCommand() {
 	if len(l.words) > 0 {
 		l.commands = append(l.commands, l.words)
 		l.groups = append(l.groups, l.group())
+		l.writes = append(l.writes, l.redirected)
 		l.words = nil
 	}
+	l.redirected = false
 }
 
 func (l *lexer) group() int {
@@ -94,6 +114,7 @@ func (l *lexer) substitute(inner []rune) {
 	sub := lexIn(string(inner), l.powerShell, l.subshells, l.subshells.start(l.group()))
 	l.commands = append(l.commands, sub.commands...)
 	l.groups = append(l.groups, sub.groups...)
+	l.writes = append(l.writes, sub.writes...)
 	l.started = true
 }
 
@@ -205,6 +226,7 @@ func (l *lexer) redirect(rs []rune, i int) int {
 	}
 	l.endWord()
 	for i < len(rs) && strings.ContainsRune("<>&|-", rs[i]) {
+		l.redirected = l.redirected || rs[i] == '>'
 		i++
 	}
 	// What follows is the target: a file, or the descriptor in `>&2`.
@@ -260,14 +282,15 @@ func programsIn(line string, powerShell bool) [][]string {
 // the line starts in, and a number of its own for each subshell, substitution
 // and script handed to another shell, whose `cd` moves only that one.
 type ran struct {
-	words []string
-	group int
+	words     []string
+	group     int
+	redirects bool // it sends its output to a file
 }
 
 // programsAt is programsIn with the subshell each command runs in, and which
 // subshell opened each.
 func programsAt(line string, powerShell bool) ([]ran, *subshells) {
-	t := &subshells{parent: []int{0}}
+	t := newSubshells()
 	return programsWithin(line, powerShell, t, 0, 0), t
 }
 
@@ -286,11 +309,12 @@ func programsWithin(line string, powerShell bool, t *subshells, group, depth int
 		switch {
 		case run.shell:
 			in = t.start(in)
+			t.script[in] = true
 		case base(script[0]) == "eval":
 			// eval runs its string in this shell, so a `cd` in it moves this one.
 			script = script[1:]
 		default:
-			out = append(out, ran{run.words, in})
+			out = append(out, ran{run.words, in, l.writes[i]})
 			if base(run.words[0]) == "find" {
 				// Each -exec runs a command:
 				// `find . -exec true \; -exec git commit -m x \;` runs git.
@@ -299,7 +323,7 @@ func programsWithin(line string, powerShell bool, t *subshells, group, depth int
 						continue
 					}
 					if exec := program(run.words[j+1:]); len(exec.words) > 0 {
-						out = append(out, ran{exec.words, in})
+						out = append(out, ran{exec.words, in, false})
 					}
 				}
 			}

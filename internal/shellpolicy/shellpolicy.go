@@ -163,9 +163,32 @@ func Inspect(command string, s State) (Finding, bool) {
 		return f, true
 	}
 	dir, lost := s.Dir, false
-	unsure := movesInASubshell(text, s.PowerShell)
+	unsure := movesInAScript(text, s.PowerShell)
 	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}}
-	for _, segment := range segments(text) {
+	// Where the command is, for each subshell open around the segment being
+	// read. A `cd` in a subshell moves only that subshell: followed as a move
+	// of the shell around it, `cd internal && (cd /tmp && ls) && cp e x_test.go`
+	// wrote /tmp's x_test.go, and taken as leaving where the command is
+	// unknown, `(cd web && npm run build) && cp config.example.json config.json`
+	// wrote a frozen fixture's config.json. PowerShell's parentheses and $( )
+	// run in the scope around them, so there a cd moves the command.
+	type place struct {
+		dir  string
+		lost bool
+	}
+	var outer []place
+	ticked := false
+	for _, marked := range markedSegments(text) {
+		segment, opens, closes := subshellMarks(marked, &ticked)
+		if !s.PowerShell {
+			for ; closes > 0 && len(outer) > 0; closes-- {
+				dir, lost = outer[len(outer)-1].dir, outer[len(outer)-1].lost
+				outer = outer[:len(outer)-1]
+			}
+			for ; opens > 0; opens-- {
+				outer = append(outer, place{dir, lost})
+			}
+		}
 		words, redirects, _ := parse(segment)
 		if len(words) == 0 {
 			continue
@@ -177,7 +200,9 @@ func Inspect(command string, s State) (Finding, bool) {
 		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, lost || unsure, s, m); ok {
 			return f, true
 		}
-		if next, ok := changedDir(dir, run.words); ok {
+		// A script handed to a shell runs in a process of its own, and its cd is
+		// movesInAScript's.
+		if next, ok := changedDir(dir, run.words); ok && !run.shell {
 			// A relative `cd` from somewhere unknown leads somewhere unknown.
 			dir, lost = next, next == "" || lost && !isAbsolute(next)
 		}
@@ -185,16 +210,25 @@ func Inspect(command string, s State) (Finding, bool) {
 	return Finding{}, false
 }
 
-// movesInASubshell reports whether a command changes directory somewhere that
-// does not move the shell around it: a subshell, a substitution, a script
-// handed to another shell. The segments the path rules read cannot tell, so
-// where anything in the command runs is not known. Followed as a move,
-// `cd internal && (cd /tmp && ls) && cp e x_test.go` wrote /tmp's x_test.go.
-func movesInASubshell(text string, powerShell bool) bool {
-	runs, _ := programsAt(text, powerShell)
+// movesInAScript reports whether a script handed to a shell changes directory
+// and then writes a file. The path rules read a quoted script's commands as
+// segments of the command around it, from the directory outside it, so where
+// that write lands is not known to them: `sh -c 'cd internal && cp e
+// x_test.go'`. A script that moves and writes nothing says nothing about the
+// rest of the command.
+func movesInAScript(text string, powerShell bool) bool {
+	runs, subshells := programsAt(text, powerShell)
+	moved := map[int]bool{}
 	for _, r := range runs {
-		if _, ok := changedDir("", r.words); ok && r.group != 0 {
+		script := subshells.scriptOf(r.group)
+		if script == 0 {
+			continue
+		}
+		if moved[script] && (r.redirects || changesAFile(r.words)) {
 			return true
+		}
+		if _, ok := changedDir("", r.words); ok {
+			moved[script] = true
 		}
 	}
 	return false
@@ -1183,6 +1217,48 @@ func runsAScript(line string) bool {
 // separator hidden inside quotes makes one segment out of two, which can only
 // make this notice more, never less.
 func segments(command string) []string {
+	return splitSegments(command, false)
+}
+
+// markedSegments is segments with where each subshell opens and closes left on
+// the front of the segment after it: `(` for a subshell or a `$(`, `)` for its
+// end, and a backtick for either end of a backtick substitution.
+func markedSegments(command string) []string {
+	return splitSegments(command, true)
+}
+
+// subshellMarks takes markedSegments' marks off the front of a segment, and
+// counts the subshells they open and close before it. ticked is whether a
+// backtick substitution is open.
+func subshellMarks(marked string, ticked *bool) (segment string, opens, closes int) {
+	for {
+		marked = strings.TrimLeft(marked, " \t")
+		if marked == "" {
+			return "", opens, closes
+		}
+		switch c := marked[0]; {
+		case c == '(' || c == '`' && !*ticked:
+			*ticked = *ticked || c == '`'
+			opens++
+		case c == ')' || c == '`':
+			*ticked = *ticked && c != '`'
+			if opens > 0 {
+				opens--
+			} else {
+				closes++
+			}
+		default:
+			return marked, opens, closes
+		}
+		marked = marked[1:]
+	}
+}
+
+func splitSegments(command string, marked bool) []string {
+	sub, tick, end := "\n", "\n", "\n"
+	if marked {
+		sub, tick, end = "\n(", "\n`", "\n)"
+	}
 	// `>|` is a redirect that overwrites, not a pipe, and read as a pipe it
 	// left the file it writes as a command of its own. `>&` and `&>` are
 	// redirects too, and are taken as one before a lone `&` is.
@@ -1193,7 +1269,7 @@ func segments(command string) []string {
 	// `&`, and the commit gate knew neither.
 	replacer := strings.NewReplacer(
 		">|", ">", ">&", ">", "&>", ">",
-		"&&", "\n", "||", "\n", ";", "\n", "|", "\n", "&", "\n", "`", "\n", "$(", "\n", ")", "\n",
+		"&&", "\n", "||", "\n", ";", "\n", "|", "\n", "&", "\n", "`", tick, "$(", sub, ")", end,
 	)
 	var out []string
 	for _, line := range strings.Split(replacer.Replace(command), "\n") {

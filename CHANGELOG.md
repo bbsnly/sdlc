@@ -261,7 +261,7 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   root was refused as a write to a frozen test, and so was `touch main.go` in
   another package. A name is still read that way where its directory cannot be
   known: after a `cd` to a variable, a glob, home or `-`, after `popd` or a `cd`
-  in a subshell, and in `find`,
+  in a script handed to a shell, and in `find`,
   `xargs`, `git -C` and a program's own code.
 - A document handed over in a PowerShell here-string (`@' ... '@`) is read as
   text, as a here-document is. A plan or review whose table named `git commit`

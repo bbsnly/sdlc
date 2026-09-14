@@ -392,6 +392,10 @@ func TestAFrozenTestCannotBeWrittenAnyOtherWay(t *testing.T) {
 		"echo x > /repo/internal/x_test.go",
 		// A `cd` this cannot follow, or followed where it does not move the shell.
 		"cd internal && (cd /tmp && ls) && cp /tmp/e x_test.go",
+		"cd internal && (cd /tmp && cd x) && cp /tmp/e x_test.go",
+		"cd internal && echo $(cd /tmp) && cp /tmp/e x_test.go",
+		"cd internal && echo `cd /tmp` && cp /tmp/e x_test.go",
+		"cd internal && echo `pwd` `cd /tmp` && cp /tmp/e x_test.go",
 		"cd internal && sh -c 'cd ..' && echo x > x_test.go",
 		"cd inter* && cp /tmp/e x_test.go",
 		"cd /d internal && copy /y e.go x_test.go",
@@ -423,6 +427,13 @@ func TestACommonNameIsNotAFrozenFixtureElsewhere(t *testing.T) {
 	app.Dir = "cmd/app"
 	allowed(t, "touch main.go", app)
 	allowed(t, "sed -i '' 's/a/b/' main.go", app)
+	// A subshell's cd moves only the subshell.
+	allowed(t, "(cd web && npm run build) && cp config.example.json config.json", frozen)
+	allowed(t, `ROOT="$(cd .. && pwd)"; cp config.example.json config.json`, frozen)
+	allowed(t, "(cp config.example.json config.json)", frozen)
+	allowed(t, "(cd web && cp config.example.json config.json)", frozen)
+	allowed(t, "sh -c 'cp config.example.json config.json'", frozen)
+	allowed(t, "sh -c 'cd web && npm run build' && cp config.example.json config.json", frozen)
 
 	// Where the directory is the fixture's, or cannot be known, the name is
 	// still the fixture.
@@ -433,6 +444,11 @@ func TestACommonNameIsNotAFrozenFixtureElsewhere(t *testing.T) {
 		"cd internal/load && pushd /tmp && popd && rm testdata/config.json",
 		"find . -name config.json -delete",
 		"touch config.json && find . -name config.json -delete",
+		"(cd internal/load/testdata && echo {} > config.json)",
+		"cd internal/load && (cd testdata && rm config.json)",
+		"(cd internal/load && (cd testdata) && cd testdata && rm config.json)",
+		"sh -c 'cd internal/load/testdata && cp /tmp/c config.json'",
+		"sh -c 'cd internal/load/testdata && echo {} > config.json'",
 		"find internal -name config.json | xargs rm",
 		"git -C internal/load/testdata checkout -- config.json",
 		`python3 -c "import os; os.chdir('internal/load/testdata'); os.remove('config.json')"`,
