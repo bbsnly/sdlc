@@ -577,6 +577,28 @@ func TestDoctorNamesLoopStateTheHookCannotRead(t *testing.T) {
 	}
 }
 
+// Doctor read only the active story's record. A stopped story's record that no
+// longer reads was reported as fine, and the next start on it failed with an
+// error calling itself a bug.
+func TestDoctorNamesTheRecordOfAStoryNobodyIsWorkingOn(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+	mustRun(t, "stop")
+	record := filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")
+	if err := os.WriteFile(record, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := run(t, "doctor")
+	if !strings.Contains(r.stdout, `the record for "US-001"`) || !strings.Contains(r.stdout, `"sdlc start US-001" fails`) {
+		t.Errorf("doctor did not name the unreadable record of the stopped story:\n%s", r.stdout)
+	}
+	if r.code == 0 {
+		t.Error("doctor exited zero with a gate record that does not read")
+	}
+}
+
 func TestDoctorExitsNonZeroWhenSomethingIsWrong(t *testing.T) {
 	project(t)
 	mustRun(t, "init")

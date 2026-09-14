@@ -182,6 +182,23 @@ func stateCheck(s *store.Store) check {
 				"to end the iteration and commit as yourself")
 		}
 	}
+	// A story nobody is working on has its record read again when it is next
+	// started, and a record that does not read stops that start with an error
+	// that calls itself a bug. So every record is read here, not only the
+	// active story's.
+	stories, err := s.StoriesOnDisk()
+	if err != nil {
+		problem(err.Error(), "no story can be started until .sdlc/stories can be listed: fix its permissions")
+	}
+	for _, id := range stories {
+		if id == active {
+			continue
+		}
+		if _, err := s.Record(id); err != nil {
+			problem(err.Error(), `"sdlc start `+id+`" fails until .sdlc/stories/`+id+"/"+model.RecordFile+
+				" reads: restore it if you keep a copy, or remove it to take the story through its gates again")
+		}
+	}
 	if _, err := s.Lock(); err != nil {
 		problem(err.Error(), "every test is treated as frozen until .sdlc/state/tests.lock reads: "+
 			`restore it if you keep a copy, or remove it and run "sdlc freeze", `+
@@ -192,7 +209,7 @@ func stateCheck(s *store.Store) check {
 			Detail: strings.Join(details, "; "), Fix: strings.Join(fixes, "; ")}
 	}
 	return check{Name: "loop state", State: stateOK,
-		Detail: "the iteration, its gate record and the test freeze all read"}
+		Detail: "the iteration, every gate record and the test freeze all read"}
 }
 
 // checkOrder is every check doctor makes, in the order it makes them. It is

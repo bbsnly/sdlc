@@ -329,6 +329,27 @@ func (s *Store) Record(id string) (*model.Record, error) {
 	return &r, nil
 }
 
+// StoriesOnDisk lists the stories that have a directory under .sdlc/stories,
+// in name order. A directory whose name could not be a story id is not one.
+func (s *Store) StoriesOnDisk() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(s.root, filepath.FromSlash(storiesDir)))
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil, nil
+	case err != nil:
+		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
+			storiesDir+" could not be listed",
+			"it is there, but reading the directory failed").WithCause(err)
+	}
+	var ids []string
+	for _, e := range entries {
+		if e.IsDir() && CheckID(e.Name()) == nil {
+			ids = append(ids, e.Name())
+		}
+	}
+	return ids, nil
+}
+
 // SaveRecord writes a story's gate record.
 func (s *Store) SaveRecord(r *model.Record) error {
 	dir, err := s.StoryDir(r.Story)
