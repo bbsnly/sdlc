@@ -26,11 +26,13 @@ type StopCount struct {
 }
 
 // StopCount reads the count. One that is missing or will not read counts
-// nothing, and the next count written replaces it.
+// nothing, and the next count written replaces it. So does one below zero,
+// which no stop wrote: the count only grows from there, and a count far enough
+// below zero never reached the limit, so the story was never handed over.
 func (s *Store) StopCount() StopCount {
 	var c StopCount
 	raw, err := os.ReadFile(filepath.Join(s.root, filepath.FromSlash(stopFile)))
-	if err != nil || json.Unmarshal(raw, &c) != nil {
+	if err != nil || json.Unmarshal(raw, &c) != nil || c.Blocks < 0 {
 		return StopCount{}
 	}
 	return c

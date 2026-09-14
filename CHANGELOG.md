@@ -48,7 +48,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   as everywhere, and it goes stale if the story changes after it.
 - A session cannot quietly end its turn mid-story. A `Stop` hook sends the stop
   back with what to do instead, and after `loop.max_stop_blocks` stops in a row
-  with nothing recorded, hands the story to a person.
+  with nothing recorded, hands the story to a person. A count in
+  `.sdlc/state/stop-blocks.json` below zero starts again rather than putting
+  the hand-over off indefinitely.
 - `commands.fmt_file` runs on each file a tool writes while a story is being
   worked on, and a formatter that fails is reported to the session. The
   commands `sdlc init` writes for it name the files their formatter

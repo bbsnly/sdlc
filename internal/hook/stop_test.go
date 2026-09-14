@@ -148,6 +148,37 @@ func TestAStoryThatKeepsStoppingIsHandedToAPerson(t *testing.T) {
 	}
 }
 
+// A count below zero is not one any stop wrote. Read as it was, the count grew
+// from there and never reached the limit, and a story that kept stopping was
+// never handed to anybody.
+func TestACountBelowZeroStartsAgain(t *testing.T) {
+	root := storyUnderWay(t)
+	stop(t, root, false, noEnv)
+	path := filepath.Join(root, ".sdlc", "state", "stop-blocks.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var count map[string]any
+	if err := json.Unmarshal(raw, &count); err != nil {
+		t.Fatal(err)
+	}
+	count["blocks"] = -1
+	if raw, err = json.Marshal(count); err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, ".sdlc/state/stop-blocks.json", string(raw))
+
+	for i := 1; i <= 3; i++ {
+		if r := stop(t, root, false, noEnv); r.Decision != "block" {
+			t.Fatalf("stop %d after the count was spoiled went through before the limit", i)
+		}
+	}
+	if r := stop(t, root, false, noEnv); !strings.Contains(r.SystemMessage, "sdlc approve A-1") {
+		t.Errorf("a story whose count was below zero was not handed to a person: %+v", r)
+	}
+}
+
 // The count is of stops with nothing done in between, so a session making
 // progress is never handed over for it.
 func TestRecordingAnythingStartsTheCountAgain(t *testing.T) {
