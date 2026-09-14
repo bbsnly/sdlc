@@ -114,6 +114,29 @@ func TestWrappedOrdinaryWorkIsStillOrdinary(t *testing.T) {
 	}
 }
 
+// A review from anyone but the reviewer it names is the implementer approving
+// its own work, and the gate passed on it.
+func TestAReviewIsTheReviewersOwn(t *testing.T) {
+	as := func(agent string) State { return State{CommitReady: true, Agent: agent} }
+	for _, c := range []struct{ agent, command string }{
+		{"implementer", "sdlc review add code_review code-reviewer approve --note ok"},
+		{"", "sdlc review add design_review architect approve"},
+		{"general-purpose", "sdlc review add verifier_review verifier approve"},
+		{"architect", "sdlc review add design_review security approve"},
+		{"implementer", `sdlc review add --note "all good" code_review code-reviewer approve`},
+		{"implementer", "npx @bbsnly/sdlc --json review add code_review code-reviewer approve"},
+		{"implementer", "sdlc review add --story A-1 verifier_review verifier approve"},
+		{"implementer", "sdlc review add code_review Code-Reviewer approve"},
+	} {
+		refused(t, c.command, as(c.agent), "review-is-recorded-by-its-reviewer")
+	}
+	allowed(t, "sdlc review add code_review code-reviewer approve --note ok", as("code-reviewer"))
+	allowed(t, "sdlc review add design_review human-advocate note --note 'the architect missed AC-2'",
+		as("human-advocate"))
+	allowed(t, "sdlc review list --gate code_review", as("implementer"))
+	allowed(t, `sdlc gate code_review pass --note "code-reviewer approved"`, as(""))
+}
+
 // Every agent hands its review or its plan to sdlc as a here-document, and a
 // document talks about commands. Read as commands, these were refused.
 func TestADocumentIsTextNotCommands(t *testing.T) {
@@ -123,8 +146,9 @@ func TestADocumentIsTextNotCommands(t *testing.T) {
 		"rm .sdlc/state/tests.lock would break the freeze.\n" +
 		"SDLC_DOCUMENT"
 	allowed(t, plan, notReady)
-	allowed(t, "sdlc review add design_review red-team note --note x <<-EOF\n\t`git commit` too early\n\tEOF", notReady)
-	allowed(t, "sdlc review add design_review red-team note <<< 'fine'", notReady)
+	redTeam := State{CommitReady: false, CommitWhy: notReady.CommitWhy, Agent: "red-team"}
+	allowed(t, "sdlc review add design_review red-team note --note x <<-EOF\n\t`git commit` too early\n\tEOF", redTeam)
+	allowed(t, "sdlc review add design_review red-team note <<< 'fine'", redTeam)
 
 	// Text that goes to something that runs it is commands, and the command
 	// that opens the document, and anything after it, is still read.
@@ -506,7 +530,8 @@ func TestApprovingIsAHumanDecision(t *testing.T) {
 		"sdlc status --json",
 		"echo approve",
 	} {
-		allowed(t, command, ready)
+		// As the code reviewer, whose review it is to record.
+		allowed(t, command, State{CommitReady: true, Agent: "code-reviewer"})
 	}
 }
 

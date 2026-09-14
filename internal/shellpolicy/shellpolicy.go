@@ -64,6 +64,10 @@ type State struct {
 	// one call to the next, so `cd .sdlc/state` in one call and `rm tests.lock`
 	// in the next named the freeze in a word that did not say so.
 	Dir string
+
+	// Agent is the role running the command, as policy.NormalizeAgent gives
+	// it: empty for the main conversation.
+	Agent string
 }
 
 // Finding is a refusal. An empty Rule means nothing objected.
@@ -119,9 +123,10 @@ var mutating = map[string]bool{
 //
 // The rules do not depend on who is asking. A shell command that rewrites the
 // loop's record is wrong from every role, including the one whose record it is,
-// for the same reason the file-writing rules refuse it from everyone. The one
-// exception follows the file-writing rules too: the implementer may not create a
-// test file, which is only wrong because of who is creating it.
+// for the same reason the file-writing rules refuse it from everyone. Two
+// exceptions are only wrong because of who is asking: the implementer creating
+// a test file, as the file-writing rules have it, and a review recorded by
+// anyone but the reviewer it names.
 func Inspect(command string, s State) (Finding, bool) {
 	dir := s.Dir
 	for _, segment := range segments(withoutDocuments(command)) {
@@ -137,6 +142,9 @@ func Inspect(command string, s State) (Finding, bool) {
 			return f, true
 		}
 		if f, ok := checkApprove(words); ok {
+			return f, true
+		}
+		if f, ok := checkReviewer(words, s); ok {
 			return f, true
 		}
 		if f, ok := checkCommit(run.words, s); ok {
@@ -210,6 +218,58 @@ func checkApprove(words []string) (Finding, bool) {
 		Route: "hand the question over with `sdlc escalate <type> --message \"...\"` and stop; " +
 			"the person reads the work and runs `sdlc approve` in their own terminal",
 	}, true
+}
+
+// checkReviewer keeps a review the reviewer's own.
+//
+// Every reviewer records its own verdict with `sdlc review add`, and nothing
+// asked who was running it: the implementer could record the code reviewer's
+// approval of its own work, and the gate passed on it. A person recording one
+// in their own terminal is not asked.
+func checkReviewer(words []string, s State) (Finding, bool) {
+	role, ok := reviewRole(words)
+	if !ok || role == s.Agent {
+		return Finding{}, false
+	}
+	who := "the main conversation"
+	if s.Agent != "" {
+		who = s.Agent
+	}
+	return Finding{
+		Rule: "review-is-recorded-by-its-reviewer",
+		Reason: who + " is recording a review as " + role + ", and a review is only worth " +
+			"having from the reviewer it names",
+		Route: "delegate to sdlc:" + role + ", which reads the work and records its own verdict " +
+			"with `sdlc review add`",
+	}, true
+}
+
+// reviewRole is the reviewer a `sdlc review add GATE ROLE VERDICT` command
+// records a review for, if this is one. The gate and the role are found as a
+// pair the loop knows, rather than by position, so a note given before them
+// cannot move the role somewhere else.
+func reviewRole(words []string) (string, bool) {
+	if !runsSubcommand(words, "review") || !hasWord(words, "add") {
+		return "", false
+	}
+	var positional []string
+	seen := false
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+		switch {
+		case !seen:
+			seen = base(w) == "sdlc"
+		case strings.HasPrefix(w, "-"):
+		default:
+			positional = append(positional, w)
+		}
+	}
+	for i := 0; i+1 < len(positional); i++ {
+		if r, ok := model.FindReviewer(model.Gate(positional[i]), positional[i+1]); ok {
+			return r.Role, true
+		}
+	}
+	return "", false
 }
 
 // runsSubcommand reports whether the command runs sdlc with this subcommand,

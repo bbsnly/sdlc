@@ -202,6 +202,7 @@ func shellRules(t *testing.T) []string {
 		"sdlc unfreeze --reason x",
 		"sdlc approve US-1",
 		"echo x > CLAUDE.md",
+		"sdlc review add code_review code-reviewer approve",
 	} {
 		f, ok := shellpolicy.Inspect(command, shellpolicy.State{})
 		if !ok {

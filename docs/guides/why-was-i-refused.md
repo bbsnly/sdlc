@@ -48,9 +48,10 @@ The rules come in two groups. The
 `Write`, `Edit`, `MultiEdit` and `NotebookEdit`, and most of them depend on
 which agent is asking. The
 [rules on shell commands](../enforcement.md#rules-on-shell-commands) apply to
-every agent alike, with one exception: a shell command that writes a test file
+every agent alike, with two exceptions. A shell command that writes a test file
 is refused from the implementer, under the same
-`implementer-does-not-write-tests` id as the file tools use.
+`implementer-does-not-write-tests` id as the file tools use. And
+`sdlc review add` is refused from anyone but the reviewer it names.
 
 If a rule is wrong for your project, say which one and why. Do not route around
 it.

@@ -188,7 +188,7 @@ iteration and take over yourself.
 Every rule above governs the file-writing tools, and two of them —
 `no-new-test-after-the-freeze` and `implementer-does-not-write-tests` — hold
 against a shell command too. The rest would leave
-`cat > .sdlc/stories/A-1/ANALYSIS.md` walking past them. These seven close
+`cat > .sdlc/stories/A-1/ANALYSIS.md` walking past them. These eight close
 that, and nothing else about your shell is touched: your tests, your build and
 your tooling run exactly as before.
 
@@ -274,6 +274,19 @@ given with `sdlc review add`, is a different command and is not refused.
 
 *Instead:* `sdlc escalate <type> --message "..."`, and stop. The person reads the
 work and runs `sdlc approve` in their own terminal.
+
+### `review-is-recorded-by-its-reviewer`
+
+Refuses `sdlc review add <gate> <role> <verdict>` run by anyone but the agent
+it names: the main conversation, a subagent outside the loop, another reviewer,
+or the implementer recording an approval of its own work.
+
+Every reviewer records its own verdict, and the gate passes on those verdicts.
+A review recorded by someone else is a review nobody did. A person recording one
+in their own terminal is not asked.
+
+*Instead:* delegate to the reviewer, which reads the work and records its own
+verdict.
 
 ### `commit-gate`
 

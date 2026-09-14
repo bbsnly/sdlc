@@ -637,6 +637,23 @@ func TestTheShellCannotWriteWhatTheToolsMayNot(t *testing.T) {
 	}
 }
 
+// The reviewer a review names is the one who records it, as the agent prompts
+// have it. The implementer recording the code reviewer's approval is refused.
+func TestAReviewIsRecordedByTheReviewerItNames(t *testing.T) {
+	root := loopProject(t)
+	add := "sdlc review add code_review code-reviewer approve --note fine <<'SDLC_DOCUMENT'\n" +
+		"looks good\nSDLC_DOCUMENT"
+	for _, agent := range []string{"sdlc:implementer", "", "general-purpose", "sdlc:architect"} {
+		if !denied(call(t, command(root, agent, add), noEnv)) {
+			t.Errorf("%q recorded the code reviewer's review", agent)
+		}
+	}
+	if r := call(t, command(root, "sdlc:code-reviewer", add), noEnv); denied(r) {
+		t.Errorf("the code reviewer could not record its own review: %s",
+			r.HookSpecificOutput.PermissionDecisionReason)
+	}
+}
+
 // The Bash tool keeps a cd from one call to the next, and the payload's cwd is
 // where it left the session. A relative path is read from there.
 func TestAShellCommandIsReadFromTheSessionsDirectory(t *testing.T) {
