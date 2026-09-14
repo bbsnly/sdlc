@@ -285,6 +285,22 @@ func TestTheBacklogIsNotEditedDuringAnIteration(t *testing.T) {
 	}
 }
 
+// In PowerShell a backtick escapes the character after it, so the hook reads a
+// PowerShell command with that in mind, and a Bash one without it.
+func TestAPowerShellCommandIsReadAsPowerShell(t *testing.T) {
+	root := loopProject(t)
+	raw, err := json.Marshal(map[string]any{
+		"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "cwd": root,
+		"agent_type": "sdlc-implementer", "tool_input": map[string]string{"command": "Remove-Item CLAUDE`.md"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := call(t, string(raw), noEnv); !denied(r) {
+		t.Error("CLAUDE.md, escaped with a backtick, was removable from PowerShell")
+	}
+}
+
 // Claude Code on Windows writes `\repo\CLAUDE.md` to the project's own
 // CLAUDE.md, and the hook read it as `repo/CLAUDE.md`, a file nothing protects.
 func TestAPathRootedWithoutADriveIsGovernedOnWindows(t *testing.T) {

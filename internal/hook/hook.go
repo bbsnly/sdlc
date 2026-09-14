@@ -268,8 +268,8 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
-		Backlog: backlogPath(project),
-		Fresh:   func() (bool, string) { return reviewsFresh(project, story, warn) },
+		Backlog: backlogPath(project), PowerShell: p.ToolName == "PowerShell",
+		Fresh: func() (bool, string) { return reviewsFresh(project, story, warn) },
 	})
 	if !refused {
 		return policy.Allowed

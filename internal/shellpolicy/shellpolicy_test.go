@@ -314,6 +314,44 @@ func TestACommandAfterAnAmpersandIsReadLikeAnyOther(t *testing.T) {
 	}
 }
 
+// PowerShell writes the same files under other names: a parameter's value after
+// a colon, aliases, cmd /c, and a backtick that escapes rather than substitutes.
+// Every one of these went through.
+func TestPowerShellSpellingsMeetTheShellRules(t *testing.T) {
+	ps := ready
+	ps.PowerShell = true
+	for command, rule := range map[string]string{
+		"Set-Content -Path:CLAUDE.md -Value x":          "protected-path-through-the-tool",
+		`Remove-Item -Path:.sdlc\state\active`:          "loop-state-through-the-tool",
+		`Out-File -FilePath:.sdlc\config.json`:          "loop-state-through-the-tool",
+		"sc CLAUDE.md x":                                "protected-path-through-the-tool",
+		"ac CLAUDE.md x":                                "protected-path-through-the-tool",
+		"clc CLAUDE.md":                                 "protected-path-through-the-tool",
+		`ren .sdlc\state\active old`:                    "loop-state-through-the-tool",
+		`rd -r .sdlc\state`:                             "loop-state-through-the-tool",
+		`'x' | Tee-Object -FilePath .sdlc\state\active`: "loop-state-through-the-tool",
+		`Push-Location .sdlc\state; Remove-Item active`: "loop-state-through-the-tool",
+		`cmd /c del .sdlc\state\active`:                 "loop-state-through-the-tool",
+		`cmd /s /c "del .sdlc\state\active"`:            "loop-state-through-the-tool",
+		"Remove-Item CLAUDE`.md":                        "protected-path-through-the-tool",
+		"Remove-Item .`s`d`l`c/state/tests.lock":        "loop-state-through-the-tool",
+	} {
+		refused(t, command, ps, rule)
+	}
+
+	commit := notReady
+	commit.PowerShell = true
+	refused(t, "cmd /c git commit -m x", commit, "commit-gate")
+
+	frozen := ps
+	frozen.Frozen = []string{"internal/x_test.go"}
+	refused(t, `Set-Content -Path:internal\x_test.go -Value x`, frozen, "frozen-test-through-the-tool")
+
+	// In bash a backtick substitutes a command, and nothing here is PowerShell's.
+	allowed(t, "echo `date` > notes.txt", ready)
+	allowed(t, "Get-Content -Path:CLAUDE.md", ps)
+}
+
 // Reading is nobody's business here, and neither is anything outside the
 // loop's own files. A rule that refused too much would be turned off.
 func TestReadingAndOrdinaryWorkAreUntouched(t *testing.T) {

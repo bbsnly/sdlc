@@ -69,6 +69,11 @@ type State struct {
 	// it: empty for the main conversation.
 	Agent string
 
+	// PowerShell is whether the command is PowerShell's, where a backtick is an
+	// escape rather than a command substitution: `Remove-Item CLAUDE`.md`
+	// removes CLAUDE.md.
+	PowerShell bool
+
 	// Backlog is the backlog file, repository-relative and slash-separated, or
 	// empty for none. It is protected as CLAUDE.md is, and is not in that list
 	// only because the configuration says where it is.
@@ -117,11 +122,13 @@ var mutating = map[string]bool{
 	"sed": true, "perl": true, "awk": true, "ed": true, "patch": true,
 	"python": true, "python3": true, "ruby": true, "node": true,
 	// Windows spellings, because Bash on Windows is not always a POSIX shell.
-	"del": true, "erase": true, "move": true, "copy": true,
+	"del": true, "erase": true, "move": true, "copy": true, "ren": true, "rename": true,
+	"rd": true,
 	// PowerShell's cmdlets and their aliases, folded like every other name.
 	"remove-item": true, "move-item": true, "copy-item": true, "rename-item": true,
 	"new-item": true, "set-content": true, "add-content": true, "clear-content": true,
-	"out-file": true, "ri": true, "mi": true, "cpi": true, "rni": true, "ni": true,
+	"out-file": true, "tee-object": true, "ri": true, "mi": true, "cpi": true, "rni": true,
+	"ni": true, "sc": true, "ac": true, "clc": true,
 }
 
 // Inspect reports the first rule that refuses this command.
@@ -134,6 +141,9 @@ var mutating = map[string]bool{
 // anyone but the reviewer it names.
 func Inspect(command string, s State) (Finding, bool) {
 	dir := s.Dir
+	if s.PowerShell {
+		command = strings.ReplaceAll(command, "`", "")
+	}
 	for _, segment := range segments(withoutDocuments(command)) {
 		words, redirects, assigns := parse(segment)
 		if len(words) == 0 && len(assigns) == 0 {
@@ -641,6 +651,12 @@ func program(words []string) invocation {
 			if len(words) > 0 {
 				words = words[1:] // the duration
 			}
+		case "cmd":
+			// cmd's switches start with a slash: `cmd /c del file`, `cmd /s /c`.
+			words = words[1:]
+			for len(words) > 0 && strings.HasPrefix(words[0], "/") && !strings.Contains(words[0][1:], "/") {
+				words = words[1:]
+			}
 		default:
 			run.words = append([]string{first}, words[1:]...)
 			return run
@@ -671,7 +687,7 @@ func changedDir(dir string, words []string) (string, bool) {
 		return dir, false
 	}
 	switch base(words[0]) {
-	case "cd", "pushd", "chdir", "set-location", "sl":
+	case "cd", "pushd", "chdir", "set-location", "sl", "push-location":
 	default:
 		return dir, false
 	}
@@ -698,6 +714,13 @@ func spellings(dir string, words []string) []string {
 		named := []string{w}
 		if _, value, ok := strings.Cut(w, "="); ok && value != "" {
 			named = append(named, value)
+		}
+		// PowerShell gives a parameter its value after a colon as well:
+		// `Set-Content -Path:CLAUDE.md`.
+		if strings.HasPrefix(w, "-") {
+			if _, value, ok := strings.Cut(w, ":"); ok && value != "" {
+				named = append(named, value)
+			}
 		}
 		out = append(out, named...)
 		if dir == "" || dir == "." {

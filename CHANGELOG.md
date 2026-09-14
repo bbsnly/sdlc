@@ -240,6 +240,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   file no rule protects, while the tool wrote the project's own `CLAUDE.md`. A
   path relative to a drive's working directory, such as `C:CLAUDE.md`, is
   refused as outside the repository, since only the writer knows where it is.
+- The shell rules know more of PowerShell and cmd. A parameter given as
+  `-Path:CLAUDE.md`, the aliases `sc`, `ac`, `clc`, `ren`, `rd` and
+  `Tee-Object`, `Push-Location`, `cmd /c`, and a backtick used as an escape
+  (``CLAUDE`.md``) each wrote or removed a protected file unrefused.
 - A new test file cannot be added through the shell after the freeze. The file
   tools refused one; `echo > new_test.go` did not, because the shell was checked
   only against the files the freeze already held.

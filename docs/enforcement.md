@@ -208,10 +208,12 @@ your tooling run exactly as before.
 
 They apply to every tool that runs a command: `Bash`, `PowerShell` and
 `Monitor`. They read past what only wraps a command — `( … )`, `env`, `sudo`,
-`sh -c`, `xargs` and their like — as well as a command sent to the background
-with `&` or run with PowerShell's `&`, and read a relative path from where the
-command runs: after a `cd` earlier in the same command, or where an earlier call
-left the session. The body of a here-document is text, not commands, so a plan
+`sh -c`, `cmd /c`, `xargs` and their like — as well as a command sent to the
+background with `&` or run with PowerShell's `&`. They know PowerShell's
+cmdlets and their aliases, a parameter given as `-Path:file`, and a backtick
+used as an escape. They read a relative path from where the command runs:
+after a `cd` earlier in the same command, or where an earlier call left the
+session. The body of a here-document is text, not commands, so a plan
 or a review that mentions `git commit` is not refused for it — unless the text
 goes to a shell or an interpreter, which runs it.
 
