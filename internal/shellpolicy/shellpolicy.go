@@ -30,6 +30,11 @@ type State struct {
 	CommitReady bool
 	CommitWhy   string
 
+	// StoryFinished is whether every gate on the story has passed, which is
+	// when ending the iteration is the runbook's last step rather than the way
+	// round every rule at once.
+	StoryFinished bool
+
 	// Fresh, when set, reports whether the work a commit would record is the
 	// work that was reviewed, and says what changed when it is not. It is asked
 	// only for a commit whose gates have passed, because answering it means
@@ -167,6 +172,9 @@ func Inspect(command string, s State) (Finding, bool) {
 		if f, ok := checkApprove(args); ok {
 			return f, true
 		}
+		if f, ok := checkStop(args, s); ok {
+			return f, true
+		}
 		if f, ok := checkReviewer(args, s); ok {
 			return f, true
 		}
@@ -242,6 +250,27 @@ func checkUnfreeze(words []string) (Finding, bool) {
 		Route: "say which frozen test is wrong and which acceptance criterion it gets " +
 			"wrong, and stop there; the person running the session lifts the freeze with " +
 			"`sdlc unfreeze --reason \"...\"` in their own terminal",
+	}, true
+}
+
+// checkStop keeps ending a story part-way a person's decision.
+//
+// Every rule here holds only while a story is being worked on, so ending the
+// iteration was the way round all of them at once. Refusals and the Stop hook
+// kept naming it as the way out, and an agent that took it could commit work no
+// gate had passed. Ending a story whose gates have all passed is the runbook's
+// last step, and is not refused.
+func checkStop(words []string, s State) (Finding, bool) {
+	if s.StoryFinished || !runsSubcommand(words, "stop") {
+		return Finding{}, false
+	}
+	return Finding{
+		Rule: "stop-is-a-human-decision",
+		Reason: "ending the iteration before the story's gates have passed turns every rule " +
+			"here off, so it is not a step an agent takes",
+		Route: "work the next gate -- `sdlc status` shows which; if the story cannot go on, " +
+			"hand it to a person with `sdlc escalate <type> --message \"...\"` and stop; the " +
+			"person running the session ends the iteration with `sdlc stop` in their own terminal",
 	}, true
 }
 

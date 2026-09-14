@@ -290,8 +290,9 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
 		Backlog: backlogPath(project), PowerShell: p.ToolName == "PowerShell",
-		Resolve: func(word string) string { return onDisk(resolver, word) },
-		Fresh:   func() (bool, string) { return reviewsFresh(project, story, warn) },
+		StoryFinished: storyFinished(project, story),
+		Resolve:       func(word string) string { return onDisk(resolver, word) },
+		Fresh:         func() (bool, string) { return reviewsFresh(project, story, warn) },
 	})
 	if !refused {
 		return policy.Allowed
@@ -393,6 +394,21 @@ func commitReady(project, story string) (bool, string) {
 		}
 	}
 	return true, ""
+}
+
+// storyFinished reports whether every gate on the story has passed. A record
+// that is missing or will not read is not a finished story.
+func storyFinished(project, story string) bool {
+	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "stories", story, model.RecordFile))
+	if err != nil {
+		return false
+	}
+	var record model.Record
+	if json.Unmarshal(raw, &record) != nil {
+		return false
+	}
+	_, remaining := record.NextGate()
+	return !remaining
 }
 
 // treeTimeout bounds measuring the working tree for a commit. A repository big

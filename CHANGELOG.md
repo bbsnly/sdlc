@@ -247,6 +247,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - The shell rules read a path as the file it is on disk. A link to `.sdlc`,
   `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
   the file in letters no rule matched, and `rm notes/state/active` went through.
+- `sdlc stop` is refused from a tool call while the story still has a gate to
+  pass (`stop-is-a-human-decision`). Every rule holds only while a story is
+  being worked on, so ending it part-way was the way round all of them at
+  once, and the Stop hook, the runbook and several refusals kept naming it as
+  the way out. The runbook's `sdlc stop` after the last gate is not refused.
 - `sdlc approve` and `sdlc unfreeze` are refused from a tool call with no story
   being worked on. `sdlc escalate` ends the iteration, and the hook allowed
   everything once it had, so an agent could hand a story over and approve it

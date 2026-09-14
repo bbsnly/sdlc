@@ -209,7 +209,7 @@ the person's decision.
 Every rule above governs the file-writing tools, and two of them —
 `no-new-test-after-the-freeze` and `implementer-does-not-write-tests` — hold
 against a shell command too. The rest would leave
-`cat > .sdlc/stories/A-1/ANALYSIS.md` walking past them. These eight close
+`cat > .sdlc/stories/A-1/ANALYSIS.md` walking past them. These nine close
 that, and nothing else about your shell is touched: your tests, your build and
 your tooling run exactly as before.
 
@@ -304,6 +304,20 @@ given with `sdlc review add`, is a different command and is not refused.
 *Instead:* `sdlc escalate <type> --message "..."`, and stop. The person reads the
 work and runs `sdlc approve` in their own terminal.
 
+### `stop-is-a-human-decision`
+
+Refuses `sdlc stop` run from a tool call while the story still has a gate to
+pass, however `sdlc` is reached.
+
+Every rule on this page holds only while a story is being worked on, so ending
+the iteration part-way is the way round all of them at once: a commit no gate
+passed goes through straight after. Ending a story whose gates have all passed
+is the runbook's last step, and is not refused.
+
+*Instead:* work the next gate, or hand the story to a person with
+`sdlc escalate <type> --message "..."` and stop. The person ends the iteration
+with `sdlc stop` in their own terminal.
+
 ### `review-is-recorded-by-its-reviewer`
 
 Refuses `sdlc review add <gate> <role> <verdict>` run by anyone but the agent
@@ -335,13 +349,14 @@ missing from the backlog is refused too, because its tier cannot be known.
 
 A gate record that is missing or will not parse counts as no gate passed, and
 the refusal names the file. `sdlc start` always writes one, so either means
-something damaged it. `sdlc stop` still ends the iteration when the record
-cannot be read.
+something damaged it. `sdlc stop`, run by a person, still ends the iteration
+when the record cannot be read.
 
 *Instead:* finish the gates — `sdlc status` shows where the story stands.
-Committing without them is for the person running the session to decide: the
-refusal does not name `sdlc stop`, which turns this rule off along with the
-iteration.
+Committing without them is for the person running the session to decide:
+`sdlc stop`, which turns this rule off along with the iteration, is refused from
+a tool call until they have passed
+([`stop-is-a-human-decision`](#stop-is-a-human-decision)).
 
 ### `enforcement-stays-on`
 

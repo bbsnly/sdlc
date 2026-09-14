@@ -91,9 +91,9 @@ func stopReason(project, story string, blocks, limit int) string {
 			next = string(gate)
 		}
 	}
-	return fmt.Sprintf("%s is still being worked on. Work %s and record it; hand the story to a "+
-		"person with `sdlc escalate <type> --message \"...\"` if it needs one; or end the iteration "+
-		"with `sdlc stop`. A story left mid-gate is one nobody is looking at, so after %d stops in a "+
+	return fmt.Sprintf("%s is still being worked on. Work %s and record it, or hand the story to a "+
+		"person with `sdlc escalate <type> --message \"...\"` if it needs one. A story left mid-gate "+
+		"is one nobody is looking at, so after %d stops in a "+
 		"row with nothing recorded the loop hands it to a person itself (this was %d).",
 		story, next, limit, blocks)
 }

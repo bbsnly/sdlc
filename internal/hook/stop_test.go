@@ -84,10 +84,15 @@ func TestAStopMidStoryIsSentBackWithWhatToDoInstead(t *testing.T) {
 	if r.Decision != "block" {
 		t.Fatal("a session stopped mid-story without a word")
 	}
-	for _, want := range []string{"analysis", "sdlc escalate", "sdlc stop"} {
+	for _, want := range []string{"analysis", "sdlc escalate"} {
 		if !strings.Contains(r.Reason, want) {
 			t.Errorf("the reason does not say %q: %s", want, r.Reason)
 		}
+	}
+	// Not `sdlc stop`: ending the iteration part-way turns every rule off, and
+	// the hook refuses it from the session this reason is read by.
+	if strings.Contains(r.Reason, "sdlc stop") {
+		t.Errorf("the reason sends the session to end the iteration: %s", r.Reason)
 	}
 	if again := stop(t, root, true, noEnv); again.Decision != "" {
 		t.Error("a stop that was already sent back was held again, which holds the session in a loop")

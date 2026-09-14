@@ -1115,6 +1115,30 @@ func TestACommitIsNotRefusedBecauseTheStoryWaitedForAPerson(t *testing.T) {
 	}
 }
 
+// Ending the iteration turns every rule off, so an agent that could run
+// `sdlc stop` part-way through a story could commit it ungated straight after.
+// The runbook's own `sdlc stop`, after the last gate, still goes through.
+func TestAStoryIsEndedPartWayOnlyByAPerson(t *testing.T) {
+	root := loopProject(t)
+	if !denied(call(t, command(root, "", "sdlc stop"), noEnv)) {
+		t.Error("sdlc stop went through with the story's gates still to work")
+	}
+
+	at := time.Now()
+	record := model.NewRecord("A-1", at)
+	for _, g := range model.Gates {
+		record.SetGate(g, model.GatePass, "", at)
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, ".sdlc/stories/A-1/gate-record.json", string(raw))
+	if r := call(t, command(root, "", "sdlc stop"), noEnv); denied(r) {
+		t.Errorf("the runbook's last step was refused: %s", r.HookSpecificOutput.PermissionDecisionReason)
+	}
+}
+
 // A story in a tier the project pauses waits for a person before the commit,
 // and the hook asks before it, not only `sdlc gate commit pass` afterwards.
 func TestACommitOfAPausedStoryWaitsForAPersonsApproval(t *testing.T) {

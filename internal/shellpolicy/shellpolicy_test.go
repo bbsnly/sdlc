@@ -31,6 +31,18 @@ func refused(t *testing.T, command string, s State, wantRule string) Finding {
 	return got
 }
 
+// Every rule holds only while a story is being worked on, so ending it part-way
+// was the way round all of them at once.
+func TestEndingAStoryPartWayIsAHumanDecision(t *testing.T) {
+	for _, command := range []string{"sdlc stop", "sdlc --json stop", "npx @bbsnly/sdlc stop"} {
+		refused(t, command, ready, "stop-is-a-human-decision")
+	}
+	finished := ready
+	finished.StoryFinished = true
+	allowed(t, "sdlc stop", finished)
+	allowed(t, `sdlc gate retro pass --note "then sdlc stop"`, ready)
+}
+
 // A refusal's route is what the agent does next. The commit gate's named
 // `sdlc stop`, which turns the gate off, and it was followed to commit work a
 // person was waiting to approve. The configuration's named commands that cannot

@@ -226,10 +226,9 @@ func TestEachGateCanBeWorkedByItsOwnSession(t *testing.T) {
 	binary := build(t)
 	root := project(t, binary)
 
-	first := &session{t: t, binary: binary, root: root}
-	first.run("", "start")
-	first.run("", "stop")
-
+	// A session ends without `sdlc stop`: the story stays under way, and the
+	// next session's `sdlc start` picks it up. Stopping part-way is a person's
+	// decision, and the hook refuses it from a session.
 	var worked []string
 	for range model.Gates {
 		s := &session{t: t, binary: binary, root: root}
@@ -241,7 +240,6 @@ func TestEachGateCanBeWorkedByItsOwnSession(t *testing.T) {
 		}
 		worked = append(worked, gate)
 		s.workGate(model.Gate(gate), "US-001")
-		s.run("", "stop")
 	}
 
 	if len(worked) != len(model.Gates) {

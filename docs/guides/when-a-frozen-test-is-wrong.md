@@ -111,8 +111,8 @@ The reason becomes an `unfreeze` event in the story's gate record, next to the
 
 With the freeze lifted, the separation of duties still holds. The implementer
 may never write a test file, and the main conversation writes no code or tests
-during an iteration. Either delegate the change to `sdlc:sdet`, or `sdlc stop`,
-edit the test yourself, and `sdlc start` again.
+during an iteration. Either delegate the change to `sdlc:sdet`, or run
+`sdlc stop` in your own terminal, edit the test yourself, and `sdlc start` again.
 
 Then freeze again, with the story active, and pass the gate the unfreeze
 reopened:
