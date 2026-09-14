@@ -8,7 +8,7 @@ const USAGE = `Install sdlc, the story-driven delivery loop for Claude Code.
 
   npx @bbsnly/sdlc install [--version X.Y.Z] [--dir PATH]
 
-  --version X.Y.Z   install that version instead of the latest
+  --version X.Y.Z   install that version instead of this package's own
   --dir PATH        install somewhere other than the default
                     (~/.local/bin, or %LOCALAPPDATA%\\Programs\\sdlc\\bin)
   -h, --help        this

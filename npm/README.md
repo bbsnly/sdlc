@@ -32,7 +32,7 @@ something else — and `--ignore-scripts` changes nothing here.
 ## Options
 
 ```sh
-npx @bbsnly/sdlc install --version 0.1.0   # a version other than the latest
+npx @bbsnly/sdlc install --version 0.1.0   # a version other than this package's
 npx @bbsnly/sdlc install --dir /usr/local/bin
 ```
 

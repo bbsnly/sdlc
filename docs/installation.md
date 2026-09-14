@@ -46,7 +46,10 @@ yourself, which is what you want inside a container image.
 $ npx @bbsnly/sdlc install
 ```
 
-Same download, same verification, same destination. What ends up on your
+Same download and destination. It installs the release the package was
+published with, and checks it against the checksums the package carries, which
+nobody can change after publishing. `npx` fetches the newest package, so that
+is the newest release. What ends up on your
 `PATH` is the native binary, not a Node wrapper around it: sdlc runs as a hook
 on every matching tool call, and a Node process start costs more than
 everything else in the loop put together.

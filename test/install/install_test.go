@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -127,12 +128,18 @@ func release(t *testing.T, corrupt bool) string {
 // exercised by a real release.
 func serve(t *testing.T, dir string) string {
 	t.Helper()
+	return serveNamingLatest(t, dir, version)
+}
+
+// serveNamingLatest is serve with /releases/latest naming another version.
+func serveNamingLatest(t *testing.T, dir, latest string) string {
+	t.Helper()
 	const downloads = "/releases/download/"
 	mux := http.NewServeMux()
 	mux.Handle(downloads+"v"+version+"/",
 		http.StripPrefix(downloads+"v"+version+"/", http.FileServer(http.Dir(dir))))
 	mux.HandleFunc("/releases/latest", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/releases/tag/v"+version, http.StatusFound)
+		http.Redirect(w, r, "/releases/tag/v"+latest, http.StatusFound)
 	})
 	mux.HandleFunc("/releases/tag/", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -364,6 +371,49 @@ func TestTheNpmInstallerRefusesADownloadThatDoesNotMatchItsChecksum(t *testing.T
 		t.Errorf("the refusal did not say why:\n%s", out)
 	}
 	nothingInstalled(t, dir)
+}
+
+// A published package carries its own release's checksums, and those describe
+// no other release. Asking which release is newest could name another one --
+// from an older cached npx, or while a release is open and its npm publish
+// failed -- and that one's checksums came from the same place as its download.
+// Here the newest release is one the mirror does not even serve.
+func TestThePublishedNpmPackageInstallsTheReleaseItCarriesChecksumsFor(t *testing.T) {
+	skipUnlessNode(t)
+	dir := release(t, false)
+	pkg := filepath.Join(t.TempDir(), "npm")
+	if err := os.CopyFS(pkg, os.DirFS(filepath.Join(repoRoot(t), "npm"))); err != nil {
+		t.Fatal(err)
+	}
+	// What the release job does before publishing: the release's checksums go
+	// in, and the package's version is the release's.
+	sums, err := os.ReadFile(filepath.Join(dir, "checksums.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "checksums.txt"), sums, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(pkg, "package.json")
+	raw, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	versioned := regexp.MustCompile(`"version":\s*"[^"]*"`).ReplaceAll(raw, []byte(`"version": "`+version+`"`))
+	if err := os.WriteFile(manifest, versioned, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	into := t.TempDir()
+	out, err := runResolvingLatest(t, serveNamingLatest(t, dir, "10.0.0"), into,
+		"node", filepath.Join(pkg, "bin", "sdlc-install.js"), "install")
+	if err != nil {
+		t.Fatalf("the published package did not install its own release: %v\n%s", err, out)
+	}
+	installed(t, into)
+	if strings.Contains(out, "being fetched") {
+		t.Errorf("the package fetched checksums it carries:\n%s", out)
+	}
 }
 
 // Scope, declared rather than hidden: install.sh is for macOS and Linux and

@@ -98,6 +98,16 @@ async function download(url, into) {
   fs.writeFileSync(into, Buffer.from(await response.arrayBuffer()))
 }
 
+// packagedVersion is the release this package was published with, when it
+// carries that release's checksums. That is the release to install: asking
+// the network which one is newest could name another -- from an older cached
+// `npx`, or while a release is open and its npm publish failed -- and the pins
+// for that one would come from the same place as the download.
+function packagedVersion() {
+  if (!fs.existsSync(path.join(__dirname, '..', 'checksums.txt'))) return ''
+  return require('../package.json').version
+}
+
 // The "latest" lookup is the sibling of the download path, so a mirror that
 // serves one serves the other. That is what lets the resolve-the-latest-version
 // path -- the one every reader of the documentation takes -- be tested at all.
@@ -165,7 +175,8 @@ function unpack(archive, into, binary) {
 
 async function install(options = {}) {
   const log = options.log || console.log
-  const version = (options.version || process.env.SDLC_VERSION || '').replace(/^v/, '') || (await latestVersion())
+  const version = (options.version || process.env.SDLC_VERSION || '').replace(/^v/, '') ||
+    packagedVersion() || (await latestVersion())
   const dir = options.dir || defaultDir()
   const { archive, binary } = assetFor(process.platform, process.arch, version)
   const target = path.join(dir, binary)
