@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -48,6 +49,17 @@ func newInitCmd() *cobra.Command {
 			root, err := config.FindRoot(wd)
 			if err != nil {
 				return err
+			}
+			// The running story is held to the settings it started under, and
+			// the file rules keep an agent's hands off them; --force put the
+			// defaults back from the shell, which no rule was looking at.
+			if force {
+				if _, err := os.Stat(filepath.Join(root, ".sdlc", "state", "active")); err == nil {
+					return sdlcerr.New(sdlcerr.IterationAlreadyActive,
+						"the default settings were not restored",
+						"a story is being worked on, and it is held to the settings it started under").
+						WithFix(`finish the story, or run "sdlc stop" to end the iteration, then "sdlc init --force"`)
+				}
 			}
 			res, err := scaffold.Init(root, force)
 			if err != nil {

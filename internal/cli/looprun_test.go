@@ -143,6 +143,31 @@ func finishedStory(t *testing.T) string {
 	return root
 }
 
+// The settings a story runs under are refused to an agent's file tools and its
+// shell, and `sdlc init --force` put the defaults back from the shell all the
+// same: a person's pause on medium-risk commits was gone mid-story.
+func TestInitForceWaitsForTheIterationToEnd(t *testing.T) {
+	root := finishedStory(t)
+	path := filepath.Join(root, ".sdlc", "config.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(before), `"version": 1`, `"version": 1, "_note": "mine"`, 1)
+	writeFile(t, root, ".sdlc/config.json", changed)
+
+	r := run(t, "init", "--force")
+	if r.code == 0 || !strings.Contains(r.stderr, "SDLC-E0012") {
+		t.Fatalf("init --force ran during an iteration: exit %d\n%s", r.code, r.stderr)
+	}
+	if after, _ := os.ReadFile(path); string(after) != changed {
+		t.Error("the refused init --force changed the configuration")
+	}
+
+	mustRun(t, "stop")
+	mustRun(t, "init", "--force")
+}
+
 // A story whose gates have all passed has to leave the backlog. Nothing else in
 // the loop moves a story to done, and a real run found out what that costs: the
 // story stayed in_progress after its retro, and `sdlc start` took it as the one

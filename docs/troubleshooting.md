@@ -119,6 +119,9 @@ that is what keeps a diff small enough to review honestly.
 
 Finish the current story, or run `sdlc stop` to end the iteration without recording a result.
 
+`sdlc init --force` is refused with this code too. The story under way is held to the settings it
+started under, so the defaults go back once it has ended.
+
 ### SDLC-E0013
 
 You named a gate this version does not know.

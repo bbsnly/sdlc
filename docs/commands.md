@@ -22,7 +22,7 @@ $ sdlc init --force
 
 | Flag | What it does |
 | --- | --- |
-| `--force` | restore the default settings over an existing setup, keeping your stories, where they are (`backlog.path`) and your trunk branch (`git.trunk_branch`) |
+| `--force` | restore the default settings over an existing setup, keeping your stories, where they are (`backlog.path`) and your trunk branch (`git.trunk_branch`); refused while a story is being worked on ([SDLC-E0012](troubleshooting.md#sdlc-e0012)) |
 
 Reads the repository, detects the stack, and writes `.sdlc/config.json` with
 commands that already match it, a backlog with one example story, the story

@@ -247,6 +247,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - The shell rules read a path as the file it is on disk. A link to `.sdlc`,
   `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
   the file in letters no rule matched, and `rm notes/state/active` went through.
+- `sdlc init --force` is refused while a story is being worked on
+  (SDLC-E0012). Run from an agent's shell, it put the default settings back
+  under a running story, which no rule was looking at: a person's pause on
+  medium-risk commits was gone mid-story.
 - A flag before the subcommand no longer hides it from the shell rules.
   `sdlc --reason x unfreeze`, `sdlc --reject x approve` and
   `sdlc --note x review add ...` were read as running `x`, and went through.
