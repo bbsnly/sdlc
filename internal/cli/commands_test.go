@@ -493,6 +493,29 @@ func TestDoctorNamesAConfiguredProgramThatIsNotInstalled(t *testing.T) {
 	}
 }
 
+// A gate record is committed with the work, so a merge can leave conflict
+// markers in one. The refusal called that a bug in sdlc and sent the reader to
+// the issue tracker, when git had the file and doctor would name it.
+func TestAnUnreadableRecordSaysHowToRecover(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "<<<<<<< HEAD\n{}\n=======\n")
+
+	r := run(t, "status")
+	if r.code == 0 {
+		t.Fatal("status read a gate record with conflict markers in it")
+	}
+	for _, want := range []string{"SDLC-E0005", "gate-record.json", "sdlc doctor", "git"} {
+		if !strings.Contains(r.stderr, want) {
+			t.Errorf("the refusal is missing %q:\n%s", want, r.stderr)
+		}
+	}
+	if strings.Contains(r.stderr, "is a bug") {
+		t.Errorf("a record broken by a merge is blamed on sdlc:\n%s", r.stderr)
+	}
+}
+
 // The binary check told everyone to run "./task build", which only means
 // something in a clone of this repository, and ignored SDLC_BIN, which the hook
 // launcher reads before PATH.

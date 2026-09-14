@@ -25,7 +25,7 @@ var (
 		`fix the JSON in .sdlc/config.json, or delete it and run "sdlc init" again`)
 
 	StateUnreadable = register("SDLC-E0005",
-		`this is a bug — please open an issue at https://github.com/bbsnly/sdlc/issues with the code above`)
+		`run "sdlc doctor", which names every file it cannot read; restore a committed one from git, or fix its permissions — and if sdlc left it that way, open an issue at https://github.com/bbsnly/sdlc/issues`)
 
 	StateUnwritable = register("SDLC-E0006",
 		`check that you can write to .sdlc/ and that the disk is not full`)

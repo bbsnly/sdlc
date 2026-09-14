@@ -39,10 +39,17 @@ Fix the JSON, or delete the file and run `sdlc init` again to get a fresh one.
 
 ### SDLC-E0005
 
-A file under `.sdlc/state/` could not be read. These files are written by `sdlc` itself, so a
-corrupt one is a bug rather than something you did.
+A file the loop depends on could not be read: the iteration or the freeze under `.sdlc/state/`, a
+story's `gate-record.json` under `.sdlc/stories/`, or a test file the freeze has to hash. The
+message names it.
 
-Please open an issue at <https://github.com/bbsnly/sdlc/issues> with the code above.
+`sdlc` writes its own files whole or not at all, so one that will not parse was usually edited
+or merged by hand — gate records are committed with the work, and a merge conflict in one is
+enough. `sdlc doctor` lists every file it cannot read. Restore a committed one from git, fix
+the permissions on one that cannot be opened, and run `sdlc stop` if it is the iteration file.
+
+If `sdlc` itself left a file it cannot read, that is a bug: please open an issue at
+<https://github.com/bbsnly/sdlc/issues> with the code above.
 
 ### SDLC-E0006
 

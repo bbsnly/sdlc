@@ -355,7 +355,8 @@ func (s *Store) Record(id string) (*model.Record, error) {
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
 			"the record for "+quote(id)+" is not valid JSON",
-			"this file is written by sdlc, so a corrupt one is a bug rather than an edit").WithCause(err)
+			storiesDir+"/"+id+"/"+recordFile+" does not parse, and sdlc writes it whole or not "+
+				"at all, so it was edited or merged by hand; git has the last committed copy").WithCause(err)
 	}
 	if r.Gates == nil {
 		r.Gates = map[model.Gate]model.GateResult{}
