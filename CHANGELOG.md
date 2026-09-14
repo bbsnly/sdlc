@@ -146,6 +146,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - A crash in the hook tells the session. It exited non-zero with a
   `stopReason`, and Claude Code reads neither in that case.
 - `name::$DATA`, NTFS's other spelling of a file, is that file to every rule.
+- A freeze belongs to the story it was taken for. With a second story started,
+  `sdlc freeze` said "already frozen" and pointed at `sdlc unfreeze`, which
+  then lifted the first story's freeze and logged it on the second story's
+  record. `unfreeze` now refuses another story's freeze, `freeze` names that
+  story instead, and marking a story `dropped` releases its freeze.
 - `sdlc doctor` checks the loop's state files. Every hook warning about them
   said to run it, and it did not read either one.
 

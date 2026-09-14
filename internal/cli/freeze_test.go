@@ -293,3 +293,42 @@ func TestStatusReportsTheFreeze(t *testing.T) {
 		t.Errorf("the prose does not mention it:\n%s", out)
 	}
 }
+
+// A freeze belongs to the story it was taken for. Started on a second story,
+// `sdlc freeze` said "already frozen" and sent people to unfreeze -- which
+// lifted the first story's freeze, logged it on the second story's record, and
+// left the first story's tests editable when it was picked up again.
+func TestAnotherStorysFreezeIsNotThisStorysToLift(t *testing.T) {
+	root := frozenStory(t)
+	mustRun(t, "freeze")
+	addStory(t, root, "US-002")
+	mustRun(t, "stop")
+	mustRun(t, "start", "US-002")
+
+	r := run(t, "unfreeze", "--reason", "these are in my way")
+	if r.code == 0 {
+		t.Fatal("unfreeze lifted a freeze that belongs to another story")
+	}
+	if !strings.Contains(r.stderr, "US-001") {
+		t.Errorf("the refusal does not say whose freeze it is:\n%s", r.stderr)
+	}
+	if got := lockOnDisk(t, root).Story; got != "US-001" {
+		t.Fatalf("the freeze on disk now belongs to %q", got)
+	}
+
+	r = run(t, "freeze")
+	if r.code == 0 {
+		t.Fatal("a second freeze was taken over the first story's")
+	}
+	if strings.Contains(r.stderr, "unfreeze") {
+		t.Errorf("freeze still sends people to unfreeze another story's freeze:\n%s", r.stderr)
+	}
+
+	// Dropping the story it belongs to is the way past it.
+	// US-001 is first in the backlog, so its status is the first one replaced.
+	setStatusOnDisk(t, root, model.StatusInProgress, model.StatusDropped)
+	mustRun(t, "freeze")
+	if got := lockOnDisk(t, root).Story; got != "US-002" {
+		t.Errorf("after dropping US-001 the freeze belongs to %q, want US-002", got)
+	}
+}

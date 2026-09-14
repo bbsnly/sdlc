@@ -169,7 +169,11 @@ bless whatever changed in between. If the tests genuinely have to change, run
 
 This is about the story you are working on. A freeze left behind by a story that has since
 finished is not in the way: `sdlc stop` lifts it when the story is done, and `sdlc freeze`
-replaces one that names a finished story rather than refusing over it.
+replaces one that names a finished or dropped story rather than refusing over it.
+
+If the freeze belongs to another story that is still under way, it is not this story's to lift,
+and `sdlc unfreeze` refuses to. Finish that story — `sdlc stop`, then `sdlc start` with its id —
+or mark it `dropped` in the backlog, and freeze again.
 
 ### SDLC-E0023
 

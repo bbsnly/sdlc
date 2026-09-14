@@ -63,10 +63,19 @@ func newFreezeCmd() *cobra.Command {
 					return err
 				}
 				if !stale {
-					return sdlcerr.New(sdlcerr.AlreadyFrozen,
+					refusal := sdlcerr.New(sdlcerr.AlreadyFrozen,
 						"the tests are already frozen",
 						"they were frozen for "+lock.Story+" at "+lock.At+", covering "+
 							countFiles(len(lock.Files)))
+					// Another story's freeze is not this story's to lift. The
+					// usual fix, unfreeze, would take it off a story that is
+					// still under way.
+					if lock.Story != "" && lock.Story != id {
+						return refusal.WithFix(lock.Story + " still holds it: finish that story " +
+							`("sdlc stop", then "sdlc start ` + lock.Story + `"), or mark it dropped ` +
+							"in the backlog, which releases its freeze")
+					}
+					return refusal
 				}
 				if err := s.ClearLock(); err != nil {
 					return err
@@ -117,6 +126,10 @@ func newFreezeCmd() *cobra.Command {
 // be stuck at Gate 3 forever with the only way out an override meant for
 // something else.
 //
+// A dropped story is finished too, as far as its freeze is concerned: nobody
+// is coming back to it, and its freeze is how "drop it" was offered as the way
+// past one.
+//
 // A freeze naming a story that is still in progress is not a leftover, and
 // still refuses. So does one naming a story that is not in the backlog at all:
 // that is a state nobody should walk past.
@@ -132,7 +145,7 @@ func freezeIsALeftover(s *store.Store, lock *model.Lock, active string) (bool, e
 		}
 		return false, err
 	}
-	return story.Status == model.StatusDone, nil
+	return story.Status == model.StatusDone || story.Status == model.StatusDropped, nil
 }
 
 func newUnfreezeCmd() *cobra.Command {
@@ -171,6 +184,17 @@ func newUnfreezeCmd() *cobra.Command {
 				return sdlcerr.New(sdlcerr.NotFrozen,
 					"there is no freeze to lift",
 					"the acceptance tests have not been frozen for this story")
+			}
+			// The freeze belongs to the story it was taken for. Lifting another
+			// story's freeze from this one put the event on the wrong record and
+			// left that story's tests editable when it was picked up again --
+			// and "already frozen" on this story used to send people here.
+			if lock.Story != "" && lock.Story != id {
+				return sdlcerr.New(sdlcerr.NotFrozen,
+					"there is no freeze on "+quote(id)+" to lift",
+					"the tests are frozen for "+lock.Story+", which is not the story being worked on").
+					WithFix("finish " + lock.Story + ` ("sdlc stop", then "sdlc start ` + lock.Story +
+						`") and lift it there if it has to be lifted, or mark it dropped in the backlog`)
 			}
 			if err := s.ClearLock(); err != nil {
 				return err
