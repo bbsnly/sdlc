@@ -103,6 +103,15 @@ func (l *lexer) read(rs []rune) {
 			l.word.WriteString(string(rs[i:min(end+1, len(rs))]))
 			l.started = true
 			i = end
+		case l.powerShell && r == '<' && i+1 < len(rs) && rs[i+1] == '#':
+			// PowerShell's block comment. Read as a redirect and then a line
+			// comment, `<# note #> sdlc approve` hid the command after it.
+			l.endWord()
+			j := i + 2
+			for j+1 < len(rs) && (rs[j] != '#' || rs[j+1] != '>') {
+				j++
+			}
+			i = j + 1
 		case r == '#' && !l.started:
 			// A comment runs to the end of the line, and nothing in it runs.
 			i = find(rs, i, '\n') - 1
@@ -235,6 +244,15 @@ func programsAt(line string, powerShell bool, depth int) []ran {
 			script = script[1:]
 		} else if !run.shell {
 			out = append(out, ran{run.words, depth > 0 || l.nested[i]})
+			if base(run.words[0]) == "find" {
+				// `find . -exec git commit -m x \;` runs git.
+				for j, w := range run.words {
+					if exec := program(run.words[j+1:]); findRuns(w) && len(exec.words) > 0 {
+						out = append(out, ran{exec.words, true})
+						break
+					}
+				}
+			}
 			continue
 		}
 		if depth < 4 {
@@ -262,7 +280,20 @@ func sdlcArgs(words []string) ([]string, bool) {
 			}
 		}
 	}
+	// Behind a wrapper program does not know -- `ssh host`, `watch -n 1`,
+	// `Start-Process` -- sdlc is still a word of its own. A word after a flag
+	// is the flag's value, as in `docker compose -p sdlc stop`.
+	for i := 1; i < len(words); i++ {
+		if isSdlc(words[i]) && !strings.HasPrefix(words[i-1], "-") {
+			return words[i+1:], true
+		}
+	}
 	return nil, false
+}
+
+// findRuns reports whether a find flag runs the command after it.
+func findRuns(flag string) bool {
+	return flag == "-exec" || flag == "-execdir" || flag == "-ok" || flag == "-okdir"
 }
 
 func isSdlc(word string) bool {

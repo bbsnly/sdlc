@@ -752,16 +752,36 @@ func program(words []string) invocation {
 			for len(words) > 0 && isAssignment(words[0]) {
 				words = words[1:]
 			}
-		case "command", "builtin", "exec", "nohup", "sudo", "doas", "nice", "stdbuf":
+		case "command", "builtin", "exec", "nohup", "nice", "stdbuf", "caffeinate":
 			words = skipOptions(words[1:])
+		case "sudo", "doas":
+			words = skipValued(words[1:], "-u", "-g", "-h", "-p", "-C", "-D", "-R", "-r", "-t", "-T", "-U")
 		case "sh", "bash", "zsh", "dash", "ksh", "pwsh", "powershell":
 			run.shell = true
 			words = skipOptions(words[1:])
+		case "ssh":
+			// What follows the host is a command line for the shell at the
+			// other end, and localhost is this machine.
+			run.shell = true
+			words = skipValued(words[1:], "-B", "-b", "-c", "-D", "-E", "-e", "-F", "-I", "-i", "-J",
+				"-L", "-l", "-m", "-O", "-o", "-P", "-p", "-Q", "-R", "-S", "-W", "-w")
+			if len(words) > 0 {
+				words = words[1:]
+			}
 		case "timeout":
-			words = skipOptions(words[1:])
+			// skipOptions took the duration for a number an option was given,
+			// and then the command for the duration: `timeout 60 git commit`
+			// was a command called `commit`.
+			words = skipValued(words[1:], "-s", "-k", "--signal", "--kill-after")
 			if len(words) > 0 {
 				words = words[1:] // the duration
 			}
+		case "direnv":
+			if len(words) < 3 || words[1] != "exec" {
+				run.words = append([]string{first}, words[1:]...)
+				return run
+			}
+			words = words[3:]
 		case "cmd":
 			// cmd's switches start with a slash: `cmd /c del file`, `cmd /s /c`.
 			run.shell = true
@@ -775,6 +795,18 @@ func program(words []string) invocation {
 		}
 	}
 	return run
+}
+
+// skipValued drops the flags a wrapper takes before the command it runs, with
+// the value each of the valued ones is given: `sudo -u me`, `timeout -s KILL`.
+func skipValued(words []string, valued ...string) []string {
+	for len(words) > 0 && strings.HasPrefix(words[0], "-") {
+		if hasWord(valued, words[0]) && len(words) > 1 {
+			words = words[1:]
+		}
+		words = words[1:]
+	}
+	return words
 }
 
 // skipOptions drops the flags a wrapper takes before the command it runs, and
@@ -1069,6 +1101,15 @@ func runsAScript(line string) bool {
 		case "fish", "eval", "source", ".",
 			"python", "python3", "perl", "ruby", "node", "deno", "bun", "php":
 			return true
+		}
+		// Behind a wrapper program does not know, the shell is still a word of
+		// its own: `firejail sh <<EOF`. A quoted note is one word, so a note
+		// that mentions a shell is not one.
+		for _, w := range run.words[1:] {
+			switch base(w) {
+			case "sh", "bash", "zsh", "dash", "ksh", "fish", "pwsh", "powershell":
+				return true
+			}
 		}
 	}
 	return false

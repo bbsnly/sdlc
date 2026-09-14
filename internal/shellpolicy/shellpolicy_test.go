@@ -147,6 +147,48 @@ func TestEndingAStoryPartWayIsAHumanDecision(t *testing.T) {
 	allowed(t, `sdlc gate retro pass --note "then sdlc stop"`, ready)
 }
 
+// A wrapper still runs what follows it. After `timeout 60`, `sudo -u me` or
+// `ssh host`, sdlc, git, or the shell a document went to was read as an
+// argument, and the command went through.
+func TestAWrapperDoesNotHideWhatItRuns(t *testing.T) {
+	for command, rule := range map[string]string{
+		"timeout 60 sdlc approve A-1":                  "approval-is-a-human-decision",
+		"sudo -u me sdlc unfreeze --reason x":          "unfreeze-is-a-human-decision",
+		"ssh localhost sdlc stop":                      "stop-is-a-human-decision",
+		"watch -n 1 sdlc approve A-1":                  "approval-is-a-human-decision",
+		"caffeinate -i sdlc approve A-1":               "approval-is-a-human-decision",
+		"chronic sdlc stop":                            "stop-is-a-human-decision",
+		`find . -maxdepth 0 -exec sdlc approve A-1 \;`: "approval-is-a-human-decision",
+	} {
+		refused(t, command, ready, rule)
+	}
+	ps := ready
+	ps.PowerShell = true
+	refused(t, "Start-Process sdlc -ArgumentList approve", ps, "approval-is-a-human-decision")
+	refused(t, "<# note #> sdlc approve A-1", ps, "approval-is-a-human-decision")
+	implementer := ready
+	implementer.Agent = "implementer"
+	refused(t, "timeout 60 sdlc review add code_review code-reviewer approve", implementer,
+		"review-is-recorded-by-its-reviewer")
+
+	for _, command := range []string{
+		"timeout 60 git commit -m x",
+		"timeout -s KILL 60 git commit -m x",
+		"sudo -u me git commit -m x",
+		"caffeinate -i git commit -m x",
+		"direnv exec . git commit -m x",
+		"ssh localhost git commit -m x",
+		`find . -maxdepth 0 -exec git commit -m x \;`,
+		"timeout 60 bash <<'EOF'\ngit commit -m x\nEOF",
+		"ssh localhost bash <<'EOF'\ngit commit -m x\nEOF",
+		"firejail sh <<'EOF'\ngit commit -m x\nEOF",
+	} {
+		refused(t, command, notReady, "commit-gate")
+	}
+	allowed(t, "docker compose --project-name sdlc stop", ready)
+	allowed(t, "direnv allow . && ls", notReady)
+}
+
 // A refusal's route is what the agent does next. The commit gate's named
 // `sdlc stop`, which turns the gate off, and it was followed to commit work a
 // person was waiting to approve. The configuration's named commands that cannot
