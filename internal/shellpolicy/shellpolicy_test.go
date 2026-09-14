@@ -133,6 +133,9 @@ func TestACommitInAnotherRepositoryIsNotTheStorys(t *testing.T) {
 	// As the hook's lookup does: the project at /work/project, whose own root is
 	// named by nothing, as a path outside it is.
 	s.Resolve = func(word string) string {
+		if rest, ok := strings.CutPrefix(word, "~"); ok {
+			word = "/home/dev" + rest
+		}
 		if !strings.HasPrefix(word, "/") {
 			word = path.Join("/work/project", word)
 		}
@@ -160,6 +163,8 @@ func TestACommitInAnotherRepositoryIsNotTheStorys(t *testing.T) {
 	allowed(t, "cd /tmp/fixture && git --git-dir .git commit -m x", s)
 	allowed(t, "git -C /tmp/fixture --work-tree /work/project commit -m x", s)
 	allowed(t, "git --work-tree /work/project --git-dir /tmp/fixture/.git commit -m x", s)
+	allowed(t, "cd internal && git -C ~/scratch/other commit -m x", s)
+	allowed(t, "cd internal && git --git-dir ~/scratch/other/.git commit -m x", s)
 	refused(t, "git commit -m --git-dir=/tmp/fixture/.git", s, "commit-gate")
 	for _, command := range []string{
 		"git --git-dir=/work/project/.git --work-tree=/work/project commit -am x",

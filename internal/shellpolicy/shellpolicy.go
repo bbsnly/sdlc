@@ -487,11 +487,12 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 		return Finding{}, false
 	}
 	switch {
-	case strings.ContainsAny(to, "$~%"):
+	case strings.ContainsAny(to, "$%"):
 		// `git -C "$OLDPWD"` is somewhere this cannot know, which is not
 		// another repository.
 		dir = ""
-	case isAbsolute(to):
+	case isAbsolute(to) || strings.HasPrefix(to, "~"):
+		// The lookup reads ~ as the home it names.
 		dir = to
 	case to != "":
 		dir = path.Join(dir, to)
@@ -503,11 +504,11 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 	// not followed is "", which is the project.
 	repository := path.Join(dir, ".git")
 	switch gitDir := gitDirOf(words[1:]); {
-	case strings.ContainsAny(gitDir, "$~%"):
+	case strings.ContainsAny(gitDir, "$%"):
 		// Wherever the command runs, `--git-dir` can name this repository:
 		// `cd /tmp && git --git-dir="$PROJECT/.git" commit`.
 		repository = ".git"
-	case isAbsolute(gitDir):
+	case isAbsolute(gitDir) || strings.HasPrefix(gitDir, "~"):
 		repository = gitDir
 	case gitDir != "":
 		repository = path.Join(dir, gitDir)
