@@ -125,8 +125,8 @@ jobs:
 
   # CONTRIBUTING asks for conventional commit subjects, and until this job
   # nothing checked, so a subject without a type reached trunk. It reads only
-  # the commits this push or pull request adds: trunk is never rewritten, so a
-  # subject already there is not something a later push can fix.
+  # the commits this push or pull request adds or rewrites: a subject already on
+  # trunk is not something a later push can fix.
   commits:
     name: commit subjects
     runs-on: ubuntu-latest
@@ -149,22 +149,27 @@ jobs:
         run: |
           set -euo pipefail
           case "${EVENT}" in
-            pull_request) range="${BASE}..${HEAD}" ;;
+            pull_request) range=("${BASE}..${HEAD}") ;;
             push)
-              # A new branch or tag has no "before", and a force push can
-              # leave one that no longer exists. Neither adds a subject to
-              # check against anything.
-              if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
-                echo "no earlier commit to compare against; nothing to check"
-                exit 0
-              fi
-              range="${BEFORE}..${AFTER}" ;;
+              # A force push leaves a "before" no branch holds, so the clone
+              # does not have it, and it once passed here as nothing to check:
+              # the one push that can put unchecked subjects on trunk. GitHub
+              # still serves it by name, and from it the range is exactly what
+              # the push rewrote.
+              if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null ||
+                git fetch --no-tags --quiet origin "${BEFORE}" 2>/dev/null; then
+                range=("${BEFORE}..${AFTER}")
+              else
+                # A new branch or tag has no "before" at all.
+                echo "::warning::no earlier commit to compare against; checking only ${AFTER:0:7}"
+                range=(-1 "${AFTER}")
+              fi ;;
             *) echo "${EVENT} adds no commits; nothing to check"; exit 0 ;;
           esac
           pattern='^(feat|fix|docs|refactor|test|chore|build|ci|perf|revert)(\([a-z0-9._/-]+\))?!?: [^ ]'
           # Captured first: a process substitution's exit status is lost even
           # under pipefail, so a git log that failed checked nothing and passed.
-          log=$(git log --no-merges --format='%H %s' "${range}")
+          log=$(git log --no-merges --format='%H %s' "${range[@]}")
           bad=0
           while IFS= read -r line; do
             [ -n "${line}" ] || continue
