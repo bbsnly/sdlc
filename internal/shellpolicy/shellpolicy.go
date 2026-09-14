@@ -577,6 +577,21 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 		// freeze below.
 		candidates = append(candidates, m.words(line)...)
 	}
+	if len(run.words) > 0 && base(run.words[0]) == "find" && changesFiles(run.words) {
+		// What find picks by a name, from a directory that can come to the
+		// project's own files.
+		roots, names, patterns := findArguments(run.words[1:])
+		var from []string
+		for _, r := range roots {
+			if reaches(r, dir, s, m) {
+				from = append(from, r)
+			}
+		}
+		if len(from) > 0 && len(names)+len(patterns) > 0 {
+			shapes := append(protectedShapes(s.Backlog), stateFiles...)
+			candidates = append(candidates, foundBy(from, names, patterns, shapes)...)
+		}
+	}
 	spelled := withGlobs(m.spell(s, dir, candidates), func() []string { return protectedShapes(s.Backlog) })
 	for _, c := range spelled {
 		if !m.first("loop state", c) || m.outside(s, c) {
@@ -666,6 +681,14 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 	rule := "freeze"
 	if byName {
 		rule = "freeze by name"
+	}
+	if len(run.words) > 0 && base(run.words[0]) == "find" && changesAFile(run.words) && len(s.Frozen) > 0 {
+		// A name find is given with a glob in it, wherever it starts, as the
+		// freeze reads find's names. Not one that is all wildcards: from
+		// anywhere, that is every file, and `find build -name '*' -delete`
+		// was a frozen test.
+		roots, names, patterns := findArguments(run.words[1:])
+		candidates = append(candidates, foundBy(roots, literals(names), literals(patterns), frozenShapes(s.Frozen))...)
 	}
 	spelled := withGlobs(m.spell(s, dir, candidates), func() []string { return frozenShapes(s.Frozen) })
 	for _, c := range spelled {

@@ -209,7 +209,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `rm .sdl?/state/active`, `rm -rf .sdlc/*`, `echo x > CLAUDE.{md,}` and
   `rm internal/calc/add_tes?.go` reached the loop's files, the protected paths
   and the frozen tests under words no rule matched, and so did a `cd` into one:
-  `cd .sdl? && rm state/active`. A protected path has to be
+  `cd .sdl? && rm state/active`. So does what `find` picks by `-name` or
+  `-path` from a directory that can reach the project: `find . -name active
+  -delete` and `find . -path '*state/tests.lock' -delete` removed the loop's
+  record and the freeze. A protected path has to be
   named, so `rm -rf build/*` goes through, and `*` does not match a leading dot,
   as in the shell.
 - The hook's warnings reach the session. They went to standard error, which

@@ -549,8 +549,9 @@ func TestACommonNameIsNotAFrozenFixtureElsewhere(t *testing.T) {
 		`cd "$ROOT/internal/load/testdata" && rm config.json`,
 		"cd $HOME && cd load/testdata && rm config.json",
 		"cd internal/load && pushd /tmp && popd && rm testdata/config.json",
-		"find . -name config.json -delete",
-		"touch config.json && find . -name config.json -delete",
+		// From internal, which does not reach the loop's own config.json.
+		"find internal -name config.json -delete",
+		"touch config.json && find internal -name config.json -delete",
 		"(cd internal/load/testdata && echo {} > config.json)",
 		"cd internal/load && (cd testdata && rm config.json)",
 		"(cd internal/load && (cd testdata) && cd testdata && rm config.json)",
