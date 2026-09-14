@@ -183,7 +183,7 @@ SDLC_DOCUMENT
 | Flag | What it does |
 | --- | --- |
 | `--file` | read the document from this path instead of standard input |
-| `--story` | store against this story instead of the one being worked on |
+| `--story` | store against this story instead of the one being worked on. The id has to be in the backlog |
 
 Names: `analysis`, `threats`, `test_plan`, `plan`, `verification`, `retro`.
 
@@ -230,7 +230,7 @@ $ sdlc review add code_review perf note --file /tmp/perf.md
 | --- | --- |
 | `--file` | read the review from this path instead of standard input |
 | `--note` | the headline finding, in one line |
-| `--story` | record against this story instead of the one being worked on |
+| `--story` | record against this story instead of the one being worked on. The id has to be in the backlog |
 
 Verdicts: `approve`, `block`, `note`.
 

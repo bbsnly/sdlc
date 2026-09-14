@@ -117,6 +117,10 @@ func newReviewAddCmd() *cobra.Command {
 				if id, err = activeStory(s, "a review belongs to the story being worked on"); err != nil {
 					return err
 				}
+			} else if _, _, err := s.Story(id); err != nil {
+				// As gate --story does: a mistyped id is refused, not given a
+				// review that no gate will ever read.
+				return err
 			}
 			record, err := s.Record(id)
 			if err != nil {

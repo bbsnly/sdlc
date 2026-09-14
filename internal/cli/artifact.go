@@ -119,6 +119,10 @@ func newArtifactWriteCmd() *cobra.Command {
 				if id, err = activeStory(s, "a gate's documents belong to the story being worked on"); err != nil {
 					return err
 				}
+			} else if _, _, err := s.Story(id); err != nil {
+				// As gate --story does: a mistyped id is refused, not given a
+				// directory that no gate will ever read.
+				return err
 			}
 
 			path, err := s.WriteArtifact(id, artifact, content)

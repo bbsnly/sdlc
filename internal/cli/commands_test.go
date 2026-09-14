@@ -77,6 +77,30 @@ func TestADocumentIsReadBeforeTheLockIsTaken(t *testing.T) {
 	}
 }
 
+// gate --story and cost --story refuse an id the backlog does not have. These
+// two made a directory and a record for it and said ok, and the gate they were
+// feeding reported the document or the review missing afterwards.
+func TestAMistypedStoryIsRefusedBeforeAnythingIsWritten(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	for _, args := range [][]string{
+		{"artifact", "write", "analysis", "--story", "NOPE"},
+		{"review", "add", "dor", "human-advocate", "note", "--story", "NOPE"},
+	} {
+		r := runWith(t, "# Notes\n\nfine\n", args...)
+		if r.code == 0 {
+			t.Errorf("sdlc %s accepted a story that is not in the backlog", strings.Join(args, " "))
+		}
+		if !strings.Contains(r.stderr, "NOPE") {
+			t.Errorf("sdlc %s does not name the story it refused:\n%s", strings.Join(args, " "), r.stderr)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".sdlc", "stories", "NOPE")); !os.IsNotExist(err) {
+		t.Errorf("a directory was made for a story that does not exist: %v", err)
+	}
+}
+
 func run(t *testing.T, args ...string) result {
 	t.Helper()
 	return runWith(t, "", args...)
