@@ -337,6 +337,49 @@ func TestTheConfigurationExampleIsAConfiguration(t *testing.T) {
 	}
 }
 
+// The page is headed "What init writes for a Go project", and it had drifted
+// from what init writes: no smoke, fmt_file or coverage command, test dirs and
+// source dirs init never chose. So it is checked against init itself, leaving
+// out only the explanatory "_" keys and the commands a Go project gets empty.
+func TestTheConfigurationExampleIsWhatInitWrites(t *testing.T) {
+	doc := page(t, "configuration.md")
+	_, rest, _ := strings.Cut(doc, "```json\n")
+	body, _, _ := strings.Cut(rest, "```")
+	var shown map[string]any
+	if err := json.Unmarshal([]byte(body), &shown); err != nil {
+		t.Fatalf("the example is not JSON: %v", err)
+	}
+
+	project(t)
+	writeFile(t, ".", "go.mod", "module example.com/x\n")
+	mustRun(t, "init")
+	raw, err := os.ReadFile(filepath.Join(".sdlc", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written map[string]any
+	if err := json.Unmarshal(raw, &written); err != nil {
+		t.Fatal(err)
+	}
+	for key := range written {
+		if strings.HasPrefix(key, "_") {
+			delete(written, key)
+		}
+	}
+	if commands, ok := written["commands"].(map[string]any); ok {
+		for name, command := range commands {
+			if command == "" {
+				delete(commands, name)
+			}
+		}
+	}
+
+	if !reflect.DeepEqual(shown, written) {
+		want, _ := json.MarshalIndent(written, "", "  ")
+		t.Errorf("docs/configuration.md shows a configuration init does not write; init writes:\n%s", want)
+	}
+}
+
 // The story a new reader copies was not a backlog: it carried a "schema" field
 // no backlog has, where the real one is "_schema". Decoded strictly, a field
 // the loop would silently ignore is a failure here.

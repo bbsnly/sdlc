@@ -10,22 +10,28 @@ a new field arrives.
 
 ## What `init` writes for a Go project
 
+Leaving out the notes it writes under `_` keys, and `mutation`, which it leaves
+empty for Go:
+
 ```json
 {
   "version": 1,
   "backlog": { "path": "user_stories.json" },
-  "git": { "trunk_branch": "main" },
+  "git": { "trunk_branch": "main", "remote": false },
   "commands": {
+    "smoke": "test -z \"$(go list ./...)\" || go vet ./...",
     "build": "go build ./...",
     "test": "go test ./... -count=1",
     "lint": "golangci-lint run",
     "fmt": "gofmt -w .",
-    "fmt_check": "test -z \"$(gofmt -l .)\""
+    "fmt_check": "test -z \"$(gofmt -l .)\"",
+    "fmt_file": "case \"$FILE\" in *.go) gofmt -w \"$FILE\" ;; esac",
+    "coverage": "go test ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'"
   },
   "thresholds": { "diff_size_cap": 500, "coverage_min": 80, "mutation_min": 70 },
   "paths": {
-    "tests": { "dirs": ["tests/", "test/"], "file_globs": ["*_test.go"] },
-    "src": ["src/", "internal/", "pkg/", "cmd/", "lib/"]
+    "tests": { "dirs": ["testdata/"], "file_globs": ["*_test.go"] },
+    "src": ["cmd/", "internal/", "pkg/"]
   },
   "spec": { "paths": ["docs/", "spec/", "README.md"] },
   "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
@@ -68,6 +74,7 @@ are installed.
 | `fmt_check` | the verifier |
 | `fmt_file` | the hook, on each file a tool writes while a story is being worked on |
 | `coverage` | the verifier, compared against `thresholds.coverage_min` |
+| `mutation` | the verifier, compared against `thresholds.mutation_min` |
 | `smoke` | `sdlc start`, on trunk, before each new story. Keep it fast: it runs before every story |
 
 Any key you add is available to the agents; these are the ones the loop looks
@@ -115,7 +122,7 @@ what the implementer cannot touch.
 
 | Key | What it means |
 | --- | --- |
-| `dirs` | a directory and everything beneath it is tests. A bare name — `testdata`, `__snapshots__` — is a directory of that name wherever it is, because that is what projects mean by it; one with a slash in it, like `src/fixtures`, is that directory and no other |
+| `dirs` | a directory and everything beneath it is tests. A bare name — `testdata`, `__snapshots__` — is a directory of that name wherever it is, because that is what projects mean by it; one with a slash inside it, like `src/fixtures`, is that directory and no other. A slash at either end does not count: `tests/` is the bare name `tests` |
 | `file_globs` | a pattern matched against the whole path *and* against the file's own name, so `*_test.go` finds `internal/store/x_test.go` |
 
 **Anything that decides whether a test passes belongs here, not only the test

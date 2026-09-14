@@ -34,8 +34,8 @@ and the code, in that order.
    tests are frozen and cannot be changed now.
 2. Run `commands.test`. All of it, not the story's tests alone: a change that fixes its own
    tests and breaks three others has not passed.
-3. Run the rest of `commands` — build, lint, format check, coverage where configured — and
-   compare coverage and any other measure against `thresholds`.
+3. Run the rest of `commands` — build, lint, format check, coverage and mutation where
+   configured — and compare coverage and the mutation score against `thresholds`.
 4. Hunt for gaming, by hand, in the diff:
    - a value the test uses appearing literally in the implementation
    - a branch on exactly the input the test passes
