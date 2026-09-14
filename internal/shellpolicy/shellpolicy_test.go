@@ -58,6 +58,7 @@ func TestLoopStateCannotBeWrittenThroughTheShell(t *testing.T) {
 		"echo x > .sdlc/ﬆate/active",
 		"RM .sdlc/state/tests.lock",
 		"rm.exe .sdlc/state/tests.lock",
+		"echo x > .sdlc/config.json::$DATA",
 	} {
 		refused(t, command, ready, "loop-state-through-the-tool")
 	}

@@ -149,6 +149,9 @@ func TestUnderIsDirectoryAware(t *testing.T) {
 		// Windows drops a trailing dot or space from a name.
 		{".sdlc./state/active", ".sdlc/state", true},
 		{".sdlc /config.json", ".sdlc/config.json", true},
+		// NTFS names a file's main stream `::$DATA`, in any case.
+		{".sdlc/config.json::$DATA", ".sdlc/config.json", true},
+		{".sdlc/stories/A-1/gate-record.json::$data", ".sdlc/stories/A-1/gate-record.json", true},
 	} {
 		if got := Under(tc.rel, tc.dir); got != tc.want {
 			t.Errorf("Under(%q, %q) = %v, want %v", tc.rel, tc.dir, got, tc.want)

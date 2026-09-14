@@ -122,12 +122,16 @@ func Under(rel, dir string) bool {
 // written either way is one letter, which is how APFS also compares.
 //
 // A trailing dot or space is dropped from each segment, because Windows drops
-// it: `.sdlc.` is `.sdlc` there. On a filesystem that keeps them, this refuses
+// it: `.sdlc.` is `.sdlc` there. So is a trailing `::$DATA`, NTFS's name for a
+// file's main stream. On a filesystem that keeps them, this refuses
 // a name that is genuinely different, which is the safe way to be wrong.
 func Fold(p string) string {
 	folded := norm.NFC.String(cases.Fold().String(norm.NFD.String(p)))
 	parts := strings.Split(folded, "/")
 	for i, part := range parts {
+		// On NTFS `name::$DATA` is the file's own content under another
+		// spelling, so it is that file.
+		part = strings.TrimSuffix(part, "::$data")
 		if trimmed := strings.TrimRight(part, ". "); trimmed != "" {
 			parts[i] = trimmed
 		}
