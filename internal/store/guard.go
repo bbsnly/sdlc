@@ -40,8 +40,14 @@ import (
 // themselves committing it, since `.sdlc/state` is committed with the story.
 //
 // It is created with os.Mkdir, which fails if the directory already exists on
-// every filesystem sdlc supports. That is the whole mechanism: no flock, no new
-// dependency, and nothing that behaves differently on Windows.
+// every filesystem sdlc supports. That is the whole mechanism: no flock, and no
+// new dependency.
+//
+// One thing does behave differently on Windows. A directory another holder is
+// in the middle of removing cannot be created again until it is gone, and the
+// attempt fails with "Access is denied", not "already exists". That is the lock
+// being handed on, so it is waited for like any other holder. Taking it for a
+// failure lost the change of whichever command arrived as another let go.
 
 // How long to wait for another process, and how long before an existing lock is
 // assumed to belong to one that died. A command that takes longer than
@@ -52,6 +58,10 @@ const (
 	guardStale = 2 * time.Minute
 	guardPoll  = 10 * time.Millisecond
 )
+
+// mkdir is os.Mkdir, and a variable only so that a test can make it fail the
+// way Windows does.
+var mkdir = os.Mkdir
 
 // Guard is a held lock. Release it when the command is done.
 type Guard struct {
@@ -82,21 +92,30 @@ func Lock(root, what string) (*Guard, error) {
 
 	deadline := time.Now().Add(guardWait)
 	for {
-		err := os.Mkdir(path, 0o755)
+		err := mkdir(path, 0o755)
 		if err == nil {
 			g := &Guard{path: path}
 			g.describe(what)
 			return g, nil
 		}
-		if !errors.Is(err, fs.ErrExist) {
+		// A denial is waited for rather than failed: on Windows it is how a lock
+		// being released looks (see above). One that outlasts the wait is not
+		// that, and says what it really is.
+		denied := errors.Is(err, fs.ErrPermission)
+		if !denied && !errors.Is(err, fs.ErrExist) {
 			return nil, sdlcerr.New(sdlcerr.StateUnwritable,
 				"the loop's state could not be locked",
 				path+" could not be created").WithCause(err)
 		}
-		if breakIfStale(path) {
+		if !denied && breakIfStale(path) {
 			continue
 		}
 		if time.Now().After(deadline) {
+			if denied {
+				return nil, sdlcerr.New(sdlcerr.StateUnwritable,
+					"the loop's state could not be locked",
+					path+" could not be created").WithCause(err)
+			}
 			return nil, sdlcerr.New(sdlcerr.StateUnwritable,
 				"another sdlc command is still running",
 				heldBy(path)+" has held the loop's state for longer than "+

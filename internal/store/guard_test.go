@@ -1,6 +1,7 @@
 package store
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,6 +18,28 @@ func cacheDir(t *testing.T) string {
 	t.Setenv("HOME", dir)           // macOS
 	t.Setenv("LocalAppData", dir)   // Windows
 	return dir
+}
+
+// On Windows, creating the lock while another holder is still removing it fails
+// with "Access is denied". Lock took that for a failure, and the command that
+// met the release lost its change: CI caught it as 11 of 12 changes surviving.
+func TestALockBeingHandedOnIsWaitedForRatherThanFailed(t *testing.T) {
+	cacheDir(t)
+	denials := 3
+	mkdir = func(path string, perm fs.FileMode) error {
+		if denials > 0 {
+			denials--
+			return &fs.PathError{Op: "mkdir", Path: path, Err: fs.ErrPermission}
+		}
+		return os.Mkdir(path, perm)
+	}
+	t.Cleanup(func() { mkdir = os.Mkdir })
+
+	g, err := Lock(t.TempDir(), "gate")
+	if err != nil {
+		t.Fatalf("a lock that was being released was taken for a failure: %v", err)
+	}
+	g.Release()
 }
 
 func TestOnlyOneHolderAtATime(t *testing.T) {
