@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -489,6 +490,44 @@ func TestDoctorNamesAConfiguredProgramThatIsNotInstalled(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("doctor did not notice a command whose program is not installed: %+v", got.Checks)
+	}
+}
+
+// The binary check told everyone to run "./task build", which only means
+// something in a clone of this repository, and ignored SDLC_BIN, which the hook
+// launcher reads before PATH.
+func TestDoctorLooksForTheBinaryWhereTheHookDoes(t *testing.T) {
+	project(t)
+	mustRun(t, "init")
+	binaryCheckIn := func() check {
+		t.Helper()
+		for _, c := range decode[doctorPayload](t, run(t, "doctor", "--json")).Checks {
+			if c.Name == "sdlc on PATH" {
+				return c
+			}
+		}
+		t.Fatal("doctor no longer checks for the binary")
+		return check{}
+	}
+
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("SDLC_BIN", "")
+	c := binaryCheckIn()
+	if c.State != stateProblem || !strings.Contains(c.Fix, "npx @bbsnly/sdlc install") {
+		t.Errorf("a binary nowhere to be found gives no fix an installed user can follow: %+v", c)
+	}
+
+	name := "sdlc"
+	if runtime.GOOS == "windows" {
+		name = "sdlc.exe"
+	}
+	bin := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SDLC_BIN", bin)
+	if c := binaryCheckIn(); c.State != stateOK || !strings.Contains(c.Detail, bin) {
+		t.Errorf("a binary SDLC_BIN points at, which the hook would run, was not found: %+v", c)
 	}
 }
 

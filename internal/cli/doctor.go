@@ -388,12 +388,22 @@ func afterCasePattern(fields []string) []string {
 // binaryCheck asks the question the hook asks. A hook that cannot find the
 // binary allows the tool call and says so in a system message -- which is the right
 // behaviour and easy to miss, so doctor asks it out loud.
+//
+// The hook's launcher takes SDLC_BIN before PATH, so doctor does too: a binary
+// SDLC_BIN points at is one the hooks find. The plugin's own bin directory is
+// the launcher's other place to look, and only a hook knows where that is.
 func binaryCheck() check {
+	if bin := os.Getenv("SDLC_BIN"); bin != "" {
+		if path, err := exec.LookPath(bin); err == nil {
+			return check{Name: "sdlc on PATH", State: stateOK, Detail: "SDLC_BIN: " + path}
+		}
+	}
 	path, err := exec.LookPath("sdlc")
 	if err != nil {
 		return check{Name: "sdlc on PATH", State: stateProblem,
 			Detail: "the hooks cannot find sdlc, so nothing is enforced",
-			Fix:    `put the sdlc binary on PATH -- "./task build" prints the line to use`}
+			Fix: `install it where PATH reaches -- "npx @bbsnly/sdlc install" does, and from a ` +
+				`checkout "./task build" prints the line to add -- then open a new terminal`}
 	}
 	return check{Name: "sdlc on PATH", State: stateOK, Detail: path}
 }
