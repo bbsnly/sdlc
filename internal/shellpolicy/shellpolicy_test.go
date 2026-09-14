@@ -175,6 +175,46 @@ func TestACommitInAnotherRepositoryIsNotTheStorys(t *testing.T) {
 	}
 }
 
+// A commit is a commit whichever git command makes it. Held to `git commit`
+// alone, work committed on a branch elsewhere reached trunk with `git merge`.
+func TestEveryCommandThatCommitsMeetsTheGate(t *testing.T) {
+	for _, command := range []string{
+		"git merge --no-ff -m x wip",
+		"git merge -m --abort wip",
+		"git merge wip -m --abort",
+		"git config Alias.ci commit",
+		"git cherry-pick 1a2b3c",
+		"git revert --no-edit HEAD",
+		"git am 0001-x.patch",
+		"git rebase -x 'make test' main",
+		"git rebase --continue",
+		"git update-ref HEAD $(git commit-tree $(git write-tree) -p HEAD -m x)",
+		"git -c alias.ci=commit ci -am x",
+		"git -c alias.ci=commit CI -am x",
+		"git -c 'alias.CI=!git -C . commit -a' ci -m x",
+		"git config alias.ci commit",
+		`git config --global alias.m "merge --no-ff"`,
+		"hub commit -am x",
+	} {
+		refused(t, command, notReady, "commit-gate")
+	}
+	for _, command := range []string{
+		"git merge --abort",
+		"git rebase --quit",
+		"git -C internal cherry-pick --abort",
+		"git merge-base HEAD main",
+		"git log --merges",
+		"git config user.name x",
+		"git config --get alias.ci",
+		"git config alias.st status",
+		"git -c alias.st=status st",
+		"git -c color.ui=never commit-graph write",
+		"hub browse",
+	} {
+		allowed(t, command, notReady)
+	}
+}
+
 // Every rule holds only while a story is being worked on, so ending it part-way
 // was the way round all of them at once.
 func TestEndingAStoryPartWayIsAHumanDecision(t *testing.T) {

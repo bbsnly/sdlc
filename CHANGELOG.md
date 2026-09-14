@@ -252,6 +252,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `sdlc approve` or the shell a document is handed to went unread, and sdlc is
   now found behind a wrapper the rules do not know. PowerShell's `<# ... #>`
   comment no longer hides the command after it.
+- Only `git commit` met the commit gate. Work committed on a branch in another
+  worktree reached trunk with `git merge`, and `git cherry-pick`, `git revert`,
+  `git am`, `git rebase`, `git commit-tree` and an alias such as `git -c
+  alias.ci=commit ci` went past it too. They are now refused the same way, and
+  so is `hub commit`.
 - A commit to the project's own repository made from somewhere else went past
   the commit gate: `cd /tmp && git --git-dir=/path/to/project/.git commit`, or
   the same with `GIT_DIR` set. A commit with `GIT_DIR` set is now held to the

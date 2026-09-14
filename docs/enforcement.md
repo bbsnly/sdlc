@@ -347,7 +347,11 @@ verdict.
 ### `commit-gate`
 
 Refuses `git commit` until every gate before the commit gate has passed. The
-refusal names the first one that has not.
+refusal names the first one that has not. The git commands that make commits of
+their own are refused the same way: `merge`, `cherry-pick`, `revert`, `am`,
+`rebase` and `commit-tree`, apart from `--abort` or `--quit` on its own. So is an
+alias to one of them set with `git -c` or `git config`; an alias already in your
+git configuration is not read.
 
 Once they have, it also refuses a commit of work that has changed since the
 verifier and the code reviewers approved it. Their reviews are stamped with the

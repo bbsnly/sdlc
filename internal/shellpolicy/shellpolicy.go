@@ -458,7 +458,7 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 		return Finding{}, false
 	}
 	sub, to := gitCommand(words[1:])
-	if sub != "commit" {
+	if !makesACommit(words, sub) {
 		return Finding{}, false
 	}
 	switch {
@@ -1401,7 +1401,10 @@ func exporting(words []string) bool {
 	return false
 }
 
-func isGit(words []string) bool { return len(words) > 0 && base(words[0]) == "git" }
+// isGit reports whether a command runs git, or hub, which hands git its words.
+func isGit(words []string) bool {
+	return len(words) > 0 && (base(words[0]) == "git" || base(words[0]) == "hub")
+}
 
 func hasWord(words []string, want string) bool {
 	for _, w := range words {

@@ -402,6 +402,7 @@ func subcommand(args []string) string {
 // the directory a -C in front of it moves it to. The word `commit` anywhere
 // after git was a commit, so `git log --grep commit` met the commit gate.
 func gitCommand(args []string) (sub, dir string) {
+	aliases := map[string]string{}
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case a == "-C" && i+1 < len(args):
@@ -411,17 +412,67 @@ func gitCommand(args []string) (sub, dir string) {
 			} else {
 				dir = path.Join(dir, to)
 			}
-		case a == "-c" || a == "--git-dir" || a == "--work-tree" || a == "--namespace" ||
+		case a == "-c" && i+1 < len(args):
+			i++
+			if name, value, ok := strings.Cut(args[i], "="); ok {
+				if name, ok := strings.CutPrefix(strings.ToLower(name), "alias."); ok {
+					aliases[name] = value
+				}
+			}
+		case a == "--git-dir" || a == "--work-tree" || a == "--namespace" ||
 			a == "--config-env" || a == "--attr-source":
 			// Read as the subcommand, the value hid it: `git --attr-source HEAD
 			// commit` was a command called HEAD.
 			i++
 		case strings.HasPrefix(a, "-"):
 		default:
+			// `git -c alias.ci=commit ci` runs commit.
+			if value, ok := aliases[strings.ToLower(a)]; ok {
+				return aliasedCommand(value), dir
+			}
 			return a, dir
 		}
 	}
 	return "", dir
+}
+
+// aliasedCommand is the git subcommand an alias runs: `commit -a`, or
+// `!git commit -a` handed to the shell.
+func aliasedCommand(value string) string {
+	fields := strings.Fields(value)
+	if len(fields) > 0 && base(fields[0]) == "git" {
+		fields = fields[1:]
+	}
+	sub, _ := gitCommand(fields)
+	return sub
+}
+
+// makesCommits are the git subcommands that put a commit on the branch.
+var makesCommits = map[string]bool{
+	"commit": true, "commit-tree": true, "merge": true, "cherry-pick": true, "revert": true,
+	"am": true, "rebase": true,
+}
+
+// makesACommit reports whether a git command, running sub, makes a commit.
+// Held to `git commit` alone, a branch committed in a worktree elsewhere went
+// onto trunk past the gate with `git merge`, and so did `git commit-tree`.
+func makesACommit(words []string, sub string) bool {
+	if sub == "config" {
+		// An alias set now is a commit later: `git config alias.ci commit`.
+		for i := 1; i+1 < len(words); i++ {
+			if strings.HasPrefix(strings.ToLower(words[i]), "alias.") {
+				return makesCommits[aliasedCommand(words[i+1])]
+			}
+		}
+		return false
+	}
+	if !makesCommits[sub] {
+		return false
+	}
+	// Backing out of one part-way commits nothing. Only the flag on its own is
+	// that: in `git merge -m --abort wip` it is the message.
+	n := len(words)
+	return words[n-2] != sub || words[n-1] != "--abort" && words[n-1] != "--quit"
 }
 
 // gitDirOf is the repository a --git-dir in front of git's subcommand names.
