@@ -546,10 +546,25 @@ func TestANewTestFileIsRefusedThroughTheShellUnlessTheProjectAllowsIt(t *testing
 		t.Errorf("refused for the wrong reason: %q", r.HookSpecificOutput.PermissionDecisionReason)
 	}
 
+	// A project that allows new test files allows them to the test author. The
+	// implementer does not write tests, whatever the project allows.
 	write(t, root, ".sdlc/config.json", `{"version":1,"freeze":{"allow_new_test_files":true}}`)
-	if r := call(t, command(root, "sdlc:implementer", "echo 'package x' > other_test.go"), noEnv); denied(r) {
-		t.Errorf("a project that allows new test files was refused one: %q",
+	if r := call(t, command(root, "sdlc:sdet", "echo 'package x' > other_test.go"), noEnv); denied(r) {
+		t.Errorf("a project that allows new test files refused the test author one: %q",
 			r.HookSpecificOutput.PermissionDecisionReason)
+	}
+	r = call(t, command(root, "sdlc:implementer", "echo 'package x' > other_test.go"), noEnv)
+	if !denied(r) || !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "implementer-does-not-write-tests") {
+		t.Errorf("the implementer wrote a test through the shell because new test files are allowed: %+v", r)
+	}
+
+	// Nor before the freeze, when there is nothing frozen for it to break.
+	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "tests.lock")); err != nil {
+		t.Fatal(err)
+	}
+	r = call(t, command(root, "sdlc:implementer", "echo 'package x' >> helper_test.go"), noEnv)
+	if !denied(r) || !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "implementer-does-not-write-tests") {
+		t.Errorf("the implementer wrote a test through the shell before the freeze: %+v", r)
 	}
 }
 

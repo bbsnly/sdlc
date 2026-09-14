@@ -230,9 +230,20 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 		"agent", p.AgentType, "story", story, "commit_ready", ready, "why", why)
 
 	frozen, isTest, newTest := frozenTests(project, story, warn)
+	var implementerTest func(string) bool
+	if policy.NormalizeAgent(p.AgentType) == "implementer" {
+		// A configuration that will not read is said by the rules that read it
+		// first; the defaults are a better guess at what a test is than none.
+		cfg, err := config.Load(project)
+		if err != nil {
+			cfg = config.Default()
+		}
+		implementerTest = testset.New(cfg.Paths.Tests).Match
+	}
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
-		Fresh: func() (bool, string) { return reviewsFresh(project, story, warn) },
+		ImplementerTest: implementerTest,
+		Fresh:           func() (bool, string) { return reviewsFresh(project, story, warn) },
 	})
 	if !refused {
 		return policy.Allowed

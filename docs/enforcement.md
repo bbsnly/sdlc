@@ -115,7 +115,9 @@ again so the new file is covered.
 ### `implementer-does-not-write-tests`
 
 Refuses the implementer writing any test file, frozen or not, before the freeze
-or after it. This is not a setting.
+or after it, through the file tools or through the shell. This is not a
+setting: `freeze.allow_new_test_files` lets the test author add one, never the
+implementer.
 
 *Instead:* make the existing tests pass; if they are wrong, say so rather than
 changing them.

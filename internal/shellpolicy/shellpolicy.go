@@ -50,6 +50,13 @@ type State struct {
 	// not allow new test files. The file tools refused adding one, and a
 	// redirect or a `touch` did not.
 	NewTest func(path string) bool
+
+	// ImplementerTest, set only when the implementer is the one running the
+	// command, reports whether a path is a test file at all. The implementer
+	// does not write tests, frozen or not: the file tools refused it and a
+	// redirect did not, before the freeze and whenever new test files were
+	// allowed after it.
+	ImplementerTest func(path string) bool
 }
 
 // Finding is a refusal. An empty Rule means nothing objected.
@@ -261,7 +268,7 @@ func checkLoopState(words, redirects []string) (Finding, bool) {
 // a frozen acceptance test, and `echo cheat > x_test.go` was allowed. One
 // redirect was the whole way round the hinge the loop turns on.
 func checkFrozenTests(segment string, words, redirects []string, s State) (Finding, bool) {
-	if len(s.Frozen) == 0 && s.IsTest == nil && s.NewTest == nil {
+	if len(s.Frozen) == 0 && s.IsTest == nil && s.NewTest == nil && s.ImplementerTest == nil {
 		return Finding{}, false
 	}
 	candidates := redirects
@@ -301,6 +308,15 @@ func checkFrozenTests(segment string, words, redirects []string, s State) (Findi
 					"genuinely has to change, say which and why: the person running the " +
 					"session lifts the freeze with `sdlc unfreeze --reason ...`, which puts the " +
 					"reason on the record",
+			}, true
+		}
+		if w != "" && s.ImplementerTest != nil && s.ImplementerTest(w) {
+			return Finding{
+				Rule: "implementer-does-not-write-tests",
+				Reason: w + " is a test file, and the implementer does not write tests -- through " +
+					"the shell any more than through the file tools",
+				Route: "make the existing tests pass; if they are wrong, say so rather than " +
+					"changing them",
 			}, true
 		}
 	}

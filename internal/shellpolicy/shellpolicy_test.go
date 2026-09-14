@@ -412,6 +412,26 @@ func TestANewTestCannotBeAddedThroughTheShellAfterTheFreeze(t *testing.T) {
 	}
 }
 
+// The implementer does not write tests, and that rule was only ever put to the
+// file tools: before the freeze, or with new test files allowed after it, a
+// redirect wrote one.
+func TestTheImplementerCannotWriteATestThroughTheShell(t *testing.T) {
+	state := State{
+		CommitReady:     true,
+		ImplementerTest: func(p string) bool { return strings.HasSuffix(p, "_test.go") },
+	}
+	for _, command := range []string{
+		"echo 'package x' > y_test.go",
+		"touch internal/new_test.go",
+		"cp /tmp/passing.go ./z_test.go",
+	} {
+		refused(t, command, state, "implementer-does-not-write-tests")
+	}
+	for _, command := range []string{"echo x > y.go", "go test ./...", "cat y_test.go"} {
+		allowed(t, command, state)
+	}
+}
+
 // Before the freeze there is nothing to protect, and the sdet writes these
 // files for a living.
 func TestBeforeTheFreezeTheShellIsAsFreeAsItWas(t *testing.T) {

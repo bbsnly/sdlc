@@ -25,7 +25,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - Acceptance tests are frozen by content before a line of implementation is
   written. `sdlc freeze` records a hash per test file; after that the
   implementer cannot edit a test, cannot add a test, and cannot pass the
-  verification gate on tests that changed. `sdlc unfreeze --reason` is the
+  verification gate on tests that changed. The implementer writes no test
+  file at all, before the freeze or after it, through the file tools or
+  through the shell. `sdlc unfreeze --reason` is the
   way out, and it is on the record. The freeze belongs to the iteration: it
   survives `sdlc stop` and a new session, and is lifted when the story
   finishes, so the next story freezes its own tests.
