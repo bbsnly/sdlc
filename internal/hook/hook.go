@@ -5,11 +5,15 @@
 // parses configuration it does not need, or touches the network. The rest of
 // the CLI is reached only when the first argument is not `hook`.
 //
-// It fails open. Every error -- an unreadable payload, a missing file, a path
-// that cannot be resolved -- ends in "carry on". A hook that blocks a session
-// because of its own bug is worse than the mistake it was trying to prevent,
-// and the loop's real guarantee is the gate record, which a wrong write cannot
-// forge.
+// It fails open. An error -- an unreadable payload, a missing configuration, a
+// path that cannot be resolved -- ends in "carry on", and says so. A hook that
+// blocks a session because of its own bug is worse than the mistake it was
+// trying to prevent.
+//
+// Except where the unreadable file is the thing a rule protects. A test freeze
+// or a gate record that is there and cannot be read is not treated as absent,
+// because then breaking it would be the way round it: tests stay frozen and the
+// commit waits until they read.
 package hook
 
 import (
@@ -244,18 +248,27 @@ func frozenTests(project, story string, warn func(string)) []string {
 // commitReady reports whether the story has been through the gates that come
 // before committing, and names the first one that has not.
 //
-// Anything unreadable answers "ready". A story whose record cannot be read is
-// not a story this hook should stand in front of a commit for: the loop would
-// be blocking work it cannot explain, which is the failure mode that teaches
-// people to switch a tool off.
+// A record that is missing or will not parse answers "not ready", and says
+// which file it is. `sdlc start` always writes one, so either is damage, and
+// reading damage as "ready" made deleting the record the way to commit past
+// every gate -- silently. The refusal explains itself, and `sdlc stop` still
+// ends an iteration whose record cannot be read, so it blocks nothing a person
+// cannot see a way through.
 func commitReady(project, story string) (bool, string) {
+	rel := ".sdlc/stories/" + story + "/" + model.RecordFile
 	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "stories", story, model.RecordFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, rel + " is missing, so no gate can be shown to have passed " +
+			"(`sdlc doctor` says more)"
+	}
 	if err != nil {
-		return true, ""
+		return false, rel + " could not be read, so no gate can be shown to have passed " +
+			"(`sdlc doctor` says why)"
 	}
 	var record model.Record
 	if err := json.Unmarshal(raw, &record); err != nil {
-		return true, ""
+		return false, rel + " is not valid JSON, so no gate can be shown to have passed " +
+			"(`sdlc doctor` says more)"
 	}
 	for _, g := range model.GateCommit.Before() {
 		if !record.Pass(g) {
@@ -267,10 +280,10 @@ func commitReady(project, story string) (bool, string) {
 
 // testState works out what the freeze says about this path.
 //
-// Anything unreadable answers "not a test". The freeze is one rule among
-// several, and a project whose configuration will not parse should still have
-// its protected paths and its separation of duties enforced -- doctor is where
-// a broken configuration gets reported, not here.
+// A configuration that will not parse answers "not a test". The freeze is one
+// rule among several, and a project whose configuration is broken should still
+// have its protected paths and its separation of duties enforced. A freeze
+// that will not parse is different, and is handled below.
 func testState(project, story, rel string, warn func(string)) policy.Tests {
 	if rel == "" {
 		return policy.Tests{}

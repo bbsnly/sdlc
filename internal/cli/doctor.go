@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bbsnly/sdlc/internal/config"
+	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/scaffold"
 	"github.com/bbsnly/sdlc/internal/store"
 )
@@ -149,19 +150,37 @@ func runChecks() []check {
 // stateCheck reads the two files the hook reads on every tool call. When either
 // is there and cannot be read, the hook fails open, says so, and sends you
 // here -- so this has to be the check that knows which one it is.
+//
+// Every problem at once, not the first: a broken iteration file reported alone
+// hid a broken freeze behind it, and a second run of doctor to find it.
 func stateCheck(s *store.Store) check {
-	if _, err := s.Active(); err != nil {
-		return check{Name: "loop state", State: stateProblem, Detail: err.Error(),
-			Fix: "nothing is enforced until .sdlc/state/active reads: fix its " +
-				`permissions, or remove it and run "sdlc start" again`}
+	var details, fixes []string
+	problem := func(err error, fix string) {
+		details = append(details, err.Error())
+		fixes = append(fixes, fix)
+	}
+	active, err := s.Active()
+	if err != nil {
+		problem(err, "nothing is enforced until .sdlc/state/active reads: fix its "+
+			`permissions, or remove it and run "sdlc start" again`)
+	} else if active != "" {
+		if _, err := s.Record(active); err != nil {
+			problem(err, "no commit goes through while .sdlc/stories/"+active+"/"+
+				model.RecordFile+` cannot be read: restore it if you keep a copy, or run "sdlc stop" `+
+				"to end the iteration and commit as yourself")
+		}
 	}
 	if _, err := s.Lock(); err != nil {
-		return check{Name: "loop state", State: stateProblem, Detail: err.Error(),
-			Fix: "every test is treated as frozen until .sdlc/state/tests.lock reads: " +
-				`restore it if you keep a copy, or remove it and run "sdlc freeze", ` +
-				"which freezes the tests as they are now"}
+		problem(err, "every test is treated as frozen until .sdlc/state/tests.lock reads: "+
+			`restore it if you keep a copy, or remove it and run "sdlc freeze", `+
+			"which freezes the tests as they are now")
 	}
-	return check{Name: "loop state", State: stateOK, Detail: "the iteration and the test freeze both read"}
+	if len(details) > 0 {
+		return check{Name: "loop state", State: stateProblem,
+			Detail: strings.Join(details, "; "), Fix: strings.Join(fixes, "; ")}
+	}
+	return check{Name: "loop state", State: stateOK,
+		Detail: "the iteration, its gate record and the test freeze all read"}
 }
 
 // checkOrder is every check doctor makes, in the order it makes them. It is

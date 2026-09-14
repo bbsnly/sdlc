@@ -564,14 +564,30 @@ func TestOnceEveryGateHasPassedTheCommitGoesThrough(t *testing.T) {
 	}
 }
 
-// A record that cannot be read is not a reason to stand in front of a commit.
-// Blocking work the loop cannot explain is how a tool teaches people to switch
-// it off.
-func TestAnUnreadableRecordDoesNotBlockACommit(t *testing.T) {
-	root := loopProject(t)
-	write(t, root, ".sdlc/stories/A-1/gate-record.json", "{not json")
-
-	if denied(call(t, command(root, "", "git commit -m x"), noEnv)) {
-		t.Error("a broken record blocked a commit")
+// A record that is missing or will not parse is not a story with nothing to
+// stand in front of. `sdlc start` always writes one, so either is damage, and
+// reading it as "ready" made `rm` on the record the way to a commit no gate had
+// passed.
+func TestACommitWaitsForARecordThatReads(t *testing.T) {
+	for name, spoil := range map[string]func(t *testing.T, root string){
+		"missing": func(*testing.T, string) {},
+		"corrupt": func(t *testing.T, root string) {
+			write(t, root, ".sdlc/stories/A-1/gate-record.json", "{not json")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := loopProject(t)
+			spoil(t, root)
+			r := call(t, command(root, "", "git commit -m x"), noEnv)
+			if !denied(r) {
+				t.Fatal("a commit went through with no readable record of the gates")
+			}
+			// Blocking work the loop cannot explain is how a tool teaches
+			// people to switch it off, so the refusal has to name the file.
+			if !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "gate-record.json") {
+				t.Errorf("the refusal does not say which file is wrong: %q",
+					r.HookSpecificOutput.PermissionDecisionReason)
+			}
+		})
 	}
 }

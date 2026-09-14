@@ -134,6 +134,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - A test freeze that cannot be read no longer counts as no freeze. Corrupting
   `.sdlc/state/tests.lock` made every frozen test editable, quietly; until it
   reads again, every test file is treated as frozen.
+- A gate record that is missing or will not parse no longer opens the commit
+  gate. Deleting `.sdlc/stories/<id>/gate-record.json` was the way to commit
+  past every gate, without a word. The refusal names the file, `sdlc doctor`
+  reads it, and `sdlc stop` still ends an iteration whose record is broken, so
+  there is always a way out.
 - `sdlc doctor` checks the loop's state files. Every hook warning about them
   said to run it, and it did not read either one.
 

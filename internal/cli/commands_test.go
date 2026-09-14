@@ -489,6 +489,31 @@ func TestDoctorSkipsWhatItCannotCheckYet(t *testing.T) {
 	}
 }
 
+// The hook refuses a commit while the gate record cannot be read, and sends you
+// to `sdlc stop` to commit as yourself. A stop that failed on the same broken
+// record left no way out from inside the tool, and a doctor that did not read
+// the record could not say what was wrong.
+func TestAnUnreadableRecordHasAWayOut(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	mustRun(t, "start")
+	record := filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")
+	if err := os.WriteFile(record, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if out := run(t, "doctor").stdout; !strings.Contains(out, "gate-record.json") {
+		t.Errorf("doctor did not name the unreadable record:\n%s", out)
+	}
+	r := mustRun(t, "stop")
+	if !strings.Contains(r.stderr, "gate-record.json") {
+		t.Errorf("stop did not say the record could not be written to:\n%s", r.stderr)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".sdlc", "state", "active")); !os.IsNotExist(err) {
+		t.Error("stop left the iteration running")
+	}
+}
+
 // The hook's warnings about unreadable loop state all say "run sdlc doctor".
 // Doctor did not read either file, so it answered that all was well.
 func TestDoctorNamesLoopStateTheHookCannotRead(t *testing.T) {

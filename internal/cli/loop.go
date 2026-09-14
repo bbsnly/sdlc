@@ -276,26 +276,36 @@ func newStopCmd() *cobra.Command {
 			done := false
 			if active != "" {
 				record, err := s.Record(active)
-				if err != nil {
+				var unreadable *sdlcerr.Error
+				switch {
+				case errors.As(err, &unreadable) && unreadable.Code == sdlcerr.StateUnreadable:
+					// The hook refuses a commit while the record cannot be
+					// read, and its refusal sends you here to commit as
+					// yourself. So stop must not be one more thing the broken
+					// record traps: the iteration ends, off the record.
+					fmt.Fprintln(cmd.ErrOrStderr(), "sdlc: .sdlc/stories/"+active+"/"+model.RecordFile+
+						" could not be read, so this stop is not written to it. Run `sdlc doctor` to see why.")
+				case err != nil:
 					return err
-				}
-				record.Append("loop_end", "iteration ended", s.Now())
-				if err := s.SaveRecord(record); err != nil {
-					return err
-				}
-				// The same function that owns the invariant, so that the
-				// sentence stop prints and the backlog cannot disagree.
-				if done, err = settleStory(s, active, record); err != nil {
-					// A story the backlog has lost must not trap the
-					// iteration: stop is the way out of a broken state.
-					var known *sdlcerr.Error
-					if !errors.As(err, &known) || known.Code != sdlcerr.StoryNotFound {
+				default:
+					record.Append("loop_end", "iteration ended", s.Now())
+					if err := s.SaveRecord(record); err != nil {
 						return err
 					}
-				}
-				if done {
-					if err := releaseFreeze(s, active); err != nil {
-						return err
+					// The same function that owns the invariant, so that the
+					// sentence stop prints and the backlog cannot disagree.
+					if done, err = settleStory(s, active, record); err != nil {
+						// A story the backlog has lost must not trap the
+						// iteration: stop is the way out of a broken state.
+						var known *sdlcerr.Error
+						if !errors.As(err, &known) || known.Code != sdlcerr.StoryNotFound {
+							return err
+						}
+					}
+					if done {
+						if err := releaseFreeze(s, active); err != nil {
+							return err
+						}
 					}
 				}
 			}

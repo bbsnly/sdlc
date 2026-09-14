@@ -26,9 +26,15 @@ Nothing is enforced unless **all** of these are true:
 3. `SDLC_ENFORCE` is not `0` in the environment the session started with.
 
 Outside those, the hook allows everything and says nothing. It also **fails
-open**: an unreadable payload, a missing file, a path it cannot resolve — every
-error ends in "carry on". A hook that blocks a session because of its own bug is
-worse than the mistake it was trying to prevent.
+open**: an unreadable payload, a missing configuration, a path it cannot
+resolve — an error ends in "carry on", with a message saying what is off. A hook
+that blocks a session because of its own bug is worse than the mistake it was
+trying to prevent.
+
+The exceptions are the files a rule exists to protect. A test freeze or a gate
+record that cannot be read is not treated as absent, because then breaking one
+would be the way round it: tests stay frozen and the commit waits until the file
+reads. `sdlc doctor` names it under "loop state".
 
 ## Rules on writing files
 
@@ -204,6 +210,11 @@ has to change.
 
 Refuses `git commit` until every gate before the commit gate has passed. The
 refusal names the first one that has not.
+
+A gate record that is missing or will not parse counts as no gate passed, and
+the refusal names the file. `sdlc start` always writes one, so either means
+something damaged it. `sdlc stop` still ends the iteration when the record
+cannot be read.
 
 *Instead:* finish the gates — `sdlc status` shows where the story stands — or
 `sdlc stop` to end the iteration and commit as yourself.
