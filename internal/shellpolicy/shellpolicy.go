@@ -166,6 +166,7 @@ func Inspect(command string, s State) (Finding, bool) {
 		return f, true
 	}
 	dir, lost := s.Dir, false
+	unsure := movesInASubshell(text, s.PowerShell)
 	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}}
 	for _, segment := range segments(text) {
 		words, redirects, _ := parse(segment)
@@ -176,7 +177,7 @@ func Inspect(command string, s State) (Finding, bool) {
 		if f, ok := checkLoopState(command, segment, run, redirects, dir, s, m); ok {
 			return f, true
 		}
-		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, lost, s, m); ok {
+		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, lost || unsure, s, m); ok {
 			return f, true
 		}
 		if next, ok := changedDir(dir, run.words); ok {
@@ -185,6 +186,20 @@ func Inspect(command string, s State) (Finding, bool) {
 		}
 	}
 	return Finding{}, false
+}
+
+// movesInASubshell reports whether a command changes directory somewhere that
+// does not move the shell around it: a subshell, a substitution, a script
+// handed to another shell. The segments the path rules read cannot tell, so
+// where anything in the command runs is not known. Followed as a move,
+// `cd internal && (cd /tmp && ls) && cp e x_test.go` wrote /tmp's x_test.go.
+func movesInASubshell(text string, powerShell bool) bool {
+	for _, r := range programsAt(text, powerShell, 0) {
+		if _, ok := changedDir("", r.words); ok && r.nested {
+			return true
+		}
+	}
+	return false
 }
 
 // checkPrograms applies the rules that turn on which program a command runs,
@@ -838,12 +853,18 @@ func changedDir(dir string, words []string) (string, bool) {
 		return dir, false
 	}
 	args := skipOptions(words[1:])
+	if len(args) > 1 && strings.EqualFold(args[0], "/d") {
+		// cmd's switch to change drive as well, not a directory called /d.
+		args = args[1:]
+	}
 	if len(args) == 0 {
 		return "", true
 	}
 	to := clean(args[0])
 	switch {
-	case to == "" || to == "-" || strings.HasPrefix(to, "~") || strings.HasPrefix(to, "$"):
+	case to == "" || to == "-" || strings.HasPrefix(to, "~") || strings.HasPrefix(to, "$"),
+		strings.ContainsAny(to, "*?["):
+		// A glob names whichever directory it matches.
 		return "", true
 	case isAbsolute(to):
 		return to, true

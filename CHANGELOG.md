@@ -262,7 +262,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `testdata/config.json` frozen, `cp config.example.json config.json` at the
   root was refused as a write to a frozen test, and so was `touch main.go` in
   another package. A name is still read that way where its directory cannot be
-  known: after a `cd` to a variable, home or `-`, after `popd`, and in `find`,
+  known: after a `cd` to a variable, a glob, home or `-`, after `popd` or a `cd`
+  in a subshell, and in `find`,
   `xargs`, `git -C` and a program's own code.
 - A document handed over in a PowerShell here-string (`@' ... '@`) is read as
   text, as a here-document is. A plan or review whose table named `git commit`

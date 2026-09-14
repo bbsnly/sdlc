@@ -365,6 +365,11 @@ func TestAFrozenTestCannotBeWrittenAnyOtherWay(t *testing.T) {
 		"find internal -name x_test.go -delete",
 		"ls internal/x_test.go | xargs rm",
 		"echo x > /repo/internal/x_test.go",
+		// A `cd` this cannot follow, or followed where it does not move the shell.
+		"cd internal && (cd /tmp && ls) && cp /tmp/e x_test.go",
+		"cd internal && sh -c 'cd ..' && echo x > x_test.go",
+		"cd inter* && cp /tmp/e x_test.go",
+		"cd /d internal && copy /y e.go x_test.go",
 	} {
 		refused(t, command, frozen, "frozen-test-through-the-tool")
 	}
