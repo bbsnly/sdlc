@@ -1057,9 +1057,19 @@ func withoutDocuments(command string) string {
 			closer := strings.TrimPrefix(strings.TrimLeft(lines[end], " \t"), quote+"@")
 			kept[len(kept)-1] = opener
 			// A here-string is usually put in a variable and used on a later
-			// line, so the rest of the command is where it may be run:
-			// `$s = @'...'@` and then `Invoke-Expression $s`.
-			rest := append([]string{opener, closer}, lines[end+1:]...)
+			// line, so a later line that uses the variable is where it may be
+			// run: `$s = @'...'@` and then `Invoke-Expression $s`. Only such a
+			// line: a commit message in $msg was commands whenever the script
+			// also ran `python -m pytest`.
+			rest := []string{opener, closer}
+			if name, _, ok := strings.Cut(opener, "="); ok && strings.HasPrefix(strings.TrimSpace(name), "$") {
+				name = strings.ToLower(strings.TrimSpace(name))
+				for _, later := range lines[end+1:] {
+					if strings.Contains(strings.ToLower(later), name) {
+						rest = append(rest, later)
+					}
+				}
+			}
 			if runsAScript(strings.Join(rest, "\n")) {
 				kept = append(kept, lines[i+1:end]...)
 			}
@@ -1143,9 +1153,16 @@ func runsAScript(line string) bool {
 			return true
 		}
 		// Behind a wrapper program does not know, the shell is still a word of
-		// its own: `firejail sh <<EOF`. A quoted note is one word, so a note
-		// that mentions a shell is not one.
-		for _, w := range run.words[1:] {
+		// its own: `firejail sh <<EOF`, `firejail /bin/sh <<EOF`. Only a word
+		// that could be the program counts, not a flag's value, as in
+		// `shellcheck -s bash`, and not a relative path: the security
+		// reviewer's note "hooks exec via /bin/sh" is one word ending in sh,
+		// and it ran the review as commands, as `tee completions/zsh` did.
+		for i := 1; i < len(run.words); i++ {
+			w := run.words[i]
+			if strings.HasPrefix(run.words[i-1], "-") || strings.Contains(w, "/") && !isAbsolute(w) {
+				continue
+			}
 			switch base(w) {
 			case "sh", "bash", "zsh", "dash", "ksh", "fish", "pwsh", "powershell":
 				return true

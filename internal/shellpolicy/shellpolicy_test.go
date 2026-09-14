@@ -85,6 +85,17 @@ func TestADocumentIsTextHoweverItIsHandedOver(t *testing.T) {
 	allowed(t, "sdlc review add code_review code-reviewer block --note \"error source is lost\" "+
 		"<<'SDLC_DOCUMENT'\n| git commit | refused |\nSDLC_DOCUMENT", reviewer)
 
+	security := State{CommitWhy: "code_review has not passed", Agent: "security"}
+	allowed(t, "sdlc review add code_review security note --note \"hooks exec via /bin/sh\" "+
+		"<<'SDLC_DOCUMENT'\n- `git commit` runs the pre-commit hook first\nSDLC_DOCUMENT", security)
+	allowed(t, "shellcheck -s bash - <<'EOF'\ngit commit -m x\nEOF", notReady)
+	allowed(t, "tee completions/zsh <<'EOF'\ngit commit -m x\nEOF", notReady)
+	allowed(t, "$plan = @'\n"+plan+"'@\n$plan | sdlc artifact write plan\nnode scripts/check.js", ps)
+	psReady := ready
+	psReady.PowerShell = true
+	allowed(t, "$msg = @'\nsdlc stop stays with a person\n'@\ngit commit -m $msg\npython -m pytest", psReady)
+
+	refused(t, "firejail /bin/sh <<'EOF'\ngit commit -m x\nEOF", notReady, "commit-gate")
 	refused(t, "@'\ngit commit -m x\n'@ | pwsh -Command -", ps, "commit-gate")
 	refused(t, "@'\nlooks right\n'@ | sdlc approve A-1", ps, "approval-is-a-human-decision")
 	refused(t, "@'\ngit commit -m x\n'@ | iex", ps, "commit-gate")
