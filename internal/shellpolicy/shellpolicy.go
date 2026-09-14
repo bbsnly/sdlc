@@ -124,7 +124,7 @@ var mutating = map[string]bool{
 // test file, which is only wrong because of who is creating it.
 func Inspect(command string, s State) (Finding, bool) {
 	dir := s.Dir
-	for _, segment := range segments(command) {
+	for _, segment := range segments(withoutDocuments(command)) {
 		words, redirects, assigns := parse(segment)
 		if len(words) == 0 && len(assigns) == 0 {
 			continue
@@ -668,6 +668,75 @@ func inAPath(r rune) bool {
 		// A name spelled with a ligature is still that name to the
 		// filesystem, so a letter outside ASCII cannot end a path here.
 		return true
+	}
+	return false
+}
+
+// withoutDocuments takes the bodies of here-documents out of a command line.
+//
+// A document is text handed to a command, and every agent hands its review or
+// its plan to sdlc that way. Read as commands, a plan that said "commit with
+// `git commit`" was refused by the commit gate, and a review that warned
+// against `sdlc unfreeze` was refused as an unfreeze. A body that goes to a
+// shell or an interpreter is kept: that text is what runs.
+func withoutDocuments(command string) string {
+	lines := strings.Split(command, "\n")
+	kept := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); i++ {
+		kept = append(kept, lines[i])
+		delimiters := documentDelimiters(lines[i])
+		if len(delimiters) == 0 || runsAScript(lines[i]) {
+			continue
+		}
+		for _, d := range delimiters {
+			for i+1 < len(lines) {
+				i++
+				// `<<-` lets the closing line be indented with tabs.
+				if strings.TrimLeft(lines[i], "\t") == d {
+					break
+				}
+			}
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
+// documentDelimiters lists the words that end the here-documents one line
+// opens, in order, with their quoting taken off.
+func documentDelimiters(line string) []string {
+	var out []string
+	rest := line
+	for {
+		i := strings.Index(rest, "<<")
+		if i < 0 {
+			return out
+		}
+		rest = rest[i+2:]
+		// A `<<<` here-string has no body, and names no delimiter here: the
+		// word below stops at its third `<` before it starts.
+		word := strings.TrimLeft(strings.TrimPrefix(rest, "-"), " \t")
+		if end := strings.IndexAny(word, " \t;&|<>()"); end >= 0 {
+			word = word[:end]
+		}
+		if word = strings.NewReplacer(`'`, "", `"`, "", `\`, "").Replace(word); word != "" {
+			out = append(out, word)
+		}
+	}
+}
+
+// runsAScript reports whether anything on this line could run the text it is
+// handed, so that a here-document going to it is a program and not a document.
+func runsAScript(line string) bool {
+	for _, segment := range segments(line) {
+		words, _, _ := parse(segment)
+		for _, w := range words {
+			switch base(w) {
+			case "sh", "bash", "zsh", "dash", "ksh", "fish", "pwsh", "powershell", "cmd",
+				"eval", "source", ".", "xargs",
+				"python", "python3", "perl", "ruby", "node", "deno", "bun", "php":
+				return true
+			}
+		}
 	}
 	return false
 }

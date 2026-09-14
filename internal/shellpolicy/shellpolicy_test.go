@@ -114,6 +114,26 @@ func TestWrappedOrdinaryWorkIsStillOrdinary(t *testing.T) {
 	}
 }
 
+// Every agent hands its review or its plan to sdlc as a here-document, and a
+// document talks about commands. Read as commands, these were refused.
+func TestADocumentIsTextNotCommands(t *testing.T) {
+	plan := "sdlc artifact write plan <<'SDLC_DOCUMENT'\n# Plan\n\n" +
+		"3. Commit with `git commit -m \"...\"` at Gate 8.\n" +
+		"Never run `sdlc unfreeze` or `sdlc approve`.\n" +
+		"rm .sdlc/state/tests.lock would break the freeze.\n" +
+		"SDLC_DOCUMENT"
+	allowed(t, plan, notReady)
+	allowed(t, "sdlc review add design_review red-team note --note x <<-EOF\n\t`git commit` too early\n\tEOF", notReady)
+	allowed(t, "sdlc review add design_review red-team note <<< 'fine'", notReady)
+
+	// Text that goes to something that runs it is commands, and the command
+	// that opens the document, and anything after it, is still read.
+	refused(t, "bash <<'EOF'\nrm .sdlc/state/tests.lock\nEOF", ready, "loop-state-through-the-tool")
+	refused(t, "cat <<'EOF' | sh\ngit commit -m x\nEOF", notReady, "commit-gate")
+	refused(t, "cat > .sdlc/stories/A-1/PLAN.md <<'EOF'\nplan\nEOF", ready, "loop-state-through-the-tool")
+	refused(t, "sdlc artifact write plan <<'EOF'\ntext\nEOF\ngit commit -m x", notReady, "commit-gate")
+}
+
 // Ways to write a frozen test that the shell rules read past: an overwriting
 // redirect, a bundled -i, a program on standard input, and git.
 func TestAFrozenTestCannotBeWrittenAnyOtherWay(t *testing.T) {
