@@ -63,9 +63,19 @@ const (
 // way Windows does.
 var mkdir = os.Mkdir
 
+// guardBeat is how often a held lock says it is still held, by touching its
+// directory. Age is how a lock left by a dead process is recognised, so a live
+// one has to stay young: a command that held it longer than guardStale -- a
+// slow smoke test, a document that took a while to arrive -- had it broken open
+// under it by the next command, and one of the two changes was lost. A
+// variable so a test can make it quick.
+var guardBeat = 30 * time.Second
+
 // Guard is a held lock. Release it when the command is done.
 type Guard struct {
 	path string
+	stop chan struct{}
+	done chan struct{}
 }
 
 type guardOwner struct {
@@ -94,8 +104,9 @@ func Lock(root, what string) (*Guard, error) {
 	for {
 		err := mkdir(path, 0o755)
 		if err == nil {
-			g := &Guard{path: path}
+			g := &Guard{path: path, stop: make(chan struct{}), done: make(chan struct{})}
 			g.describe(what)
+			go g.beat()
 			return g, nil
 		}
 		// A denial is waited for rather than failed: on Windows it is how a lock
@@ -133,8 +144,26 @@ func (g *Guard) Release() {
 	if g == nil || g.path == "" {
 		return
 	}
+	close(g.stop)
+	<-g.done
 	_ = os.RemoveAll(g.path)
 	g.path = ""
+}
+
+// beat keeps the lock's directory young for as long as it is held.
+func (g *Guard) beat() {
+	defer close(g.done)
+	ticker := time.NewTicker(guardBeat)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-g.stop:
+			return
+		case <-ticker.C:
+			now := time.Now()
+			_ = os.Chtimes(g.path, now, now)
+		}
+	}
 }
 
 // describe records who holds the lock, so that a lock left behind by a crash

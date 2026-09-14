@@ -119,6 +119,44 @@ func TestALockLeftByADeadProcessIsBrokenOpen(t *testing.T) {
 	g.Release()
 }
 
+// Age is how an abandoned lock is recognised, so a lock that is still held has
+// to keep itself young. One held past guardStale -- by a slow smoke test, or a
+// document slow to arrive -- was broken open by the next command, and two
+// writers ran at once.
+func TestALockStillHeldIsNotTakenForAbandoned(t *testing.T) {
+	cacheDir(t)
+	guardBeat = 5 * time.Millisecond
+	t.Cleanup(func() { guardBeat = 30 * time.Second })
+
+	held, err := Lock(t.TempDir(), "artifact write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+	old := time.Now().Add(-2 * guardStale)
+	if err := os.Chtimes(held.path, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		info, err := os.Stat(held.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if time.Since(info.ModTime()) < guardStale {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("a held lock never refreshed itself, so the next command would break it open")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if breakIfStale(held.path) {
+		t.Error("a lock that is still held was broken open")
+	}
+}
+
 // Nothing to do with the repository: the lock is a mutex between processes,
 // and the commit gate refuses while anything in the tree is uncommitted --
 // which is exactly when the lock is held.

@@ -101,6 +101,14 @@ func newArtifactWriteCmd() *cobra.Command {
 					"this version stores "+model.ArtifactNames())
 			}
 
+			// Read before the lock is taken. Standing input can take as long as
+			// its writer likes, and every other command that writes loop state
+			// waited on it, then failed.
+			content, err := readDocument(cmd, file)
+			if err != nil {
+				return err
+			}
+
 			s, _, unlock, err := openStoreForWriting(cmd)
 			if err != nil {
 				return err
@@ -113,10 +121,6 @@ func newArtifactWriteCmd() *cobra.Command {
 				}
 			}
 
-			content, err := readDocument(cmd, file)
-			if err != nil {
-				return err
-			}
 			path, err := s.WriteArtifact(id, artifact, content)
 			if err != nil {
 				return err

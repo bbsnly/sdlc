@@ -35,6 +35,48 @@ type result struct {
 	code   int
 }
 
+// lockProbe is standard input that, before it hands over its document, runs
+// another command that writes loop state. That command cannot finish while the
+// one reading the input holds the project's lock.
+type lockProbe struct {
+	t      *testing.T
+	doc    *strings.Reader
+	probed bool
+	result result
+}
+
+func (p *lockProbe) Read(b []byte) (int, error) {
+	if !p.probed {
+		p.probed = true
+		p.result = run(p.t, "cost", "add", "--usd", "0.01")
+	}
+	return p.doc.Read(b)
+}
+
+// A document on standard input arrives when its writer is done with it. Read
+// under the lock, every other command that writes loop state waited on that
+// writer and then failed.
+func TestADocumentIsReadBeforeTheLockIsTaken(t *testing.T) {
+	gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	for _, args := range [][]string{
+		{"artifact", "write", "analysis"},
+		{"review", "add", "dor", "human-advocate", "note"},
+	} {
+		probe := &lockProbe{t: t, doc: strings.NewReader("# Notes\n\nfine\n")}
+		var out, errb bytes.Buffer
+		Execute(args, probe, &out, &errb)
+		if !probe.probed {
+			t.Fatalf("sdlc %s never read its input: %s", strings.Join(args, " "), errb.String())
+		}
+		if probe.result.code != 0 {
+			t.Errorf("sdlc %s held the lock while it waited for its input:\n%s",
+				strings.Join(args, " "), probe.result.stderr)
+		}
+	}
+}
+
 func run(t *testing.T, args ...string) result {
 	t.Helper()
 	return runWith(t, "", args...)

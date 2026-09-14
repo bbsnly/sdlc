@@ -100,6 +100,13 @@ func newReviewAddCmd() *cobra.Command {
 					"a reviewer approves, blocks, or leaves a note")
 			}
 
+			// Read before the lock is taken, as artifact write does: every
+			// other writer would wait on standard input otherwise.
+			content, err := readDocument(cmd, file)
+			if err != nil {
+				return err
+			}
+
 			s, _, unlock, err := openStoreForWriting(cmd)
 			if err != nil {
 				return err
@@ -110,10 +117,6 @@ func newReviewAddCmd() *cobra.Command {
 				if id, err = activeStory(s, "a review belongs to the story being worked on"); err != nil {
 					return err
 				}
-			}
-			content, err := readDocument(cmd, file)
-			if err != nil {
-				return err
 			}
 			record, err := s.Record(id)
 			if err != nil {
