@@ -21,7 +21,9 @@ and the code, in that order.
 - the story's acceptance criteria, in the backlog file that `backlog.path` in
   `.sdlc/config.json` names. **Read these first**, before any test and before any code, and
   write down what each one would mean in observable terms.
-- the diff: `git diff` and `git diff --stat` against the trunk branch in `.sdlc/config.json`
+- the diff: `git diff` and `git diff --stat` against the trunk branch in `.sdlc/config.json`,
+  and every new file `git status --short` lists as `??` — the work is not committed yet, and
+  `git diff` does not show a file git has never seen
 - `.sdlc/stories/<ID>/TEST-PLAN.md` and the frozen tests
 - `.sdlc/stories/<ID>/reviews/design_review-red-team-*.md` — the gaming vectors somebody already
   named. Check every one of them by hand.

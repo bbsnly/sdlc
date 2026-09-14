@@ -388,9 +388,10 @@ a person answers with `sdlc approve` in their own terminal. Do not run `sdlc app
 — the hook refuses it — and do not start the story again before they have answered.
 
 Do not end your turn mid-story any other way. While a story is being worked on, the plugin's
-Stop hook sends a stop back until it is one of three things: the gate finished, the story handed
-to a person, or the iteration ended with `sdlc stop`. After `loop.max_stop_blocks` stops in a row
-with nothing recorded, it hands the story to a person itself.
+Stop hook sends a stop back once, naming the gate to work next; finishing a gate is not a place
+to stop. Only handing the story to a person or ending the iteration with `sdlc stop` ends it.
+After `loop.max_stop_blocks` stops sent back with nothing recorded in between, it hands the
+story to a person itself.
 
 ## If a command fails
 

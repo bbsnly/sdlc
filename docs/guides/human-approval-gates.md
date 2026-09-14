@@ -147,8 +147,10 @@ Keep the story's `id` as it is. `sdlc approve` finds the story by it, and a stor
 that has gone from the backlog cannot be committed: `sdlc status` reports it as
 `not in the backlog`.
 
-**A frozen test that is wrong.** Run `sdlc unfreeze --reason "..."`, then
-`sdlc approve`. The reason is your decision on the record. See
+**A frozen test that is wrong.** Run `sdlc approve <ID>`, then `sdlc start <ID>`
+and `sdlc unfreeze --reason "..."`: the escalation ended the iteration, and the
+freeze is lifted on the story being worked on. The reason is your decision on
+the record. See
 [When a frozen test is wrong](when-a-frozen-test-is-wrong.md).
 
 **A contract rule or a setting.** While a story is being worked on, the hook

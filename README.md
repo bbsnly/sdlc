@@ -86,9 +86,11 @@ In Claude Code, one command:
 /sdlc:next
 ```
 
-It works the current story to its next gate and stops there. Run it again for
-the next gate, and again until the story is committed and its retro is written.
-Nothing else is needed, and nothing else is the intended way in.
+It works the current story through its gates, one at a time, until the story is
+committed and its retro is written, or until a gate needs a person. Run it again
+after that, or after a session that ended part-way, and it picks up at the first
+gate that has not passed. Nothing else is needed, and nothing else is the
+intended way in.
 
 Underneath, everything the skill does is the `sdlc` command, and you can run any
 of it yourself — to see where a story is, to take over a gate, or to script the

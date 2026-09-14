@@ -20,6 +20,8 @@ why.
 
 - the diff: `git diff` against the trunk branch in `.sdlc/config.json`, and the whole of every
   file it touches. A diff read without its surroundings misses the thing it broke.
+- every new file: the story's work is not committed yet, and `git diff` does not show a file
+  git has never seen. `git status --short` lists them as `??`; read each one in full.
 - the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names
 - `.sdlc/stories/<ID>/PLAN.md`, `TEST-PLAN.md`, `VERIFICATION.md`
 - `.sdlc/stories/<ID>/reviews/` — what the design reviewers said. A finding that was raised at

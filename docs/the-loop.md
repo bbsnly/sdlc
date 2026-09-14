@@ -118,12 +118,14 @@ The plan is the smallest change that makes the frozen tests pass, in steps
 somebody else could follow, with the alternative that was rejected and why.
 
 The reviewers run in parallel and do not read each other's work. The architect
-blocks; security blocks when the story is security-sensitive; the other three
-report but cannot stop the gate — and cannot be skipped either.
+blocks; security blocks when the story is security-sensitive; perf never has to
+approve, but its block stops the gate, because it blocks only on a performance
+budget the contract states. Red-team and human-advocate report but cannot stop
+the gate — and none of the five can be skipped.
 
 **Refused without it:** a pass with the plan missing, a reviewer that has not
-reported, a blocking reviewer that has not approved, or an approval of a plan
-that has since changed.
+reported, a blocking reviewer that has not approved, a block from perf, or an
+approval of a plan that has since changed.
 
 ## Gate 5 — `implementation`
 

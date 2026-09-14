@@ -152,7 +152,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 
 ### The plugin
 
-- `/sdlc:next` works the current story to its next gate and stops there.
+- `/sdlc:next` works the current story through its gates, one at a time, until
+  it is committed or needs a person, and picks up where a session left off.
 - Eleven agents, one per role: researcher, sdet, implementer, architect,
   security, red-team, perf, human-advocate, verifier, code-reviewer and
   bookkeeper.

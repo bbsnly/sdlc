@@ -93,8 +93,7 @@ tag. `/plugin update sdlc@sdlc` therefore gives you the plugin as it is on
 `main`, which can be ahead of the binary release you have installed — the
 version in the plugin's manifest names the release it was cut for, not the
 commit you received. The two halves are kept compatible on purpose, and the
-binary is the one that enforces; if they ever disagree, `sdlc doctor` is what
-tells you.
+binary is the one that enforces.
 
 ### The skill on its own, with `npx skills add`
 

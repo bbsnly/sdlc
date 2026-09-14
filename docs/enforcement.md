@@ -323,10 +323,11 @@ session. A switch an assistant can reach is not a control.
 
 ## Stopping mid-story
 
-A session that ends its turn while a story is being worked on — without
-finishing the gate, handing the story to a person, or ending the iteration —
-leaves the story where nobody is looking. The `Stop` hook sends that stop back,
-with what to do instead: work the next gate, `sdlc escalate`, or `sdlc stop`.
+A session that ends its turn while a story is being worked on — without handing
+the story to a person or ending the iteration — leaves the story where nobody
+is looking. Finishing a gate is not a place to stop: the next one is waiting.
+The `Stop` hook sends that stop back, with what to do instead: work the next
+gate, `sdlc escalate`, or `sdlc stop`.
 
 A stop it has already sent back goes through, so a session is never held in a
 loop. The count is kept per story and starts again whenever anything is recorded
