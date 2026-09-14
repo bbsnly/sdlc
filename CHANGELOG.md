@@ -248,7 +248,7 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `CLAUDE.md` or a frozen test, or a Windows short name such as `SDLC~1`, named
   the file in letters no rule matched, and `rm notes/state/active` went through.
 - A wrapper no longer hides what it runs. After `timeout 60`, `sudo -u me`,
-  `ssh localhost`, `caffeinate`, `direnv exec` or `find -exec`, a `git commit`, an
+  `ssh localhost`, `caffeinate`, `direnv exec` or any `find -exec`, a `git commit`, an
   `sdlc approve` or the shell a document is handed to went unread, and sdlc is
   now found behind a wrapper the rules do not know. PowerShell's `<# ... #>`
   comment no longer hides the command after it.

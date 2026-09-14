@@ -182,6 +182,8 @@ func TestAWrapperDoesNotHideWhatItRuns(t *testing.T) {
 		"direnv exec . git commit -m x",
 		"ssh localhost git commit -m x",
 		`find . -maxdepth 0 -exec git commit -m x \;`,
+		`find . -maxdepth 0 -exec true \; -exec git commit -m x \;`,
+		`find . -maxdepth 0 -exec true {} + -exec git commit -m x \;`,
 		"timeout 60 bash <<'EOF'\ngit commit -m x\nEOF",
 		"ssh localhost bash <<'EOF'\ngit commit -m x\nEOF",
 		"firejail sh <<'EOF'\ngit commit -m x\nEOF",
@@ -190,6 +192,8 @@ func TestAWrapperDoesNotHideWhatItRuns(t *testing.T) {
 	}
 	allowed(t, "docker compose --project-name sdlc stop", ready)
 	allowed(t, "direnv allow . && ls", notReady)
+	allowed(t, `find . -name '*.go' -exec grep -l commit {} \; -print`, notReady)
+	allowed(t, "find . -name git -o -name commit", notReady)
 }
 
 // A refusal's route is what the agent does next. The commit gate's named

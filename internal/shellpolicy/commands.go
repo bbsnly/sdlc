@@ -83,6 +83,12 @@ func (l *lexer) read(rs []rune) {
 		case r == '\\' && i+1 < len(rs) && rs[i+1] == '\n':
 			i++
 			l.endWord()
+		case r == '\\' && !l.powerShell && i+1 < len(rs) && strings.ContainsRune(";&|", rs[i+1]):
+			// An escaped separator is a character of the word, as find's `\;`
+			// is. Read as a separator, it ended find before a second -exec.
+			i++
+			l.word.WriteRune(rs[i])
+			l.started = true
 		case r == '\'':
 			end := find(rs, i+1, '\'')
 			l.word.WriteString(string(rs[i+1 : end]))
@@ -119,6 +125,12 @@ func (l *lexer) read(rs []rune) {
 			i = l.redirect(rs, i)
 		case r == ' ' || r == '\t' || r == '\r':
 			l.endWord()
+		case r == '{' && i+1 < len(rs) && rs[i+1] == '}':
+			// `{}` is a word, the one find puts each file in. Read as a group,
+			// `-exec true {} +` ended find before the -exec after it.
+			i++
+			l.word.WriteString("{}")
+			l.started = true
 		case r == '(':
 			l.endCommand()
 			l.depth++
@@ -245,11 +257,14 @@ func programsAt(line string, powerShell bool, depth int) []ran {
 		} else if !run.shell {
 			out = append(out, ran{run.words, depth > 0 || l.nested[i]})
 			if base(run.words[0]) == "find" {
-				// `find . -exec git commit -m x \;` runs git.
+				// Each -exec runs a command:
+				// `find . -exec true \; -exec git commit -m x \;` runs git.
 				for j, w := range run.words {
-					if exec := program(run.words[j+1:]); findRuns(w) && len(exec.words) > 0 {
+					if !findRuns(w) {
+						continue
+					}
+					if exec := program(run.words[j+1:]); len(exec.words) > 0 {
 						out = append(out, ran{exec.words, true})
-						break
 					}
 				}
 			}
