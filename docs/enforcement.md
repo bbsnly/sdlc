@@ -321,6 +321,16 @@ A `fail` is always recordable. A gate can fail precisely because its work could
 not be done, and refusing to record that would leave the loop with nowhere to
 put the truth.
 
+`sdlc start` holds new work to the same standard before it begins. A story
+picked up again is not held to it, because its own work is in the tree:
+
+| Refused | Code |
+| --- | --- |
+| HEAD is not on `git.trunk_branch` | `SDLC-E0038` |
+| uncommitted work that belongs to no story | `SDLC-E0039` |
+| trunk is behind `origin`, with `git.remote` on | `SDLC-E0040` |
+| trunk fails `commands.smoke` | `SDLC-E0041` |
+
 ## Turning it off
 
 `SDLC_ENFORCE=0` in the environment you start the session from disables every

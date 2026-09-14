@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
@@ -108,6 +109,66 @@ func Clean(ctx context.Context, root string) (bool, error) {
 		return false, err
 	}
 	return strings.TrimSpace(string(out)) == "", nil
+}
+
+// Changes lists every path with uncommitted changes, tracked or not, the way git
+// reports them: repository-relative and slash-separated, with a directory in
+// which nothing is tracked reported once, as the directory.
+func Changes(ctx context.Context, root string) ([]string, error) {
+	out, err := git(ctx, root, nil, "status", "--porcelain", "-z", "--untracked-files=normal")
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	entries := strings.Split(string(out), "\x00")
+	for i := 0; i < len(entries); i++ {
+		entry := entries[i]
+		if len(entry) < 4 {
+			continue
+		}
+		paths = append(paths, entry[3:])
+		// A rename or a copy is followed by the path it came from.
+		if (entry[0] == 'R' || entry[0] == 'C') && i+1 < len(entries) {
+			i++
+			paths = append(paths, entries[i])
+		}
+	}
+	return paths, nil
+}
+
+// Branch is the branch HEAD is on, or "" when HEAD is detached. A repository
+// with no commits yet is on the branch its first commit will be made on.
+func Branch(ctx context.Context, root string) (string, error) {
+	out, err := git(ctx, root, nil, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if err == nil {
+		return firstLine(string(out)), nil
+	}
+	if head, headErr := git(ctx, root, nil, "rev-parse", "--abbrev-ref", "HEAD"); headErr == nil &&
+		firstLine(string(head)) == "HEAD" {
+		return "", nil
+	}
+	return "", err
+}
+
+// Behind fetches branch from remote and counts the commits on it that HEAD does
+// not have. It never prompts: a remote that wants a password it has not been
+// given is a remote that could not be asked.
+func Behind(ctx context.Context, root, remote, branch string) (int, error) {
+	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	if _, err := git(ctx, root, env, "fetch", "--quiet", remote, branch); err != nil {
+		return 0, err
+	}
+	out, err := git(ctx, root, nil, "rev-list", "--count", "HEAD..FETCH_HEAD")
+	if err != nil {
+		return 0, err
+	}
+	n, err := strconv.Atoi(firstLine(string(out)))
+	if err != nil {
+		return 0, sdlcerr.New(sdlcerr.RepositoryUnreadable,
+			"git rev-list did not report a count",
+			"git said: "+firstLine(string(out))).WithCause(err)
+	}
+	return n, nil
 }
 
 // Override is content to hash in place of a file's own; see TreeHash. Path is

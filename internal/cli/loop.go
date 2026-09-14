@@ -38,15 +38,18 @@ func newStartCmd() *cobra.Command {
 		Example: "  sdlc start\n  sdlc start AUTH-3",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			asked := ""
+			if len(args) == 1 {
+				asked = args[0]
+			}
+			if err := checkTrunkForNewWork(cmd, asked); err != nil {
+				return err
+			}
 			s, _, unlock, err := openStoreForWriting(cmd)
 			if err != nil {
 				return err
 			}
 			defer unlock()
-			asked := ""
-			if len(args) == 1 {
-				asked = args[0]
-			}
 
 			active, err := s.Active()
 			if err != nil {
@@ -93,8 +96,7 @@ func newStartCmd() *cobra.Command {
 			}
 			// A story that is already in progress is being picked up again,
 			// whether or not the iteration that started it is still running.
-			resume := story.Status == model.StatusInProgress ||
-				story.Status == model.StatusAwaitingHuman
+			resume := resuming(story.Status)
 			// Picking a story up again is the no-op the help promises it is:
 			// SetStoryStatus writes nothing when the status is already the one
 			// asked for, which keeps a resume out of the tree the reviewers
@@ -117,6 +119,12 @@ func newStartCmd() *cobra.Command {
 			return reportStart(cmd, s, id, resume)
 		},
 	}
+}
+
+// resuming is whether starting a story in this status picks it up again rather
+// than beginning it.
+func resuming(status model.Status) bool {
+	return status == model.StatusInProgress || status == model.StatusAwaitingHuman
 }
 
 // refuseIfFinished stops a story whose gates have all passed from being put

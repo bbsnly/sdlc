@@ -13,8 +13,8 @@ import (
 // in which a gate has a document to store.
 func storyUnderway(t *testing.T) string {
 	t.Helper()
-	root := project(t)
-	mustRun(t, "init")
+	root := gitProject(t)
+	initialised(t)
 	mustRun(t, "start")
 	return root
 }

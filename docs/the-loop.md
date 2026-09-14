@@ -55,6 +55,12 @@ would read them. A criterion that describes an implementation rather than an
 observable behaviour fails the gate here, which is the cheapest place in the
 loop to find out.
 
+A new story starts only from a trunk fit to start from. `sdlc start` refuses
+another branch, uncommitted work that belongs to no story, a trunk behind
+`origin` when [`git.remote`](configuration.md#git) is on, and a trunk that
+fails `commands.smoke`. A story picked up again is not held to it: its own work
+is in the tree.
+
 With [`human_gates.dor_advocate_check`](configuration.md#human_gates) on,
 `sdlc:human-advocate` reads the story first, as the person it is for would, and
 the gate waits for its review. The review is advisory, and it goes stale if the

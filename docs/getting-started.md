@@ -64,6 +64,15 @@ them nothing to hold the work to.
 You do not need all of it. The three that earn their keep first are the
 architecture rules, the test conventions, and the glossary.
 
+Then commit it, with everything `init` wrote. A new story starts only from a
+trunk with nothing uncommitted on it, because the story's own commit takes the
+whole working tree:
+
+```console
+$ git add .sdlc user_stories.json CLAUDE.md
+$ git commit -m "Set up the sdlc loop"
+```
+
 ## Write a story
 
 Stories live in the file named by `backlog.path` in `.sdlc/config.json`, which

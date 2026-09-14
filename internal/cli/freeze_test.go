@@ -27,7 +27,7 @@ func gitProject(t *testing.T) string {
 	t.Setenv("GIT_DIR", filepath.Join(root, ".git"))
 	t.Setenv("GIT_WORK_TREE", root)
 
-	cmd := exec.CommandContext(t.Context(), "git", "init", "--quiet")
+	cmd := exec.CommandContext(t.Context(), "git", "init", "--quiet", "--initial-branch=main")
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
@@ -36,12 +36,21 @@ func gitProject(t *testing.T) string {
 	return root
 }
 
+// initialised is `sdlc init` with what it wrote committed, which is where a
+// project is when its first story starts: `sdlc start` begins new work only from
+// a trunk with nothing uncommitted on it.
+func initialised(t *testing.T) {
+	t.Helper()
+	mustRun(t, "init")
+	commitEverything(t, ".")
+}
+
 // frozenStory is a project with an iteration running and one acceptance test
 // written, which is the state Gate 3 starts from.
 func frozenStory(t *testing.T) string {
 	t.Helper()
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GateTestsFrozen)
 	writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// AC-1\n")
@@ -128,7 +137,7 @@ func TestFreezingTwiceIsRefused(t *testing.T) {
 
 func TestFreezingWithNoTestsSaysWhereToLook(t *testing.T) {
 	gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 
 	r := run(t, "freeze")
@@ -303,6 +312,9 @@ func TestAnotherStorysFreezeIsNotThisStorysToLift(t *testing.T) {
 	mustRun(t, "freeze")
 	addStory(t, root, "US-002")
 	mustRun(t, "stop")
+	// Committed, or the second story would not start on top of the first
+	// one's work.
+	commitEverything(t, root)
 	mustRun(t, "start", "US-002")
 
 	r := run(t, "unfreeze", "--reason", "these are in my way")

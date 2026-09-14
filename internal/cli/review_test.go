@@ -40,7 +40,7 @@ func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
 		name := map[bool]string{false: "blocking by default", true: "advisory when configured"}[advisory]
 		t.Run(name, func(t *testing.T) {
 			root := gitProject(t)
-			mustRun(t, "init")
+			initialised(t)
 			if advisory {
 				setConfigOnDisk(t, root, "reviews", map[string]any{"gate7_advisory": true})
 			}
@@ -68,7 +68,7 @@ func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
 func planned(t *testing.T) string {
 	t.Helper()
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GateDesignReview)
 	return root
@@ -79,7 +79,7 @@ func planned(t *testing.T) string {
 // reviewer it expects.
 func TestTheHumanAdvocateReadsTheStoryAtGate1WhenTheProjectAsks(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 
 	if listed := decode[reviewListPayload](t, mustRun(t, "review", "list", "--gate", "dor", "--json")); len(listed.Reviews) != 0 {
@@ -259,7 +259,7 @@ func TestSecuritySensitivityDecidesWhetherSecurityBlocks(t *testing.T) {
 	for _, c := range []struct{ sensitive, blocks bool }{{true, true}, {false, false}} {
 		t.Run(map[bool]string{true: "sensitive", false: "not sensitive"}[c.sensitive], func(t *testing.T) {
 			root := gitProject(t)
-			mustRun(t, "init")
+			initialised(t)
 			mustRun(t, "start")
 
 			mustRunWith(t, "# Analysis\n", "artifact", "write", "analysis")

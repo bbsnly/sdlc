@@ -82,6 +82,13 @@ It also refuses a story whose gates have all passed, rather than putting
 finished work back in progress. The way back into a finished story is to record
 the gate that failed — see [SDLC-E0033](troubleshooting.md#sdlc-e0033).
 
+Before it begins a new story — not one it is picking up again — it checks that
+trunk is somewhere to start from: HEAD is on `git.trunk_branch`, nothing is
+uncommitted outside `.sdlc/` and the backlog, trunk is not behind `origin` when
+`git.remote` is on, and `commands.smoke` passes. Each has its own refusal, from
+[SDLC-E0038](troubleshooting.md#sdlc-e0038) to
+[SDLC-E0041](troubleshooting.md#sdlc-e0041).
+
 ## `sdlc stop`
 
 End the current iteration without recording a result.

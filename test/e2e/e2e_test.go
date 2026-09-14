@@ -44,11 +44,15 @@ func project(t *testing.T, binary string) string {
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
 	}
-	git(t, root, "init", "--quiet")
+	git(t, root, "init", "--quiet", "--initial-branch=main")
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/demo\n\ngo 1.26\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	runTool(t, binary, root, "init")
+	// Committed, as a project is before its first story: `sdlc start` begins new
+	// work only from a trunk with nothing uncommitted on it.
+	git(t, root, "add", "-A")
+	git(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--quiet", "-m", "sdlc init")
 	return root
 }
 

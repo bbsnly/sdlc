@@ -168,8 +168,8 @@ func TestInitJSONSaysWhatItDid(t *testing.T) {
 // ------------------------------------------------------------------ the loop
 
 func TestAStoryGoesThroughStartGateAndStop(t *testing.T) {
-	project(t)
-	mustRun(t, "init")
+	gitProject(t)
+	initialised(t)
 
 	start := decode[startPayload](t, mustRun(t, "start", "--json"))
 	if start.Story != "US-001" || start.Resume {
@@ -217,8 +217,8 @@ func TestAStoryGoesThroughStartGateAndStop(t *testing.T) {
 }
 
 func TestStartingTwiceOnTheSameStoryChangesNothing(t *testing.T) {
-	project(t)
-	mustRun(t, "init")
+	gitProject(t)
+	initialised(t)
 	mustRun(t, "start")
 
 	again := decode[startPayload](t, mustRun(t, "start", "--json"))
@@ -228,8 +228,8 @@ func TestStartingTwiceOnTheSameStoryChangesNothing(t *testing.T) {
 }
 
 func TestStartingASecondStoryIsRefused(t *testing.T) {
-	project(t)
-	mustRun(t, "init")
+	gitProject(t)
+	initialised(t)
 	writeFile(t, ".", "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"One","status":"ready","priority":1},
 	  {"id":"B-2","title":"Two","status":"ready","priority":2}]}`)
@@ -281,8 +281,8 @@ func TestStopRemovesAnIterationFileThatNamesNoStory(t *testing.T) {
 }
 
 func TestStartExplainsWhenNothingIsRunnable(t *testing.T) {
-	project(t)
-	mustRun(t, "init")
+	gitProject(t)
+	initialised(t)
 	writeFile(t, ".", "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"Done","status":"done"},
 	  {"id":"B-2","title":"Blocked","status":"blocked"},
@@ -302,8 +302,8 @@ func TestStartExplainsWhenNothingIsRunnable(t *testing.T) {
 // A backlog that is finished is not a backlog that is stuck, and the sentence
 // has to say which, because the two want opposite things from the reader.
 func TestStartSaysWhenTheBacklogIsSimplyFinished(t *testing.T) {
-	project(t)
-	mustRun(t, "init")
+	gitProject(t)
+	initialised(t)
 	writeFile(t, ".", "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"One","status":"done"},
 	  {"id":"B-2","title":"Two","status":"done"}]}`)
@@ -320,8 +320,8 @@ func TestStartSaysWhenTheBacklogIsSimplyFinished(t *testing.T) {
 // ------------------------------------------------------------------ gates
 
 func TestGateRejectsANameThisVersionDoesNotKnow(t *testing.T) {
-	project(t)
-	mustRun(t, "init")
+	gitProject(t)
+	initialised(t)
 	mustRun(t, "start")
 
 	r := run(t, "gate", "vibes", "pass")
@@ -334,8 +334,8 @@ func TestGateRejectsANameThisVersionDoesNotKnow(t *testing.T) {
 }
 
 func TestGateRejectsAnOutcomeThatIsNotAnOutcome(t *testing.T) {
-	project(t)
-	mustRun(t, "init")
+	gitProject(t)
+	initialised(t)
 	mustRun(t, "start")
 
 	r := run(t, "gate", "analysis", "probably")
@@ -357,8 +357,8 @@ func TestGateWithoutAnIterationSaysWhatToDo(t *testing.T) {
 // A gate that fails is still recorded successfully: the command reports what
 // happened, it does not decide whether that is acceptable.
 func TestRecordingAFailedGateSucceeds(t *testing.T) {
-	project(t)
-	mustRun(t, "init")
+	gitProject(t)
+	initialised(t)
 	mustRun(t, "start")
 
 	got := decode[gatePayload](t, mustRun(t, "gate", "code_review", "fail",
@@ -369,8 +369,8 @@ func TestRecordingAFailedGateSucceeds(t *testing.T) {
 }
 
 func TestGateCanTargetAStoryThatIsNotTheActiveOne(t *testing.T) {
-	project(t)
-	mustRun(t, "init")
+	gitProject(t)
+	initialised(t)
 	writeFile(t, ".", "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"One","status":"ready","priority":1},
 	  {"id":"B-2","title":"Two","status":"ready","priority":2}]}`)
@@ -521,7 +521,7 @@ func TestDoctorSkipsWhatItCannotCheckYet(t *testing.T) {
 // the record could not say what was wrong.
 func TestAnUnreadableRecordHasAWayOut(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	record := filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")
 	if err := os.WriteFile(record, []byte("{not json"), 0o644); err != nil {
@@ -544,7 +544,7 @@ func TestAnUnreadableRecordHasAWayOut(t *testing.T) {
 // and doctor, reading through Record, saw a fresh record and said all was well.
 func TestDoctorNamesAMissingRecord(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	if err := os.Remove(filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")); err != nil {
 		t.Fatal(err)
@@ -582,7 +582,7 @@ func TestDoctorNamesLoopStateTheHookCannotRead(t *testing.T) {
 // error calling itself a bug.
 func TestDoctorNamesTheRecordOfAStoryNobodyIsWorkingOn(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	mustRun(t, "stop")
 	record := filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")

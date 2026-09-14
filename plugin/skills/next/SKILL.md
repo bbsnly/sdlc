@@ -56,6 +56,12 @@ This picks up a story already under way, or takes the next runnable one. If it f
 `SDLC-E0010` there is nothing to work on: show the user the `why` field from the error, run
 `sdlc story list` so they can see the backlog, and stop.
 
+If it fails with `SDLC-E0038`, `SDLC-E0039`, `SDLC-E0040` or `SDLC-E0041`, trunk is not somewhere
+a new story can start from: HEAD is on another branch, there is uncommitted work that belongs to
+no story, trunk is behind `origin`, or it fails its smoke check. Show the user the error as it
+is, and stop. Do not commit, stash, discard or fix anything on trunk to get past it — that work
+is not a story's, and nothing the loop records would account for it.
+
 Read the story from the backlog file named by `backlog.path` in `.sdlc/config.json`. Check its
 acceptance criteria are testable: each one names an observable behaviour, not an implementation.
 If a criterion cannot be turned into a failing test, that is a Definition-of-Ready problem —

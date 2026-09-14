@@ -7,12 +7,12 @@ import (
 	"errors"
 	"log/slog"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/pathrules"
+	"github.com/bbsnly/sdlc/internal/shellx"
 )
 
 // formatTimeout bounds one run of commands.fmt_file. It is inside the hook's own
@@ -63,16 +63,14 @@ func formatWritten(raw []byte, getenv func(string) string, warn func(string)) tu
 		return reply
 	}
 
-	shell, err := findShell()
-	if err != nil {
-		reply.SystemMessage = "sdlc: commands.fmt_file was not run on " + rel +
-			", because neither sh nor bash is on PATH."
-		return reply
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), formatTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, shell, "-c", command)
-	cmd.Dir = project
+	cmd, err := shellx.Command(ctx, project, command)
+	if err != nil {
+		reply.SystemMessage = "sdlc: commands.fmt_file was not run on " + rel +
+			", because " + err.Error() + "."
+		return reply
+	}
 	cmd.Env = append(os.Environ(), "FILE="+p.ToolInput.FilePath)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
@@ -82,10 +80,7 @@ func formatWritten(raw []byte, getenv func(string) string, warn func(string)) tu
 		return reply
 	}
 
-	said := strings.TrimSpace(out.String())
-	if len(said) > formatOutputLimit {
-		said = "..." + said[len(said)-formatOutputLimit:]
-	}
+	said := shellx.Tail(out.String(), formatOutputLimit)
 	why := "it exited with " + err.Error()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		why = "it did not finish in " + formatTimeout.String()
@@ -98,15 +93,4 @@ func formatWritten(raw []byte, getenv func(string) string, warn func(string)) tu
 	}
 	reply.Decision, reply.Reason = "block", reason
 	return reply
-}
-
-// findShell is what runs a configured command. The commands are written for a
-// POSIX shell, and Claude Code on Windows runs under Git Bash, which has both.
-func findShell() (string, error) {
-	for _, name := range []string{"sh", "bash"} {
-		if path, err := exec.LookPath(name); err == nil {
-			return path, nil
-		}
-	}
-	return "", exec.ErrNotFound
 }

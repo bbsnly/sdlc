@@ -47,6 +47,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   worked on, and a formatter that fails is reported to the session. The
   commands `sdlc init` writes for it name the files their formatter
   understands.
+- A new story starts only from a healthy trunk. `sdlc start` refuses another
+  branch, uncommitted work that belongs to no story, a trunk behind `origin`
+  when `git.remote` is on, and a trunk that fails `commands.smoke`. A story
+  picked up again is not held to it.
 - `sdlc cost` keeps what a story spent beside everything else it did.
   `sdlc cost add --usd` records an amount, `sdlc status` reports the running
   total, and crossing one of `budget.alert_fractions` says so once, on

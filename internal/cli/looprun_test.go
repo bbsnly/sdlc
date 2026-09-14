@@ -77,7 +77,7 @@ func commitEverything(t *testing.T, root string) {
 // be refused.
 func TestAStoryGoesAllTheWayThrough(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 
 	reach(t, root, "")
@@ -97,7 +97,7 @@ func TestAStoryGoesAllTheWayThrough(t *testing.T) {
 // reaches the commit gate having skipped the one that would have stopped it.
 func TestAGateCannotBeRecordedOutOfOrder(t *testing.T) {
 	gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 
 	r := run(t, "gate", "code_review", "pass", "--note", "looks fine")
@@ -124,7 +124,7 @@ func TestAGateCannotBeRecordedOutOfOrder(t *testing.T) {
 // put the truth.
 func TestAnyGateCanBeRecordedAsFailedWithNothingDone(t *testing.T) {
 	gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 
 	for _, gate := range model.Gates {
@@ -137,7 +137,7 @@ func TestAnyGateCanBeRecordedAsFailedWithNothingDone(t *testing.T) {
 func finishedStory(t *testing.T) string {
 	t.Helper()
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	reach(t, root, "")
 	return root
@@ -173,7 +173,7 @@ func TestPassingTheLastGateTakesTheStoryOutOfTheBacklog(t *testing.T) {
 // is the one that has to know the loop is over.
 func TestTheLastGateSaysTheStoryIsDone(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GateRetro)
 	satisfy(t, root, model.GateRetro)
@@ -223,7 +223,7 @@ func onlyStory(t *testing.T, payload storyListPayload) storyRow {
 // sentence a session ends on is the only place a person sees which happened.
 func TestStopSaysWhetherTheStoryIsFinished(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GatePlan)
 
@@ -273,7 +273,7 @@ func TestStatusSaysWhichKindOfNothingIsLeft(t *testing.T) {
 // to come before anything is written.
 func TestAGateCannotBeRecordedAgainstAStoryThatIsNotInTheBacklog(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 
 	r := run(t, "gate", "dor", "pass", "--story", "NOPE-9")
@@ -419,7 +419,7 @@ func addStory(t *testing.T, root, id string) {
 // this on its second story.
 func TestASecondStoryCanFreezeItsOwnTests(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	addStory(t, root, "US-002")
 	mustRun(t, "start")
 
@@ -450,7 +450,7 @@ func TestASecondStoryCanFreezeItsOwnTests(t *testing.T) {
 // what stopped the next story.
 func TestFinishingAStoryLiftsItsFreeze(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	reach(t, root, "")
 	mustRun(t, "stop")
@@ -466,7 +466,7 @@ func TestFinishingAStoryLiftsItsFreeze(t *testing.T) {
 // after Gate 3.
 func TestStoppingAnUnfinishedStoryKeepsItsFreeze(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GatePlan)
 
@@ -491,7 +491,7 @@ func TestStoppingAnUnfinishedStoryKeepsItsFreeze(t *testing.T) {
 // not being true.
 func TestCodeChangedAfterTheReviewCannotBeCommitted(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GateCommit)
 
@@ -529,7 +529,7 @@ func backlogBytes(t *testing.T, root string) string {
 
 func TestResumingAStoryDoesNotStaleItsReviews(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GateCommit)
 
@@ -549,7 +549,7 @@ func TestResumingAStoryDoesNotStaleItsReviews(t *testing.T) {
 
 func TestCommittingWhatWasReviewedStillPasses(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GateCommit)
 	commitEverything(t, root)

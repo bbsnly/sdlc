@@ -66,7 +66,10 @@ func detectGo(root string) (Stack, bool) {
 	return Stack{
 		Name: "Go",
 		Commands: map[string]string{
-			"smoke":     "go build ./... && go vet ./...",
+			// A module with no packages in it yet is not broken, and both
+			// `go build ./...` and `go vet ./...` fail on one; vet also
+			// compiles a package that so far has only tests.
+			"smoke":     `test -z "$(go list ./...)" || go vet ./...`,
 			"build":     "go build ./...",
 			"test":      "go test ./... -count=1",
 			"lint":      "golangci-lint run",

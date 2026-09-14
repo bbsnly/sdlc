@@ -63,6 +63,18 @@ var (
 	ApprovalRequired = register("SDLC-E0037",
 		`hand it to a person with "sdlc escalate pre_commit_approval --message ..." and stop; once they have run "sdlc approve", commit the work they approved`)
 
+	NotOnTrunk = register("SDLC-E0038",
+		`switch to the branch named by git.trunk_branch in .sdlc/config.json, then start again`)
+
+	UncommittedWork = register("SDLC-E0039",
+		`commit it, stash it, or discard it, then start again — the loop's own files under .sdlc/ and the backlog do not count`)
+
+	TrunkBehind = register("SDLC-E0040",
+		`bring trunk up to date — "git pull --rebase" — then start again`)
+
+	TrunkBroken = register("SDLC-E0041",
+		`fix trunk, or revert what broke it, then start again — commands.smoke in .sdlc/config.json is the check that failed`)
+
 	UnknownGate = register("SDLC-E0013",
 		`run "sdlc gate --help" to see the gate names this version knows`)
 

@@ -13,7 +13,7 @@ import (
 // documented as what a story is expected to cost, and read by nothing.
 func TestCostIsRecordedAgainstTheStory(t *testing.T) {
 	gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 
 	if got := mustRun(t, "cost").stdout; !strings.Contains(got, "$0.00") {
@@ -41,7 +41,7 @@ func TestCostIsRecordedAgainstTheStory(t *testing.T) {
 // entry after it would be noise, and noise is how a warning stops being read.
 func TestAnAlertFiresOnceWhenItIsCrossed(t *testing.T) {
 	gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 
 	// The default budget is $60, alerting at a half, four fifths and all of it.
@@ -77,7 +77,7 @@ func TestAnAlertFiresOnceWhenItIsCrossed(t *testing.T) {
 // would question.
 func TestAnAmountThatIsNotAnAmountIsRefused(t *testing.T) {
 	gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 
 	for _, bad := range []string{"", "null", "n/a", "-1", "NaN"} {
@@ -97,7 +97,7 @@ func TestAnAmountThatIsNotAnAmountIsRefused(t *testing.T) {
 // cost" is a question with an answer either way.
 func TestWithNoBudgetTheSpendIsStillKept(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	setBudgetOnDisk(t, root, 0)
 	mustRun(t, "start")
 

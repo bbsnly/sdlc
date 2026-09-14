@@ -75,7 +75,8 @@ $ sdlc doctor
 and adds the contract section to your `CLAUDE.md`. It never overwrites your own
 files, and it writes no `.gitignore`: what a project commits is the project's
 decision. `doctor` checks the result and names the command that fixes anything
-it does not like.
+it does not like. Commit what `init` wrote before the first story: a new story
+starts only from a trunk with nothing uncommitted on it.
 
 ## Using it
 

@@ -331,6 +331,69 @@ approving again, and work that was sent back stays sent back until it changes.
 The same refusal comes from the hook, before `git commit`, as
 [`commit-gate`](enforcement.md#commit-gate).
 
+### SDLC-E0038
+
+A new story starts from trunk, and HEAD is somewhere else: on another branch, or
+detached.
+
+The loop commits every story straight to the branch `git.trunk_branch` names —
+`main`, unless `.sdlc/config.json` says otherwise — so a story begun anywhere
+else is not where its commit is recorded as landing. Switch back, and start
+again:
+
+```console
+$ git switch main
+$ sdlc start
+```
+
+Only new work is held to this. A story already under way is picked up again as
+it is.
+
+### SDLC-E0039
+
+There is uncommitted work that belongs to no story, and a new story would take
+it with it.
+
+Gate 8 commits a story with everything in the working tree, so work left lying
+around is reviewed and committed as part of whatever starts next. The refusal
+names what it found. Commit it, stash it, or discard it:
+
+```console
+$ git stash --include-untracked
+$ sdlc start
+```
+
+The loop's own files do not count: everything under `.sdlc/`, and the backlog,
+whose statuses the loop writes. Straight after `sdlc init`, what is left is
+usually the contract section it added to `CLAUDE.md` — commit it.
+
+### SDLC-E0040
+
+`git.remote` is on, and trunk is behind `origin`.
+
+A story started on an old trunk is planned, tested and reviewed against code
+that has already changed, and meets the difference only when it is committed.
+Bring trunk up to date first:
+
+```console
+$ git pull --rebase
+$ sdlc start
+```
+
+When `origin` cannot be asked at all, `sdlc start` says so and goes ahead:
+working offline is not the same as being behind.
+
+### SDLC-E0041
+
+Trunk fails `commands.smoke` before the story has changed anything.
+
+A story started on a broken trunk cannot tell its own failures from the ones
+that were already there. The refusal carries the end of what the check printed.
+Fix trunk, or revert the commit that broke it, and start again.
+
+If the check itself is what is wrong — it fails on a trunk that works — change
+`commands.smoke` in `.sdlc/config.json`. Leaving it out turns the check off.
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session as a system message, and

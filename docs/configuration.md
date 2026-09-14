@@ -50,8 +50,8 @@ Where your stories live, relative to the repository root. Default
 
 | Key | What it means |
 | --- | --- |
-| `trunk_branch` | the branch a story is committed to and diffed against. Default `main` |
-| `remote` | whether this repository has somewhere to push. Off by default, and the loop never pushes on its own either way |
+| `trunk_branch` | the branch a story starts from, is committed to, and is diffed against. `sdlc start` begins new work only there. Default `main` |
+| `remote` | whether this repository has an `origin` to keep up with. With it on, `sdlc start` fetches trunk from `origin` and will not begin new work while trunk is behind it. Off by default, and the loop never pushes either way |
 
 ## `commands`
 
@@ -68,7 +68,7 @@ are installed.
 | `fmt_check` | the verifier |
 | `fmt_file` | the hook, on each file a tool writes while a story is being worked on |
 | `coverage` | the verifier, compared against `thresholds.coverage_min` |
-| `smoke` | a fast sanity check |
+| `smoke` | `sdlc start`, on trunk, before each new story. Keep it fast: it runs before every story |
 
 Any key you add is available to the agents; these are the ones the loop looks
 for by name. A key you leave out is simply not run.

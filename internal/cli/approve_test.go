@@ -13,7 +13,7 @@ import (
 // past it, so a story handed to a person stays with them until they answer.
 func TestAnEscalatedStoryWaitsForAPersonToAnswer(t *testing.T) {
 	gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 
 	if r := run(t, "escalate", "spec_unclear", "--message", "which one?"); !strings.Contains(r.stderr, "no story being worked on") {
 		t.Errorf("an escalation with no iteration running was not refused:\n%s", r.stderr)
@@ -76,7 +76,7 @@ func TestAnEscalatedStoryWaitsForAPersonToAnswer(t *testing.T) {
 // read by nothing, so a high-risk story went to trunk with nobody asked.
 func TestAStoryInAPausedTierIsCommittedOnlyOnceAPersonApprovesIt(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	writeFile(t, root, "user_stories.json", `{"stories":[
 	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"High","priority":1,
 	   "acceptance_criteria":[{"id":"AC-1","given":"a paid invoice","when":"it is refunded","then":"the money goes back"}]}]}`)
@@ -110,7 +110,7 @@ func TestAStoryInAPausedTierIsCommittedOnlyOnceAPersonApprovesIt(t *testing.T) {
 // And a story in a tier that is not paused is committed as it always was.
 func TestAStoryInATierThatIsNotPausedIsNotHeld(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	setConfigOnDisk(t, root, "human_gates", map[string]any{"pre_commit_pause_tiers": []string{}})
 	writeFile(t, root, "user_stories.json", `{"stories":[
 	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"high","priority":1,
@@ -128,7 +128,7 @@ func TestAStoryInATierThatIsNotPausedIsNotHeld(t *testing.T) {
 // is not optional, and it goes on the record where the next session reads it.
 func TestARejectionNeedsAReasonAndRecordsIt(t *testing.T) {
 	root := gitProject(t)
-	mustRun(t, "init")
+	initialised(t)
 	mustRun(t, "start")
 	mustRun(t, "escalate", "pre_commit_approval", "--message", "ready to commit?")
 
