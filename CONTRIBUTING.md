@@ -82,6 +82,11 @@ archives, their checksums, an SBOM and a build provenance attestation, and
 finally `@bbsnly/sdlc` to npm. A pre-release tag (`v0.2.0-rc.1`) is marked as a
 pre-release on GitHub and published to npm under `next` rather than `latest`.
 
+The npm publish is a job of its own, after the release is open. If it fails —
+a token that can log in but not publish is the usual reason — the GitHub
+release is already out and complete. Fix the cause and use **Re-run failed
+jobs** on the run: only the `npm` job runs again.
+
 Two things the workflow cannot do for itself:
 
 - **`NPM_TOKEN`** must exist in the repository's Actions secrets, or the

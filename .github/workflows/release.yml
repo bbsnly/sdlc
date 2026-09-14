@@ -4,7 +4,7 @@ on:
   push:
     tags: ['v*']
 
-# Read-only by default. The release job asks for exactly what it needs.
+# Read-only by default. Each job asks for exactly what it needs.
 permissions:
   contents: read
 
@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the release and upload its archives
-      id-token: write # provenance for the archives and for the npm package
+      id-token: write # provenance for the archives
       attestations: write
     steps:
       # Actions are pinned to a commit SHA, not a tag: a tag can be moved.
@@ -74,7 +74,7 @@ jobs:
           # This does not prove the token may publish @bbsnly/sdlc: whoami
           # succeeds for a read-only token too. That one still fails at
           # `npm publish`, after the GitHub release is out -- replace the
-          # token and re-run the job.
+          # token and re-run the failed npm job.
           if ! who=$(npm whoami 2>&1); then
             echo "::error::NPM_TOKEN cannot authenticate to npm: ${who}" >&2
             exit 1
@@ -198,33 +198,58 @@ jobs:
       # goreleaser publishes a draft, so until this step the archives are
       # uploaded but not downloadable: a run that fails anywhere above leaves
       # nothing half-released, and no one can fetch an archive that has not
-      # been attested yet. If the npm step below fails, this release is still
+      # been attested yet. If the npm job fails, this release is still
       # correct and complete on its own -- every other install route works,
-      # and the publish can be rerun.
+      # and re-running that job publishes the package without touching it.
       - name: Open the release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "${GITHUB_REF_NAME}" --draft=false --repo "${GITHUB_REPOSITORY}"
 
+  # A job of its own so that "Re-run failed jobs" repeats only the publish.
+  # The release job cannot run twice for one tag: its archives are already
+  # uploaded, and an open release is immutable. A publish that failed inside
+  # that job could never be retried.
+  npm:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # the published release's checksums
+      id-token: write # provenance for the npm package
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.21.x'
+          registry-url: 'https://registry.npmjs.org'
+
       - name: Publish @bbsnly/sdlc
         shell: bash
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           # The checksums travel inside the package. npm packages are
           # immutable once published, so a checksum that shipped with the
           # installer is a stronger promise than one fetched at install time
-          # from the same place as the download.
-          cp dist/checksums.txt npm/checksums.txt
+          # from the same place as the download. They are taken from the
+          # release that was just opened, which is what the installer
+          # downloads from.
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" \
+            --pattern checksums.txt --dir npm --clobber
           cp LICENSE npm/LICENSE
 
           # The package's whole verification story is that it carries the pins
           # for its own release. If that copy were ever missing or stale, the
           # installer would quietly fall back to fetching them and nothing
-          # would fail -- so it is asserted here instead.
-          version=$(go run ./internal/tools/release version)
+          # would fail -- so it is asserted here instead. The version is the
+          # package's own, which the release job checked against the tag.
+          version=$(node -p "require('./npm/package.json').version")
           if ! grep -q "sdlc_${version}_linux_amd64.tar.gz" npm/checksums.txt; then
             echo "::error::npm/checksums.txt does not describe ${version}" >&2
             exit 1
@@ -237,4 +262,3 @@ jobs:
           tag=latest
           case "${version}" in *-*) tag=next ;; esac
           npm publish ./npm --provenance --access public --tag "$tag"
-

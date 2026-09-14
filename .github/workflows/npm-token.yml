@@ -1,8 +1,9 @@
 name: npm-token
 
 # The npm token is the one release ingredient a commit cannot check. The
-# release workflow runs on a tag, so a token that turns out to be missing,
-# expired or read-only costs a deleted tag and a re-cut release.
+# release workflow runs on a tag, so a token that turns out to be missing or
+# expired costs a failed release run, and one that is read-only leaves a
+# release out on GitHub with no npm package until the npm job is re-run.
 #
 # This runs the same two questions on demand -- can the token authenticate,
 # and would the package be accepted -- and publishes nothing. Run it from the
@@ -45,9 +46,9 @@ jobs:
           fi
           echo "npm: authenticated as ${who}"
 
-          # The real release copies these in from the build. Here they only
-          # have to exist, so that the dry run reports the file list the
-          # release would publish rather than a shorter one.
+          # The release workflow downloads these from the published release.
+          # Here they only have to exist, so that the dry run reports the file
+          # list the release would publish rather than a shorter one.
           cp LICENSE npm/LICENSE
           : > npm/checksums.txt
 
