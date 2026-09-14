@@ -87,6 +87,9 @@ func TestADocumentIsTextHoweverItIsHandedOver(t *testing.T) {
 
 	refused(t, "@'\ngit commit -m x\n'@ | pwsh -Command -", ps, "commit-gate")
 	refused(t, "@'\nlooks right\n'@ | sdlc approve A-1", ps, "approval-is-a-human-decision")
+	refused(t, "@'\ngit commit -m x\n'@ | iex", ps, "commit-gate")
+	refused(t, "$s = @'\ngit commit -m x\n'@\nInvoke-Expression $s", ps, "commit-gate")
+	refused(t, "@\"\nsdlc approve A-1\n\"@ | Invoke-Expression", ps, "approval-is-a-human-decision")
 	refused(t, "cat <<'EOF' | sh\ngit commit -m x\nEOF", notReady, "commit-gate")
 	refused(t, "source <<'EOF'\ngit commit -m x\nEOF", notReady, "commit-gate")
 }

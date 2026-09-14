@@ -1020,7 +1020,11 @@ func withoutDocuments(command string) string {
 			}
 			closer := strings.TrimPrefix(strings.TrimLeft(lines[end], " \t"), quote+"@")
 			kept[len(kept)-1] = opener
-			if runsAScript(opener + " " + closer) {
+			// A here-string is usually put in a variable and used on a later
+			// line, so the rest of the command is where it may be run:
+			// `$s = @'...'@` and then `Invoke-Expression $s`.
+			rest := append([]string{opener, closer}, lines[end+1:]...)
+			if runsAScript(strings.Join(rest, "\n")) {
 				kept = append(kept, lines[i+1:end]...)
 			}
 			kept = append(kept, closer)
@@ -1098,7 +1102,7 @@ func runsAScript(line string) bool {
 			continue
 		}
 		switch base(run.words[0]) {
-		case "fish", "eval", "source", ".",
+		case "fish", "eval", "source", ".", "iex", "invoke-expression",
 			"python", "python3", "perl", "ruby", "node", "deno", "bun", "php":
 			return true
 		}

@@ -268,7 +268,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   text, as a here-document is. A plan or review whose table named `git commit`
   or `sdlc stop` was refused as that command, and a here-document went to
   `source` when its `--note` merely said "source". A body handed to a shell or
-  an interpreter is still read for what it runs.
+  an interpreter, or to `Invoke-Expression` on a later line, is still read for
+  what it runs.
 - Which program a shell command runs is read with its quoting. A commit
   message, a `--note` or a `--message` that mentioned `sdlc approve`, `sdlc stop`
   or `sdlc unfreeze` after a `;` or in backticks was refused as that command,
