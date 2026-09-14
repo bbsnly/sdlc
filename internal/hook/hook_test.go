@@ -203,10 +203,21 @@ func TestNothingIsEnforcedWhileNoStoryIsBeingWorkedOn(t *testing.T) {
 // that commit met this story's gate.
 func TestAPathInTheHomeDirectoryIsNotTheProjects(t *testing.T) {
 	resolver := pathrules.NewResolver(loopProject(t))
-	for _, word := range []string{"~", "~/.claude/skills/check.py"} {
+	for _, word := range []string{"~", "~/.claude/skills/check.py", "~someone/.claude/settings.json"} {
 		if r := onDisk(resolver, word); r != "" {
 			t.Errorf("%s was the project's, as %q", word, r)
 		}
+	}
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	if r := onDisk(resolver, "~/.claude/settings.json"); r != "" {
+		t.Errorf("with HOME unset, ~/.claude/settings.json was the project's, as %q", r)
+	}
+	// Read as a home of "", ~/.claude is /.claude, which is outside every
+	// project but one at the root of the disk.
+	atRoot := pathrules.NewResolver(filepath.VolumeName(os.TempDir()) + string(filepath.Separator))
+	if r := onDisk(atRoot, "~/.claude/settings.json"); r != "" {
+		t.Errorf("with HOME unset, ~/.claude/settings.json was a project's at the root, as %q", r)
 	}
 	for _, word := range []string{"CLAUDE.md", "~CLAUDE.md"} {
 		if r := onDisk(resolver, word); r != word {

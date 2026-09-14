@@ -257,9 +257,15 @@ func onDisk(resolver pathrules.Resolver, word string) string {
 	// The shell expands ~ before the command sees it. Read as a directory
 	// called ~ in the repository, the user's own ~/.claude was the project's.
 	if rest, ok := strings.CutPrefix(word, "~"); ok && (rest == "" || rest[0] == '/') {
-		if home, err := os.UserHomeDir(); err == nil {
-			word = filepath.ToSlash(home) + rest
+		home, err := os.UserHomeDir()
+		if err != nil {
+			// Somebody's home, even when HOME is not set to say where.
+			return ""
 		}
+		word = filepath.ToSlash(home) + rest
+	} else if ok && strings.Contains(rest, "/") {
+		// `~someone/.claude` is someone's home, not the project's.
+		return ""
 	}
 	rel, outside := resolver.Rel(filepath.FromSlash(word))
 	if outside {
