@@ -203,7 +203,7 @@ func FindRoot(start string) (string, error) {
 	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = resolved
 	}
-	ceilings := ceilingDirectories()
+	ceilings := CeilingDirectories(os.Getenv)
 	for {
 		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
 			return dir, nil
@@ -224,15 +224,15 @@ func FindRoot(start string) (string, error) {
 	}
 }
 
-// ceilingDirectories is GIT_CEILING_DIRECTORIES as git reads it: absolute
+// CeilingDirectories is GIT_CEILING_DIRECTORIES as git reads it: absolute
 // paths, separated as PATH is, that the search for a repository does not climb
 // into. An empty entry says the entries after it are not symlinks. Git stopped
 // there while this went on up, and a repository git would not use was the one
 // sdlc worked in.
-func ceilingDirectories() []string {
+func CeilingDirectories(getenv func(string) string) []string {
 	var out []string
 	resolve := true
-	for _, entry := range filepath.SplitList(os.Getenv("GIT_CEILING_DIRECTORIES")) {
+	for _, entry := range filepath.SplitList(getenv("GIT_CEILING_DIRECTORIES")) {
 		if entry == "" {
 			resolve = false
 			continue

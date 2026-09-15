@@ -620,6 +620,42 @@ func TestTheLoopIsFoundWhereTheToolCallActs(t *testing.T) {
 	}
 }
 
+// GIT_CEILING_DIRECTORIES stops git looking further up, and sdlc run below it
+// says it is not in a repository. The hook agrees, rather than applying the
+// rules of a project sdlc cannot see.
+func TestTheLoopIsNotLookedForAboveAGitCeiling(t *testing.T) {
+	root := loopProject(t)
+	sub := filepath.Join(root, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	active := filepath.Join(root, ".sdlc", "state", "active")
+	session := func(dir, ceiling string) func(string) string {
+		return env(map[string]string{"CLAUDE_PROJECT_DIR": dir, "GIT_CEILING_DIRECTORIES": ceiling})
+	}
+
+	if r := call(t, event(sub, "Write", "", active), session(sub, root)); denied(r) {
+		t.Errorf("the rules applied below a ceiling at the project: %+v", r)
+	}
+	if r := call(t, event(sub, "Write", "", active), session(sub, filepath.Dir(root))); !denied(r) {
+		t.Errorf("a ceiling above the project turned its rules off: %+v", r)
+	}
+	if r := call(t, event(root, "Write", "", active), session(root, root)); !denied(r) {
+		t.Errorf("a ceiling at the project turned its rules off in it: %+v", r)
+	}
+
+	// The ceiling as git resolves it, and the session in the project by way
+	// of a link, as a macOS /tmp path is.
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Skipf("a link cannot be made here: %v", err)
+	}
+	through := filepath.Join(alias, "sub")
+	if r := call(t, event(through, "Write", "", filepath.Join(alias, ".sdlc", "state", "active")), session(through, root)); denied(r) {
+		t.Errorf("the rules applied below a ceiling reached through a link: %+v", r)
+	}
+}
+
 func TestANotebookPathIsGovernedToo(t *testing.T) {
 	root := loopProject(t)
 	e, _ := json.Marshal(map[string]any{

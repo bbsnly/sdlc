@@ -652,9 +652,9 @@ func findLoop(getenv func(string) string, p payload, target string, warn func(st
 			target = ""
 		}
 	}
-	walked := map[string]bool{}
+	walked, ceilings := map[string]bool{}, config.CeilingDirectories(getenv)
 	for _, start := range starts(getenv, p, target) {
-		root, ok := projectRoot(start, walked)
+		root, ok := projectRoot(start, walked, ceilings)
 		if !ok {
 			continue
 		}
@@ -668,9 +668,9 @@ func findLoop(getenv func(string) string, p payload, target string, warn func(st
 // inLoop reports whether the session is in a project that takes part in the
 // loop, whether or not a story is being worked on.
 func inLoop(getenv func(string) string, p payload) bool {
-	walked := map[string]bool{}
+	walked, ceilings := map[string]bool{}, config.CeilingDirectories(getenv)
 	for _, start := range starts(getenv, p, "") {
-		if _, ok := projectRoot(start, walked); ok {
+		if _, ok := projectRoot(start, walked, ceilings); ok {
 			return true
 		}
 	}
@@ -706,12 +706,14 @@ func starts(getenv func(string) string, p payload, target string) []string {
 // allowed from one directory down.
 //
 // The walk stops at the repository, so a project that does not take part never
-// picks up the configuration of one further up the filesystem.
+// picks up the configuration of one further up the filesystem. It stops where
+// GIT_CEILING_DIRECTORIES stops git, too: sdlc, run there, says it is not in a
+// repository, and the rules of a project it cannot see do not apply either.
 //
 // walked holds the directories earlier walks went through. A walk that reaches
 // one ends there, with the answer that walk already gave, so a command naming
 // thousands of paths in one tree climbs it once.
-func projectRoot(start string, walked map[string]bool) (string, bool) {
+func projectRoot(start string, walked map[string]bool, ceilings []string) (string, bool) {
 	dir, err := filepath.Abs(start)
 	if err != nil {
 		return "", false
@@ -730,11 +732,25 @@ func projectRoot(start string, walked map[string]bool) (string, bool) {
 			return "", false
 		}
 		parent := filepath.Dir(dir)
-		if parent == dir {
+		if parent == dir || atCeiling(parent, ceilings) {
 			return "", false
 		}
 		dir = parent
 	}
+}
+
+// atCeiling reports whether GIT_CEILING_DIRECTORIES names dir, which git does not
+// look in from below it. The entries are resolved, so dir is too when there are
+// any: a path through a link, as /tmp is on macOS, still matches.
+func atCeiling(dir string, ceilings []string) bool {
+	if len(ceilings) == 0 {
+		return false
+	}
+	if slices.Contains(ceilings, dir) {
+		return true
+	}
+	resolved, err := filepath.EvalSymlinks(dir)
+	return err == nil && slices.Contains(ceilings, resolved)
 }
 
 func exists(path string) bool {
