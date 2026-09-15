@@ -352,6 +352,9 @@ tasks:
       # run. To bump it, change the version in
       # .github/tools/markdownlint/package.json and run
       # `npm install --package-lock-only --ignore-scripts` there.
+      # package.json overrides smol-toml, which markdownlint-cli2 0.23.2 pins at a
+      # version with a denial-of-service advisory; drop the override once it
+      # pins 1.7.1 or later.
       - npm ci --prefix .github/tools/markdownlint --ignore-scripts --no-audit --no-fund
       - node .github/tools/markdownlint/node_modules/markdownlint-cli2/markdownlint-cli2-bin.mjs
 
