@@ -7,7 +7,9 @@
 #
 # The two exceptions are Go itself and shellcheck, which have no such mechanism.
 # Both are checked for presence and version, and both fail with an install line
-# rather than skipping: a check that skips is a check that lies.
+# rather than skipping: a check that skips is a check that lies. syft, which only
+# the release job runs, is installed there from a hash-pinned release asset, as
+# shellcheck is in CI.
 
 version: '3'
 
@@ -275,6 +277,44 @@ tasks:
           # GNU coreutils prefixes the line with a backslash when the filename
           # contains one, which is what a Windows temporary path looks like.
           sum="${sum#\\}"
+          printf '%s  %s\n' "$sum" "$asset" >> "$tmp/out"
+          echo "  $asset  $sum" >&2
+        done
+        mv "$tmp/out" "$out"
+        echo "wrote $out" >&2
+
+  syft-checksums:
+    desc: Regenerate .github/syft.sha256 after bumping SYFT_VERSION
+    silent: true
+    cmds:
+      - |
+        # Run this on trunk whenever SYFT_VERSION changes. The release job
+        # installs syft from a GitHub release asset and runs it after the
+        # archives are built and before they are attested, so the bytes are
+        # pinned here.
+        set -eu
+        version="{{.SYFT_VERSION}}"
+        out=.github/syft.sha256
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        {
+          echo "# sha256 of every syft release asset the release job installs, cross-checked"
+          echo "# against the digests GitHub reports for the release. The version is in the"
+          echo "# filename, so bumping SYFT_VERSION in Taskfile.yml without regenerating this"
+          echo "# file fails the lookup rather than passing with a stale hash."
+          echo "#"
+          echo "# Regenerate with: ./task syft-checksums"
+        } > "$tmp/out"
+        for asset in \
+          "syft_${version}_linux_amd64.tar.gz" \
+          "syft_${version}_linux_arm64.tar.gz"; do
+          url="https://github.com/anchore/syft/releases/download/v${version}/${asset}"
+          curl -fsSL --retry 3 -o "$tmp/$asset" "$url"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sum=$(sha256sum "$tmp/$asset" | awk '{print $1}')
+          else
+            sum=$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')
+          fi
           printf '%s  %s\n' "$sum" "$asset" >> "$tmp/out"
           echo "  $asset  $sum" >&2
         done

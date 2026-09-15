@@ -121,10 +121,47 @@ jobs:
           read_pin SYFT_VERSION syft
           read_pin GORELEASER_VERSION goreleaser
 
+      # Not anchore's download-syft action: that runs syft's install.sh from the
+      # tag, which checks the binary against a checksum file from the same
+      # release, so a replaced asset arrives with a hash that matches it. syft
+      # runs after the archives are built and before they are attested, in a
+      # job that can write the release, so its bytes are pinned like
+      # shellcheck's are in CI.
       - name: Install pinned syft
-        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
-        with:
-          syft-version: v${{ steps.pins.outputs.syft }}
+        shell: bash
+        env:
+          SYFT_VERSION: ${{ steps.pins.outputs.syft }}
+        run: |
+          set -euo pipefail
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            Linux-X64)   asset="syft_${SYFT_VERSION}_linux_amd64.tar.gz" ;;
+            Linux-ARM64) asset="syft_${SYFT_VERSION}_linux_arm64.tar.gz" ;;
+            *) echo "::error::no pinned syft build for ${RUNNER_OS}-${RUNNER_ARCH}" >&2; exit 1 ;;
+          esac
+          want=$(awk -v a="${asset}" '$2 == a { print $1 }' .github/syft.sha256)
+          if [ -z "${want}" ]; then
+            echo "::error::no sha256 for ${asset} in .github/syft.sha256" >&2
+            echo "SYFT_VERSION was bumped without regenerating it:" >&2
+            echo "  ./task syft-checksums" >&2
+            exit 1
+          fi
+          url="https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/${asset}"
+          curl -fsSL --retry 5 --retry-all-errors --retry-max-time 180 \
+            --connect-timeout 20 -o "${RUNNER_TEMP}/${asset}" "$url" || {
+            echo "::error::could not download ${asset} from ${url}" >&2
+            exit 1
+          }
+          got=$(sha256sum "${RUNNER_TEMP}/${asset}" | awk '{print $1}')
+          if [ "${got}" != "${want}" ]; then
+            echo "::error::${asset} does not match its pinned checksum" >&2
+            echo "expected ${want}" >&2
+            echo "got      ${got}" >&2
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/syft"
+          tar -xzf "${RUNNER_TEMP}/${asset}" -C "${RUNNER_TEMP}/syft" syft
+          echo "${RUNNER_TEMP}/syft" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/syft/syft" version
 
       # Written outside the checkout: goreleaser refuses a tree with an
       # untracked file in it, so notes written beside the code stopped the

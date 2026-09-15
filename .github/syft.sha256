@@ -1,0 +1,8 @@
+# sha256 of every syft release asset the release job installs, cross-checked
+# against the digests GitHub reports for the release. The version is in the
+# filename, so bumping SYFT_VERSION in Taskfile.yml without regenerating this
+# file fails the lookup rather than passing with a stale hash.
+#
+# Regenerate with: ./task syft-checksums
+8fcb33017a0dc1058298c923c436d19dfa68ae93968e0b423248542e3afb9fc3  syft_1.51.1_linux_amd64.tar.gz
+a7fd2b784e6664acd44719270574f6cd8c6864fc2b1700bf9099bd1cccda7d7f  syft_1.51.1_linux_arm64.tar.gz
