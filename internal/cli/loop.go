@@ -614,7 +614,7 @@ func printGates(w io.Writer, record *model.Record) {
 			continue
 		}
 		recorded++
-		line := fmt.Sprintf("  %-16s %s", g, result.Status)
+		line := fmt.Sprintf("  %-16s %s", g, oneLine(string(result.Status)))
 		if result.Note != "" {
 			line += "  " + oneLine(result.Note)
 		}

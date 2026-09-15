@@ -371,7 +371,7 @@ func verifyFreeze(s *store.Store, lock *model.Lock) []string {
 func brokenFreeze(changed []string) error {
 	return sdlcerr.New(sdlcerr.FreezeBroken,
 		"the frozen tests are not what was frozen",
-		strings.Join(changed, ", ")+" changed after the freeze was taken")
+		oneLine(strings.Join(changed, ", "))+" changed after the freeze was taken")
 }
 
 // unfrozenTests lists the project's test files that the freeze does not hold,

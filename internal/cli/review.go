@@ -268,13 +268,15 @@ func describeReviewPower(i reviewInfo) string {
 }
 
 func describeReviewState(i reviewInfo) string {
+	// A verdict is read back from the record, which a clone can bring.
+	verdict := oneLine(i.Verdict)
 	switch {
 	case i.Verdict == "":
 		return "not reviewed"
 	case i.Stale:
-		return i.Verdict + " (round " + strconv.Itoa(i.Round) + ", stale -- what was reviewed has changed since)"
+		return verdict + " (round " + strconv.Itoa(i.Round) + ", stale -- what was reviewed has changed since)"
 	default:
-		return i.Verdict + " (round " + strconv.Itoa(i.Round) + ")"
+		return verdict + " (round " + strconv.Itoa(i.Round) + ")"
 	}
 }
 

@@ -155,7 +155,7 @@ func newStatusCmd() *cobra.Command {
 			}
 			fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))
 			for _, ws := range payload.Waiting {
-				fmt.Fprintf(w, "  waiting  %s  %s: %s\n", ws.Story, ws.Type, oneLine(ws.Message))
+				fmt.Fprintf(w, "  waiting  %s  %s: %s\n", ws.Story, oneLine(ws.Type), oneLine(ws.Message))
 			}
 			switch {
 			case payload.NotInBacklog:
@@ -232,10 +232,10 @@ func printFreeze(w io.Writer, f *freezeState) {
 	case f == nil:
 		fmt.Fprintf(w, "\n  tests  not frozen\n")
 	case f.Intact:
-		fmt.Fprintf(w, "\n  tests  %s frozen at %s\n", countFiles(f.Files), f.At)
+		fmt.Fprintf(w, "\n  tests  %s frozen at %s\n", countFiles(f.Files), oneLine(f.At))
 	default:
 		fmt.Fprintf(w, "\n  tests  %s frozen at %s, and %s changed since\n",
-			countFiles(f.Files), f.At, strings.Join(f.Changed, ", "))
+			countFiles(f.Files), oneLine(f.At), oneLine(strings.Join(f.Changed, ", ")))
 	}
 }
 
