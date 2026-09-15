@@ -6,7 +6,9 @@
 // sign", a temp directory inside a repository let git find that repository
 // from a test that is outside any, and SDLC_ENFORCE=0 or SDLC_DEBUG=1 left
 // exported in the shell turned enforcement off under the end-to-end tests or
-// put debug lines into output the installer tests compare.
+// put debug lines into output the installer tests compare. Run from a git
+// hook, the tests inherited the variables git exports to it: GIT_INDEX_FILE
+// sent every test repository to the index of the commit being made.
 package testenv
 
 import (
@@ -19,11 +21,12 @@ import (
 
 // Run runs m and returns its exit code, for TestMain. While it runs, git reads
 // no configuration but a repository's own and stops looking for a repository
-// at the temp directory, and no SDLC_ or CLAUDE_ variable is set.
+// at the temp directory, and no SDLC_ or CLAUDE_ variable is set, nor any GIT_
+// variable but the three that say so.
 func Run(m *testing.M) int {
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
-		if strings.HasPrefix(name, "SDLC_") || strings.HasPrefix(name, "CLAUDE_") {
+		if strings.HasPrefix(name, "SDLC_") || strings.HasPrefix(name, "CLAUDE_") || strings.HasPrefix(name, "GIT_") {
 			_ = os.Unsetenv(name)
 		}
 	}
