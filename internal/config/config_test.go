@@ -148,6 +148,9 @@ func TestFindRootStopsWhereGitCeilingDirectoriesSays(t *testing.T) {
 	t.Setenv("GIT_CEILING_DIRECTORIES", link)
 	if _, err := FindRoot(inside); err == nil {
 		t.Error("FindRoot climbed into a ceiling directory named through a symlink")
+	} else if !errors.As(err, &e) || !strings.Contains(e.Fix, "take "+link+" out of") {
+		// The link is what is written in the variable, and what has to come out.
+		t.Errorf("the fix does not name the entry as it is written, %s: %v", link, err)
 	}
 }
 

@@ -203,7 +203,7 @@ func FindRoot(start string) (string, error) {
 	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = resolved
 	}
-	ceilings := CeilingDirectories(os.Getenv)
+	ceilings := ceilingEntries(os.Getenv)
 	for {
 		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
 			return dir, nil
@@ -214,13 +214,16 @@ func FindRoot(start string) (string, error) {
 				"this is not a Git repository",
 				"sdlc looked for .git in "+start+" and in every directory above it")
 		}
-		if slices.Contains(ceilings, parent) {
+		if i := slices.IndexFunc(ceilings, func(c ceiling) bool { return c.dir == parent }); i >= 0 {
+			// The fix names the entry as it is written in the variable, which
+			// is where it has to be taken out, not the directory it resolves to.
 			return "", sdlcerr.New(sdlcerr.NotAGitRepo,
 				"this is not a Git repository",
 				"sdlc looked for .git in "+start+" and above it, as far as "+parent+
 					", which GIT_CEILING_DIRECTORIES says not to look in").
-				WithFix("take " + parent + " out of GIT_CEILING_DIRECTORIES, or unset it: this directory may be " +
-					"inside a repository that the ceiling hides, and \"git init\" would start another in it")
+				WithFix("take " + ceilings[i].written + " out of GIT_CEILING_DIRECTORIES, or unset it: this " +
+					"directory may be inside a repository that the ceiling hides, and \"git init\" would start " +
+					"another in it")
 		}
 		dir = parent
 	}
@@ -232,20 +235,33 @@ func FindRoot(start string) (string, error) {
 // there while this went on up, and a repository git would not use was the one
 // sdlc worked in.
 func CeilingDirectories(getenv func(string) string) []string {
-	var out []string
+	entries := ceilingEntries(getenv)
+	out := make([]string, 0, len(entries))
+	for _, c := range entries {
+		out = append(out, c.dir)
+	}
+	return out
+}
+
+// ceiling is one entry of GIT_CEILING_DIRECTORIES: as it is written, and the
+// directory git takes it to name.
+type ceiling struct{ written, dir string }
+
+func ceilingEntries(getenv func(string) string) []ceiling {
+	var out []ceiling
 	resolve := true
 	for _, entry := range filepath.SplitList(getenv("GIT_CEILING_DIRECTORIES")) {
 		if entry == "" {
 			resolve = false
 			continue
 		}
-		entry = filepath.Clean(entry)
+		dir := filepath.Clean(entry)
 		if resolve {
-			if resolved, err := filepath.EvalSymlinks(entry); err == nil {
-				entry = resolved
+			if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+				dir = resolved
 			}
 		}
-		out = append(out, entry)
+		out = append(out, ceiling{written: entry, dir: dir})
 	}
 	return out
 }
