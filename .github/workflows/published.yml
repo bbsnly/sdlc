@@ -1,0 +1,215 @@
+name: published
+
+# The install tests in ci.yml install a release they build themselves, from a
+# mirror on localhost. That proves the installers. It cannot prove the release
+# people actually download: an asset GitHub will not serve, an npm package
+# that installs nothing, a redirect that changed. The first release had one of
+# those: for a while after it went out, its Apple silicon archive answered 500
+# from the public link, so install.sh failed on every such Mac while every
+# test was green.
+#
+# This installs what is published, from GitHub and from npm, on every platform
+# a release ships, with the commands the documentation gives -- after each
+# release, every day, and on demand from the Actions tab.
+on:
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: published-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    name: published (${{ matrix.os }})
+    # A release that failed has published nothing new to install.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel, windows-latest, windows-11-arm]
+    steps:
+      # Only for go.mod, which names the Go that `go install` is tried with.
+      # Nothing below installs from this checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '26.8.2'
+
+      # The two can differ for a while: a release stages its npm package, and
+      # it is not public until a maintainer approves it. Each route is held to
+      # the version its own source says is newest.
+      - name: What is published
+        id: published
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release=$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq .tagName)
+          package=$(npm view @bbsnly/sdlc version)
+          echo "release=${release#v}" >> "${GITHUB_OUTPUT}"
+          echo "package=${package}" >> "${GITHUB_OUTPUT}"
+          echo "GitHub release ${release}; npm package ${package}; ${RUNNER_OS} ${RUNNER_ARCH}"
+
+      - name: curl -fsSL .../install.sh | sh
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          SDLC_INSTALL_DIR: ${{ runner.temp }}/sh
+          EXPECTED: ${{ steps.published.outputs.release }}
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
+          got=$("${SDLC_INSTALL_DIR}/sdlc" version --short)
+          if [ "${got#v}" != "${EXPECTED}" ]; then
+            echo "::error::install.sh installed ${got}, and the release is ${EXPECTED}"
+            exit 1
+          fi
+          echo "install.sh installed ${got}"
+
+      - name: irm .../install.ps1 | iex (PowerShell 7)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          SDLC_INSTALL_DIR: ${{ runner.temp }}\pwsh
+          SDLC_NO_PATH: '1'
+          EXPECTED: ${{ steps.published.outputs.release }}
+        run: |
+          irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex
+          $got = & (Join-Path $env:SDLC_INSTALL_DIR 'sdlc.exe') version --short
+          if ($LASTEXITCODE -ne 0 -or "$got".TrimStart('v') -ne $env:EXPECTED) {
+            Write-Output "::error::install.ps1 installed '$got', and the release is $env:EXPECTED"
+            exit 1
+          }
+          Write-Output "install.ps1 installed $got"
+
+      - name: irm .../install.ps1 | iex (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          SDLC_INSTALL_DIR: ${{ runner.temp }}\powershell
+          SDLC_NO_PATH: '1'
+          EXPECTED: ${{ steps.published.outputs.release }}
+        run: |
+          irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex
+          $got = & (Join-Path $env:SDLC_INSTALL_DIR 'sdlc.exe') version --short
+          if ($LASTEXITCODE -ne 0 -or "$got".TrimStart('v') -ne $env:EXPECTED) {
+            Write-Output "::error::install.ps1 installed '$got', and the release is $env:EXPECTED"
+            exit 1
+          }
+          Write-Output "install.ps1 installed $got"
+
+      # A fresh runner has no npx cache, so this is the package as the
+      # registry serves it to someone running it for the first time.
+      - name: npx @bbsnly/sdlc install
+        shell: bash
+        env:
+          EXPECTED: ${{ steps.published.outputs.package }}
+        run: |
+          set -euo pipefail
+          dir="${RUNNER_TEMP}/npx"
+          npx --yes @bbsnly/sdlc install --dir "${dir}"
+          bin="${dir}/sdlc"
+          if [ "${RUNNER_OS}" = Windows ]; then bin="${bin}.exe"; fi
+          got=$("${bin}" version --short)
+          if [ "${got#v}" != "${EXPECTED}" ]; then
+            echo "::error::npx @bbsnly/sdlc installed ${got}, and the npm package is ${EXPECTED}"
+            exit 1
+          fi
+          echo "npx @bbsnly/sdlc installed ${got}"
+
+      # The release's version by name rather than @latest: the module proxy
+      # can take a while to list a new tag, and a run straight after a release
+      # would otherwise fail on the proxy rather than on anything published.
+      - name: go install github.com/bbsnly/sdlc/cmd/sdlc@version
+        shell: bash
+        env:
+          GOBIN: ${{ runner.temp }}/go
+          EXPECTED: ${{ steps.published.outputs.release }}
+        run: |
+          set -euo pipefail
+          go install "github.com/bbsnly/sdlc/cmd/sdlc@v${EXPECTED}"
+          bin="${GOBIN}/sdlc"
+          if [ "${RUNNER_OS}" = Windows ]; then bin="${bin}.exe"; fi
+          got=$("${bin}" version --short)
+          if [ "${got#v}" != "${EXPECTED}" ]; then
+            echo "::error::go install built ${got}, and the release is ${EXPECTED}"
+            exit 1
+          fi
+          echo "go install built ${got}"
+
+      # The steps docs/installation.md gives for a download by hand, as written:
+      # the archive from its public link, checked against checksums.txt.
+      - name: The archive by hand (macOS, Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          EXPECTED: ${{ steps.published.outputs.release }}
+        run: |
+          set -euo pipefail
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            Linux-X64)   platform=linux_amd64 ;;
+            Linux-ARM64) platform=linux_arm64 ;;
+            macOS-X64)   platform=darwin_amd64 ;;
+            macOS-ARM64) platform=darwin_arm64 ;;
+            *) echo "::error::no archive is published for ${RUNNER_OS}-${RUNNER_ARCH}"; exit 1 ;;
+          esac
+          version="${EXPECTED}" asset="sdlc_${EXPECTED}_${platform}.tar.gz"
+          mkdir -p "${RUNNER_TEMP}/manual" && cd "${RUNNER_TEMP}/manual"
+          curl -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/${asset}"
+          curl -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/checksums.txt"
+          if command -v shasum >/dev/null 2>&1; then
+            grep " ${asset}\$" checksums.txt | shasum -a 256 -c -
+          else
+            grep " ${asset}\$" checksums.txt | sha256sum -c -
+          fi
+          tar -xzf "${asset}" sdlc
+          got=$(./sdlc version --short)
+          if [ "${got#v}" != "${EXPECTED}" ]; then
+            echo "::error::the ${platform} archive holds ${got}, and the release is ${EXPECTED}"
+            exit 1
+          fi
+          echo "the ${platform} archive holds ${got}"
+
+      - name: The archive by hand (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          EXPECTED: ${{ steps.published.outputs.release }}
+        run: |
+          $arch = if ($env:RUNNER_ARCH -eq 'ARM64') { 'arm64' } else { 'amd64' }
+          New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP 'manual') | Set-Location
+          $version = $env:EXPECTED; $asset = "sdlc_${version}_windows_$arch.zip"
+          $base = "https://github.com/bbsnly/sdlc/releases/download/v$version"
+          Invoke-WebRequest "$base/$asset" -OutFile $asset
+          Invoke-WebRequest "$base/checksums.txt" -OutFile checksums.txt
+          $want = ((Get-Content checksums.txt) -match " $([regex]::Escape($asset))$" -split '\s+')[0]
+          if (-not $want -or (Get-FileHash $asset -Algorithm SHA256).Hash.ToLower() -ne $want) {
+            Write-Output "::error::$asset does not match checksums.txt"
+            exit 1
+          }
+          Expand-Archive $asset -DestinationPath sdlc
+          $got = & .\sdlc\sdlc.exe version --short
+          if ($LASTEXITCODE -ne 0 -or "$got".TrimStart('v') -ne $env:EXPECTED) {
+            Write-Output "::error::the windows_$arch archive holds '$got', and the release is $env:EXPECTED"
+            exit 1
+          }
+          Write-Output "the windows_$arch archive holds $got"

@@ -94,6 +94,14 @@ The npm job runs after the release is open. If it fails before staging, the
 GitHub release is already out and complete: fix the cause and use **Re-run
 failed jobs** on the run, and only the `npm` job runs again.
 
+`.github/workflows/published.yml` then installs what was published, on every
+platform a release ships: `install.sh` piped from curl, `install.ps1` piped
+into PowerShell 7 and Windows PowerShell 5.1, `npx @bbsnly/sdlc install`,
+`go install`, and the archive downloaded and checked by hand. Every installed
+binary has to report the published version. It runs after each release, every
+day, and from the Actions tab — a red run means someone following the
+documentation cannot install sdlc.
+
 Things the workflow cannot do for itself:
 
 - **The trusted publisher** is configured by hand on npmjs.com, under the
