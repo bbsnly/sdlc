@@ -13,7 +13,8 @@
       "source": "./plugin",
       "skills": [
         "./skills/next",
-        "./skills/trunk-review"
+        "./skills/trunk-review",
+        "./skills/consolidate"
       ],
       "description": "Run one story at a time through nine gates: tests are written and frozen before any implementation, and the agent that implements cannot edit them."
     }

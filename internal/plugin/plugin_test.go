@@ -122,7 +122,62 @@ func TestEveryAgentAndSkillIsUsable(t *testing.T) {
 
 // humanOnlySkills are the skills only a person starts. The docs promise it of
 // each of them, and every other skill is one the model has to be able to start.
-var humanOnlySkills = map[string]bool{"trunk-review": true}
+var humanOnlySkills = map[string]bool{"trunk-review": true, "consolidate": true}
+
+// A skill only a person starts is trusted with what it is told not to do, and
+// no hook stands behind it: with no story being worked on, every write goes
+// through. So what a person relies on is pinned here, as the sentence that
+// says it, with the line breaks folded away. A phrase rather than a pattern,
+// because a pattern that allowed the wording to drift would allow the meaning
+// to drift with it; rewording one of these means rewording the promise, and
+// that is worth a failing test.
+func TestAHumanOnlySkillKeepsWhatItPromises(t *testing.T) {
+	skills, err := Skills(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promises := map[string][]string{
+		"trunk-review": {
+			"Do not revert, reset, amend, rebase or rewrite a commit",
+			"do not edit the backlog",
+			"Add nothing to the backlog until the person says which follow-ups to add",
+			"Do not run it yourself",
+		},
+		"consolidate": {
+			"the `## SDLC Contract` section of the project's `CLAUDE.md`, and only that section",
+			"Never write under `~/.claude`",
+			"never write under the plugin cache",
+			"Before each edit run `sdlc status --json` again",
+			"make no more edits and write nothing more to the proposals file",
+			"goes to the person as issue text for the plugin's issue tracker, never as an edit",
+			"Never propose pinning a model or a reasoning effort",
+			"write nothing at all, not even the proposals file",
+			"Apply it only on a yes, and only that one",
+			"A proposal that loosens a check says so first",
+		},
+	}
+	for name := range humanOnlySkills {
+		if _, ok := promises[name]; !ok {
+			t.Errorf("%s is human-only and nothing pins what it promises", name)
+		}
+	}
+	for _, s := range skills {
+		want, ok := promises[s.Name]
+		if !ok {
+			continue
+		}
+		delete(promises, s.Name)
+		body := strings.Join(strings.Fields(s.Body), " ")
+		for _, phrase := range want {
+			if !strings.Contains(body, phrase) {
+				t.Errorf("%s: no longer says %q", s.Path, phrase)
+			}
+		}
+	}
+	for name := range promises {
+		t.Errorf("no skill named %s to hold to its promises", name)
+	}
+}
 
 // flagProblems is where a skill's invocation flags break something.
 //

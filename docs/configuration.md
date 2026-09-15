@@ -243,3 +243,8 @@ conventions, allowed dependencies, and the glossary that keeps everyone using
 the project's own words. `sdlc init` appends a template with every field marked
 `TBD`; filling it in is the highest-value thing you can do before your first
 story.
+
+Once a few stories have finished, `/sdlc:consolidate` reads their retros and the
+log, and proposes changes to both halves from what repeats. It applies only the
+ones you confirm; see
+[Consolidating what the retros say](guides/consolidating-what-the-retros-say.md).

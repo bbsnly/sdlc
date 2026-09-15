@@ -50,6 +50,14 @@ not change and it is never reused.
   while no story is being worked on. It never reverts a commit and never runs
   `sdlc ack`. Only a person starts it: the skill carries
   `disable-model-invocation`.
+- `/sdlc:consolidate` reads the retros and `sdlc log --all` across finished
+  stories and proposes changes from what more than one story shows: a sentence
+  in the `## SDLC Contract` section, a key in `.sdlc/config.json`, issue text for
+  the plugin, or something for you to do differently. It writes the proposals
+  to `.sdlc/consolidation-<date>.md`, applies only the contract and configuration
+  changes you confirm, one at a time, and writes nothing while a story is being
+  worked on. A proposal that loosens a check says so. It never edits the plugin
+  or its cache, and never proposes pinning a model. Only a person starts it.
 
 ### Changed
 

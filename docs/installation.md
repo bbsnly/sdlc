@@ -145,9 +145,10 @@ In Claude Code:
 ```
 
 The repository is its own marketplace, so there is nothing else to add. That
-gives you the `/sdlc:next` skill, the `/sdlc:trunk-review` skill you run to look
-back at what landed, eleven agents, and the `PreToolUse`, `PostToolUse` and
-`Stop` hooks that do the enforcing.
+gives you the `/sdlc:next` skill, two skills you run yourself —
+`/sdlc:trunk-review` to look back at what landed and `/sdlc:consolidate` to turn
+the retros into changes to your contract and configuration — eleven agents, and
+the `PreToolUse`, `PostToolUse` and `Stop` hooks that do the enforcing.
 
 Worth knowing: the marketplace serves the repository's default branch, not a
 tag. `/plugin update sdlc@sdlc` therefore gives you the plugin as it is on
@@ -181,11 +182,11 @@ CLI can install it into any agent that reads them:
 $ npx skills add bbsnly/sdlc
 ```
 
-There are two skills, `next` and `trunk-review`, so it asks which to install.
-`--skill next` names one, and `--yes` installs both without asking. Each goes in
-`.claude/skills/<name>/` and the equivalent directory for every other agent it
-knows, is recorded in `skills-lock.json`, and gives you `/next` or
-`/trunk-review` in a session.
+There are three skills, `next`, `trunk-review` and `consolidate`, so it asks
+which to install. `--skill next` names one, and `--yes` installs all three
+without asking. Each goes in `.claude/skills/<name>/` and the equivalent
+directory for every other agent it knows, is recorded in `skills-lock.json`, and
+gives you `/next`, `/trunk-review` or `/consolidate` in a session.
 
 Know what that route brings and what it does not. It brings the runbook: the
 order of the gates, what each one produces, what to do when one fails. It does
@@ -193,9 +194,10 @@ order of the gates, what each one produces, what to do when one fails. It does
 recorded, nothing is frozen, and nothing is refused. `next` checks for the tool
 and for the agents before it does anything and stops if either is missing,
 because a loop with no enforcement behind it is a checklist, and a checklist you
-mark off about your own work is worth nothing. `trunk-review` checks for the
-tool only. With no hook, nothing refuses `sdlc ack` from the assistant either:
-only the skill's own instruction not to run it stands between them.
+mark off about your own work is worth nothing. `trunk-review` and `consolidate`
+check for the tool only. With no hook, nothing refuses `sdlc ack` from the
+assistant either: only `trunk-review`'s own instruction not to run it stands
+between them.
 
 Use it to read the loop, to run it against a different agent, or to pin the
 runbook in a repository that installs the rest some other way. To actually use

@@ -56,9 +56,10 @@ to install the binary for you.
 | The skills alone, any agent | `npx skills add bbsnly/sdlc` |
 
 The repository is its own marketplace, so there is nothing else to add. What
-you get is the `/sdlc:next` skill, the `/sdlc:trunk-review` skill you run to look
-back at what landed, eleven agents, and the `PreToolUse`, `PostToolUse` and
-`Stop` hooks.
+you get is the `/sdlc:next` skill, two skills you run yourself —
+`/sdlc:trunk-review` to look back at what landed and `/sdlc:consolidate` to turn
+the retros into changes to your contract and configuration — eleven agents, and
+the `PreToolUse`, `PostToolUse` and `Stop` hooks.
 
 The plugin works without the binary if you only want the agents: they review
 as usual, nothing is enforced, and sessions outside a project that uses sdlc
