@@ -592,6 +592,10 @@ that writes to anything that looks like a test is refused, frozen or not: a
 freeze that cannot be read is not treated as no freeze. `sdlc doctor` names it
 under "loop state".
 
+It can also be a freeze a newer sdlc wrote, in a format this one does not read:
+doctor then says which format it is in. Upgrade sdlc to the version that froze
+the tests; lifting and freezing again with the older one is not needed.
+
 Restore it if you keep a copy. Otherwise lift it with
 `sdlc unfreeze --reason "..."` in your own terminal and run `sdlc freeze` again.
 Deleting the file is not enough: `sdlc freeze` refuses a freeze that went

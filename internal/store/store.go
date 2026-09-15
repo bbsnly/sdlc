@@ -322,6 +322,16 @@ func (s *Store) ClearActive() error {
 
 // ---------------------------------------------------------------- the freeze
 
+// unknownFormat is the cause behind loop state in a format this build does not
+// read, which a newer sdlc can write.
+type unknownFormat struct{}
+
+func (unknownFormat) Error() string { return "it is in a format this sdlc does not read" }
+
+// IsUnknownFormat reports whether err is loop state a newer sdlc wrote. Lifting
+// and taking the freeze again is not the answer to it; upgrading is.
+func IsUnknownFormat(err error) bool { return errors.As(err, new(unknownFormat)) }
+
 // Lock reads the freeze, or nil if the tests have not been frozen.
 func (s *Store) Lock() (*model.Lock, error) {
 	path := filepath.Join(s.root, filepath.FromSlash(lockFile))
@@ -339,6 +349,16 @@ func (s *Store) Lock() (*model.Lock, error) {
 		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
 			"the test freeze could not be read",
 			lockFile+" is not valid JSON").WithCause(err)
+	}
+	// A newer sdlc may write the freeze in a shape this one does not know. Read as
+	// this one's, every field it did not find is empty, and an empty freeze holds
+	// no test at all.
+	if l.Schema != model.LockSchema {
+		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
+			"the test freeze could not be read",
+			lockFile+" is in the format "+quote(l.Schema)+", and this sdlc reads only "+quote(model.LockSchema)).
+			WithFix("upgrade sdlc to the version that froze the tests; until then the hook treats every test as frozen").
+			WithCause(unknownFormat{})
 	}
 	return &l, nil
 }

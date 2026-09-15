@@ -25,8 +25,8 @@ func TestAFreezeTheRecordHoldsIsNotLiftedByRewritingTheLock(t *testing.T) {
 		for name, lock := range map[string]string{
 			"gone":          "",
 			"null":          "null",
-			"no story":      "{}",
-			"another story": `{"story":"OTHER-1","files":{"invoice_test.go":"abc"}}`,
+			"no story":      `{"schema":"sdlc/tests-lock/1"}`,
+			"another story": `{"schema":"sdlc/tests-lock/1","story":"OTHER-1","files":{"invoice_test.go":"abc"}}`,
 		} {
 			t.Run(name+" "+config, func(t *testing.T) {
 				if lock == "" {

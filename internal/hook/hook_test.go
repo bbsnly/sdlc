@@ -791,7 +791,7 @@ func TestABrokenConfigurationStillProtectsWhatItCan(t *testing.T) {
 	root := loopProject(t)
 	write(t, root, ".sdlc/config.json", "{not json")
 	write(t, root, "invoice_test.go", "package x\n")
-	write(t, root, ".sdlc/state/tests.lock", `{"story":"A-1","files":{"invoice_test.go":"abc"}}`)
+	write(t, root, ".sdlc/state/tests.lock", `{"schema":"sdlc/tests-lock/1","story":"A-1","files":{"invoice_test.go":"abc"}}`)
 
 	if !denied(call(t, event(root, "Write", "", ".sdlc/state/active"), noEnv)) {
 		t.Error("loop state became writable because the configuration was broken")
@@ -921,7 +921,7 @@ func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
 func TestANewTestFileIsRefusedThroughTheShellUnlessTheProjectAllowsIt(t *testing.T) {
 	root := loopProject(t)
 	write(t, root, "invoice_test.go", "package x\n")
-	write(t, root, ".sdlc/state/tests.lock", `{"story":"A-1","files":{"invoice_test.go":"abc"}}`)
+	write(t, root, ".sdlc/state/tests.lock", `{"schema":"sdlc/tests-lock/1","story":"A-1","files":{"invoice_test.go":"abc"}}`)
 
 	r := call(t, command(root, "sdlc:implementer", "echo 'package x' > other_test.go"), noEnv)
 	if !denied(r) {
@@ -950,6 +950,28 @@ func TestANewTestFileIsRefusedThroughTheShellUnlessTheProjectAllowsIt(t *testing
 	r = call(t, command(root, "sdlc:implementer", "echo 'package x' >> helper_test.go"), noEnv)
 	if !denied(r) || !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "implementer-does-not-write-tests") {
 		t.Errorf("the implementer wrote a test through the shell before the freeze: %+v", r)
+	}
+}
+
+// A freeze a newer sdlc wrote, in a shape this build does not know, read as a
+// freeze of nothing when its schema was not looked at. It is one this build
+// cannot read, and every test stays frozen.
+func TestAFreezeInAnUnknownFormatStillProtectsTheTests(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, "invoice_test.go", "package x\n")
+	write(t, root, ".sdlc/state/tests.lock", `{"schema":"sdlc/tests-lock/2","story":"A-1",`+
+		`"at":"2026-09-10T08:30:00Z","hashes":{"invoice_test.go":"00"}}`)
+
+	// Denied is not enough: read as a freeze of nothing, the file is refused as a
+	// new test instead, which a project that allows new test files lets through.
+	// The warning says the freeze was not read.
+	for name, stdin := range map[string]string{
+		"file tools": event(root, "Write", "sdlc:sdet", "invoice_test.go"),
+		"shell":      command(root, "sdlc:sdet", "echo cheat > invoice_test.go"),
+	} {
+		if r := call(t, stdin, noEnv); !denied(r) || !strings.Contains(r.SystemMessage, "tests.lock could not be read") {
+			t.Errorf("a freeze in a format this build does not know was read through the %s: %+v", name, r)
+		}
 	}
 }
 

@@ -368,6 +368,10 @@ func freezeRecorded(project, story string) bool {
 	return standing
 }
 
+// errUnknownFreeze is a freeze in a shape this build does not know, which a
+// newer sdlc can write. Its fields read as empty, which is a freeze of nothing.
+var errUnknownFreeze = errors.New("the freeze is in a format this build of sdlc does not know")
+
 // frozenTests is what the freeze holds, for the shell rules to refuse writes
 // to. No freeze yet means nothing frozen, which is the ordinary state before
 // Gate 3 and leaves the shell as free as it was.
@@ -385,7 +389,9 @@ func frozenTests(project, story string, warn func(string)) (frozen []string, isT
 	case errors.Is(err, fs.ErrNotExist):
 		err = nil
 	case err == nil:
-		err = json.Unmarshal(raw, &lock)
+		if err = json.Unmarshal(raw, &lock); err == nil && lock.Schema != model.LockSchema {
+			err = errUnknownFreeze
+		}
 	}
 	// A freeze belonging to another story says nothing about this one.
 	if gone := lock.Story != story && freezeRecorded(project, story); err != nil || gone {
