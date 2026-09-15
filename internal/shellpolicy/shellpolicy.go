@@ -17,6 +17,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/bbsnly/sdlc/internal/model"
@@ -695,7 +696,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 	}
 	shapes := func() []string { return frozenShapes(s.Frozen) }
 	added := withGlobs(m.spell(s, dir, candidates), shapes)
-	spelled := append(added[:len(added):len(added)], withGlobs(m.spell(s, dir, removed), shapes)...)
+	spelled := slices.Concat(added, withGlobs(m.spell(s, dir, removed), shapes))
 	for i, c := range spelled {
 		// A file taken away is no test added: removing the test files the freeze
 		// does not hold is what SDLC-E0043 asks for. Remembered apart, or `rm
