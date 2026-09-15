@@ -667,7 +667,27 @@ type Record struct {
 	// Base is the commit HEAD was on when the iteration started. The story's
 	// work is committed at the commit gate, so a HEAD that moves before then is
 	// work that reached trunk past the gates.
-	Base        string              `json:"base,omitempty"`
+	Base string `json:"base,omitempty"`
+	// CommitBase and Commit bound the story's commits: they are the ones after
+	// CommitBase, up to and including Commit. The range holds every commit the
+	// story made, and can hold commits somebody else made in that window: ones
+	// that together left the reviewed code as it was, such as commits touching
+	// only .sdlc/ or a story's status and updated, or ones made before a later
+	// review.
+	//
+	// CommitBase is HEAD when code_review first passed. The hook refuses the
+	// story's commits until then, so it is trunk before any of them. It stays
+	// through rework, and on a finished story reopened later, whose range then
+	// spans everything that landed on trunk in between. It is empty when that
+	// first pass had no commit to name, or was recorded by an sdlc that did not
+	// keep it. It is not Base, which follows HEAD once code review has passed.
+	CommitBase string `json:"commit_base,omitempty"`
+	// Commit is HEAD when the commit gate last passed. Its tree holds all of the
+	// reviewed work, and it is usually the story's last commit, but it need not
+	// be the only one, nor one that changed code. It goes when the commit gate
+	// stops standing passed, so a record never names an end the story has since
+	// gone back on.
+	Commit      string              `json:"commit,omitempty"`
 	Gates       map[Gate]GateResult `json:"gates"`
 	Events      []Event             `json:"events"`
 	Escalations []Escalation        `json:"escalations"`
@@ -766,6 +786,18 @@ func (r *Record) SinceDecision(kind, message string) int {
 	n := 0
 	for i := len(r.Events) - 1; i >= 0 && r.Events[i].Type != EventApproval; i-- {
 		if r.Events[i].Type == kind && r.Events[i].Message == message {
+			n++
+		}
+	}
+	return n
+}
+
+// Count counts the events of one kind and message in the whole history, across
+// every decision a person has made.
+func (r *Record) Count(kind, message string) int {
+	n := 0
+	for _, e := range r.Events {
+		if e.Type == kind && e.Message == message {
 			n++
 		}
 	}
@@ -902,6 +934,7 @@ func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) {
 		r.Append("gates_reopened", strings.Join(reopened, ", ")+" reopened: "+
 			string(g)+" was recorded "+string(status), at)
 	}
+	r.forgetCommit()
 }
 
 // Reopen puts a gate that had passed back to pending, with every gate after it,
@@ -916,7 +949,18 @@ func (r *Record) Reopen(g Gate, why string, at time.Time) []string {
 	r.Gates[g] = GateResult{Status: GatePending, At: Timestamp(at), Note: note}
 	reopened := append([]string{string(g)}, r.reopenAfter(g, note, at)...)
 	r.Append("gates_reopened", strings.Join(reopened, ", ")+" reopened: "+why, at)
+	r.forgetCommit()
 	return reopened
+}
+
+// forgetCommit drops where the story's commits end once the commit gate no
+// longer stands passed, whether it was recorded again as failed or reopened by
+// a gate before it. A new pass records the end it is then given. Where they
+// start stays: the story's first commits are still where they were.
+func (r *Record) forgetCommit() {
+	if !r.Pass(GateCommit) {
+		r.Commit = ""
+	}
 }
 
 // reopenAfter puts every passed gate after g back to pending, and returns them.

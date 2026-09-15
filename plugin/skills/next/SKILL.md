@@ -324,11 +324,11 @@ Write the message about the change and why, in the project's own style.
 ```bash
 git add -A
 git commit -m "<type>: <what changed and why>"
-sdlc gate commit pass --note "<short sha>"
+sdlc gate commit pass --note "<what reached trunk, in one line>"
 ```
 
 The gate refuses while anything is uncommitted, and refuses if an acceptance test changed since
-the freeze.
+the freeze. Passing it records the commits the story landed in, so the note needs no hash.
 
 ## Gate 9 — Retro
 

@@ -369,6 +369,43 @@ func TestAGateWhoseGroundWentIsReopened(t *testing.T) {
 	}
 }
 
+// Rework moves where a story's commits end, never where they start. The end goes
+// with the commit gate, so the record never names an end the story has gone back
+// on. The start stays, because what the story committed before a code review was
+// reopened is still the story's.
+func TestReworkMovesTheEndOfTheStorysCommitsButNeverTheStart(t *testing.T) {
+	at := time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
+	const start, end = "0c1e7a52", "4f9d5d36"
+	landed := func() *Record {
+		r := NewRecord("A-1", at)
+		for _, g := range GateRetro.Before() {
+			r.SetGate(g, GatePass, "", at)
+		}
+		r.CommitBase, r.Commit = start, end
+		return r
+	}
+
+	for name, c := range map[string]struct {
+		change     func(*Record)
+		start, end string
+	}{
+		"the retro passed":             {func(r *Record) { r.SetGate(GateRetro, GatePass, "no deviations", at) }, start, end},
+		"the retro failed":             {func(r *Record) { r.SetGate(GateRetro, GateFail, "no retro", at) }, start, end},
+		"the commit gate passed again": {func(r *Record) { r.SetGate(GateCommit, GatePass, "on trunk", at) }, start, end},
+		"the commit gate failed":       {func(r *Record) { r.SetGate(GateCommit, GateFail, "wrong tree", at) }, start, ""},
+		"the commit gate went pending": {func(r *Record) { r.SetGate(GateCommit, GatePending, "", at) }, start, ""},
+		"the code review failed":       {func(r *Record) { r.SetGate(GateCodeReview, GateFail, "AC-2 is untested", at) }, start, ""},
+		"the code review passed again": {func(r *Record) { r.SetGate(GateCodeReview, GatePass, "looked again", at) }, start, ""},
+		"the freeze was lifted":        {func(r *Record) { r.Reopen(GateTestsFrozen, "the freeze was lifted", at) }, start, ""},
+	} {
+		r := landed()
+		c.change(r)
+		if r.CommitBase != c.start || r.Commit != c.end {
+			t.Errorf("%s: the record names %q..%q, want %q..%q", name, r.CommitBase, r.Commit, c.start, c.end)
+		}
+	}
+}
+
 // A record written by the shell kit must still load, and one written here must
 // still be readable by it.
 func TestRecordRoundTripsTheOnDiskShape(t *testing.T) {
@@ -537,6 +574,27 @@ func TestAFailedGateIsWhereTheLoopResumes(t *testing.T) {
 
 	if got, ok := r.NextGate(); !ok || got != Gates[1] {
 		t.Errorf("next = %q, %v; want the failed gate %q", got, ok, Gates[1])
+	}
+}
+
+// Whether code review passed before is asked of the whole history: a person's
+// approval since then must not make an old pass look like it never happened.
+func TestCountSeesPastADecisionWhereSinceDecisionStops(t *testing.T) {
+	pass := GateEvent(GateCodeReview, GatePass)
+	r := NewRecord("A-1", time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC))
+	r.Events = []Event{
+		{Type: EventGate, Message: pass},
+		{Type: EventReview, Message: pass},
+		{Type: EventGate, Message: GateEvent(GateCodeReview, GateFail)},
+		{Type: EventApproval, Message: DecisionApproved},
+		{Type: EventGate, Message: pass},
+	}
+
+	if got := r.Count(EventGate, pass); got != 2 {
+		t.Errorf("Count = %d; want 2, one on each side of the approval", got)
+	}
+	if got := r.SinceDecision(EventGate, pass); got != 1 {
+		t.Errorf("SinceDecision = %d; want 1, the pass after the approval", got)
 	}
 }
 

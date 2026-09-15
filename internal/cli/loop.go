@@ -433,6 +433,11 @@ type gatePayload struct {
 	Gate   string `json:"gate"`
 	Status string `json:"status"`
 	Note   string `json:"note,omitempty"`
+	// CommitBase and Commit bound the story's commits, when this was the commit
+	// gate passing: they are the ones after CommitBase, up to and including
+	// Commit. CommitBase is left out when it is not known.
+	CommitBase string `json:"commit_base,omitempty"`
+	Commit     string `json:"commit,omitempty"`
 	// Done reports that this gate was the last one: the story left the backlog.
 	Done bool `json:"done"`
 	// HandedOver is the kind of escalation, when this failure was one too many
@@ -563,6 +568,39 @@ func newGateCmd() *cobra.Command {
 				record.SetSecuritySensitive(securitySensitive)
 			}
 			record.SetGate(gate, status, note, s.Now())
+			// The story's commits are the ones after HEAD when code review first
+			// passed, up to and including HEAD when the commit gate last passed.
+			//
+			// The hook refuses them until code review has passed, and
+			// requireUnmoved has just held HEAD to where the story started, so
+			// HEAD at the first pass is trunk before any of them. Only that pass
+			// takes the start, and the record's history says which pass it was,
+			// not an empty field: a later pass would take a HEAD after whatever
+			// the story had committed by then. A first pass with no commit to
+			// name, or one an older sdlc recorded, leaves the start unknown.
+			//
+			// The commit gate refused anything uncommitted, so HEAD at its pass
+			// holds all of the reviewed work. It is usually the story's last
+			// commit, but need not be its only one, nor one that changed code.
+			// A commit pass that cannot say which commit that is is not recorded.
+			if status == model.GatePass {
+				switch {
+				case gate == model.GateCodeReview &&
+					record.Count(model.EventGate, model.GateEvent(model.GateCodeReview, model.GatePass)) == 0:
+					if record.CommitBase, err = headCommit(cmd.Context(), s.Root()); err != nil {
+						return err
+					}
+				case gate == model.GateCommit:
+					if record.Commit, err = headCommit(cmd.Context(), s.Root()); err != nil {
+						return err
+					}
+					if record.Commit == "" {
+						return sdlcerr.New(sdlcerr.RepositoryUnreadable,
+							"HEAD names no commit, so the commit gate cannot record where the story landed",
+							"the gate records the commit that holds the story's work, and git reports none")
+					}
+				}
+			}
 			record.Append(model.EventGate, model.GateEvent(gate, status), s.Now())
 			if err := s.SaveRecord(record); err != nil {
 				return err
@@ -583,15 +621,26 @@ func newGateCmd() *cobra.Command {
 				}
 			}
 
+			start, end := "", ""
+			if gate == model.GateCommit {
+				start, end = record.CommitBase, record.Commit
+			}
 			if wantJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), gatePayload{
-					OK: true, Story: id, Gate: string(gate), Status: string(status), Note: note, Done: done,
-					HandedOver: handedOver,
+					OK: true, Story: id, Gate: string(gate), Status: string(status), Note: note,
+					CommitBase: start, Commit: end, Done: done, HandedOver: handedOver,
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n", id, gate, status)
 			if note != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", oneLine(note))
+			}
+			if end != "" {
+				landed := end[:min(len(end), 12)]
+				if start != "" {
+					landed = start[:min(len(start), 12)] + ".." + landed
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "  landed in %s\n", landed)
 			}
 			if done {
 				fmt.Fprintf(cmd.OutOrStdout(), "\n%s is done: every gate has passed.\n", id)
@@ -717,6 +766,17 @@ func requireSize(ctx context.Context, s *store.Store) error {
 		"a change bigger than the project trusts one review to read is not made smaller "+
 			"by reviewing it anyway; lines are counted as git diff --numstat counts them "+
 			"against the last commit, tests included, .sdlc/ and the backlog not")
+}
+
+// headCommit is the commit HEAD is on, for a record to name. A repository with
+// no commits yet has none, and git's all-zero name for that is not a commit, so
+// it comes back as "".
+func headCommit(ctx context.Context, root string) (string, error) {
+	head, err := gitx.Head(ctx, root)
+	if err != nil || head == gitx.NoCommits {
+		return "", err
+	}
+	return head, nil
 }
 
 // requireUnmoved holds the gates before the commit to a trunk the story has not

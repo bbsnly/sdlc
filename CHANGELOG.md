@@ -9,6 +9,26 @@ not change and it is never reused.
 
 ## [Unreleased]
 
+### Added
+
+- A story's record names the commits it landed in, as a range. The first
+  `code_review` pass records HEAD as `commit_base`, and each `commit` pass
+  records HEAD as `commit`, which holds all of the reviewed work. The range
+  runs from HEAD when code review first passed to HEAD when the commit gate
+  last passed. It holds every commit the story made, and can hold commits
+  somebody else made in that window: ones that together left the reviewed code
+  as it was, such as commits touching only `.sdlc/` or a story's `status` and
+  `updated`, or ones made before a later review. A finished story reopened
+  later keeps its start, so its range spans everything that landed on trunk in
+  between. `sdlc gate commit pass` reports the range as
+  `landed in <start>..<end>`, or in full with `--json`. `commit` is forgotten
+  when the commit gate is later recorded as failed, or reopened by a gate
+  before it, until it passes again. A start that is not known, because the
+  repository had no commits yet or an older `sdlc` passed the code review, is
+  left out rather than guessed, and so is one an older `sdlc` dropped when it
+  rewrote the record. The runbook no longer asks for a hash in the commit
+  gate's note.
+
 ### Changed
 
 - Every agent is told it runs unattended: it finishes what it says it will do

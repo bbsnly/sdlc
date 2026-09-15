@@ -503,6 +503,33 @@ func TestAStoryReachesTrunk(t *testing.T) {
 		"commit", "--quiet", "-m", "US-001")
 	runTool(t, binary, root, "gate", "commit", "pass", "--note", "on trunk")
 
+	// The record names the commits the story landed in, so nobody has to type
+	// them: here the one commit after where code review left trunk.
+	revParse := func(rev string) string {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), "git", "rev-parse", rev)
+		cmd.Dir = root
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record struct {
+		CommitBase string `json:"commit_base"`
+		Commit     string `json:"commit"`
+	}
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	if start, end := revParse("HEAD^"), revParse("HEAD"); record.CommitBase != start || record.Commit != end {
+		t.Errorf("the record names %q..%q, want the story's one commit, %s..%s", record.CommitBase, record.Commit, start, end)
+	}
+
 	runToolWithInput(t, binary, root, "# Retro\n", "artifact", "write", "retro")
 	runTool(t, binary, root, "gate", "retro", "pass", "--note", "no deviations")
 

@@ -156,6 +156,21 @@ Gates: `dor`, `analysis`, `tests_frozen`, `plan`, `design_review`,
 requires. A `fail` is always recordable — a gate can fail precisely because its
 work could not be done, and the loop has to have somewhere to put that.
 
+The first `code_review` pass records where the story's commits start, HEAD at
+that moment. Each `commit` pass records where they end, HEAD then, and says so:
+`landed in <start>..<end>`, with each hash cut to 12 characters, or
+`commit_base` and `commit` in full with `--json`. The range runs from HEAD when
+code review first passed to HEAD when the commit gate last passed. It holds
+every commit the story made, and can hold commits somebody else made in that
+window: ones that together left the reviewed code as it was, such as commits
+touching only `.sdlc/` or a story's `status` and `updated`, or ones made before
+a later review. The start is left out, and the output says `landed in <end>`,
+when it is not known: the repository had no commits yet when code review first
+passed, or an older `sdlc` passed it. The end is forgotten when the commit gate
+stops standing, and the next pass records it again. The start stays, even when
+a finished story is reopened later, so that story's range also spans everything
+that landed on trunk in between.
+
 Recording the last gate is also what finishes the story: when no gate is left
 unpassed, the story's status becomes `done` and it leaves the backlog. That is
 read from the record rather than from the gate's name, so a gate recorded as

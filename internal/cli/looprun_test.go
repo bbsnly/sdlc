@@ -689,6 +689,159 @@ func TestCommittingWhatWasReviewedStillPasses(t *testing.T) {
 	}
 }
 
+// Which commits a story landed in was a hash somebody typed into the gate's note,
+// when they remembered to. The gates know: code review passes on trunk before any
+// of them, and the commit gate passes on a HEAD that holds all of the work. That
+// HEAD need not be the commit that brought the work, so the record keeps the
+// range, and whatever reads it later gets every commit rather than the last.
+func TestTheGatesRecordTheCommitsTheStoryLandedIn(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+
+	head := func() string {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), "git", "rev-parse", "HEAD")
+		cmd.Dir = root
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	recorded := func() (string, string) {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record model.Record
+		if err := json.Unmarshal(data, &record); err != nil {
+			t.Fatal(err)
+		}
+		return record.CommitBase, record.Commit
+	}
+
+	reach(t, root, model.GateCommit)
+	start := head()
+	if got, _ := recorded(); got != start {
+		t.Errorf("code review passed on %s, and the record starts the story's commits at %q", start, got)
+	}
+
+	commitEverything(t, root)
+	code := head()
+	passed := decode[gatePayload](t, mustRun(t, "gate", "commit", "pass", "--note", "on trunk", "--json"))
+	if passed.CommitBase != start || passed.Commit != code {
+		t.Errorf("the pass reported %q..%q, want %s..%s", passed.CommitBase, passed.Commit, start, code)
+	}
+	if gotStart, gotEnd := recorded(); gotStart != start || gotEnd != code {
+		t.Errorf("the pass recorded %q..%q, want %s..%s", gotStart, gotEnd, start, code)
+	}
+
+	mustRun(t, "gate", "commit", "fail", "--note", "the wrong tree went out")
+	if gotStart, gotEnd := recorded(); gotStart != start || gotEnd != "" {
+		t.Errorf("the commit gate failed, and the record names %q..%q, want %s and no end", gotStart, gotEnd, start)
+	}
+
+	// The failure is on the record, and the record is work to commit. The HEAD
+	// the gate passes on now changed nothing but the record, and the story's
+	// commits still reach back to the one with its code.
+	commitEverything(t, root)
+	end := head()
+	if r := mustRun(t, "gate", "commit", "pass", "--note", "on trunk"); !strings.Contains(r.stdout, "landed in "+start[:12]+".."+end[:12]) {
+		t.Errorf("a new pass did not say which commits the story landed in:\n%s", r.stdout)
+	}
+	if gotStart, gotEnd := recorded(); gotStart != start || gotEnd != end {
+		t.Errorf("a new pass recorded %q..%q, want %s..%s", gotStart, gotEnd, start, end)
+	}
+	between := func(from, to string) []string {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), "git", "log", "--format=%H", from+".."+to)
+		cmd.Dir = root
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Fields(string(out))
+	}
+	if commits := between(start, end); !slices.Contains(commits, code) {
+		t.Errorf("the story's commits %s..%s are %v, without %s, the one with its code", start, end, commits, code)
+	}
+
+	// Code review is reopened after the story has committed, and passes again on
+	// a HEAD that holds the story's commits. They still start where they first
+	// did, so the first of them is still in the range.
+	mustRun(t, "gate", "code_review", "fail", "--note", "one more look")
+	if gotStart, gotEnd := recorded(); gotStart != start || gotEnd != "" {
+		t.Errorf("code review was reopened, and the record names %q..%q, want %s and no end", gotStart, gotEnd, start)
+	}
+	mustRun(t, "gate", "code_review", "pass", "--note", "looked again")
+	if got, _ := recorded(); got != start || head() == start {
+		t.Errorf("code review passed again on %s, and the record starts the story's commits at %q, want %s",
+			head(), got, start)
+	}
+	commitEverything(t, root)
+	end = head()
+	mustRun(t, "gate", "commit", "pass", "--note", "on trunk")
+	if gotStart, gotEnd := recorded(); gotStart != start || gotEnd != end {
+		t.Errorf("after the rework the record names %q..%q, want %s..%s", gotStart, gotEnd, start, end)
+	}
+	if commits := between(start, end); !slices.Contains(commits, code) {
+		t.Errorf("after the rework the story's commits %s..%s are %v, without its first, %s", start, end, commits, code)
+	}
+}
+
+// A code review that passed without the record keeping where the story's commits
+// start -- under an older sdlc, or in a record an older sdlc rewrote -- has no
+// start to give. One taken at a later pass would come after whatever the story
+// had committed by then, so the record leaves it out rather than guess.
+func TestAStartTheFirstCodeReviewDidNotRecordIsNotTakenLater(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	reach(t, root, model.GateCommit)
+
+	// What an older sdlc leaves: the code review's pass in the history, and no
+	// commit_base.
+	path := filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := record["commit_base"]; !ok {
+		t.Fatalf("code review passed and recorded no start to take away:\n%s", data)
+	}
+	delete(record, "commit_base")
+	if data, err = json.Marshal(record); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The story commits, and its code review is reopened and passed again on a
+	// HEAD that holds that commit.
+	commitEverything(t, root)
+	mustRun(t, "gate", "code_review", "fail", "--note", "one more look")
+	mustRun(t, "gate", "code_review", "pass", "--note", "looked again")
+	commitEverything(t, root)
+
+	r := mustRun(t, "gate", "commit", "pass", "--note", "on trunk", "--json")
+	if strings.Contains(r.stdout, "commit_base") {
+		t.Errorf("a start the first code review did not record was taken later:\n%s", r.stdout)
+	}
+	if passed := decode[gatePayload](t, r); passed.Commit == "" {
+		t.Errorf("the pass named no end:\n%s", r.stdout)
+	}
+	if data, err := os.ReadFile(path); err != nil || strings.Contains(string(data), "commit_base") {
+		t.Errorf("the record took a start after the story's commit (%v):\n%s", err, data)
+	}
+}
+
 // The hook refuses the commits it can read, and git has ways it cannot: an alias
 // in the user's own configuration, a commit fetched from a clone. Work committed
 // that way before the review was on trunk with no gate passed, and measured

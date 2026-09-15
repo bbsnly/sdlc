@@ -180,6 +180,17 @@ a person as well. The conversation hands it over with `sdlc escalate` and stops,
 and the commit is refused until somebody has approved the work as it stands. See
 [`human_gates`](configuration.md#human_gates).
 
+Passing the gate records the commits the story landed in, as a range. The
+range runs from HEAD when code review first passed to HEAD when the commit gate
+last passed. It holds every commit the story made, and can hold commits
+somebody else made in that window: ones that together left the reviewed code as
+it was, such as commits touching only `.sdlc/` or a story's `status` and
+`updated`, or ones made before a later review. The last commit holds all of the
+reviewed work, but need not be one that changed code. The end goes when the
+commit gate stops standing, and the next pass records it again. The start
+stays: a finished story reopened later keeps it, so its range also spans
+everything that landed on trunk in between.
+
 **Refused without it:** a pass while anything is uncommitted, with a broken
 freeze, with code that has changed since the reviewers saw it, or, in a paused
 tier, with work no person has approved.
