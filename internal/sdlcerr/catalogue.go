@@ -151,7 +151,7 @@ var (
 		`record the gate as failed, hand the story to a person with "sdlc escalate", and stop; a person keeps the commits or reverts them, and answers with "sdlc approve", after which "sdlc start" picks the story up from where trunk is then`)
 
 	AcknowledgedUnknown = register("SDLC-E0047",
-		`run "sdlc log --since <commit>" to start after a commit git has, or "sdlc log --all" to list every story; replace or remove .sdlc/state/acknowledged to change where the log starts`)
+		`run "sdlc ack --through <commit>" in your own terminal to acknowledge a commit git has, or remove .sdlc/state/acknowledged to list every story; meanwhile "sdlc log --since <commit>" starts after a commit you name, and "sdlc log --all" lists every story`)
 )
 
 // entry is one row of the catalogue.

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bbsnly/sdlc/internal/config"
+	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/scaffold"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
@@ -58,7 +60,7 @@ func newDoctorCmd() *cobra.Command {
 		Example: "  sdlc doctor\n  sdlc doctor --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			checks := runChecks()
+			checks := runChecks(cmd.Context())
 			problems := 0
 			for _, c := range checks {
 				if c.State == stateProblem {
@@ -106,7 +108,7 @@ func printChecks(w io.Writer, checks []check, problems int) {
 // runChecks walks from the outside in: each check assumes the ones before it
 // passed, and says it was skipped rather than reporting a second failure with
 // the same cause.
-func runChecks() []check {
+func runChecks(ctx context.Context) []check {
 	var out []check
 	add := func(c check) { out = append(out, c) }
 
@@ -146,7 +148,7 @@ func runChecks() []check {
 		// The loop's state does not come from the configuration, and a broken
 		// configuration is when the hook warns about both and sends you here --
 		// so this is the one check that still runs.
-		add(stateCheck(store.New(&config.Project{Root: root, Config: config.Default()})))
+		add(stateCheck(ctx, store.New(&config.Project{Root: root, Config: config.Default()})))
 		return append(out, skipRest("loop state", "configuration")...)
 	}
 	stack, _ := scaffold.Detect(root)
@@ -166,20 +168,22 @@ func runChecks() []check {
 
 	project := &config.Project{Root: root, Config: cfg}
 	add(backlogCheck(store.New(project), cfg.BacklogPath(root), root))
-	add(stateCheck(store.New(project)))
+	add(stateCheck(ctx, store.New(project)))
 	add(contractCheck(root))
 	out = append(out, commandChecks(cfg)...)
 	add(binaryCheck())
 	return out
 }
 
-// stateCheck reads the two files the hook reads on every tool call. When either
-// is there and cannot be read, the hook fails open, says so, and sends you
-// here -- so this has to be the check that knows which one it is.
+// stateCheck reads the loop's own files: the iteration file, every story's gate
+// record and the test freeze, which the hook fails open over when one is there
+// and cannot be read, saying so and sending you here -- so this has to be the
+// check that knows which one it is. It also reads the commit acknowledged, which
+// the hook never does and `sdlc log` refuses when git does not have it.
 //
 // Every problem at once, not the first: a broken iteration file reported alone
 // hid a broken freeze behind it, and a second run of doctor to find it.
-func stateCheck(s *store.Store) check {
+func stateCheck(ctx context.Context, s *store.Store) check {
 	var details, fixes []string
 	problem := func(detail, fix string) {
 		details = append(details, detail)
@@ -238,12 +242,28 @@ func stateCheck(s *store.Store) check {
 			}
 		}
 	}
+	// The log refuses a commit acknowledged that git does not have. No file is
+	// nothing acknowledged, which is fine. Git that does not run cannot say
+	// either way, and the git command check has already said why, so the commit
+	// goes unchecked rather than reported missing for the same cause.
+	if named, ok, err := s.Acknowledged(); err != nil {
+		problem(err.Error(), `"sdlc log" cannot start where you left off until `+store.AcknowledgedFile+
+			" reads: fix its permissions, or remove it to list every story")
+	} else if ok {
+		if _, headErr := gitx.Head(ctx, s.Root()); headErr == nil {
+			if _, err := gitx.Resolve(ctx, s.Root(), named); gitx.NamesNoCommit(err) {
+				problem(store.AcknowledgedFile+" names "+quote(named)+", which is no commit in this repository",
+					`"sdlc log" refuses to start until it does: run "sdlc ack --through <commit>" in your own `+
+						"terminal, or remove the file to list every story")
+			}
+		}
+	}
 	if len(details) > 0 {
 		return check{Name: "loop state", State: stateProblem,
 			Detail: strings.Join(details, "; "), Fix: strings.Join(fixes, "; ")}
 	}
 	return check{Name: "loop state", State: stateOK,
-		Detail: "the iteration, every gate record and the test freeze all read"}
+		Detail: "the iteration, every gate record, the test freeze and the commit acknowledged all read"}
 }
 
 // checkOrder is every check doctor makes, in the order it makes them. It is

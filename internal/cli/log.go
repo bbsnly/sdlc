@@ -127,6 +127,9 @@ func newLogCmd() *cobra.Command {
 			case sinceGiven:
 				payload.SinceSource = sinceFlag
 				if payload.Since, err = gitx.Resolve(ctx, s.Root(), since); err != nil {
+					if !gitx.NamesNoCommit(err) {
+						return err
+					}
 					return sdlcerr.New(sdlcerr.BadArgument,
 						"--since "+quote(since)+" names no commit in this repository",
 						"the log starts after the commit --since names, and git cannot read that as one").
@@ -192,6 +195,9 @@ func acknowledged(ctx context.Context, s *store.Store) (string, string, error) {
 	}
 	sha, err := gitx.Resolve(ctx, s.Root(), named)
 	if err != nil {
+		if !gitx.NamesNoCommit(err) {
+			return "", "", err
+		}
 		return "", "", sdlcerr.New(sdlcerr.AcknowledgedUnknown,
 			store.AcknowledgedFile+" names "+quote(named)+", which is no commit in this repository",
 			"the log starts after the last commit a person acknowledged, and git cannot read that as one").
@@ -259,12 +265,16 @@ func placeRange(ctx context.Context, root, head string, e *logEntry, r *model.Re
 	}
 
 	// What the record names is text somebody could have edited, so the entry
-	// carries the commit git reads it as, and only that reaches git again. Git
-	// works -- it answered for HEAD -- so a commit it cannot read is one it does
-	// not have.
+	// carries the commit git reads it as, and only that reaches git again. Only
+	// git saying there is no such commit makes it missing: git that stopped
+	// running has said nothing about it.
 	e.CommitBase, e.Commit, e.RangeSource = r.CommitBase, r.Commit, rangeFromRecord
 	commit, unresolved := gitx.Resolve(ctx, root, r.Commit)
-	if e.Missing = unresolved != nil; e.Missing {
+	if unresolved != nil {
+		e.Missing = gitx.NamesNoCommit(unresolved)
+		if !e.Missing {
+			return unresolved
+		}
 		return nil
 	}
 	e.Commit = commit

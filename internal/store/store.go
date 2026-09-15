@@ -319,6 +319,11 @@ func (s *Store) Acknowledged() (string, bool, error) {
 	return strings.TrimSpace(string(raw)), true, nil
 }
 
+// Acknowledge records the commit a person has read the log up to.
+func (s *Store) Acknowledge(sha string) error {
+	return s.writeFile(filepath.Join(s.root, filepath.FromSlash(AcknowledgedFile)), []byte(sha+"\n"))
+}
+
 // SetActive marks a story as the one being worked on.
 func (s *Store) SetActive(id string) error {
 	if err := CheckID(id); err != nil {

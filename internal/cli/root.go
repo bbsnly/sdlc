@@ -49,6 +49,7 @@ func New(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newStatusCmd(),
 		newStoryCmd(),
 		newLogCmd(),
+		newAckCmd(),
 		newStartCmd(),
 		newStopCmd(),
 		newGateCmd(),

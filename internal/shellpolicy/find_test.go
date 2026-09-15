@@ -16,6 +16,7 @@ func TestFindPicksItsFilesByName(t *testing.T) {
 		"find . -name '[!x]ctive' -delete",
 		"find . -name tests.lock -exec rm {} +",
 		"find -L . -name stop-blocks.json -delete",
+		"find . -name acknowledged -delete",
 		"find . -path '*state/active' -delete",
 		"find . -path './.sdlc/sta[t]e' -exec rm -rf {} +",
 		"find -name active -delete",

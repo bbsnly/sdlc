@@ -136,17 +136,37 @@ func Head(ctx context.Context, root string) (string, error) {
 // git cannot read as a commit is refused with what git said. A revision that
 // starts with a dash is refused before git sees it, because git would read it
 // as an option, and every hash Resolve returns is safe to pass on.
+//
+// NamesNoCommit tells a refusal from git failing to run at all.
 func Resolve(ctx context.Context, root, rev string) (string, error) {
 	if strings.HasPrefix(rev, "-") {
-		return "", sdlcerr.New(sdlcerr.RepositoryUnreadable,
+		return "", notACommit{sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			strconv.Quote(rev)+" is not a commit",
-			"no revision starts with a dash, and git would read one that does as an option")
+			"no revision starts with a dash, and git would read one that does as an option")}
 	}
 	out, err := git(ctx, root, nil, "rev-parse", "--verify", rev+"^{commit}")
-	if err != nil {
+	var exit *exec.ExitError
+	switch {
+	case errors.As(err, &exit):
+		return "", notACommit{err}
+	case err != nil:
 		return "", err
 	}
 	return firstLine(string(out)), nil
+}
+
+// notACommit is Resolve's refusal: git ran, or would have, and the revision
+// names no commit.
+type notACommit struct{ error }
+
+func (e notACommit) Unwrap() error { return e.error }
+
+// NamesNoCommit reports whether err is Resolve saying a revision names no
+// commit, rather than git not running: missing from PATH, or stopped. Only the
+// first is reason to tell somebody the commit is not there.
+func NamesNoCommit(err error) bool {
+	var refused notACommit
+	return errors.As(err, &refused)
 }
 
 // IsAncestor reports whether ancestor is in descendant's history, which a

@@ -43,11 +43,12 @@ refused ([SDLC-E0046](troubleshooting.md#sdlc-e0046)), so the story goes to a
 person.
 
 Outside those, the hook allows everything and says nothing, with two exceptions:
-in a project with `.sdlc/config.json`, `sdlc approve` and `sdlc unfreeze` are
-refused from a tool call whether or not a story is being worked on, and so is a
-command nested too deep to read
+in a project with `.sdlc/config.json`, `sdlc approve`, `sdlc unfreeze` and
+`sdlc ack` are refused from a tool call whether or not a story is being worked
+on, and so is a command nested too deep to read
 ([`command-too-deep-to-read`](#command-too-deep-to-read)).
-`sdlc escalate` ends the iteration, so the answer to it always comes after.
+`sdlc escalate` ends the iteration, so the answer to it always comes after, and
+reading the log is not part of any story.
 
 The hook also **fails
 open**: an unreadable payload, a missing configuration, a path it cannot
@@ -338,6 +339,18 @@ given with `sdlc review add`, is a different command and is not refused.
 
 *Instead:* `sdlc escalate <type> --message "..."`, and stop. The person reads the
 work and runs `sdlc approve` in their own terminal.
+
+### `acknowledgement-is-a-human-decision`
+
+Refuses `sdlc ack` run from a tool call, however `sdlc` is reached, whether or
+not a story is being worked on.
+
+`sdlc log` starts after the commit acknowledged, so acknowledging one takes every
+story before it off the list a person reads. An agent that could run it would be
+deciding which stories nobody needs to look at. `sdlc log` itself is not refused.
+
+*Instead:* say what `sdlc log` lists, and stop. The person reads it and runs
+`sdlc ack --through <commit>` in their own terminal.
 
 ### `stop-is-a-human-decision`
 

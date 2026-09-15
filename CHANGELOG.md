@@ -37,6 +37,12 @@ not change and it is never reused.
   and says the range was inferred; one no message names is listed with its
   range unknown. It changes nothing. An acknowledged commit git does not have
   is refused with `SDLC-E0047`.
+- `sdlc ack --through <commit>` marks the log read up to a commit on this
+  branch, and `sdlc log` starts after it from then on. It names the commit
+  acknowledged before, and says so when the new one comes before it, because
+  the log then lists the stories in between again. The hook refuses it from a
+  tool call under `acknowledgement-is-a-human-decision`, and `sdlc doctor`
+  names an acknowledged commit git does not have.
 
 ### Changed
 

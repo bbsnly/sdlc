@@ -292,6 +292,9 @@ func checkPrograms(text string, s State) (Finding, bool) {
 		if f, ok := checkApprove(words); ok {
 			return f, true
 		}
+		if f, ok := checkAck(words); ok {
+			return f, true
+		}
 		if f, ok := checkStop(words, s); ok {
 			return f, true
 		}
@@ -349,10 +352,11 @@ var setsSession = regexp.MustCompile(
 		`setenvironmentvariable\(\s*['"]claude_code_session_id['"]`)
 
 // HumanDecisions reports a command that makes one of the decisions the loop
-// keeps for a person: approving work handed over, or lifting the freeze. These
-// hold with no story being worked on, because `sdlc escalate` ends the
-// iteration and the approval always comes after it -- which is where nothing
-// else was being enforced, so no approval was ever refused.
+// keeps for a person: approving work handed over, lifting the freeze, or
+// acknowledging the log. These hold with no story being worked on, because
+// `sdlc escalate` ends the iteration and the approval always comes after it --
+// which is where nothing else was being enforced, so no approval was ever
+// refused -- and reading the log is not part of any story.
 func HumanDecisions(command string, powerShell bool) (Finding, bool) {
 	if powerShell {
 		command = strings.ReplaceAll(command, "`", "")
@@ -366,6 +370,9 @@ func HumanDecisions(command string, powerShell bool) (Finding, bool) {
 			return f, true
 		}
 		if f, ok := checkApprove(words); ok {
+			return f, true
+		}
+		if f, ok := checkAck(words); ok {
 			return f, true
 		}
 	}
@@ -517,6 +524,25 @@ func checkApprove(words []string) (Finding, bool) {
 	}, true
 }
 
+// checkAck keeps acknowledging the log with the person who read it.
+//
+// `sdlc log` starts after the commit acknowledged, so moving it forward takes
+// every story before it off the list somebody reads. An agent that could run
+// it would be deciding which stories nobody needs to look at -- the ones it
+// worked on among them.
+func checkAck(words []string) (Finding, bool) {
+	if !runsSubcommand(words, "ack") {
+		return Finding{}, false
+	}
+	return Finding{
+		Rule: "acknowledgement-is-a-human-decision",
+		Reason: "acknowledging says a person has read what landed on trunk, and an agent that " +
+			"gave it would be deciding which stories nobody needs to look at",
+		Route: "say what `sdlc log` lists and stop; the person reads it and runs " +
+			"`sdlc ack --through <commit>` in their own terminal",
+	}, true
+}
+
 // checkReviewer keeps a review the reviewer's own.
 //
 // Every reviewer records its own verdict with `sdlc review add`, and nothing
@@ -579,7 +605,8 @@ func runsSubcommand(words []string, sub string) bool {
 // command's own tests hold this to the flags it has.
 var ValueFlags = map[string]bool{
 	"--file": true, "--gate": true, "--message": true, "--note": true,
-	"--reason": true, "--reject": true, "--since": true, "--story": true, "--usd": true,
+	"--reason": true, "--reject": true, "--since": true, "--story": true, "--through": true,
+	"--usd": true,
 }
 
 // checkCommit puts the commit gate in front of the commit, for a commit in this

@@ -1316,6 +1316,45 @@ func TestApprovingIsAHumanDecision(t *testing.T) {
 	}
 }
 
+// The log starts after the commit acknowledged, so an agent that could move it
+// would be deciding which stories nobody needs to look at.
+func TestAcknowledgingIsAHumanDecision(t *testing.T) {
+	for _, command := range []string{
+		"sdlc ack --through HEAD",
+		"/usr/local/bin/sdlc ack --through HEAD",
+		`C:\Users\dev\AppData\Local\sdlc\bin\sdlc.exe ack --through HEAD`,
+		"SDLC ack --through HEAD",
+		"npx @bbsnly/sdlc ack --through HEAD",
+		"go run ./cmd/sdlc ack --through HEAD",
+		"go run -mod=mod ./cmd/sdlc ack --through HEAD",
+		"sdlc --json ack --through HEAD",
+		"sdlc --through HEAD ack",
+		"go test ./... && sdlc ack --through HEAD~1",
+	} {
+		refused(t, command, ready, "acknowledgement-is-a-human-decision")
+	}
+	// With no story, where only these checks run: reading the log is not part of
+	// one.
+	for command, powerShell := range map[string]bool{
+		"sdlc ack --through HEAD":  false,
+		"s`dlc ack --through HEAD": true,
+	} {
+		if f, ok := HumanDecisions(command, powerShell); !ok || f.Rule != "acknowledgement-is-a-human-decision" {
+			t.Errorf("HumanDecisions(%q) = %q, %v; want acknowledgement-is-a-human-decision", command, f.Rule, ok)
+		}
+	}
+	for _, command := range []string{
+		"sdlc log --since HEAD~2",
+		"sdlc log --json",
+		"echo ack",
+	} {
+		allowed(t, command, ready)
+		if f, ok := HumanDecisions(command, false); ok {
+			t.Errorf("HumanDecisions(%q) refused it under %s", command, f.Rule)
+		}
+	}
+}
+
 // The file tools refused a test file added after the freeze. A shell command
 // was checked only against the files the freeze holds, so `echo > new_test.go`
 // added one, written to pass, and nothing noticed.

@@ -99,7 +99,7 @@ sdlc doctor
   ok       git command          found on PATH
   ok       configuration        .sdlc/config.json  (Go project)
   ok       backlog              user_stories.json  (1 story, one runnable)
-  ok       loop state           the iteration, every gate record and the test freeze all read
+  ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
   ok       commands             build, coverage, fmt, fmt_check, fmt_file, lint, smoke, test
   problem  commands on PATH     golangci-lint is not installed, so lint would fail

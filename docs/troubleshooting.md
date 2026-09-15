@@ -346,7 +346,8 @@ produced nothing is refused rather than recorded as zero, because a story that s
 nothing is the one wrong answer nobody questions. Check the command that produced the value.
 
 `sdlc log --since` carries it for something git cannot read as a commit, and so does
-`--since` given together with `--all`.
+`--since` given together with `--all`. `sdlc ack` carries it when `--through` is missing, names
+something git cannot read as a commit, or names one that is not on this branch.
 
 An unknown command, an unknown flag, or the wrong number of arguments carries this code too, and
 `sdlc <command> --help` says what the command takes.
@@ -556,8 +557,9 @@ something git cannot read as a commit: history was rewritten, this clone does no
 commit, or the file was edited. The log refuses rather than list every story again, which would
 bury the new ones under everything already read.
 
-`sdlc log --since` starts after a commit you name, and `sdlc log --all` lists every committed
-story. Replace or remove the file to change where the log starts by default.
+Run `sdlc ack --through <commit>` in your own terminal to acknowledge a commit git has, or remove
+the file to list every story again. Until then, `sdlc log --since` starts after a commit you name,
+and `sdlc log --all` lists every committed story.
 
 ## Warnings the hook prints
 

@@ -17,6 +17,7 @@ import (
 // can pick out of the directory.
 var stateFiles = []string{
 	".sdlc/state/active", ".sdlc/state/session", ".sdlc/state/tests.lock", ".sdlc/state/stop-blocks.json",
+	".sdlc/state/acknowledged",
 }
 
 // findArguments are the directories find starts from, and the patterns it picks

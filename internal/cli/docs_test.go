@@ -201,6 +201,7 @@ func shellRules(t *testing.T) []string {
 		"export SDLC_ENFORCE=0",
 		"sdlc unfreeze --reason x",
 		"sdlc approve US-1",
+		"sdlc ack --through HEAD",
 		"echo x > CLAUDE.md",
 		"sdlc review add code_review code-reviewer approve",
 		"echo " + strings.Repeat("$(", 100),

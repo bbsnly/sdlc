@@ -193,8 +193,9 @@ func TestNothingIsEnforcedWhileNoStoryIsBeingWorkedOn(t *testing.T) {
 		t.Error("a commit was refused with no iteration running")
 	}
 	// Except the decisions that are a person's. `sdlc escalate` ends the
-	// iteration, so an approval always came while nothing was enforced.
-	for _, cmd := range []string{"sdlc approve A-1", "sdlc unfreeze --reason x"} {
+	// iteration, so an approval always came while nothing was enforced, and
+	// reading the log is not part of any story.
+	for _, cmd := range []string{"sdlc approve A-1", "sdlc unfreeze --reason x", "sdlc ack --through HEAD"} {
 		if !denied(call(t, command(root, "sdlc-implementer", cmd), noEnv)) {
 			t.Errorf("%q went through because no story was being worked on", cmd)
 		}

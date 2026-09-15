@@ -98,10 +98,10 @@ worth a second look — a freeze lifted with `sdlc unfreeze`, gates reopened, a
 question handed to a person and whether it was answered, and what the story
 cost. It changes nothing.
 
-The log starts after the last commit a person acknowledged, the one
-`.sdlc/state/acknowledged` names: a story whose commits end in that commit's
-history has been read. With nothing acknowledged, it lists every story. A file
-that names no commit git has is refused —
+The log starts after the last commit a person acknowledged with
+[`sdlc ack`](#sdlc-ack), the one `.sdlc/state/acknowledged` names: a story whose
+commits end in that commit's history has been read. With nothing acknowledged,
+it lists every story. A file that names no commit git has is refused —
 [SDLC-E0047](troubleshooting.md#sdlc-e0047) — rather than read as nothing
 acknowledged.
 
@@ -126,6 +126,36 @@ story with no spend recorded.
 A range can hold commits somebody else made in the same window, and a story
 reopened after it was committed spans everything that landed in between. It is a
 list to read, not a list to revert.
+
+## `sdlc ack`
+
+Mark the log read up to a commit, so it starts after it.
+
+```console
+$ sdlc ack --through HEAD
+$ sdlc ack --through 3f2a9c1e0b7d
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--through` | the commit you have read the log up to: HEAD, or one in its history. Required |
+
+Run it in your own terminal: the hook refuses it from a tool call, because an
+agent that could run it would be deciding which stories nobody needs to look at.
+It writes the full commit to `.sdlc/state/acknowledged`, and `sdlc log` starts
+after it from then on. Nothing else changes.
+
+There is no default. A commit git cannot read, or one that is not on this branch,
+is refused with [SDLC-E0034](troubleshooting.md#sdlc-e0034). The output names the
+commit acknowledged before, and says when the new one comes before it, because
+the log then lists the stories in between again; in `--json`, `back` is `true`.
+`through` is a full commit. `previous` is too, or the file's text when git does
+not have that commit, and it is absent when nothing was acknowledged. Running
+`sdlc ack` is how a file that names no commit
+([SDLC-E0047](troubleshooting.md#sdlc-e0047)) is put right.
+
+The file says how far the person using this clone has read, so whether it is
+committed is your call.
 
 ## `sdlc start`
 
@@ -463,12 +493,12 @@ $ sdlc doctor --json
 ```
 
 Looks at the git repository, the git command itself, the configuration —
-including a setting it does not know, such as a misspelled one — the
-backlog, the loop's state files the hook reads on every tool call, the contract
-in `CLAUDE.md`, the programs your configured commands would run, and whether
-`sdlc` is on your `PATH`. Every problem comes with the
-command that fixes it. Exits non-zero when something is wrong, so it works in a
-script.
+including a setting it does not know, such as a misspelled one — the backlog,
+the loop's state files the hook reads on every tool call and the commit
+[`sdlc ack`](#sdlc-ack) recorded, the contract in `CLAUDE.md`, the programs your
+configured commands would run, and whether `sdlc` is on your `PATH`. Every
+problem comes with the command that fixes it. Exits non-zero when something is
+wrong, so it works in a script.
 
 It does not run your test suite. This is meant to be the fast answer to "why is
 this not working".

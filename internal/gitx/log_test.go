@@ -36,9 +36,15 @@ func TestResolveNamesACommitInFullOrRefuses(t *testing.T) {
 	// git would read it as an option.
 	run(t, root, "update-ref", "refs/heads/-x", "HEAD")
 	for _, rev := range []string{"nope", "", "--all", "-x", "HEAD^{tree}"} {
-		if got, err := Resolve(t.Context(), root, rev); err == nil {
-			t.Errorf("%q resolved to %q; want a refusal", rev, got)
+		if got, err := Resolve(t.Context(), root, rev); !NamesNoCommit(err) {
+			t.Errorf("%q resolved to %q, %v; want a refusal saying it names no commit", rev, got, err)
 		}
+	}
+
+	// Git that does not run has said nothing about the commit.
+	t.Setenv("PATH", t.TempDir())
+	if _, err := Resolve(t.Context(), root, "HEAD"); err == nil || NamesNoCommit(err) {
+		t.Errorf("with git not on PATH, Resolve = %v; want a failure that does not say the commit is missing", err)
 	}
 }
 
