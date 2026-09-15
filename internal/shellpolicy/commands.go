@@ -462,6 +462,40 @@ func gitCall(args []string) (sub, dir string, rest []string) {
 	return "", dir, nil
 }
 
+// inThisRepository reports whether a git command run in dir works on the
+// project's own repository, wherever its -C and --git-dir send it.
+func inThisRepository(words []string, dir string, s State) bool {
+	_, to := gitCommand(words[1:])
+	switch {
+	case strings.ContainsAny(to, "$%") || shellDirectory(to):
+		// `git -C "$OLDPWD"`, or `git -C ~-`, is somewhere this cannot know,
+		// which is not another repository.
+		dir = ""
+	case isAbsolute(to) || strings.HasPrefix(to, "~"):
+		// The lookup reads ~ as the home it names.
+		dir = to
+	case to != "":
+		dir = path.Join(dir, to)
+	}
+	// Another repository is a directory outside the project. Its .git is
+	// asked about rather than the directory, which for the project root
+	// itself resolves to nothing, the same as outside: `cd /path/to/project &&
+	// git commit`, the usual way to spell it, went past the gate. A directory
+	// not followed is "", which is the project.
+	repository := path.Join(dir, ".git")
+	switch gitDir := gitDirOf(words[1:]); {
+	case strings.ContainsAny(gitDir, "$%") || shellDirectory(gitDir):
+		// Wherever the command runs, `--git-dir` can name this repository:
+		// `cd /tmp && git --git-dir="$PROJECT/.git" commit`.
+		repository = ".git"
+	case isAbsolute(gitDir) || strings.HasPrefix(gitDir, "~"):
+		repository = gitDir
+	case gitDir != "":
+		repository = path.Join(dir, gitDir)
+	}
+	return s.Resolve == nil || s.Resolve(repository) != ""
+}
+
 // aliasedCommand is the git subcommand an alias runs: `commit -a`, or
 // `!git commit -a` handed to the shell.
 func aliasedCommand(value string) string {

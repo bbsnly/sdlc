@@ -17,8 +17,6 @@ func TestTakingADirectoryAwayTakesItsFrozenTests(t *testing.T) {
 		"rm -r internal/load/testdata",
 		"rm -R internal/calc",
 		"rm --recursive internal/calc",
-		"rm -rf .",
-		"rm -rf ./",
 		"cd internal && rm -rf calc",
 		"cd internal && rm -rf .",
 		"cd internal/calc && rm -rf ..",
@@ -84,10 +82,6 @@ func TestTakingADirectoryAwayTakesItsFrozenTests(t *testing.T) {
 	} {
 		allowed(t, command, s)
 	}
-	// With no frozen tests, the project's own directory holds none.
-	tests := ready
-	tests.IsTest = func(string) bool { return false }
-	allowed(t, "rm -rf .", tests)
 	for _, command := range []string{
 		"Move-Item new.go -Destination internal/calc",
 		"Move-Item -Destination:internal/calc new.go",

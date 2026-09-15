@@ -208,7 +208,7 @@ func Inspect(command string, s State) (Finding, bool) {
 			continue
 		}
 		run := program(words)
-		if f, ok := checkLoopState(command, segment, run, redirects, dir, s, m); ok {
+		if f, ok := checkLoopState(command, segment, run, redirects, dir, lost, s, m); ok {
 			return f, true
 		}
 		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, lost || unsure, s, m); ok {
@@ -500,38 +500,8 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 	if !isGit(words) {
 		return Finding{}, false
 	}
-	sub, to := gitCommand(words[1:])
-	if !makesACommit(words, sub) {
-		return Finding{}, false
-	}
-	switch {
-	case strings.ContainsAny(to, "$%") || shellDirectory(to):
-		// `git -C "$OLDPWD"`, or `git -C ~-`, is somewhere this cannot know,
-		// which is not another repository.
-		dir = ""
-	case isAbsolute(to) || strings.HasPrefix(to, "~"):
-		// The lookup reads ~ as the home it names.
-		dir = to
-	case to != "":
-		dir = path.Join(dir, to)
-	}
-	// Another repository is a directory outside the project. Its .git is
-	// asked about rather than the directory, which for the project root
-	// itself resolves to nothing, the same as outside: `cd /path/to/project &&
-	// git commit`, the usual way to spell it, went past the gate. A directory
-	// not followed is "", which is the project.
-	repository := path.Join(dir, ".git")
-	switch gitDir := gitDirOf(words[1:]); {
-	case strings.ContainsAny(gitDir, "$%") || shellDirectory(gitDir):
-		// Wherever the command runs, `--git-dir` can name this repository:
-		// `cd /tmp && git --git-dir="$PROJECT/.git" commit`.
-		repository = ".git"
-	case isAbsolute(gitDir) || strings.HasPrefix(gitDir, "~"):
-		repository = gitDir
-	case gitDir != "":
-		repository = path.Join(dir, gitDir)
-	}
-	if s.Resolve != nil && s.Resolve(repository) == "" {
+	sub, _ := gitCommand(words[1:])
+	if !makesACommit(words, sub) || !inThisRepository(words, dir, s) {
 		return Finding{}, false
 	}
 	ready, why := s.CommitReady, s.CommitWhy
@@ -555,7 +525,7 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 }
 
 // checkLoopState stops the shell being the way around every other rule.
-func checkLoopState(line, segment string, run invocation, redirects []string, dir string, s State, m *memo) (Finding, bool) {
+func checkLoopState(line, segment string, run invocation, redirects []string, dir string, lost bool, s State, m *memo) (Finding, bool) {
 	candidates := append([]string{}, redirects...)
 	if changesFiles(run.words) {
 		for _, w := range run.words[1:] {
@@ -592,6 +562,16 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 			candidates = append(candidates, foundBy(from, names, patterns, shapes)...)
 		}
 	}
+	// Taking the project's own directory away, or throwing away what its work
+	// tree holds that is not committed, takes the loop's record with it.
+	for _, w := range takenAway(run.words) {
+		if path.Clean(clean(w)) == "." && dir == "" && !lost {
+			return recordFinding(".sdlc/state"), true
+		}
+	}
+	if discardsTheWorkTree(run.words) && inThisRepository(run.words, dir, s) {
+		return recordFinding(".sdlc/state"), true
+	}
 	spelled := withGlobs(m.spell(s, dir, candidates), func() []string { return protectedShapes(s.Backlog) })
 	for _, c := range spelled {
 		if !m.first("loop state", c) || m.outside(s, c) {
@@ -615,14 +595,7 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 					"outside a running iteration; say which setting is wrong and stop",
 			}, true
 		} else if ok {
-			return Finding{
-				Rule: "loop-state-through-the-tool",
-				Reason: hit + " is the loop's own record, and a shell command is the one " +
-					"way around every rule that protects it",
-				Route: "the sdlc command owns this: `sdlc artifact write` for a gate's " +
-					"documents, `sdlc review add` for a review, `sdlc gate` for an " +
-					"outcome; the freeze is lifted by the person running the session",
-			}, true
+			return recordFinding(hit), true
 		}
 	}
 	return Finding{}, false
@@ -693,7 +666,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 	// A directory taken away takes the frozen tests in it along: `rm -rf
 	// internal/calc` removed internal/calc/add_test.go without naming it.
 	for _, c := range m.spell(s, dir, takenAway(run.words)) {
-		if frozen, ok := holding(c, s.Frozen, dir == "" && !lost); ok {
+		if frozen, ok := holding(c, s.Frozen); ok {
 			return frozenFinding(frozen), true
 		}
 	}
@@ -743,6 +716,17 @@ func frozenFinding(frozen string) Finding {
 			"genuinely has to change, say which and why: the person running the " +
 			"session lifts the freeze with `sdlc unfreeze --reason ...`, which puts the " +
 			"reason on the record",
+	}
+}
+
+func recordFinding(hit string) Finding {
+	return Finding{
+		Rule: "loop-state-through-the-tool",
+		Reason: hit + " is the loop's own record, and a shell command is the one " +
+			"way around every rule that protects it",
+		Route: "the sdlc command owns this: `sdlc artifact write` for a gate's " +
+			"documents, `sdlc review add` for a review, `sdlc gate` for an " +
+			"outcome; the freeze is lifted by the person running the session",
 	}
 }
 

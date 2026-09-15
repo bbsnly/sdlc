@@ -229,6 +229,12 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `rm -rf internal/calc`, `mv internal/calc /tmp`, `git checkout -- internal`
   and `find internal -delete` took a frozen test away without naming it. Putting
   a file into the directory, or copying the directory, is still allowed.
+- Throwing away the work tree while a story is being worked on is refused.
+  `rm -rf .`, `git clean -fd`, `git stash -u`, `git reset --hard`, `git switch
+  -f` and `git read-tree -u --reset` took the loop's record and the frozen
+  tests, which are not committed until the story is, with them. `git clean`
+  given a directory, or run in one, cleans only there, and is refused only
+  where that holds a frozen test.
 - The hook's warnings reach the session. They went to standard error, which
   Claude Code sends to its debug log when a hook allows the call, so "nothing
   is being enforced" was said to nobody. They now arrive as a system message,

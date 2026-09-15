@@ -9,9 +9,10 @@ import (
 
 // takenAway are the words a command takes away whole, a directory as much as a
 // file: what rm -r, rmdir and del remove, what mv moves from, what git rm,
-// checkout and restore put back, and find's roots when it deletes everything
-// it finds. Not where anything goes: `cp new.go internal/calc/` and `mv new.go
-// internal/calc` leave the directory where it was.
+// checkout, restore and clean put back or clear out, and find's roots when it
+// deletes everything it finds. Not where anything goes: `cp new.go
+// internal/calc/` and `mv new.go internal/calc` leave the directory where it
+// was.
 func takenAway(words []string) []string {
 	if len(words) == 0 {
 		return nil
@@ -40,26 +41,88 @@ func takenAway(words []string) []string {
 			named = rest
 		case "mv":
 			named = sources(rest)
-		}
-		if moved != "" {
-			for j, w := range named {
-				named[j] = path.Join(moved, clean(w))
+		case "clean":
+			// Without -f, git clean cleans nothing.
+			if hasWord(rest, "--force") || shortFlag(rest, 'f') {
+				named = cleaned(rest)
 			}
 		}
-		return named
+		if moved == "" {
+			return named
+		}
+		// A new slice: named shares the command's own words, and joined in
+		// place, the next rule to read them read internal/internal/calc.
+		joined := make([]string, len(named))
+		for j, w := range named {
+			joined[j] = path.Join(moved, clean(w))
+		}
+		return joined
 	}
 	return nil
+}
+
+// discardsTheWorkTree reports whether a git command throws away what the work
+// tree holds that is not committed, all of it, wherever in the tree the
+// command runs: `git stash`, `git reset --hard`, `git switch -f`, `git
+// read-tree -u`. The loop's record is never committed, and a frozen test is not
+// until the story is.
+func discardsTheWorkTree(words []string) bool {
+	if !isGit(words) {
+		return false
+	}
+	sub, _, rest := gitCall(words[1:])
+	switch sub {
+	case "stash":
+		return len(rest) == 0 || !stashKeeps[rest[0]]
+	case "reset":
+		return hasWord(rest, "--hard") || hasWord(rest, "--merge") || hasWord(rest, "--keep")
+	case "checkout", "switch":
+		return hasWord(rest, "--force") || hasWord(rest, "--discard-changes") || shortFlag(rest, 'f')
+	case "read-tree":
+		return shortFlag(rest, 'u')
+	}
+	return false
+}
+
+// stashKeeps are the stash commands that leave the work tree as it is.
+var stashKeeps = map[string]bool{
+	"list": true, "show": true, "drop": true, "clear": true, "create": true, "store": true,
 }
 
 // recursive reports whether rm was asked to go into directories: -r, -R, a
 // bundle with either in it, --recursive, or PowerShell's -Recurse.
 func recursive(args []string) bool {
+	return hasWord(args, "--recursive") || shortFlag(args, 'r') || shortFlag(args, 'R')
+}
+
+// shortFlag reports whether a one-letter option is among args, alone or in a
+// bundle.
+func shortFlag(args []string, flag byte) bool {
 	for _, a := range args {
-		if a == "--recursive" || strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") && strings.ContainsAny(a, "rR") {
+		if strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") && strings.IndexByte(a, flag) >= 0 {
 			return true
 		}
 	}
 	return false
+}
+
+// cleaned are the paths git clean is given, or where it runs when it is given
+// none.
+func cleaned(args []string) []string {
+	var named []string
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "-e" || a == "--exclude":
+			i++
+		case strings.HasPrefix(a, "-"):
+		default:
+			named = append(named, a)
+		}
+	}
+	if len(named) == 0 {
+		return []string{"."}
+	}
+	return named
 }
 
 // sources are what a move takes from: every operand but the last, which is
@@ -86,17 +149,10 @@ func sources(args []string) []string {
 	return named
 }
 
-// holding is a frozen path inside the directory word names, or any of them when
-// the word is the project's own directory, which it is only where the command
-// runs at the project's root.
-func holding(word string, frozen []string, atRoot bool) (string, bool) {
+// holding is a frozen path inside the directory word names. The project's own
+// directory is the loop state's to refuse, which it holds as well.
+func holding(word string, frozen []string) (string, bool) {
 	c := strings.TrimPrefix(clean(word), "./")
-	if c == "." {
-		if atRoot && len(frozen) > 0 {
-			return frozen[0], true
-		}
-		return "", false
-	}
 	w := pathrules.Fold(c)
 	for _, f := range frozen {
 		folded := pathrules.Fold(f)

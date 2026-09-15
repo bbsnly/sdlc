@@ -49,7 +49,7 @@ func TestOnlyWhatACommandRunsIsReadAsTheCommand(t *testing.T) {
 		allowed(t, command, ready)
 	}
 	for _, command := range []string{
-		`git stash push -m "wip before commit"`,
+		`git stash create "wip before commit"`,
 		"git log --grep commit",
 		"git log --format='%h commit %s'",
 	} {
