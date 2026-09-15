@@ -287,11 +287,7 @@ async function install(options = {}) {
     log('')
     log(`  ${dir} is not on your PATH. Add it:`)
     log('')
-    // Not `setx PATH "...;%PATH%"`: that writes the machine PATH into the user
-    // PATH and truncates the result at 1024 characters.
-    log(process.platform === 'win32'
-      ? `    [Environment]::SetEnvironmentVariable('Path', "${dir};" + [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')`
-      : `    export PATH="${dir}:$PATH"`)
+    for (const line of pathHint(process.platform, dir)) log(`    ${line}`)
     log('')
     log(process.platform === 'win32'
       ? '  in PowerShell, and open a new terminal for it to take effect.'
@@ -307,4 +303,20 @@ async function install(options = {}) {
   return { version, dir, target }
 }
 
-module.exports = { install, assetFor, defaultDir, parseChecksums, onPath, download, Failure, REPO }
+// pathHint is what to run to put dir on PATH. On Windows, not `setx PATH
+// "...;%PATH%"`: that writes the machine PATH into the user PATH and truncates
+// the result at 1024 characters. Nor [Environment]::GetEnvironmentVariable,
+// which returns %JAVA_HOME%\bin already expanded, so writing it back froze
+// every such entry at today's value. The raw registry value instead, as
+// install.ps1 reads it, and then the call that tells Explorer -- and so every
+// terminal opened after it -- that PATH changed.
+function pathHint(platform, dir) {
+  if (platform !== 'win32') return [`export PATH="${dir}:$PATH"`]
+  return [
+    "$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)",
+    `$key.SetValue('Path', '${psQuote(dir)};' + $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames'), 'ExpandString')`,
+    "[Environment]::SetEnvironmentVariable('SDLC_PATH_REFRESH', $null, 'User')",
+  ]
+}
+
+module.exports = { install, assetFor, defaultDir, parseChecksums, onPath, pathHint, download, Failure, REPO }
