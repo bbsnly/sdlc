@@ -209,7 +209,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   it creates, or where it extracts and the members it is asked for, and a copy
   writes its destination, so `rsync -a --exclude .sdlc ./ /tmp/snap/` goes
   through. A file copied into a directory lands there under its own name, so
-  `scp host:proj/CLAUDE.md .` writes CLAUDE.md, while `rsync -a CLAUDE.md
+  `cp /tmp/snap/CLAUDE.md .` and `scp host:proj/CLAUDE.md .` write CLAUDE.md,
+  while `rsync -a CLAUDE.md
   CLAUDE.md.bak` writes the backup. The value of an option written after the
   destination, as in `--info progress2`, is not taken for
   it. What `tar --remove-files` and

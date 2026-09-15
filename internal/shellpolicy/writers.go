@@ -25,6 +25,8 @@ func writtenTo(words []string) []string {
 		if !hasWord(args, "-delete") && !runsAWriter(args) {
 			return printedTo(args)
 		}
+	case "cp", "copy", "copy-item", "cpi", "mv", "move", "move-item", "mi":
+		return append(args, landing(args)...)
 	case "curl":
 		return curlWrites(args)
 	case "wget":
@@ -176,6 +178,21 @@ func intoADirectory(to string, sources int) bool {
 	}
 	name := path.Base(clean(to))
 	return name == ".." || !strings.Contains(name[1:], ".")
+}
+
+// landing are the names a cp or mv writes in the directory it copies or moves
+// into, as a copy's: `cp /tmp/snap/CLAUDE.md .` writes CLAUDE.md. A directory given
+// as an option is one whatever its name.
+func landing(args []string) []string {
+	from, to, target := moveArguments(args)
+	if !target && !intoADirectory(to, len(from)) {
+		return nil
+	}
+	names := make([]string, 0, len(from))
+	for _, f := range from {
+		names = append(names, path.Join(to, path.Base(clean(f))))
+	}
+	return names
 }
 
 // remote reports whether a copy's operand is on another machine, as rsync and

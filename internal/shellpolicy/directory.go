@@ -206,25 +206,36 @@ func cleaned(args []string) []string {
 // sources are what a move takes from: every operand but the last, which is
 // where they go, unless where they go was given as an option.
 func sources(args []string) []string {
-	var named []string
-	target := false
+	from, _, _ := moveArguments(args)
+	return from
+}
+
+// moveArguments are what a copy or move takes from, where it puts them, and
+// whether that was given as an option.
+func moveArguments(args []string) (from []string, to string, target bool) {
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case a == "-t" || a == "--target-directory" || strings.EqualFold(a, "-Destination"):
 			target = true
+			if i+1 < len(args) {
+				to = args[i+1]
+			}
 			i++
-		case strings.HasPrefix(a, "-t") || strings.HasPrefix(a, "--target-directory=") ||
-			len(a) > len("-Destination:") && strings.EqualFold(a[:len("-Destination:")], "-Destination:"):
-			target = true
+		case strings.HasPrefix(a, "--target-directory="):
+			target, to = true, strings.TrimPrefix(a, "--target-directory=")
+		case strings.HasPrefix(a, "-t"):
+			target, to = true, a[len("-t"):]
+		case len(a) > len("-Destination:") && strings.EqualFold(a[:len("-Destination:")], "-Destination:"):
+			target, to = true, a[len("-Destination:"):]
 		case strings.HasPrefix(a, "-"):
 		default:
-			named = append(named, a)
+			from = append(from, a)
 		}
 	}
-	if !target && len(named) > 0 {
-		named = named[:len(named)-1]
+	if !target && len(from) > 0 {
+		from, to = from[:len(from)-1], from[len(from)-1]
 	}
-	return named
+	return from, to, target
 }
 
 // holding is a frozen path inside the directory word names. The project's own
