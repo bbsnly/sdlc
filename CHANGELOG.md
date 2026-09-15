@@ -118,6 +118,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   The loop's own state is never written through a link that leads out of the
   repository: with `.sdlc/state` committed as one, a clone had the stop hook
   write its count into whatever directory the link named.
+  A reason a person gave for sending work back is quoted when the commit gate
+  reads it back to the assistant, so a committed one cannot end the refusal
+  and add a route that reads as sdlc's own.
 - Reviews are recorded against the thing they reviewed. A design review is
   stamped with the hash of the plan it read and a code review with the hash
   of the tree it read, so a review of an older version of the work shows as

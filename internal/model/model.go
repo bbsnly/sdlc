@@ -10,6 +10,7 @@ import (
 	"cmp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -837,7 +838,9 @@ func (r *Record) WaitsForApproval(tier, tree string) string {
 		if d.Reason == "" {
 			return "a person sent this work back"
 		}
-		return "a person sent this work back: " + d.Reason
+		// Quoted: the reason is read back to the assistant inside sdlc's own
+		// refusal, and one that ended the sentence could add a route of its own.
+		return "a person sent this work back, saying " + strconv.Quote(d.Reason)
 	}
 	if len(r.Approvals) > 0 {
 		return "the work has changed since a person last decided on it, " +
