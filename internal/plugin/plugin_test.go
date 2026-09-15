@@ -361,6 +361,141 @@ func TestTheLauncherRefusalCarriesTheSameThreeFields(t *testing.T) {
 	}
 }
 
+// The plugin is installed for every session, not only for projects that use
+// sdlc. Without the binary, every session everywhere was told on every tool
+// call that nothing was being enforced -- the moment somebody installed the
+// plugin, each project they had open started complaining. The launcher is run
+// here as Claude Code runs it, with no binary anywhere it looks.
+func TestTheLauncherSaysNothingOutsideAProjectThatUsesSdlc(t *testing.T) {
+	tmp := t.TempDir()
+	mkdir := func(parts ...string) string {
+		t.Helper()
+		dir := filepath.Join(append([]string{tmp}, parts...)...)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	plain := mkdir("plain")
+	mkdir("plain", ".git")
+	nowhere := mkdir("nowhere")
+	project := mkdir("project")
+	mkdir("project", ".git")
+	writeConfig(t, project)
+	below := mkdir("project", "internal", "invoice")
+	// A repository inside a directory that uses sdlc is a project of its own.
+	nested := mkdir("outer", "inner")
+	writeConfig(t, filepath.Join(tmp, "outer"))
+	mkdir("outer", "inner", ".git")
+
+	cases := []struct {
+		name, projectDir, cwd string
+		warns                 bool
+	}{
+		{"a repository that does not use sdlc", plain, plain, false},
+		{"a directory in no repository", nowhere, nowhere, false},
+		{"no project directory, run from a plain repository", "", plain, false},
+		{"a repository nested in one that uses sdlc", nested, nested, false},
+		{"the root of a project that uses sdlc", project, project, true},
+		{"a session opened below the root of one", below, below, true},
+		{"no project directory, run from inside one", "", below, true},
+		{"a project directory elsewhere, run from inside one", plain, below, true},
+		{"a project directory inside one, run from elsewhere", below, plain, true},
+	}
+	for _, l := range launchers(t) {
+		for _, c := range cases {
+			t.Run(l.name+"/"+c.name, func(t *testing.T) {
+				out := runLauncher(t, l, c.projectDir, c.cwd, tmp)
+				warned := strings.Contains(out, "the sdlc binary was not found")
+				if warned != c.warns {
+					t.Errorf("warned = %v, want %v; the launcher printed %q", warned, c.warns, out)
+				}
+				if !c.warns && strings.TrimSpace(out) != "" {
+					t.Errorf("the launcher printed %q where it has nothing to say", out)
+				}
+			})
+		}
+	}
+}
+
+// writeConfig makes dir a project that uses sdlc.
+func writeConfig(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, ".sdlc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".sdlc", "config.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// launcher is one way the hook command can be run: the program and arguments,
+// and a PATH with no sdlc on it that still has what the program needs.
+type launcher struct {
+	name string
+	argv []string
+	path string
+}
+
+// launchers lists every launcher this platform can run. The command in
+// hooks.json has no extension, so on Windows it may be run by Git Bash's sh as
+// well as by cmd.exe -- and there the project directory arrives written with
+// backslashes. Where both can run, both are held to the same cases.
+func launchers(t *testing.T) []launcher {
+	t.Helper()
+	var out []launcher
+	if runtime.GOOS == "windows" {
+		script, err := filepath.Abs(filepath.Join(pluginDir, "bin", "sdlc-hook.cmd"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		system := filepath.Join(os.Getenv("SystemRoot"), "System32")
+		out = append(out, launcher{"cmd", []string{"cmd", "/c", script, "PreToolUse"}, system})
+	}
+	if sh, err := exec.LookPath("sh"); err == nil {
+		script, err := filepath.Abs(filepath.Join(pluginDir, "bin", "sdlc-hook"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, launcher{"sh", []string{sh, script, "PreToolUse"}, filepath.Dir(sh)})
+	} else if runtime.GOOS == "windows" {
+		t.Log("no sh on PATH, so the POSIX launcher is not run here")
+	}
+	if len(out) == 0 {
+		t.Skip("nothing here can run the launcher")
+	}
+	return out
+}
+
+// runLauncher runs a launcher with no sdlc binary on PATH or in the plugin
+// root, and returns what it wrote to standard output.
+func runLauncher(t *testing.T, l launcher, projectDir, cwd, pluginRoot string) string {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), l.argv[0], l.argv[1:]...)
+	path := l.path
+	// Everything the launcher looks at comes from the case, and nothing from
+	// the environment the tests happen to run in.
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		switch strings.ToUpper(name) {
+		case "PATH", "PWD", "SDLC_BIN", "CLAUDE_PLUGIN_ROOT", "CLAUDE_PROJECT_DIR":
+			continue
+		}
+		cmd.Env = append(cmd.Env, kv)
+	}
+	cmd.Env = append(cmd.Env, "PATH="+path, "CLAUDE_PLUGIN_ROOT="+pluginRoot)
+	if projectDir != "" {
+		cmd.Env = append(cmd.Env, "CLAUDE_PROJECT_DIR="+projectDir)
+	}
+	cmd.Dir = cwd
+	cmd.Stdin = strings.NewReader("{}")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("the launcher failed: %v", err)
+	}
+	return string(out)
+}
+
 // ------------------------------------------------------------------ drift
 
 var (

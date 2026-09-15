@@ -557,7 +557,9 @@ Each one means a rule you are relying on is not running as it should.
 
 The plugin is installed and the binary it hands every tool call to is not on
 `PATH` or in the plugin's own `bin` directory. Nothing is refused until it is.
-Install the binary, or run `/sdlc:next`, which offers to.
+Install the binary, or run `/sdlc:next`, which offers to. Only a session
+started inside a project with `.sdlc/config.json` shows this; every other
+session says nothing, including one started in a directory above it.
 
 ### `.sdlc/state/active could not be read, so nothing is being enforced`
 

@@ -170,7 +170,8 @@ binary runs and which project it checks. See
 The plugin runs a small launcher, and the launcher hands every call to the
 `sdlc` binary. It looks for the binary at `SDLC_BIN`, then in the plugin's own
 `bin` directory, then on `PATH`. When none of them has it, every call goes
-through and the session shows:
+through, and in a project that uses sdlc — one with `.sdlc/config.json` — the
+session shows:
 
 ```text
 sdlc: the sdlc binary was not found, so nothing is being enforced. why: the
@@ -178,6 +179,12 @@ plugin is installed, but the binary it drives is not on PATH and is not in the
 bin directory of the plugin. fix: run sdlc doctor in your terminal; if that also
 fails, reinstall with npx @bbsnly/sdlc install
 ```
+
+Every other session says nothing: the plugin is installed for all of them, and
+a project that does not use sdlc has nothing to enforce. That includes a
+session opened in a directory above a project that uses sdlc — without the
+binary, the launcher looks only from the session's own directory and where
+it runs, so start the session inside the project to see the message.
 
 Nothing is refused until the binary is found. Install it by any route in
 [installation](../installation.md#1-the-binary), or run `/sdlc:next`, which

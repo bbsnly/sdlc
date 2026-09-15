@@ -21,6 +21,20 @@ for /f "delims=" %%B in ('where $PATH:sdlc.exe 2^>nul') do (
   exit /b 0
 )
 
+rem Only a session whose project directory or working directory is in a project
+rem that uses sdlc hears that the binary is missing. plugin/bin/sdlc-hook says
+rem where that is narrower than the binary's own rule. The directory goes in
+rem through a variable: an argument to call is expanded a second time, which
+rem doubles a caret and drops a percent sign.
+set "dir=%CLAUDE_PROJECT_DIR%"
+call :takes_part
+if not errorlevel 1 goto missing
+set "dir=%CD%"
+call :takes_part
+if not errorlevel 1 goto missing
+exit /b 0
+
+:missing
 rem systemMessage is what reaches the session: stderr from a hook that exits 0
 rem goes to the debug log only. See plugin/bin/sdlc-hook.
 echo {"continue":true,"systemMessage":"sdlc: the sdlc binary was not found, so nothing is being enforced. why: the plugin is installed, but the binary it drives is not on PATH and is not in the bin directory of the plugin. fix: run sdlc doctor in your terminal; if that also fails, reinstall with npx @bbsnly/sdlc install"}
@@ -31,3 +45,16 @@ echo        is not in the plugin's own bin directory>&2
 echo   fix  run "sdlc doctor" in your terminal; if that also fails, reinstall>&2
 echo        with "npx @bbsnly/sdlc install">&2
 exit /b 0
+
+rem takes_part succeeds when %dir%, or a directory above it in the same
+rem repository, has .sdlc\config.json. It stops at a repository boundary and
+rem at the root of the drive.
+:takes_part
+if not defined dir exit /b 1
+:walk
+if exist "%dir%\.sdlc\config.json" exit /b 0
+if exist "%dir%\.git" exit /b 1
+for %%P in ("%dir%\..") do set "parent=%%~fP"
+if /i "%parent%"=="%dir%" exit /b 1
+set "dir=%parent%"
+goto walk

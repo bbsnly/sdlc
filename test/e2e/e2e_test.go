@@ -256,7 +256,15 @@ func TestTheLauncherWithoutABinaryAllowsAndExplains(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A project that uses sdlc: anywhere else a missing binary has nothing to
+	// explain, and the launcher says nothing.
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".sdlc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".sdlc", "config.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := exec.CommandContext(t.Context(), script, "PreToolUse")
 	cmd.Dir = root

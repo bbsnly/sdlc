@@ -33,12 +33,59 @@ find_binary() {
   return 1
 }
 
+# takes_part reports whether a directory, or one above it in the same
+# repository, has .sdlc/config.json. The walk stops at a repository boundary,
+# as the binary's does, so a project never inherits the configuration of one
+# further up.
+#
+# It is a narrower rule than the binary's. The binary also looks from the file
+# a call writes and from every path a command names, so a session opened above
+# a project that uses sdlc is enforced there; without the binary, that session
+# hears nothing, because reading paths out of the payload is no job for shell
+# builtins. Git Bash on Windows can hand this a project directory written with
+# backslashes, so a name with no slash in it goes up by its backslashes.
+takes_part() {
+  dir="$1"
+  while [ -n "${dir}" ]; do
+    # Never "//": Git Bash reads a path that starts with two slashes as a
+    # network share, and would go looking for a host called .sdlc.
+    case "${dir}" in
+      */ | *\\) base="${dir}" ;;
+      *) base="${dir}/" ;;
+    esac
+    if [ -e "${base}.sdlc/config.json" ]; then
+      return 0
+    fi
+    if [ -e "${base}.git" ] || [ "${dir}" = / ]; then
+      return 1
+    fi
+    case "${dir}" in
+      */*)
+        dir="${dir%/*}"
+        if [ -z "${dir}" ]; then dir=/; fi
+        ;;
+      *\\*) dir="${dir%\\*}" ;;
+      *) return 1 ;;
+    esac
+  done
+  return 1
+}
+
 if binary="$(find_binary)"; then
   exec "${binary}" hook "${event}"
 fi
 
 # Read the payload to end of file so the caller never writes into a closed pipe.
 while IFS= read -r _payload_line; do :; done || true
+
+# The plugin is installed for every session, and most sessions are in projects
+# that do not use sdlc. Each of them was told, on every tool call, that nothing
+# was being enforced -- in a project with nothing to enforce. Now only a
+# session whose project directory or working directory is in a project that
+# uses sdlc hears it; takes_part says where that is narrower than the binary.
+if ! takes_part "${CLAUDE_PROJECT_DIR:-}" && ! takes_part "${PWD:-}"; then
+  exit 0
+fi
 
 # systemMessage is what reaches the session. Stderr from a hook that exits 0
 # goes to Claude Code's debug log only, so the lines below it are for that log;

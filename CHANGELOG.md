@@ -9,7 +9,16 @@ not change and it is never reused.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- Installing the plugin without the binary no longer makes every session
+  complain. The plugin's hook runs in every session, and when it could not
+  find `sdlc` it said "the sdlc binary was not found, so nothing is being
+  enforced" on every tool call, in every project — including the ones that
+  have never used sdlc. It now says so only in a session started inside a
+  project with `.sdlc/config.json`. Every other session hears nothing,
+  including one started in a directory above such a project, where the
+  binary, once installed, does enforce.
 
 ## [0.1.0](https://github.com/bbsnly/sdlc/releases/tag/v0.1.0) - 2026-09-15
 
