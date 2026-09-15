@@ -450,7 +450,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   without a word. So did a write to a path tens of thousands of levels deep.
 - A new test file cannot be added through the shell after the freeze. The file
   tools refused one; `echo > new_test.go` did not, because the shell was checked
-  only against the files the freeze already held.
+  only against the files the freeze already held. Taking one away is not adding
+  one: `rm internal/calc/extra_test.go`, which `SDLC-E0043` asks for, goes
+  through.
 - `sdlc doctor` checks the loop's state files. Every hook warning about them
   said to run it, and it did not read either one.
 

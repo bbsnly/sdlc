@@ -79,6 +79,19 @@ func takenAway(words []string) []string {
 	return nil
 }
 
+// removes reports whether all a command does to the files it names is take
+// them away: it can change a test the freeze holds, but add none.
+func removes(words []string) bool {
+	switch base(words[0]) {
+	case "rm", "unlink", "del", "erase", "remove-item", "ri":
+		return true
+	case "git":
+		sub, _, _ := gitCall(words[1:])
+		return sub == "rm"
+	}
+	return false
+}
+
 // discardsTheWorkTree reports whether a git command throws away what the work
 // tree holds that is not committed, all of it, wherever in the tree the
 // command runs: `git stash`, `git reset --hard`, `git switch -f`, `git

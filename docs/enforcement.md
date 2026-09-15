@@ -127,7 +127,8 @@ change on the record.
 
 Refuses a new test file once the tests are frozen, unless
 `freeze.allow_new_test_files` is on. A shell command that would create one — a
-redirect, `touch`, `cp` — is refused by the same rule.
+redirect, `touch`, `cp` — is refused by the same rule. Removing a test file the
+freeze does not hold is not: that is what `SDLC-E0043` asks for.
 
 *Instead:* say which case is missing and stop. The frozen files are frozen too,
 so the case cannot go into one of them either: the person running the session

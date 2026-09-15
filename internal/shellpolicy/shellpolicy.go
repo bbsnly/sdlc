@@ -648,8 +648,13 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 			}
 		}
 	}
+	var removed []string
 	if changesAFile(run.words) {
-		candidates = append(candidates, writtenTo(run.words)...)
+		if removes(run.words) {
+			removed = writtenTo(run.words)
+		} else {
+			candidates = append(candidates, writtenTo(run.words)...)
+		}
 		if run.piped {
 			candidates = append(candidates, m.words(line)...)
 		}
@@ -688,9 +693,19 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 			}
 		}
 	}
-	spelled := withGlobs(m.spell(s, dir, candidates), func() []string { return frozenShapes(s.Frozen) })
-	for _, c := range spelled {
-		if !m.first(rule, c) {
+	shapes := func() []string { return frozenShapes(s.Frozen) }
+	added := withGlobs(m.spell(s, dir, candidates), shapes)
+	spelled := append(added[:len(added):len(added)], withGlobs(m.spell(s, dir, removed), shapes)...)
+	for i, c := range spelled {
+		// A file taken away is no test added: removing the test files the freeze
+		// does not hold is what SDLC-E0043 asks for. Remembered apart, or `rm
+		// x_test.go; echo > x_test.go` read the second as already checked.
+		taken := i >= len(added)
+		key := rule
+		if taken {
+			key = rule + ", taken away"
+		}
+		if !m.first(key, c) {
 			continue
 		}
 		frozen, ok := m.frozen(c, s.Frozen, byName)
@@ -698,7 +713,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 		if !ok && w != "" && s.IsTest != nil && s.IsTest(w) {
 			frozen, ok = w, true
 		}
-		if !ok && w != "" && s.NewTest != nil && s.NewTest(w) {
+		if !ok && w != "" && !taken && s.NewTest != nil && s.NewTest(w) {
 			return Finding{
 				Rule: "no-new-test-after-the-freeze",
 				Reason: w + " would be a new test file added after the freeze, which is the " +
