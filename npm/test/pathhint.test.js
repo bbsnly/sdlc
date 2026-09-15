@@ -10,11 +10,11 @@ const { pathHint } = require('../lib/install.js')
 // entry back frozen at today's value -- which install.ps1 goes out of its way
 // not to do.
 test('the Windows PATH line keeps the entries that name a variable', () => {
-  const hint = pathHint('win32', 'C:\\Users\\ann\\AppData\\Local\\Programs\\sdlc\\bin').join('\n')
+  const hint = pathHint('win32', 'C:\\Users\\dev\\AppData\\Local\\Programs\\sdlc\\bin').join('\n')
   assert.match(hint, /DoNotExpandEnvironmentNames/)
   assert.match(hint, /'ExpandString'/)
   assert.doesNotMatch(hint, /GetEnvironmentVariable/)
-  assert.match(hint, /'C:\\Users\\ann\\AppData\\Local\\Programs\\sdlc\\bin;'/)
+  assert.match(hint, /'C:\\Users\\dev\\AppData\\Local\\Programs\\sdlc\\bin;'/)
   // A registry write tells nobody; this is what makes a new terminal see it.
   assert.match(hint, /SetEnvironmentVariable\('SDLC_PATH_REFRESH', \$null, 'User'\)/)
 })
@@ -25,5 +25,5 @@ test('the Windows PATH line survives an apostrophe in the directory', () => {
 })
 
 test('elsewhere the PATH line is an export', () => {
-  assert.deepStrictEqual(pathHint('linux', '/home/ann/.local/bin'), ['export PATH="/home/ann/.local/bin:$PATH"'])
+  assert.deepStrictEqual(pathHint('linux', '/home/dev/.local/bin'), ['export PATH="/home/dev/.local/bin:$PATH"'])
 })
