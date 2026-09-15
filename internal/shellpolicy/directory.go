@@ -170,3 +170,28 @@ func holding(word string, frozen []string) (string, bool) {
 	}
 	return "", false
 }
+
+// globHolding is a frozen path inside a directory a glob names, the glob
+// matched segment by segment from the project's root, as the shell expands it
+// there: `*` is internal, and so internal/calc/add_test.go goes with it.
+func globHolding(pattern string, frozen []string) (string, bool) {
+	p := strings.Split(pattern, "/")
+	for _, f := range frozen {
+		names := strings.Split(f, "/")
+		if len(p) >= len(names) {
+			// The file itself, or below it, which the freeze's own globs read.
+			continue
+		}
+		matched := true
+		for i := range p {
+			if !segmentMatches(p[i], names[i]) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return f, true
+		}
+	}
+	return "", false
+}

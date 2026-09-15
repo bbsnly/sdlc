@@ -235,6 +235,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   tests, which are not committed until the story is, with them. `git clean`
   given a directory, or run in one, cleans only there, and is refused only
   where that holds a frozen test.
+- A glob that names a directory holding a frozen test names that test:
+  `rm -rf *` and `rm -rf internal/*` took frozen tests away. The glob is read
+  where the command runs, so `cd dist && rm -rf *` is still allowed.
 - The hook's warnings reach the session. They went to standard error, which
   Claude Code sends to its debug log when a hook allows the call, so "nothing
   is being enforced" was said to nobody. They now arrive as a system message,

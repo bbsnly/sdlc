@@ -670,6 +670,16 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 			return frozenFinding(frozen), true
 		}
 	}
+	// A glob is expanded where the command runs, so that has to be known. Read
+	// as written as well, `cd dist && rm -rf *` was every frozen test. A word
+	// with no glob in it matches here as itself.
+	for _, w := range takenAway(run.words) {
+		if !lost {
+			if frozen, ok := globHolding(path.Join(dir, clean(w)), s.Frozen); ok {
+				return frozenFinding(frozen), true
+			}
+		}
+	}
 	spelled := withGlobs(m.spell(s, dir, candidates), func() []string { return frozenShapes(s.Frozen) })
 	for _, c := range spelled {
 		if !m.first(rule, c) {
