@@ -83,7 +83,7 @@ func TestACommandNestedTooDeepToReadIsRefused(t *testing.T) {
 	}
 	allowed(t, nested(maxNesting, "date"), notReady)
 	refused(t, nested(maxNesting+1, "date"), ready, "command-too-deep-to-read")
-	if f, ok := HumanDecisions(nested(maxNesting+1, "sdlc approve A-1"), false); !ok || f.Rule != "command-too-deep-to-read" {
+	if f, ok := HumanDecisions(nested(maxNesting+1, "sdlc approve A-1"), false, aStoryWaits); !ok || f.Rule != "command-too-deep-to-read" {
 		t.Errorf("an approval nested too deep to read was %+v", f)
 	}
 
@@ -1301,7 +1301,7 @@ func TestApprovingIsAHumanDecision(t *testing.T) {
 		"go run -mod=mod ./cmd/sdlc approve US-001": false,
 		"s`dlc approve US-001":                      true,
 	} {
-		if f, ok := HumanDecisions(command, powerShell); !ok || f.Rule != "approval-is-a-human-decision" {
+		if f, ok := HumanDecisions(command, powerShell, aStoryWaits); !ok || f.Rule != "approval-is-a-human-decision" {
 			t.Errorf("HumanDecisions(%q) = %q, %v; want approval-is-a-human-decision", command, f.Rule, ok)
 		}
 	}
@@ -1339,7 +1339,7 @@ func TestAcknowledgingIsAHumanDecision(t *testing.T) {
 		"sdlc ack --through HEAD":  false,
 		"s`dlc ack --through HEAD": true,
 	} {
-		if f, ok := HumanDecisions(command, powerShell); !ok || f.Rule != "acknowledgement-is-a-human-decision" {
+		if f, ok := HumanDecisions(command, powerShell, aStoryWaits); !ok || f.Rule != "acknowledgement-is-a-human-decision" {
 			t.Errorf("HumanDecisions(%q) = %q, %v; want acknowledgement-is-a-human-decision", command, f.Rule, ok)
 		}
 	}
@@ -1349,7 +1349,7 @@ func TestAcknowledgingIsAHumanDecision(t *testing.T) {
 		"echo ack",
 	} {
 		allowed(t, command, ready)
-		if f, ok := HumanDecisions(command, false); ok {
+		if f, ok := HumanDecisions(command, false, aStoryWaits); ok {
 			t.Errorf("HumanDecisions(%q) refused it under %s", command, f.Rule)
 		}
 	}
@@ -1402,5 +1402,80 @@ func TestTheImplementerCannotWriteATestThroughTheShell(t *testing.T) {
 func TestBeforeTheFreezeTheShellIsAsFreeAsItWas(t *testing.T) {
 	if _, refused := Inspect("echo written > x_test.go", State{CommitReady: true}); refused {
 		t.Error("a test file was refused before anything was frozen")
+	}
+}
+
+// aStoryWaits is a project with a story waiting for a person's decision.
+func aStoryWaits(string) bool { return true }
+
+// HumanDecisions asks whether a story waits only for a decision on one, and
+// reports the rest wherever sdlc is used: the log is always there to read, and a
+// command too deep to read could hold anything.
+func TestOnlyADecisionOnAStoryWaitsForOne(t *testing.T) {
+	for command, onAStory := range map[string]bool{
+		"sdlc approve A-1":         true,
+		"sdlc unfreeze --reason x": true,
+		"sdlc ack --through HEAD":  false,
+		"echo " + strings.Repeat("$(", maxNesting+1) + "date" + strings.Repeat(")", maxNesting+1): false,
+	} {
+		asked := false
+		f, ok := HumanDecisions(command, false, func(string) bool { asked = true; return true })
+		if !ok || asked != onAStory {
+			t.Errorf("%.40q: reported %v under %s, asked whether a story waits = %v", command, ok, f.Rule, asked)
+		}
+		if _, ok := HumanDecisions(command, false, func(string) bool { return false }); ok == onAStory {
+			t.Errorf("%.40q, with no story waiting: reported = %v", command, ok)
+		}
+	}
+}
+
+// A decision on a story that is let through does not end the reading of the
+// command, and it is asked about where the command has moved to.
+func TestADecisionOnAStoryIsAskedAboutWhereItRuns(t *testing.T) {
+	nothingWaits := func(string) bool { return false }
+	for _, command := range []string{
+		"sdlc approve A-1; sdlc ack --through HEAD",
+		"sdlc unfreeze --reason x || sdlc ack --through HEAD",
+		"sdlc ack --through HEAD; sdlc approve A-1",
+	} {
+		if f, ok := HumanDecisions(command, false, nothingWaits); !ok || f.Rule != "acknowledgement-is-a-human-decision" {
+			t.Errorf("%q with no story waiting: %q, %v", command, f.Rule, ok)
+		}
+	}
+	for command, want := range map[string]string{
+		"sdlc approve A-1":                           ".",
+		"cd ../b && sdlc approve A-1":                "../b",
+		"cd .. && cd b && sdlc approve A-1":          "../b",
+		"cd /work/b && sdlc unfreeze --reason x":     "/work/b",
+		"(cd /work/b) && sdlc approve A-1":           ".",
+		"sh -c 'cd /work/b && sdlc approve A-1'":     "/work/b",
+		"cd $HOME && cd /work/b && sdlc approve A-1": "/work/b",
+	} {
+		var asked []string
+		HumanDecisions(command, false, func(dir string) bool { asked = append(asked, dir); return false })
+		if len(asked) != 1 || asked[0] != want {
+			t.Errorf("%q asked about %q, want %q", command, asked, want)
+		}
+	}
+	// Somewhere it cannot follow the command to could be a project with a story
+	// waiting, and nothing there is asked.
+	for _, command := range []string{
+		`cd "$(dirname "$PWD")/b" && sdlc approve A-1`,
+		"x=b; cd ../$x && sdlc approve A-1",
+		"pushd $OLDPWD && sdlc approve A-1",
+		"cd - && sdlc unfreeze --reason x",
+		"popd && sdlc approve A-1",
+		"cd ../* && sdlc approve A-1",
+		"cd && sdlc approve A-1",
+	} {
+		asked := false
+		f, ok := HumanDecisions(command, false, func(string) bool { asked = true; return false })
+		if !ok || asked {
+			t.Errorf("%q: reported %v under %s, asked = %v", command, ok, f.Rule, asked)
+		}
+	}
+	ps := "Set-Location $env:OTHER; sdlc approve A-1"
+	if _, ok := HumanDecisions(ps, true, nothingWaits); !ok {
+		t.Errorf("%q went through", ps)
 	}
 }

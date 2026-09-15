@@ -437,8 +437,9 @@ $ sdlc approve US-001 --reject "the migration has no way back"
 | --- | --- |
 | `--reject` | send the work back instead, saying why |
 
-Run it in your own terminal: the hook refuses it from a tool call, because an
-agent that could answer would be approving its own work. Without a story id it
+Run it in your own terminal: the hook refuses it from a tool call in any session
+while a story waits for an answer or is under way, because an agent that could
+answer would be approving its own work. Without a story id it
 answers for the story being worked on. The answer goes on the record with the
 tree it was given for, the story goes back to `in_progress`, and `sdlc start`
 picks it up again.

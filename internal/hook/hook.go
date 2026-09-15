@@ -6,8 +6,10 @@
 // the CLI is reached only when the first argument is not `hook`.
 //
 // It speaks only in the Claude Code session working a story. The plugin is
-// installed for every session, and in any other one the hook refuses nothing
-// but a person's decisions, holds no turn open, and says nothing at all.
+// installed for every session, and in any other one the hook holds no turn open
+// and says nothing at all. It refuses nothing there but a person's decisions, in
+// a project that takes part: acknowledging the log, and approving work handed
+// over or lifting the freeze while a story has one waiting.
 //
 // It fails open. An error -- an unreadable payload, a missing configuration, a
 // path that cannot be resolved -- ends in "carry on". In the session working a
@@ -212,12 +214,21 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 	// nothing at all.
 	project, story := findLoop(getenv, p, path, warn)
 	if story == "" {
-		// Except the decisions that are a person's, in a project that takes
-		// part: an escalation ends the iteration, so its approval always came
-		// while this allowed everything.
-		if shellpolicy.Tools[p.ToolName] && inLoop(getenv, p) {
-			if f, refused := shellpolicy.HumanDecisions(p.ToolInput.Command, p.ToolName == "PowerShell"); refused {
-				return policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, event, true
+		// Except a person's decisions, from any session, in a project that takes
+		// part. The log of what landed on trunk is always there for a person to
+		// read, so acknowledging it is always refused, and so is a command too
+		// deep to read, which could hold that. A decision on a story waits for a
+		// story that has one: an escalation ends the iteration, so its approval
+		// always comes while no session is held, and a session the story is not
+		// held in could otherwise approve it or lift its freeze. Where no story
+		// has one waiting, that is refused nobody. The command is read before the
+		// project's state, which is read only for a decision on a story.
+		if shellpolicy.Tools[p.ToolName] {
+			if projects := loopProjects(getenv, p); len(projects) > 0 {
+				waits := storyWaits(getenv, p, projects)
+				if f, refused := shellpolicy.HumanDecisions(p.ToolInput.Command, p.ToolName == "PowerShell", waits); refused {
+					return policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, event, true
+				}
 			}
 		}
 		return policy.Allowed, event, false
@@ -715,12 +726,77 @@ func findLoop(getenv func(string) string, p payload, target string, warn func(st
 	return "", ""
 }
 
-// inLoop reports whether the session is in a project that takes part in the
-// loop, whether or not a story is being worked on.
-func inLoop(getenv func(string) string, p payload) bool {
+// loopProjects is every project that takes part in the loop the call is in or
+// names, whether or not a story is being worked on there.
+func loopProjects(getenv func(string) string, p payload) []string {
+	var out []string
 	walked, ceilings := map[string]bool{}, config.CeilingDirectories(getenv)
 	for _, start := range starts(getenv, p, "") {
-		if _, ok := projectRoot(start, walked, ceilings); ok {
+		if root, ok := projectRoot(start, walked, ceilings); ok {
+			out = append(out, root)
+		}
+	}
+	return out
+}
+
+// storyWaits is the question HumanDecisions asks of a decision on a story:
+// whether a story waits for a person in a project the call reaches, or in the
+// one the command has moved to, dir, relative to where the call runs. Each
+// project's state is read once at most, and only for a decision on a story.
+func storyWaits(getenv func(string) string, p payload, reached []string) func(dir string) bool {
+	known := map[string]bool{}
+	waits := func(root string) bool {
+		w, seen := known[root]
+		if !seen {
+			w = awaitsDecision(root)
+			known[root] = w
+		}
+		return w
+	}
+	return func(dir string) bool {
+		if slices.ContainsFunc(reached, waits) {
+			return true
+		}
+		if dir == "." {
+			return false
+		}
+		// A move from a directory the call does not name leads nowhere known.
+		abs, ok := pathrules.Abs(p.CWD, dir)
+		if p.CWD == "" || !ok {
+			return true
+		}
+		root, found := projectRoot(abs, map[string]bool{}, config.CeilingDirectories(getenv))
+		return found && waits(root)
+	}
+}
+
+// awaitsDecision reports whether a story in project has a decision waiting for a
+// person: a story is under way, whose freeze is the person's to lift, or a story
+// was handed to a person and nobody has answered. These are the states in which
+// `sdlc unfreeze` and `sdlc approve` do anything. A file that will not read says
+// nothing is waiting, as it does to those commands.
+func awaitsDecision(project string) bool {
+	sdlc := filepath.Join(project, ".sdlc")
+	if raw, err := os.ReadFile(filepath.Join(sdlc, "state", "active")); err == nil &&
+		store.CheckID(strings.TrimSpace(string(raw))) == nil {
+		return true
+	}
+	stories, err := os.ReadDir(filepath.Join(sdlc, "stories"))
+	if err != nil {
+		return false
+	}
+	// Not only directories: a story directory linked in from elsewhere is read
+	// through the link, as the store reads it.
+	for _, story := range stories {
+		raw, err := os.ReadFile(filepath.Join(sdlc, "stories", story.Name(), model.RecordFile))
+		if err != nil {
+			continue
+		}
+		var record model.Record
+		if json.Unmarshal(raw, &record) != nil {
+			continue
+		}
+		if _, waiting := record.PendingEscalation(); waiting {
 			return true
 		}
 	}

@@ -39,10 +39,10 @@ Nothing is enforced unless **all** of these are true:
    something that cannot be a session id, holds no session either.
 4. `SDLC_ENFORCE` is not `0` in the environment the session started with.
 
-In every other session the plugin is silent: it refuses nothing but the
-decisions below that are a person's, never sends a session back at the end of
-its turn, runs no formatter, writes nothing and prints nothing, with the binary
-installed or not. `sdlc status` and `sdlc doctor` say when a story is under way
+In every other session the plugin is silent: it never sends a session back at
+the end of its turn, runs no formatter, writes nothing and prints nothing, with
+the binary installed or not. It refuses nothing there but a person's decisions,
+below. `sdlc status` and `sdlc doctor` say when a story is under way
 and no session is working it.
 
 Left alone means every rule. Another session can edit code and tests, commit
@@ -52,13 +52,31 @@ under the story, and from then on every gate before the story's own commit is
 refused ([SDLC-E0046](troubleshooting.md#sdlc-e0046)), so the story goes to a
 person.
 
-Outside those, the hook allows everything and says nothing, with two exceptions:
-in a project with `.sdlc/config.json`, `sdlc approve`, `sdlc unfreeze` and
-`sdlc ack` are refused from a tool call whether or not a story is being worked
-on, and so is a command nested too deep to read
-([`command-too-deep-to-read`](#command-too-deep-to-read)).
-`sdlc escalate` ends the iteration, so the answer to it always comes after, and
-reading the log is not part of any story.
+Outside those, the hook allows everything and says nothing, with one exception:
+a person's decisions, refused from a tool call in any session, in any project
+with `.sdlc/config.json` the call reaches (the session's, the working
+directory's, or one a path in the command names).
+
+- `sdlc ack` is refused there always. The log of what landed on trunk is always
+  there for a person to read.
+- `sdlc approve` and `sdlc unfreeze` are refused while a project the call
+  reaches, or the one the command moves to with `cd`, has a story a person could
+  decide on: one under way, whichever session holds it or none, or one handed to
+  a person with `sdlc escalate` that nobody has answered. With no story under
+  way and none waiting, they are not. After a move the hook cannot follow, such
+  as `cd "$OLDPWD"`, `cd ../$name` or `popd`, they are refused as if a story
+  waited where it led.
+- A command nested too deep to read
+  ([`command-too-deep-to-read`](#command-too-deep-to-read)) is refused whatever
+  it runs, since any of these could be inside it.
+
+A command is read to its end, so `sdlc approve A-1; sdlc ack --through HEAD` is
+refused for the `sdlc ack` in it. `sdlc escalate` ends the iteration, so the
+answer to it always comes while no session is held, and no session's assistant
+approves another's story. A session that is not using sdlc never meets the
+refusals of `sdlc ack`, `sdlc approve` and `sdlc unfreeze`: each is refused only
+when an assistant runs that command itself. A command nested too deep to read
+is refused in any of those projects, whatever else it does.
 
 The hook also **fails
 open**: an unreadable payload, a missing configuration, a path it cannot
@@ -329,7 +347,8 @@ why; the person running the session lifts the freeze with
 ### `unfreeze-is-a-human-decision`
 
 Refuses `sdlc unfreeze` run from a tool call, however `sdlc` is reached — on
-`PATH`, by path, through `npx` or `go run`.
+`PATH`, by path, through `npx` or `go run`. In a session the story is not held
+in, it is refused while a story is under way or waiting for a person.
 
 Lifting the freeze is sometimes right, and it is also exactly the move an agent
 would make to reach green. So it is a person's decision: they run it in their
@@ -341,7 +360,9 @@ wrong, and stop there.
 
 ### `approval-is-a-human-decision`
 
-Refuses `sdlc approve` run from a tool call, however `sdlc` is reached.
+Refuses `sdlc approve` run from a tool call, however `sdlc` is reached. In a
+session the story is not held in, it is refused while a story is under way or
+waiting for a person, and not in a project with neither.
 
 An approval is a person's answer to a question the loop stopped to ask them:
 `sdlc escalate` hands the story over and ends the iteration. An agent that could
@@ -353,12 +374,18 @@ work and runs `sdlc approve` in their own terminal.
 
 ### `acknowledgement-is-a-human-decision`
 
-Refuses `sdlc ack` run from a tool call, however `sdlc` is reached, whether or
-not a story is being worked on.
+Refuses `sdlc ack` run from a tool call, however `sdlc` is reached, in any
+session, in any project with `.sdlc/config.json` the call reaches (the
+session's, the working directory's, or one a path in the command names),
+whether or not a story is being worked on.
 
 `sdlc log` starts after the commit acknowledged, so acknowledging one takes every
 story before it off the list a person reads. An agent that could run it would be
 deciding which stories nobody needs to look at. `sdlc log` itself is not refused.
+
+The log of what landed on trunk is always there for a person to read, so there
+is always a decision here to keep, between stories and in a session that never
+started one as much as during a story.
 
 *Instead:* say what `sdlc log` lists, and stop. The person reads it and runs
 `sdlc ack --through <commit>` in their own terminal.
@@ -458,8 +485,11 @@ Refuses a command that nests `$( )` or backticks more than 32 deep.
 
 Every level is read for the commands it runs, and a line nested thousands deep
 took longer to read than Claude Code gives the hook, which then lets the command
-run unchecked. Nothing a person writes nests that deep. It is refused whether or
-not a story is being worked on, because an approval could be buried in it too.
+run unchecked. Nothing a person writes nests that deep. It applies to any
+command: it is refused in any session, in any project with `.sdlc/config.json`
+the call reaches (the session's, the working directory's, or one a path in the
+command names), whether or not a story is being worked on, because `sdlc ack`
+or an approval could be buried in it.
 
 *Instead:* write it as separate commands.
 

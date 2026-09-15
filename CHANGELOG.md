@@ -100,6 +100,19 @@ not change and it is never reused.
   rather than lose it. `sdlc start --json` reports the session it recorded as
   `session`, and `/sdlc:next` stops and says so when it is empty, rather than
   work a story nothing enforces.
+- `sdlc approve`, `sdlc unfreeze` and a command nested too deep to read were
+  refused from a tool call in every session in a project with
+  `.sdlc/config.json`, and in any session whose command named a path into one,
+  with no story under way and none waiting for a person. Now `sdlc approve` and
+  `sdlc unfreeze` are refused outside the session working a story only while
+  the project has a story a person could decide on: one under way, whoever
+  holds it, or one handed to a person that nobody has answered, in a project
+  the call reaches or the one the command moves to with `cd`. After a move the
+  hook cannot follow, such as `cd "$OLDPWD"`, they are refused as if a story
+  waited there. `sdlc ack`, and a command nested too deep to read, are still
+  refused in any session in a project that uses sdlc, and a command is read to
+  its end: `sdlc approve A-1; sdlc ack --through HEAD` is refused for its
+  `sdlc ack`.
 
 ## [0.1.1](https://github.com/bbsnly/sdlc/releases/tag/v0.1.1) - 2026-09-15
 

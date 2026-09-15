@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/user"
@@ -182,8 +184,10 @@ func TestAProjectWithNoConfigIsNotGoverned(t *testing.T) {
 	}
 	// Not even the decisions the loop keeps for a person: there is no loop here
 	// to keep them for.
-	if denied(call(t, command(root, "", "sdlc approve A-1"), noEnv)) {
-		t.Error("sdlc approve was refused in a project that does not take part")
+	for _, cmd := range decisions {
+		if denied(call(t, command(root, "", cmd), noEnv)) {
+			t.Errorf("%.40q was refused in a project that does not take part", cmd)
+		}
 	}
 }
 
@@ -198,13 +202,178 @@ func TestNothingIsEnforcedWhileNoStoryIsBeingWorkedOn(t *testing.T) {
 	if denied(call(t, command(root, "", "git commit -m x"), noEnv)) {
 		t.Error("a commit was refused with no iteration running")
 	}
-	// Except the decisions that are a person's. `sdlc escalate` ends the
-	// iteration, so an approval always came while nothing was enforced, and
-	// reading the log is not part of any story.
-	for _, cmd := range []string{"sdlc approve A-1", "sdlc unfreeze --reason x", "sdlc ack --through HEAD"} {
-		if !denied(call(t, command(root, "sdlc-implementer", cmd), noEnv)) {
-			t.Errorf("%q went through because no story was being worked on", cmd)
+	// Nor a decision on a story, with no story for a person to decide on. The
+	// log of what landed on trunk is always there to read, so acknowledging it
+	// stays a person's, and so does a command too deep to read, which could hold
+	// that.
+	for _, cmd := range decisions {
+		refused := denied(call(t, inSession(command(root, "", cmd), "session-b"), noEnv))
+		if want := !onAStory(cmd); refused != want {
+			t.Errorf("%.40q, with no story waiting for a person: refused = %v", cmd, refused)
 		}
+	}
+	// An escalation a person has answered leaves nothing waiting.
+	escalated(t, root, true)
+	for _, cmd := range decisions {
+		refused := denied(call(t, inSession(command(root, "", cmd), "session-b"), noEnv))
+		if want := !onAStory(cmd); refused != want {
+			t.Errorf("%.40q, with every escalation answered: refused = %v", cmd, refused)
+		}
+	}
+}
+
+// onAStory reports whether one of decisions makes only decisions on a story,
+// which wait for a story that has one.
+func onAStory(cmd string) bool {
+	return !strings.Contains(cmd, " ack ") && !strings.Contains(cmd, "$(")
+}
+
+// decisions are the commands a person keeps for themselves, and a command
+// nested too deep to read, which could hold any of them.
+var decisions = []string{
+	"sdlc approve A-1",
+	"sdlc unfreeze --reason x",
+	"go run ./cmd/sdlc ack --through HEAD",
+	"echo " + strings.Repeat("$(", 33) + "date" + strings.Repeat(")", 33),
+	"sdlc approve A-1; sdlc ack --through HEAD",
+	"sdlc unfreeze --reason x || sdlc ack --through HEAD",
+	"sdlc ack --through HEAD; sdlc approve A-1",
+}
+
+// A command is followed to where it moves before a decision on a story in it.
+// From a project where nothing waits, a move into one where a story does is
+// refused, and so is a move the hook cannot follow, which could lead anywhere.
+func TestADecisionOnAStoryIsKeptWhereTheCommandMovesTo(t *testing.T) {
+	parent := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(parent); err == nil {
+		parent = resolved
+	}
+	a, b := filepath.Join(parent, "a"), filepath.Join(parent, "b")
+	for _, dir := range []string{a, b} {
+		write(t, dir, ".sdlc/config.json", `{"version":1}`)
+		write(t, dir, ".git/HEAD", "ref: refs/heads/main\n")
+	}
+	escalated(t, b, false)
+	for _, cmd := range []string{
+		"cd ../b && sdlc approve A-1",
+		"cd .. && cd b && sdlc approve A-1",
+		`cd "$(dirname "$PWD")/b" && sdlc approve A-1`,
+		"x=b; cd ../$x && sdlc approve A-1",
+		"pushd $OLDPWD && sdlc approve A-1",
+	} {
+		if !denied(call(t, inSession(command(a, "", cmd), "session-b"), noEnv)) {
+			t.Errorf("from a project where nothing waits, %q approved the story waiting next door", cmd)
+		}
+	}
+	escalated(t, b, true)
+	for cmd, want := range map[string]bool{
+		"cd ../b && sdlc approve A-1":       false,
+		"cd .. && cd b && sdlc approve A-1": false,
+		"pushd $OLDPWD && sdlc approve A-1": true,
+	} {
+		if refused := denied(call(t, inSession(command(a, "", cmd), "session-b"), noEnv)); refused != want {
+			t.Errorf("with nothing waiting anywhere, %q: refused = %v, want %v", cmd, refused, want)
+		}
+	}
+}
+
+// A story directory linked in from elsewhere is read through the link, as
+// `sdlc approve` reads it.
+func TestAStoryLinkedInFromElsewhereStillWaits(t *testing.T) {
+	root := loopProject(t)
+	escalated(t, root, false)
+	story := filepath.Join(root, ".sdlc", "stories", "A-1")
+	elsewhere := filepath.Join(t.TempDir(), "A-1")
+	if err := os.Rename(story, elsewhere); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, story); err != nil {
+		t.Skipf("this platform will not make the link: %v", err)
+	}
+	if !denied(call(t, inSession(command(root, "", "sdlc approve A-1"), "session-b"), noEnv)) {
+		t.Error("an approval went through while a story linked in from elsewhere waited for it")
+	}
+}
+
+// escalated puts an escalation on A-1's record and marks it as waiting for a
+// person, as `sdlc escalate` does, answered when answered is set. It ends the
+// iteration, as `sdlc escalate` does for the story being worked on.
+func escalated(t *testing.T, root string, answered bool) {
+	t.Helper()
+	at := time.Now()
+	record := model.NewRecord("A-1", at)
+	record.Escalate("loop_stalled", "stuck", "", at)
+	if answered {
+		record.Decide(true, "", "", at)
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, ".sdlc/stories/A-1/gate-record.json", string(raw))
+	write(t, root, "user_stories.json", `{"stories":[{"id":"A-1","title":"Invoices","status":"awaiting_human"}]}`+"\n")
+	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "active")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal(err)
+	}
+}
+
+// A person's decision on a story is kept for a person in every session, so that
+// no session's model approves another's story or lifts its freeze: while a story
+// is under way, whoever holds it, and while one waits for a person's answer.
+// Acknowledging the log is kept for a person in every session too.
+func TestAPersonsDecisionOnAStoryIsKeptFromEverySession(t *testing.T) {
+	underWay := loopProject(t)
+	fromTerminal := loopProject(t)
+	if err := os.Remove(filepath.Join(fromTerminal, ".sdlc", "state", "session")); err != nil {
+		t.Fatal(err)
+	}
+	waiting := loopProject(t)
+	escalated(t, waiting, false)
+	for name, root := range map[string]string{
+		"a story another session holds":   underWay,
+		"a story started from a terminal": fromTerminal,
+		"a story waiting for a person":    waiting,
+	} {
+		for _, session := range []string{"session-b", ""} {
+			for _, cmd := range decisions {
+				if !denied(call(t, inSession(command(root, "", cmd), session), noEnv)) {
+					t.Errorf("%s, session %q: %.40q went through", name, session, cmd)
+				}
+			}
+		}
+	}
+	// The session working the story is refused every one of them.
+	for _, cmd := range decisions {
+		if !denied(call(t, command(underWay, "", cmd), noEnv)) {
+			t.Errorf("the session working the story ran %.40q", cmd)
+		}
+	}
+	// From a session outside the repository, naming a path into it.
+	outside := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(outside); err == nil {
+		outside = resolved
+	}
+	invoices := filepath.Join(outside, "invoices")
+	write(t, invoices, ".sdlc/config.json", `{"version":1}`)
+	escalated(t, invoices, false)
+	above := env(map[string]string{"CLAUDE_PROJECT_DIR": outside})
+	approve := "cd invoices && sdlc approve A-1"
+	if !denied(call(t, inSession(command(outside, "", approve), "session-b"), above)) {
+		t.Error("an approval named from outside the repository went through while a story waited for it")
+	}
+	escalated(t, invoices, true)
+	if denied(call(t, inSession(command(outside, "", approve), "session-b"), above)) {
+		t.Error("an approval named from outside the repository was refused with nothing waiting")
+	}
+	ack := "cd invoices && sdlc ack --through HEAD"
+	if !denied(call(t, inSession(command(outside, "", ack), "session-b"), above)) {
+		t.Error("an acknowledgement named from outside the repository went through")
+	}
+	escalated(t, waiting, true)
+	// A record that will not read waits for nobody, as it does for `sdlc approve`.
+	write(t, waiting, ".sdlc/stories/B-2/gate-record.json", "{")
+	if denied(call(t, inSession(command(waiting, "", "sdlc approve B-2"), "session-b"), noEnv)) {
+		t.Error("a record that does not read was taken for a story waiting for a person")
 	}
 }
 
@@ -238,6 +407,9 @@ func TestOnlyTheSessionWorkingTheStoryIsHeldToIt(t *testing.T) {
 	}
 	if !denied(call(t, inSession(command(root, "", `sdlc unfreeze --reason "x"`), "session-b"), noEnv)) {
 		t.Error("another session lifted the freeze that is a person's to lift")
+	}
+	if !denied(call(t, inSession(command(root, "", "sdlc ack --through HEAD"), "session-b"), noEnv)) {
+		t.Error("another session acknowledged the log, which is a person's to acknowledge")
 	}
 	if denied(call(t, inSession(command(root, "", `claude -p "x"`), "session-b"), noEnv)) {
 		t.Error("another session was refused a Claude Code session of its own")
@@ -747,8 +919,9 @@ func TestTheLoopIsFoundWhereTheToolCallActs(t *testing.T) {
 		t.Errorf("looking into the repository from above it was refused: %+v", r)
 	}
 
-	// An approval is a person's with no story running, from above as well.
-	write(t, root, ".sdlc/state/active", "")
+	// An approval is a person's with no story running, from above as well, while
+	// a story waits for one.
+	escalated(t, root, false)
 	if r := call(t, command(above, "", "cd "+name+" && sdlc approve A-1"), session); !denied(r) {
 		t.Errorf("an approval run from above the repository was allowed: %+v", r)
 	}

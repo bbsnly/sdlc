@@ -353,27 +353,56 @@ var setsSession = regexp.MustCompile(
 
 // HumanDecisions reports a command that makes one of the decisions the loop
 // keeps for a person: approving work handed over, lifting the freeze, or
-// acknowledging the log. These hold with no story being worked on, because
+// acknowledging the log. The caller asks it where no story is held, because
 // `sdlc escalate` ends the iteration and the approval always comes after it --
 // which is where nothing else was being enforced, so no approval was ever
-// refused -- and reading the log is not part of any story.
-func HumanDecisions(command string, powerShell bool) (Finding, bool) {
+// refused -- and reading the log is not part of any story. A command nested too
+// deep to read is reported with them, since any of them could be inside it.
+//
+// Acknowledging the log is always reported. Approving and lifting the freeze
+// are decisions on a story, and are reported when storyWaits says a story waits
+// for one where the command runs: dir, the directory it has moved to from where
+// it started, "." when it has not moved. One that runs after a move this cannot
+// follow -- `cd "$OLDPWD"`, `cd ../$name`, `popd` -- is reported without asking,
+// because it could be anywhere. A decision on a story that is let through does
+// not end the reading: `sdlc approve A-1; sdlc ack --through HEAD` is still an
+// acknowledgement.
+func HumanDecisions(command string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
 	if powerShell {
 		command = strings.ReplaceAll(command, "`", "")
 	}
 	text := withoutDocuments(command)
-	if _, subshells := programsAt(text, powerShell); subshells.tooDeep {
+	runs, subshells := programsAt(text, powerShell)
+	if subshells.tooDeep {
 		return tooDeep, true
 	}
-	for _, words := range programsIn(text, powerShell) {
-		if f, ok := checkUnfreeze(words); ok {
+	// Where each subshell is, followed as checkPrograms follows it, and whether
+	// a move there was one that cannot be read.
+	type place struct {
+		dir  string
+		lost bool
+	}
+	places := map[int]place{0: {dir: "."}}
+	for _, r := range runs {
+		here, ok := places[r.group]
+		for g := r.group; !ok; {
+			g = subshells.parent[g]
+			here, ok = places[g]
+		}
+		places[r.group] = here
+		if f, ok := checkAck(r.words); ok {
 			return f, true
 		}
-		if f, ok := checkApprove(words); ok {
+		f, onAStory := checkUnfreeze(r.words)
+		if !onAStory {
+			f, onAStory = checkApprove(r.words)
+		}
+		if onAStory && (here.lost || storyWaits(here.dir)) {
 			return f, true
 		}
-		if f, ok := checkAck(words); ok {
-			return f, true
+		if next, ok := changedDir(here.dir, r.words); ok {
+			unread := r.substituted || next == "" || strings.ContainsAny(next, "$`%(){}*?[")
+			places[r.group] = place{dir: next, lost: unread || here.lost && !isAbsolute(next)}
 		}
 	}
 	return Finding{}, false
@@ -594,7 +623,7 @@ func reviewRole(words []string) (string, bool) {
 	return "", false
 }
 
-// runsSubcommand reports whether a command -- one from programsIn -- runs sdlc
+// runsSubcommand reports whether a command -- one from programsAt -- runs sdlc
 // with this subcommand.
 func runsSubcommand(words []string, sub string) bool {
 	args, ok := sdlcArgs(words)

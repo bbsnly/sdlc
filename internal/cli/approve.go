@@ -87,10 +87,11 @@ func newApproveCmd() *cobra.Command {
 		Use:   "approve [story]",
 		Short: "Answer an escalation: approve the work, or send it back",
 		Long: "approve is a person's answer to `sdlc escalate`.\n\n" +
-			"Run it in your own terminal. The hook refuses it from a tool call, because an\n" +
-			"agent that could answer would be approving its own work. The answer goes on\n" +
-			"the story's record with the tree it was given for, the story goes back to\n" +
-			"in_progress, and `sdlc start` picks it up again.\n\n" +
+			"Run it in your own terminal. The hook refuses it from a tool call in any session\n" +
+			"while a story waits for an answer or is under way, because an agent that could\n" +
+			"answer would be approving its own work. The answer goes on the story's record\n" +
+			"with the tree it was given for, the story goes back to in_progress, and\n" +
+			"`sdlc start` picks it up again.\n\n" +
 			"Without a story, it answers for the story being worked on.",
 		Example: "  sdlc approve US-001\n" +
 			`  sdlc approve US-001 --reject "the migration has no way back"`,

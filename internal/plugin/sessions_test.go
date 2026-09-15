@@ -243,9 +243,12 @@ func changed(before, after map[string]string) []string {
 // The plugin is installed for every session there is. A session that did not
 // start the story in front of it -- in a directory in no repository, in a
 // repository that does not use sdlc, in one that does with nothing under way,
-// or in one with a story another session or a terminal started -- hears nothing
-// from it, is refused nothing, is never sent back at the end of its turn, and
-// has nothing written for it, with the binary installed and without it. The
+// or in one with a story another session or a terminal started, or handed to a
+// person -- hears nothing from it, is never sent back at the end of its turn,
+// and has nothing written for it, with the binary installed and without it. It
+// is refused nothing but a person's decisions: `sdlc approve` and
+// `sdlc unfreeze` where a story is under way or handed over, and `sdlc ack` and
+// a command nested too deep to read in any repository that uses sdlc. The
 // session that started the story is the control: the same calls there are
 // refused, formatted and sent back, and without the binary it is told that
 // nothing is being enforced.
@@ -255,36 +258,56 @@ func TestOnlyTheSessionThatStartedAStoryHearsFromThePlugin(t *testing.T) {
 		name string
 		make func(t *testing.T, dir string)
 		held bool
+		// waits is a story a person could decide on: under way, or handed over.
+		waits bool
+		// uses is a repository that uses sdlc.
+		uses bool
 	}{
 		{"a directory in no repository", func(t *testing.T, dir string) {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-		}, false},
-		{"a repository that does not use sdlc", gitInit, false},
-		{"a repository that uses sdlc with no story under way", loopRepository, false},
+		}, false, false, false},
+		{"a repository that does not use sdlc", gitInit, false, false, false},
+		{"a repository that uses sdlc with no story under way", loopRepository, false, false, true},
 		{"a story another session started", func(t *testing.T, dir string) {
 			loopRepository(t, dir)
 			writeStoryState(t, dir, "session-other")
-		}, false},
+		}, false, true, true},
 		{"a story started from a terminal", func(t *testing.T, dir string) {
 			loopRepository(t, dir)
 			writeStoryState(t, dir, "")
-		}, false},
+		}, false, true, true},
+		{"a story waiting for a person", handedOver, false, true, true},
 		{"a story this session started", func(t *testing.T, dir string) {
 			loopRepository(t, dir)
 			writeStoryState(t, dir, me)
-		}, true},
+		}, true, true, true},
 	}
+	nested := "echo " + strings.Repeat("$(", 33) + "date" + strings.Repeat(")", 33)
+	// decision is set on a command that makes a person's decision: "story" for
+	// one on a story, refused while a story waits for it, and "project" for one
+	// refused wherever sdlc is used: acknowledging the log, or a command too deep
+	// to read, which could hold that.
 	calls := []struct {
-		name, event, tool string
-		input             map[string]any
+		name, event, tool, decision string
+		input                       map[string]any
 	}{
-		{"an edit", "PreToolUse", "Edit", map[string]any{"file_path": "internal/x.go"}},
-		{"a commit", "PreToolUse", "Bash", map[string]any{"command": "git commit -m x"}},
-		{"a write to the configuration", "PreToolUse", "Write", map[string]any{"file_path": ".sdlc/config.json"}},
-		{"a file written", "PostToolUse", "Write", map[string]any{"file_path": "internal/x.go"}},
-		{"the end of a turn", "Stop", "", nil},
+		{"an edit", "PreToolUse", "Edit", "", map[string]any{"file_path": "internal/x.go"}},
+		{"a commit", "PreToolUse", "Bash", "", map[string]any{"command": "git commit -m x"}},
+		{"a write to the configuration", "PreToolUse", "Write", "", map[string]any{"file_path": ".sdlc/config.json"}},
+		{"a file written", "PostToolUse", "Write", "", map[string]any{"file_path": "internal/x.go"}},
+		{"the end of a turn", "Stop", "", "", nil},
+		{"an approval", "PreToolUse", "Bash", "story", map[string]any{"command": "sdlc approve A-1"}},
+		{"lifting the freeze", "PreToolUse", "Bash", "story", map[string]any{"command": "sdlc unfreeze --reason x"}},
+		{"an approval, then an acknowledgement", "PreToolUse", "Bash", "project",
+			map[string]any{"command": "sdlc approve A-1; sdlc ack --through HEAD"}},
+		{"lifting the freeze, or else an acknowledgement", "PreToolUse", "Bash", "project",
+			map[string]any{"command": "sdlc unfreeze --reason x || sdlc ack --through HEAD"}},
+		{"an acknowledgement, then an approval", "PreToolUse", "Bash", "project",
+			map[string]any{"command": "sdlc ack --through HEAD; sdlc approve A-1"}},
+		{"an acknowledgement", "PreToolUse", "Bash", "project", map[string]any{"command": "go run ./cmd/sdlc ack --through HEAD"}},
+		{"a command nested too deep to read", "PreToolUse", "Bash", "project", map[string]any{"command": nested}},
 	}
 	for _, l := range launchers(t) {
 		for _, withBinary := range []bool{false, true} {
@@ -302,16 +325,16 @@ func TestOnlyTheSessionThatStartedAStoryHearsFromThePlugin(t *testing.T) {
 						stdout, stderr := h.run(t, c.event, hookEvent(c.event, me, dir, c.tool, c.input))
 						heard := said(stdout, stderr)
 						switch {
-						case !s.held:
-							if heard != "" {
-								t.Errorf("%s was answered: %s", c.name, heard)
-							}
-						case !withBinary:
+						case s.held && !withBinary:
 							if !strings.Contains(stdout, "the sdlc binary was not found") {
 								t.Errorf("%s: the session working the story was not told nothing is enforced: %s", c.name, heard)
 							}
-						default:
+						case s.held:
 							assertHeld(t, l, dir, c.event, c.name, stdout)
+						case withBinary && (s.waits && c.decision == "story" || s.uses && c.decision == "project"):
+							assertRefused(t, c.name, stdout)
+						case heard != "":
+							t.Errorf("%s was answered: %s", c.name, heard)
 						}
 					}
 					if !s.held {
@@ -320,8 +343,66 @@ func TestOnlyTheSessionThatStartedAStoryHearsFromThePlugin(t *testing.T) {
 						}
 					}
 				})
+
+				// From a session outside the repository, naming a path into it. The
+				// launchers look for the project only from where the session is, so
+				// without the binary nobody hears anything this way.
+				t.Run(name+"/named from outside", func(t *testing.T) {
+					outside := t.TempDir()
+					dir := filepath.Join(outside, "project")
+					s.make(t, dir)
+					h := hookRun{launcher: l, projectDir: outside, cwd: outside, home: t.TempDir()}
+					if withBinary {
+						h.binary = binary
+					}
+					for _, c := range calls {
+						if c.decision == "" {
+							continue
+						}
+						command := "cd project && " + c.input["command"].(string)
+						stdout, stderr := h.run(t, c.event, hookEvent(c.event, me, outside, c.tool, map[string]any{"command": command}))
+						switch {
+						case withBinary && (s.held || s.waits && c.decision == "story" || s.uses && c.decision == "project"):
+							assertRefused(t, c.name, stdout)
+						default:
+							if heard := said(stdout, stderr); heard != "" {
+								t.Errorf("%s was answered: %s", c.name, heard)
+							}
+						}
+					}
+				})
 			}
 		}
+	}
+}
+
+// handedOver is a repository loopRepository made, with A-1 handed to a person
+// and nobody's answer yet, as `sdlc escalate` leaves it: nothing under way.
+func handedOver(t *testing.T, dir string) {
+	t.Helper()
+	loopRepository(t, dir)
+	at := time.Now()
+	record := model.NewRecord("A-1", at)
+	record.SetGate(model.GateDoR, model.GatePass, "", at)
+	record.Escalate("loop_stalled", "stuck", "", at)
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putFile(t, dir, ".sdlc/stories/A-1/"+model.RecordFile, string(raw))
+	putFile(t, dir, "user_stories.json", `{"stories":[{"id":"A-1","title":"Invoices","status":"awaiting_human"}]}`+"\n")
+}
+
+// assertRefused checks that a tool call was refused.
+func assertRefused(t *testing.T, name, stdout string) {
+	t.Helper()
+	var r struct {
+		HookSpecificOutput struct {
+			PermissionDecision string `json:"permissionDecision"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &r); err != nil || r.HookSpecificOutput.PermissionDecision != "deny" {
+		t.Errorf("%s, a person's decision, went through: %q", name, stdout)
 	}
 }
 

@@ -63,6 +63,14 @@ The hook enforces nothing unless all of these are true: the project has
 the session working that story or one of its agents, and `SDLC_ENFORCE` is not
 `0`. See [when any of it applies](../enforcement.md#when-any-of-it-applies).
 
+One thing is refused in every session, in any project with `.sdlc/config.json`
+the call reaches (the session's, the working directory's, or one a path in the
+command names): a person's decisions. `sdlc ack` is refused from any tool call,
+and so is any command nested too deep to read. While a story is under way, or
+handed to a person and not yet answered, so are `sdlc approve` and
+`sdlc unfreeze`, and after a `cd` the hook cannot follow, such as
+`cd "$OLDPWD"`, they are refused as if a story waited.
+
 When the hook cannot do its job, it still lets the call through. This is
 failing open, and in the session working a story it does not happen silently.
 That session shows a system message that starts with `sdlc:`. For example:
