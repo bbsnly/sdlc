@@ -213,7 +213,7 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   written after the destination, as in `--info progress2`, is not taken for
   it. What `tar --remove-files` and
   `rsync --remove-source-files` copy they delete, and it is read as taken
-  away. A URL is not a path on this
+  away. tar reads the operands after `-C` from the directory it names. A URL is not a path on this
   machine: `curl` and `wget` write their output, their logs, headers and
   cookies, and a URL's last part only where it is saved under its own name, so
   `curl -fsSL https://example.com/CLAUDE.md` goes through. A URL written

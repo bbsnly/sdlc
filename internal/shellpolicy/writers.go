@@ -57,6 +57,12 @@ func tarArguments(args []string) (archives, into, operands []string, extract boo
 		}
 		return rest
 	}
+	// changeTo is -C: where tar extracts, and where the operands after it are.
+	dir := ""
+	changeTo := func(to string) {
+		into = append(into, to)
+		dir = to
+	}
 	for next < len(args) {
 		a := args[next]
 		next++
@@ -66,14 +72,14 @@ func tarArguments(args []string) (archives, into, operands []string, extract boo
 		case a == "--file" || a == "--listed-incremental":
 			archives = append(archives, value(""))
 		case a == "--directory":
-			into = append(into, value(""))
+			changeTo(value(""))
 		case a == "--exclude" || a == "--exclude-from" || a == "--files-from":
 			value("")
 		case strings.HasPrefix(a, "--file=") || strings.HasPrefix(a, "--listed-incremental="):
 			_, v, _ := strings.Cut(a, "=")
 			archives = append(archives, v)
 		case strings.HasPrefix(a, "--directory="):
-			into = append(into, strings.TrimPrefix(a, "--directory="))
+			changeTo(strings.TrimPrefix(a, "--directory="))
 		case strings.HasPrefix(a, "--"):
 		case strings.HasPrefix(a, "-") || next == 1:
 			// The first word is options whether or not it starts with a dash.
@@ -86,7 +92,7 @@ func tarArguments(args []string) (archives, into, operands []string, extract boo
 					archives = append(archives, value(bundle[i+1:]))
 					i = len(bundle)
 				case 'C':
-					into = append(into, value(bundle[i+1:]))
+					changeTo(value(bundle[i+1:]))
 					i = len(bundle)
 				case 'T', 'X':
 					value(bundle[i+1:])
@@ -94,6 +100,9 @@ func tarArguments(args []string) (archives, into, operands []string, extract boo
 				}
 			}
 		default:
+			if dir != "" {
+				a = path.Join(dir, a)
+			}
 			operands = append(operands, a)
 		}
 	}
