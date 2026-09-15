@@ -11,7 +11,7 @@ not change and it is never reused.
 
 Nothing yet.
 
-## [0.1.0](https://github.com/bbsnly/sdlc/releases/tag/v0.1.0) - 2026-09-11
+## [0.1.0](https://github.com/bbsnly/sdlc/releases/tag/v0.1.0) - 2026-09-15
 
 The first release: the whole loop, end to end, on macOS, Linux and Windows.
 
