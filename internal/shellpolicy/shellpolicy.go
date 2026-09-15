@@ -528,7 +528,7 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 func checkLoopState(line, segment string, run invocation, redirects []string, dir string, lost bool, s State, m *memo) (Finding, bool) {
 	candidates := append([]string{}, redirects...)
 	if changesFiles(run.words) {
-		for _, w := range run.words[1:] {
+		for _, w := range writtenTo(run.words) {
 			// A whole directory given to an interpreter is a setting of the
 			// program it runs, as in `python3 -m pytest --ignore .sdlc`, not a
 			// file for it to write.
@@ -646,7 +646,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 		}
 	}
 	if changesAFile(run.words) {
-		candidates = append(candidates, run.words[1:]...)
+		candidates = append(candidates, writtenTo(run.words)...)
 		if run.piped {
 			candidates = append(candidates, m.words(line)...)
 		}

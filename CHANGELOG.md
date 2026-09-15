@@ -204,7 +204,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - `tar`, `rsync`, `unzip`, `cpio`, `scp`, `curl` and `wget` are read as writing
   the paths they are given, and a short option's value glued to it, as in
   `-C.sdlc` or `-oCLAUDE.md`, is read as that path. `tar -xf e.tar -C .sdlc`,
-  `unzip -d .git/hooks` and `curl -o CLAUDE.md` wrote past every rule.
+  `unzip -d .git/hooks` and `curl -o CLAUDE.md` wrote past every rule. What
+  `tar`, `rsync` and `scp` only read is not counted: `tar` writes the archive
+  it creates, or where it extracts and the members it is asked for, and a copy
+  writes its destination, so `rsync -a --exclude .sdlc ./ /tmp/snap/` goes
+  through.
 - A glob or a brace in a shell command names the files it matches.
   `rm .sdl?/state/active`, `rm -rf .sdlc/*`, `echo x > CLAUDE.{md,}` and
   `rm internal/calc/add_tes?.go` reached the loop's files, the protected paths
