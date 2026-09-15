@@ -784,9 +784,10 @@ func changesFiles(words []string) bool {
 	}
 	switch base(words[0]) {
 	case "find":
-		// The command find runs is out of sight.
-		return hasWord(words[1:], "-delete") || hasWord(words[1:], "-exec") ||
-			hasWord(words[1:], "-execdir") || hasWord(words[1:], "-ok") || hasWord(words[1:], "-okdir")
+		// What find runs is a write unless it is a program that only reads:
+		// `-exec wc -l {} +` changes nothing, and `-exec ./tidy {} +` cannot be
+		// seen to leave anything alone.
+		return hasWord(words[1:], "-delete") || runsAWriter(words[1:])
 	case "sed", "perl", "awk", "gawk":
 		return true
 	}
@@ -794,6 +795,27 @@ func changesFiles(words []string) bool {
 		return true
 	}
 	return changesAFile(words)
+}
+
+// runsAWriter reports whether find runs anything but a reader on what it finds.
+func runsAWriter(args []string) bool {
+	for i, a := range args {
+		switch a {
+		case "-exec", "-execdir", "-ok", "-okdir":
+			if i+1 == len(args) || !readers[base(args[i+1])] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// readers are the programs find runs that only read what they are given.
+var readers = map[string]bool{
+	"cat": true, "head": true, "tail": true, "wc": true, "grep": true, "rg": true,
+	"ls": true, "stat": true, "file": true, "du": true, "cksum": true,
+	"md5sum": true, "sha1sum": true, "sha256sum": true, "shasum": true,
+	"diff": true, "cmp": true, "basename": true, "dirname": true, "realpath": true,
 }
 
 // gitChangesFiles reports whether a git command rewrites or removes the files

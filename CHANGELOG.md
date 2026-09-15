@@ -212,7 +212,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `cd .sdl? && rm state/active`. So does what `find` picks by `-name` or
   `-path` from a directory that can reach the project: `find . -name active
   -delete` and `find . -path '*state/tests.lock' -delete` removed the loop's
-  record and the freeze. A protected path has to be
+  record and the freeze. What find runs with `-exec` counts only when it is
+  not a program that just reads, so `find . -name '*.md' -exec wc -l {} +`
+  goes through. A protected path has to be
   named, so `rm -rf build/*` goes through, and `*` does not match a leading dot,
   as in the shell.
 - A quote or a backslash inside a word in a shell command is taken out, as the
