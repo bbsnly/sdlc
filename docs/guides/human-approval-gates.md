@@ -60,7 +60,7 @@ approving its own work. See
 | Gate 8 | the story's risk tier waits for a person | `pre_commit_approval` |
 | any gate | the same gate failed `loop.max_rework_rounds` times | `gate_failing`, by `sdlc gate` |
 | a review | the same reviewer blocked `loop.max_review_rounds` times | `review_not_converging`, by `sdlc review add` |
-| any time | the session tried to stop `loop.max_stop_blocks` times in a row with nothing recorded | `loop_stalled`, by the `Stop` hook |
+| any time | the `Stop` hook sent back `loop.max_stop_blocks` stops in a row with nothing recorded, and the session stopped again | `loop_stalled`, by the `Stop` hook |
 
 The rows down to Gate 8 are written into the `/sdlc:next` runbook. The last
 three are done by `sdlc` itself, so no session can talk its way past them:
