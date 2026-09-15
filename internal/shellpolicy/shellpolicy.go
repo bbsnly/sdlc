@@ -655,7 +655,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 	if byName {
 		rule = "freeze by name"
 	}
-	if len(run.words) > 0 && base(run.words[0]) == "find" && hasWord(run.words[1:], "-delete") && len(s.Frozen) > 0 {
+	if len(run.words) > 0 && base(run.words[0]) == "find" && (hasWord(run.words[1:], "-delete") || runsAWriter(run.words[1:])) && len(s.Frozen) > 0 {
 		// A name find is given with a glob in it, wherever it starts, as the
 		// freeze reads find's names. Not one that is all wildcards: from
 		// anywhere, that is every file, and `find build -name '*' -delete`
