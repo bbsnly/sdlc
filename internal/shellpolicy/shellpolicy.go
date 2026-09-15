@@ -834,11 +834,11 @@ func gitChangesFiles(args []string) bool {
 		return len(stashPaths(rest)) > 0
 	case "rm":
 		// --cached takes a path out of the index and leaves the file.
-		return !hasWord(rest, "--cached")
+		return !gitOption(rest, "--cached")
 	case "restore":
 		// --staged alone puts back the index, and the file stays as it is.
-		staged := hasWord(rest, "--staged") || shortFlag(rest, 'S')
-		return !staged || hasWord(rest, "--worktree") || shortFlag(rest, 'W')
+		staged := gitOption(rest, "--staged") || shortFlag(rest, 'S')
+		return !staged || gitOption(rest, "--worktree") || shortFlag(rest, 'W')
 	}
 	return false
 }

@@ -61,7 +61,7 @@ func takenAway(words []string) []string {
 			named = stashPaths(rest)
 		case "clean":
 			// Without -f, git clean cleans nothing.
-			if hasWord(rest, "--force") || shortFlag(rest, 'f') {
+			if gitOption(rest, "--force") || shortFlag(rest, 'f') {
 				named = cleaned(rest)
 			}
 		}
@@ -93,9 +93,9 @@ func discardsTheWorkTree(words []string) bool {
 	case "stash":
 		return len(rest) == 0 || !stashKeeps[rest[0]] && wholeTree(stashPaths(rest))
 	case "reset":
-		return hasWord(rest, "--hard") || hasWord(rest, "--merge") || hasWord(rest, "--keep")
+		return gitOption(rest, "--hard") || gitOption(rest, "--merge") || gitOption(rest, "--keep")
 	case "checkout", "switch":
-		return hasWord(rest, "--force") || hasWord(rest, "--discard-changes") || shortFlag(rest, 'f')
+		return gitOption(rest, "--force") || gitOption(rest, "--discard-changes") || shortFlag(rest, 'f')
 	case "read-tree":
 		return shortFlag(rest, 'u')
 	}
@@ -157,6 +157,18 @@ var stashKeeps = map[string]bool{
 // bundle with either in it, --recursive, or PowerShell's -Recurse.
 func recursive(args []string) bool {
 	return hasWord(args, "--recursive") || shortFlag(args, 'r') || shortFlag(args, 'R')
+}
+
+// gitOption reports whether a git long option is among args, spelled out or cut
+// short: git takes any start of a long option that names only one, and
+// `git restore --staged --work` puts back the work tree as well.
+func gitOption(args []string, name string) bool {
+	for _, a := range args {
+		if len(a) > 2 && strings.HasPrefix(name, a) {
+			return true
+		}
+	}
+	return false
 }
 
 // shortFlag reports whether a one-letter option is among args, alone or in a
