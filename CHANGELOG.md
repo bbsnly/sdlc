@@ -232,7 +232,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   and `find internal -delete` took a frozen test away without naming it. Putting
   a file into the directory, or copying the directory, is still allowed, and so
   is unstaging with `git restore --staged` or `git rm --cached`, which leaves
-  the files where they are.
+  the files where they are. A directory outside the project holds none of its
+  tests, whatever its name ends with: `rm -rf /tmp/snap/internal` goes through.
 - Throwing away the work tree while a story is being worked on is refused.
   `rm -rf .`, `git clean -fd`, `git stash -u`, `git reset --hard`, `git switch
   -f` and `git read-tree -u --reset` took the loop's record and the frozen

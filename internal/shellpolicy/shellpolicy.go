@@ -666,6 +666,11 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 	// A directory taken away takes the frozen tests in it along: `rm -rf
 	// internal/calc` removed internal/calc/add_test.go without naming it.
 	for _, c := range m.spell(s, dir, takenAway(run.words)) {
+		// Outside the project, a directory ending in internal/calc is another
+		// project's: `rm -rf /tmp/snap/internal` cleans up a scratch copy.
+		if m.outside(s, c) {
+			continue
+		}
 		if frozen, ok := holding(c, s.Frozen); ok {
 			return frozenFinding(frozen), true
 		}
