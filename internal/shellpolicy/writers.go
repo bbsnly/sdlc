@@ -16,6 +16,10 @@ func writtenTo(words []string) []string {
 		return copyWrites(args, rsyncValued, "--log-file", "--write-batch", "--only-write-batch")
 	case "scp":
 		return copyWrites(args, scpValued)
+	case "curl":
+		return curlWrites(args)
+	case "wget":
+		return wgetWrites(args)
 	}
 	return args
 }
