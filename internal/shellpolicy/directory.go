@@ -8,7 +8,8 @@ import (
 )
 
 // takenAway are the words a command takes away whole, a directory as much as a
-// file: what rm -r, rmdir and del remove, what mv moves from, what git rm,
+// file: what rm -r, rmdir and del remove, what mv moves from, what tar
+// --remove-files and rsync --remove-source-files copy and delete, what git rm,
 // checkout, restore and clean put back or clear out, and find's roots when it
 // deletes everything it finds. Not where anything goes: `cp new.go
 // internal/calc/` and `mv new.go internal/calc` leave the directory where it
@@ -28,6 +29,19 @@ func takenAway(words []string) []string {
 		return args
 	case "mv", "move", "move-item", "mi", "ren", "rename", "rename-item", "rni":
 		return sources(args)
+	case "tar":
+		// Each file goes once it is in the archive.
+		if hasWord(args, "--remove-files") {
+			_, _, operands, _ := tarArguments(args)
+			return operands
+		}
+	case "rsync":
+		// Each file goes once it is copied, which empties a directory of them.
+		if hasWord(args, "--remove-source-files") {
+			if operands := copyOperands(args, rsyncValued); len(operands) > 1 {
+				return operands[:len(operands)-1]
+			}
+		}
 	case "find":
 		// With a name to look for, find deletes what has it, which foundBy reads.
 		if roots, names, patterns := findArguments(args); hasWord(args, "-delete") && len(names)+len(patterns) == 0 {

@@ -11,9 +11,10 @@ func writtenTo(words []string) []string {
 	args := words[1:]
 	switch base(words[0]) {
 	case "tar":
-		return tarWrites(args)
+		// What an archiver removes once it has copied it, it writes as well.
+		return append(tarWrites(args), takenAway(words)...)
 	case "rsync":
-		return copyWrites(args, rsyncValued, "--log-file", "--write-batch", "--only-write-batch")
+		return append(copyWrites(args, rsyncValued, "--log-file", "--write-batch", "--only-write-batch"), takenAway(words)...)
 	case "scp":
 		return copyWrites(args, scpValued)
 	case "find":
@@ -32,8 +33,16 @@ func writtenTo(words []string) []string {
 // tarWrites are what tar writes: the archive it creates, with an incremental
 // archive's snapshot file, or where it extracts and the members it is asked for.
 func tarWrites(args []string) []string {
-	var archives, into, operands []string
-	extract := false
+	archives, into, operands, extract := tarArguments(args)
+	if extract {
+		return append(into, operands...)
+	}
+	return archives
+}
+
+// tarArguments are the archives tar is given, the directories it is told to
+// change to, its operands, and whether it extracts.
+func tarArguments(args []string) (archives, into, operands []string, extract bool) {
 	// value is the value of an option: the rest of its bundle, or the next word,
 	// which old-style bundles such as `tar cvfC a.tar dir` hand out in the order
 	// their letters are written.
@@ -85,10 +94,7 @@ func tarWrites(args []string) []string {
 			operands = append(operands, a)
 		}
 	}
-	if extract {
-		return append(into, operands...)
-	}
-	return archives
+	return archives, into, operands, extract
 }
 
 // rsyncValued and scpValued are the options that take the next word as their
@@ -110,9 +116,8 @@ var scpValued = map[string]bool{
 // copyWrites is the destination of a copy, its last operand, and the values of
 // the options named in writes, which are files it writes as well.
 func copyWrites(args []string, valued map[string]bool, writes ...string) []string {
-	var operands, written []string
-	for i := 0; i < len(args); i++ {
-		a := args[i]
+	var written []string
+	for i, a := range args {
 		name, v, glued := strings.Cut(a, "=")
 		for _, w := range writes {
 			if name == w {
@@ -122,7 +127,20 @@ func copyWrites(args []string, valued map[string]bool, writes ...string) []strin
 				written = append(written, v)
 			}
 		}
-		switch {
+	}
+	// A single operand is a listing, not a copy.
+	if operands := copyOperands(args, valued); len(operands) > 1 {
+		written = append(written, operands[len(operands)-1])
+	}
+	return written
+}
+
+// copyOperands are the paths a copy is given: what it copies, and last, where
+// it copies to.
+func copyOperands(args []string, valued map[string]bool) []string {
+	var operands []string
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
 		case valued[a]:
 			i++
 		case strings.HasPrefix(a, "-"):
@@ -130,9 +148,5 @@ func copyWrites(args []string, valued map[string]bool, writes ...string) []strin
 			operands = append(operands, a)
 		}
 	}
-	// A single operand is a listing, not a copy.
-	if len(operands) > 1 {
-		written = append(written, operands[len(operands)-1])
-	}
-	return written
+	return operands
 }

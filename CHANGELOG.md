@@ -208,10 +208,11 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `tar`, `rsync` and `scp` only read is not counted: `tar` writes the archive
   it creates, or where it extracts and the members it is asked for, and a copy
   writes its destination, so `rsync -a --exclude .sdlc ./ /tmp/snap/` goes
-  through. A URL is not a path on this machine: `curl` and `wget` write their
-  output, their logs, headers and cookies, and a URL's last part only where it
-  is saved under its own name, so `curl -fsSL https://example.com/CLAUDE.md`
-  goes through.
+  through. What `tar --remove-files` and `rsync --remove-source-files` copy
+  they delete, and it is read as taken away. A URL is not a path on this
+  machine: `curl` and `wget` write their output, their logs, headers and
+  cookies, and a URL's last part only where it is saved under its own name, so
+  `curl -fsSL https://example.com/CLAUDE.md` goes through.
 - A glob or a brace in a shell command names the files it matches.
   `rm .sdl?/state/active`, `rm -rf .sdlc/*`, `echo x > CLAUDE.{md,}` and
   `rm internal/calc/add_tes?.go` reached the loop's files, the protected paths
