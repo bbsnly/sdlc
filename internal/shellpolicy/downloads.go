@@ -28,11 +28,27 @@ func wgetWrites(args []string) []string {
 	return downloadWrites(args, download{
 		writes: map[string]bool{"O": true, "o": true, "a": true, "--output-document": true, "--output-file": true, "--append-output": true},
 		dir:    map[string]bool{"P": true, "--directory-prefix": true},
+		valued: "eiBtTwQDARIXlU",
+		longValued: map[string]bool{
+			"--accept": true, "--reject": true, "--accept-regex": true, "--reject-regex": true,
+			"--include-directories": true, "--exclude-directories": true, "--domains": true,
+			"--exclude-domains": true, "--tries": true, "--timeout": true, "--wait": true,
+			"--waitretry": true, "--quota": true, "--level": true, "--user-agent": true,
+			"--header": true, "--user": true, "--password": true, "--http-user": true,
+			"--http-password": true, "--post-data": true, "--post-file": true, "--body-data": true,
+			"--body-file": true, "--method": true, "--referer": true, "--load-cookies": true,
+			"--input-file": true, "--base": true, "--config": true, "--execute": true,
+			"--limit-rate": true, "--bind-address": true, "--dns-timeout": true,
+			"--connect-timeout": true, "--read-timeout": true, "--cut-dirs": true,
+			"--default-page": true, "--restrict-file-names": true,
+		},
 	})
 }
 
 type download struct {
 	writes, dir, remote map[string]bool
+	// longValued are the long options that take the next word as their value.
+	longValued map[string]bool
 	// valued are the one-letter options that take a value, which ends a bundle:
 	// `curl -XPOST` asks for no -O.
 	valued string
@@ -62,7 +78,7 @@ func downloadWrites(args []string, d download) []string {
 		case strings.HasPrefix(a, "--"):
 			name, value, glued := strings.Cut(a, "=")
 			remote = remote || d.remote[name]
-			if (d.writes[name] || d.dir[name]) && !glued && i+1 < len(args) {
+			if (d.writes[name] || d.dir[name] || d.longValued[name]) && !glued && i+1 < len(args) {
 				i++
 				value = args[i]
 			}

@@ -217,7 +217,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   machine: `curl` and `wget` write their output, their logs, headers and
   cookies, and a URL's last part only where it is saved under its own name, so
   `curl -fsSL https://example.com/CLAUDE.md` goes through. A URL written
-  without its scheme is a URL all the same.
+  without its scheme is a URL all the same, and the value of an option such as
+  wget's `-A '*.md'` is not one.
 - A glob or a brace in a shell command names the files it matches.
   `rm .sdl?/state/active`, `rm -rf .sdlc/*`, `echo x > CLAUDE.{md,}` and
   `rm internal/calc/add_tes?.go` reached the loop's files, the protected paths
