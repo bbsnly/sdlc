@@ -584,7 +584,7 @@ func newGateCmd() *cobra.Command {
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n", id, gate, status)
 			if note != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", note)
+				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", oneLine(note))
 			}
 			if done {
 				fmt.Fprintf(cmd.OutOrStdout(), "\n%s is done: every gate has passed.\n", id)

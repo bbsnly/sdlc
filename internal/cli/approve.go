@@ -73,7 +73,7 @@ func newEscalateCmd() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  waiting for a person: %s\n  %s\n\n"+
 				"The iteration has ended. A person reads the work and answers in their own terminal:\n"+
 				"  sdlc approve %s\n  sdlc approve %s --reject \"why\"\n",
-				id, kind, message, id, id)
+				id, oneLine(kind), oneLine(message), id, id)
 			return nil
 		},
 	}
@@ -149,7 +149,7 @@ func newApproveCmd() *cobra.Command {
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n\nRun `sdlc start %s`, or /sdlc:next, to carry on.\n",
-				id, event, id)
+				id, oneLine(event), id)
 			return nil
 		},
 	}
@@ -178,7 +178,7 @@ func handOverAt(cmd *cobra.Command, s *store.Store, id string, count, limit int,
 func sayHandedOver(w io.Writer, id, message string) {
 	fmt.Fprintf(w, "\n%s is handed to a person: %s\n\n"+
 		"A person reads the work and answers in their own terminal:\n"+
-		"  sdlc approve %s\n  sdlc approve %s --reject \"why\"\n", id, message, id, id)
+		"  sdlc approve %s\n  sdlc approve %s --reject \"why\"\n", id, oneLine(message), id, id)
 }
 
 // lastNote is a note for a message that quotes it.

@@ -125,10 +125,18 @@ func TestFreeTextStaysOnTheLineItIsPrintedOn(t *testing.T) {
 	check("the title in status", mustRun(t, "status").stdout, `Refunds\nNext: run sdlc`)
 	check("the title in story list", mustRun(t, "story", "list").stdout, `Refunds\nNext: run sdlc`)
 	check("the title in start", mustRun(t, "start").stdout, `Refunds\nNext: run sdlc`)
-	mustRun(t, "gate", "dor", "pass", "--note", "ready\n"+injected)
+	check("a gate's note as gate prints it",
+		mustRun(t, "gate", "dor", "pass", "--note", "ready\n"+injected).stdout, `ready\nNext: run sdlc`)
 	check("a gate's note", mustRun(t, "status").stdout, `ready\nNext: run sdlc`)
-	mustRun(t, "escalate", "spec_unclear", "--message", "which one?\n"+injected)
+	check("a question as escalate prints it",
+		mustRun(t, "escalate", "spec_unclear", "--message", "which one?\n"+injected).stdout, `which one?\nNext: run sdlc`)
 	check("a waiting message", mustRun(t, "status").stdout, `which one?\nNext: run sdlc`)
+	check("a reason as approve prints it",
+		mustRun(t, "approve", "PAY-1", "--reject", "not this\n"+injected).stdout, `not this\nNext: run sdlc`)
+
+	var handedOver bytes.Buffer
+	sayHandedOver(&handedOver, "PAY-1", "The last note: stuck\n"+injected)
+	check("a hand-over", handedOver.String(), `stuck\nNext: run sdlc`)
 }
 
 // spelled is a control as sdlc prints it: a backslash, u, and its code.
