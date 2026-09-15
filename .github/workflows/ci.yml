@@ -195,8 +195,8 @@ jobs:
           exit "${bad}"
 
   # The npm package names the oldest Node it supports, and nothing ever ran it
-  # there: every job installs 22, so ">=18" was a promise with nothing behind
-  # it. The floor is read out of package.json rather than written here, so
+  # there: every other job installs a current Node, so ">=18" was a promise with
+  # nothing behind it. The floor is read out of package.json rather than written here, so
   # raising the claim and testing the claim are the same edit.
   npm-engines:
     name: npm on the oldest Node it claims

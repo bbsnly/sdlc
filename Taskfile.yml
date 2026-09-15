@@ -205,7 +205,11 @@ tasks:
         # Captured rather than piped. Task's embedded shell has errexit on but
         # pipefail off, so `node --test ... | tail` reported the failure in its
         # output and still exited 0 -- this leg could not fail.
-        out=$(node --test 'npm/test/*.test.js' 2>&1) || {
+        #
+        # TAP named, not left to the default: Node 23 made the default reporter
+        # spec, which prints no "# tests" line, and the check below failed a
+        # green run.
+        out=$(node --test --test-reporter=tap 'npm/test/*.test.js' 2>&1) || {
           echo "$out" >&2
           exit 1
         }
