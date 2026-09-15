@@ -481,6 +481,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   and its own variables behind in your PowerShell session.
   `npx @bbsnly/sdlc install` gives up on a download after a minute with
   nothing arriving rather than a minute in all, so a slow link can finish it.
+  When it cannot connect it says why rather than only "fetch failed", and that
+  behind a proxy `install.sh` or `install.ps1` will get through where Node's
+  fetch does not.
 - Release archives carry an SBOM and build provenance attestation. The tool
   that writes the SBOM runs between the build and the attestation, so it is
   checked against a pinned hash before it runs.

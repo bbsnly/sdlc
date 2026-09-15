@@ -9,7 +9,7 @@ const path = require('node:path')
 const { test } = require('node:test')
 const { promisify } = require('node:util')
 
-const { download, Failure } = require('../lib/install.js')
+const { download, install, Failure } = require('../lib/install.js')
 
 // serve answers with body one byte every `gap` milliseconds or, given no body,
 // sends the headers and then nothing at all.
@@ -75,4 +75,61 @@ test('a finished download leaves nothing behind to keep the installer running', 
   const lasted = Date.now() - started
   assert.ok(lasted < 4000, `the process lasted ${lasted} ms after a download that takes almost none`)
   assert.strictEqual(fs.readFileSync(into, 'utf8'), 'sdlc')
+})
+
+// A server that answers is not an unreachable one: a release that has no such
+// file is a different problem with a different fix.
+test('a download the server refuses says what it answered', { timeout: 10_000 }, async (t) => {
+  const server = http.createServer((req, res) => {
+    res.writeHead(404, 'Not Found')
+    res.end()
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const url = `http://127.0.0.1:${server.address().port}/sdlc.tar.gz`
+  await assert.rejects(download(url, target(t), 5000), (err) => {
+    assert.ok(err instanceof Failure)
+    assert.ok(err.advice.some((line) => line.includes('answered 404')), err.advice.join('\n'))
+    assert.ok(!err.advice.some((line) => line.includes('could not be reached')))
+    return true
+  })
+})
+
+// closedPort is a local port nothing is listening on.
+async function closedPort() {
+  const server = http.createServer()
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const { port } = server.address()
+  await new Promise((resolve) => server.close(resolve))
+  return port
+}
+
+// fetch reports every network failure as "fetch failed", and the installer
+// passed that on as all it had to say -- behind a proxy it does not use, too.
+test('a download that cannot connect says why, and what to do behind a proxy', { timeout: 30_000 }, async (t) => {
+  const url = `http://127.0.0.1:${await closedPort()}/sdlc.tar.gz`
+  await assert.rejects(download(url, target(t), 20_000), (err) => {
+    assert.ok(err instanceof Failure)
+    assert.ok(err.advice.some((line) => line.includes('ECONNREFUSED')), err.advice.join('\n'))
+    assert.ok(err.advice.some((line) => line.includes('HTTPS_PROXY')))
+    return true
+  })
+})
+
+test('looking up the latest version without a connection says why', { timeout: 30_000 }, async (t) => {
+  const saved = { SDLC_DOWNLOAD_BASE: process.env.SDLC_DOWNLOAD_BASE, SDLC_VERSION: process.env.SDLC_VERSION }
+  t.after(() => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  })
+  process.env.SDLC_DOWNLOAD_BASE = `http://127.0.0.1:${await closedPort()}/releases/download`
+  delete process.env.SDLC_VERSION
+  await assert.rejects(install({ dir: path.dirname(target(t)), log: () => {} }), (err) => {
+    assert.ok(err instanceof Failure)
+    assert.match(err.message, /could not work out the latest version/)
+    assert.ok(err.advice.some((line) => line.includes('ECONNREFUSED')), err.advice.join('\n'))
+    return true
+  })
 })

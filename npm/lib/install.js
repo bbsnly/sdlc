@@ -84,6 +84,20 @@ function onPath(dir, env = process.env) {
   return entries.some((entry) => same(path.resolve(entry), path.resolve(dir)))
 }
 
+// unreachable is a network failure that says what failed. fetch reports every
+// one of them as "fetch failed" and keeps the reason in its cause, and it does
+// not read HTTPS_PROXY by default: behind a proxy npm itself goes through, the
+// download went direct and failed with nothing more to say than that.
+function unreachable(url, what, err) {
+  const cause = err && err.cause
+  const reason = (cause && (cause.code || cause.message)) || (err && err.message) || String(err)
+  return new Failure(what, [
+    `why  ${url} could not be reached (${reason})`,
+    'fix  check that this machine can reach github.com. Behind a proxy, use install.sh',
+    "     or install.ps1 instead: Node's fetch does not use HTTPS_PROXY by default",
+  ])
+}
+
 async function download(url, into, idle = 60_000) {
   // Without a limit a stalled connection hangs `npx` indefinitely, with nothing
   // on screen after "downloading". A deadline on the whole download failed
@@ -95,30 +109,36 @@ async function download(url, into, idle = 60_000) {
     clearTimeout(timer)
     timer = setTimeout(() => controller.abort(), idle)
   }
+  const what = `could not download ${path.basename(into)}`
+  const chunks = []
   wait()
   try {
     const response = await fetch(url, { redirect: 'follow', signal: controller.signal })
     if (!response.ok) {
-      throw new Failure(`could not download ${path.basename(into)}`, [
+      throw new Failure(what, [
         `why  ${url} answered ${response.status} ${response.statusText}`,
         'fix  check that this version is released, and that this machine can reach github.com',
       ])
     }
-    const chunks = []
     for await (const chunk of response.body) {
       wait()
       chunks.push(chunk)
     }
-    fs.writeFileSync(into, Buffer.concat(chunks))
   } catch (err) {
-    if (!controller.signal.aborted) throw err
-    throw new Failure(`could not download ${path.basename(into)}`, [
-      `why  ${url} sent nothing for ${idle / 1000} seconds`,
-      'fix  check the connection and try again',
-    ])
+    if (err instanceof Failure) throw err
+    if (controller.signal.aborted) {
+      throw new Failure(what, [
+        `why  ${url} sent nothing for ${idle / 1000} seconds`,
+        'fix  check the connection and try again',
+      ])
+    }
+    throw unreachable(url, what, err)
   } finally {
     clearTimeout(timer)
   }
+  // Written outside the network's try, so a disk that refuses the file is not
+  // reported as a server that could not be reached.
+  fs.writeFileSync(into, Buffer.concat(chunks))
 }
 
 // packagedVersion is the release this package was published with, when it
@@ -149,7 +169,12 @@ async function latestVersion() {
   // Through the redirect rather than the API: the API is rate limited per IP,
   // and a shared network can exhaust it for everyone on it.
   const url = latestURL()
-  const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(60_000) })
+  let response
+  try {
+    response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(60_000) })
+  } catch (err) {
+    throw unreachable(url, 'could not work out the latest version of sdlc.', err)
+  }
   const location = response.headers.get('location') || ''
   const match = location.match(/\/tag\/v([0-9][^/]*)$/)
   if (!match) {
