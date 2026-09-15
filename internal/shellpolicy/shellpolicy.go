@@ -562,6 +562,9 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 			candidates = append(candidates, foundBy(from, names, patterns, shapes)...)
 		}
 	}
+	// What a command takes away is gone as much as what it writes: `git clean
+	// -fdx .sdlc` writes nothing, and empties the loop's record.
+	candidates = append(candidates, takenAway(run.words)...)
 	// Taking the project's own directory away, or throwing away what its work
 	// tree holds that is not committed, takes the loop's record with it.
 	for _, w := range takenAway(run.words) {
