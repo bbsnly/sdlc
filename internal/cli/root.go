@@ -120,6 +120,14 @@ func askedForJSON(args []string) bool {
 
 // Execute builds and runs the tree, returning a process exit code.
 func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	// Errors go through controls too: a story id or a document name quoted in
+	// one comes from the same places as a title.
+	out, errs := &controls{w: stdout}, &controls{w: stderr}
+	defer func() {
+		_ = out.Flush()
+		_ = errs.Flush()
+	}()
+	stdout, stderr = out, errs
 	root := New(stdin, stdout, stderr)
 	root.SetArgs(args)
 
