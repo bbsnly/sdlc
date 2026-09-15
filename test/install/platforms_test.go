@@ -74,6 +74,28 @@ func TestTheShellInstallerInstallsEveryPlatformWeShip(t *testing.T) {
 	}
 }
 
+// Under Rosetta, `uname -m` says x86_64 on an Apple Silicon Mac, and the Intel
+// build the installer chose ran translated on every hook call. Only the arm64
+// archive is published here, so choosing the other one fails outright.
+func TestTheShellInstallerInstallsTheNativeBuildUnderRosetta(t *testing.T) {
+	skipUnlessPOSIX(t)
+	binary, mirror := crossRelease(t, "darwin", "arm64")
+	dir := t.TempDir()
+	shim := unameShim(t, "Darwin", "x86_64")
+	sysctlShim(t, shim, "1")
+
+	out, err := runWithEnv(t, serve(t, mirror), dir,
+		[]string{
+			"SDLC_VERSION=" + version,
+			"PATH=" + shim + string(os.PathListSeparator) + os.Getenv("PATH"),
+		},
+		"sh", "install.sh")
+	if err != nil {
+		t.Fatalf("install.sh failed under Rosetta: %v\n%s", err, out)
+	}
+	sameFile(t, filepath.Join(dir, "sdlc"), binary)
+}
+
 // A machine we publish nothing for must be told so, rather than given a
 // 404 from a URL it built out of a name it did not recognise.
 func TestTheShellInstallerSaysSoOnAPlatformWeDoNotShip(t *testing.T) {
@@ -173,7 +195,25 @@ esac
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	sysctlShim(t, dir, "0")
 	return dir
+}
+
+// sysctlShim writes a `sysctl` into dir that answers install.sh's one question,
+// whether the shell runs translated under Rosetta, with answer. The other
+// platform tests answer 0, so running them from a translated terminal still
+// tests the machine they name.
+func sysctlShim(t *testing.T, dir, answer string) {
+	t.Helper()
+	script := fmt.Sprintf(`#!/bin/sh
+case "$*" in
+  "-n sysctl.proc_translated") echo %q ;;
+  *) echo "sysctl shim: unexpected argument $*" >&2; exit 1 ;;
+esac
+`, answer)
+	if err := os.WriteFile(filepath.Join(dir, "sysctl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func sameFile(t *testing.T, got, want string) {

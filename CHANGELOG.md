@@ -487,6 +487,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   behind a proxy `install.sh` or `install.ps1` will get through where Node's
   fetch does not. The PowerShell line it prints to add the install directory
   to your PATH no longer expands `%JAVA_HOME%`-style entries in it for good.
+  On an Apple Silicon Mac, `install.sh` run from a shell under Rosetta installs
+  the native build rather than the Intel one.
 - Release archives carry an SBOM and build provenance attestation. The tool
   that writes the SBOM runs between the build and the attestation, so it is
   checked against a pinned hash before it runs.

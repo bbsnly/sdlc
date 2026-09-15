@@ -86,6 +86,15 @@ case "$(uname -m)" in
     ;;
 esac
 
+# Under Rosetta a shell is translated, and `uname -m` answers for it rather than
+# for the machine: an Apple Silicon Mac got the Intel build, which works and
+# runs translated on every hook call. Where there is no such sysctl, the
+# answer is empty and nothing changes.
+if [ "$os" = darwin ] && [ "$arch" = amd64 ] &&
+  [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
+  arch=arm64
+fi
+
 # SDLC_DOWNLOAD_BASE points this at somewhere other than GitHub. It exists so
 # that this script can be tested against a local mirror on every commit,
 # rather than only by a real release.
