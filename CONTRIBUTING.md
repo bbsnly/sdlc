@@ -83,15 +83,22 @@ archives, their checksums, an SBOM and a build provenance attestation, and
 finally `@bbsnly/sdlc` to npm. A pre-release tag (`v0.2.0-rc.1`) is marked as a
 pre-release on GitHub and published to npm under `next` rather than `latest`.
 
-The npm publish is a job of its own, after the release is open. If it fails —
-a token that can log in but not publish is the usual reason — the GitHub
-release is already out and complete. Fix the cause and use **Re-run failed
-jobs** on the run: only the `npm` job runs again.
+The npm job does not publish on its own. It stages the package through npm's
+trusted publishing, with no token stored anywhere, and a maintainer makes it
+public with two-factor authentication: **Approve** under the package's Staged
+Packages tab on npmjs.com, or `npm stage approve <stage-id>`. The run's summary
+names the stage. Until it is approved, `npx @bbsnly/sdlc` still installs the
+previous release.
 
-Two things the workflow cannot do for itself:
+The npm job runs after the release is open. If it fails before staging, the
+GitHub release is already out and complete: fix the cause and use **Re-run
+failed jobs** on the run, and only the `npm` job runs again.
 
-- **`NPM_TOKEN`** must exist in the repository's Actions secrets, or the
-  release stops at its first step rather than publishing half of itself.
+Things the workflow cannot do for itself:
+
+- **The trusted publisher** is configured by hand on npmjs.com, under the
+  package's settings: repository `bbsnly/sdlc`, workflow `release.yml`,
+  allowed to stage a publish.
 - **Immutable releases** are enabled by hand in Settings → General. There is no
   API for it, and it is what stops a published tag being quietly replaced.
 

@@ -60,30 +60,13 @@ jobs:
       # release that made it to GitHub and not to npm is the worst outcome
       # here: the version exists, and the install line in the release notes
       # does not work.
+      # There is no npm token to check. The npm job publishes through trusted
+      # publishing, which npm grants to this workflow in this repository and
+      # nothing else, for the length of one job.
       - name: Preflight
         shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN}" ]; then
-            echo "::error::NPM_TOKEN is not set, so @bbsnly/sdlc cannot be published." >&2
-            echo "Add it under Settings -> Secrets and variables -> Actions, then re-run." >&2
-            exit 1
-          fi
-          # Not just that the token exists: that it authenticates. An expired
-          # or revoked token passes a non-empty check and would fail at the
-          # last step of the run, which is the one place failing is expensive.
-          # This does not prove the token may publish @bbsnly/sdlc: whoami
-          # succeeds for a read-only token too. That one still fails at
-          # `npm publish`, after the GitHub release is out -- replace the
-          # token and re-run the failed npm job.
-          if ! who=$(npm whoami 2>&1); then
-            echo "::error::NPM_TOKEN cannot authenticate to npm: ${who}" >&2
-            exit 1
-          fi
-          echo "npm: authenticated as ${who}"
-
           go run ./internal/tools/release -tag "${GITHUB_REF_NAME}" check
           version=$(go run ./internal/tools/release version)
 
@@ -261,7 +244,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read # the published release's checksums
-      id-token: write # provenance for the npm package
+      id-token: write # trusted publishing, and provenance for the npm package
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -272,11 +255,10 @@ jobs:
           node-version: '26.8.2'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Publish @bbsnly/sdlc
+      - name: Stage @bbsnly/sdlc
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           # The checksums travel inside the package. npm packages are
@@ -306,4 +288,19 @@ jobs:
           # the same thing as a semver pre-release.
           tag=latest
           case "${version}" in *-*) tag=next ;; esac
-          npm publish ./npm --provenance --access public --tag "$tag"
+
+          # Trusted publishing: npm trades this job's OIDC token for one that
+          # may stage @bbsnly/sdlc and nothing else, so no npm token is stored
+          # anywhere. Staged is not public. A maintainer approves it with
+          # two-factor authentication, and only then does the tag apply.
+          npm stage publish ./npm --provenance --access public --tag "$tag" | tee "${RUNNER_TEMP}/stage.txt"
+          {
+            echo "## @bbsnly/sdlc@${version} is staged, not yet public"
+            echo
+            echo "Approve it with two-factor authentication under Staged Packages on"
+            echo "https://www.npmjs.com/package/@bbsnly/sdlc, or with \`npm stage approve <stage-id>\`."
+            echo
+            echo '```text'
+            cat "${RUNNER_TEMP}/stage.txt"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
