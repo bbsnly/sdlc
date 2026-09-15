@@ -141,7 +141,10 @@ run `sdlc freeze` after adding the file, or `tests_frozen`, `plan`,
 Refuses the implementer writing any test file, frozen or not, before the freeze
 or after it, through the file tools or through the shell. This is not a
 setting: `freeze.allow_new_test_files` lets the test author add one, never the
-implementer.
+implementer. After the freeze, the rules above answer first: a frozen file is
+refused as `frozen-test-is-not-edited` and a new one as
+`no-new-test-after-the-freeze`, so this is the rule named only before the
+freeze, or once the setting lets a new file past.
 
 *Instead:* make the existing tests pass; if they are wrong, say so rather than
 changing them.

@@ -44,7 +44,7 @@ The shell is covered too. Once the tests are frozen, the hook refuses:
 | --- | --- |
 | writes, moves or deletes a frozen file from the shell | `frozen-test-through-the-tool` |
 | creates a new test file, with the file tools or the shell, unless the project allows it | `no-new-test-after-the-freeze` |
-| writes any test file as the implementer, frozen or not | `implementer-does-not-write-tests` |
+| writes a test file as the implementer before the freeze, or with `freeze.allow_new_test_files` on | `implementer-does-not-write-tests` |
 | runs `sdlc unfreeze` | `unfreeze-is-a-human-decision` |
 
 Reading tests and running them is never refused.
