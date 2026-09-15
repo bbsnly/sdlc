@@ -38,7 +38,9 @@ func takenAway(words []string) []string {
 		var named []string
 		switch sub {
 		case "rm", "checkout", "restore":
-			named = rest
+			if gitChangesFiles(args) {
+				named = rest
+			}
 		case "mv":
 			named = sources(rest)
 		case "clean":

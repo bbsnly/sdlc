@@ -29,7 +29,6 @@ func TestTakingADirectoryAwayTakesItsFrozenTests(t *testing.T) {
 		"mv --target-directory /tmp internal/calc",
 		"mv --target-directory=/tmp internal/calc",
 		"git rm -r internal/calc",
-		"git rm -r --cached internal/calc",
 		"git -C internal rm -r calc",
 		"git -c alias.nuke=rm nuke -r internal/calc",
 		"rm -rf internal/parse",

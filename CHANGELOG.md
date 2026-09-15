@@ -228,7 +228,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
 - Removing or moving a directory is removing or moving the frozen tests in it.
   `rm -rf internal/calc`, `mv internal/calc /tmp`, `git checkout -- internal`
   and `find internal -delete` took a frozen test away without naming it. Putting
-  a file into the directory, or copying the directory, is still allowed.
+  a file into the directory, or copying the directory, is still allowed, and so
+  is unstaging with `git restore --staged` or `git rm --cached`, which leaves
+  the files where they are.
 - Throwing away the work tree while a story is being worked on is refused.
   `rm -rf .`, `git clean -fd`, `git stash -u`, `git reset --hard`, `git switch
   -f` and `git read-tree -u --reset` took the loop's record and the frozen

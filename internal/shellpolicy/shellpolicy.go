@@ -799,9 +799,16 @@ func changesFiles(words []string) bool {
 // gitChangesFiles reports whether a git command rewrites or removes the files
 // named after it: `git rm`, `git mv`, `git checkout -- path`, `git restore`.
 func gitChangesFiles(args []string) bool {
-	switch sub, _ := gitCommand(args); sub {
-	case "rm", "mv", "checkout", "restore":
+	switch sub, _, rest := gitCall(args); sub {
+	case "mv", "checkout":
 		return true
+	case "rm":
+		// --cached takes a path out of the index and leaves the file.
+		return !hasWord(rest, "--cached")
+	case "restore":
+		// --staged alone puts back the index, and the file stays as it is.
+		staged := hasWord(rest, "--staged") || shortFlag(rest, 'S')
+		return !staged || hasWord(rest, "--worktree") || shortFlag(rest, 'W')
 	}
 	return false
 }
