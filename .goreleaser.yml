@@ -11,8 +11,9 @@
 #     this" without unpacking it.
 #
 # Everything is reproducible from the tag: -trimpath removes the build
-# machine's paths, mod_timestamp pins file times to the commit, and the
-# version, commit and date come from the tag rather than from the clock.
+# machine's paths, mod_timestamp and the archives' entry info pin file times
+# and owners to the commit, and the version, commit and date come from the tag
+# rather than from the clock.
 version: 2
 
 project_name: sdlc
@@ -55,10 +56,24 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    # An archive entry carries its file's time, owner and group. Left to the
+    # checkout, the licence, readme and changelog took the clone's time and
+    # the build user's name, so every archive rebuilt from the tag hashed
+    # differently from the one published, binary identical or not.
+    builds_info:
+      owner: root
+      group: root
+      mtime: '{{ .CommitDate }}'
     files:
-      - LICENSE
-      - README.md
-      - CHANGELOG.md
+      - src: LICENSE
+        info: &pinned
+          owner: root
+          group: root
+          mtime: '{{ .CommitDate }}'
+      - src: README.md
+        info: *pinned
+      - src: CHANGELOG.md
+        info: *pinned
 
 checksum:
   name_template: checksums.txt
