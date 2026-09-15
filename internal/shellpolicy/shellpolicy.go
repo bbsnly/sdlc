@@ -547,7 +547,7 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 		// freeze below.
 		candidates = append(candidates, m.words(line)...)
 	}
-	if len(run.words) > 0 && base(run.words[0]) == "find" && changesFiles(run.words) {
+	if len(run.words) > 0 && base(run.words[0]) == "find" && (hasWord(run.words[1:], "-delete") || runsAWriter(run.words[1:])) {
 		// What find picks by a name, from a directory that can come to the
 		// project's own files.
 		roots, names, patterns := findArguments(run.words[1:])
@@ -655,7 +655,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 	if byName {
 		rule = "freeze by name"
 	}
-	if len(run.words) > 0 && base(run.words[0]) == "find" && changesAFile(run.words) && len(s.Frozen) > 0 {
+	if len(run.words) > 0 && base(run.words[0]) == "find" && hasWord(run.words[1:], "-delete") && len(s.Frozen) > 0 {
 		// A name find is given with a glob in it, wherever it starts, as the
 		// freeze reads find's names. Not one that is all wildcards: from
 		// anywhere, that is every file, and `find build -name '*' -delete`
@@ -766,7 +766,7 @@ func changesAFile(words []string) bool {
 		}
 		return false
 	case "find":
-		return hasWord(words[1:], "-delete")
+		return hasWord(words[1:], "-delete") || len(printedTo(words[1:])) > 0
 	case "git":
 		return gitChangesFiles(words[1:])
 	default:
@@ -792,7 +792,7 @@ func changesFiles(words []string) bool {
 		// What find runs is a write unless it is a program that only reads:
 		// `-exec wc -l {} +` changes nothing, and `-exec ./tidy {} +` cannot be
 		// seen to leave anything alone.
-		return hasWord(words[1:], "-delete") || runsAWriter(words[1:])
+		return hasWord(words[1:], "-delete") || runsAWriter(words[1:]) || len(printedTo(words[1:])) > 0
 	case "sed", "perl", "awk", "gawk":
 		return true
 	}

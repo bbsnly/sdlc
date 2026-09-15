@@ -163,3 +163,18 @@ func findPattern(pattern string) *regexp.Regexp {
 	}
 	return re
 }
+
+// printedTo are the files find writes what it finds to: `-fprint FILE`,
+// `-fprint0 FILE`, `-fprintf FILE FORMAT` and `-fls FILE`.
+func printedTo(args []string) []string {
+	var files []string
+	for i, a := range args {
+		switch a {
+		case "-fprint", "-fprint0", "-fprintf", "-fls":
+			if i+1 < len(args) {
+				files = append(files, args[i+1])
+			}
+		}
+	}
+	return files
+}
