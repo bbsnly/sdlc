@@ -208,8 +208,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `tar`, `rsync` and `scp` only read is not counted: `tar` writes the archive
   it creates, or where it extracts and the members it is asked for, and a copy
   writes its destination, so `rsync -a --exclude .sdlc ./ /tmp/snap/` goes
-  through. What `tar --remove-files` and `rsync --remove-source-files` copy
-  they delete, and it is read as taken away. A URL is not a path on this
+  through. A file copied into a directory lands there under its own name, so
+  `scp host:proj/CLAUDE.md .` writes CLAUDE.md. What `tar --remove-files` and
+  `rsync --remove-source-files` copy they delete, and it is read as taken
+  away. A URL is not a path on this
   machine: `curl` and `wget` write their output, their logs, headers and
   cookies, and a URL's last part only where it is saved under its own name, so
   `curl -fsSL https://example.com/CLAUDE.md` goes through.

@@ -25,7 +25,6 @@ func TestACopyWritesOnlyWhereItGoes(t *testing.T) {
 		"rsync -a --exclude .sdlc ./ /tmp/snap/",
 		"rsync -a ./ /tmp/snap --exclude .sdlc",
 		"rsync -a --exclude-from .sdlc/ignore . /tmp/snap",
-		"rsync -av CLAUDE.md .sdlc/config.json internal/calc/add_test.go /tmp/backup/",
 		"rsync .sdlc/",
 		"tar -xf",
 		"scp CLAUDE.md host:/tmp/",

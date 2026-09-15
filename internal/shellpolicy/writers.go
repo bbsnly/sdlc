@@ -1,6 +1,9 @@
 package shellpolicy
 
-import "strings"
+import (
+	"path"
+	"strings"
+)
 
 // writtenTo are the words of a command that name what it writes. For most
 // programs that is every word, which is how the rules have always read them.
@@ -130,9 +133,28 @@ func copyWrites(args []string, valued map[string]bool, writes ...string) []strin
 	}
 	// A single operand is a listing, not a copy.
 	if operands := copyOperands(args, valued); len(operands) > 1 {
-		written = append(written, operands[len(operands)-1])
+		to := operands[len(operands)-1]
+		written = append(written, to)
+		// Into a directory, a file lands under its own name: `scp
+		// host:proj/CLAUDE.md .` writes CLAUDE.md. Not on another machine.
+		if !remote(to) {
+			for _, from := range operands[:len(operands)-1] {
+				name := clean(from)
+				if remote(from) {
+					_, name, _ = strings.Cut(name, ":")
+				}
+				written = append(written, path.Join(to, path.Base(name)))
+			}
+		}
 	}
 	return written
+}
+
+// remote reports whether a copy's operand is on another machine, as rsync and
+// scp read one: a host and a colon before any slash. Not a Windows drive.
+func remote(operand string) bool {
+	host, _, ok := strings.Cut(operand, ":")
+	return ok && len(host) > 1 && !strings.Contains(host, "/")
 }
 
 // copyOperands are the paths a copy is given: what it copies, and last, where
