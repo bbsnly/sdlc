@@ -101,6 +101,48 @@ func TestAMistypedStoryIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 	}
 }
 
+// The session `sdlc start` runs in is the one the hook holds to the story, and
+// picking the story up in another session moves it there.
+func TestStartRecordsTheSessionItRunsIn(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	path := filepath.Join(root, ".sdlc", "state", "session")
+	recorded := func() string {
+		t.Helper()
+		raw, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			return ""
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(raw))
+	}
+
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "session-a")
+	mustRun(t, "start")
+	if got := recorded(); got != "session-a" {
+		t.Fatalf("after start, session = %q", got)
+	}
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "session-b")
+	mustRun(t, "start")
+	if got := recorded(); got != "session-b" {
+		t.Errorf("after resuming in another session, session = %q", got)
+	}
+	// From a terminal there is no session: the story holds every session.
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	mustRun(t, "start")
+	if got := recorded(); got != "" {
+		t.Errorf("a start outside Claude Code left session %q recorded", got)
+	}
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "session-a")
+	mustRun(t, "start")
+	mustRun(t, "stop")
+	if got := recorded(); got != "" {
+		t.Errorf("stopping left session %q recorded", got)
+	}
+}
+
 func run(t *testing.T, args ...string) result {
 	t.Helper()
 	return runWith(t, "", args...)

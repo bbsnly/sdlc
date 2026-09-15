@@ -15,7 +15,9 @@ import (
 
 // stateFiles are the files the store keeps in .sdlc/state, which only a name
 // can pick out of the directory.
-var stateFiles = []string{".sdlc/state/active", ".sdlc/state/tests.lock", ".sdlc/state/stop-blocks.json"}
+var stateFiles = []string{
+	".sdlc/state/active", ".sdlc/state/session", ".sdlc/state/tests.lock", ".sdlc/state/stop-blocks.json",
+}
 
 // findArguments are the directories find starts from, and the patterns it picks
 // files with: a -name is matched against a file's name, a -path against the

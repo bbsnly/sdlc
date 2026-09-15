@@ -447,6 +447,55 @@ func TestSetActiveThenClearActive(t *testing.T) {
 	}
 }
 
+// The session working the story is recorded while it is under way, and goes
+// with the iteration.
+func TestTheSessionWorkingTheStoryEndsWithTheIteration(t *testing.T) {
+	s := newStore(t)
+	path := filepath.Join(s.root, filepath.FromSlash(sessionFile))
+	recorded := func() string {
+		t.Helper()
+		raw, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			return ""
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(raw))
+	}
+	if err := s.SetActive("A-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.bindSession("3f2c9e10-aa01-4b7e-9f00-5d1c2b3a4e5f"); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorded(); got != "3f2c9e10-aa01-4b7e-9f00-5d1c2b3a4e5f" {
+		t.Fatalf("session = %q", got)
+	}
+	// Outside Claude Code there is no session, and a start there records none.
+	// Nor does a value that could be a path.
+	for _, id := range []string{"", "../../elsewhere", "two words"} {
+		if err := s.bindSession("session-a"); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.bindSession(id); err != nil {
+			t.Fatal(err)
+		}
+		if got := recorded(); got != "" {
+			t.Errorf("binding %q left %q recorded", id, got)
+		}
+	}
+	if err := s.bindSession("session-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ClearActive(); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorded(); got != "" {
+		t.Errorf("ending the iteration left session %q recorded", got)
+	}
+}
+
 func TestActiveRefusesATamperedStateFile(t *testing.T) {
 	s := newStore(t)
 	path := filepath.Join(s.root, filepath.FromSlash(activeFile))

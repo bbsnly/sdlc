@@ -100,6 +100,37 @@ func TestAStopMidStoryIsSentBackWithWhatToDoInstead(t *testing.T) {
 	}
 }
 
+// The stop guard holds the session working the story. Any other session in the
+// repository ends its turn when it likes.
+func TestOnlyTheSessionWorkingTheStoryIsSentBack(t *testing.T) {
+	root := storyUnderWay(t)
+	write(t, root, ".sdlc/state/session", "session-a\n")
+	stopIn := func(session string) stopOutcome {
+		t.Helper()
+		event, err := json.Marshal(map[string]any{
+			"hook_event_name": "Stop", "cwd": root, "session_id": session,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if code := Run([]string{"Stop"}, bytes.NewReader(event), &out, io.Discard, noEnv); code != 0 {
+			t.Fatalf("exit %d", code)
+		}
+		var r stopOutcome
+		if err := json.Unmarshal(out.Bytes(), &r); err != nil {
+			t.Fatalf("stdout is not JSON: %v (%q)", err, out.String())
+		}
+		return r
+	}
+	if r := stopIn("session-b"); r.Decision != "" {
+		t.Errorf("another session was sent back while a story was under way: %s", r.Reason)
+	}
+	if r := stopIn("session-a"); r.Decision != "block" {
+		t.Error("the session working the story stopped mid-story without a word")
+	}
+}
+
 // The session's project directory can be above the repository the story is in.
 // The stop is still one made mid-story.
 func TestAStopFromASessionOpenedAboveTheRepositoryIsStillSentBack(t *testing.T) {

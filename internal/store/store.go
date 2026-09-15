@@ -35,9 +35,13 @@ const (
 	stateDir   = config.Dir + "/state"
 	storiesDir = config.Dir + "/stories"
 	activeFile = stateDir + "/active"
-	lockFile   = stateDir + "/tests.lock"
-	reviewsDir = "reviews"
-	recordFile = model.RecordFile
+	// sessionFile names the Claude Code session working the story: the one
+	// `sdlc start` last ran in. The hook holds that session to the story, and
+	// leaves every other session in the repository alone.
+	sessionFile = stateDir + "/session"
+	lockFile    = stateDir + "/tests.lock"
+	reviewsDir  = "reviews"
+	recordFile  = model.RecordFile
 )
 
 // safeID is what a story id may contain, given that it becomes a directory
@@ -304,16 +308,60 @@ func (s *Store) SetActive(id string) error {
 	return s.writeFile(filepath.Join(s.root, filepath.FromSlash(activeFile)), []byte(id+"\n"))
 }
 
-// ClearActive ends the iteration.
+// SessionEnv is the variable Claude Code sets, in the Bash tool and in hooks, to
+// the id of the session they run in. In a hook it matches the payload's
+// session_id.
+const SessionEnv = "CLAUDE_CODE_SESSION_ID"
+
+// safeSession is what a session id may contain. Claude Code's are UUIDs; this
+// is wider than that, and still nothing that could be a path.
+var safeSession = regexp.MustCompile(`^[A-Za-z0-9._-]{1,200}$`)
+
+// CheckSession reports whether id can be a Claude Code session id.
+func CheckSession(id string) bool {
+	return safeSession.MatchString(id)
+}
+
+// BindSession records the Claude Code session this command runs in as the one
+// working the story. Run outside Claude Code there is no session, and it records
+// none: the story then holds every session, as it did before sessions were told
+// apart.
+func (s *Store) BindSession() error {
+	return s.bindSession(os.Getenv(SessionEnv))
+}
+
+func (s *Store) bindSession(id string) error {
+	path := filepath.Join(s.root, filepath.FromSlash(sessionFile))
+	if CheckSession(id) {
+		return s.writeFile(path, []byte(id+"\n"))
+	}
+	if s.leaves(path) {
+		return sdlcerr.New(sdlcerr.StateUnwritable, relative(s.root, path)+" could not be removed", leavesWhy).
+			WithFix(leavesFix)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return sdlcerr.New(sdlcerr.StateUnwritable,
+			"the session working the story could not be recorded",
+			sessionFile+" could not be removed").WithCause(err)
+	}
+	return nil
+}
+
+// ClearActive ends the iteration, and with it the record of the session that
+// was working the story. The session goes first: an iteration that could not
+// be ended keeps its session, and one left with none holds every session.
 func (s *Store) ClearActive() error {
 	path := filepath.Join(s.root, filepath.FromSlash(activeFile))
 	if s.leaves(path) {
 		return sdlcerr.New(sdlcerr.StateUnwritable, "the iteration could not be ended", leavesWhy).WithFix(leavesFix)
 	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return sdlcerr.New(sdlcerr.StateUnwritable,
-			"the iteration could not be ended",
-			activeFile+" could not be removed").WithCause(err)
+	for _, file := range []string{sessionFile, activeFile} {
+		err := os.Remove(filepath.Join(s.root, filepath.FromSlash(file)))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return sdlcerr.New(sdlcerr.StateUnwritable,
+				"the iteration could not be ended",
+				file+" could not be removed").WithCause(err)
+		}
 	}
 	return nil
 }

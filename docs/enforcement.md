@@ -27,7 +27,20 @@ Nothing is enforced unless **all** of these are true:
    tool call are, as far as the repository root and not into a directory
    `GIT_CEILING_DIRECTORIES` names.
 2. A story is being worked on — `.sdlc/state/active` names one.
-3. `SDLC_ENFORCE` is not `0` in the environment the session started with.
+3. The call comes from the Claude Code session working the story, or from one
+   of its agents. `sdlc start` records the session it runs in, in
+   `.sdlc/state/session`, so the session that starts or resumes a story is the
+   one held to it, and every other session in the repository is left alone.
+   Run outside Claude Code, `sdlc start` records no session, and until a
+   session picks the story up it holds every session in the repository.
+4. `SDLC_ENFORCE` is not `0` in the environment the session started with.
+
+Left alone means every rule. Another session can edit code and tests, commit
+and run `sdlc stop`, and the loop commits a story with `git add -A`, so work it
+has left uncommitted goes into the story's commit. A commit it makes moves HEAD
+under the story, and from then on every gate before the story's own commit is
+refused ([SDLC-E0046](troubleshooting.md#sdlc-e0046)), so the story goes to a
+person.
 
 Outside those, the hook allows everything and says nothing, with two exceptions:
 in a project with `.sdlc/config.json`, `sdlc approve` and `sdlc unfreeze` are
@@ -390,12 +403,30 @@ a tool call until they have passed
 
 ### `enforcement-stays-on`
 
-Refuses a command that sets `SDLC_ENFORCE`, `SDLC_BIN` or `CLAUDE_PROJECT_DIR`.
+Refuses a command that sets `SDLC_ENFORCE`, `SDLC_BIN`, `CLAUDE_PROJECT_DIR` or
+`CLAUDE_CODE_SESSION_ID`.
 
 The switch that turns enforcement off belongs to the person who started the
 session. A switch an assistant can reach is not a control.
+`CLAUDE_CODE_SESSION_ID` is one: `sdlc start` records the session it finds
+there as the one the story holds, so setting it hands the story to a session
+that does not exist.
 
 *Instead:* if a rule is wrong, say which one and why.
+
+### `story-stays-in-its-session`
+
+Refuses running `claude`, or running `@anthropic-ai/claude-code` through a
+package runner such as `npx`, `npm exec` or `pnpm dlx`, from the session
+working the story. Installing the package is not refused.
+
+A Claude Code session started from a shell is a session of its own, and the
+story holds only the session working it, so none of these rules would hold
+what the new one did. A script file that runs `claude`, or sets
+`CLAUDE_CODE_SESSION_ID`, is not read, like any other script file.
+
+*Instead:* hand the work to this session's agents. A person who wants another
+session opens one in their own terminal.
 
 ### `command-too-deep-to-read`
 

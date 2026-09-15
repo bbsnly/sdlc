@@ -1065,8 +1065,48 @@ func TestEnforcementCannotBeTurnedOffFromInside(t *testing.T) {
 		"export SDLC_ENFORCE=0",
 		"SDLC_BIN=/tmp/fake sdlc gate commit pass",
 		"CLAUDE_PROJECT_DIR=/tmp sdlc status",
+		// The session a story holds is the one sdlc start finds here.
+		"CLAUDE_CODE_SESSION_ID=nobody sdlc start",
+		"export CLAUDE_CODE_SESSION_ID=nobody; sdlc start",
+		"env CLAUDE_CODE_SESSION_ID=nobody sdlc start",
+		"$env:CLAUDE_CODE_SESSION_ID='nobody'; sdlc start",
+		"Set-Item Env:\\CLAUDE_CODE_SESSION_ID nobody; sdlc start",
+		"[Environment]::SetEnvironmentVariable('CLAUDE_CODE_SESSION_ID', 'nobody'); sdlc start",
 	} {
 		refused(t, command, ready, "enforcement-stays-on")
+	}
+}
+
+// A Claude Code session started from the one working the story is a session of
+// its own, which the story does not hold.
+func TestASessionIsNotStartedFromInsideTheStory(t *testing.T) {
+	for _, command := range []string{
+		`claude -p "commit it"`,
+		"/usr/local/bin/claude --dangerously-skip-permissions",
+		"cd /tmp && claude.exe",
+		"npx @anthropic-ai/claude-code -p x",
+		"npx -y @anthropic-ai/claude-code",
+		"pnpm dlx @anthropic-ai/claude-code",
+		"npm exec @anthropic-ai/claude-code -- -p x",
+		"npm x @anthropic-ai/claude-code",
+		"bun x @anthropic-ai/claude-code",
+		"pnpm exec claude -p x",
+		"yarn dlx @anthropic-ai/claude-code",
+	} {
+		refused(t, command, ready, "story-stays-in-its-session")
+	}
+	for _, command := range []string{
+		"grep claude README.md",
+		"echo claude",
+		"cat .claude/settings.json",
+		"npm install @anthropic-ai/claude-code",
+		"yarn add @anthropic-ai/claude-code",
+		"npx eslint claude",
+		// Reading the session is not setting it.
+		"echo $env:CLAUDE_CODE_SESSION_ID",
+		"Write-Output $env:CLAUDE_CODE_SESSION_ID",
+	} {
+		allowed(t, command, ready)
 	}
 }
 

@@ -577,6 +577,22 @@ the file rather than empty it, so it was written some other way. Every rule is
 off until it names a story. `sdlc doctor` names it under "loop state";
 `sdlc stop` removes it and ends the iteration.
 
+### `.sdlc/state/session could not be read, so every session in this project is held to the story under way`
+
+The file naming the Claude Code session working the story is there but
+unreadable — a permission, a directory where the file should be. Until it
+reads, the story holds every session in the repository, not only the one
+working it. Remove it and run `sdlc start` in the session working the story,
+which records that session again.
+
+### `.sdlc/state/session does not name a session, so every session in this project is held to the story under way`
+
+The file is empty, or names something that cannot be a session id.
+`sdlc start` never writes such a file, so it was written some other way. Until
+it names a session, the story holds every session in the repository. Run
+`sdlc start` in the session working the story, which records that session
+again.
+
 ### `.sdlc/config.json could not be read, so tests are being recognised by the default patterns`
 
 The configuration will not parse, so the loop cannot read your `paths.tests`.

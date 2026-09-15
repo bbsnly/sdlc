@@ -9,6 +9,20 @@ not change and it is never reused.
 
 ## [Unreleased]
 
+### Changed
+
+- A story is held only in the Claude Code session working it. While a story
+  was under way, every session opened in the repository was held to it:
+  somebody doing ordinary work there could not write code, commit, or end a
+  turn. `sdlc start` now records the session it runs in, in
+  `.sdlc/state/session`, and the hook holds that session and its agents to the
+  story and leaves every other session alone. `/sdlc:next` in another session
+  picks the story up there. `sdlc approve` and `sdlc unfreeze` stay a person's
+  in every session. Run outside Claude Code, `sdlc start` records no session,
+  and the story holds every session until one picks it up. The session working
+  a story cannot pass it on from inside: setting `CLAUDE_CODE_SESSION_ID`, and
+  starting `claude` from its shell, are refused.
+
 ### Fixed
 
 - Installing the plugin without the binary no longer makes every session

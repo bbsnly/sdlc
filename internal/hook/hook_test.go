@@ -201,6 +201,97 @@ func TestNothingIsEnforcedWhileNoStoryIsBeingWorkedOn(t *testing.T) {
 	}
 }
 
+// inSession is a call made from the Claude Code session with this id.
+func inSession(stdin, session string) string {
+	var e map[string]any
+	_ = json.Unmarshal([]byte(stdin), &e)
+	e["session_id"] = session
+	raw, _ := json.Marshal(e)
+	return string(raw)
+}
+
+// A story is held in the session working it and nowhere else. Somebody doing
+// ordinary work in the same repository while a story is under way is not the
+// loop's business; the session running the story, and its agents, which carry
+// its id, still are.
+func TestOnlyTheSessionWorkingTheStoryIsHeldToIt(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, ".sdlc/state/session", "session-a\n")
+	code := event(root, "Write", "", "internal/x.go")
+
+	if denied(call(t, inSession(code, "session-b"), noEnv)) {
+		t.Error("another session was refused a write while a story was under way")
+	}
+	if denied(call(t, inSession(command(root, "", "git commit -m x"), "session-b"), noEnv)) {
+		t.Error("another session was refused a commit while a story was under way")
+	}
+	// The decisions that are a person's stay a person's, from any session.
+	if !denied(call(t, inSession(command(root, "", "sdlc approve A-1"), "session-b"), noEnv)) {
+		t.Error("another session gave the approval that is a person's")
+	}
+	if !denied(call(t, inSession(command(root, "", `sdlc unfreeze --reason "x"`), "session-b"), noEnv)) {
+		t.Error("another session lifted the freeze that is a person's to lift")
+	}
+	if denied(call(t, inSession(command(root, "", `claude -p "x"`), "session-b"), noEnv)) {
+		t.Error("another session was refused a Claude Code session of its own")
+	}
+
+	if !denied(call(t, inSession(code, "session-a"), noEnv)) {
+		t.Error("the session working the story wrote code itself")
+	}
+	if !denied(call(t, inSession(event(root, "Write", "sdlc:researcher", "internal/x.go"), "session-a"), noEnv)) {
+		t.Error("an agent of the session working the story wrote outside its own story")
+	}
+	// Nor can it hand the story to a session of its own making.
+	for _, escape := range []string{
+		"CLAUDE_CODE_SESSION_ID=nobody sdlc start",
+		"$env:CLAUDE_CODE_SESSION_ID='nobody'; sdlc start",
+		`claude -p "commit it"`,
+	} {
+		if !denied(call(t, inSession(command(root, "", escape), "session-a"), noEnv)) {
+			t.Errorf("the session working the story ran %s", escape)
+		}
+	}
+
+	// A call that names no session, and a story with no session recorded, are
+	// held as they were before sessions were told apart.
+	if !denied(call(t, code, noEnv)) {
+		t.Error("a call naming no session got past the story")
+	}
+	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "session")); err != nil {
+		t.Fatal(err)
+	}
+	if !denied(call(t, inSession(code, "session-b"), noEnv)) {
+		t.Error("with no session recorded, another session got past the story")
+	}
+
+	// A session file that names nothing holds every session, and says so.
+	write(t, root, ".sdlc/state/session", "../../elsewhere\n")
+	r := call(t, inSession(code, "session-b"), noEnv)
+	if !denied(r) {
+		t.Error("a session file naming no session let another session past the story")
+	}
+	if !strings.Contains(r.SystemMessage, ".sdlc/state/session") {
+		t.Errorf("a session file naming no session was not mentioned: %q", r.SystemMessage)
+	}
+
+	// So does one that cannot be read.
+	session := filepath.Join(root, ".sdlc", "state", "session")
+	if err := os.Remove(session); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(session, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r = call(t, inSession(code, "session-b"), noEnv)
+	if !denied(r) {
+		t.Error("a session file that could not be read let another session past the story")
+	}
+	if !strings.Contains(r.SystemMessage, "could not be read") {
+		t.Errorf("a session file that could not be read was not mentioned: %q", r.SystemMessage)
+	}
+}
+
 // A session opened in the loop's project can commit in another repository, and
 // that commit met this story's gate.
 func TestAPathInTheHomeDirectoryIsNotTheProjects(t *testing.T) {

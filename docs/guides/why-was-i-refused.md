@@ -59,8 +59,9 @@ it.
 ## When nothing was refused
 
 The hook enforces nothing unless all of these are true: the project has
-`.sdlc/config.json`, `.sdlc/state/active` names a story, and `SDLC_ENFORCE` is
-not `0`. See [when any of it applies](../enforcement.md#when-any-of-it-applies).
+`.sdlc/config.json`, `.sdlc/state/active` names a story, the call comes from
+the session working that story or one of its agents, and `SDLC_ENFORCE` is not
+`0`. See [when any of it applies](../enforcement.md#when-any-of-it-applies).
 
 When the hook cannot do its job, it still lets the call through. This is
 failing open, and it does not happen silently. The session shows a system
@@ -162,7 +163,8 @@ say which one and why, and stop
 ```
 
 The same rule covers `SDLC_BIN` and `CLAUDE_PROJECT_DIR`, which decide which
-binary runs and which project it checks. See
+binary runs and which project it checks, and `CLAUDE_CODE_SESSION_ID`, which
+decides which session the story holds. See
 [turning it off](../enforcement.md#turning-it-off).
 
 ## "The sdlc binary was not found"

@@ -86,7 +86,10 @@ type payload struct {
 	HookEventName string `json:"hook_event_name"`
 	ToolName      string `json:"tool_name"`
 	AgentType     string `json:"agent_type"`
-	CWD           string `json:"cwd"`
+	// SessionID is the Claude Code session the call comes from. A subagent's
+	// calls carry the session that spawned it.
+	SessionID string `json:"session_id"`
+	CWD       string `json:"cwd"`
 	// StopHookActive is set on a Stop event when the session is already
 	// carrying on because a stop hook sent it back.
 	StopHookActive bool `json:"stop_hook_active"`
@@ -606,6 +609,40 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 	return t
 }
 
+// heldElsewhere reports whether the story in project is being worked on by a
+// Claude Code session other than the one this call comes from.
+//
+// A story is held in the session working it, and nowhere else. The state that
+// says a story is under way is the repository's, and every session opened in
+// the repository read it: somebody doing ordinary work there while a story was
+// part-way through could not write a line of code, commit, or end a turn.
+// `sdlc start` records the session it runs in, and a subagent's calls carry the
+// session that spawned it, so the session running the story and its agents
+// are held, and nobody else is.
+//
+// Where no session is recorded, or the call names none, the story holds every
+// session, as it did before sessions were told apart.
+func heldElsewhere(project, session string, warn func(string)) bool {
+	if session == "" {
+		return false
+	}
+	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "session"))
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			warn(".sdlc/state/session could not be read, so every session in this project is " +
+				"held to the story under way. Run `sdlc start` in the session working it.")
+		}
+		return false
+	}
+	owner := strings.TrimSpace(string(raw))
+	if !store.CheckSession(owner) {
+		warn(".sdlc/state/session does not name a session, so every session in this project is " +
+			"held to the story under way. Run `sdlc start` in the session working it.")
+		return false
+	}
+	return owner != session
+}
+
 // activeStory reads the story being worked on, directly rather than through the
 // store: this runs on every tool call, and parsing the configuration to learn
 // something that is not in it would be work for nothing.
@@ -659,6 +696,10 @@ func findLoop(getenv func(string) string, p payload, target string, warn func(st
 			continue
 		}
 		if story := activeStory(root, warn); story != "" {
+			if heldElsewhere(root, p.SessionID, warn) {
+				slog.Debug("hook: the story is another session's", "project", root, "story", story)
+				continue
+			}
 			return root, story
 		}
 	}

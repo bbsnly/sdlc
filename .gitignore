@@ -30,9 +30,11 @@
 /.sdlc/stories/*/logs/
 
 # .sdlc/state holds one load-bearing file and two that are not: tests.lock is
-# the freeze itself and belongs in history, while `active` is which story this
-# machine happens to be on and cover.out is a build artefact.
+# the freeze itself and belongs in history, while `active` and `session` are
+# which story this machine happens to be on and which session is working it,
+# and cover.out is a build artefact.
 /.sdlc/state/active
+/.sdlc/state/session
 /.sdlc/state/cover.out
 
 # Where `./task markdownlint` installs markdownlint from its lockfile.

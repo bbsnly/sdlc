@@ -174,6 +174,13 @@ func Inspect(command string, s State) (Finding, bool) {
 			}
 		}
 	}
+	// PowerShell sets a variable as a statement of its own, which parse does not
+	// read as an assignment: `$env:CLAUDE_CODE_SESSION_ID='x'; sdlc start`.
+	if setsSession.MatchString(text) {
+		if f, ok := checkEnforcement([]string{"CLAUDE_CODE_SESSION_ID"}); ok {
+			return f, true
+		}
+	}
 	if f, ok := checkPrograms(text, s); ok {
 		return f, true
 	}
@@ -291,6 +298,9 @@ func checkPrograms(text string, s State) (Finding, bool) {
 		if f, ok := checkReviewer(words, s); ok {
 			return f, true
 		}
+		if f, ok := checkNestedSession(words); ok {
+			return f, true
+		}
 		// A directory of "" is the project.
 		if gitDirSet {
 			dir = ""
@@ -326,6 +336,17 @@ var tooDeep = Finding{
 // one: a commit message that said "unset GIT_DIR", or `grep 'GIT_DIR'`, was a
 // commit in the project wherever it was made.
 var setsGitDir = regexp.MustCompile(`(?i)\bgit_dir=|env:[\\/]?git_dir\b|setenvironmentvariable\(\s*['"]git_dir['"]`)
+
+// setsSession matches an assignment to CLAUDE_CODE_SESSION_ID: `NAME=`, and
+// PowerShell's `$env:NAME = `, `Set-Item env:NAME` and
+// `[Environment]::SetEnvironmentVariable('NAME', ...)`. `sdlc start` records the
+// session it finds there as the one the story holds, so setting it hands the
+// story to a session that does not exist. Unlike setsGitDir it is a refusal, so
+// a read is not one: `echo $env:CLAUDE_CODE_SESSION_ID` is allowed.
+var setsSession = regexp.MustCompile(
+	`(?i)\bclaude_code_session_id=|\$env:claude_code_session_id\s*=|` +
+		`\b(set-item|new-item|si|ni)\s+(-path\s+)?env:[\\/]?claude_code_session_id\b|` +
+		`setenvironmentvariable\(\s*['"]claude_code_session_id['"]`)
 
 // HumanDecisions reports a command that makes one of the decisions the loop
 // keeps for a person: approving work handed over, or lifting the freeze. These
@@ -375,7 +396,7 @@ func Places(command string, powerShell bool) []string {
 func checkEnforcement(assigns []string) (Finding, bool) {
 	for _, name := range assigns {
 		switch name {
-		case "SDLC_ENFORCE", "SDLC_BIN", "CLAUDE_PROJECT_DIR":
+		case "SDLC_ENFORCE", "SDLC_BIN", "CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID":
 			return Finding{
 				Rule: "enforcement-stays-on",
 				Reason: name + " decides whether the loop is enforced at all, and it is " +
@@ -385,6 +406,56 @@ func checkEnforcement(assigns []string) (Finding, bool) {
 		}
 	}
 	return Finding{}, false
+}
+
+// checkNestedSession keeps the story in the session working it.
+//
+// A story holds only the Claude Code session that took it, and a session
+// started from its shell has an id of its own, so `claude -p "..."` run from
+// inside was a session no rule here held: it could lift the freeze, commit, or
+// end the iteration.
+func checkNestedSession(words []string) (Finding, bool) {
+	if len(words) == 0 {
+		return Finding{}, false
+	}
+	nested := false
+	switch base(words[0]) {
+	case "claude", "claude.cmd":
+		nested = true
+	case "npx", "bunx", "pnpx":
+		nested = runsClaude(words[1:])
+	case "npm", "bun", "pnpm", "yarn":
+		// A package runner's own spelling: `npm exec`, `bun x`, `pnpm dlx`.
+		// Installing the package starts nothing.
+		if len(words) > 1 {
+			switch base(words[1]) {
+			case "exec", "x", "dlx":
+				nested = runsClaude(words[2:])
+			}
+		}
+	}
+	if !nested {
+		return Finding{}, false
+	}
+	return Finding{
+		Rule: "story-stays-in-its-session",
+		Reason: "a Claude Code session started from here is a session of its own, and the story " +
+			"holds only the session working it, so nothing here would hold what that one did",
+		Route: "hand the work to this session's agents; a person who wants another session " +
+			"opens one in their own terminal",
+	}, true
+}
+
+// runsClaude reports whether a package runner's arguments run Claude Code: the
+// first that is not a flag names its package, or its `claude` program.
+func runsClaude(args []string) bool {
+	for _, w := range args {
+		if strings.HasPrefix(w, "-") {
+			continue
+		}
+		return base(w) == "claude" || strings.Contains(pathrules.Fold(w), "@anthropic-ai/claude-code")
+	}
+	return false
 }
 
 // checkUnfreeze keeps lifting the freeze a person's decision.

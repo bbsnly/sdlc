@@ -75,6 +75,10 @@ func newStartCmd() *cobra.Command {
 					return finished.WithFix(`run "sdlc stop" to end the iteration -- ` +
 						"the story is done, and there is nothing left to resume")
 				}
+				// Picked up in another session, the story is that session's now.
+				if err := s.BindSession(); err != nil {
+					return err
+				}
 				return reportStart(cmd, s, active, true)
 			}
 
@@ -115,6 +119,9 @@ func newStartCmd() *cobra.Command {
 				return err
 			}
 			if err := s.SetActive(id); err != nil {
+				return err
+			}
+			if err := s.BindSession(); err != nil {
 				return err
 			}
 

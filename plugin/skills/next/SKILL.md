@@ -34,7 +34,9 @@ sdlc status --json
 - If it fails with `SDLC-E0001`, you are not in a Git repository. Say so and stop.
 - Otherwise read `active`, `gates` and `next_gate` from the output. `next_gate` is the gate
   to work now: the loop resumes at the first gate that has not passed, and the tool works
-  that out so you do not have to. Go straight to that section below.
+  that out so you do not have to. With a story active, run `sdlc start --json` first: it
+  changes nothing about the story, and it makes this session the one working it, which is
+  the session the hook holds to the loop's rules. Then go straight to that section below.
 - With no story active there is no `next_gate`; `next` names the story that would be picked
   up. Start at Gate 1, which may resume a story put down part of the way through.
 

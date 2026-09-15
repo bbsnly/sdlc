@@ -168,6 +168,7 @@ any attempt by the assistant to write `CLAUDE.md`
   templates/story.schema.json   written by init; not read by sdlc itself
   state/
     active                      sdlc start writes it; sdlc stop and a hand-over remove it
+    session                     sdlc start writes it in Claude Code; removed with active
     tests.lock                  sdlc freeze writes it
     stop-blocks.json            the Stop hook's count of stops it sent back
     cover.out                   only if the Go coverage command has run
@@ -185,6 +186,10 @@ any attempt by the assistant to write `CLAUDE.md`
 - **`state/active`** names the story under way. Its presence is what turns
   enforcement on. Handing a story to a person with `sdlc escalate` ends the
   iteration and removes it.
+- **`state/session`** names the Claude Code session working the story. Only
+  that session and its agents are held to the story; every other session in
+  the repository is left alone. `sdlc start` in another session moves the
+  story there, and outside Claude Code it records none.
 - **`state/tests.lock`** is the freeze: every test file's sha256. `sdlc
   unfreeze` removes it, and so does `sdlc stop` on a finished story.
 - **`state/stop-blocks.json`** counts the stops the `Stop` hook sent back with
@@ -215,6 +220,10 @@ That is your call. These are the facts it rests on:
   updates `gate-record.json`, the retro adds `RETRO.md`, passing the retro marks
   the story `done` in the backlog, and `sdlc stop` on a finished story removes
   `state/active` and `state/tests.lock`.
+- `state/session` names a Claude Code session, and `sdlc start` rewrites it
+  whenever the story is picked up in another one. A clone that brings it along
+  holds none of the cloner's sessions to the story until one of them runs
+  `/sdlc:next`.
 - The freeze only considers files git lists: tracked, or untracked and not
   ignored.
 
