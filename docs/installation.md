@@ -59,6 +59,10 @@ everything else in the loop put together.
 There is no postinstall script, so `npm install --ignore-scripts` changes
 nothing here — the download happens when you ask for it.
 
+Unlike the Windows install script, it does not change `PATH`: when the
+directory is not on it, it prints the lines to add it. The plugin's hook finds
+the binary in the default directory either way.
+
 ### By hand, from a release
 
 Every [release](https://github.com/bbsnly/sdlc/releases) carries a prebuilt
@@ -157,6 +161,12 @@ version in the plugin's manifest names the release it was cut for, not the
 commit you received. The two halves are kept compatible on purpose, and the
 binary is the one that enforces.
 
+The hook looks for the binary on `PATH` and then where the installers put it,
+so a desktop app such as Claude Desktop finds a binary in the default directory
+even though it keeps the `PATH` it was started with. Installed anywhere else,
+quit the app fully and reopen it after changing `PATH`, or set `SDLC_BIN` to the
+full path of the binary.
+
 ### The plugin without the binary
 
 If you only want the agents, install the plugin and stop there. Without the
@@ -172,6 +182,9 @@ binary:
   nothing either, so sessions in every other repository carry on as if the
   plugin were not there. Inside such a project it says, on every tool call,
   that the binary was not found.
+- A binary left where the installers put it (`~/.local/bin`, or
+  `%LOCALAPPDATA%\Programs\sdlc\bin` on Windows) still counts: the hook runs it
+  even when that directory is not on `PATH`.
 
 ### The skill on its own, with `npx skills add`
 
@@ -268,7 +281,9 @@ $ rm ~/.local/bin/sdlc
 ```
 
 On Windows, delete `%LOCALAPPDATA%\Programs\sdlc\bin` and remove it from your
-`PATH`. In Claude Code, `/plugin uninstall sdlc@sdlc`.
+`PATH`. Delete it even once it is off `PATH`: the hook looks there without
+`PATH`, and runs a binary it finds. In Claude Code,
+`/plugin uninstall sdlc@sdlc`.
 
 A project's own `.sdlc/` directory is yours; nothing removes it for you.
 

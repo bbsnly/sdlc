@@ -774,10 +774,14 @@ func TestDoctorLooksForTheBinaryWhereTheHookDoes(t *testing.T) {
 		return check{}
 	}
 
+	// Nothing where the installers put the binary, which the machine running
+	// this may well have.
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("SDLC_BIN", "")
 	c := binaryCheckIn()
-	if c.State != stateProblem || !strings.Contains(c.Fix, "npx @bbsnly/sdlc install") {
+	if c.State != stateProblem || !strings.Contains(c.Fix, "npx @bbsnly/sdlc install") || !strings.Contains(c.Fix, "desktop app") {
 		t.Errorf("a binary nowhere to be found gives no fix an installed user can follow: %+v", c)
 	}
 
@@ -810,6 +814,28 @@ func TestDoctorLooksForTheBinaryWhereTheHookDoes(t *testing.T) {
 	t.Setenv("SDLC_BIN", name)
 	if c := binaryCheckIn(); c.State != stateProblem || !strings.Contains(c.Detail, "SDLC_BIN") {
 		t.Errorf("SDLC_BIN=%s is on PATH but is not a path the hooks run, and doctor said nothing: %+v", name, c)
+	}
+
+	// A desktop app keeps the PATH it started with, so the launchers also look
+	// where the installers put the binary, and doctor has to agree with them.
+	installed := filepath.Join(os.Getenv("HOME"), ".local", "bin", name)
+	if runtime.GOOS == "windows" {
+		installed = filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "sdlc", "bin", name)
+	}
+	if err := os.MkdirAll(filepath.Dir(installed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("SDLC_BIN", "")
+	if c := binaryCheckIn(); c.State != stateOK || !strings.Contains(c.Detail, installed) {
+		t.Errorf("a binary only where the installers put it, which the hooks run, was not found: %+v", c)
+	}
+	t.Setenv("SDLC_BIN", filepath.Join(t.TempDir(), "gone", name))
+	if c := binaryCheckIn(); c.State != stateProblem || !strings.Contains(c.Detail, "run "+installed) {
+		t.Errorf("a broken SDLC_BIN did not name the installed binary the hooks run instead: %+v", c)
 	}
 }
 

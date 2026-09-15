@@ -15,9 +15,18 @@ if defined CLAUDE_PLUGIN_ROOT if exist "%CLAUDE_PLUGIN_ROOT%\bin\sdlc.exe" (
 rem PATH only: cmd.exe, and where with it, look in the current directory
 rem first, and a hook runs in the project. A bare `sdlc` ran an sdlc.cmd
 rem sitting at its root on every tool call, in place of the installed binary.
-rem Every installer puts sdlc.exe itself on PATH.
+rem Every installer installs sdlc.exe itself, not a script beside it, so only
+rem sdlc.exe is looked up.
 for /f "delims=" %%B in ('where $PATH:sdlc.exe 2^>nul') do (
   "%%B" hook %1
+  exit /b 0
+)
+rem Where the installers put it, install.ps1 and "npx @bbsnly/sdlc install"
+rem alike, found without PATH. The npm installer never adds it to PATH, and a
+rem desktop app such as Claude Desktop keeps the PATH it started with, so a binary
+rem every new terminal found was not found here. PATH comes first.
+if defined LOCALAPPDATA if exist "%LOCALAPPDATA%\Programs\sdlc\bin\sdlc.exe" if not exist "%LOCALAPPDATA%\Programs\sdlc\bin\sdlc.exe\" (
+  "%LOCALAPPDATA%\Programs\sdlc\bin\sdlc.exe" hook %1
   exit /b 0
 )
 
@@ -37,13 +46,15 @@ exit /b 0
 :missing
 rem systemMessage is what reaches the session: stderr from a hook that exits 0
 rem goes to the debug log only. See plugin/bin/sdlc-hook.
-echo {"continue":true,"systemMessage":"sdlc: the sdlc binary was not found, so nothing is being enforced. why: the plugin is installed, but the binary it drives is not on PATH and is not in the bin directory of the plugin. fix: run sdlc doctor in your terminal; if that also fails, reinstall with npx @bbsnly/sdlc install"}
+echo {"continue":true,"systemMessage":"sdlc: the sdlc binary was not found, so nothing is being enforced. why: it is not at SDLC_BIN, in the bin directory of the plugin, on the PATH this app started with, or where the installers put it. fix: install it with npx @bbsnly/sdlc install. A desktop app such as Claude Desktop keeps the PATH it started with, so quit it fully and reopen it after installing or changing PATH, or set SDLC_BIN to the full path of the binary. Then run sdlc doctor in your terminal."}
 echo sdlc: the sdlc binary was not found, so nothing is being enforced.>&2
 echo.>&2
-echo   why  the plugin is installed but the binary it drives is not on PATH and>&2
-echo        is not in the plugin's own bin directory>&2
-echo   fix  run "sdlc doctor" in your terminal; if that also fails, reinstall>&2
-echo        with "npx @bbsnly/sdlc install">&2
+echo   why  it is not at SDLC_BIN, in the bin directory of the plugin, on the PATH>&2
+echo        this app started with, or where the installers put it>&2
+echo   fix  install it with "npx @bbsnly/sdlc install". A desktop app such as>&2
+echo        Claude Desktop keeps the PATH it started with, so quit it fully and>&2
+echo        reopen it after installing or changing PATH, or set SDLC_BIN to the>&2
+echo        full path of the binary. Then run "sdlc doctor" in your terminal.>&2
 exit /b 0
 
 rem takes_part succeeds when %dir%, or a directory above it in the same

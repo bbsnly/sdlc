@@ -532,6 +532,8 @@ func governed(tool string) bool {
 // The launcher's failure is the message a user is most likely to be the first
 // to hit, and it runs before the binary that holds the error catalogue exists.
 func TestTheLauncherRefusalCarriesTheSameThreeFields(t *testing.T) {
+	systemMessage := regexp.MustCompile(`\{"continue":true,"systemMessage":"[^"]*"\}`)
+	messages := map[string]string{}
 	for _, name := range []string{"bin/sdlc-hook", "bin/sdlc-hook.cmd"} {
 		raw, err := os.ReadFile(filepath.Join(pluginDir, filepath.FromSlash(name)))
 		if err != nil {
@@ -552,6 +554,12 @@ func TestTheLauncherRefusalCarriesTheSameThreeFields(t *testing.T) {
 		if !strings.Contains(text, `"systemMessage":"sdlc: the sdlc binary was not found`) {
 			t.Errorf("%s: the not-found message is not in systemMessage, so nobody sees it", name)
 		}
+		messages[name] = systemMessage.FindString(text)
+	}
+	// Which launcher runs depends on the platform and the shell, and a person
+	// looking the message up should find one text, not two.
+	if sh, cmd := messages["bin/sdlc-hook"], messages["bin/sdlc-hook.cmd"]; sh == "" || sh != cmd {
+		t.Errorf("the launchers tell a person different things:\nsdlc-hook:     %s\nsdlc-hook.cmd: %s", sh, cmd)
 	}
 }
 
@@ -672,12 +680,15 @@ func runLauncher(t *testing.T, l launcher, projectDir, cwd, pluginRoot string) s
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
 		switch strings.ToUpper(name) {
-		case "PATH", "PWD", "SDLC_BIN", "CLAUDE_PLUGIN_ROOT", "CLAUDE_PROJECT_DIR":
+		case "PATH", "PWD", "SDLC_BIN", "CLAUDE_PLUGIN_ROOT", "CLAUDE_PROJECT_DIR", "HOME", "LOCALAPPDATA":
 			continue
 		}
 		cmd.Env = append(cmd.Env, kv)
 	}
-	cmd.Env = append(cmd.Env, "PATH="+path, "CLAUDE_PLUGIN_ROOT="+pluginRoot)
+	// The launcher also looks where the installers put the binary, and the
+	// machine running this may have a real one there: CI's install jobs do.
+	nowhere := t.TempDir()
+	cmd.Env = append(cmd.Env, "PATH="+path, "CLAUDE_PLUGIN_ROOT="+pluginRoot, "HOME="+nowhere, "LOCALAPPDATA="+nowhere)
 	if projectDir != "" {
 		cmd.Env = append(cmd.Env, "CLAUDE_PROJECT_DIR="+projectDir)
 	}
@@ -688,6 +699,94 @@ func runLauncher(t *testing.T, l launcher, projectDir, cwd, pluginRoot string) s
 		t.Fatalf("the launcher failed: %v", err)
 	}
 	return string(out)
+}
+
+// A desktop app keeps the PATH it started with, and on macOS one never has the
+// shell's at all. A binary the installer put where every new terminal found it
+// was not found by the hook, which told the user nothing was enforced while
+// `sdlc doctor` in a terminal passed. The launcher looks where the installers
+// put it after PATH, so a binary somebody put elsewhere on purpose still wins.
+func TestTheLauncherFindsTheBinaryWhereTheInstallersPutIt(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in binaries here are shell scripts; windowslauncher_test.go holds cmd.exe to this")
+	}
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh to run the launcher with")
+	}
+	script, err := filepath.Abs(filepath.Join(pluginDir, "bin", "sdlc-hook"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := t.TempDir()
+	// Each stand-in says which one it is and what it was handed.
+	stand := func(dir, name, which string) string {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		at := filepath.Join(dir, name)
+		body := "#!/bin/sh\nprintf '" + which + ": %s\\n' \"$*\"\n"
+		if err := os.WriteFile(at, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+	home := filepath.Join(tmp, "home")
+	stand(filepath.Join(home, ".local", "bin"), "sdlc", "home")
+	local := filepath.Join(tmp, "local")
+	stand(filepath.Join(local, "Programs", "sdlc", "bin"), "sdlc.exe", "localappdata")
+	onPath := filepath.Join(tmp, "on-path")
+	stand(onPath, "sdlc", "path")
+	chosen := stand(filepath.Join(tmp, "chosen"), "sdlc", "sdlc_bin")
+	empty := filepath.Join(tmp, "empty")
+	// A directory named sdlc, and an sdlc nobody can run, are not the binary.
+	dirHome := filepath.Join(tmp, "dir-home")
+	if err := os.MkdirAll(filepath.Join(dirHome, ".local", "bin", "sdlc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plainHome := filepath.Join(tmp, "plain-home")
+	if err := os.MkdirAll(filepath.Join(plainHome, ".local", "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plainHome, ".local", "bin", "sdlc"), []byte("#!/bin/sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	system := filepath.Dir(sh)
+	withSdlc := onPath + string(os.PathListSeparator) + system
+
+	cases := []struct {
+		name string
+		env  []string
+		want string
+	}{
+		{"only in ~/.local/bin", []string{"PATH=" + system, "HOME=" + home}, "home"},
+		{"only in LOCALAPPDATA", []string{"PATH=" + system, "HOME=" + empty, "LOCALAPPDATA=" + local}, "localappdata"},
+		{"on PATH as well", []string{"PATH=" + withSdlc, "HOME=" + home, "LOCALAPPDATA=" + local}, "path"},
+		{"at SDLC_BIN as well", []string{"PATH=" + withSdlc, "HOME=" + home, "SDLC_BIN=" + chosen}, "sdlc_bin"},
+		// Outside a project, a launcher that finds nothing says nothing.
+		{"a directory named sdlc in ~/.local/bin", []string{"PATH=" + system, "HOME=" + dirHome}, ""},
+		{"a file there nobody can run", []string{"PATH=" + system, "HOME=" + plainHome}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), sh, script, "PreToolUse")
+			cmd.Dir = tmp
+			cmd.Env = c.env
+			cmd.Stdin = strings.NewReader("{}")
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("the launcher failed: %v", err)
+			}
+			want := ""
+			if c.want != "" {
+				want = c.want + ": hook PreToolUse"
+			}
+			if got := strings.TrimSpace(string(out)); got != want {
+				t.Errorf("the launcher ran %q, want %q", got, want)
+			}
+		})
+	}
 }
 
 // ------------------------------------------------------------------ drift

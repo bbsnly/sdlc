@@ -171,16 +171,25 @@ decides which session the story holds. See
 
 The plugin runs a small launcher, and the launcher hands every call to the
 `sdlc` binary. It looks for the binary at `SDLC_BIN`, then in the plugin's own
-`bin` directory, then on `PATH`. When none of them has it, every call goes
-through, and in a project that uses sdlc — one with `.sdlc/config.json` — the
-session shows:
+`bin` directory, then on `PATH`, then where the installers put it:
+`~/.local/bin`, or `%LOCALAPPDATA%\Programs\sdlc\bin` on Windows. When none of
+them has it, every call goes through, and in a project that uses sdlc — one with
+`.sdlc/config.json` — the session shows:
 
 ```text
-sdlc: the sdlc binary was not found, so nothing is being enforced. why: the
-plugin is installed, but the binary it drives is not on PATH and is not in the
-bin directory of the plugin. fix: run sdlc doctor in your terminal; if that also
-fails, reinstall with npx @bbsnly/sdlc install
+sdlc: the sdlc binary was not found, so nothing is being enforced. why: it is
+not at SDLC_BIN, in the bin directory of the plugin, on the PATH this app
+started with, or where the installers put it. fix: install it with npx
+@bbsnly/sdlc install. A desktop app such as Claude Desktop keeps the PATH it
+started with, so quit it fully and reopen it after installing or changing PATH,
+or set SDLC_BIN to the full path of the binary. Then run sdlc doctor in your
+terminal.
 ```
+
+A terminal and a desktop app can disagree: `sdlc doctor` passes in a new
+terminal while the app, started before the binary was installed, still does not
+see it. [Troubleshooting](../troubleshooting.md#the-sdlc-binary-was-not-found-so-nothing-is-being-enforced)
+has the details.
 
 Every other session says nothing: the plugin is installed for all of them, and
 a project that does not use sdlc has nothing to enforce. That includes a

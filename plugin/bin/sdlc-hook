@@ -30,6 +30,25 @@ find_binary() {
     command -v sdlc
     return 0
   fi
+  # Where the installers put it, found without PATH. A desktop app keeps the
+  # PATH it started with, and on macOS one never has the shell's at all, so a
+  # binary every new terminal found was not found here. PATH is looked at
+  # first, so a binary somebody put elsewhere on purpose still wins.
+  if [ -n "${HOME:-}" ] && [ -f "${HOME}/.local/bin/sdlc" ] && [ -x "${HOME}/.local/bin/sdlc" ]; then
+    printf '%s' "${HOME}/.local/bin/sdlc"
+    return 0
+  fi
+  if [ -n "${LOCALAPPDATA:-}" ]; then
+    # Git Bash hands this over as Windows wrote it, with backslashes.
+    case "${LOCALAPPDATA}" in
+      *\\*) candidate="${LOCALAPPDATA}\\Programs\\sdlc\\bin\\sdlc.exe" ;;
+      *) candidate="${LOCALAPPDATA}/Programs/sdlc/bin/sdlc.exe" ;;
+    esac
+    if [ -f "${candidate}" ] && [ -x "${candidate}" ]; then
+      printf '%s' "${candidate}"
+      return 0
+    fi
+  fi
   return 1
 }
 
@@ -90,13 +109,15 @@ fi
 # systemMessage is what reaches the session. Stderr from a hook that exits 0
 # goes to Claude Code's debug log only, so the lines below it are for that log;
 # on their own they told nobody that enforcement was off.
-printf '%s\n' '{"continue":true,"systemMessage":"sdlc: the sdlc binary was not found, so nothing is being enforced. why: the plugin is installed, but the binary it drives is not on PATH and is not in the bin directory of the plugin. fix: run sdlc doctor in your terminal; if that also fails, reinstall with npx @bbsnly/sdlc install"}'
+printf '%s\n' '{"continue":true,"systemMessage":"sdlc: the sdlc binary was not found, so nothing is being enforced. why: it is not at SDLC_BIN, in the bin directory of the plugin, on the PATH this app started with, or where the installers put it. fix: install it with npx @bbsnly/sdlc install. A desktop app such as Claude Desktop keeps the PATH it started with, so quit it fully and reopen it after installing or changing PATH, or set SDLC_BIN to the full path of the binary. Then run sdlc doctor in your terminal."}'
 
 printf '%s\n' \
   'sdlc: the sdlc binary was not found, so nothing is being enforced.' \
   '' \
-  '  why  the plugin is installed, but the binary it drives is not on PATH and' \
-  '       is not in the bin directory of the plugin' \
-  '  fix  run "sdlc doctor" in your terminal; if that also fails, reinstall' \
-  '       with "npx @bbsnly/sdlc install"' >&2
+  '  why  it is not at SDLC_BIN, in the bin directory of the plugin, on the PATH' \
+  '       this app started with, or where the installers put it' \
+  '  fix  install it with "npx @bbsnly/sdlc install". A desktop app such as' \
+  '       Claude Desktop keeps the PATH it started with, so quit it fully and' \
+  '       reopen it after installing or changing PATH, or set SDLC_BIN to the' \
+  '       full path of the binary. Then run "sdlc doctor" in your terminal.' >&2
 exit 0

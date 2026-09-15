@@ -447,9 +447,10 @@ func afterCasePattern(fields []string) []string {
 // binary allows the tool call and says so in a system message -- which is the right
 // behaviour and easy to miss, so doctor asks it out loud.
 //
-// The hook's launcher takes SDLC_BIN before PATH, so doctor does too: a binary
-// SDLC_BIN points at is one the hooks find. The plugin's own bin directory is
-// the launcher's other place to look, and only a hook knows where that is.
+// The hook's launcher takes SDLC_BIN before PATH, and PATH before where the
+// installers put the binary, so doctor does too: a binary SDLC_BIN points at is
+// one the hooks find. The plugin's own bin directory is the launcher's other
+// place to look, and only a hook knows where that is.
 func binaryCheck() check {
 	bin := os.Getenv("SDLC_BIN")
 	if bin != "" && runnable(bin) {
@@ -457,6 +458,12 @@ func binaryCheck() check {
 		return check{Name: "sdlc on PATH", State: stateOK, Detail: "SDLC_BIN: " + path}
 	}
 	path, err := exec.LookPath("sdlc")
+	offPath := false
+	if err != nil {
+		if at := installedWhereTheInstallersPutIt(); at != "" {
+			path, err, offPath = at, nil, true
+		}
+	}
 	if bin != "" {
 		// The hooks pass over an SDLC_BIN that names nothing runnable and run
 		// whatever else they find, so a build being tried out is quietly not
@@ -472,10 +479,41 @@ func binaryCheck() check {
 	if err != nil {
 		return check{Name: "sdlc on PATH", State: stateProblem,
 			Detail: "the hooks cannot find sdlc, so nothing is enforced",
-			Fix: `install it where PATH reaches -- "npx @bbsnly/sdlc install" does, and from a ` +
-				`checkout "./task build" prints the line to add -- then open a new terminal`}
+			Fix: `install it with "npx @bbsnly/sdlc install", which puts it where the hooks find it ` +
+				`without PATH; from a checkout "./task build" prints the line to add to PATH. A desktop app ` +
+				`such as Claude Desktop keeps the PATH it started with, so quit it fully and reopen it ` +
+				`after changing PATH, or set SDLC_BIN to the binary`}
+	}
+	if offPath {
+		return check{Name: "sdlc on PATH", State: stateOK,
+			Detail: path + ", where the installers put it: not on PATH, and the hooks look there anyway"}
 	}
 	return check{Name: "sdlc on PATH", State: stateOK, Detail: path}
+}
+
+// installedWhereTheInstallersPutIt is the binary in the directory the install
+// scripts and npx use, which the launchers look at after PATH, or "" when there
+// is none. A desktop app keeps the PATH it started with, so without this the
+// hooks missed a binary every new terminal found.
+func installedWhereTheInstallersPutIt() string {
+	var at string
+	if runtime.GOOS == "windows" {
+		local := os.Getenv("LOCALAPPDATA")
+		if local == "" {
+			return ""
+		}
+		at = filepath.Join(local, "Programs", "sdlc", "bin", "sdlc.exe")
+	} else {
+		home := os.Getenv("HOME")
+		if home == "" {
+			return ""
+		}
+		at = filepath.Join(home, ".local", "bin", "sdlc")
+	}
+	if !runnable(at) {
+		return ""
+	}
+	return at
 }
 
 // runnable is the launchers' test for SDLC_BIN: a file at that path, read from

@@ -572,11 +572,30 @@ Each one means a rule you are relying on is not running as it should.
 
 ### `the sdlc binary was not found, so nothing is being enforced`
 
-The plugin is installed and the binary it hands every tool call to is not on
-`PATH` or in the plugin's own `bin` directory. Nothing is refused until it is.
-Install the binary, or run `/sdlc:next`, which offers to. Only a session
-started inside a project with `.sdlc/config.json` shows this; every other
-session says nothing, including one started in a directory above it.
+The plugin is installed and the binary it hands every tool call to was not
+found: not at `SDLC_BIN`, in the plugin's own `bin` directory, on `PATH`, or
+where the installers put it (`~/.local/bin`, or `%LOCALAPPDATA%\Programs\sdlc\bin`
+on Windows). Nothing is refused until it is. Install the binary, or run
+`/sdlc:next`, which offers to. Only a session started inside a project with
+`.sdlc/config.json` shows this; every other session says nothing, including one
+started in a directory above it.
+
+A desktop app such as Claude Desktop keeps the `PATH` it was started with, so a
+binary a new terminal finds, and `sdlc doctor` passes for, can still be missing
+here. Installed to the default directory, it is found without `PATH`. Installed
+anywhere else, quit the app fully (from the tray or the menu bar too) and reopen
+it after changing `PATH`, or set `SDLC_BIN` to the full path of the binary.
+
+On Windows, `npx @bbsnly/sdlc install` does not change `PATH`; it prints the
+lines that do. The hook does not need them for the default directory. They are
+for a terminal, so that `sdlc` runs by name there. Run them in PowerShell, with
+your install directory in the second:
+
+```powershell
+$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+$key.SetValue('Path', "$env:LOCALAPPDATA\Programs\sdlc\bin;" + $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames'), 'ExpandString')
+[Environment]::SetEnvironmentVariable('SDLC_PATH_REFRESH', $null, 'User')
+```
 
 ### `.sdlc/state/active could not be read, so nothing is being enforced`
 

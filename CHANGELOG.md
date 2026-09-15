@@ -69,6 +69,18 @@ not change and it is never reused.
   catch the error a test should see, and the implementer not to swallow that
   error or add a flag only a test sets.
 
+### Fixed
+
+- The hook found no binary in a desktop app such as Claude Desktop, which keeps
+  the `PATH` it was started with (on macOS, one never has the shell's), and
+  said nothing was being enforced while `sdlc doctor` passed in a terminal.
+  The launchers now also look where the installers put the binary, after
+  `PATH`: the shell launcher in `~/.local/bin/sdlc`, and both the shell
+  launcher under Git Bash and the Windows launcher in
+  `%LOCALAPPDATA%\Programs\sdlc\bin\sdlc.exe`. `sdlc doctor` looks in the same
+  places. The not-found message says a desktop app has to be quit and reopened
+  after `PATH` changes, or `SDLC_BIN` set.
+
 ## [0.1.1](https://github.com/bbsnly/sdlc/releases/tag/v0.1.1) - 2026-09-15
 
 ### Changed
