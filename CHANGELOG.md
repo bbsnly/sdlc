@@ -403,7 +403,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   message, a `--note` or a `--message` that mentioned `sdlc approve`, `sdlc stop`
   or `sdlc unfreeze` after a `;` or in backticks was refused as that command,
   including the runbook's own `sdlc escalate`; `git log --grep commit` and
-  `git stash push -m "wip before commit"` met the commit gate; and
+  `git stash push -m "wip before commit" -- docs/notes.md` met the commit
+  gate; and
   `docker compose -p sdlc stop` was a stop. A string handed to `bash -c`,
   `cmd /c`, `-Command` or `eval`, and a command in `$(...)` or backticks, is
   still read for what it runs. A commit in another repository, reached by a
