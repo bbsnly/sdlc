@@ -105,6 +105,48 @@ func TestFindRootOutsideAnyRepository(t *testing.T) {
 	}
 }
 
+// Git does not climb into a directory GIT_CEILING_DIRECTORIES names, and a
+// repository above one is not the repository it works in. FindRoot went on up
+// and found it: from a temp directory inside a repository, "outside any
+// repository" was that repository.
+func TestFindRootStopsWhereGitCeilingDirectoriesSays(t *testing.T) {
+	root := repo(t)
+	inside := filepath.Join(root, "a", "b")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Join(root, "a"))
+	var e *sdlcerr.Error
+	if _, err := FindRoot(inside); err == nil {
+		t.Error("FindRoot climbed into a ceiling directory to find the repository above it")
+	} else if !errors.As(err, &e) || !strings.Contains(e.Why, "GIT_CEILING_DIRECTORIES") {
+		t.Errorf("the error does not say where the search stopped: %+v", err)
+	}
+
+	// The directory the search starts in is looked in even when it is a
+	// ceiling, as git does, and so is everything below the ceiling.
+	t.Setenv("GIT_CEILING_DIRECTORIES", string(filepath.ListSeparator)+root)
+	if got, err := FindRoot(root); err != nil || got != root {
+		t.Errorf("from the ceiling itself: FindRoot = %q, %v; want %q", got, err, root)
+	}
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(root))
+	if got, err := FindRoot(inside); err != nil || got != root {
+		t.Errorf("with the ceiling above the repository: FindRoot = %q, %v; want %q", got, err, root)
+	}
+
+	// A ceiling named through a link is the directory the link leads to, as it
+	// is to git. The temp directory is named that way on macOS, under /var.
+	link := filepath.Join(t.TempDir(), "ceiling")
+	if err := os.Symlink(filepath.Join(root, "a"), link); err != nil {
+		t.Skipf("this system cannot make a symlink: %v", err)
+	}
+	t.Setenv("GIT_CEILING_DIRECTORIES", link)
+	if _, err := FindRoot(inside); err == nil {
+		t.Error("FindRoot climbed into a ceiling directory named through a symlink")
+	}
+}
+
 func TestFindRootHonoursGitWorkTree(t *testing.T) {
 	elsewhere := t.TempDir()
 	t.Setenv("GIT_WORK_TREE", elsewhere)

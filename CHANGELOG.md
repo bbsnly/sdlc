@@ -97,6 +97,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   acts on, and the hook looks for the project there, so
   `rm repo/internal/invoice_test.go`, `git -C repo commit` and
   `cd repo && sdlc unfreeze` are refused from above it as they are from inside.
+  `sdlc` stops looking for the repository where `GIT_CEILING_DIRECTORIES` says,
+  as git does, instead of finding one above it that git would not use.
 - Path rules match the way the filesystem does. macOS and Windows are
   case-insensitive, and `.SDLC/state/active`, `.sdlc/Config.json` and
   `claude.md` were writable while the identically-named files were refused.
