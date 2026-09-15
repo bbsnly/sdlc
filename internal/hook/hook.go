@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -651,11 +652,9 @@ func findLoop(getenv func(string) string, p payload, target string, warn func(st
 			target = ""
 		}
 	}
-	for _, start := range []string{getenv("CLAUDE_PROJECT_DIR"), p.CWD, target} {
-		if start == "" {
-			continue
-		}
-		root, ok := projectRoot(start)
+	walked := map[string]bool{}
+	for _, start := range starts(getenv, p, target) {
+		root, ok := projectRoot(start, walked)
 		if !ok {
 			continue
 		}
@@ -669,15 +668,31 @@ func findLoop(getenv func(string) string, p payload, target string, warn func(st
 // inLoop reports whether the session is in a project that takes part in the
 // loop, whether or not a story is being worked on.
 func inLoop(getenv func(string) string, p payload) bool {
-	for _, start := range []string{getenv("CLAUDE_PROJECT_DIR"), p.CWD} {
-		if start == "" {
-			continue
-		}
-		if _, ok := projectRoot(start); ok {
+	walked := map[string]bool{}
+	for _, start := range starts(getenv, p, "") {
+		if _, ok := projectRoot(start, walked); ok {
 			return true
 		}
 	}
 	return false
+}
+
+// starts is where to look for the loop project: the session's project
+// directory, where the call runs, the file a file tool writes, and, for a
+// command, every path it names. A command has no file of its own, so from a
+// session opened above the repository `rm repo/internal/invoice_test.go`,
+// `git -C repo commit` and `cd repo && sdlc unfreeze` were in no project at
+// all, and every shell rule was off without a word.
+func starts(getenv func(string) string, p payload, target string) []string {
+	out := []string{getenv("CLAUDE_PROJECT_DIR"), p.CWD, target}
+	if shellpolicy.Tools[p.ToolName] && p.CWD != "" {
+		for _, word := range shellpolicy.Places(p.ToolInput.Command, p.ToolName == "PowerShell") {
+			if abs, ok := pathrules.Abs(p.CWD, word); ok {
+				out = append(out, abs)
+			}
+		}
+	}
+	return slices.DeleteFunc(out, func(s string) bool { return s == "" })
 }
 
 // projectRoot finds the directory holding `.sdlc/config.json`, starting at the
@@ -692,12 +707,20 @@ func inLoop(getenv func(string) string, p payload) bool {
 //
 // The walk stops at the repository, so a project that does not take part never
 // picks up the configuration of one further up the filesystem.
-func projectRoot(start string) (string, bool) {
+//
+// walked holds the directories earlier walks went through. A walk that reaches
+// one ends there, with the answer that walk already gave, so a command naming
+// thousands of paths in one tree climbs it once.
+func projectRoot(start string, walked map[string]bool) (string, bool) {
 	dir, err := filepath.Abs(start)
 	if err != nil {
 		return "", false
 	}
 	for {
+		if walked[dir] {
+			return "", false
+		}
+		walked[dir] = true
 		if exists(filepath.Join(dir, ".sdlc", "config.json")) {
 			return dir, true
 		}

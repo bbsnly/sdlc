@@ -592,6 +592,32 @@ func TestTheLoopIsFoundWhereTheToolCallActs(t *testing.T) {
 	if r := call(t, command(root, "", "rm .sdlc/state/tests.lock"), session); !denied(r) {
 		t.Errorf("the freeze could be removed from a session opened above the repository: %+v", r)
 	}
+
+	// A command run from above it, naming what it acts on. A command has no
+	// file of its own to find the project from, and each of these was allowed
+	// in silence.
+	freeze(t, root, "A-1", "internal/invoice_test.go", "package internal\n")
+	name := filepath.Base(root)
+	for _, c := range []struct{ agent, cmd string }{
+		{"sdlc:implementer", "rm " + name + "/internal/invoice_test.go"},
+		{"sdlc:implementer", `rm "` + name + `/.sdlc/state/tests.lock"`},
+		{"", "echo {} > " + name + "/.sdlc/config.json"},
+		{"", "cd " + name + " && sdlc unfreeze --reason x"},
+		{"", "git -C " + name + " commit -am wip"},
+	} {
+		if r := call(t, command(above, c.agent, c.cmd), session); !denied(r) {
+			t.Errorf("%q, run from above the repository, was allowed: %+v", c.cmd, r)
+		}
+	}
+	if r := call(t, command(above, "", "ls "+name), session); denied(r) {
+		t.Errorf("looking into the repository from above it was refused: %+v", r)
+	}
+
+	// An approval is a person's with no story running, from above as well.
+	write(t, root, ".sdlc/state/active", "")
+	if r := call(t, command(above, "", "cd "+name+" && sdlc approve A-1"), session); !denied(r) {
+		t.Errorf("an approval run from above the repository was allowed: %+v", r)
+	}
 }
 
 func TestANotebookPathIsGovernedToo(t *testing.T) {

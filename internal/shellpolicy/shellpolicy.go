@@ -351,6 +351,24 @@ func HumanDecisions(command string, powerShell bool) (Finding, bool) {
 	return Finding{}, false
 }
 
+// Places is every path-shaped word a command names, each once, in the order
+// they first appear: where the command may act, for a caller that has yet to
+// find which project that is in.
+func Places(command string, powerShell bool) []string {
+	if powerShell {
+		command = strings.ReplaceAll(command, "`", "")
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, word := range wordsIn(command) {
+		if !seen[word] {
+			seen[word] = true
+			out = append(out, word)
+		}
+	}
+	return out
+}
+
 // checkEnforcement stops a session turning the loop off from the inside. The
 // switch exists for the person who started the session, and a switch an
 // assistant can reach is not a control.

@@ -93,6 +93,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   subdirectory reports that directory, and the hook looked for the project's
   configuration only there -- so `cd backend && claude` turned every rule off
   without saying so.
+  A session opened above the repository is held too: a command names what it
+  acts on, and the hook looks for the project there, so
+  `rm repo/internal/invoice_test.go`, `git -C repo commit` and
+  `cd repo && sdlc unfreeze` are refused from above it as they are from inside.
 - Path rules match the way the filesystem does. macOS and Windows are
   case-insensitive, and `.SDLC/state/active`, `.sdlc/Config.json` and
   `claude.md` were writable while the identically-named files were refused.
