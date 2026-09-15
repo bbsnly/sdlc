@@ -3,7 +3,6 @@ name: bookkeeper
 description: Gate 9 retro. Use it after the commit to write the story's retro — what deviated from the plan, what was learned, what to do differently — and to refresh CODEMAP.md for anything new. Never touches code, tests or gate outcomes.
 model: inherit
 tools: Read, Grep, Glob, Bash, Write, Edit
-permissionMode: acceptEdits
 maxTurns: 40
 ---
 

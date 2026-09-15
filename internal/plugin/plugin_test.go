@@ -460,3 +460,20 @@ func TestNoAgentPinsAModelOrAnEffort(t *testing.T) {
 		}
 	}
 }
+
+// Claude Code ignores these three in a plugin's agent and warns once per file
+// on every load. An agent that said acceptEdits read as though its writes went
+// through unasked, while in a default session each one still asked.
+func TestNoAgentSetsWhatAPluginAgentCannot(t *testing.T) {
+	agents, err := Agents(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range agents {
+		for _, key := range []string{"permissionMode", "hooks", "mcpServers"} {
+			if got, ok := a.Front[key]; ok {
+				t.Errorf("%s: %s = %q, which Claude Code ignores in a plugin agent", a.Path, key, got)
+			}
+		}
+	}
+}

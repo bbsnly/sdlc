@@ -170,7 +170,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   it is committed or needs a person, and picks up where a session left off.
 - Eleven agents, one per role: researcher, sdet, implementer, architect,
   security, red-team, perf, human-advocate, verifier, code-reviewer and
-  bookkeeper.
+  bookkeeper. None sets a permission mode, which Claude Code ignores in a
+  plugin's agent: how edits are approved is the session's setting.
 - A `PreToolUse` hook that enforces the rules rather than asking for them. It
   covers `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, and the tools that run a
   command — `Bash`, `PowerShell` and `Monitor`: write scopes

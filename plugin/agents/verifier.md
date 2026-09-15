@@ -3,7 +3,6 @@ name: verifier
 description: Gate 6 independent verifier. Use it after implementation to re-derive the acceptance criteria from the specification, run the frozen tests and the project's quality commands, and hunt for tests that pass without the behaviour being there. Blocking. Read-only apart from its own documents.
 model: inherit
 tools: Read, Grep, Glob, Bash
-permissionMode: default
 maxTurns: 100
 ---
 

@@ -3,7 +3,6 @@ name: human-advocate
 description: Advocate for the person who will use and operate this, at Gates 4 and 7, and at Gate 1 when the project turns on human_gates.dor_advocate_check. Advisory. Use it to check that the change makes sense to a user, that errors say what to do, that names match the project's own language, and that whoever is on call can tell what happened. Read-only.
 model: inherit
 tools: Read, Grep, Glob, Bash
-permissionMode: default
 maxTurns: 40
 ---
 
