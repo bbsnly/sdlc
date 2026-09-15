@@ -29,3 +29,48 @@ func TestAnInterruptedWriteOfALinkedBacklogIsClearedWhereItWasMade(t *testing.T)
 		t.Errorf("what a killed write of the linked backlog left is still there: %v", err)
 	}
 }
+
+func TestAnInterruptedWriteOfLoopStateIsCleared(t *testing.T) {
+	s := newStore(t)
+	left := filepath.Join(s.root, ".sdlc", "state", ".active.tmp3")
+	if err := os.MkdirAll(filepath.Dir(left), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(left, []byte("A-"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s.ClearInterruptedWrites()
+	if _, err := os.Stat(left); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("what a killed write of loop state left is still there: %v", err)
+	}
+}
+
+// With .sdlc a link out of the repository, as a clone can bring one, the files
+// where it leads are somebody else's, and none of them is removed.
+func TestInterruptedWritesAreNotClearedThroughALinkOutOfTheRepository(t *testing.T) {
+	s := newStore(t)
+	outside := t.TempDir()
+	kept := []string{
+		filepath.Join(outside, "state", ".active.tmp1"),
+		filepath.Join(outside, "stories", "A-1", ".record.json.tmp7"),
+	}
+	for _, path := range kept {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("theirs"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(s.root, ".sdlc")); err != nil {
+		t.Skipf("this system cannot make a symlink: %v", err)
+	}
+
+	s.ClearInterruptedWrites()
+	for _, path := range kept {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("%s, outside the repository, was removed: %v", path, err)
+		}
+	}
+}

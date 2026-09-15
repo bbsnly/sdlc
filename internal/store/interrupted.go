@@ -24,6 +24,11 @@ var interruptedWrite = regexp.MustCompile(`^\..+\.tmp[0-9]+$`)
 func (s *Store) ClearInterruptedWrites() {
 	for _, dir := range []string{stateDir, storiesDir} {
 		root := filepath.Join(s.root, filepath.FromSlash(dir))
+		// Where a link out of the repository leads, the files are not the
+		// loop's, whatever they are called.
+		if s.leaves(root) {
+			continue
+		}
 		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err == nil && interruptedWrite.MatchString(d.Name()) {
 				removeLeftover(path)
