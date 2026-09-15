@@ -479,6 +479,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   the Start menu finds `sdlc` without signing out first. Piped into
   `Invoke-Expression`, it no longer leaves `$ErrorActionPreference = 'Stop'`
   and its own variables behind in your PowerShell session.
+  `npx @bbsnly/sdlc install` gives up on a download after a minute with
+  nothing arriving rather than a minute in all, so a slow link can finish it.
 - Release archives carry an SBOM and build provenance attestation. The tool
   that writes the SBOM runs between the build and the attestation, so it is
   checked against a pinned hash before it runs.

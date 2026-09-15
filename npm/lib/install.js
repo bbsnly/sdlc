@@ -84,18 +84,41 @@ function onPath(dir, env = process.env) {
   return entries.some((entry) => same(path.resolve(entry), path.resolve(dir)))
 }
 
-async function download(url, into) {
-  // Without a deadline a stalled connection hangs `npx` indefinitely, with
-  // nothing on screen after "downloading". Sixty seconds is long enough for a
-  // slow link and short enough to be a failure rather than a hang.
-  const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) })
-  if (!response.ok) {
-    throw new Failure(`could not download ${path.basename(into)}`, [
-      `why  ${url} answered ${response.status} ${response.statusText}`,
-      'fix  check that this version is released, and that this machine can reach github.com',
-    ])
+async function download(url, into, idle = 60_000) {
+  // Without a limit a stalled connection hangs `npx` indefinitely, with nothing
+  // on screen after "downloading". A deadline on the whole download failed
+  // every link too slow to finish inside it instead, so the limit is on
+  // silence: this long to answer, and this long without a byte after that.
+  const controller = new AbortController()
+  let timer
+  const wait = () => {
+    clearTimeout(timer)
+    timer = setTimeout(() => controller.abort(), idle)
   }
-  fs.writeFileSync(into, Buffer.from(await response.arrayBuffer()))
+  wait()
+  try {
+    const response = await fetch(url, { redirect: 'follow', signal: controller.signal })
+    if (!response.ok) {
+      throw new Failure(`could not download ${path.basename(into)}`, [
+        `why  ${url} answered ${response.status} ${response.statusText}`,
+        'fix  check that this version is released, and that this machine can reach github.com',
+      ])
+    }
+    const chunks = []
+    for await (const chunk of response.body) {
+      wait()
+      chunks.push(chunk)
+    }
+    fs.writeFileSync(into, Buffer.concat(chunks))
+  } catch (err) {
+    if (!controller.signal.aborted) throw err
+    throw new Failure(`could not download ${path.basename(into)}`, [
+      `why  ${url} sent nothing for ${idle / 1000} seconds`,
+      'fix  check the connection and try again',
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // packagedVersion is the release this package was published with, when it
@@ -259,4 +282,4 @@ async function install(options = {}) {
   return { version, dir, target }
 }
 
-module.exports = { install, assetFor, defaultDir, parseChecksums, onPath, Failure, REPO }
+module.exports = { install, assetFor, defaultDir, parseChecksums, onPath, download, Failure, REPO }
