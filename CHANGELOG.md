@@ -98,7 +98,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `rm repo/internal/invoice_test.go`, `git -C repo commit` and
   `cd repo && sdlc unfreeze` are refused from above it as they are from inside.
   `sdlc` stops looking for the repository where `GIT_CEILING_DIRECTORIES` says,
-  as git does, instead of finding one above it that git would not use.
+  as git does, instead of finding one above it that git would not use, and
+  the hook stops looking for the project there too.
 - Path rules match the way the filesystem does. macOS and Windows are
   case-insensitive, and `.SDLC/state/active`, `.sdlc/Config.json` and
   `claude.md` were writable while the identically-named files were refused.
@@ -127,8 +128,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   was already shown.
   A story id, status or name quoted in an error is escaped as well, so a quote
   or a line break in one cannot end the quotation early.
-  A line break in a title, a gate's note or a waiting message is written out
-  too, so it cannot start a line that reads as sdlc's own.
+  A line break in text read back from the backlog or the loop's files -- a
+  title, a gate's status or note, a review's verdict, a question waiting for
+  a person, the freeze -- is written out too, so it cannot start a line that
+  reads as sdlc's own.
 - Reviews are recorded against the thing they reviewed. A design review is
   stamped with the hash of the plan it read and a code review with the hash
   of the tree it read, so a review of an older version of the work shows as
