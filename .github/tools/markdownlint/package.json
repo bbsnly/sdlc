@@ -1,0 +1,7 @@
+{
+  "name": "sdlc-markdownlint",
+  "private": true,
+  "devDependencies": {
+    "markdownlint-cli2": "0.23.2"
+  }
+}

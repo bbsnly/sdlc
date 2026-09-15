@@ -35,6 +35,9 @@
 /.sdlc/state/active
 /.sdlc/state/cover.out
 
+# Where `./task markdownlint` installs markdownlint from its lockfile.
+node_modules/
+
 # Scratch paths the launcher and tests use
 /.scratch/
 *.tmp

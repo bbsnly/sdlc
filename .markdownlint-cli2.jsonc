@@ -34,6 +34,6 @@
     ".github/PULL_REQUEST_TEMPLATE.md",
     "plan/**",
     "internal/scaffold/templates/**",
-    "node_modules/**"
+    "**/node_modules/**"
   ]
 }

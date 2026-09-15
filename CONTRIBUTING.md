@@ -28,7 +28,8 @@ Two things Go cannot fetch for you, because they are not Go programs:
   disagree about what is a warning, so the Taskfile refuses to run rather than
   silently checking something else. `brew install shellcheck`, or see
   [installing shellcheck](https://github.com/koalaman/shellcheck#installing).
-- **Node** 22 or newer, because markdownlint runs through `npx`.
+- **Node** 22 or newer, because markdownlint runs on it. `./task markdownlint`
+  installs it with `npm ci` from the lockfile in `.github/tools/markdownlint`.
 
 `./task check` never skips a leg. A check that skips when its tool is missing
 reports success for work it did not do, so every leg either runs or fails with
