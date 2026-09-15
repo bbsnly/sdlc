@@ -23,7 +23,9 @@ around the hook, or give up, all worse than the thing being prevented.
 
 Nothing is enforced unless **all** of these are true:
 
-1. The project has `.sdlc/config.json`.
+1. The project has `.sdlc/config.json`, found by looking up from where the session and the
+   tool call are, as far as the repository root and no further than a directory
+   `GIT_CEILING_DIRECTORIES` names.
 2. A story is being worked on — `.sdlc/state/active` names one.
 3. `SDLC_ENFORCE` is not `0` in the environment the session started with.
 

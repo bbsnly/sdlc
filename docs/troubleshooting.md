@@ -15,6 +15,11 @@ compares your working tree against `HEAD`, so it needs a repository to work in.
 
 Run `git init`, or change to a directory inside the repository you meant to use.
 
+If the message names `GIT_CEILING_DIRECTORIES`, you may well be inside a repository: that
+variable tells git, and `sdlc`, not to look in the directory it names, and one of those is
+above you. Take that directory out of it, or unset it. `git init` would start a second
+repository inside the first. The hook stops at the same place, so no rule applies there either.
+
 ### SDLC-E0002
 
 This repository has no `.sdlc/config.json`, so it does not take part in the loop yet.

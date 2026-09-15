@@ -218,7 +218,9 @@ func FindRoot(start string) (string, error) {
 			return "", sdlcerr.New(sdlcerr.NotAGitRepo,
 				"this is not a Git repository",
 				"sdlc looked for .git in "+start+" and above it, as far as "+parent+
-					", which GIT_CEILING_DIRECTORIES says not to look in")
+					", which GIT_CEILING_DIRECTORIES says not to look in").
+				WithFix("take " + parent + " out of GIT_CEILING_DIRECTORIES, or unset it: this directory may be " +
+					"inside a repository that the ceiling hides, and \"git init\" would start another in it")
 		}
 		dir = parent
 	}

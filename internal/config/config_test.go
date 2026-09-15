@@ -122,6 +122,10 @@ func TestFindRootStopsWhereGitCeilingDirectoriesSays(t *testing.T) {
 		t.Error("FindRoot climbed into a ceiling directory to find the repository above it")
 	} else if !errors.As(err, &e) || !strings.Contains(e.Why, "GIT_CEILING_DIRECTORIES") {
 		t.Errorf("the error does not say where the search stopped: %+v", err)
+	} else if !strings.Contains(e.Fix, "GIT_CEILING_DIRECTORIES") || strings.Contains(e.Fix, "run \"git init\"") {
+		// Starting a repository here would put one inside the repository the
+		// ceiling hides.
+		t.Errorf("the fix does not point at the ceiling: %q", e.Fix)
 	}
 
 	// The directory the search starts in is looked in even when it is a
