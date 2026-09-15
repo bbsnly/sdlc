@@ -127,6 +127,9 @@ A range can hold commits somebody else made in the same window, and a story
 reopened after it was committed spans everything that landed in between. It is a
 list to read, not a list to revert.
 
+To go through the log with the assistant, run `/sdlc:trunk-review`: see
+[Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md).
+
 ## `sdlc ack`
 
 Mark the log read up to a commit, so it starts after it.

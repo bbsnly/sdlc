@@ -30,6 +30,8 @@ you have a specific job to do.
   loop stops and waits for you to decide
 - [Tracking what a story costs](guides/tracking-what-a-story-costs.md): record
   spend, set a budget, and read the alerts
+- [Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md):
+  read the stories committed since you last looked, and follow them up
 - [Why was I refused?](guides/why-was-i-refused.md): read a hook refusal, find
   its rule, and check when enforcement is off
 

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -114,17 +115,154 @@ func TestEveryAgentAndSkillIsUsable(t *testing.T) {
 		}
 	}
 
-	// A skill flagged user-invocable: false or disable-model-invocation: true is
-	// not delivered to agents through a plugin, even though the same flag works
-	// outside one. A skill that quietly stops being delivered is worse than one
-	// that was never written.
+	for _, problem := range flagProblems(agents, skills, humanOnlySkills) {
+		t.Error(problem)
+	}
+}
+
+// humanOnlySkills are the skills only a person starts. The docs promise it of
+// each of them, and every other skill is one the model has to be able to start.
+var humanOnlySkills = map[string]bool{"trunk-review": true}
+
+// flagProblems is where a skill's invocation flags break something.
+//
+// A skill in humanOnly carries disable-model-invocation: true, and no other
+// skill does: dropping the flag lets the model start what was promised to a
+// person, and adding it to another skill silently stops the model starting it.
+//
+// A skill carrying disable-model-invocation: true is not delivered to an agent
+// through its skills: field: measured with a plugin skill (none of four runs
+// delivered it, all four did without the flag), and Claude Code's own
+// documentation says a skill the model cannot invoke cannot be preloaded. The
+// same flag leaves /sdlc:<skill> for a person to type and keeps the model from
+// starting the skill, which is what a skill only a person should run needs. So
+// it is refused where an agent preloads the skill, and nowhere else: a skill
+// that quietly stops being delivered is worse than one that was never written.
+//
+// user-invocable: false is refused on every skill. It stopped delivery the same
+// way, and anywhere else it only hides the slash command a person runs the skill
+// with, leaving the model what a skill with no flag already gives it.
+func flagProblems(agents, skills []Component, humanOnly map[string]bool) []string {
+	byName := map[string]Component{}
+	var problems []string
 	for _, s := range skills {
-		for _, flag := range []string{"user-invocable", "disable-model-invocation"} {
-			if v, ok := s.Front[flag]; ok {
-				t.Errorf("%s: %s: %s -- a plugin skill carrying this is not delivered to agents",
-					s.Path, flag, v)
+		byName[s.Name] = s
+		flag, flagged := s.Front["disable-model-invocation"]
+		switch {
+		case humanOnly[s.Name] && flag != "true":
+			problems = append(problems, fmt.Sprintf(
+				"%s: only a person starts this skill, and without disable-model-invocation: true the model can", s.Path))
+		case !humanOnly[s.Name] && flagged:
+			problems = append(problems, fmt.Sprintf(
+				"%s: disable-model-invocation: %s -- the model never starts this skill with it; "+
+					"a skill only a person starts belongs in humanOnlySkills", s.Path, flag))
+		}
+		if v, ok := s.Front["user-invocable"]; ok {
+			problems = append(problems, fmt.Sprintf(
+				"%s: user-invocable: %s -- a plugin skill has no use for it: a preloaded one is not delivered, "+
+					"and any other loses the slash command a person runs it with", s.Path, v))
+		}
+	}
+	for _, a := range agents {
+		for _, name := range a.List("skills") {
+			s, ok := byName[strings.TrimPrefix(name, "sdlc:")]
+			if !ok {
+				problems = append(problems, fmt.Sprintf("%s: skills: names %q, which this plugin does not ship", a.Path, name))
+				continue
+			}
+			if v, ok := s.Front["disable-model-invocation"]; ok {
+				problems = append(problems, fmt.Sprintf(
+					"%s: disable-model-invocation: %s -- %s preloads it, and a skill carrying this is not delivered to an agent",
+					s.Path, v, a.Path))
 			}
 		}
+	}
+	return problems
+}
+
+func TestOnlyASkillNoAgentPreloadsIsKeptFromTheModel(t *testing.T) {
+	skill := func(name, flag string) Component {
+		front := map[string]string{"name": name}
+		if key, value, ok := strings.Cut(flag, ": "); ok {
+			front[key] = value
+		}
+		return Component{Name: name, Path: "plugin/skills/" + name + "/SKILL.md", Front: front}
+	}
+	agent := func(skills string) Component {
+		return Component{Name: "reviewer", Path: "plugin/agents/reviewer.md",
+			Front: map[string]string{"name": "reviewer", "skills": skills}}
+	}
+	humanOnly := skill("trunk-review", "disable-model-invocation: true")
+	plain := skill("next", "")
+	preloadsInABlock := Component{Name: "reviewer", Path: "plugin/agents/reviewer.md",
+		Front: map[string]string{"name": "reviewer", "skills": ""},
+		lists: map[string][]string{"skills": {"next", "trunk-review"}}}
+
+	for _, c := range []struct {
+		name   string
+		agents []Component
+		skills []Component
+		want   string
+	}{
+		{"a human-only skill no agent preloads", []Component{agent("")}, []Component{humanOnly, plain}, ""},
+		{"a plain skill an agent preloads", []Component{agent("next")}, []Component{humanOnly, plain}, ""},
+		{"a human-only skill an agent preloads", []Component{agent("next, trunk-review")},
+			[]Component{humanOnly, plain}, "reviewer.md preloads it"},
+		{"a human-only skill preloaded by its namespaced name", []Component{agent("[sdlc:trunk-review]")},
+			[]Component{humanOnly, plain}, "reviewer.md preloads it"},
+		{"a human-only skill preloaded from a block list", []Component{preloadsInABlock},
+			[]Component{humanOnly, plain}, "reviewer.md preloads it"},
+		{"a preloaded skill the plugin does not ship", []Component{agent("gone")},
+			[]Component{plain}, `names "gone"`},
+		{"user-invocable: false on a skill nobody preloads", []Component{agent("")},
+			[]Component{skill("quiet", "user-invocable: false")}, "user-invocable: false"},
+		{"a human-only skill that lost its flag", []Component{agent("")},
+			[]Component{skill("trunk-review", ""), plain}, "without disable-model-invocation"},
+		{"the flag on a skill the model has to start", []Component{agent("")},
+			[]Component{humanOnly, skill("next", "disable-model-invocation: true")}, "belongs in humanOnlySkills"},
+	} {
+		got := flagProblems(c.agents, c.skills, map[string]bool{"trunk-review": true})
+		switch {
+		case c.want == "" && len(got) > 0:
+			t.Errorf("%s: refused: %v", c.name, got)
+		case c.want != "" && (len(got) != 1 || !strings.Contains(got[0], c.want)):
+			t.Errorf("%s: problems = %v, want one saying %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestAListInTheFrontmatterReadsInEitherForm(t *testing.T) {
+	for _, text := range []string{
+		"---\nname: a\nskills:\n  - next\n  - \"trunk-review\"\nmodel: inherit\n---\nbody\n",
+		"---\nname: a\nskills:\n  - next\n  # the one only a person starts\n  - trunk-review\n---\nbody\n",
+		"---\nname: a\nskills: next, trunk-review\n---\nbody\n",
+		"---\nname: a\nskills: [next, 'trunk-review']\n---\nbody\n",
+	} {
+		front, lists, _, err := splitFrontmatter(text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := Component{Front: front, lists: lists}
+		if got := c.List("skills"); !slices.Equal(got, []string{"next", "trunk-review"}) {
+			t.Errorf("skills read from %q = %q", text, got)
+		}
+		if got := c.List("tools"); got != nil {
+			t.Errorf("a key that is not there read as %q", got)
+		}
+	}
+
+	// Items under a nested key belong to that key, not to the one above it.
+	front, lists, _, err := splitFrontmatter(
+		"---\nname: a\nhooks:\n  PreToolUse:\n    - matcher: Bash\nskills:\n  - next\n---\nbody\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := Component{Front: front, lists: lists}
+	if got := c.List("hooks"); got != nil {
+		t.Errorf("a nested block's items read as the list %q", got)
+	}
+	if got := c.List("skills"); !slices.Equal(got, []string{"next"}) {
+		t.Errorf("skills after a nested block read as %q", got)
 	}
 }
 

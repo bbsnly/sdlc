@@ -43,6 +43,13 @@ not change and it is never reused.
   the log then lists the stories in between again. The hook refuses it from a
   tool call under `acknowledgement-is-a-human-decision`, and `sdlc doctor`
   names an acknowledged commit git does not have.
+- `/sdlc:trunk-review` goes through what `sdlc log` lists with you: the commits
+  each story landed in, read against its acceptance criteria and its retro, with
+  what looks right, what is worth a second look, and follow-ups. It proposes
+  follow-ups as backlog stories, and adds only the ones you confirm, and only
+  while no story is being worked on. It never reverts a commit and never runs
+  `sdlc ack`. Only a person starts it: the skill carries
+  `disable-model-invocation`.
 
 ### Changed
 

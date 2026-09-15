@@ -62,6 +62,22 @@ type Component struct {
 	Path        string // repository-relative, slash-separated
 	Body        string
 	Front       map[string]string
+	lists       map[string][]string
+}
+
+// List reads a frontmatter key as a list, in either form it can take: "- item"
+// lines under the key, or inline as "a, b" or "[a, b]".
+func (c Component) List(key string) []string {
+	if items := c.lists[key]; len(items) > 0 {
+		return items
+	}
+	var out []string
+	for _, item := range strings.Split(strings.Trim(c.Front[key], "[]"), ",") {
+		if item = unquote(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // LoadManifest reads plugin/.claude-plugin/plugin.json.
@@ -126,7 +142,7 @@ func components(dir, pattern string) ([]Component, error) {
 		if err != nil {
 			return nil, err
 		}
-		front, body, err := splitFrontmatter(string(raw))
+		front, lists, body, err := splitFrontmatter(string(raw))
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
@@ -136,40 +152,63 @@ func components(dir, pattern string) ([]Component, error) {
 			Path:        filepath.ToSlash(path),
 			Body:        body,
 			Front:       front,
+			lists:       lists,
 		})
 	}
 	return out, nil
 }
 
-// splitFrontmatter reads the leading --- block as scalar key/value pairs. Keys
-// whose value is a list or a nested block are recorded with an empty value:
+// splitFrontmatter reads the leading --- block as scalar key/value pairs, and
+// the "- item" lines directly under a key with no value as that key's list. A
+// nested block is recorded with an empty value, and its items belong to nobody:
 // nothing here needs to read one, and pretending to parse YAML would be worse
 // than not parsing it.
-func splitFrontmatter(text string) (map[string]string, string, error) {
+func splitFrontmatter(text string) (map[string]string, map[string][]string, string, error) {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	if !strings.HasPrefix(text, "---\n") {
-		return nil, "", fmt.Errorf("no frontmatter: a component starts with a --- block")
+		return nil, nil, "", fmt.Errorf("no frontmatter: a component starts with a --- block")
 	}
 	end := strings.Index(text[4:], "\n---\n")
 	if end < 0 {
-		return nil, "", fmt.Errorf("the frontmatter block is never closed")
+		return nil, nil, "", fmt.Errorf("the frontmatter block is never closed")
 	}
 	block := text[4 : 4+end]
 	body := text[4+end+5:]
 
 	front := map[string]string{}
+	lists := map[string][]string{}
+	last := ""
 	for _, line := range strings.Split(block, "\n") {
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, " ") ||
-			strings.HasPrefix(line, "-") {
+		if item, isItem := strings.CutPrefix(strings.TrimSpace(line), "- "); isItem {
+			if last != "" && front[last] == "" {
+				lists[last] = append(lists[last], unquote(item))
+			}
+			continue
+		}
+		if trimmed := strings.TrimSpace(line); trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			// A comment between a list's items leaves the list going.
+			continue
+		}
+		if strings.HasPrefix(line, " ") {
+			// A nested key: the items after it are its, not the top-level key's.
+			last = ""
+			continue
+		}
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "-") {
 			continue
 		}
 		key, value, ok := strings.Cut(line, ":")
 		if !ok {
 			continue
 		}
-		front[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		last = strings.TrimSpace(key)
+		front[last] = strings.TrimSpace(value)
 	}
-	return front, body, nil
+	return front, lists, body, nil
+}
+
+func unquote(s string) string {
+	return strings.TrimSpace(strings.Trim(strings.TrimSpace(s), `"'`))
 }
 
 func readJSON(path string, v any) error {

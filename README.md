@@ -53,11 +53,12 @@ to install the binary for you.
 | --- | --- |
 | Claude Code | `/plugin marketplace add bbsnly/sdlc`, then `/plugin install sdlc@sdlc` |
 | From a clone | `claude --plugin-dir /path/to/sdlc/plugin` |
-| The skill alone, any agent | `npx skills add bbsnly/sdlc` |
+| The skills alone, any agent | `npx skills add bbsnly/sdlc` |
 
 The repository is its own marketplace, so there is nothing else to add. What
-you get is the `/sdlc:next` skill, eleven agents, and the `PreToolUse`,
-`PostToolUse` and `Stop` hooks.
+you get is the `/sdlc:next` skill, the `/sdlc:trunk-review` skill you run to look
+back at what landed, eleven agents, and the `PreToolUse`, `PostToolUse` and
+`Stop` hooks.
 
 The plugin works without the binary if you only want the agents: they review
 as usual, nothing is enforced, and sessions outside a project that uses sdlc
@@ -66,8 +67,8 @@ hear nothing from it.
 has the details.
 
 The third row is the [Agent Skill](https://agentskills.io) route, and it is the
-runbook only — no binary, no agents, no hook, so nothing is recorded and
-nothing is refused. The skill checks for both and stops if either is missing.
+skills only — no binary, no agents, no hook, so nothing is recorded and nothing
+is refused. `next` checks for both and stops if either is missing.
 Use it to read the loop, to run it against a different agent, or to pin the
 runbook in a repository that installs the rest some other way.
 

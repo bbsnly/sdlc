@@ -12,7 +12,8 @@
       "name": "sdlc",
       "source": "./plugin",
       "skills": [
-        "./skills/next"
+        "./skills/next",
+        "./skills/trunk-review"
       ],
       "description": "Run one story at a time through nine gates: tests are written and frozen before any implementation, and the agent that implements cannot edit them."
     }
