@@ -107,6 +107,7 @@ loop from somewhere that is not Claude Code:
 | --- | --- |
 | `sdlc status` | where the story is, which gate is next, what it has spent |
 | `sdlc story list` | the backlog, and which story is next up |
+| `sdlc log` | the stories committed to trunk, where their commits are, and what each went through |
 | `sdlc start` / `sdlc stop` | begin an iteration, or end one |
 | `sdlc gate GATE pass\|fail` | record a gate, refused unless its evidence is there |
 | `sdlc artifact write NAME` | store a gate's document; `artifact list` says which are in |

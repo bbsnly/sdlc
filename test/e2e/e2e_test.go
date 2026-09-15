@@ -529,6 +529,18 @@ func TestAStoryReachesTrunk(t *testing.T) {
 	if start, end := revParse("HEAD^"), revParse("HEAD"); record.CommitBase != start || record.Commit != end {
 		t.Errorf("the record names %q..%q, want the story's one commit, %s..%s", record.CommitBase, record.Commit, start, end)
 	}
+	var logged struct {
+		Entries []struct {
+			Story  string `json:"story"`
+			Commit string `json:"commit"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(runTool(t, binary, root, "log", "--json")), &logged); err != nil {
+		t.Fatal(err)
+	}
+	if len(logged.Entries) != 1 || logged.Entries[0].Story != "US-001" || logged.Entries[0].Commit != revParse("HEAD") {
+		t.Errorf("sdlc log lists %+v, want US-001 ending at HEAD", logged.Entries)
+	}
 
 	runToolWithInput(t, binary, root, "# Retro\n", "artifact", "write", "retro")
 	runTool(t, binary, root, "gate", "retro", "pass", "--note", "no deviations")

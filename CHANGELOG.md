@@ -28,6 +28,15 @@ not change and it is never reused.
   left out rather than guessed, and so is one an older `sdlc` dropped when it
   rewrote the record. The runbook no longer asks for a hash in the commit
   gate's note.
+- `sdlc log` lists the stories committed to trunk, oldest first: the commits
+  each one landed in, the review rounds per gate, the blocks, and what is worth
+  a second look — a freeze lifted, gates reopened, an escalation, the spend. It
+  starts after the commit `.sdlc/state/acknowledged` names, when there is one;
+  `--since` starts after another commit, and `--all` lists every story. A story
+  whose record names no commit is found by the commit messages that name it,
+  and says the range was inferred; one no message names is listed with its
+  range unknown. It changes nothing. An acknowledged commit git does not have
+  is refused with `SDLC-E0047`.
 
 ### Changed
 

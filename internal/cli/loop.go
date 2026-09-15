@@ -498,8 +498,13 @@ func releaseFreeze(s *store.Store, id string) error {
 	if err := s.ClearLock(); err != nil {
 		return err
 	}
-	return appendEvent(s, id, "unfreeze", "the story is finished, so its freeze is lifted")
+	return appendEvent(s, id, "unfreeze", finishedUnfreeze)
 }
+
+// finishedUnfreeze is what lifting a finished story's freeze says on its
+// record. It is the loop tidying up rather than somebody changing the tests,
+// and `sdlc log` leaves it out of what it flags.
+const finishedUnfreeze = "the story is finished, so its freeze is lifted"
 
 func newGateCmd() *cobra.Command {
 	var note, storyID string

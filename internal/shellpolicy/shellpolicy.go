@@ -579,7 +579,7 @@ func runsSubcommand(words []string, sub string) bool {
 // command's own tests hold this to the flags it has.
 var ValueFlags = map[string]bool{
 	"--file": true, "--gate": true, "--message": true, "--note": true,
-	"--reason": true, "--reject": true, "--story": true, "--usd": true,
+	"--reason": true, "--reject": true, "--since": true, "--story": true, "--usd": true,
 }
 
 // checkCommit puts the commit gate in front of the commit, for a commit in this

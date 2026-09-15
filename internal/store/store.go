@@ -39,9 +39,12 @@ const (
 	// `sdlc start` last ran in. The hook holds that session to the story, and
 	// leaves every other session in the repository alone.
 	sessionFile = stateDir + "/session"
-	lockFile    = stateDir + "/tests.lock"
-	reviewsDir  = "reviews"
-	recordFile  = model.RecordFile
+	// AcknowledgedFile names the last commit a person has read the log up to.
+	// `sdlc log` starts after it.
+	AcknowledgedFile = stateDir + "/acknowledged"
+	lockFile         = stateDir + "/tests.lock"
+	reviewsDir       = "reviews"
+	recordFile       = model.RecordFile
 )
 
 // safeID is what a story id may contain, given that it becomes a directory
@@ -298,6 +301,22 @@ func (s *Store) Active() (string, error) {
 			WithCause(err)
 	}
 	return id, nil
+}
+
+// Acknowledged is the commit a person last read the log up to, as the file
+// names it, and whether there is a file at all. What it names is for git to
+// read: a file that names nothing is not the same as no file.
+func (s *Store) Acknowledged() (string, bool, error) {
+	raw, err := os.ReadFile(filepath.Join(s.root, filepath.FromSlash(AcknowledgedFile)))
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "", false, nil
+	case err != nil:
+		return "", false, sdlcerr.New(sdlcerr.StateUnreadable,
+			AcknowledgedFile+" could not be read",
+			"it exists but could not be opened").WithCause(err)
+	}
+	return strings.TrimSpace(string(raw)), true, nil
 }
 
 // SetActive marks a story as the one being worked on.

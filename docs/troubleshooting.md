@@ -345,6 +345,9 @@ A flag was given a value it cannot use, or the command line did not parse at all
 produced nothing is refused rather than recorded as zero, because a story that silently cost
 nothing is the one wrong answer nobody questions. Check the command that produced the value.
 
+`sdlc log --since` carries it for something git cannot read as a commit, and so does
+`--since` given together with `--all`.
+
 An unknown command, an unknown flag, or the wrong number of arguments carries this code too, and
 `sdlc <command> --help` says what the command takes.
 
@@ -543,6 +546,18 @@ $ sdlc start US-001
 If nobody escalated, because the person moved trunk themselves, `sdlc stop` and then `sdlc start`
 in their own terminal do the same. A story's own commit, made once its code review has passed,
 is not a move: a gate reopened after it measures from that commit.
+
+### SDLC-E0047
+
+`.sdlc/state/acknowledged` names a commit git does not have.
+
+`sdlc log` starts after the last commit a person acknowledged, and the file that holds it names
+something git cannot read as a commit: history was rewritten, this clone does not have the
+commit, or the file was edited. The log refuses rather than list every story again, which would
+bury the new ones under everything already read.
+
+`sdlc log --since` starts after a commit you name, and `sdlc log --all` lists every committed
+story. Replace or remove the file to change where the log starts by default.
 
 ## Warnings the hook prints
 

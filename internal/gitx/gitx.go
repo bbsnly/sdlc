@@ -10,6 +10,7 @@ package gitx
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -129,6 +130,110 @@ func Head(ctx context.Context, root string) (string, error) {
 		return "", err
 	}
 	return firstLine(string(out)), nil
+}
+
+// Resolve is the commit a revision names, in full: a hash, a tag, HEAD~3. What
+// git cannot read as a commit is refused with what git said. A revision that
+// starts with a dash is refused before git sees it, because git would read it
+// as an option, and every hash Resolve returns is safe to pass on.
+func Resolve(ctx context.Context, root, rev string) (string, error) {
+	if strings.HasPrefix(rev, "-") {
+		return "", sdlcerr.New(sdlcerr.RepositoryUnreadable,
+			strconv.Quote(rev)+" is not a commit",
+			"no revision starts with a dash, and git would read one that does as an option")
+	}
+	out, err := git(ctx, root, nil, "rev-parse", "--verify", rev+"^{commit}")
+	if err != nil {
+		return "", err
+	}
+	return firstLine(string(out)), nil
+}
+
+// IsAncestor reports whether ancestor is in descendant's history, which a
+// commit is in its own. Git says no with exit status 1; anything else it says,
+// such as a commit it does not have, is a failure rather than a no. Both are
+// full hashes git has printed, so neither can be read as an option.
+func IsAncestor(ctx context.Context, root, ancestor, descendant string) (bool, error) {
+	_, err := git(ctx, root, nil, "merge-base", "--is-ancestor", ancestor, descendant)
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &exit) && exit.ExitCode() == 1:
+		return false, nil
+	}
+	return false, err
+}
+
+// Commit is one commit, with its first parent: "" for a root commit.
+type Commit struct {
+	Hash   string
+	Parent string
+}
+
+// CommitsNaming lists the commits in HEAD's history whose message names word,
+// newest first. Git finds the candidates by fixed string, and the whole word is
+// checked here: US-1 is not named by "US-10" or "US-1.2", and is by "US-1.".
+func CommitsNaming(ctx context.Context, root, word string) ([]Commit, error) {
+	if word == "" {
+		return nil, nil
+	}
+	// -z ends each commit with a NUL, which no commit message can hold; the
+	// first line is the commit and its parents, and the rest is the message.
+	out, err := git(ctx, root, nil, "log", "-z", "--fixed-strings", "--grep="+word,
+		"--format=%H %P%n%B", "HEAD", "--")
+	if err != nil {
+		return nil, err
+	}
+	var commits []Commit
+	for entry := range strings.SplitSeq(string(out), "\x00") {
+		header, message, ok := strings.Cut(entry, "\n")
+		fields := strings.Fields(header)
+		if !ok || len(fields) == 0 || !namesWord(message, word) {
+			continue
+		}
+		c := Commit{Hash: fields[0]}
+		if len(fields) > 1 {
+			c.Parent = fields[1]
+		}
+		commits = append(commits, c)
+	}
+	return commits, nil
+}
+
+// namesWord reports whether word appears in text with nothing carrying it on at
+// either edge.
+func namesWord(text, word string) bool {
+	for from := 0; from <= len(text)-len(word); {
+		i := strings.Index(text[from:], word)
+		if i < 0 {
+			return false
+		}
+		start := from + i
+		if !carriesOn(text, start-1, -1) && !carriesOn(text, start+len(word), 1) {
+			return true
+		}
+		from = start + 1
+	}
+	return false
+}
+
+// carriesOn reports whether the byte at i continues a word past its edge, going
+// in direction step: a letter, a digit, a dash or an underscore does, and so
+// does a dot with one of those beyond it. A dot on its own ends a sentence.
+func carriesOn(text string, i, step int) bool {
+	if i < 0 || i >= len(text) {
+		return false
+	}
+	if wordByte(text[i]) {
+		return true
+	}
+	next := i + step
+	return text[i] == '.' && next >= 0 && next < len(text) && wordByte(text[next])
+}
+
+func wordByte(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '-' || b == '_'
 }
 
 // Changes lists every path with uncommitted changes, tracked or not, the way git

@@ -77,6 +77,56 @@ Marks the story `sdlc start` would choose and shows every story's status. A
 story waiting on a `depends_on` story that is not done names it, and says when
 that one is dropped or not in the backlog, because then it never will be.
 
+## `sdlc log`
+
+List the stories committed to trunk, and what each one went through.
+
+```console
+$ sdlc log
+$ sdlc log --since HEAD~20
+$ sdlc log --all --json
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--since` | list the stories committed after this commit — a hash, a tag, or a name like `HEAD~20` — instead of after the last one acknowledged |
+| `--all` | list every committed story, whatever has been acknowledged. Not together with `--since` |
+
+One entry per story whose commit gate has passed, oldest first: the commits it
+landed in, how many rounds each gate's reviews took, every block, and what is
+worth a second look — a freeze lifted with `sdlc unfreeze`, gates reopened, a
+question handed to a person and whether it was answered, and what the story
+cost. It changes nothing.
+
+The log starts after the last commit a person acknowledged, the one
+`.sdlc/state/acknowledged` names: a story whose commits end in that commit's
+history has been read. With nothing acknowledged, it lists every story. A file
+that names no commit git has is refused —
+[SDLC-E0047](troubleshooting.md#sdlc-e0047) — rather than read as nothing
+acknowledged.
+
+The range is the one the commit gate recorded; see
+[`sdlc gate`](#sdlc-gate-gate-status). A story committed by an `sdlc` that did
+not record one is found by its commit messages instead: the newest commit in
+HEAD's history whose message names the story's id as a whole word ends the
+range, the commit before the oldest one starts it, and the entry says the range
+was inferred. A later commit that names the id, such as `Revert US-001`, moves
+that end, and can bring a story already acknowledged back into the log. When no
+message names the story either, its range is `unknown`, and nothing is guessed.
+A story that cannot be placed — its range is unknown, or ends in a commit that
+is not on this branch (`off_branch`) or not in this repository (`missing`) — is
+always listed.
+
+In `--json`, `range_source` is `record`, `message` or `unknown`, and
+`since_source` says where the log started: `acknowledged`, `flag` for
+`--since`, `all` for `--all`, or `none` when nothing is acknowledged. `since` is
+the full commit it started after, and `spent_usd` is always there, `0` for a
+story with no spend recorded.
+
+A range can hold commits somebody else made in the same window, and a story
+reopened after it was committed spans everything that landed in between. It is a
+list to read, not a list to revert.
+
 ## `sdlc start`
 
 Begin an iteration on the next story, or on the one you name.
