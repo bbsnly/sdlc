@@ -110,10 +110,17 @@ var rsyncValued = map[string]bool{
 	"--chmod": true, "--chown": true, "--password-file": true, "--rsync-path": true,
 	"--log-file": true, "--write-batch": true, "--only-write-batch": true, "--out-format": true,
 	"--timeout": true, "--port": true, "--bwlimit": true, "--max-size": true, "--min-size": true,
+	"-M": true, "-@": true, "--info": true, "--debug": true, "--stderr": true, "--remote-option": true,
+	"--usermap": true, "--groupmap": true, "--copy-as": true, "--contimeout": true, "--modify-window": true,
+	"--compress-choice": true, "--zc": true, "--compress-level": true, "--zl": true, "--skip-compress": true,
+	"--checksum-choice": true, "--cc": true, "--checksum-seed": true, "--block-size": true, "--max-delete": true,
+	"--max-alloc": true, "--address": true, "--sockopts": true, "--outbuf": true, "--log-file-format": true,
+	"--early-input": true, "--stop-after": true, "--stop-at": true, "--read-batch": true, "--protocol": true,
+	"--iconv": true,
 }
 
 var scpValued = map[string]bool{
-	"-i": true, "-P": true, "-o": true, "-F": true, "-c": true, "-l": true, "-S": true, "-J": true,
+	"-i": true, "-P": true, "-o": true, "-F": true, "-c": true, "-l": true, "-S": true, "-J": true, "-D": true, "-X": true,
 }
 
 // copyWrites is the destination of a copy, its last operand, and the values of
