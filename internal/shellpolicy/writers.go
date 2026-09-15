@@ -153,7 +153,7 @@ func copyWrites(args []string, valued map[string]bool, writes ...string) []strin
 		written = append(written, to)
 		// Into a directory, a file lands under its own name: `scp
 		// host:proj/CLAUDE.md .` writes CLAUDE.md. Not on another machine.
-		if !remote(to) {
+		if !remote(to) && intoADirectory(to, len(operands)-1) {
 			for _, from := range operands[:len(operands)-1] {
 				name := clean(from)
 				if remote(from) {
@@ -164,6 +164,18 @@ func copyWrites(args []string, valued map[string]bool, writes ...string) []strin
 		}
 	}
 	return written
+}
+
+// intoADirectory reports whether a copy's destination is a directory the files land
+// in, rather than the file one of them becomes: more than one source, a
+// trailing slash, `..`, or a name with no extension. `rsync -a CLAUDE.md
+// CLAUDE.md.bak` writes the backup, not CLAUDE.md.bak/CLAUDE.md.
+func intoADirectory(to string, sources int) bool {
+	if sources > 1 || strings.HasSuffix(to, "/") {
+		return true
+	}
+	name := path.Base(clean(to))
+	return name == ".." || !strings.Contains(name[1:], ".")
 }
 
 // remote reports whether a copy's operand is on another machine, as rsync and
