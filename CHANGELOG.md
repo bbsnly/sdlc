@@ -257,7 +257,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   given a directory, or run in one, cleans only there, and is refused only
   where that holds a frozen test. A stash of the paths written after `--`,
   `git stash push -- docs/notes.md`, takes only those, unless they still name
-  the whole tree: its top, `:/`, or only what to leave out, `:!build`. A long
+  the whole tree: its top, `:/`, or only what to leave out, `:!build` or
+  `:(exclude)build`. A long
   option cut short, as git takes it, is that option: `git reset --ha`.
 - A glob that names a directory holding a frozen test names that test:
   `rm -rf *` and `rm -rf internal/*` took frozen tests away. The glob is read

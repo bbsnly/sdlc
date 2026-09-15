@@ -125,20 +125,16 @@ func stashPaths(rest []string) []string {
 }
 
 // wholeTree reports whether pathspecs name the whole work tree: none at all, its
-// top, which `:/` and `:(top)` name wherever git runs, or only what to leave
+// top, which `:/` names wherever git runs, or only what to leave
 // out, as `:!build` does.
 func wholeTree(pathspecs []string) bool {
 	positive := 0
 	for _, p := range pathspecs {
 		p = clean(p)
-		// A word ends at `)`, so `:(top)` arrives as `:(top`.
-		rest, top := strings.CutPrefix(p, ":(top")
-		if !top {
-			// clean took the slash off `:/`.
-			rest, top = strings.CutPrefix(p+"/", ":/")
-		}
+		// clean took the slash off `:/`.
+		rest, top := strings.CutPrefix(p+"/", ":/")
 		switch {
-		case strings.HasPrefix(p, ":!") || strings.HasPrefix(p, ":^") || strings.HasPrefix(p, ":(exclude"):
+		case strings.HasPrefix(p, ":!") || strings.HasPrefix(p, ":^"):
 		case top && path.Clean("./"+rest) == ".":
 			return true
 		default:

@@ -1447,7 +1447,44 @@ func pathText(text string, powerShell bool) string {
 	if !powerShell {
 		text = escapedSeparators.Replace(text)
 	}
-	return glued(text)
+	return glued(shortMagic(text))
+}
+
+// shortMagic is a command with git's long pathspec magic written the short way,
+// which has no parenthesis for the command to be split at: `git stash push --
+// ':(exclude)build' src` was a stash of `:(exclude` alone, and src a command of
+// its own. Only exclude is kept, as `!`; `:(top)` left as `:` is the top, as `:/`
+// is.
+func shortMagic(text string) string {
+	var b strings.Builder
+	for {
+		i := strings.Index(text, ":(")
+		if i < 0 {
+			break
+		}
+		j := strings.IndexByte(text[i:], ')')
+		if j < 0 {
+			break
+		}
+		magic := text[i+2 : i+j]
+		if strings.Trim(magic, "abcdefghijklmnopqrstuvwxyz,:=_-") != "" {
+			// Not magic: what is between the parentheses stays as it is.
+			b.WriteString(text[:i+2])
+			text = text[i+2:]
+			continue
+		}
+		exclude := false
+		for _, name := range strings.Split(magic, ",") {
+			exclude = exclude || name == "exclude"
+		}
+		b.WriteString(text[:i+1])
+		if exclude {
+			b.WriteByte('!')
+		}
+		text = text[i+j+1:]
+	}
+	b.WriteString(text)
+	return b.String()
 }
 
 // glued is a command with each substitution taken out of the word it is written
