@@ -78,7 +78,8 @@ func TestAcknowledgingAnEarlierCommitListsTheStoriesAfterItAgain(t *testing.T) {
 func TestAcknowledgingNeedsACommitOnThisBranch(t *testing.T) {
 	root := finishedStory(t)
 	mustRun(t, "stop")
-	elsewhere := gitOut(t, root, "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "elsewhere")
+	elsewhere := gitOut(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test",
+		"commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "elsewhere")
 
 	for _, args := range [][]string{
 		{"ack"},
