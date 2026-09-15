@@ -59,6 +59,12 @@ The repository is its own marketplace, so there is nothing else to add. What
 you get is the `/sdlc:next` skill, eleven agents, and the `PreToolUse`,
 `PostToolUse` and `Stop` hooks.
 
+The plugin works without the binary if you only want the agents: they review
+as usual, nothing is enforced, and sessions outside a project that uses sdlc
+hear nothing from it.
+[The plugin without the binary](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md#the-plugin-without-the-binary)
+has the details.
+
 The third row is the [Agent Skill](https://agentskills.io) route, and it is the
 runbook only — no binary, no agents, no hook, so nothing is recorded and
 nothing is refused. The skill checks for both and stops if either is missing.

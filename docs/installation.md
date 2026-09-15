@@ -2,8 +2,10 @@
 
 Two things get installed: the `sdlc` binary, which owns the loop's state and
 enforces its rules, and the Claude Code plugin, which is what your session
-talks to. Both are needed, and the plugin will tell you if the binary is
-missing rather than quietly enforcing nothing.
+talks to. The loop needs both, and in a project that uses sdlc the plugin will
+tell you if the binary is missing rather than quietly enforcing nothing. The
+plugin's agents work without the binary; see
+[the plugin without the binary](#the-plugin-without-the-binary).
 
 ## 1. The binary
 
@@ -152,6 +154,22 @@ tag. `/plugin update sdlc@sdlc` therefore gives you the plugin as it is on
 version in the plugin's manifest names the release it was cut for, not the
 commit you received. The two halves are kept compatible on purpose, and the
 binary is the one that enforces.
+
+### The plugin without the binary
+
+If you only want the agents, install the plugin and stop there. Without the
+binary:
+
+- The agents run. Ask for the code reviewer, the architect or the researcher
+  and you get their findings in the session. What they would have stored with
+  `sdlc artifact write` or `sdlc review add` is not stored, because that is the
+  binary's job.
+- `/sdlc:next` says the binary is missing, offers to install it, and does
+  nothing else until you say yes. It does not work the gates by hand.
+- The hook enforces nothing. Outside a project with `.sdlc/config.json` it says
+  nothing either, so sessions in every other repository carry on as if the
+  plugin were not there. Inside such a project it says, on every tool call,
+  that the binary was not found.
 
 ### The skill on its own, with `npx skills add`
 
