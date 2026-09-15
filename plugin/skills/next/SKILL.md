@@ -36,7 +36,8 @@ sdlc status --json
   to work now: the loop resumes at the first gate that has not passed, and the tool works
   that out so you do not have to. With a story active, run `sdlc start --json` first: it
   changes nothing about the story, and it makes this session the one working it, which is
-  the session the hook holds to the loop's rules. Then go straight to that section below.
+  the session the hook holds to the loop's rules. Check its `session` as Gate 1 says, then go
+  straight to that section below.
 - With no story active there is no `next_gate`; `next` names the story that would be picked
   up. Start at Gate 1, which may resume a story put down part of the way through.
 
@@ -54,7 +55,18 @@ Run:
 sdlc start --json
 ```
 
-This picks up a story already under way, or takes the next runnable one. If it fails with
+This picks up a story already under way, or takes the next runnable one.
+
+If it succeeds and `session` in the output is empty, sdlc could not tell which Claude Code session
+this is, so it did not record this one, and nothing would hold this session to the loop's rules: no
+edit, commit or stop would be refused while you work. Tell the user that, in those plain words, and
+that it happens where Claude Code does not tell the commands it runs which session they are in
+(`CLAUDE_CODE_SESSION_ID`), such as an older Claude Code or an app that does not pass it on, and
+that `/sdlc:next` in Claude Code in a terminal does. Tell them too that the story is now in
+progress, and that `/sdlc:next` in a session that does pass it on picks the story up where it is.
+Then stop. Do not work the story without it.
+
+If it fails with
 `SDLC-E0010` there is nothing to work on: show the user the `why` field from the error, run
 `sdlc story list` so they can see the backlog, and stop.
 

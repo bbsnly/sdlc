@@ -29,8 +29,13 @@ func env(pairs map[string]string) func(string) string {
 	return func(k string) string { return pairs[k] }
 }
 
+// working is the Claude Code session that started the story in loopProject. The
+// calls the tests make come from it unless they say otherwise.
+const working = "session-a"
+
 // loopProject makes a project that takes part in the loop with an iteration
-// running on story A-1, which is the only state in which anything is enforced.
+// running on story A-1, started in the session working, which is the only state
+// in which anything is enforced.
 func loopProject(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -39,6 +44,7 @@ func loopProject(t *testing.T) string {
 	}
 	write(t, root, ".sdlc/config.json", `{"version":1}`)
 	write(t, root, ".sdlc/state/active", "A-1\n")
+	write(t, root, ".sdlc/state/session", working+"\n")
 	// `sdlc start` takes a story from the backlog, so the story being worked on
 	// is always in it; the commit gate reads its risk tier there.
 	write(t, root, "user_stories.json", `{"stories":[{"id":"A-1","title":"Invoices","status":"in_progress"}]}`+"\n")
@@ -58,10 +64,10 @@ func write(t *testing.T, root, rel, body string) {
 
 func event(root, tool, agent, path string) string {
 	e := map[string]any{
-		"hook_event_name": "PreToolUse",
-		"tool_name":       tool,
-		"cwd":             root,
-		"tool_input":      map[string]string{"file_path": path},
+		"hook_event_name": "PreToolUse", "session_id": working,
+		"tool_name":  tool,
+		"cwd":        root,
+		"tool_input": map[string]string{"file_path": path},
 	}
 	if agent != "" {
 		e["agent_type"] = agent
@@ -128,9 +134,9 @@ func TestRunAlwaysEmitsExactlyOneJSONObject(t *testing.T) {
 }
 
 // A call too large to read whole cannot be checked. The hook still answers, and
-// small, and says the call went unchecked: in silence, a Write to loop state cut
-// off at the bound looked like a call with nothing in it to check.
-func TestOversizedStdinIsNotCheckedAndSaysSo(t *testing.T) {
+// small. It names no session, so there is no telling whether the session that
+// made it is the one working the story, and nothing is said.
+func TestOversizedStdinIsNotCheckedAndNothingIsSaid(t *testing.T) {
 	root := loopProject(t)
 	quoted, err := json.Marshal(root)
 	if err != nil {
@@ -150,8 +156,8 @@ func TestOversizedStdinIsNotCheckedAndSaysSo(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &r); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(r.SystemMessage, "not checked") {
-		t.Errorf("a call too large to read went through without saying it was not checked: %q", out.String())
+	if r.SystemMessage != "" || denied(r) {
+		t.Errorf("a call too large to read was answered: %q", out.String())
 	}
 }
 
@@ -254,42 +260,78 @@ func TestOnlyTheSessionWorkingTheStoryIsHeldToIt(t *testing.T) {
 		}
 	}
 
-	// A call that names no session, and a story with no session recorded, are
-	// held as they were before sessions were told apart.
-	if !denied(call(t, code, noEnv)) {
-		t.Error("a call naming no session got past the story")
-	}
-	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "session")); err != nil {
-		t.Fatal(err)
-	}
-	if !denied(call(t, inSession(code, "session-b"), noEnv)) {
-		t.Error("with no session recorded, another session got past the story")
-	}
+}
 
-	// A session file that names nothing holds every session, and says so.
-	write(t, root, ".sdlc/state/session", "../../elsewhere\n")
-	r := call(t, inSession(code, "session-b"), noEnv)
-	if !denied(r) {
-		t.Error("a session file naming no session let another session past the story")
+// The plugin is installed for every session, and a session that did not start
+// the story in front of it is not held to it: not refused, not sent back, not
+// told anything. Where the call names no session, where no session is
+// recorded, and where the record names nothing or cannot be read, no session
+// is the one working the story, so none is held.
+func TestAStoryNoSessionIsRecordedAsWorkingHoldsNoSession(t *testing.T) {
+	removeRecord := func(t *testing.T, root string) {
+		if err := os.Remove(filepath.Join(root, ".sdlc", "state", "session")); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if !strings.Contains(r.SystemMessage, ".sdlc/state/session") {
-		t.Errorf("a session file naming no session was not mentioned: %q", r.SystemMessage)
+	cases := []struct {
+		name, session string
+		record        func(t *testing.T, root string)
+	}{
+		{"a call naming no session", "", func(*testing.T, string) {}},
+		{"no session recorded", "session-b", removeRecord},
+		{"no session recorded, and a call naming none", "", removeRecord},
+		{"a record naming no session", "session-b", func(t *testing.T, root string) {
+			write(t, root, ".sdlc/state/session", "../../elsewhere\n")
+		}},
+		{"an empty record", "session-b", func(t *testing.T, root string) {
+			write(t, root, ".sdlc/state/session", "")
+		}},
+		{"a record that cannot be read", "session-b", func(t *testing.T, root string) {
+			removeRecord(t, root)
+			if err := os.Mkdir(filepath.Join(root, ".sdlc", "state", "session"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"a spoiled iteration file, in a session the record does not name", "session-b", func(t *testing.T, root string) {
+			write(t, root, ".sdlc/state/active", "../../etc\n")
+		}},
 	}
-
-	// So does one that cannot be read.
-	session := filepath.Join(root, ".sdlc", "state", "session")
-	if err := os.Remove(session); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(session, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	r = call(t, inSession(code, "session-b"), noEnv)
-	if !denied(r) {
-		t.Error("a session file that could not be read let another session past the story")
-	}
-	if !strings.Contains(r.SystemMessage, "could not be read") {
-		t.Errorf("a session file that could not be read was not mentioned: %q", r.SystemMessage)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := loopProject(t)
+			c.record(t, root)
+			named := func(stdin string) string {
+				var e map[string]any
+				_ = json.Unmarshal([]byte(stdin), &e)
+				if c.session == "" {
+					delete(e, "session_id")
+				} else {
+					e["session_id"] = c.session
+				}
+				raw, _ := json.Marshal(e)
+				return string(raw)
+			}
+			for what, stdin := range map[string]string{
+				"a write":                   event(root, "Write", "", "internal/x.go"),
+				"a write to the loop state": event(root, "Write", "", ".sdlc/state/active"),
+				"a commit":                  command(root, "", "git commit -m x"),
+			} {
+				if r := call(t, named(stdin), noEnv); denied(r) || r.SystemMessage != "" {
+					t.Errorf("%s was answered: %+v", what, r)
+				}
+			}
+			stop, err := json.Marshal(map[string]any{"hook_event_name": "Stop", "cwd": root})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			if code := Run([]string{"Stop"}, strings.NewReader(named(string(stop))), &out, io.Discard, noEnv); code != 0 {
+				t.Fatalf("exit %d", code)
+			}
+			if got := strings.TrimSpace(out.String()); got != `{"continue":true}` {
+				t.Errorf("the stop was answered: %s", got)
+			}
+		})
 	}
 }
 
@@ -340,7 +382,7 @@ func TestACommitInAnotherRepositoryIsNotHeldToTheStory(t *testing.T) {
 		other = resolved
 	}
 	raw, err := json.Marshal(map[string]any{
-		"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": other,
+		"hook_event_name": "PreToolUse", "session_id": working, "tool_name": "Bash", "cwd": other,
 		"tool_input": map[string]string{"command": "git commit -m x"},
 	})
 	if err != nil {
@@ -536,7 +578,7 @@ func TestTheProjectSpelledInAnotherCaseIsStillTheProject(t *testing.T) {
 func TestAPowerShellCommandIsReadAsPowerShell(t *testing.T) {
 	root := loopProject(t)
 	raw, err := json.Marshal(map[string]any{
-		"hook_event_name": "PreToolUse", "tool_name": "PowerShell", "cwd": root,
+		"hook_event_name": "PreToolUse", "session_id": working, "tool_name": "PowerShell", "cwd": root,
 		"agent_type": "sdlc-implementer", "tool_input": map[string]string{"command": "Remove-Item CLAUDE`.md"},
 	})
 	if err != nil {
@@ -758,10 +800,10 @@ func TestTheLoopIsNotLookedForAboveAGitCeiling(t *testing.T) {
 func TestANotebookPathIsGovernedToo(t *testing.T) {
 	root := loopProject(t)
 	e, _ := json.Marshal(map[string]any{
-		"hook_event_name": "PreToolUse",
-		"tool_name":       "NotebookEdit",
-		"cwd":             root,
-		"tool_input":      map[string]string{"notebook_path": "analysis.ipynb"},
+		"hook_event_name": "PreToolUse", "session_id": working,
+		"tool_name":  "NotebookEdit",
+		"cwd":        root,
+		"tool_input": map[string]string{"notebook_path": "analysis.ipynb"},
 	})
 	if !denied(call(t, string(e), noEnv)) {
 		t.Error("a notebook edit by the main conversation was allowed")
@@ -770,12 +812,42 @@ func TestANotebookPathIsGovernedToo(t *testing.T) {
 
 // An active-story file that has been tampered with must not become part of a
 // path. Failing open here is deliberate: the gate record is the real guarantee.
+// The session working the story is told that nothing is being enforced, and no
+// other session hears a word about it.
 func TestATamperedActiveStoryTurnsEnforcementOffRatherThanBuildingABadPath(t *testing.T) {
-	root := loopProject(t)
-	write(t, root, ".sdlc/state/active", "../../etc\n")
-
-	if denied(call(t, event(root, "Write", "sdlc-researcher", "internal/x.go"), noEnv)) {
-		t.Error("a tampered active file was used to build a rule")
+	for name, spoil := range map[string]func(t *testing.T, root string){
+		"naming no story":            func(t *testing.T, root string) { write(t, root, ".sdlc/state/active", "../../etc\n") },
+		"naming one the CLI refuses": func(t *testing.T, root string) { write(t, root, ".sdlc/state/active", "A..1") },
+		"left empty":                 func(t *testing.T, root string) { write(t, root, ".sdlc/state/active", "") },
+		"holding only a newline":     func(t *testing.T, root string) { write(t, root, ".sdlc/state/active", " \n") },
+		"left with a merge conflict in": func(t *testing.T, root string) {
+			write(t, root, ".sdlc/state/active", "<<<<<<< HEAD\nA-1\n=======\nA-2\n>>>>>>> other\n")
+		},
+		"a directory": func(t *testing.T, root string) {
+			active := filepath.Join(root, ".sdlc", "state", "active")
+			if err := os.Remove(active); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(active, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := loopProject(t)
+			spoil(t, root)
+			for _, stdin := range []string{
+				event(root, "Write", "sdlc-researcher", "internal/x.go"),
+				command(root, "sdlc:implementer", "echo hello"),
+			} {
+				if r := call(t, stdin, noEnv); denied(r) || !strings.Contains(r.SystemMessage, "nothing is being enforced") {
+					t.Errorf("the session working the story was not told the rules are off: %+v", r)
+				}
+				if r := call(t, inSession(stdin, "session-b"), noEnv); denied(r) || r.SystemMessage != "" {
+					t.Errorf("another session was told about a story it did not start: %+v", r)
+				}
+			}
+		})
 	}
 }
 
@@ -950,49 +1022,6 @@ func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
 			shell: true,
 			says:  "every file the default patterns call a test is being treated as frozen",
 		},
-		{
-			name: "an iteration file that cannot be read",
-			spoil: func(t *testing.T, root string) {
-				active := filepath.Join(root, ".sdlc", "state", "active")
-				if err := os.Remove(active); err != nil {
-					t.Fatal(err)
-				}
-				// A directory where the file should be: there, and unreadable
-				// as a file, on every platform.
-				if err := os.MkdirAll(active, 0o755); err != nil {
-					t.Fatal(err)
-				}
-			},
-			says: "nothing is being enforced",
-		},
-		{
-			name: "an iteration file that names no story",
-			spoil: func(t *testing.T, root string) {
-				write(t, root, ".sdlc/state/active", "../elsewhere")
-			},
-			says: "does not name a story",
-		},
-		{
-			name: "an iteration file naming a story the CLI would refuse",
-			spoil: func(t *testing.T, root string) {
-				write(t, root, ".sdlc/state/active", "A..1")
-			},
-			says: "does not name a story",
-		},
-		{
-			name: "an iteration file left empty",
-			spoil: func(t *testing.T, root string) {
-				write(t, root, ".sdlc/state/active", "")
-			},
-			says: "does not name a story",
-		},
-		{
-			name: "an iteration file holding only a newline",
-			spoil: func(t *testing.T, root string) {
-				write(t, root, ".sdlc/state/active", " \n")
-			},
-			says: "does not name a story",
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := loopProject(t)
@@ -1095,10 +1124,10 @@ func TestTheHookIsQuietWhenNothingIsWrong(t *testing.T) {
 
 func command(root, agent, cmd string) string {
 	e := map[string]any{
-		"hook_event_name": "PreToolUse",
-		"tool_name":       "Bash",
-		"cwd":             root,
-		"tool_input":      map[string]string{"command": cmd},
+		"hook_event_name": "PreToolUse", "session_id": working,
+		"tool_name":  "Bash",
+		"cwd":        root,
+		"tool_input": map[string]string{"command": cmd},
 	}
 	if agent != "" {
 		e["agent_type"] = agent
@@ -1149,11 +1178,11 @@ func TestAReviewIsRecordedByTheReviewerItNames(t *testing.T) {
 func TestAShellCommandIsReadFromTheSessionsDirectory(t *testing.T) {
 	root := loopProject(t)
 	e := map[string]any{
-		"hook_event_name": "PreToolUse",
-		"tool_name":       "Bash",
-		"cwd":             filepath.Join(root, ".sdlc", "state"),
-		"agent_type":      "sdlc:implementer",
-		"tool_input":      map[string]string{"command": "rm tests.lock"},
+		"hook_event_name": "PreToolUse", "session_id": working,
+		"tool_name":  "Bash",
+		"cwd":        filepath.Join(root, ".sdlc", "state"),
+		"agent_type": "sdlc:implementer",
+		"tool_input": map[string]string{"command": "rm tests.lock"},
 	}
 	raw, _ := json.Marshal(e)
 	if !denied(call(t, string(raw), noEnv)) {
@@ -1167,11 +1196,11 @@ func TestEveryToolThatRunsACommandMeetsTheShellRules(t *testing.T) {
 	root := loopProject(t)
 	for _, tool := range []string{"Bash", "Monitor", "PowerShell"} {
 		e := map[string]any{
-			"hook_event_name": "PreToolUse",
-			"tool_name":       tool,
-			"cwd":             root,
-			"agent_type":      "sdlc:implementer",
-			"tool_input":      map[string]string{"command": "rm .sdlc/state/tests.lock"},
+			"hook_event_name": "PreToolUse", "session_id": working,
+			"tool_name":  tool,
+			"cwd":        root,
+			"agent_type": "sdlc:implementer",
+			"tool_input": map[string]string{"command": "rm .sdlc/state/tests.lock"},
 		}
 		raw, _ := json.Marshal(e)
 		if !denied(call(t, string(raw), noEnv)) {

@@ -563,10 +563,11 @@ and `sdlc log --all` lists every committed story.
 
 ## Warnings the hook prints
 
-These are not error codes. They arrive in the session as a system message, and
-the tool call goes through: the hook fails open, always, because a bug in it
-must not be able to stop your session. What it will not do is fail open
-quietly.
+These are not error codes. They arrive in the session working a story as a
+system message, and the tool call goes through: the hook fails open, always,
+because a bug in it must not be able to stop your session. What it will not do
+is fail open quietly in that session. Every other session hears nothing from
+the plugin at all.
 
 Each one means a rule you are relying on is not running as it should.
 
@@ -576,9 +577,10 @@ The plugin is installed and the binary it hands every tool call to was not
 found: not at `SDLC_BIN`, in the plugin's own `bin` directory, on `PATH`, or
 where the installers put it (`~/.local/bin`, or `%LOCALAPPDATA%\Programs\sdlc\bin`
 on Windows). Nothing is refused until it is. Install the binary, or run
-`/sdlc:next`, which offers to. Only a session started inside a project with
-`.sdlc/config.json` shows this; every other session says nothing, including one
-started in a directory above it.
+`/sdlc:next`, which offers to. Only the session working a story shows this: the
+one `sdlc start` recorded in `.sdlc/state/session`, in a project its own
+directory is in. Every other session says nothing, including one started in a
+directory above that project.
 
 A desktop app such as Claude Desktop keeps the `PATH` it was started with, so a
 binary a new terminal finds, and `sdlc doctor` passes for, can still be missing
@@ -600,9 +602,9 @@ $key.SetValue('Path', "$env:LOCALAPPDATA\Programs\sdlc\bin;" + $key.GetValue('Pa
 ### `.sdlc/state/active could not be read, so nothing is being enforced`
 
 The file naming the story under way is there but unreadable — a permission, a
-directory where the file should be. Every rule is off until it reads.
-`sdlc doctor` names it under "loop state"; `sdlc stop` removes it and ends the
-iteration.
+directory where the file should be. Every rule is off until it reads. Only the
+session working the story is told. `sdlc doctor` names it under "loop state";
+`sdlc stop` removes it and ends the iteration.
 
 ### `.sdlc/state/active does not name a story, so nothing is being enforced`
 
@@ -610,24 +612,17 @@ The file is empty, or names something that cannot be a story id — a path, an i
 with `..` in it, a merge conflict left in place — so there is no story to hold
 the session to. `sdlc start` never writes such a file, and `sdlc stop` removes
 the file rather than empty it, so it was written some other way. Every rule is
-off until it names a story. `sdlc doctor` names it under "loop state";
-`sdlc stop` removes it and ends the iteration.
+off until it names a story. Only the session working the story is told.
+`sdlc doctor` names it under "loop state"; `sdlc stop` removes it and ends the
+iteration.
 
-### `.sdlc/state/session could not be read, so every session in this project is held to the story under way`
+### Nothing is enforced, and nothing is said
 
-The file naming the Claude Code session working the story is there but
-unreadable — a permission, a directory where the file should be. Until it
-reads, the story holds every session in the repository, not only the one
-working it. Remove it and run `sdlc start` in the session working the story,
-which records that session again.
-
-### `.sdlc/state/session does not name a session, so every session in this project is held to the story under way`
-
-The file is empty, or names something that cannot be a session id.
-`sdlc start` never writes such a file, so it was written some other way. Until
-it names a session, the story holds every session in the repository. Run
-`sdlc start` in the session working the story, which records that session
-again.
+When `.sdlc/state/session` is missing, cannot be read, or names something that
+cannot be a session id, no session is working the story, so the hook holds none
+to it and tells none. `sdlc status` and `sdlc doctor` say that no Claude Code
+session is working the story. Run `/sdlc:next` in the session that should work
+it, which records that session again.
 
 ### `.sdlc/config.json could not be read, so tests are being recognised by the default patterns`
 

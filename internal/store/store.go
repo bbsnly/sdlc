@@ -347,11 +347,36 @@ func CheckSession(id string) bool {
 }
 
 // BindSession records the Claude Code session this command runs in as the one
-// working the story. Run outside Claude Code there is no session, and it records
-// none: the story then holds every session, as it did before sessions were told
-// apart.
-func (s *Store) BindSession() error {
-	return s.bindSession(os.Getenv(SessionEnv))
+// working the story, and returns it: empty when the command runs in none, from
+// a terminal or wherever Claude Code does not set SessionEnv.
+//
+// With no session, beginning an iteration removes whatever record is left,
+// which belongs to no iteration, and the story holds no session until one picks
+// it up with /sdlc:next. Picking up an iteration already under way leaves the
+// record as it is. A start that cannot say which session it runs in cannot say
+// the story has moved, and wiping the record turned every rule off in the
+// session working it, without a word.
+func (s *Store) BindSession(underWay bool) (string, error) {
+	id := os.Getenv(SessionEnv)
+	if !CheckSession(id) {
+		id = ""
+	}
+	if id == "" && underWay {
+		return "", nil
+	}
+	return id, s.bindSession(id)
+}
+
+// WorkingSession is the Claude Code session recorded as working the story, and
+// false when there is none the hook would hold to it: no record, one that
+// cannot be read, or one that names no session.
+func (s *Store) WorkingSession() (string, bool) {
+	raw, err := os.ReadFile(filepath.Join(s.root, filepath.FromSlash(sessionFile)))
+	if err != nil {
+		return "", false
+	}
+	id := strings.TrimSpace(string(raw))
+	return id, CheckSession(id)
 }
 
 func (s *Store) bindSession(id string) error {
@@ -373,7 +398,7 @@ func (s *Store) bindSession(id string) error {
 
 // ClearActive ends the iteration, and with it the record of the session that
 // was working the story. The session goes first: an iteration that could not
-// be ended keeps its session, and one left with none holds every session.
+// be ended keeps its session, and one left with none holds no session.
 func (s *Store) ClearActive() error {
 	path := filepath.Join(s.root, filepath.FromSlash(activeFile))
 	if s.leaves(path) {

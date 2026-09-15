@@ -75,20 +75,21 @@ func TestHookCrashStillEmitsParseableJSONAndContinues(t *testing.T) {
 	if code != 0 {
 		t.Errorf("a crashed hook exited %d, so its reply is never read", code)
 	}
+	// A crash comes before the hook knows whether this session is working a
+	// story, and a session that is not hears nothing from the plugin: not even
+	// that it crashed.
+	if got := strings.TrimSpace(out.String()); got != `{"continue":true}` {
+		t.Errorf("a crashed hook said more than carry on: %q", got)
+	}
 	var d struct {
-		Continue      bool   `json:"continue"`
-		SystemMessage string `json:"systemMessage"`
+		Continue bool `json:"continue"`
 	}
-	if err := json.Unmarshal(out.Bytes(), &d); err != nil {
-		t.Fatalf("crashed hook stdout is not JSON: %v (%q)", err, out.String())
+	if err := json.Unmarshal(out.Bytes(), &d); err != nil || !d.Continue {
+		t.Errorf("a crash in the tool must not block the user's action: %v (%q)", err, out.String())
 	}
-	if !d.Continue {
-		t.Error("a crash in the tool must not block the user's action")
-	}
-	// A stopReason is shown only when continue is false, which it never is
-	// here, so the message has to be the one field that is shown.
-	if !strings.Contains(d.SystemMessage, "crashed") {
-		t.Errorf("the system message should say what happened, got %q", d.SystemMessage)
+	// The debug log still has it.
+	if !strings.Contains(errb.String(), "crashed") {
+		t.Errorf("stderr should say what happened, got %q", errb.String())
 	}
 }
 

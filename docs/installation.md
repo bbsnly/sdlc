@@ -2,8 +2,8 @@
 
 Two things get installed: the `sdlc` binary, which owns the loop's state and
 enforces its rules, and the Claude Code plugin, which is what your session
-talks to. The loop needs both, and in a project that uses sdlc the plugin will
-tell you if the binary is missing rather than quietly enforcing nothing. The
+talks to. The loop needs both, and in the session working a story the plugin
+tells you if the binary is missing rather than quietly enforcing nothing. The
 plugin's agents work without the binary; see
 [the plugin without the binary](#the-plugin-without-the-binary).
 
@@ -178,10 +178,10 @@ binary:
   binary's job.
 - `/sdlc:next` says the binary is missing, offers to install it, and does
   nothing else until you say yes. It does not work the gates by hand.
-- The hook enforces nothing. Outside a project with `.sdlc/config.json` it says
-  nothing either, so sessions in every other repository carry on as if the
-  plugin were not there. Inside such a project it says, on every tool call,
-  that the binary was not found.
+- The hook enforces nothing, and says nothing either, so every session carries
+  on as if the plugin were not there. The one exception is the session working
+  a story it started with `sdlc start`: it is told, on every tool call, that the
+  binary was not found.
 - A binary left where the installers put it (`~/.local/bin`, or
   `%LOCALAPPDATA%\Programs\sdlc\bin` on Windows) still counts: the hook runs it
   even when that directory is not on `PATH`.

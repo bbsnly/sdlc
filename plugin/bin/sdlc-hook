@@ -1,11 +1,12 @@
 #!/bin/sh
 # Hand a hook event to the sdlc binary, wherever it happens to live.
 #
-# This runs on every matching tool call, so it does as little as possible and
-# never blocks the session on its own failure: if the binary cannot be found,
-# the tool call is allowed and the reason goes back as a system message, which
-# the session shows. Enforcement silently off would be worse than enforcement
-# off with an explanation.
+# This runs on every matching tool call, in every session the plugin is
+# installed for, so it does as little as possible and never blocks the session
+# on its own failure. If the binary cannot be found, the tool call is allowed,
+# and only the Claude Code session working a story is told why: enforcement
+# silently off would be worse than enforcement off with an explanation, and a
+# session that never asked for sdlc must not hear from it at all.
 #
 # The fallback path uses only shell builtins. An environment that has lost the
 # sdlc binary may have lost more, and the failure path is the last place that
@@ -52,19 +53,44 @@ find_binary() {
   return 1
 }
 
-# takes_part reports whether a directory, or one above it in the same
-# repository, has .sdlc/config.json. The walk stops at a repository boundary,
-# as the binary's does, so a project never inherits the configuration of one
-# further up.
+# only_line sets line to the one line of a file that says anything, without the
+# white space around it. It fails when there is no such file, no such line, or
+# more than one, since the binary reads the whole file as a single value.
+only_line() {
+  line=''
+  if [ ! -f "$1" ] || [ ! -r "$1" ]; then
+    return 1
+  fi
+  file_line=''
+  while IFS= read -r file_line || [ -n "${file_line}" ]; do
+    file_line="${file_line#"${file_line%%[![:space:]]*}"}"
+    file_line="${file_line%"${file_line##*[![:space:]]}"}"
+    if [ -n "${file_line}" ]; then
+      if [ -n "${line}" ]; then
+        return 1
+      fi
+      line="${file_line}"
+    fi
+    file_line=''
+  done 2>/dev/null <"$1"
+  [ -n "${line}" ]
+}
+
+# working_session sets session to the Claude Code session recorded as working
+# the story under way in the project a directory is in. It fails when there is
+# no such project, no story under way there, or no session recorded.
 #
-# It is a narrower rule than the binary's. The binary also looks from the file
-# a call writes and from every path a command names, so a session opened above
-# a project that uses sdlc is enforced there; without the binary, that session
-# hears nothing, because reading paths out of the payload is no job for shell
-# builtins. Git Bash on Windows can hand this a project directory written with
-# backslashes, so a name with no slash in it goes up by its backslashes.
-takes_part() {
+# The project is found as the binary finds it: the nearest directory, going up,
+# with .sdlc/config.json, stopping at a repository boundary so a project never
+# inherits the configuration of one further up. It is a narrower rule than the
+# binary's, which also looks from the file a call writes and from every path a
+# command names; reading paths out of the payload is no job for shell builtins.
+# Git Bash on Windows can hand this a directory written with backslashes, so a
+# name with no slash in it goes up by its backslashes.
+working_session() {
+  session=''
   dir="$1"
+  base=''
   while [ -n "${dir}" ]; do
     # Never "//": Git Bash reads a path that starts with two slashes as a
     # network share, and would go looking for a host called .sdlc.
@@ -73,7 +99,7 @@ takes_part() {
       *) base="${dir}/" ;;
     esac
     if [ -e "${base}.sdlc/config.json" ]; then
-      return 0
+      break
     fi
     if [ -e "${base}.git" ] || [ "${dir}" = / ]; then
       return 1
@@ -87,22 +113,55 @@ takes_part() {
       *) return 1 ;;
     esac
   done
-  return 1
+  if [ -z "${dir}" ] || ! only_line "${base}.sdlc/state/active"; then
+    return 1
+  fi
+  if ! only_line "${base}.sdlc/state/session"; then
+    return 1
+  fi
+  # What `sdlc start` records, and nothing that could match more than itself
+  # in the payload.
+  case "${line}" in
+    *[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  session="${line}"
 }
 
 if binary="$(find_binary)"; then
   exec "${binary}" hook "${event}"
 fi
 
-# Read the payload to end of file so the caller never writes into a closed pipe.
-while IFS= read -r _payload_line; do :; done || true
-
 # The plugin is installed for every session, and most sessions are in projects
-# that do not use sdlc. Each of them was told, on every tool call, that nothing
-# was being enforced -- in a project with nothing to enforce. Now only a
-# session whose project directory or working directory is in a project that
-# uses sdlc hears it; takes_part says where that is narrower than the binary.
-if ! takes_part "${CLAUDE_PROJECT_DIR:-}" && ! takes_part "${PWD:-}"; then
+# that do not use sdlc, or in one with a story under way that is not theirs.
+# Each of them was told, on every tool call, that nothing was being enforced.
+# Only the session `sdlc start` recorded in the project its project directory or
+# working directory is in hears it, and that session's id is in the payload.
+from_project=''
+if working_session "${CLAUDE_PROJECT_DIR:-}"; then from_project="${session}"; fi
+from_cwd=''
+if working_session "${PWD:-}"; then from_cwd="${session}"; fi
+
+# names_session reports whether a line of the payload is from the session named.
+names_session() {
+  [ -n "$2" ] || return 1
+  case "$1" in
+    *"\"session_id\":\"$2\""* | *"\"session_id\": \"$2\""*) return 0 ;;
+  esac
+  return 1
+}
+
+# The payload is read to end of file either way, so the caller never writes
+# into a closed pipe.
+heard=''
+payload_line=''
+while IFS= read -r payload_line || [ -n "${payload_line}" ]; do
+  if [ -z "${heard}" ] && { names_session "${payload_line}" "${from_project}" ||
+    names_session "${payload_line}" "${from_cwd}"; }; then
+    heard=1
+  fi
+  payload_line=''
+done || true
+if [ -z "${heard}" ]; then
   exit 0
 fi
 

@@ -262,8 +262,15 @@ func stateCheck(ctx context.Context, s *store.Store) check {
 		return check{Name: "loop state", State: stateProblem,
 			Detail: strings.Join(details, "; "), Fix: strings.Join(fixes, "; ")}
 	}
-	return check{Name: "loop state", State: stateOK,
-		Detail: "the iteration, every gate record, the test freeze and the commit acknowledged all read"}
+	detail := "the iteration, every gate record, the test freeze and the commit acknowledged all read"
+	// Not a problem: a story started from a terminal is picked up in a session
+	// by /sdlc:next. Until then the hook holds no session to it, and says so
+	// nowhere, so this does.
+	if _, held := s.WorkingSession(); active != "" && !held {
+		detail += "; no Claude Code session is working " + active + ", so nothing is enforced until one " +
+			"picks it up with /sdlc:next"
+	}
+	return check{Name: "loop state", State: stateOK, Detail: detail}
 }
 
 // checkOrder is every check doctor makes, in the order it makes them. It is

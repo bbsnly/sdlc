@@ -27,7 +27,7 @@ type stopOutcome struct {
 func stop(t *testing.T, root string, alreadySentBack bool, getenv func(string) string) stopOutcome {
 	t.Helper()
 	event, err := json.Marshal(map[string]any{
-		"hook_event_name": "Stop", "cwd": root, "stop_hook_active": alreadySentBack,
+		"hook_event_name": "Stop", "cwd": root, "stop_hook_active": alreadySentBack, "session_id": working,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +242,7 @@ func stopWhileLocked(t *testing.T, during func(root string)) (string, stopOutcom
 	if err != nil {
 		t.Fatal(err)
 	}
-	event, err := json.Marshal(map[string]any{"hook_event_name": "Stop", "cwd": root})
+	event, err := json.Marshal(map[string]any{"hook_event_name": "Stop", "cwd": root, "session_id": working})
 	if err != nil {
 		t.Fatal(err)
 	}

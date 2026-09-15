@@ -29,6 +29,11 @@ type startPayload struct {
 	// NextGate is the gate to work now. A resumed story has passed some gates
 	// already, and a session told only that it resumed starts again at Gate 1.
 	NextGate string `json:"next_gate,omitempty"`
+	// Session is the Claude Code session this start ran in and recorded as the
+	// one working the story, and empty when it ran in none. The hook holds only
+	// that session to the loop's rules, so a runbook that finds it empty has
+	// nothing enforcing anything, and stops.
+	Session string `json:"session"`
 }
 
 func newStartCmd() *cobra.Command {
@@ -76,10 +81,11 @@ func newStartCmd() *cobra.Command {
 						"the story is done, and there is nothing left to resume")
 				}
 				// Picked up in another session, the story is that session's now.
-				if err := s.BindSession(); err != nil {
+				session, err := s.BindSession(true)
+				if err != nil {
 					return err
 				}
-				return reportStart(cmd, s, active, true)
+				return reportStart(cmd, s, active, true, session)
 			}
 
 			id := asked
@@ -121,7 +127,8 @@ func newStartCmd() *cobra.Command {
 			if err := s.SetActive(id); err != nil {
 				return err
 			}
-			if err := s.BindSession(); err != nil {
+			session, err := s.BindSession(false)
+			if err != nil {
 				return err
 			}
 
@@ -138,7 +145,7 @@ func newStartCmd() *cobra.Command {
 			if err := s.SaveRecord(record); err != nil {
 				return err
 			}
-			return reportStart(cmd, s, id, resume)
+			return reportStart(cmd, s, id, resume, session)
 		},
 	}
 }
@@ -297,7 +304,7 @@ func nothingToStart(b *model.Backlog, path string) string {
 	return said + "`sdlc story list` shows what is holding each story back.\n"
 }
 
-func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool) error {
+func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool, session string) error {
 	story, _, err := s.Story(id)
 	if err != nil {
 		return err
@@ -307,7 +314,7 @@ func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool) err
 		return err
 	}
 	if wantJSON(cmd) {
-		payload := startPayload{OK: true, Story: id, Title: story.Title, Resume: resume}
+		payload := startPayload{OK: true, Story: id, Title: story.Title, Resume: resume, Session: session}
 		if next, ok := record.NextGate(); ok {
 			payload.NextGate = string(next)
 		}

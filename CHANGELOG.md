@@ -80,6 +80,26 @@ not change and it is never reused.
   `%LOCALAPPDATA%\Programs\sdlc\bin\sdlc.exe`. `sdlc doctor` looks in the same
   places. The not-found message says a desktop app has to be quit and reopened
   after `PATH` changes, or `SDLC_BIN` set.
+- The plugin stays out of every session that did not start the story in front
+  of it. The hook runs in every session the plugin is installed for, and
+  sessions that never asked for sdlc heard from it: without the binary, every
+  session in a project with `.sdlc/config.json` was told on every tool call that
+  nothing was enforced; with it, a story started from a terminal, or a
+  `.sdlc/state/session` that did not read, held every session in the
+  repository to the story, refusing edits and commits and sending each back at
+  the end of its turn; and a spoiled `.sdlc/state/active`, a call that did not
+  parse, or a crash in the hook was reported to every session. Now a story holds
+  only the session `.sdlc/state/session` names, and only when the call names that
+  session. Anywhere else the hook, and both launchers without the binary, print
+  nothing, refuse nothing but a person's decisions, never hold a turn open, run
+  no formatter and write nothing. A story started from a terminal holds no
+  session until `/sdlc:next` picks it up, and `sdlc status` and `sdlc doctor`
+  say so. `sdlc status --json` reports the working session as `session`. A
+  story resumed where no session can be told, from a terminal or a surface that
+  does not set `CLAUDE_CODE_SESSION_ID`, keeps the session already recorded
+  rather than lose it. `sdlc start --json` reports the session it recorded as
+  `session`, and `/sdlc:next` stops and says so when it is empty, rather than
+  work a story nothing enforces.
 
 ## [0.1.1](https://github.com/bbsnly/sdlc/releases/tag/v0.1.1) - 2026-09-15
 

@@ -124,6 +124,34 @@ func TestEveryAgentAndSkillIsUsable(t *testing.T) {
 // each of them, and every other skill is one the model has to be able to start.
 var humanOnlySkills = map[string]bool{"trunk-review": true, "consolidate": true}
 
+// The hook holds only the session `sdlc start` recorded. Where Claude Code does
+// not tell a command which session it runs in, start records none, and a
+// runbook that carried on would work the story with no rule holding it and
+// nobody told.
+func TestTheRunbookStopsWhenStartRecordsNoSession(t *testing.T) {
+	skills, err := Skills(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range skills {
+		if s.Name != "next" {
+			continue
+		}
+		body := strings.Join(strings.Fields(s.Body), " ")
+		for _, phrase := range []string{
+			"Check its `session` as Gate 1 says",
+			"If it succeeds and `session` in the output is empty",
+			"Then stop. Do not work the story without it.",
+		} {
+			if !strings.Contains(body, phrase) {
+				t.Errorf("the next runbook no longer says %q", phrase)
+			}
+		}
+		return
+	}
+	t.Fatal("there is no next skill")
+}
+
 // A skill only a person starts is trusted with what it is told not to do, and
 // no hook stands behind it: with no story being worked on, every write goes
 // through. So what a person relies on is pinned here, as the sentence that
@@ -566,9 +594,11 @@ func TestTheLauncherRefusalCarriesTheSameThreeFields(t *testing.T) {
 // The plugin is installed for every session, not only for projects that use
 // sdlc. Without the binary, every session everywhere was told on every tool
 // call that nothing was being enforced -- the moment somebody installed the
-// plugin, each project they had open started complaining. The launcher is run
-// here as Claude Code runs it, with no binary anywhere it looks.
-func TestTheLauncherSaysNothingOutsideAProjectThatUsesSdlc(t *testing.T) {
+// plugin, each project they had open started complaining. Then every session
+// in a project that uses sdlc was, whether or not it had started anything. The
+// launcher is run here as Claude Code runs it, with no binary anywhere it
+// looks, and only the session that started the story under way hears it.
+func TestTheLauncherSaysNothingOutsideTheSessionWorkingAStory(t *testing.T) {
 	tmp := t.TempDir()
 	mkdir := func(parts ...string) string {
 		t.Helper()
@@ -583,31 +613,37 @@ func TestTheLauncherSaysNothingOutsideAProjectThatUsesSdlc(t *testing.T) {
 	nowhere := mkdir("nowhere")
 	project := mkdir("project")
 	mkdir("project", ".git")
-	writeConfig(t, project)
+	writeStory(t, project, me)
 	below := mkdir("project", "internal", "invoice")
+	idle := mkdir("idle")
+	mkdir("idle", ".git")
+	writeConfig(t, idle)
 	// A repository inside a directory that uses sdlc is a project of its own.
 	nested := mkdir("outer", "inner")
-	writeConfig(t, filepath.Join(tmp, "outer"))
+	writeStory(t, filepath.Join(tmp, "outer"), me)
 	mkdir("outer", "inner", ".git")
 
 	cases := []struct {
-		name, projectDir, cwd string
-		warns                 bool
+		name, projectDir, cwd, session string
+		warns                          bool
 	}{
-		{"a repository that does not use sdlc", plain, plain, false},
-		{"a directory in no repository", nowhere, nowhere, false},
-		{"no project directory, run from a plain repository", "", plain, false},
-		{"a repository nested in one that uses sdlc", nested, nested, false},
-		{"the root of a project that uses sdlc", project, project, true},
-		{"a session opened below the root of one", below, below, true},
-		{"no project directory, run from inside one", "", below, true},
-		{"a project directory elsewhere, run from inside one", plain, below, true},
-		{"a project directory inside one, run from elsewhere", below, plain, true},
+		{"a repository that does not use sdlc", plain, plain, me, false},
+		{"a directory in no repository", nowhere, nowhere, me, false},
+		{"no project directory, run from a plain repository", "", plain, me, false},
+		{"a repository nested in one that uses sdlc", nested, nested, me, false},
+		{"a project that uses sdlc with no story under way", idle, idle, me, false},
+		{"another session in the project", project, project, "session-other", false},
+		{"a call naming no session", project, project, "", false},
+		{"the root of the project", project, project, me, true},
+		{"a session opened below the root of it", below, below, me, true},
+		{"no project directory, run from inside it", "", below, me, true},
+		{"a project directory elsewhere, run from inside it", plain, below, me, true},
+		{"a project directory inside it, run from elsewhere", below, plain, me, true},
 	}
 	for _, l := range launchers(t) {
 		for _, c := range cases {
 			t.Run(l.name+"/"+c.name, func(t *testing.T) {
-				out := runLauncher(t, l, c.projectDir, c.cwd, tmp)
+				out := runLauncher(t, l, c.projectDir, c.cwd, tmp, callFrom(c.session))
 				warned := strings.Contains(out, "the sdlc binary was not found")
 				if warned != c.warns {
 					t.Errorf("warned = %v, want %v; the launcher printed %q", warned, c.warns, out)
@@ -670,8 +706,8 @@ func launchers(t *testing.T) []launcher {
 }
 
 // runLauncher runs a launcher with no sdlc binary on PATH or in the plugin
-// root, and returns what it wrote to standard output.
-func runLauncher(t *testing.T, l launcher, projectDir, cwd, pluginRoot string) string {
+// root, hands it payload, and returns what it wrote to standard output.
+func runLauncher(t *testing.T, l launcher, projectDir, cwd, pluginRoot, payload string) string {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), l.argv[0], l.argv[1:]...)
 	path := l.path
@@ -693,7 +729,7 @@ func runLauncher(t *testing.T, l launcher, projectDir, cwd, pluginRoot string) s
 		cmd.Env = append(cmd.Env, "CLAUDE_PROJECT_DIR="+projectDir)
 	}
 	cmd.Dir = cwd
-	cmd.Stdin = strings.NewReader("{}")
+	cmd.Stdin = strings.NewReader(payload)
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("the launcher failed: %v", err)

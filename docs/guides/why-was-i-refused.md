@@ -64,12 +64,16 @@ the session working that story or one of its agents, and `SDLC_ENFORCE` is not
 `0`. See [when any of it applies](../enforcement.md#when-any-of-it-applies).
 
 When the hook cannot do its job, it still lets the call through. This is
-failing open, and it does not happen silently. The session shows a system
-message that starts with `sdlc:`. For example:
+failing open, and in the session working a story it does not happen silently.
+That session shows a system message that starts with `sdlc:`. For example:
 
 ```json
-{"continue":true,"systemMessage":"sdlc: .sdlc/state/active could not be read, so nothing is being enforced in this session. Run `sdlc doctor` to see why."}
+{"continue":true,"systemMessage":"sdlc: .sdlc/config.json could not be read, so tests are being recognised by the default patterns until it can be. Run `sdlc doctor` to see why."}
 ```
+
+Every other session hears nothing from the plugin, and neither does any session
+while no session is recorded as working the story. `sdlc status` and
+`sdlc doctor` say when that is so.
 
 Take these messages seriously. Each one means a rule you are relying on is off
 or running in a reduced form. Every message and what it switches off is listed
@@ -173,8 +177,8 @@ The plugin runs a small launcher, and the launcher hands every call to the
 `sdlc` binary. It looks for the binary at `SDLC_BIN`, then in the plugin's own
 `bin` directory, then on `PATH`, then where the installers put it:
 `~/.local/bin`, or `%LOCALAPPDATA%\Programs\sdlc\bin` on Windows. When none of
-them has it, every call goes through, and in a project that uses sdlc — one with
-`.sdlc/config.json` — the session shows:
+them has it, every call goes through, and the session working a story — the one
+`sdlc start` recorded in `.sdlc/state/session` — shows:
 
 ```text
 sdlc: the sdlc binary was not found, so nothing is being enforced. why: it is
@@ -192,10 +196,10 @@ see it. [Troubleshooting](../troubleshooting.md#the-sdlc-binary-was-not-found-so
 has the details.
 
 Every other session says nothing: the plugin is installed for all of them, and
-a project that does not use sdlc has nothing to enforce. That includes a
-session opened in a directory above a project that uses sdlc — without the
-binary, the launcher looks only from the session's own directory and where
-it runs, so start the session inside the project to see the message.
+only the session working a story has anything enforced. That includes a
+session opened in a directory above the project — without the binary, the
+launcher looks only from the session's own directory and where it runs, so
+start the session inside the project to see the message.
 
 Nothing is refused until the binary is found. Install it by any route in
 [installation](../installation.md#1-the-binary), or run `/sdlc:next`, which

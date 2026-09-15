@@ -31,9 +31,19 @@ Nothing is enforced unless **all** of these are true:
    of its agents. `sdlc start` records the session it runs in, in
    `.sdlc/state/session`, so the session that starts or resumes a story is the
    one held to it, and every other session in the repository is left alone.
-   Run outside Claude Code, `sdlc start` records no session, and until a
-   session picks the story up it holds every session in the repository.
+   Run outside Claude Code, `sdlc start` records no session: a new story holds
+   no session until one picks it up with `/sdlc:next`, and a story resumed that
+   way keeps the session it had. `/sdlc:next` stops rather than work a story
+   when `sdlc start` could not record the session it runs in. A call that names
+   no session, or a `.sdlc/state/session` that is empty, unreadable or names
+   something that cannot be a session id, holds no session either.
 4. `SDLC_ENFORCE` is not `0` in the environment the session started with.
+
+In every other session the plugin is silent: it refuses nothing but the
+decisions below that are a person's, never sends a session back at the end of
+its turn, runs no formatter, writes nothing and prints nothing, with the binary
+installed or not. `sdlc status` and `sdlc doctor` say when a story is under way
+and no session is working it.
 
 Left alone means every rule. Another session can edit code and tests, commit
 and run `sdlc stop`, and the loop commits a story with `git add -A`, so work it
@@ -52,9 +62,10 @@ reading the log is not part of any story.
 
 The hook also **fails
 open**: an unreadable payload, a missing configuration, a path it cannot
-resolve — an error ends in "carry on", with a message saying what is off. A hook
-that blocks a session because of its own bug is worse than the mistake it was
-trying to prevent.
+resolve — an error ends in "carry on", and in the session working a story, with
+a message saying what is off. A call that cannot be read names no session, so
+it goes through with nothing said. A hook that blocks a session because of its
+own bug is worse than the mistake it was trying to prevent.
 
 The exceptions are the files a rule exists to protect. A test freeze or a gate
 record that cannot be read is not treated as absent, because then breaking one

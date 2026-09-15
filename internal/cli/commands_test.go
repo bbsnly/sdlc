@@ -129,17 +129,55 @@ func TestStartRecordsTheSessionItRunsIn(t *testing.T) {
 	if got := recorded(); got != "session-b" {
 		t.Errorf("after resuming in another session, session = %q", got)
 	}
-	// From a terminal there is no session: the story holds every session.
+	// Picked up where no session can be told -- a terminal, or a surface that
+	// does not set the variable -- the iteration stays with the session it had:
+	// wiping the record turned every rule off in that session without a word.
+	// start says it recorded none, which is what the runbook stops on.
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
-	mustRun(t, "start")
-	if got := recorded(); got != "" {
-		t.Errorf("a start outside Claude Code left session %q recorded", got)
+	started := mustRun(t, "start", "--json")
+	if got := decode[startPayload](t, started); got.Session != "" {
+		t.Errorf("a start with no session reported session %q", got.Session)
 	}
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "session-a")
-	mustRun(t, "start")
+	if !strings.Contains(started.stdout, `"session":""`) {
+		t.Errorf("start --json leaves session out when it recorded none, so it cannot be read as empty: %s", started.stdout)
+	}
+	if got := recorded(); got != "session-b" {
+		t.Errorf("a resume with no session left session %q recorded, want session-b", got)
+	}
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "session-c")
+	if got := decode[startPayload](t, mustRun(t, "start", "--json")); got.Session != "session-c" {
+		t.Errorf("start reported session %q, want session-c", got.Session)
+	}
+	if got := decode[statusPayload](t, mustRun(t, "status", "--json")); got.Session != "session-c" {
+		t.Errorf("status reported session %q, want session-c", got.Session)
+	}
+	if out := mustRun(t, "status").stdout; strings.Contains(out, "No Claude Code session") {
+		t.Errorf("status says no session is working a story one is working:\n%s", out)
+	}
 	mustRun(t, "stop")
 	if got := recorded(); got != "" {
 		t.Errorf("stopping left session %q recorded", got)
+	}
+
+	// An iteration begun with no session holds none, and status and doctor say
+	// so, since the hook says nothing. A record left over from no iteration
+	// belongs to none, and goes.
+	writeFile(t, root, ".sdlc/state/session", "session-left\n")
+	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	if got := decode[startPayload](t, mustRun(t, "start", "--json")); got.Session != "" {
+		t.Errorf("a start with no session reported session %q", got.Session)
+	}
+	if got := recorded(); got != "" {
+		t.Errorf("an iteration begun with no session left session %q recorded", got)
+	}
+	if out := mustRun(t, "status").stdout; !strings.Contains(out, "No Claude Code session is working it") {
+		t.Errorf("status does not say no session is working the story:\n%s", out)
+	}
+	if got := decode[statusPayload](t, mustRun(t, "status", "--json")); got.Session != "" {
+		t.Errorf("status reported session %q for a story no session is working", got.Session)
+	}
+	if r := run(t, "doctor"); !strings.Contains(r.stdout, "no Claude Code session is working") {
+		t.Errorf("doctor does not say no session is working the story:\n%s", r.stdout)
 	}
 }
 

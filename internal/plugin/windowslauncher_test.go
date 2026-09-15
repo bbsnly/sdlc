@@ -22,10 +22,10 @@ func TestTheWindowsLauncherNeverRunsAnSdlcFromTheProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A project that uses sdlc, because only there does a launcher with no
+	// A story this session started, because only there does a launcher with no
 	// binary to hand the call to say anything at all.
 	project := t.TempDir()
-	writeConfig(t, project)
+	writeStory(t, project, me)
 	for _, name := range []string{"sdlc.cmd", "sdlc.bat"} {
 		planted := "@echo off\r\necho planted: %*\r\necho {\"continue\":true}\r\n"
 		if err := os.WriteFile(filepath.Join(project, name), []byte(planted), 0o644); err != nil {
@@ -158,7 +158,7 @@ func runCmdLauncher(t *testing.T, launcher, project, path, localAppData string) 
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), "cmd", "/c", launcher, "PreToolUse")
 	cmd.Dir = project
-	cmd.Stdin = strings.NewReader("{}")
+	cmd.Stdin = strings.NewReader(callFrom(me))
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
 		switch strings.ToUpper(name) {

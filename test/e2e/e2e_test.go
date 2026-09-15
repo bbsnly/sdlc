@@ -20,6 +20,11 @@ import (
 	"testing"
 )
 
+// claudeSession is the Claude Code session the tests start and work their
+// stories in. The hook holds that session to a story and no other, so every
+// command the tests run and every call they hand the hook comes from it.
+const claudeSession = "e2e-session"
+
 // build compiles the binary once for the whole package.
 func build(t *testing.T) string {
 	t.Helper()
@@ -69,6 +74,7 @@ func runTool(t *testing.T, binary, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), binary, args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "CLAUDE_CODE_SESSION_ID="+claudeSession)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
@@ -83,6 +89,7 @@ func tool(t *testing.T, binary, dir string, args ...string) (string, error) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), binary, args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "CLAUDE_CODE_SESSION_ID="+claudeSession)
 	var both bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &both, &both
 	err := cmd.Run()
@@ -95,6 +102,7 @@ func runToolWithInput(t *testing.T, binary, dir, stdin string, args ...string) s
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), binary, args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "CLAUDE_CODE_SESSION_ID="+claudeSession)
 	cmd.Stdin = strings.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -104,17 +112,27 @@ func runToolWithInput(t *testing.T, binary, dir, stdin string, args ...string) s
 	return stdout.String()
 }
 
-// launcher runs plugin/bin/sdlc-hook exactly as the hooks.json entry does.
+// launcher runs plugin/bin/sdlc-hook exactly as the hooks.json entry does, for
+// a call from the Claude Code session the tests work the story in.
 func launcher(t *testing.T, binary, root, payload string) string {
 	t.Helper()
 	script, err := filepath.Abs(filepath.Join("..", "..", "plugin", "bin", "sdlc-hook"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	var call map[string]any
+	if err := json.Unmarshal([]byte(payload), &call); err != nil {
+		t.Fatal(err)
+	}
+	call["session_id"] = claudeSession
+	raw, err := json.Marshal(call)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.CommandContext(t.Context(), script, "PreToolUse")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "SDLC_BIN="+binary, "CLAUDE_PROJECT_DIR="+root)
-	cmd.Stdin = strings.NewReader(payload)
+	cmd.Stdin = bytes.NewReader(raw)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
@@ -256,13 +274,24 @@ func TestTheLauncherWithoutABinaryAllowsAndExplains(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A project that uses sdlc: anywhere else a missing binary has nothing to
-	// explain, and the launcher says nothing.
+	// A story this session started: in any other session a missing binary has
+	// nothing to explain, and the launcher says nothing.
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".sdlc"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".sdlc", "state"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".sdlc", "config.json"), []byte("{}"), 0o644); err != nil {
+	for name, body := range map[string]string{
+		"config.json": "{}", "state/active": "US-001\n", "state/session": claudeSession + "\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, ".sdlc", filepath.FromSlash(name)), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	call, err := json.Marshal(map[string]any{
+		"hook_event_name": "PreToolUse", "session_id": claudeSession, "tool_name": "Write",
+		"cwd": root, "tool_input": map[string]string{"file_path": "x.go"},
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -270,7 +299,7 @@ func TestTheLauncherWithoutABinaryAllowsAndExplains(t *testing.T) {
 	cmd.Dir = root
 	// An empty PATH and no SDLC_BIN: there is no binary to find.
 	cmd.Env = []string{"PATH=" + filepath.Join(root, "nothing-here")}
-	cmd.Stdin = strings.NewReader(event(root, "Write", "", "x.go"))
+	cmd.Stdin = bytes.NewReader(call)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 

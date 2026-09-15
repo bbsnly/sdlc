@@ -4,7 +4,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -94,18 +93,12 @@ func crash(r any, stack []byte, isHook bool, stdout, stderr io.Writer, withStack
 		// wedge someone's session; the loop's guarantees are worth less than
 		// the user's ability to keep working.
 		//
-		// systemMessage, and exit 0 below: Claude Code reads a hook's JSON only
-		// when it exits 0, and shows a stopReason only when continue is false.
-		// A crash reported any other way reached nobody.
-		b, err := json.Marshal(hook.Decision{
-			Continue:      true,
-			SystemMessage: "sdlc: " + msg + ", so this tool call was not checked. Please report it: " + issues,
-		})
-		if err != nil {
-			fmt.Fprint(stdout, `{"continue":true}`)
-		} else {
-			fmt.Fprintln(stdout, string(b))
-		}
+		// And say nothing to the session, with exit 0 below. The hook runs in
+		// every session the plugin is installed for, and a crash comes before
+		// it knows whether this one is working a story; one that is not must
+		// not hear from the plugin at all. The report goes to stderr, which is
+		// Claude Code's debug log.
+		fmt.Fprintln(stdout, `{"continue":true}`)
 	}
 
 	fmt.Fprintf(stderr, "%s\n\nThis is a bug. Please report it, with the command you ran:\n  %s\n", msg, issues)

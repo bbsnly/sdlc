@@ -13,7 +13,7 @@ import (
 func written(t *testing.T, root, path string, getenv func(string) string) stopOutcome {
 	t.Helper()
 	event, err := json.Marshal(map[string]any{
-		"hook_event_name": "PostToolUse", "tool_name": "Write", "cwd": root,
+		"hook_event_name": "PostToolUse", "tool_name": "Write", "cwd": root, "session_id": working,
 		"tool_input": map[string]string{"file_path": path},
 	})
 	if err != nil {

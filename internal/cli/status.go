@@ -24,8 +24,12 @@ type statusPayload struct {
 	Title  string `json:"title,omitempty"`
 	// NotInBacklog is set when the active story has gone from the backlog, so
 	// that an empty title is not mistaken for a story with no title.
-	NotInBacklog bool              `json:"not_in_backlog,omitempty"`
-	Gates        map[string]string `json:"gates,omitempty"`
+	NotInBacklog bool `json:"not_in_backlog,omitempty"`
+	// Session is the Claude Code session working the active story, the only
+	// one the hook holds to it. Empty, nothing is enforced anywhere until a
+	// session picks the story up.
+	Session string            `json:"session,omitempty"`
+	Gates   map[string]string `json:"gates,omitempty"`
 	// NextGate is where a resumed loop picks up. A skill reads this rather
 	// than working out the gate order for itself, which is the kind of
 	// derivation that drifts from the tool that enforces it.
@@ -118,6 +122,9 @@ func newStatusCmd() *cobra.Command {
 					return err
 				}
 				payload.Cost = describeCost(p.Config.Budget, record)
+				if id, held := s.WorkingSession(); held {
+					payload.Session = id
+				}
 			} else if sel, ok := backlog.Next(); ok && !isWaiting(waiting, sel.Story.ID) {
 				// A waiting story is the one start would pick, and start refuses
 				// it, so offering it as next up would send the reader into a wall.
@@ -151,6 +158,15 @@ func newStatusCmd() *cobra.Command {
 				printCost(w, payload.Cost)
 				if payload.NextGate != "" {
 					fmt.Fprintf(w, "\n  next   %s\n", payload.NextGate)
+				}
+				// Started from a terminal, or with the record of the session
+				// spoiled, the story holds no session, and nothing tells the
+				// sessions in the repository so: the hook speaks only in the one
+				// working it. Not for a story that cannot be carried on, where it
+				// would send the reader towards a commit that is refused.
+				if payload.Session == "" && !finished && !payload.NotInBacklog {
+					fmt.Fprint(w, "\n  No Claude Code session is working it, so nothing is enforced "+
+						"until one picks it up with /sdlc:next.\n")
 				}
 			}
 			fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))

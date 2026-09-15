@@ -19,7 +19,7 @@ It also turns the hook off. Every rule in [enforcement](../enforcement.md) only
 applies while `.sdlc/state/active` names a story, and only in the Claude Code
 session working it, so once you have stopped you can edit code, tests or
 configuration as yourself. Another Claude Code session in the repository is
-not held to a story once a session has picked it up, and resuming the story
+never held to a story it did not start or pick up, and resuming the story
 there with `/sdlc:next` makes it that session's. Stopping is the sanctioned
 route when the loop refuses something and you want to take over.
 
@@ -131,7 +131,9 @@ Nothing the loop needs lives in the conversation. A fresh session running
 `sdlc start` to make the story this session's, then goes straight to
 `next_gate`. The hook reads the same files on every tool call, so the freeze
 and the write rules apply from the session's next edit. A session that never
-runs `/sdlc:next` or `sdlc start` is not held to the story.
+runs `/sdlc:next` or `sdlc start` is not held to the story, and hears nothing
+about it. Neither is any session while a story started from a terminal waits
+for one to pick it up: `sdlc status` says when that is the case.
 
 If you closed the old session without stopping, the iteration is still active
 and there is nothing to do but run `/sdlc:next`. The exception is a session that

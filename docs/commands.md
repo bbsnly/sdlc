@@ -173,14 +173,17 @@ Picks up a story already under way, or takes the next runnable one: resume
 first, then priority, then id. Refuses if an iteration is already running on
 another story; on the same story it resumes and changes nothing about the story.
 With `--json` it reports `resume` and `next_gate`, the first gate that has not
-passed, so a session picking a story back up carries on from there.
+passed, so a session picking a story back up carries on from there, and
+`session`, the Claude Code session it recorded, empty when it ran in none.
 
 Run in Claude Code, it records the session it runs in, in
 `.sdlc/state/session`. That session and its agents are the ones the hook holds
 to the story; every other session in the repository is left alone. Starting or
 resuming the story in another session moves it there. Run outside Claude Code,
-it records no session, and the story holds every session in the repository
-until one picks it up.
+it records no session. A new story then has nothing enforced in any session
+until one picks it up with `/sdlc:next`, and `sdlc status` says so meanwhile. A
+story resumed that way keeps the session already recorded, since the command
+cannot tell that the story has moved.
 
 Naming a story chooses it over the priority order, and nothing else: a story
 that is `dropped`, `blocked` or marked `done`, or that waits on a `depends_on`

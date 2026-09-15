@@ -5,10 +5,15 @@
 // parses configuration it does not need, or touches the network. The rest of
 // the CLI is reached only when the first argument is not `hook`.
 //
+// It speaks only in the Claude Code session working a story. The plugin is
+// installed for every session, and in any other one the hook refuses nothing
+// but a person's decisions, holds no turn open, and says nothing at all.
+//
 // It fails open. An error -- an unreadable payload, a missing configuration, a
-// path that cannot be resolved -- ends in "carry on", and says so. A hook that
-// blocks a session because of its own bug is worse than the mistake it was
-// trying to prevent.
+// path that cannot be resolved -- ends in "carry on". In the session working a
+// story it says what is off, except when the payload cannot be read, since then
+// there is no telling which session made the call. A hook that blocks a session
+// because of its own bug is worse than the mistake it was trying to prevent.
 //
 // Except where the unreadable file is the thing a rule protects. A test freeze
 // or a gate record that is there and cannot be read is not treated as absent,
@@ -111,10 +116,11 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 		return emit(stdout, Allow())
 	}
 
-	// Failing open is the right answer and being quiet about it is not. A hook
-	// that has decided to enforce nothing looks exactly like a hook with
-	// nothing to enforce, and the session then reports a freeze that is not
-	// there.
+	// Failing open is the right answer and being quiet about it is not, in the
+	// session working a story: a hook that has decided to enforce nothing looks
+	// exactly like a hook with nothing to enforce, and the session then reports
+	// a freeze that is not there. Nothing warns anywhere else, because nothing
+	// is reached anywhere else: findLoop finds no story for another session.
 	//
 	// The warning goes out as systemMessage. Stderr from a hook that exits 0
 	// goes to Claude Code's debug log and nowhere else, so a warning written
@@ -181,13 +187,15 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 
 	var p payload
 	if err := json.Unmarshal(raw, &p); err != nil {
-		// A call that cannot be read cannot be checked, and letting it through
-		// in silence looks exactly like a call there was nothing to check in.
+		// A call that cannot be read names no session, so there is no telling
+		// whether it came from the one working a story, and a session that did
+		// not start one hears nothing from the plugin. It goes through, and the
+		// debug log says why.
 		why := "it is not valid JSON"
 		if len(raw) > maxPayload {
 			why = fmt.Sprintf("it is larger than the %d MiB the hook reads", maxPayload>>20)
 		}
-		warn("a tool call could not be read, because " + why + ", so it was not checked.")
+		slog.Debug("hook: the call could not be read, so it was not checked", "why", why)
 		return policy.Allowed, event, false
 	}
 	if p.HookEventName != "" {
@@ -609,8 +617,8 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 	return t
 }
 
-// heldElsewhere reports whether the story in project is being worked on by a
-// Claude Code session other than the one this call comes from.
+// heldHere reports whether this call comes from the Claude Code session that
+// started or resumed the story in project, or from one of its agents.
 //
 // A story is held in the session working it, and nowhere else. The state that
 // says a story is under way is the repository's, and every session opened in
@@ -620,32 +628,31 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 // session that spawned it, so the session running the story and its agents
 // are held, and nobody else is.
 //
-// Where no session is recorded, or the call names none, the story holds every
-// session, as it did before sessions were told apart.
-func heldElsewhere(project, session string, warn func(string)) bool {
+// Where no session is recorded, the call names none, or the file names nothing
+// to compare with, the story holds no session and nothing is said. The plugin
+// is installed for every session, and one that never started the story in
+// front of it was refused edits, sent back at the end of its turn and told
+// about state it did not make: a tool acting where nobody asked it to. A story
+// started from a terminal is picked up in a session by /sdlc:next, which
+// records that session.
+func heldHere(project, session string) bool {
 	if session == "" {
 		return false
 	}
 	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "session"))
 	if err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			warn(".sdlc/state/session could not be read, so every session in this project is " +
-				"held to the story under way. Run `sdlc start` in the session working it.")
-		}
 		return false
 	}
 	owner := strings.TrimSpace(string(raw))
-	if !store.CheckSession(owner) {
-		warn(".sdlc/state/session does not name a session, so every session in this project is " +
-			"held to the story under way. Run `sdlc start` in the session working it.")
-		return false
-	}
-	return owner != session
+	return store.CheckSession(owner) && owner == session
 }
 
 // activeStory reads the story being worked on, directly rather than through the
 // store: this runs on every tool call, and parsing the configuration to learn
 // something that is not in it would be work for nothing.
+//
+// findLoop reads it only for the session working a story, so a warning here
+// reaches that session and no other.
 func activeStory(project string, warn func(string)) string {
 	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "active"))
 	if err != nil {
@@ -695,11 +702,13 @@ func findLoop(getenv func(string) string, p payload, target string, warn func(st
 		if !ok {
 			continue
 		}
+		// The session first, so that a session the story is not held in hears
+		// nothing about the state of a story that is not its own.
+		if !heldHere(root, p.SessionID) {
+			slog.Debug("hook: no story here is this session's", "project", root)
+			continue
+		}
 		if story := activeStory(root, warn); story != "" {
-			if heldElsewhere(root, p.SessionID, warn) {
-				slog.Debug("hook: the story is another session's", "project", root, "story", story)
-				continue
-			}
 			return root, story
 		}
 	}
