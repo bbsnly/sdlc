@@ -356,6 +356,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   on loop state as no other interpreter could, and PowerShell set `GIT_DIR` for a
   commit made elsewhere as `Env:\GIT_DIR` or through
   `[Environment]::SetEnvironmentVariable('GIT_DIR', ...)`. Both are now read.
+- On Windows, the hook launcher ran an `sdlc.cmd` or `sdlc.bat` at the
+  project's root in place of the installed binary, because cmd.exe looks in
+  the current directory before `PATH`, and that file could answer every tool
+  call. The launcher now looks for `sdlc.exe` on `PATH` only.
 - On macOS and Windows, the project's path spelled in another case was read as
   somewhere else: `rm /OPT/PROJECT/.sdlc/state/active`, or `cd` to it and
   `git commit`, went past the rules on loop state and the commit gate. So did a

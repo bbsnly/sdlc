@@ -12,9 +12,12 @@ if defined CLAUDE_PLUGIN_ROOT if exist "%CLAUDE_PLUGIN_ROOT%\bin\sdlc.exe" (
   "%CLAUDE_PLUGIN_ROOT%\bin\sdlc.exe" hook %1
   exit /b 0
 )
-where sdlc >nul 2>&1
-if %ERRORLEVEL% equ 0 (
-  sdlc hook %1
+rem PATH only: cmd.exe, and where with it, look in the current directory
+rem first, and a hook runs in the project. A bare `sdlc` ran an sdlc.cmd
+rem sitting at its root on every tool call, in place of the installed binary.
+rem Every installer puts sdlc.exe itself on PATH.
+for /f "delims=" %%B in ('where $PATH:sdlc.exe 2^>nul') do (
+  "%%B" hook %1
   exit /b 0
 )
 
