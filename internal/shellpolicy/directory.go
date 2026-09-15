@@ -43,6 +43,8 @@ func takenAway(words []string) []string {
 			}
 		case "mv":
 			named = sources(rest)
+		case "stash":
+			named = stashPaths(rest)
 		case "clean":
 			// Without -f, git clean cleans nothing.
 			if hasWord(rest, "--force") || shortFlag(rest, 'f') {
@@ -75,7 +77,7 @@ func discardsTheWorkTree(words []string) bool {
 	sub, _, rest := gitCall(words[1:])
 	switch sub {
 	case "stash":
-		return len(rest) == 0 || !stashKeeps[rest[0]]
+		return len(rest) == 0 || !stashKeeps[rest[0]] && len(stashPaths(rest)) == 0
 	case "reset":
 		return hasWord(rest, "--hard") || hasWord(rest, "--merge") || hasWord(rest, "--keep")
 	case "checkout", "switch":
@@ -84,6 +86,28 @@ func discardsTheWorkTree(words []string) bool {
 		return shortFlag(rest, 'u')
 	}
 	return false
+}
+
+// stashPaths are the paths a stash is limited to, and none when it takes the
+// whole work tree. Only push, or a stash with no command named, takes paths, and
+// only those written after `--` are read: a quoted message is split into words
+// here, and `git stash push -m "wip all"` read as limited to a path called all"
+// stashed everything.
+func stashPaths(rest []string) []string {
+	if len(rest) > 0 && rest[0] == "push" {
+		rest = rest[1:]
+	} else if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+		return nil
+	}
+	for i, a := range rest {
+		if strings.HasPrefix(a, "--pathspec-from-file") {
+			return nil
+		}
+		if a == "--" {
+			return rest[i+1:]
+		}
+	}
+	return nil
 }
 
 // stashKeeps are the stash commands that leave the work tree as it is.

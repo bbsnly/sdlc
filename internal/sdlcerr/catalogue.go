@@ -130,7 +130,7 @@ var (
 		`record the earlier gate first -- "sdlc status" shows where this story stands`)
 
 	TreeNotCommitted = register("SDLC-E0032",
-		`commit the work, or stash what does not belong to this story, then record the gate`)
+		`commit the work, or stash what does not belong to this story by path with "git stash push -- <path>", then record the gate`)
 
 	RepositoryUnreadable = register("SDLC-E0021",
 		`check that git is installed and that this directory is a repository git can read`)

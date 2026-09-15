@@ -19,7 +19,7 @@ func TestDiscardingTheWorkTreeDiscardsTheStory(t *testing.T) {
 		"git -C . clean -fdx",
 		"git stash",
 		"git stash -u",
-		"git stash push --include-untracked -- internal",
+		"git stash push --include-untracked",
 		"git stash pop",
 		"git reset --hard",
 		"git reset --hard HEAD~1",

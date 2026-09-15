@@ -236,7 +236,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   -f` and `git read-tree -u --reset` took the loop's record and the frozen
   tests, which are not committed until the story is, with them. `git clean`
   given a directory, or run in one, cleans only there, and is refused only
-  where that holds a frozen test.
+  where that holds a frozen test. A stash of the paths written after `--`,
+  `git stash push -- docs/notes.md`, takes only those.
 - A glob that names a directory holding a frozen test names that test:
   `rm -rf *` and `rm -rf internal/*` took frozen tests away. The glob is read
   where the command runs, so `cd dist && rm -rf *` is still allowed.

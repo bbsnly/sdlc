@@ -309,7 +309,9 @@ If an earlier gate failed, record it again once it genuinely passes. There is no
 The commit gate cannot pass while there is uncommitted work.
 
 The gate records that this story reached trunk. Commit the change, or stash what does not belong
-to this story, and then record the gate.
+to this story by path, `git stash push -- <path>`, and then record the gate. A stash of the whole
+work tree is refused while a story is being worked on, because it takes the loop's own record
+with it.
 
 ### SDLC-E0033
 

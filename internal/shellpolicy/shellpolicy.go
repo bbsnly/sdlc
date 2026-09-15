@@ -802,6 +802,9 @@ func gitChangesFiles(args []string) bool {
 	switch sub, _, rest := gitCall(args); sub {
 	case "mv", "checkout":
 		return true
+	case "stash":
+		// A stash of named paths takes those paths away.
+		return len(stashPaths(rest)) > 0
 	case "rm":
 		// --cached takes a path out of the index and leaves the file.
 		return !hasWord(rest, "--cached")
