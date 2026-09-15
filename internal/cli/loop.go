@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -624,7 +625,10 @@ func printGates(w io.Writer, record *model.Record) {
 	}
 }
 
-func quote(s string) string { return `"` + s + `"` }
+// quote escapes as well as quotes, as store's does: an id or a name can come
+// from a file a clone brought, and one that ended the quotation would read as
+// sdlc's.
+func quote(s string) string { return strconv.Quote(s) }
 
 // requireEvidence refuses to record a pass for a gate that has not left behind
 // what the gates after it read.

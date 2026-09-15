@@ -577,7 +577,9 @@ func (s *Store) replaceBacklog(path string, data []byte) error {
 
 // ---------------------------------------------------------------- helpers
 
-func quote(s string) string { return `"` + s + `"` }
+// quote escapes as well as quotes: a value read from the backlog can hold a
+// quote or a newline, and one that ended the quotation would read as sdlc's.
+func quote(s string) string { return strconv.Quote(s) }
 
 // relative shows a path as the user typed it: relative to the repository root
 // where possible, absolute when it points somewhere else entirely.

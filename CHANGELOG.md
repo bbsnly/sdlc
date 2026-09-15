@@ -125,6 +125,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   written out as text instead of reaching the terminal, where an escape
   sequence from a cloned backlog could retitle the window or rewrite what
   was already shown.
+  A story id, status or name quoted in an error is escaped as well, so a quote
+  or a line break in one cannot end the quotation early.
 - Reviews are recorded against the thing they reviewed. A design review is
   stamped with the hash of the plan it read and a code review with the hash
   of the tree it read, so a review of an older version of the work shows as
