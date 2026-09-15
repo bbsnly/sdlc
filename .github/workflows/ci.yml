@@ -25,6 +25,10 @@ jobs:
   check:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A stalled step -- a module fetch, an installer test, a release download --
+    # otherwise holds the runner for GitHub's default of six hours. The
+    # slowest job, check on Windows, takes about eight minutes.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -130,6 +134,7 @@ jobs:
   commits:
     name: commit subjects
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -196,6 +201,7 @@ jobs:
   npm-engines:
     name: npm on the oldest Node it claims
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -232,6 +238,7 @@ jobs:
   cross:
     name: cross-build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -291,6 +298,7 @@ jobs:
   install:
     name: install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

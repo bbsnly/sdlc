@@ -22,6 +22,9 @@ jobs:
   release:
     needs: check
     runs-on: ubuntu-latest
+    # A stalled step otherwise holds the runner for GitHub's default of six
+    # hours, and a tag cannot be released again until the run ends.
+    timeout-minutes: 30
     permissions:
       contents: write # create the release and upload its archives
       id-token: write # provenance for the archives
@@ -255,6 +258,7 @@ jobs:
   npm:
     needs: release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read # the published release's checksums
       id-token: write # provenance for the npm package
