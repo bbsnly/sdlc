@@ -27,7 +27,7 @@ Guessed the commands from a Go project.
 Next:
   1. sdlc doctor              check the guesses
   2. edit user_stories.json   replace the example with a story of your own
-  3. /sdlc:next               in Claude Code, to work the first story
+  3. /sdlc:next               type it in Claude Code to work the first story
 ```
 
 `init` walks up to the nearest `.git` and writes everything relative to that

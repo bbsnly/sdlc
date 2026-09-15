@@ -297,7 +297,7 @@ func (s *Store) Active() (string, error) {
 		return "", sdlcerr.New(sdlcerr.UnsafeStoryID,
 			activeFile+" does not name a story",
 			"it holds "+quote(shown)+", and sdlc start only ever writes a story id there").
-			WithFix(`run "sdlc stop" to remove it and end the iteration, then "sdlc start" again`).
+			WithFix(`a person runs "sdlc stop" to remove it and end the iteration, then "sdlc start" or types /sdlc:next in Claude Code to begin again`).
 			WithCause(err)
 	}
 	return id, nil

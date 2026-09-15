@@ -16,7 +16,7 @@ var (
 		`run "git init" first, or change to a directory inside your repository`)
 
 	NotInitialised = register("SDLC-E0002",
-		`run "sdlc init" in the root of your repository`)
+		`if you want the loop in this repository, run "sdlc init" in its root yourself`)
 
 	AlreadyInitialised = register("SDLC-E0003",
 		`edit .sdlc/config.json directly, or run "sdlc init --force" to overwrite it`)
@@ -43,7 +43,7 @@ var (
 		`add the next story, or unblock one — "sdlc story list" shows each story's status and what any blocked one is waiting on`)
 
 	NoActiveIteration = register("SDLC-E0011",
-		`run "sdlc start" to begin an iteration on the next story`)
+		`a person runs "sdlc start", or types /sdlc:next in Claude Code, to begin an iteration on the next story`)
 
 	IterationAlreadyActive = register("SDLC-E0012",
 		`finish the current story, or run "sdlc stop" to end the iteration without recording a result`)

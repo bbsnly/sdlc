@@ -62,7 +62,7 @@ person. So note the story before the run, and name it afterwards:
 
 ```console
 $ story=$(sdlc status --json | jq -r '.active // .next.story')
-$ cost=$(claude -p "Run /sdlc:next" --output-format json | jq .total_cost_usd)
+$ cost=$(claude -p "/sdlc:next" --output-format json | jq .total_cost_usd)
 $ sdlc cost add --story "$story" --usd "$cost"
 ```
 
@@ -117,7 +117,7 @@ US-001  in progress  Example: reject invoices with a non-positive total
 
   backlog  1 in progress
 
-Run /sdlc:next in Claude Code to carry on, or `sdlc stop` to put it down.
+A person types /sdlc:next in Claude Code to carry on, or runs `sdlc stop` to put it down.
 ```
 
 A script reads the `cost` object from `sdlc status --json`, which has

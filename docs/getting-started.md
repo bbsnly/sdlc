@@ -131,7 +131,10 @@ In Claude Code, from the project:
 /sdlc:next
 ```
 
-That is all, once the plugin is installed. If you are working from a clone
+That is all, once the plugin is installed. Nothing happens until you type it:
+in Claude Code only you can start the skill. Its agents are told to work only a
+gate of a story you started and to stop on anything else, but nothing enforces
+that. If you are working from a clone
 rather than an installed plugin, start the session with
 `claude --plugin-dir /path/to/sdlc/plugin` instead.
 

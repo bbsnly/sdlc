@@ -111,7 +111,7 @@ work is in the tree for you to look at. Then answer in your own terminal:
 $ sdlc approve US-001
 US-001  approved (spec_unclear)
 
-Run `sdlc start US-001`, or /sdlc:next, to carry on.
+A person runs `sdlc start US-001`, or types /sdlc:next in Claude Code, to carry on.
 ```
 
 To send the work back instead, say why. The reason is required, because

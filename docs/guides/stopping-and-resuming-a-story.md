@@ -35,7 +35,7 @@ No iteration running.
   backlog  1 in progress
   next up  US-001  Example: reject invoices with a non-positive total
 
-Run `sdlc start` to begin.
+A person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.
 
 $ sdlc start
 Resumed US-001  Example: reject invoices with a non-positive total
@@ -49,7 +49,7 @@ Resumed US-001  Example: reject invoices with a non-positive total
   verification     pass
   verifier_review  pass
 
-Next: run /sdlc:next in Claude Code to work the story.
+Next: a person types /sdlc:next in Claude Code to work the story.
 ```
 
 The loop picks up at the first gate that has not passed, here `code_review`.

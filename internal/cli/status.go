@@ -166,7 +166,7 @@ func newStatusCmd() *cobra.Command {
 				// would send the reader towards a commit that is refused.
 				if payload.Session == "" && !finished && !payload.NotInBacklog {
 					fmt.Fprint(w, "\n  No Claude Code session is working it, so nothing is enforced "+
-						"until one picks it up with /sdlc:next.\n")
+						"until a person picks it up by typing /sdlc:next in Claude Code.\n")
 				}
 			}
 			fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))
@@ -185,11 +185,11 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprintf(w, "\nA person answers first, in their own terminal: `sdlc approve %s`, "+
 					"or `sdlc approve %s --reject \"why\"`.\n", payload.Waiting[0].Story, payload.Waiting[0].Story)
 			case active != "":
-				fmt.Fprint(w, "\nRun /sdlc:next in Claude Code to carry on, "+
-					"or `sdlc stop` to put it down.\n")
+				fmt.Fprint(w, "\nA person types /sdlc:next in Claude Code to carry on, "+
+					"or runs `sdlc stop` to put it down.\n")
 			case payload.Next != nil:
 				fmt.Fprintf(w, "  next up  %s  %s\n", payload.Next.Story, oneLine(payload.Next.Title))
-				fmt.Fprint(w, "\nRun `sdlc start` to begin.\n")
+				fmt.Fprint(w, "\nA person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.\n")
 			default:
 				fmt.Fprint(w, nothingToStart(backlog, s.Config().Backlog.Path))
 			}

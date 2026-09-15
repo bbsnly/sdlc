@@ -34,6 +34,11 @@ type turnReply struct {
 // on it, and when it reaches loop.max_stop_blocks the story goes to a person.
 // Like every other rule here it fails open: anything it cannot read lets the
 // stop through.
+// RunbookLastSection is the last section of the /sdlc:next runbook. Compaction
+// keeps only the start of a long skill, so a runbook that no longer ends with it
+// was cut short, and a stop sent back says so.
+const RunbookLastSection = "Rework, at any gate"
+
 func decideStop(raw []byte, getenv func(string) string, warn func(string)) turnReply {
 	allow := turnReply{Continue: true}
 	if getenv("SDLC_ENFORCE") == "0" {
@@ -105,10 +110,13 @@ func stopReason(project, story string, blocks, limit int) string {
 		}
 	}
 	return fmt.Sprintf("%s is still being worked on. Work %s and record it, or hand the story to a "+
-		"person with `sdlc escalate <type> --message \"...\"` if it needs one. A story left mid-gate "+
+		"person with `sdlc escalate <type> --message \"...\"` if it needs one. If the /sdlc:next "+
+		"runbook in this conversation no longer ends with %q, compaction cut it short: do not work from "+
+		"memory, tell the person to type /sdlc:next to pick the story up where it is, and stop. A story "+
+		"left mid-gate "+
 		"is one nobody is looking at, so after %d stops in a "+
 		"row with nothing recorded the loop hands it to a person itself (this was %d).",
-		story, next, limit, blocks)
+		story, next, RunbookLastSection, limit, blocks)
 }
 
 // handOver gives a story that keeps stopping to a person, and lets the stop

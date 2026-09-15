@@ -1,8 +1,9 @@
 ## SDLC Contract
 
-<!-- Read by the /sdlc:next runbook and every loop agent. Machine values (commands, thresholds,
-     paths) are in .sdlc/config.json and are authoritative; this section holds the rules a script
-     cannot encode. Keep it under ~150 lines: every line here is loaded into every session. -->
+<!-- Rules for a story a person works by typing /sdlc:next; nothing here starts the loop or its
+     agents. Machine values (commands, thresholds, paths) are in .sdlc/config.json and are
+     authoritative; this section holds the rules a script cannot encode. Keep it under ~150
+     lines: every line here is loaded into every session. -->
 
 ### Phase constraints
 

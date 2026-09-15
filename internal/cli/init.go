@@ -105,7 +105,7 @@ func printInit(w io.Writer, res *scaffold.Result) {
 	fmt.Fprint(w, "\nNext:\n"+
 		"  1. sdlc doctor              check the guesses\n"+
 		"  2. edit user_stories.json   replace the example with a story of your own\n"+
-		"  3. /sdlc:next               in Claude Code, to work the first story\n")
+		"  3. /sdlc:next               type it in Claude Code to work the first story\n")
 }
 
 // joinWords renders a list the way a sentence needs it.

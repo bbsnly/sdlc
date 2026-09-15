@@ -134,7 +134,7 @@ func runChecks(ctx context.Context) []check {
 	if err != nil {
 		// The error's own words: its cause alone said nothing of which setting
 		// was wrong, and "sdlc init" does not fix a file that is already there.
-		detail, fix := err.Error(), `run "sdlc init" in `+root
+		detail, fix := err.Error(), `if you want the loop in this repository, run "sdlc init" in `+root+` yourself`
 		var e *sdlcerr.Error
 		if errors.As(err, &e) {
 			detail, fix = e.What, e.Fix
@@ -192,7 +192,7 @@ func stateCheck(ctx context.Context, s *store.Store) check {
 	active, err := s.Active()
 	if err != nil {
 		problem(err.Error(), "nothing is enforced until .sdlc/state/active names a story: "+
-			`run "sdlc stop" to remove it, then "sdlc start" to begin again`)
+			`a person runs "sdlc stop" to remove it, then "sdlc start" or types /sdlc:next in Claude Code to begin again`)
 	} else if active != "" {
 		// Record starts a fresh record when there is none, which is right for
 		// the command and wrong here: `sdlc start` always writes one, so a
@@ -264,11 +264,11 @@ func stateCheck(ctx context.Context, s *store.Store) check {
 	}
 	detail := "the iteration, every gate record, the test freeze and the commit acknowledged all read"
 	// Not a problem: a story started from a terminal is picked up in a session
-	// by /sdlc:next. Until then the hook holds no session to it, and says so
+	// when a person types /sdlc:next. Until then the hook holds no session to it, and says so
 	// nowhere, so this does.
 	if _, held := s.WorkingSession(); active != "" && !held {
-		detail += "; no Claude Code session is working " + active + ", so nothing is enforced until one " +
-			"picks it up with /sdlc:next"
+		detail += "; no Claude Code session is working " + active + ", so nothing is enforced until a " +
+			"person picks it up by typing /sdlc:next in Claude Code"
 	}
 	return check{Name: "loop state", State: stateOK, Detail: detail}
 }
@@ -317,7 +317,7 @@ func backlogCheck(s *store.Store, path, root string) check {
 	if len(backlog.Stories) == 0 {
 		return check{Name: "backlog", State: stateProblem,
 			Detail: relativeTo(root, path) + " has no stories",
-			Fix:    "add a story to it, or ask Claude Code for one with /sdlc:next"}
+			Fix:    "add a story to it: https://github.com/bbsnly/sdlc/blob/main/docs/guides/writing-stories.md"}
 	}
 	noun := "stories"
 	if len(backlog.Stories) == 1 {

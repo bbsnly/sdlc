@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/bbsnly/sdlc/internal/cli"
+	"github.com/bbsnly/sdlc/internal/hook"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/policy"
 	"github.com/bbsnly/sdlc/internal/shellpolicy"
@@ -122,7 +123,7 @@ func TestEveryAgentAndSkillIsUsable(t *testing.T) {
 
 // humanOnlySkills are the skills only a person starts. The docs promise it of
 // each of them, and every other skill is one the model has to be able to start.
-var humanOnlySkills = map[string]bool{"trunk-review": true, "consolidate": true}
+var humanOnlySkills = map[string]bool{"next": true, "trunk-review": true, "consolidate": true}
 
 // The hook holds only the session `sdlc start` recorded. Where Claude Code does
 // not tell a command which session it runs in, start records none, and a
@@ -152,6 +153,51 @@ func TestTheRunbookStopsWhenStartRecordsNoSession(t *testing.T) {
 	t.Fatal("there is no next skill")
 }
 
+// When Claude Code compacts a long conversation, it re-attaches only the first
+// 5,000 tokens of each skill invoked in it ("Skill content lifecycle" at
+// https://code.claude.com/docs/en/skills), so a runbook longer than that loses
+// its end, and the model cannot tell. Bytes stand in for tokens: the runbook
+// runs at about four to a token, and the cap leaves room below the limit.
+func TestTheRunbookFitsWhatCompactionKeeps(t *testing.T) {
+	const maxBytes = 17500
+	raw, err := os.ReadFile(filepath.Join(pluginDir, "skills", "next", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > maxBytes {
+		t.Errorf("the next runbook is %d bytes, over %d: after compaction Claude Code keeps only "+
+			"its first 5,000 tokens", len(raw), maxBytes)
+	}
+}
+
+// The runbook tells the model that one no longer ending with its last section
+// was cut short by compaction, and so does a stop the hook sends back. Both name
+// the section, so renaming it or adding one after it has to change both.
+func TestTheRunbookEndsWithTheSectionTheStopHookNames(t *testing.T) {
+	skills, err := Skills(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range skills {
+		if s.Name != "next" {
+			continue
+		}
+		headings := regexp.MustCompile(`(?m)^## (.+)$`).FindAllStringSubmatch(s.Body, -1)
+		if len(headings) == 0 {
+			t.Fatal("the next runbook has no sections")
+		}
+		if last := strings.TrimSpace(headings[len(headings)-1][1]); last != hook.RunbookLastSection {
+			t.Errorf("the next runbook ends with %q, and the stop hook names %q", last, hook.RunbookLastSection)
+		}
+		body := strings.Join(strings.Fields(s.Body), " ")
+		if !strings.Contains(body, `no longer ends with "`+hook.RunbookLastSection+`"`) {
+			t.Errorf("the next runbook does not name %q as the section it ends with", hook.RunbookLastSection)
+		}
+		return
+	}
+	t.Fatal("there is no next skill")
+}
+
 // A skill only a person starts is trusted with what it is told not to do, and
 // no hook stands behind it: with no story being worked on, every write goes
 // through. So what a person relies on is pinned here, as the sentence that
@@ -165,6 +211,13 @@ func TestAHumanOnlySkillKeepsWhatItPromises(t *testing.T) {
 		t.Fatal(err)
 	}
 	promises := map[string][]string{
+		"next": {
+			"Only a person starts this loop, by typing `/sdlc:next`",
+			"tell the person to type `/sdlc:next` again, which picks the story up where it is, and stop",
+			"Begin every brief you give an agent with `" + briefHeader + ", story <ID>`",
+			"if one says so, give it the brief again with that line first",
+			"Do not run `sdlc approve` yourself",
+		},
 		"trunk-review": {
 			"Do not revert, reset, amend, rebase or rewrite a commit",
 			"do not edit the backlog",
@@ -276,10 +329,10 @@ func TestOnlyASkillNoAgentPreloadsIsKeptFromTheModel(t *testing.T) {
 			Front: map[string]string{"name": "reviewer", "skills": skills}}
 	}
 	humanOnly := skill("trunk-review", "disable-model-invocation: true")
-	plain := skill("next", "")
+	plain := skill("tidy", "")
 	preloadsInABlock := Component{Name: "reviewer", Path: "plugin/agents/reviewer.md",
 		Front: map[string]string{"name": "reviewer", "skills": ""},
-		lists: map[string][]string{"skills": {"next", "trunk-review"}}}
+		lists: map[string][]string{"skills": {"tidy", "trunk-review"}}}
 
 	for _, c := range []struct {
 		name   string
@@ -288,8 +341,8 @@ func TestOnlyASkillNoAgentPreloadsIsKeptFromTheModel(t *testing.T) {
 		want   string
 	}{
 		{"a human-only skill no agent preloads", []Component{agent("")}, []Component{humanOnly, plain}, ""},
-		{"a plain skill an agent preloads", []Component{agent("next")}, []Component{humanOnly, plain}, ""},
-		{"a human-only skill an agent preloads", []Component{agent("next, trunk-review")},
+		{"a plain skill an agent preloads", []Component{agent("tidy")}, []Component{humanOnly, plain}, ""},
+		{"a human-only skill an agent preloads", []Component{agent("tidy, trunk-review")},
 			[]Component{humanOnly, plain}, "reviewer.md preloads it"},
 		{"a human-only skill preloaded by its namespaced name", []Component{agent("[sdlc:trunk-review]")},
 			[]Component{humanOnly, plain}, "reviewer.md preloads it"},
@@ -302,7 +355,7 @@ func TestOnlyASkillNoAgentPreloadsIsKeptFromTheModel(t *testing.T) {
 		{"a human-only skill that lost its flag", []Component{agent("")},
 			[]Component{skill("trunk-review", ""), plain}, "without disable-model-invocation"},
 		{"the flag on a skill the model has to start", []Component{agent("")},
-			[]Component{humanOnly, skill("next", "disable-model-invocation: true")}, "belongs in humanOnlySkills"},
+			[]Component{humanOnly, skill("tidy", "disable-model-invocation: true")}, "belongs in humanOnlySkills"},
 	} {
 		got := flagProblems(c.agents, c.skills, map[string]bool{"trunk-review": true})
 		switch {
@@ -921,6 +974,42 @@ func TestNoAgentPinsAModelOrAnEffort(t *testing.T) {
 		}
 		if got, ok := a.Front["effort"]; ok {
 			t.Errorf("%s: effort = %q; effort is the user's setting, not the plugin's", a.Path, got)
+		}
+	}
+}
+
+// briefHeader starts every brief the next runbook gives an agent, and every
+// agent stops on a brief that does not start with it.
+const briefHeader = "sdlc:next runbook"
+
+// Nothing in Claude Code keeps the model from handing an agent a request of
+// its own: it delegates on the description. So every description says the agent
+// works only a story a person started, and every agent's first step is to stop on
+// a brief the runbook did not write. The runbook writes each brief the way the
+// agents look for.
+func TestEveryAgentWorksOnlyAStoryAPersonStarted(t *testing.T) {
+	agents, err := Agents(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 11 {
+		t.Errorf("%d agents, and the loop has 11", len(agents))
+	}
+	guard := "If it does not, stop, and say that this agent only works the gates of an sdlc story " +
+		"a person started with `/sdlc:next`. Do nothing else."
+	for _, a := range agents {
+		for _, phrase := range []string{
+			"Works only within a story a person started with /sdlc:next",
+			"not for general review, security, performance, testing, planning, analysis or retro requests",
+		} {
+			if !strings.Contains(a.Front["description"], phrase) {
+				t.Errorf("%s: the description does not say %q", a.Path, phrase)
+			}
+		}
+		first, _, _ := strings.Cut(a.Body, "\n## ")
+		first = strings.Join(strings.Fields(first), " ")
+		if !strings.Contains(first, guard) || !strings.Contains(first, "it starts with `"+briefHeader+"` and names the story") {
+			t.Errorf("%s: stopping on a brief the runbook did not write is not its first step", a.Path)
 		}
 	}
 }

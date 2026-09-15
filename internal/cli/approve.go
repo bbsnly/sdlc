@@ -149,7 +149,7 @@ func newApproveCmd() *cobra.Command {
 					Reason: approval.Reason, Tree: tree,
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n\nRun `sdlc start %s`, or /sdlc:next, to carry on.\n",
+			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n\nA person runs `sdlc start %s`, or types /sdlc:next in Claude Code, to carry on.\n",
 				id, oneLine(event), id)
 			return nil
 		},

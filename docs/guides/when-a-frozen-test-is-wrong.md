@@ -79,7 +79,7 @@ answer it first and pick the story up again:
 $ sdlc approve US-001
 US-001  approved (frozen_test_wrong)
 
-Run `sdlc start US-001`, or /sdlc:next, to carry on.
+A person runs `sdlc start US-001`, or types /sdlc:next in Claude Code, to carry on.
 
 $ sdlc start US-001
 ```

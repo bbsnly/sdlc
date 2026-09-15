@@ -22,7 +22,7 @@
         }
       ],
       "non_goals": ["persistence", "currency conversion"],
-      "notes": "This is an example. Replace it with a story of your own, or delete it and write one against .sdlc/templates/story.schema.json."
+      "notes": "This is an example. Replace it with a story of your own, or delete it and write one against .sdlc/templates/story.schema.json. A person works a story by typing /sdlc:next in Claude Code."
     }
   ]
 }

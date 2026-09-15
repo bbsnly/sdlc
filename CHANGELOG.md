@@ -61,6 +61,23 @@ not change and it is never reused.
 
 ### Changed
 
+- In Claude Code, only a person starts the loop. `/sdlc:next` carries
+  `disable-model-invocation`, so the model no longer starts it when asked to
+  pick up work, and its description is no longer in the session. Every agent's
+  description says it works only within a story a person started with
+  `/sdlc:next` and is not for general review, security, performance, testing,
+  planning, analysis or retro requests, and its first step is to stop on a
+  brief the runbook did not write; the runbook begins each brief with the story.
+  The agents are told this, and nothing enforces it.
+- The runbook is shorter, so all of it survives when Claude Code compacts a long
+  conversation, and handing a decision to a person and what to do when a
+  command fails now come before the gates. If its last section is gone anyway,
+  it and the `Stop` hook tell the assistant to ask the person to type
+  `/sdlc:next` again.
+- `sdlc init`, `status`, `doctor` and `approve`, the fixes for `SDLC-E0002` and
+  `SDLC-E0011`, the contract section, the configuration and the example story
+  say that a person starts a story, with `sdlc start` or by typing
+  `/sdlc:next`, and that setting sdlc up in a repository is the person's choice.
 - Every agent is told it runs unattended: it finishes what it says it will do
   or says what it is blocked on, checks each claim against a tool result, and
   summarises command output rather than pasting it. Every reviewer is told not
@@ -68,6 +85,13 @@ not change and it is never reused.
   author is told not to skip a test, mock the unit a criterion is about or
   catch the error a test should see, and the implementer not to swallow that
   error or add a flag only a test sets.
+
+### Removed
+
+- The plugin's agents as a review kit of their own. Asked for a code review, a
+  design review or an analysis outside a story a person started with
+  `/sdlc:next`, an agent is told to say it only works sdlc gates and stop, with
+  or without the binary.
 
 ### Fixed
 

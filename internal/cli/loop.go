@@ -327,7 +327,7 @@ func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool, ses
 	}
 	fmt.Fprintf(w, "%s %s  %s\n\n", verb, id, oneLine(story.Title))
 	printGates(w, record)
-	fmt.Fprint(w, "\nNext: run /sdlc:next in Claude Code to work the story.\n")
+	fmt.Fprint(w, "\nNext: a person types /sdlc:next in Claude Code to work the story.\n")
 	return nil
 }
 

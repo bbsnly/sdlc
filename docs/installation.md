@@ -3,9 +3,11 @@
 Two things get installed: the `sdlc` binary, which owns the loop's state and
 enforces its rules, and the Claude Code plugin, which is what your session
 talks to. The loop needs both, and in the session working a story the plugin
-tells you if the binary is missing rather than quietly enforcing nothing. The
-plugin's agents work without the binary; see
-[the plugin without the binary](#the-plugin-without-the-binary).
+tells you if the binary is missing rather than quietly enforcing nothing.
+
+The plugin does nothing until a person types `/sdlc:next`. In Claude Code only
+a person can start its skills. Its agents are told to work only a gate of a
+story you started and to stop on anything else, but nothing enforces that.
 
 ## 1. The binary
 
@@ -149,10 +151,11 @@ In Claude Code:
 ```
 
 The repository is its own marketplace, so there is nothing else to add. That
-gives you the `/sdlc:next` skill, two skills you run yourself —
-`/sdlc:trunk-review` to look back at what landed and `/sdlc:consolidate` to turn
-the retros into changes to your contract and configuration — eleven agents, and
-the `PreToolUse`, `PostToolUse` and `Stop` hooks that do the enforcing.
+gives you three skills only you start in Claude Code — `/sdlc:next` to work the
+loop, `/sdlc:trunk-review` to look back at what landed and `/sdlc:consolidate`
+to turn the retros into changes to your contract and configuration — eleven
+agents, and the `PreToolUse`, `PostToolUse` and `Stop` hooks that do the
+enforcing.
 
 Worth knowing: the marketplace serves the repository's default branch, not a
 tag. `/plugin update sdlc@sdlc` therefore gives you the plugin as it is on
@@ -169,13 +172,12 @@ full path of the binary.
 
 ### The plugin without the binary
 
-If you only want the agents, install the plugin and stop there. Without the
-binary:
+Installed without the binary, the plugin stays out of the way:
 
-- The agents run. Ask for the code reviewer, the architect or the researcher
-  and you get their findings in the session. What they would have stored with
-  `sdlc artifact write` or `sdlc review add` is not stored, because that is the
-  binary's job.
+- The agents are not a general review kit. Each is told to work only a gate of
+  a story a person started with `/sdlc:next`, and to say so and stop when handed
+  anything else, such as a code review or an analysis. The model follows that
+  as an instruction; nothing enforces it.
 - `/sdlc:next` says the binary is missing, offers to install it, and does
   nothing else until you say yes. It does not work the gates by hand.
 - The hook enforces nothing, and says nothing either, so every session carries

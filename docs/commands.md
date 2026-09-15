@@ -484,7 +484,7 @@ first and names it:
 
 ```console
 $ story=$(sdlc status --json | jq -r '.active // .next.story')
-$ cost=$(claude -p "Run /sdlc:next" --output-format json | jq .total_cost_usd)
+$ cost=$(claude -p "/sdlc:next" --output-format json | jq .total_cost_usd)
 $ sdlc cost add --story "$story" --usd "$cost"
 ```
 

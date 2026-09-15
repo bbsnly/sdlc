@@ -24,8 +24,8 @@ repository inside the first. The hook stops at the same place, so no rule applie
 
 This repository has no `.sdlc/config.json`, so it does not take part in the loop yet.
 
-Run `sdlc init` in the root of the repository. It writes the configuration, a starter backlog,
-and the contract section your project's `CLAUDE.md` needs.
+If you want the loop in this repository, run `sdlc init` in its root yourself. It writes the
+configuration, a starter backlog, and the contract section your project's `CLAUDE.md` needs.
 
 ### SDLC-E0003
 
@@ -119,7 +119,8 @@ first.
 
 The command you ran acts on the story currently being worked on, and no iteration is active.
 
-Run `sdlc start` to begin one on the next runnable story. `sdlc cost` and `sdlc cost add` also
+A person runs `sdlc start`, or types `/sdlc:next` in Claude Code, to begin one on the next
+runnable story. `sdlc cost` and `sdlc cost add` also
 take `--story`, which is how a runner records what a session cost after its iteration ended.
 
 ### SDLC-E0012

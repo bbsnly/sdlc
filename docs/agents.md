@@ -8,6 +8,13 @@ change cannot notice what only makes sense if you already knew why, and a
 verifier that watched the implementation happen is checking its memory rather
 than the code.
 
+None of them is meant to start on its own. Each is told to work only a gate of a
+story a person started by typing `/sdlc:next`, when that runbook hands it a
+brief naming the story, and its description says it is not for general review,
+security, performance, testing, planning, analysis or retro requests. Handed one
+anyway, it is told to say it only works sdlc gates and stop. These are
+instructions, not a barrier: nothing enforces them.
+
 ## Who does what
 
 | Agent | Gate | Can it block? | Writes |
@@ -67,7 +74,10 @@ merged. Run the loop on the strongest model you are willing to pay for.
 
 An agent is a markdown file under `plugin/agents/` with frontmatter. The name in
 the frontmatter and the file name must match, and the plugin exposes it as
-`sdlc:<name>`.
+`sdlc:<name>`. Its description says it works only within a story a person
+started with `/sdlc:next`, and its first step is to stop on a brief that does
+not start with `sdlc:next runbook` and name the story; the plugin's tests refuse
+an agent without both.
 
 To add a reviewer to a gate, add it to the reviewer registry in
 `internal/model/model.go` as well — the registry is what a gate reads when it
@@ -88,8 +98,12 @@ See [enforcement](enforcement.md) for the full list and what each refusal says.
 ## What they are told
 
 These are instructions rather than refusals, so nothing enforces them. The
-first two go to every agent:
+first three go to every agent:
 
+- They work only a gate of a story a person started. The runbook begins every
+  brief with `sdlc:next runbook` and the story's id, and a brief without them
+  is one the runbook did not write: the agent says it only works sdlc gates,
+  and stops.
 - They run unattended. Nobody answers a question mid-task, so an agent finishes
   what it says it will do or stops and says what it is blocked on.
 - Every claim is checked against a tool result from the session, and what could
