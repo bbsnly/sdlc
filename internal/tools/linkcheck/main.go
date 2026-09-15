@@ -272,7 +272,6 @@ func isExternal(target string) bool {
 // resolve, and the rest is not ours.
 var skipped = map[string]bool{
 	".git":                        true,
-	"node_modules":                true,
 	"dist":                        true,
 	"plan":                        true,
 	"internal/scaffold/templates": true,
@@ -299,7 +298,9 @@ func markdownFiles(root string) ([]string, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			if rel != "." && (skipped[rel] || strings.HasPrefix(d.Name(), ".") && rel != ".github") {
+			// Installed packages are not ours wherever npm puts them, and the
+			// markdownlint this repository runs is installed under .github/tools.
+			if rel != "." && (skipped[rel] || d.Name() == "node_modules" || strings.HasPrefix(d.Name(), ".") && rel != ".github") {
 				return filepath.SkipDir
 			}
 			return nil

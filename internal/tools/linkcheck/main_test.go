@@ -60,6 +60,24 @@ func TestLinksResolve(t *testing.T) {
 	}
 }
 
+// A package's README links to files the package does not ship. The skip was
+// keyed by path, so it held for node_modules at the root and not for the one
+// `./task markdownlint` installs under .github/tools.
+func TestInstalledPackagesAreNotChecked(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "README.md", "ok\n")
+	write(t, root, "node_modules/a/README.md", "[x](./missing.md)\n")
+	write(t, root, ".github/tools/markdownlint/node_modules/b/README.md", "[x](./missing.md)\n")
+
+	got, err := checkLinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("installed packages were link-checked: %v", got)
+	}
+}
+
 func TestReadmeMayNotLinkIntoDocs(t *testing.T) {
 	root := t.TempDir()
 	// The link resolves perfectly in the repository. That is exactly why an
