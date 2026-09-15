@@ -201,6 +201,16 @@ func snapshot(t *testing.T, roots ...string) map[string]string {
 			if err != nil {
 				return err
 			}
+			// A directory's time on Windows comes from its parent's index, which
+			// NTFS brings up to date whenever it gets round to it, so a directory
+			// the fixture wrote into reads as changed by a hook that wrote
+			// nothing. What was written into it is an entry of its own. The
+			// other platforms compare the time too, and catch a file created and
+			// removed again.
+			if d.IsDir() && runtime.GOOS == "windows" {
+				seen[path] = info.Mode().String()
+				return nil
+			}
 			seen[path] = fmt.Sprintf("%v %d %s", info.Mode(), info.Size(), info.ModTime().UTC().Format(time.RFC3339Nano))
 			return nil
 		})
@@ -356,7 +366,7 @@ func assertHeld(t *testing.T, l launcher, dir, event, name, stdout string) {
 	}
 }
 
-// msysPath is a Windows path as Git Bash writes it: C:\Users\x is /c/Users/x.
+// msysPath is a Windows path as Git Bash writes it: C:\Users\dev is /c/Users/dev there.
 func msysPath(p string) string {
 	volume := filepath.VolumeName(p)
 	if len(volume) != 2 || volume[1] != ':' {
