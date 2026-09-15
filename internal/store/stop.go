@@ -46,6 +46,9 @@ func (s *Store) SaveStopCount(c StopCount) error {
 // ClearStopCount removes the count.
 func (s *Store) ClearStopCount() error {
 	path := filepath.Join(s.root, filepath.FromSlash(stopFile))
+	if s.leaves(path) {
+		return sdlcerr.New(sdlcerr.StateUnwritable, stopFile+" could not be removed", leavesWhy).WithFix(leavesFix)
+	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			stopFile+" could not be removed",

@@ -61,6 +61,9 @@ If `sdlc` itself left a file it cannot read, that is a bug: please open an issue
 half-finished — but nothing was recorded either.
 
 Check that the directory is writable and that the disk is not full.
+It is refused, too, when `.sdlc/` or a directory in it is a link to somewhere
+outside the repository, as a clone can bring one: the loop keeps its state inside
+the repository. Replace the link with a directory of the same name.
 
 It is also the code for **another sdlc command is still running**. Every command that writes
 loop state takes a lock first, and waits up to ten seconds for a command that holds it. The

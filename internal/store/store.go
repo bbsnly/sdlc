@@ -25,6 +25,7 @@ import (
 	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/fsx"
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
@@ -306,6 +307,9 @@ func (s *Store) SetActive(id string) error {
 // ClearActive ends the iteration.
 func (s *Store) ClearActive() error {
 	path := filepath.Join(s.root, filepath.FromSlash(activeFile))
+	if s.leaves(path) {
+		return sdlcerr.New(sdlcerr.StateUnwritable, "the iteration could not be ended", leavesWhy).WithFix(leavesFix)
+	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"the iteration could not be ended",
@@ -348,6 +352,9 @@ func (s *Store) SaveLock(l *model.Lock) error {
 // accident is the one thing that must not be easy.
 func (s *Store) ClearLock() error {
 	path := filepath.Join(s.root, filepath.FromSlash(lockFile))
+	if s.leaves(path) {
+		return sdlcerr.New(sdlcerr.StateUnwritable, "the test freeze could not be lifted", leavesWhy).WithFix(leavesFix)
+	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"the test freeze could not be lifted",
@@ -512,11 +519,32 @@ func (s *Store) writeJSON(path string, v any) error {
 	return s.writeFile(path, append(data, '\n'))
 }
 
+// leavesWhy and leavesFix explain a state path that resolves outside the
+// repository.
+const (
+	leavesWhy = "it leads outside the repository through a link, and the loop keeps its state inside it"
+	leavesFix = "replace the link with a directory of the same name in the repository"
+)
+
+// leaves reports whether path, with every link on the way to it followed, is
+// outside the repository. A clone brings links with everything else: with
+// .sdlc/state committed as a link to another directory, the stop hook wrote its
+// count into that directory, and every other write of the loop state would have
+// followed it there.
+func (s *Store) leaves(path string) bool {
+	_, outside := pathrules.Rel(s.root, path)
+	return outside
+}
+
 // writeFile writes atomically, so an interrupted write leaves the old file
 // intact rather than a truncated one. These files are the loop's memory: a
 // half-written record is worse than no record, because the loop would read it
 // and believe it.
 func (s *Store) writeFile(path string, data []byte) error {
+	if s.leaves(path) {
+		return sdlcerr.New(sdlcerr.StateUnwritable, relative(s.root, path)+" could not be written", leavesWhy).
+			WithFix(leavesFix)
+	}
 	if err := fsx.WriteFileAtomic(path, data, 0o644); err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			relative(s.root, path)+" could not be written",

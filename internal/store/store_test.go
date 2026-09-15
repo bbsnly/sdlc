@@ -646,3 +646,44 @@ func TestAStoryIDWithTwoDotsIsRefusedLikeTheHookRefusesIt(t *testing.T) {
 		}
 	}
 }
+
+// A clone brings links with everything else. With .sdlc/state committed as a
+// link to a directory outside the repository, the stop hook wrote its count
+// there, and every other write of the loop's state would have followed it.
+func TestStateIsNotWrittenThroughALinkOutOfTheRepository(t *testing.T) {
+	s := newStore(t)
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(s.root, ".sdlc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(s.root, ".sdlc", "state")); err != nil {
+		t.Skipf("this system cannot make a symlink: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "active"), []byte("A-1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, err := range map[string]error{
+		"SaveStopCount":  s.SaveStopCount(StopCount{Story: "A-1", Blocks: 1}),
+		"SetActive":      s.SetActive("A-2"),
+		"ClearActive":    s.ClearActive(),
+		"ClearStopCount": s.ClearStopCount(),
+		"ClearLock":      s.ClearLock(),
+	} {
+		if err == nil {
+			t.Errorf("%s went through a link out of the repository", name)
+		} else if got := codeOf(t, err); got != sdlcerr.StateUnwritable {
+			t.Errorf("%s: code = %s, want %s", name, got, sdlcerr.StateUnwritable)
+		}
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "active" {
+		t.Errorf("the directory outside holds %v, want only the active file it started with", entries)
+	}
+	if raw, err := os.ReadFile(filepath.Join(outside, "active")); err != nil || string(raw) != "A-1\n" {
+		t.Errorf("the active file outside was changed: %q, %v", raw, err)
+	}
+}
