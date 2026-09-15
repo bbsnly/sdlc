@@ -99,6 +99,12 @@ A formatter that fails is reported to the session with what it printed, and the
 file stays as it was written. Nothing is refused: the write has already
 happened.
 
+These commands run with your permissions, and `sdlc` runs them itself: `smoke`
+is covered by the prompt for `sdlc start`, and `fmt_file` gets no prompt at
+all. They are read from `.sdlc/config.json` in the repository, and a clone can
+bring `.sdlc/state/active` with it, so in a repository you did not write, read
+its `commands` before you work in it, as you would its `.claude/settings.json`.
+
 One thing worth knowing about the guessed `coverage` command: it writes a
 coverage profile to `.sdlc/state/cover.out`. That is a build artefact rather
 than loop state, and Gate 8 commits the whole story with `git add -A`, so if
