@@ -103,7 +103,7 @@ func TestGoInstallAtAVersionReportsThatVersion(t *testing.T) {
 	// carries a hash of what went into it, and a changed tree is a different
 	// version rather than a stale answer.
 	//
-	// Two separate caches had to be beaten. The extracted module and the
+	// Clearing the caches is not enough. The extracted module and the
 	// download cache live under GOMODCACHE and evictFromModuleCache clears
 	// them; the module *index* lives under GOCACHE and nothing clears it,
 	// which is how this test compiled a version of the tree from ten minutes
@@ -280,8 +280,12 @@ func evictFromModuleCache(t *testing.T) {
 			// A path that cannot be walked is one that is already not there.
 			return nil //nolint:nilerr // nothing to recover from; the RemoveAll below reports what matters
 		})
+		// Only tidiness rides on this: the version is unique to the tree, so a
+		// copy left behind cannot answer for it. A cache directory that will
+		// not empty -- macOS has refused one with "directory not empty" -- is
+		// no reason to fail an install that works.
 		if err := os.RemoveAll(p); err != nil {
-			t.Fatalf("evicting %s from the module cache: %v", p, err)
+			t.Logf("leaving %s in the module cache: %v", p, err)
 		}
 	}
 }
