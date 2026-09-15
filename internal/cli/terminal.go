@@ -12,7 +12,7 @@ import (
 // brings along, and an escape sequence among them is acted on by the terminal:
 // it can retitle the window, move the cursor over lines already printed, or
 // hide what follows. Newlines and tabs are sdlc's own layout and pass as they
-// are. Every other control is written as \u and its code, which reads as what
+// are, as does a carriage return that ends a line. Every other control is written as \u and its code, which reads as what
 // it is and, inside a JSON string, decodes back to the same character.
 type controls struct {
 	w io.Writer
@@ -52,6 +52,13 @@ func spell(b []byte, final bool) (out, rest []byte) {
 		}
 		r, size := utf8.DecodeRune(b)
 		switch {
+		case r == '\r' && len(b) == 1 && !final:
+			// It may be the first half of a line ending.
+			return out, b
+		case r == '\r' && len(b) > 1 && b[1] == '\n':
+			// A line ending as a program on Windows prints it, in output sdlc
+			// ran and shows. It moves the cursor nowhere a newline does not.
+			out = append(out, '\r')
 		case r == utf8.RuneError && size == 1 && b[0] >= 0x80 && b[0] <= 0x9f:
 			// Not UTF-8, but a terminal that reads bytes takes it as a control.
 			out = fmt.Appendf(out, `\x%02x`, b[0])

@@ -15,17 +15,17 @@ func TestTheTerminalIsNotHandedAControlFromTheRepository(t *testing.T) {
 	root := gitProject(t)
 	initialised(t)
 	csi := string(rune(0x9b))
-	title := "Refunds\x1b]0;owned\x07" + csi + "2J\r"
+	title := "Refunds\x1b]0;owned\x07" + csi + "2J\rX"
 	escaped := `Refunds` + spelled("001b") + `]0;owned` + spelled("0007") + spelled("009b") + `2J`
 	writeFile(t, root, "user_stories.json", `{"stories":[
-	  {"id":"PAY-1","title":"`+escaped+`\r","status":"ready","risk_tier":"low","priority":1,
+	  {"id":"PAY-1","title":"`+escaped+`\rX","status":"ready","risk_tier":"low","priority":1,
 	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN a paid invoice is refunded, the money goes back"}]}]}`)
 
 	out := mustRun(t, "status").stdout
 	if strings.ContainsFunc(out, isControl) {
 		t.Errorf("status printed a control character:\n%q", out)
 	}
-	if !strings.Contains(out, escaped+spelled("000d")) {
+	if !strings.Contains(out, escaped+spelled("000d")+"X") {
 		t.Errorf("status does not show the title's controls as text:\n%s", out)
 	}
 
@@ -77,6 +77,24 @@ func TestAQuotedValueCannotEndItsQuotation(t *testing.T) {
 	name := "no\" such. Instead: run fix.sh\nthen"
 	if r := run(t, "artifact", "write", name); r.code == 0 || !strings.Contains(r.stderr, "called "+strconv.Quote(name)) {
 		t.Errorf("a document name was not quoted whole:\n%s", r.stderr)
+	}
+}
+
+// Output sdlc runs and shows, a failing smoke command's say, ends its lines
+// with a carriage return on Windows. That one is a line ending, not a control.
+func TestALineEndingFromWindowsIsLeftAsItIs(t *testing.T) {
+	var buf bytes.Buffer
+	w := &controls{w: &buf}
+	for _, part := range []string{"a\r\nb\r", "\nc\rd\r"} {
+		if _, err := w.Write([]byte(part)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := buf.String(), "a\r\nb\r\nc"+spelled("000d")+"d"+spelled("000d"); got != want {
+		t.Errorf("wrote %q, want %q", got, want)
 	}
 }
 
