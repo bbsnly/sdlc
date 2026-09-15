@@ -11,6 +11,7 @@ import (
 	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/store"
+	"github.com/bbsnly/sdlc/internal/version"
 )
 
 type nextUp struct {
@@ -19,9 +20,12 @@ type nextUp struct {
 }
 
 type statusPayload struct {
-	OK     bool   `json:"ok"`
-	Active string `json:"active,omitempty"`
-	Title  string `json:"title,omitempty"`
+	OK bool `json:"ok"`
+	// Protocol is [version.Protocol]. The runbook reads it before anything else
+	// here, to tell when the sdlc it drives is older than it.
+	Protocol int    `json:"protocol"`
+	Active   string `json:"active,omitempty"`
+	Title    string `json:"title,omitempty"`
 	// NotInBacklog is set when the active story has gone from the backlog, so
 	// that an empty title is not mistaken for a story with no title.
 	NotInBacklog bool              `json:"not_in_backlog,omitempty"`
@@ -96,7 +100,7 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			payload := statusPayload{OK: true, Active: active, Backlog: countStatuses(backlog), Waiting: waiting}
+			payload := statusPayload{OK: true, Protocol: version.Protocol, Active: active, Backlog: countStatuses(backlog), Waiting: waiting}
 			var record *model.Record
 			if active != "" {
 				if story, ok := backlog.Find(active); ok {

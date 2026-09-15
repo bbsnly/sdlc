@@ -55,11 +55,12 @@ An active story that has gone from the backlog reads as `(not in the backlog)`,
 with `"not_in_backlog": true` in `--json`. The commit gate refuses such a story,
 so put it back, or run `sdlc stop` to end the iteration.
 
-Three fields in `--json` are worth knowing by name, because a skill reads them to
+Four fields in `--json` are worth knowing by name, because a skill reads them to
 decide what to do:
 
 | Field | What it says |
 | --- | --- |
+| `protocol` | what the plugin's runbook can count on from this build. `/sdlc:next` stops when it is lower than the runbook needs, which means the `sdlc` on your PATH is older than the plugin |
 | `next_gate` | the gate to work now — the first one that has not passed. Absent when every gate is behind you, or when no story is active |
 | `next` | the story `sdlc start` would pick up. Only present when nothing is active, and absent while a story waits for a person |
 | `waiting` | every story handed to a person with `sdlc escalate` and not yet answered, with the question it asks |
@@ -415,8 +416,9 @@ $ sdlc version --json
 | --- | --- |
 | `--short` | print the version alone, with nothing around it |
 
-With `--json` it prints `version`, `commit`, `date` and `dirty`, and with
-`--short` as well, `version` alone.
+With `--json` it prints `version`, `commit`, `date`, `dirty` and `protocol`,
+and with `--short` as well, `version` alone. `protocol` is the same one
+[`sdlc status --json`](#sdlc-status) carries.
 
 ## `sdlc hook EVENT`
 

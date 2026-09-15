@@ -213,6 +213,9 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   Agent Skill, for any agent that reads them. It carries no binary, no agents
   and no hook, so the skill checks for the tool and for the agents before it
   does anything and says what to install if either is missing.
+- `sdlc status --json` and `sdlc version --json` carry a `protocol`, and
+  `/sdlc:next` stops when the `sdlc` on PATH speaks an older one than it needs,
+  rather than working gates that build does not enforce.
 - A protected path spelled with a letter that folds to ASCII at a different
   length is still the protected path. `.ſdlc/state/active` (a long s) is
   `.sdlc/state/active` to a case-insensitive filesystem, and the rules compared
