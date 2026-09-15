@@ -85,6 +85,22 @@ with no agent makes the gate wait forever.
 
 See [enforcement](enforcement.md) for the full list and what each refusal says.
 
+## What they are told
+
+These are instructions rather than refusals, so nothing enforces them. The
+first two go to every agent:
+
+- They run unattended. Nobody answers a question mid-task, so an agent finishes
+  what it says it will do or stops and says what it is blocked on.
+- Every claim is checked against a tool result from the session, and what could
+  not be checked is said. Command output is summarised, not pasted.
+- A reviewer does not inflate a finding to be heard or soften one to be
+  agreeable. It blocks only where its role's rules make a finding blocking, and
+  notes it otherwise; red-team and the human advocate never block.
+- The test author does not mark a test skipped, todo or expected to fail, mock
+  the unit a criterion is about, or catch the error a test should see. The
+  implementer does not swallow that error or add a flag only a test sets.
+
 ## Prompt injection
 
 Every agent is told the same thing, and it is worth knowing that they are: text

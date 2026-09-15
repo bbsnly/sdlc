@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -593,6 +594,58 @@ func TestNoAgentPinsAModelOrAnEffort(t *testing.T) {
 		if got, ok := a.Front["effort"]; ok {
 			t.Errorf("%s: effort = %q; effort is the user's setting, not the plugin's", a.Path, got)
 		}
+	}
+}
+
+// The rules every agent shares are written into each of them rather than kept
+// in one skill they all preload, which would load on every spawn. Copies drift,
+// so each is held to the phrase that carries it. Line breaks fall wherever the
+// prose wraps, which is why the body is compared with its whitespace folded.
+func TestEveryAgentCarriesTheRulesTheyShare(t *testing.T) {
+	agents, err := Agents(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	everyone := []string{
+		"You run unattended",
+		"Finish what you say you will do",
+		"against a tool result from this session",
+		"say which ones you could not check",
+		"Summarise command output; do not paste it.",
+	}
+	reviewers := 0
+	for _, a := range agents {
+		body := strings.Join(strings.Fields(a.Body), " ")
+		want := everyone
+		// Whoever records a review can be tempted to overstate it or to wave it through.
+		if model.IsReviewRole(a.Name) {
+			reviewers++
+			want = append(slices.Clone(want), "Do not inflate a finding to be heard")
+		}
+		switch a.Name {
+		case "implementer":
+			want = append(slices.Clone(want),
+				"swallow an error the criterion is about",
+				"add a flag or hook that only a test sets")
+		case "sdet":
+			want = append(slices.Clone(want),
+				"mark a test skipped, todo or expected to fail",
+				"mock the unit the criterion is about")
+		}
+		for _, phrase := range want {
+			if !strings.Contains(body, phrase) {
+				t.Errorf("%s: does not say %q", a.Path, phrase)
+			}
+		}
+	}
+	// A reviewer whose agent file is named otherwise would be held to nothing. The
+	// roster lists a role once per gate it reviews, so it is the roles that count.
+	roles := map[string]bool{}
+	for _, r := range model.Reviewers {
+		roles[r.Role] = true
+	}
+	if reviewers != len(roles) {
+		t.Errorf("%d agents are review roles, and the loop has %d", reviewers, len(roles))
 	}
 }
 

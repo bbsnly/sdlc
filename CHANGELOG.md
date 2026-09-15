@@ -7,6 +7,18 @@ All notable changes to this project are documented here. The format follows
 Error codes are part of the interface: once published, a code's meaning does
 not change and it is never reused.
 
+## [Unreleased]
+
+### Changed
+
+- Every agent is told it runs unattended: it finishes what it says it will do
+  or says what it is blocked on, checks each claim against a tool result, and
+  summarises command output rather than pasting it. Every reviewer is told not
+  to inflate a finding to be heard or soften one to be agreeable. The test
+  author is told not to skip a test, mock the unit a criterion is about or
+  catch the error a test should see, and the implementer not to swallow that
+  error or add a flag only a test sets.
+
 ## [0.1.1](https://github.com/bbsnly/sdlc/releases/tag/v0.1.1) - 2026-09-15
 
 ### Changed

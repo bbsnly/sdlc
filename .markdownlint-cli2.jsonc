@@ -18,6 +18,10 @@
     // The convention is load-bearing; the rule would forbid it.
     "MD014": false,
 
+    // The changelog repeats "Changed" and "Fixed" under every release, as Keep a
+    // Changelog has it. A heading is a duplicate only beside its siblings.
+    "MD024": { "siblings_only": true },
+
     // Bare URLs are fine in prose where the URL is the thing being named.
     "MD034": false
   },
