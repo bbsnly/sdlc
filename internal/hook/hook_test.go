@@ -654,6 +654,13 @@ func TestTheLoopIsNotLookedForAboveAGitCeiling(t *testing.T) {
 	if r := call(t, event(through, "Write", "", filepath.Join(alias, ".sdlc", "state", "active")), session(through, root)); denied(r) {
 		t.Errorf("the rules applied below a ceiling reached through a link: %+v", r)
 	}
+	// An entry after an empty one is left as written, and git compares it with
+	// the directory resolved, so the link's own path is no ceiling: sdlc finds
+	// the repository there, and the rules apply.
+	unresolved := string(filepath.ListSeparator) + alias
+	if r := call(t, event(through, "Write", "", filepath.Join(alias, ".sdlc", "state", "active")), session(through, unresolved)); !denied(r) {
+		t.Errorf("a ceiling naming a link, after an empty entry, turned the rules off: %+v", r)
+	}
 }
 
 func TestANotebookPathIsGovernedToo(t *testing.T) {

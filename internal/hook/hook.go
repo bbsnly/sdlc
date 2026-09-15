@@ -740,17 +740,18 @@ func projectRoot(start string, walked map[string]bool, ceilings []string) (strin
 }
 
 // atCeiling reports whether GIT_CEILING_DIRECTORIES names dir, which git does not
-// look in from below it. The entries are resolved, so dir is too when there are
-// any: a path through a link, as /tmp is on macOS, still matches.
+// look in from below it. Git compares the entries with the directory resolved,
+// and so does this: a path through a link, as /tmp is on macOS, matches an
+// entry naming where the link leads, and never one naming the link itself,
+// which an entry after an empty one is left as.
 func atCeiling(dir string, ceilings []string) bool {
 	if len(ceilings) == 0 {
 		return false
 	}
-	if slices.Contains(ceilings, dir) {
-		return true
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
 	}
-	resolved, err := filepath.EvalSymlinks(dir)
-	return err == nil && slices.Contains(ceilings, resolved)
+	return slices.Contains(ceilings, dir)
 }
 
 func exists(path string) bool {
