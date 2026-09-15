@@ -25,11 +25,19 @@ func cacheDir(t *testing.T) string {
 }
 
 // deadPID is the pid of a process that has exited: this test binary, run to do
-// nothing.
+// nothing. It stays the pid of that process for the rest of the test. Windows
+// gives a pid out again as soon as nothing holds the process, and a runner
+// busy enough started another under it: the lock it "left" had a holder that
+// was running, was never broken open, and 25 commands waited on it and failed.
 func deadPID(t *testing.T) int {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	// cmd holds the process until Wait, so this is still the one it started.
+	keepPID(t, cmd.Process.Pid)
+	if err := cmd.Wait(); err != nil {
 		t.Fatal(err)
 	}
 	return cmd.ProcessState.Pid()
