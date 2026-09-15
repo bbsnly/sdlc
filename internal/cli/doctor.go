@@ -224,15 +224,11 @@ func stateCheck(s *store.Store) check {
 		}
 	}
 	lock, err := s.Lock()
-	var newer *sdlcerr.Error
-	switch {
-	case store.IsUnknownFormat(err) && errors.As(err, &newer):
-		problem(newer.What+": "+newer.Why, newer.Fix)
-	case err != nil:
+	if err != nil {
 		problem(err.Error(), "every test is treated as frozen until .sdlc/state/tests.lock reads: "+
 			`restore it if you keep a copy, or lift it on the record with "sdlc unfreeze --reason ..." `+
 			`in your own terminal and run "sdlc freeze", which freezes the tests as they are now`)
-	case active != "" && (lock == nil || lock.Story != active):
+	} else if active != "" && (lock == nil || lock.Story != active) {
 		// The hook treats every test as frozen over this, and sends people here.
 		if record, err := s.Record(active); err == nil {
 			if at, standing := record.StandingFreeze(); standing {

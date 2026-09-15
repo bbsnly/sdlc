@@ -308,9 +308,7 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   reads again, every test file is treated as frozen, whether the write comes
   from a file tool or a shell command. The same goes for a `tests.lock` that
   was deleted, or rewritten to name another story or none, while the story's
-  record still holds the freeze; `sdlc doctor` names it. So does a freeze in a
-  format a newer sdlc wrote, which read as a freeze of nothing; doctor names its
-  format and says to upgrade.
+  record still holds the freeze; `sdlc doctor` names it.
 - A gate record that is missing or will not parse no longer opens the commit
   gate. Deleting `.sdlc/stories/<id>/gate-record.json` was the way to commit
   past every gate, without a word. The refusal names the file, `sdlc doctor`

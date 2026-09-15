@@ -856,33 +856,6 @@ func TestDoctorNamesLoopStateTheHookCannotRead(t *testing.T) {
 	}
 }
 
-// A freeze a newer sdlc wrote is not fixed by lifting it and freezing again with
-// this one. Doctor says which format it is in, and to upgrade.
-func TestDoctorNamesAFreezeANewerSdlcWrote(t *testing.T) {
-	root := gitProject(t)
-	mustRun(t, "init")
-	state := filepath.Join(root, ".sdlc", "state")
-	if err := os.MkdirAll(state, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	lock := `{"schema":"sdlc/tests-lock/2","story":"US-001","hashes":{}}`
-	if err := os.WriteFile(filepath.Join(state, "tests.lock"), []byte(lock), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	r := run(t, "doctor")
-	out := r.stdout + r.stderr
-	if !strings.Contains(out, `"sdlc/tests-lock/2"`) || !strings.Contains(out, "upgrade sdlc") {
-		t.Errorf("doctor did not name the format of the freeze, or say to upgrade:\n%s", out)
-	}
-	if strings.Contains(out, "sdlc unfreeze") {
-		t.Errorf("doctor sent a freeze a newer sdlc wrote to be lifted:\n%s", out)
-	}
-	if r.code == 0 {
-		t.Error("doctor exited zero with a freeze it cannot read")
-	}
-}
-
 // A freeze the record holds and tests.lock does not has the hook treating every
 // test as frozen, and sending people here. Doctor said the freeze all read.
 func TestDoctorNamesAFreezeTheLockNoLongerHolds(t *testing.T) {
@@ -893,7 +866,7 @@ func TestDoctorNamesAFreezeTheLockNoLongerHolds(t *testing.T) {
 	}
 	mustRun(t, "freeze")
 	lock := filepath.Join(root, ".sdlc", "state", "tests.lock")
-	for _, body := range []string{`{"schema":"sdlc/tests-lock/1"}`, `{"schema":"sdlc/tests-lock/1","story":"OTHER-1","files":{}}`} {
+	for _, body := range []string{"{}", `{"story":"OTHER-1","files":{}}`} {
 		if err := os.WriteFile(lock, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
