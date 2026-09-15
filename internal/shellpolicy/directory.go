@@ -91,7 +91,7 @@ func discardsTheWorkTree(words []string) bool {
 	sub, _, rest := gitCall(words[1:])
 	switch sub {
 	case "stash":
-		return len(rest) == 0 || !stashKeeps[rest[0]] && len(stashPaths(rest)) == 0
+		return len(rest) == 0 || !stashKeeps[rest[0]] && wholeTree(stashPaths(rest))
 	case "reset":
 		return hasWord(rest, "--hard") || hasWord(rest, "--merge") || hasWord(rest, "--keep")
 	case "checkout", "switch":
@@ -122,6 +122,30 @@ func stashPaths(rest []string) []string {
 		}
 	}
 	return nil
+}
+
+// wholeTree reports whether pathspecs name the whole work tree: none at all, its
+// top, which `:/` and `:(top)` name wherever git runs, or only what to leave
+// out, as `:!build` does.
+func wholeTree(pathspecs []string) bool {
+	positive := 0
+	for _, p := range pathspecs {
+		p = clean(p)
+		// A word ends at `)`, so `:(top)` arrives as `:(top`.
+		rest, top := strings.CutPrefix(p, ":(top")
+		if !top {
+			// clean took the slash off `:/`.
+			rest, top = strings.CutPrefix(p+"/", ":/")
+		}
+		switch {
+		case strings.HasPrefix(p, ":!") || strings.HasPrefix(p, ":^") || strings.HasPrefix(p, ":(exclude"):
+		case top && path.Clean("./"+rest) == ".":
+			return true
+		default:
+			positive++
+		}
+	}
+	return positive == 0
 }
 
 // stashKeeps are the stash commands that leave the work tree as it is.
