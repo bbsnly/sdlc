@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 Error codes are part of the interface: once published, a code's meaning does
 not change and it is never reused.
 
-## [Unreleased]
+## [0.1.1](https://github.com/bbsnly/sdlc/releases/tag/v0.1.1) - 2026-09-15
 
 ### Changed
 
@@ -22,6 +22,10 @@ not change and it is never reused.
   and the story holds every session until one picks it up. The session working
   a story cannot pass it on from inside: setting `CLAUDE_CODE_SESSION_ID`, and
   starting `claude` from its shell, are refused.
+- The plugin is documented as usable on its own. The installation guide said
+  the binary and the plugin are both needed, which is true of the loop but not
+  of the agents: without the binary they still review, nothing is stored or
+  enforced, and `/sdlc:next` offers the install and waits.
 
 ### Fixed
 
