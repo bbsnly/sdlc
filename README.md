@@ -36,7 +36,7 @@ and one command in your project.
 | Windows PowerShell | `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 \| iex` |
 | Node, any platform | `npx @bbsnly/sdlc install` |
 | Go 1.26 or newer | `go install github.com/bbsnly/sdlc/cmd/sdlc@latest` |
-| By hand | the archive for your platform from [Releases](https://github.com/bbsnly/sdlc/releases), checked against `checksums.txt` |
+| By hand | the prebuilt archive for your platform from [Releases](https://github.com/bbsnly/sdlc/releases), checked against `checksums.txt` — [step by step](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md#by-hand-from-a-release) |
 | From source | `git clone https://github.com/bbsnly/sdlc && cd sdlc && ./task build` |
 
 The first three download the same native binary and check it against the

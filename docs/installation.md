@@ -57,6 +57,61 @@ everything else in the loop put together.
 There is no postinstall script, so `npm install --ignore-scripts` changes
 nothing here — the download happens when you ask for it.
 
+### By hand, from a release
+
+Every [release](https://github.com/bbsnly/sdlc/releases) carries a prebuilt
+binary for each platform, so nothing needs compiling. Pick the archive for your
+machine:
+
+| Machine | Archive |
+| --- | --- |
+| macOS, Apple silicon | `sdlc_<version>_darwin_arm64.tar.gz` |
+| macOS, Intel | `sdlc_<version>_darwin_amd64.tar.gz` |
+| Linux, x86-64 | `sdlc_<version>_linux_amd64.tar.gz` |
+| Linux, ARM64 | `sdlc_<version>_linux_arm64.tar.gz` |
+| Windows, x64 | `sdlc_<version>_windows_amd64.zip` |
+| Windows, ARM64 | `sdlc_<version>_windows_arm64.zip` |
+
+Each holds the `sdlc` binary (`sdlc.exe` on Windows) with the licence, README
+and changelog beside it. Download it with `checksums.txt`, check the one against
+the other, and put the binary somewhere on your `PATH`.
+
+On macOS or Linux:
+
+```console
+$ version=0.1.0 asset=sdlc_0.1.0_darwin_arm64.tar.gz
+$ curl -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/${asset}"
+$ curl -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/checksums.txt"
+$ grep " ${asset}\$" checksums.txt | shasum -a 256 -c -
+$ tar -xzf "${asset}" sdlc
+$ mkdir -p ~/.local/bin && mv sdlc ~/.local/bin/
+```
+
+`shasum -c` prints `OK` for a good download; anything else, delete it and do not
+run it. `sha256sum -c -` does the same where `shasum` is missing. A binary
+downloaded through a browser on macOS is quarantined and refused on its first
+run; `xattr -d com.apple.quarantine sdlc` releases it, and `curl` does not
+quarantine what it downloads.
+
+On Windows, in PowerShell:
+
+```powershell
+$version = '0.1.0'; $asset = "sdlc_${version}_windows_amd64.zip"
+$base = "https://github.com/bbsnly/sdlc/releases/download/v$version"
+Invoke-WebRequest "$base/$asset" -OutFile $asset
+Invoke-WebRequest "$base/checksums.txt" -OutFile checksums.txt
+$want = ((Get-Content checksums.txt) -match " $([regex]::Escape($asset))$" -split '\s+')[0]
+(Get-FileHash $asset -Algorithm SHA256).Hash.ToLower() -eq $want
+Expand-Archive $asset -DestinationPath sdlc
+```
+
+The check prints `True` for a good download. Move `sdlc\sdlc.exe` into a
+directory on your `PATH` — `%LOCALAPPDATA%\Programs\sdlc\bin` is where the
+install script puts it — and open a new terminal.
+
+To go further than a checksum and confirm which workflow built the archive, see
+[Verifying a download yourself](#verifying-a-download-yourself).
+
 ### With Go
 
 ```console

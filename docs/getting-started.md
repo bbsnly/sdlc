@@ -10,8 +10,9 @@ $ curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
 ```
 
 On Windows, `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex`.
-There is also `npx @bbsnly/sdlc install`, `go install`, and a source build —
-[Installation](installation.md) has all of them, and how to verify a download.
+There is also `npx @bbsnly/sdlc install`, a prebuilt archive downloaded by
+hand, `go install`, and a source build — [Installation](installation.md) has
+all of them, and how to verify a download.
 
 Then, in Claude Code:
 
