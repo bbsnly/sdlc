@@ -111,6 +111,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   it too, and decides from what is recorded once it has it. A command killed
   part-way through a write no longer leaves a temporary file that the commit
   gate refuses as uncommitted work: the next command clears it.
+  On Windows, a holder that has exited counts as stopped even while another
+  program, such as a virus scan, still has it open.
 - Reviews are recorded against the thing they reviewed. A design review is
   stamped with the hash of the plan it read and a code review with the hash
   of the tree it read, so a review of an older version of the work shows as
