@@ -475,6 +475,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   into a shell. All three verify the download against the release's checksums
   before anything reaches your PATH, and all three install the same native
   binary — no wrapper, because the binary runs on every matching tool call.
+  `install.ps1` announces the PATH change it makes, so a terminal opened from
+  the Start menu finds `sdlc` without signing out first.
 - Release archives carry an SBOM and build provenance attestation. The tool
   that writes the SBOM runs between the build and the attestation, so it is
   checked against a pinned hash before it runs.

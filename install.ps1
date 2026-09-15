@@ -201,10 +201,7 @@ if ($env:SDLC_NO_PATH -eq '1') {
     Write-Host ''
     Write-Host "  PATH was left alone (SDLC_NO_PATH=1). Add $Dir to it yourself."
 } else {
-    # Read and write the raw registry value, not the expanded one. The cost of
-    # going below [Environment]::SetEnvironmentVariable is that already-open
-    # programs are not notified, which is why the message below says to open a
-    # new terminal -- it said so before this, and it is still what is true.
+    # Read and write the raw registry value, not the expanded one.
     # [Environment]::GetEnvironmentVariable returns %JAVA_HOME%\bin already
     # expanded, and writing that back as a plain string would permanently
     # freeze every such reference in the user's PATH at today's value.
@@ -221,6 +218,13 @@ if ($env:SDLC_NO_PATH -eq '1') {
             # rather than a value with a trailing separator.
             $updated = if ($userPath) { "$Dir;$userPath" } else { $Dir }
             $key.SetValue('Path', $updated, $kind)
+            # A registry write tells nobody. Explorer keeps the environment it
+            # started with until it hears WM_SETTINGCHANGE, and every terminal
+            # opened from the Start menu or the taskbar inherits it, so a new
+            # terminal did not find sdlc until the next sign-in. .NET broadcasts
+            # that message after any user-scope change, including removing a
+            # variable that was never set.
+            [Environment]::SetEnvironmentVariable('SDLC_PATH_REFRESH', $null, 'User')
             Write-Host ''
             Write-Host "  $Dir has been added to your PATH."
             Write-Host '  Open a new terminal for it to take effect.'
