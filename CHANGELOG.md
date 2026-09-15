@@ -158,6 +158,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   contract section, git, whether each configured command's program is
   installed, and whether the hooks can find the binary at all. Every problem
   it reports carries the command that fixes it.
+  `SDLC_BIN` is checked the way the hooks read it, as a path: a bare name found
+  on `PATH` is one they pass over, and doctor now says so.
 - Error codes `SDLC-E0001` through `SDLC-E0046`, each with a heading in
   [the troubleshooting page](https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md).
   Every error says what happened, why, and what to do about it.

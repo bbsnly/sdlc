@@ -760,6 +760,15 @@ func TestDoctorLooksForTheBinaryWhereTheHookDoes(t *testing.T) {
 			t.Errorf("SDLC_BIN=%s names nothing runnable and doctor said nothing: %+v", broken, c)
 		}
 	}
+
+	// exec.LookPath finds a bare name on PATH, and the launchers never look one
+	// up: they test SDLC_BIN as a path from where the hook runs, so SDLC_BIN=sdlc
+	// with sdlc on PATH is passed over like any other name that is not a file.
+	t.Setenv("PATH", filepath.Dir(bin))
+	t.Setenv("SDLC_BIN", name)
+	if c := binaryCheckIn(); c.State != stateProblem || !strings.Contains(c.Detail, "SDLC_BIN") {
+		t.Errorf("SDLC_BIN=%s is on PATH but is not a path the hooks run, and doctor said nothing: %+v", name, c)
+	}
 }
 
 // A failure early on must not produce a cascade of unrelated failures.

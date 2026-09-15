@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -431,10 +432,9 @@ func afterCasePattern(fields []string) []string {
 // the launcher's other place to look, and only a hook knows where that is.
 func binaryCheck() check {
 	bin := os.Getenv("SDLC_BIN")
-	if bin != "" {
-		if path, err := exec.LookPath(bin); err == nil {
-			return check{Name: "sdlc on PATH", State: stateOK, Detail: "SDLC_BIN: " + path}
-		}
+	if bin != "" && runnable(bin) {
+		path, _ := filepath.Abs(bin)
+		return check{Name: "sdlc on PATH", State: stateOK, Detail: "SDLC_BIN: " + path}
 	}
 	path, err := exec.LookPath("sdlc")
 	if bin != "" {
@@ -456,6 +456,18 @@ func binaryCheck() check {
 				`checkout "./task build" prints the line to add -- then open a new terminal`}
 	}
 	return check{Name: "sdlc on PATH", State: stateOK, Detail: path}
+}
+
+// runnable is the launchers' test for SDLC_BIN: a file at that path, read from
+// where the hook runs, and executable where that means anything. Not
+// exec.LookPath, which finds a bare name on PATH that the launchers never look
+// up, so doctor said ok while the hooks ran another sdlc.
+func runnable(bin string) bool {
+	info, err := os.Stat(bin)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	return runtime.GOOS == "windows" || info.Mode().Perm()&0o111 != 0
 }
 
 func sortedKeys[V any](m map[string]V) []string {
