@@ -311,7 +311,7 @@ func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool) err
 	if resume {
 		verb = "Resumed"
 	}
-	fmt.Fprintf(w, "%s %s  %s\n\n", verb, id, story.Title)
+	fmt.Fprintf(w, "%s %s  %s\n\n", verb, id, oneLine(story.Title))
 	printGates(w, record)
 	fmt.Fprint(w, "\nNext: run /sdlc:next in Claude Code to work the story.\n")
 	return nil
@@ -616,7 +616,7 @@ func printGates(w io.Writer, record *model.Record) {
 		recorded++
 		line := fmt.Sprintf("  %-16s %s", g, result.Status)
 		if result.Note != "" {
-			line += "  " + result.Note
+			line += "  " + oneLine(result.Note)
 		}
 		fmt.Fprintln(w, line)
 	}

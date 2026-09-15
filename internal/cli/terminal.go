@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -12,8 +13,9 @@ import (
 // brings along, and an escape sequence among them is acted on by the terminal:
 // it can retitle the window, move the cursor over lines already printed, or
 // hide what follows. Newlines and tabs are sdlc's own layout and pass as they
-// are, as does a carriage return that ends a line. Every other control is written as \u and its code, which reads as what
-// it is and, inside a JSON string, decodes back to the same character.
+// are, as does a carriage return that ends a line. Every other control is
+// written as \u and its code, which reads as what it is and, inside a JSON
+// string, decodes back to the same character.
 type controls struct {
 	w io.Writer
 	// pending is the start of a character the next write completes. fmt writes
@@ -71,3 +73,11 @@ func spell(b []byte, final bool) (out, rest []byte) {
 	}
 	return out, nil
 }
+
+// oneLine is free text from the repository printed on a line of sdlc's own: a
+// title, a gate's note, a waiting message. controls lets its line breaks
+// through, and one would start a line that reads as sdlc's, so they are
+// spelled out here.
+func oneLine(s string) string { return lineBreaks.Replace(s) }
+
+var lineBreaks = strings.NewReplacer("\r", `\r`, "\n", `\n`, "\t", `\t`)

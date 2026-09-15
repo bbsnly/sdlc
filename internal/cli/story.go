@@ -109,7 +109,7 @@ func printStories(cmd *cobra.Command, backlog *model.Backlog, path string, rows 
 			priority = fmt.Sprintf("%2s", strconv.Itoa(*r.Priority))
 		}
 		line := fmt.Sprintf("%s%-*s  %-*s  %s  %s",
-			marker, idWidth, r.ID, statusWidth, r.Status, priority, r.Title)
+			marker, idWidth, r.ID, statusWidth, r.Status, priority, oneLine(r.Title))
 		if len(r.waiting) > 0 {
 			line += "  (waiting on " + strings.Join(r.waiting, ", ") + ")"
 		}

@@ -127,6 +127,8 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   was already shown.
   A story id, status or name quoted in an error is escaped as well, so a quote
   or a line break in one cannot end the quotation early.
+  A line break in a title, a gate's note or a waiting message is written out
+  too, so it cannot start a line that reads as sdlc's own.
 - Reviews are recorded against the thing they reviewed. A design review is
   stamped with the hash of the plan it read and a code review with the hash
   of the tree it read, so a review of an older version of the work shows as

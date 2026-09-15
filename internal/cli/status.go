@@ -141,7 +141,7 @@ func newStatusCmd() *cobra.Command {
 				if finished {
 					state = "finished   "
 				}
-				title := payload.Title
+				title := oneLine(payload.Title)
 				if payload.NotInBacklog {
 					title = "(not in the backlog)"
 				}
@@ -155,7 +155,7 @@ func newStatusCmd() *cobra.Command {
 			}
 			fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))
 			for _, ws := range payload.Waiting {
-				fmt.Fprintf(w, "  waiting  %s  %s: %s\n", ws.Story, ws.Type, ws.Message)
+				fmt.Fprintf(w, "  waiting  %s  %s: %s\n", ws.Story, ws.Type, oneLine(ws.Message))
 			}
 			switch {
 			case payload.NotInBacklog:
@@ -172,7 +172,7 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprint(w, "\nRun /sdlc:next in Claude Code to carry on, "+
 					"or `sdlc stop` to put it down.\n")
 			case payload.Next != nil:
-				fmt.Fprintf(w, "  next up  %s  %s\n", payload.Next.Story, payload.Next.Title)
+				fmt.Fprintf(w, "  next up  %s  %s\n", payload.Next.Story, oneLine(payload.Next.Title))
 				fmt.Fprint(w, "\nRun `sdlc start` to begin.\n")
 			default:
 				fmt.Fprint(w, nothingToStart(backlog, s.Config().Backlog.Path))
