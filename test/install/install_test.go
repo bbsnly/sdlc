@@ -27,6 +27,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/bbsnly/sdlc/internal/testenv"
 )
 
 const version = "9.9.9"
@@ -62,7 +64,7 @@ var buildOnce struct {
 // than through t.Cleanup, which would delete it while the next test is still
 // using it.
 func TestMain(m *testing.M) {
-	code := m.Run()
+	code := testenv.Run(m)
 	if buildOnce.dir != "" {
 		_ = os.RemoveAll(buildOnce.dir)
 	}
