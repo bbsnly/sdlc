@@ -56,7 +56,8 @@ func downloadWrites(args []string, d download) []string {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
-		case strings.Contains(a, "://"):
+		case strings.HasPrefix(a, "--url="):
+			// Only its last part is read.
 			urls = append(urls, a)
 		case strings.HasPrefix(a, "--"):
 			name, value, glued := strings.Cut(a, "=")
@@ -81,6 +82,9 @@ func downloadWrites(args []string, d download) []string {
 				take(letter, value)
 				break
 			}
+		default:
+			// Without its scheme, a word is a URL all the same.
+			urls = append(urls, a)
 		}
 	}
 	if remote || !d.remoteOnly && !named {
