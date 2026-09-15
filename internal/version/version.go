@@ -18,13 +18,6 @@ var (
 	date    = ""
 )
 
-// Protocol is what the plugin's runbook can count on from this build: the
-// commands, flags and JSON fields it reads, and the rules the hook enforces
-// under it. It goes up when the runbook starts relying on something an older
-// build does not have, so that a runbook newer than the sdlc on PATH can tell,
-// and stop, rather than work gates that sdlc does not enforce.
-const Protocol = 1
-
 // Info is what this build knows about itself.
 type Info struct {
 	Version string `json:"version"` // semver, or "0.0.0-dev" for an untagged build
@@ -32,9 +25,8 @@ type Info struct {
 	// RFC3339, or "" when unknown. A released build carries the *commit*
 	// date, not the time it was built: a build time would differ on every
 	// rebuild of the same tag and make the binary unreproducible.
-	Date     string `json:"date"`
-	Dirty    bool   `json:"dirty"`    // built from a tree with uncommitted changes
-	Protocol int    `json:"protocol"` // [Protocol]
+	Date  string `json:"date"`
+	Dirty bool   `json:"dirty"` // built from a tree with uncommitted changes
 }
 
 var (
@@ -50,7 +42,7 @@ func Get() Info {
 }
 
 func compute() Info {
-	info := Info{Version: version, Commit: commit, Date: date, Protocol: Protocol}
+	info := Info{Version: version, Commit: commit, Date: date}
 
 	if bi, ok := debug.ReadBuildInfo(); ok {
 		for _, s := range bi.Settings {

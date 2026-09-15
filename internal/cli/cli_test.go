@@ -39,7 +39,7 @@ func TestVersionAnswersInJSONWhenAsked(t *testing.T) {
 		args []string
 		keys string
 	}{
-		{[]string{"version", "--json"}, "commit date dirty protocol version"},
+		{[]string{"version", "--json"}, "commit date dirty version"},
 		{[]string{"version", "--short", "--json"}, "version"},
 	} {
 		var out, errb bytes.Buffer

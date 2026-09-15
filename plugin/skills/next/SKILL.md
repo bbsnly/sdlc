@@ -32,9 +32,6 @@ sdlc status --json
 - If it fails with `SDLC-E0002`, this project has not been set up. Tell the user, and offer to
   run `sdlc init`. Stop until they answer.
 - If it fails with `SDLC-E0001`, you are not in a Git repository. Say so and stop.
-- If it succeeds without a `protocol` of at least 1, the `sdlc` on PATH is older than this
-  runbook, and does not enforce everything the gates below rely on. Say so, offer to upgrade it
-  with the same installer, and stop until it reports one. Do not work the gates on the older one.
 - Otherwise read `active`, `gates` and `next_gate` from the output. `next_gate` is the gate
   to work now: the loop resumes at the first gate that has not passed, and the tool works
   that out so you do not have to. Go straight to that section below.
