@@ -51,7 +51,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.21.x'
+          node-version: '26.8.2'
 
       # The Taskfile pins shellcheck and refuses to run without that exact
       # version, so CI installs that version rather than whatever the runner
@@ -317,7 +317,7 @@ jobs:
       # here for it to be tested rather than skipped.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.21.x'
+          node-version: '26.8.2'
 
       - name: Say which platform this actually is
         shell: bash
