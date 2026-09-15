@@ -561,6 +561,24 @@ Run `sdlc ack --through <commit>` in your own terminal to acknowledge a commit g
 the file to list every story again. Until then, `sdlc log --since` starts after a commit you name,
 and `sdlc log --all` lists every committed story.
 
+### SDLC-E0048
+
+An `sdlc` command that changes a story ran in a Claude Code session other than the one working it.
+
+`sdlc start` records the Claude Code session it runs in, in `.sdlc/state/session`. This command ran
+with `CLAUDE_CODE_SESSION_ID` naming another session, so what it wrote would have gone into a story
+that session is not working. Nothing was changed. The refusal keeps one session's `sdlc` commands
+out of a story another session is working; it is not a barrier against an assistant set on getting
+round it.
+
+If you are the person running the session, type `/sdlc:next` in it to take the story over. It picks
+the story up and records this session as the one working it, and from then on the session it came
+from is refused instead. To answer for the story yourself, with `sdlc approve`, `sdlc unfreeze` or
+`sdlc stop`, run the command in your own terminal, outside Claude Code.
+
+If you are an assistant, stop and tell the person that the story is being worked on in another
+Claude Code session and that only they can move it here. Do not run `sdlc start`.
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session working a story as a

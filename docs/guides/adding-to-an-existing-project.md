@@ -187,9 +187,10 @@ any attempt by the assistant to write `CLAUDE.md`
   enforcement on. Handing a story to a person with `sdlc escalate` ends the
   iteration and removes it.
 - **`state/session`** names the Claude Code session working the story. Only
-  that session and its agents are held to the story; every other session in
-  the repository is left alone. `sdlc start` in another session moves the
-  story there, and outside Claude Code it records none.
+  that session and its agents are held to the story, and the `sdlc` commands
+  that change it refuse to run in any other Claude Code session; every other
+  session in the repository is otherwise left alone. `sdlc start` in another
+  session moves the story there, and outside Claude Code it records none.
 - **`state/tests.lock`** is the freeze: every test file's sha256. `sdlc
   unfreeze` removes it, and so does `sdlc stop` on a finished story.
 - **`state/stop-blocks.json`** counts the stops the `Stop` hook sent back with

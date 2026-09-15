@@ -178,10 +178,12 @@ passed, so a session picking a story back up carries on from there, and
 
 Run in Claude Code, it records the session it runs in, in
 `.sdlc/state/session`. That session and its agents are the ones the hook holds
-to the story; every other session in the repository is left alone. Starting or
-resuming the story in another session moves it there. Run outside Claude Code,
-it records no session. A new story then has nothing enforced in any session
-until one picks it up with `/sdlc:next`, and `sdlc status` says so meanwhile. A
+to the story; every other session in the repository is left alone, except that
+the `sdlc` commands that change the story refuse to run there
+([SDLC-E0048](troubleshooting.md#sdlc-e0048)). Starting or resuming the story
+in another session moves it there. Run outside Claude Code, it records no
+session. A new story then has nothing enforced in any session until one picks
+it up with `/sdlc:next`, and `sdlc status` says so meanwhile. A
 story resumed that way keeps the session already recorded, since the command
 cannot tell that the story has moved.
 

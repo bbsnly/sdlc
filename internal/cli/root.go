@@ -245,10 +245,52 @@ func openStoreForWriting(cmd *cobra.Command) (*store.Store, *config.Project, fun
 	if err != nil {
 		return nil, nil, nothing, err
 	}
+	// Under the lock, so that a start moving the story to another session cannot
+	// come between the check and the write, and before anything is cleared, so
+	// that a command refused here changes nothing in the project. `sdlc start` is
+	// how a session takes a story over, and `sdlc ack` is about trunk, not a story.
+	switch cmd.CommandPath() {
+	case "sdlc start", "sdlc ack":
+	default:
+		if err := refuseAnotherSession(s); err != nil {
+			g.Release()
+			return nil, nil, nothing, err
+		}
+	}
 	// Holding the lock, nothing else is part-way through a write, so what a
 	// killed command left behind can be cleared before it blocks the commit gate.
 	s.ClearInterruptedWrites()
 	return s, p, g.Release, nil
+}
+
+// refuseAnotherSession keeps one Claude Code session's sdlc commands from
+// writing into a story another session is working. The hook holds the session
+// working the story and its agents, and nothing held any other: a model in
+// another session ran `sdlc artifact write` or `sdlc gate` into a story it did
+// not start. It is not a barrier against a model set on getting round it:
+// `sdlc start` takes the story over, and `.sdlc/` can be written without sdlc.
+//
+// A command with no session set, or one that cannot be a session id, reads as
+// a terminal, which is a person, as it does to `sdlc start`. A story with no
+// session recorded has nothing here to keep.
+func refuseAnotherSession(s *store.Store) error {
+	here := os.Getenv(store.SessionEnv)
+	if !store.CheckSession(here) {
+		return nil
+	}
+	owner, held := s.WorkingSession()
+	if !held || owner == here {
+		return nil
+	}
+	// A story that cannot be read is said by the command that reads it.
+	if active, err := s.Active(); err == nil && active != "" {
+		return sdlcerr.New(sdlcerr.SessionElsewhere,
+			quote(active)+" is being worked on in another Claude Code session",
+			"this command runs in session "+quote(here)+", and .sdlc/state/session records "+
+				quote(owner)+" as the session working the story, so what it changed would go into "+
+				"a story this session did not start")
+	}
+	return nil
 }
 
 func newVersionCmd() *cobra.Command {

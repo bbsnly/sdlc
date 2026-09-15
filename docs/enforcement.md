@@ -45,12 +45,24 @@ the binary installed or not. It refuses nothing there but a person's decisions,
 below. `sdlc status` and `sdlc doctor` say when a story is under way
 and no session is working it.
 
-Left alone means every rule. Another session can edit code and tests, commit
-and run `sdlc stop`, and the loop commits a story with `git add -A`, so work it
-has left uncommitted goes into the story's commit. A commit it makes moves HEAD
+Left alone means every rule. Another session can edit code and tests and
+commit, and the loop commits a story with `git add -A`, so work it has left
+uncommitted goes into the story's commit. A commit it makes moves HEAD
 under the story, and from then on every gate before the story's own commit is
 refused ([SDLC-E0046](troubleshooting.md#sdlc-e0046)), so the story goes to a
 person.
+
+Another session's `sdlc` commands do not write into the story.
+`sdlc artifact write`, `review add`, `gate`, `escalate`, `cost add`, `freeze`,
+`unfreeze`, `approve` and `stop` refuse to run, and change nothing, with
+[SDLC-E0048](troubleshooting.md#sdlc-e0048), when `CLAUDE_CODE_SESSION_ID`
+names a Claude Code session other than the one `.sdlc/state/session` records.
+This keeps one session's `sdlc` commands out of a story another is working. It
+is not a barrier against an assistant set on getting round it: `sdlc start` is
+not refused, because it is how `/sdlc:next` takes a story over; a command with
+no `CLAUDE_CODE_SESSION_ID` reads as a terminal, and a person; and another
+session can still edit `.sdlc/` without `sdlc`. Nothing is refused while no
+session is recorded, and `sdlc ack` changes no story.
 
 Outside those, the hook allows everything and says nothing, with one exception:
 a person's decisions, refused from a tool call in any session, in any project

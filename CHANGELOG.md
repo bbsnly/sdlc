@@ -113,6 +113,16 @@ not change and it is never reused.
   refused in any session in a project that uses sdlc, and a command is read to
   its end: `sdlc approve A-1; sdlc ack --through HEAD` is refused for its
   `sdlc ack`.
+- A Claude Code session that was not working the story could still change it
+  through `sdlc`: `sdlc artifact write`, `review add`, `gate` and the other
+  commands that change a story wrote into one another session held. They now
+  refuse to run, with `SDLC-E0048`, when `CLAUDE_CODE_SESSION_ID` names a
+  session other than the one `.sdlc/state/session` records, and change nothing.
+  A terminal is not refused, and neither is a session whose id is missing or
+  invalid, nor anything while no session is recorded; `sdlc start` still moves
+  the story to the session it runs in. This keeps a session's `sdlc` commands
+  out of a story another session is working, and is not a barrier against a
+  model set on getting round it.
 
 ## [0.1.1](https://github.com/bbsnly/sdlc/releases/tag/v0.1.1) - 2026-09-15
 

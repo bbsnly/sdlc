@@ -152,6 +152,9 @@ var (
 
 	AcknowledgedUnknown = register("SDLC-E0047",
 		`run "sdlc ack --through <commit>" in your own terminal to acknowledge a commit git has, or remove .sdlc/state/acknowledged to list every story; meanwhile "sdlc log --since <commit>" starts after a commit you name, and "sdlc log --all" lists every story`)
+
+	SessionElsewhere = register("SDLC-E0048",
+		`a person takes the story over by typing /sdlc:next in this Claude Code session, or runs the command in their own terminal, outside Claude Code; an assistant stops and tells the person that the story is being worked on in another session and only they can move it here, and does not run "sdlc start"`)
 )
 
 // entry is one row of the catalogue.
