@@ -568,7 +568,7 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 	// Taking the project's own directory away, or throwing away what its work
 	// tree holds that is not committed, takes the loop's record with it.
 	for _, w := range takenAway(run.words) {
-		if path.Clean(clean(w)) == "." && dir == "" && !lost {
+		if path.Join(dir, clean(w)) == "." && !lost {
 			return recordFinding(".sdlc/state"), true
 		}
 	}

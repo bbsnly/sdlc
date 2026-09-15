@@ -82,7 +82,8 @@ func takenAway(words []string) []string {
 // discardsTheWorkTree reports whether a git command throws away what the work
 // tree holds that is not committed, all of it, wherever in the tree the
 // command runs: `git stash`, `git reset --hard`, `git switch -f`, `git
-// read-tree -u`. The loop's record is never committed, and a frozen test is not
+// read-tree -u`, and a clean, restore or checkout of the whole tree, as `:/` names
+// it. The loop's record is never committed, and a frozen test is not
 // until the story is.
 func discardsTheWorkTree(words []string) bool {
 	if !isGit(words) {
@@ -92,10 +93,15 @@ func discardsTheWorkTree(words []string) bool {
 	switch sub {
 	case "stash":
 		return len(rest) == 0 || !stashKeeps[rest[0]] && wholeTree(stashPaths(rest))
+	case "clean":
+		return (gitOption(rest, "--force") || shortFlag(rest, 'f')) && wholeTree(cleaned(rest))
+	case "restore":
+		return gitChangesFiles(words[1:]) && wholeTree(cleaned(rest))
 	case "reset":
 		return gitOption(rest, "--hard") || gitOption(rest, "--merge") || gitOption(rest, "--keep")
 	case "checkout", "switch":
-		return gitOption(rest, "--force") || gitOption(rest, "--discard-changes") || shortFlag(rest, 'f')
+		return gitOption(rest, "--force") || gitOption(rest, "--discard-changes") || shortFlag(rest, 'f') ||
+			wholeTree(cleaned(rest))
 	case "read-tree":
 		return shortFlag(rest, 'u')
 	}
@@ -178,8 +184,8 @@ func shortFlag(args []string, flag byte) bool {
 	return false
 }
 
-// cleaned are the paths git clean is given, or where it runs when it is given
-// none.
+// cleaned are the paths git clean, restore or checkout is given, or where it runs
+// when it is given none.
 func cleaned(args []string) []string {
 	var named []string
 	for i := 0; i < len(args); i++ {
