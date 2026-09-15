@@ -63,7 +63,7 @@ with `..`, is refused.
 
 | Key | What it means |
 | --- | --- |
-| `trunk_branch` | the branch a story starts from, is committed to, and is diffed against. `sdlc start` begins new work only there. Default `main` |
+| `trunk_branch` | the branch a story starts from, is committed to, and is diffed against. `sdlc start` begins new work only there. `sdlc init` writes the branch `origin`'s `HEAD` names, else `main` or `master` if the repository has one, else the branch it is on; `main` when none of those answers |
 | `remote` | whether this repository has an `origin` to keep up with. With it on, `sdlc start` fetches trunk from `origin` and will not begin new work while trunk is behind it. Off by default, and the loop never pushes either way |
 
 ## `commands`

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -502,5 +503,28 @@ func TestContractFragmentNamesOnlyCommandsThatExist(t *testing.T) {
 		if strings.Contains(string(raw), stale) {
 			t.Errorf("the contract still refers to %q, which this version does not provide", stale)
 		}
+	}
+}
+
+// A project on master got "main" written for its trunk, and its first `sdlc
+// start` was refused for not being on trunk.
+func TestInitNamesTrunkWhatTheRepositoryCallsIt(t *testing.T) {
+	root := t.TempDir()
+	for _, args := range [][]string{{"init", "--quiet"}, {"symbolic-ref", "HEAD", "refs/heads/master"}} {
+		cmd := exec.CommandContext(t.Context(), "git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if _, err := Init(root, false); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Git.TrunkBranch != "master" {
+		t.Errorf("trunk_branch = %q in a repository on master", cfg.Git.TrunkBranch)
 	}
 }

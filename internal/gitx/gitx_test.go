@@ -132,3 +132,38 @@ func TestOutsideARepositoryTheFailureExplainsItself(t *testing.T) {
 		t.Errorf("the failure does not mention git: %s", sdlcerr.Render(err))
 	}
 }
+
+// init writes the trunk's name before anyone has said it, so it takes the name
+// from the repository: a project on master got "main", and its first `sdlc
+// start` was refused for not being on trunk.
+func TestTrunkIsWhatTheRepositoryCallsIt(t *testing.T) {
+	ctx := t.Context()
+
+	unborn := t.TempDir()
+	run(t, unborn, "init", "--quiet")
+	run(t, unborn, "symbolic-ref", "HEAD", "refs/heads/trunk")
+	if got := Trunk(ctx, unborn); got != "trunk" {
+		t.Errorf("a repository with no commits yet, on trunk: Trunk = %q", got)
+	}
+
+	root := repo(t)
+	run(t, root, "symbolic-ref", "HEAD", "refs/heads/master")
+	write(t, root, "a.txt", "a\n")
+	run(t, root, "add", "a.txt")
+	run(t, root, "-c", "user.name=sdlc", "-c", "user.email=sdlc@example.com", "-c", "commit.gpgsign=false",
+		"commit", "--quiet", "-m", "a")
+	run(t, root, "checkout", "--quiet", "-b", "feature")
+	if got := Trunk(ctx, root); got != "master" {
+		t.Errorf("on a feature branch of a repository with master: Trunk = %q", got)
+	}
+
+	run(t, root, "update-ref", "refs/remotes/origin/develop", "HEAD")
+	run(t, root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+	if got := Trunk(ctx, root); got != "develop" {
+		t.Errorf("with origin's HEAD on develop: Trunk = %q", got)
+	}
+
+	if got := Trunk(ctx, t.TempDir()); got != "" {
+		t.Errorf("outside a repository: Trunk = %q, want nothing", got)
+	}
+}

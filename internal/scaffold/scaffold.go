@@ -9,6 +9,7 @@ package scaffold
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"encoding/json"
 	"os"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/fsx"
+	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
@@ -77,8 +79,15 @@ func Init(root string, force bool) (*Result, error) {
 	// example backlog and left the real one unread, and resetting the trunk
 	// made `sdlc start` refuse every story on a trunk that is not "main". A
 	// configuration too broken to read has nothing to keep.
+	//
+	// A trunk nobody has named yet is taken from the repository for the same
+	// reason: writing "main" into a project on master had its first
+	// `sdlc start` refused for not being on trunk.
 	defaults := config.Default()
 	backlogPath, trunk := defaults.Backlog.Path, defaults.Git.TrunkBranch
+	if found := gitx.Trunk(context.Background(), root); found != "" {
+		trunk = found
+	}
 	if force {
 		if old, err := config.Load(root); err == nil {
 			backlogPath, trunk = old.Backlog.Path, old.Git.TrunkBranch

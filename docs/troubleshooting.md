@@ -386,10 +386,10 @@ The same refusal comes from the hook, before `git commit`, as
 A new story starts from trunk, and HEAD is somewhere else: on another branch, or
 detached.
 
-The loop commits every story straight to the branch `git.trunk_branch` names —
-`main`, unless `.sdlc/config.json` says otherwise — so a story begun anywhere
+The loop commits every story straight to the branch `git.trunk_branch` names in
+`.sdlc/config.json` — the trunk `sdlc init` found — so a story begun anywhere
 else is not where its commit is recorded as landing. Switch back, and start
-again:
+again; if the name is not your trunk's, correct it in the file first:
 
 ```console
 $ git switch main

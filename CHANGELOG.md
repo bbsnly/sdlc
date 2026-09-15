@@ -154,6 +154,10 @@ The first release: the whole loop, end to end, on macOS, Linux and Windows.
   `review`, `freeze`, `unfreeze`, `escalate`, `approve`, `cost`, `doctor` and
   `version`. Every one of them takes `--json`, so a skill can read what a
   person reads.
+  `sdlc init` names trunk what the repository calls it: the branch `origin`'s
+  `HEAD` names, else `main` or `master`, else the branch it is on. It wrote
+  `main` into every project, and on `master` the first `sdlc start` was
+  refused for not being on trunk.
 - `sdlc doctor` checks the repository, the configuration, the backlog, the
   contract section, git, whether each configured command's program is
   installed, and whether the hooks can find the binary at all. Every problem

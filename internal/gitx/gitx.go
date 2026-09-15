@@ -170,6 +170,26 @@ func Branch(ctx context.Context, root string) (string, error) {
 	return "", err
 }
 
+// Trunk is what this repository most likely calls its trunk, for a
+// configuration that does not say yet: the branch origin's HEAD names, then
+// main or master if there is one, then the branch HEAD is on -- which, in a
+// repository with no commits yet, is the one its first commit will be made on.
+// It is "" when none of those answers, and the caller has a default for that.
+func Trunk(ctx context.Context, root string) string {
+	if out, err := git(ctx, root, nil, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		if name, ok := strings.CutPrefix(firstLine(string(out)), "origin/"); ok && name != "" {
+			return name
+		}
+	}
+	for _, name := range []string{"main", "master"} {
+		if _, err := git(ctx, root, nil, "show-ref", "--verify", "--quiet", "refs/heads/"+name); err == nil {
+			return name
+		}
+	}
+	branch, _ := Branch(ctx, root)
+	return branch
+}
+
 // Behind fetches branch from remote and counts the commits on it that HEAD does
 // not have. It never prompts: a remote that wants a password it has not been
 // given is a remote that could not be asked.
