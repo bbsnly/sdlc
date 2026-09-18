@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 Error codes are part of the interface: once published, a code's meaning does
 not change and it is never reused.
 
-## [Unreleased]
+## [0.2.0](https://github.com/bbsnly/sdlc/releases/tag/v0.2.0) - 2026-09-18
 
 ### Added
 
