@@ -14,15 +14,26 @@
       "acceptance_criteria": [
         {
           "id": "AC-1",
-          "text": "WHEN CreateInvoice is called with a total greater than zero, the system shall return an invoice in state Draft."
+          "text": "WHEN CreateInvoice is called with a total greater than zero, the system shall return an invoice in state Draft.",
+          "type": "WHEN"
         },
         {
           "id": "AC-2",
-          "text": "IF CreateInvoice is called with a total of zero or less, THEN the system shall return the domain error ErrNonPositiveTotal and create nothing."
+          "text": "IF CreateInvoice is called with a total of zero or less, THEN the system shall return the domain error ErrNonPositiveTotal and create nothing.",
+          "type": "IF-THEN"
         }
       ],
       "non_goals": ["persistence", "currency conversion"],
-      "notes": "This is an example. Replace it with a story of your own, or delete it and write one against .sdlc/templates/story.schema.json. A person works a story by typing /sdlc:next in Claude Code."
+      "decisions": [
+        {
+          "at": "2026-01-05T09:00:00Z",
+          "by": "product owner",
+          "text": "Zero counts as non-positive: an invoice for nothing is refused, not issued as a free one."
+        }
+      ],
+      "notes": "This is an example. Replace it with a story of your own, or delete it and write one against .sdlc/templates/story.schema.json. A person works a story by typing /sdlc:next in Claude Code.",
+      "created": "2026-01-05T09:00:00Z",
+      "updated": "2026-01-05T09:00:00Z"
     }
   ]
 }
