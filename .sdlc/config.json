@@ -1,0 +1,67 @@
+{
+  "_doc": [
+    "This is the machine-readable half of your project's contract with the loop.",
+    "The other half is the '## SDLC Contract' section of your CLAUDE.md: rules a",
+    "script cannot check, written for the assistant to read.",
+    "Nothing here starts the loop: a person does, by typing /sdlc:next in Claude Code.",
+    "",
+    "Commands run from the repository root. Leave one empty to skip that step.",
+    "The coverage and mutation commands must print their percentage as the last",
+    "number on stdout.",
+    "",
+    "Run 'sdlc doctor' after changing anything here.",
+    "Reference: https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md"
+  ],
+
+  "version": 1,
+
+  "backlog": { "path": "user_stories.json" },
+
+  "git": { "trunk_branch": "main", "remote": true },
+
+  "_commands_doc": [
+    "Checked against Taskfile.yml, which is what CI runs as './task check'.",
+    "lint, fmt and fmt_check go through ./task so they use the golangci-lint the",
+    "Taskfile pins and the gofmt of the toolchain go.mod pins, not whatever is on PATH.",
+    "test is './task test' plus -count=1. npm_test is not one the loop runs by name:",
+    "it needs node on PATH, and is for a story that touches npm/."
+  ],
+  "commands": {
+    "smoke":     "test -z \"$(go list ./...)\" || go vet ./...",
+    "build":     "go build ./...",
+    "test":      "go test -race ./... -count=1",
+    "npm_test":  "./task npm-test",
+    "lint":      "./task lint",
+    "fmt":       "./task fmt",
+    "fmt_check": "./task fmt-check",
+    "fmt_file":  "case \"$FILE\" in *.go) GOTOOLCHAIN=\"$(sed -n 's/^toolchain //p' go.mod | head -n 1)\" go fmt \"$FILE\" >/dev/null ;; esac",
+    "coverage":  "go test ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'",
+    "mutation":  ""
+  },
+
+  "thresholds": {
+    "diff_size_cap": 500,
+    "coverage_min": 95,
+    "mutation_min": 0
+  },
+
+  "paths": {
+    "tests": {
+      "dirs": ["testdata/", "test/"],
+      "file_globs": ["*_test.go", "*.test.js"]
+    },
+    "src": ["cmd/", "internal/", "plugin/", "npm/", "install.sh", "install.ps1"]
+  },
+
+  "spec": { "paths": ["docs/", "README.md"] },
+
+  "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
+
+  "reviews": { "gate7_advisory": false },
+
+  "freeze": { "allow_new_test_files": false },
+
+  "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
+
+  "budget": { "per_story_usd": 0, "alert_fractions": [0.5, 0.8, 1.0] }
+}

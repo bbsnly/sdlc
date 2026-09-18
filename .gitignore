@@ -29,6 +29,12 @@
 /.sdlc/stories/*/diff.stat
 /.sdlc/stories/*/logs/
 
+# The backlog, when sdlc runs on itself. Ignored for now: the stories here are
+# this repository's own to-do list, still being shaped, and not something a
+# user of sdlc needs. Again a rule about THIS repository -- sdlc itself expects
+# a project to commit its backlog, and docs/getting-started.md says so.
+/user_stories.json
+
 # .sdlc/state holds one load-bearing file, and the rest are not: tests.lock is
 # the freeze itself and belongs in history, while `active` and `session` are
 # which story this machine happens to be on and which session is working it,
