@@ -3,6 +3,7 @@ package testenv
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -49,5 +50,31 @@ func TestGitsOwnVariablesDoNotReachTheTests(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "--- PASS: "+name) {
 		t.Errorf("with git's variables set (%v):\n%s", err, out)
+	}
+}
+
+// Run's own failure is reported and stops the suite before m.Run() is
+// reached, rather than starting tests in an environment it could not set up:
+// a temporary directory it cannot create is the same failure a full disk
+// would give.
+//
+// Called directly, rather than through TestMain, so this failure -- and the
+// coverage of reaching it -- is recorded normally: TestMain's own call to Run
+// finishes, and go test writes the profile, before Run's deferred cleanup for
+// a successful call ever runs.
+func TestRunFailsWithoutStartingTheTestsWhenItCannotPrepareTheEnvironment(t *testing.T) {
+	// Run unsets GIT_CONFIG_GLOBAL, GIT_CONFIG_NOSYSTEM and GIT_CEILING_DIRECTORIES
+	// before it ever tries to create the temp directory that would set them
+	// again; failing here, as this test makes it do, leaves them unset for
+	// every test that runs after this one in the same binary unless they are
+	// put back.
+	for _, v := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_CEILING_DIRECTORIES"} {
+		t.Setenv(v, os.Getenv(v))
+	}
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+	t.Setenv("TMP", filepath.Join(t.TempDir(), "missing"))
+	t.Setenv("TEMP", filepath.Join(t.TempDir(), "missing"))
+	if got := Run(nil); got != 1 {
+		t.Errorf("Run = %d, want 1 when the temporary directory cannot be created", got)
 	}
 }

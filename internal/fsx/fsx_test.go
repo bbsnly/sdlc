@@ -118,6 +118,49 @@ func TestWriteFileAtomicReportsWhichStepFailed(t *testing.T) {
 	}
 }
 
+// The directory a write's temporary file goes in has to accept a new file
+// before there is anything to make atomic; a directory that refuses one
+// fails the same way a full disk would.
+func TestWriteFileAtomicFailsWhenTheDirectoryRefusesANewFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not enforce Unix permission bits on directories")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(dir, 0o700) }() // let t.TempDir() clean up
+
+	err := WriteFileAtomic(filepath.Join(dir, "f"), []byte("x"), 0o644)
+	if err == nil {
+		t.Fatal("writing into a directory that refuses new files succeeded")
+	}
+	if !strings.Contains(err.Error(), "create a temporary file") {
+		t.Errorf("error does not name the step that failed: %v", err)
+	}
+}
+
+// A target that is a directory cannot be replaced by a rename, and that
+// failure is not one to wait out: it is not a reader with the file open, and
+// it will not resolve itself.
+func TestWriteFileAtomicFailsWhenTheTargetIsADirectory(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "f")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := WriteFileAtomic(target, []byte("x"), 0o644)
+	if err == nil {
+		t.Fatal("writing over a directory succeeded")
+	}
+	if !strings.Contains(err.Error(), "move ") {
+		t.Errorf("error does not name the step that failed: %v", err)
+	}
+}
+
 func TestExists(t *testing.T) {
 	dir := t.TempDir()
 	if Exists(filepath.Join(dir, "nope")) {

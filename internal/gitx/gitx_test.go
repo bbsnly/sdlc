@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -130,6 +131,88 @@ func TestOutsideARepositoryTheFailureExplainsItself(t *testing.T) {
 	}
 	if !strings.Contains(sdlcerr.Render(err), "git") {
 		t.Errorf("the failure does not mention git: %s", sdlcerr.Render(err))
+	}
+}
+
+// TreeHash's first git call is outside every override, so a directory that is
+// not a repository at all fails there, the same way every other command here
+// does.
+func TestTreeHashOutsideARepositoryFails(t *testing.T) {
+	_, err := TreeHash(t.Context(), t.TempDir())
+	wantUnreadable(t, err, "TreeHash outside a repository")
+}
+
+// The temporary index lives wherever TMPDIR points, and a value that names no
+// directory is the same failure a full disk would give: there is nowhere to
+// put the index that measures the tree.
+func TestTreeHashFailsWhenNoTemporaryDirectoryIsReachable(t *testing.T) {
+	root := repo(t)
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+	// Windows reads a different variable for the same purpose, and TMPDIR would
+	// be ignored there rather than reproducing the failure.
+	if runtime.GOOS == "windows" {
+		t.Setenv("TMP", filepath.Join(t.TempDir(), "missing"))
+	}
+	_, err := TreeHash(t.Context(), root)
+	wantUnreadable(t, err, "TreeHash with no temporary directory reachable")
+	if !strings.Contains(sdlcerr.Render(err), "temporary directory") {
+		t.Errorf("the failure does not say why: %s", sdlcerr.Render(err))
+	}
+}
+
+// Clean is what the commit gate means by "committed": nothing left over,
+// tracked or not.
+func TestCleanReportsWhetherAnythingIsUncommitted(t *testing.T) {
+	root := repo(t)
+	commit(t, root, "first")
+
+	if clean, err := Clean(t.Context(), root); err != nil || !clean {
+		t.Errorf("Clean = %v, %v; want true right after a commit", clean, err)
+	}
+
+	write(t, root, "a.txt", "changed\n")
+	if clean, err := Clean(t.Context(), root); err != nil || clean {
+		t.Errorf("Clean = %v, %v; want false with an uncommitted change", clean, err)
+	}
+
+	if _, err := Clean(t.Context(), t.TempDir()); err == nil {
+		t.Error("Clean reported on a directory that is not a repository")
+	}
+}
+
+// Head is HEAD in full, NoCommits before a repository has one, and a failure
+// outside a repository -- the three states the freeze and the commit gate
+// tell apart.
+func TestHeadIsTheCommitHeadIsOnOrNoCommitsYet(t *testing.T) {
+	root := repo(t)
+	if got, err := Head(t.Context(), root); err != nil || got != NoCommits {
+		t.Errorf("Head before any commit = %q, %v; want %s", got, err, NoCommits)
+	}
+
+	want := commit(t, root, "first")
+	if got, err := Head(t.Context(), root); err != nil || got != want {
+		t.Errorf("Head = %q, %v; want %s", got, err, want)
+	}
+
+	if _, err := Head(t.Context(), t.TempDir()); err == nil {
+		t.Error("Head reported on a directory that is not a repository")
+	}
+}
+
+// A repository is on the branch its own detached HEAD is not, and Branch says
+// so with no error: a detached checkout is not a failure to read the
+// repository.
+func TestBranchIsEmptyWithADetachedHead(t *testing.T) {
+	root := repo(t)
+	head := commit(t, root, "first")
+	run(t, root, "checkout", "--quiet", head)
+
+	got, err := Branch(t.Context(), root)
+	if err != nil {
+		t.Fatalf("Branch on a detached HEAD failed: %v", err)
+	}
+	if got != "" {
+		t.Errorf("Branch on a detached HEAD = %q, want none", got)
 	}
 }
 

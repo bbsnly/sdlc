@@ -1,8 +1,11 @@
 package gitx
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
 // commit makes one commit with a message and returns its hash.
@@ -48,6 +51,24 @@ func TestResolveNamesACommitInFullOrRefuses(t *testing.T) {
 	}
 }
 
+// notACommit wraps what git said, so a caller further up that wants the
+// code and the fix -- to render a message, say -- can still reach it by
+// unwrapping past NamesNoCommit's own check.
+func TestAFailedResolveStillCarriesTheUnderlyingCode(t *testing.T) {
+	root := repo(t)
+	_, err := Resolve(t.Context(), root, "nope")
+	if !NamesNoCommit(err) {
+		t.Fatalf("Resolve(%q) = %v; want a refusal saying it names no commit", "nope", err)
+	}
+	var e *sdlcerr.Error
+	if !errors.As(err, &e) {
+		t.Fatalf("the refusal does not unwrap to a coded error: %v", err)
+	}
+	if e.Code != sdlcerr.RepositoryUnreadable {
+		t.Errorf("code = %s", e.Code)
+	}
+}
+
 func TestIsAncestorTellsNoFromAFailure(t *testing.T) {
 	root := repo(t)
 	first := commit(t, root, "first")
@@ -70,6 +91,27 @@ func TestIsAncestorTellsNoFromAFailure(t *testing.T) {
 	}
 }
 
+// With no word to look for, there is nothing to find: CommitsNaming does not
+// run git at all, let alone read every commit's message against an empty
+// string.
+func TestCommitsNamingWithNoWordFindsNothing(t *testing.T) {
+	root := repo(t)
+	commit(t, root, "first")
+	got, err := CommitsNaming(t.Context(), root, "")
+	if err != nil || got != nil {
+		t.Errorf("CommitsNaming(root, \"\") = %v, %v; want nil, nil", got, err)
+	}
+}
+
+// A repository with no commits yet has no HEAD for git log to start from, and
+// that failure is passed on rather than read as no commits naming the word.
+func TestCommitsNamingFailsWithNoHead(t *testing.T) {
+	root := t.TempDir()
+	run(t, root, "init", "--quiet")
+	_, err := CommitsNaming(t.Context(), root, "US-1")
+	wantUnreadable(t, err, "CommitsNaming with no HEAD to start from")
+}
+
 // A story id is found as a whole word: the story US-1 is not the story US-10,
 // and a sentence can end in its name.
 func TestCommitsNamingWantsTheWholeWord(t *testing.T) {
@@ -78,6 +120,10 @@ func TestCommitsNamingWantsTheWholeWord(t *testing.T) {
 	commit(t, root, "US-10 and XUS-1 and US-1.2 are other stories")
 	second := commit(t, root, "chore: tidy\n\nfinishes the work for US-1.")
 	commit(t, root, "US_1, us-1 and US-1-b are not it either")
+	// The word's only occurrence carries on right at the end of the message,
+	// with no room left to look again: namesWord must give up by running out
+	// of message to search, not by finding "US-1" absent from the rest of it.
+	commit(t, root, "fixes XUS-1")
 
 	got, err := CommitsNaming(t.Context(), root, "US-1")
 	if err != nil {

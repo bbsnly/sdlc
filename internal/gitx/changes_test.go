@@ -5,6 +5,16 @@ import (
 	"testing"
 )
 
+func TestChangesOutsideARepositoryFails(t *testing.T) {
+	_, err := Changes(t.Context(), t.TempDir())
+	wantUnreadable(t, err, "Changes on a directory that is not a repository")
+}
+
+func TestChangedLinesOutsideARepositoryFails(t *testing.T) {
+	_, err := ChangedLines(t.Context(), t.TempDir(), "HEAD")
+	wantUnreadable(t, err, "ChangedLines on a directory that is not a repository")
+}
+
 func TestChangesNamesEveryPathNotCommitted(t *testing.T) {
 	root := repo(t)
 	write(t, root, "moved.txt", "a\n")
