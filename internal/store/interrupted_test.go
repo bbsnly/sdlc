@@ -74,3 +74,29 @@ func TestInterruptedWritesAreNotClearedThroughALinkOutOfTheRepository(t *testing
 		}
 	}
 }
+
+// A leftover that cannot be removed -- another process still has it open, or
+// the directory is not writable -- is logged and left rather than crashing
+// the rest of the sweep.
+func TestClearInterruptedWritesDoesNotFailWhenALeftoverCannotBeRemoved(t *testing.T) {
+	skipIfPermissionsDoNotBind(t)
+	s := newStore(t)
+	dir := filepath.Join(s.root, filepath.FromSlash(stateDir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	left := filepath.Join(dir, ".active.tmp9")
+	if err := os.WriteFile(left, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil { // no write: Remove will fail
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	s.ClearInterruptedWrites() // must not panic
+
+	if _, err := os.Stat(left); err != nil {
+		t.Errorf("the leftover that could not be removed is gone: %v", err)
+	}
+}

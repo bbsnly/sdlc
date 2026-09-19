@@ -1,11 +1,17 @@
 package store
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +25,9 @@ var fixedTime = time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
 
 func newStore(t *testing.T) *Store {
 	t.Helper()
-	t.Setenv("GIT_WORK_TREE", "")
+	// GIT_WORK_TREE and friends are stripped for the whole binary by TestMain
+	// (see testenv_test.go), so a real one exported into a developer's shell
+	// cannot point a test at the wrong repository.
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
@@ -42,6 +50,44 @@ func codeOf(t *testing.T, err error) sdlcerr.Code {
 		t.Fatalf("error is not an *sdlcerr.Error: %v", err)
 	}
 	return e.Code
+}
+
+// runGit runs git in dir, for the handful of tests that need a real
+// repository to hash or diff rather than the backlog alone.
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// initGit turns root into a fresh, empty git repository.
+func initGit(t *testing.T, root string) {
+	t.Helper()
+	runGit(t, root, "init", "--quiet", "--initial-branch=main")
+}
+
+// commitAll stages everything in root and commits it, for a base commit later
+// changes can be measured against.
+func commitAll(t *testing.T, root, message string) {
+	t.Helper()
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--quiet", "-m", message)
+}
+
+// skipIfPermissionsDoNotBind is for a test that denies a write by taking away
+// a directory's write permission: not on Windows, which does not carry Unix
+// permission bits, and not as root, which ignores them.
+func skipIfPermissionsDoNotBind(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("this platform does not restrict a directory owner's own writes by permission bits")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
 }
 
 // A story id becomes a directory name, and ids come from a file an assistant
@@ -114,7 +160,9 @@ func TestBacklogRefusesAStatusTheLoopDoesNotKnow(t *testing.T) {
 			continue
 		}
 		var e *sdlcerr.Error
-		errors.As(err, &e)
+		if !errors.As(err, &e) {
+			t.Fatalf("err = %v, want an sdlcerr.Error", err)
+		}
 		for _, want := range []string{"B-2", "ready", "dropped"} {
 			if !strings.Contains(e.What+" "+e.Why, want) {
 				t.Errorf("%s: the refusal does not name %q: %s / %s", story, want, e.What, e.Why)
@@ -154,7 +202,9 @@ func TestBacklogRefusesTwoStoriesWithOneID(t *testing.T) {
 			t.Errorf("%s: code = %s, want %s", second, got, sdlcerr.BacklogUnreadable)
 		}
 		var e *sdlcerr.Error
-		errors.As(err, &e)
+		if !errors.As(err, &e) {
+			t.Fatalf("err = %v, want an sdlcerr.Error", err)
+		}
 		if !strings.Contains(e.What, second) || !strings.Contains(e.Why, "2 and 3") {
 			t.Errorf("%s: the refusal does not say which stories share it: %s / %s", second, e.What, e.Why)
 		}
@@ -183,7 +233,9 @@ func TestStoryNotFoundListsWhatIsThere(t *testing.T) {
 		t.Fatal("Story found one that is not there")
 	}
 	var e *sdlcerr.Error
-	errors.As(err, &e)
+	if !errors.As(err, &e) {
+		t.Fatalf("err = %v, want an sdlcerr.Error", err)
+	}
 	if !strings.Contains(e.Why, "A-1") || !strings.Contains(e.Why, "B-2") {
 		t.Errorf("why = %q, want the available ids", e.Why)
 	}
@@ -423,6 +475,13 @@ func TestActiveIsEmptyBeforeAnIterationStarts(t *testing.T) {
 	}
 	if id != "" {
 		t.Errorf("Active = %q, want empty", id)
+	}
+}
+
+func TestSetActivePropagatesAnUnsafeID(t *testing.T) {
+	s := newStore(t)
+	if err := s.SetActive("../../etc"); codeOf(t, err) != sdlcerr.UnsafeStoryID {
+		t.Errorf("code = %v, want %s", err, sdlcerr.UnsafeStoryID)
 	}
 }
 
@@ -734,5 +793,707 @@ func TestStateIsNotWrittenThroughALinkOutOfTheRepository(t *testing.T) {
 	}
 	if raw, err := os.ReadFile(filepath.Join(outside, "active")); err != nil || string(raw) != "A-1\n" {
 		t.Errorf("the active file outside was changed: %q, %v", raw, err)
+	}
+}
+
+// ---------------------------------------------------------------- Root, Config, CommitPause, StorySubject
+
+func TestConfigReturnsWhatTheStoreWasOpenedWith(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Default()
+	cfg.Git.TrunkBranch = "trunk-x"
+	s := New(&config.Project{Root: root, Config: cfg})
+	if got := s.Config().Git.TrunkBranch; got != "trunk-x" {
+		t.Errorf("Config().Git.TrunkBranch = %q, want trunk-x", got)
+	}
+	if s.Root() != root {
+		t.Errorf("Root() = %q, want %q", s.Root(), root)
+	}
+}
+
+func TestCommitPauseReportsTheStorysRiskTierAndWhetherItWaits(t *testing.T) {
+	s := newStore(t)
+	writeBacklog(t, s, `{"stories":[
+		{"id":"A-1","title":"One","status":"ready"},
+		{"id":"A-2","title":"Two","status":"ready","risk_tier":"high"}]}`)
+
+	tier, pauses, err := s.CommitPause("A-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tier != config.DefaultRiskTier || pauses {
+		t.Errorf("A-1: tier=%q pauses=%v, want %q/false", tier, pauses, config.DefaultRiskTier)
+	}
+
+	tier, pauses, err = s.CommitPause("A-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tier != "high" || !pauses {
+		t.Errorf("A-2: tier=%q pauses=%v, want high/true", tier, pauses)
+	}
+
+	if _, _, err := s.CommitPause("Z-9"); codeOf(t, err) != sdlcerr.StoryNotFound {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StoryNotFound)
+	}
+}
+
+// StorySubject is what a review is stamped with: the story's own content,
+// without the status and updated time the loop writes as it moves.
+func TestStorySubjectIsStableAcrossAMoveButChangesWithTheStory(t *testing.T) {
+	s := newStore(t)
+	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"ready","priority":1}]}`)
+	before, err := s.StorySubject("A-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.SetStoryStatus("A-1", model.StatusInProgress); err != nil {
+		t.Fatal(err)
+	}
+	after, err := s.StorySubject("A-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before != after {
+		t.Errorf("StorySubject changed when only status and updated moved: %q -> %q", before, after)
+	}
+
+	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One (retitled)","status":"in_progress","priority":1}]}`)
+	changed, err := s.StorySubject("A-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed == after {
+		t.Error("StorySubject did not change when the story's own field changed")
+	}
+
+	if _, err := s.StorySubject("Z-9"); codeOf(t, err) != sdlcerr.StoryNotFound {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StoryNotFound)
+	}
+}
+
+func TestStoryPropagatesABacklogReadError(t *testing.T) {
+	s := newStore(t)
+	if _, _, err := s.Story("A-1"); codeOf(t, err) != sdlcerr.BacklogMissing {
+		t.Errorf("code = %v, want %s", err, sdlcerr.BacklogMissing)
+	}
+}
+
+// ---------------------------------------------------------------- more backlog reading
+
+func TestBacklogFailsWhenTheFileCannotBeOpened(t *testing.T) {
+	s := newStore(t)
+	path := s.cfg.BacklogPath(s.root)
+	if err := os.MkdirAll(path, 0o755); err != nil { // a directory, not a file
+		t.Fatal(err)
+	}
+	if _, err := s.Backlog(); codeOf(t, err) != sdlcerr.BacklogUnreadable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.BacklogUnreadable)
+	}
+}
+
+func TestBacklogRefusesAStoryWithNoID(t *testing.T) {
+	s := newStore(t)
+	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"ready"},{"title":"No id","status":"ready"}]}`)
+	_, err := s.Backlog()
+	if codeOf(t, err) != sdlcerr.BacklogUnreadable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.BacklogUnreadable)
+	}
+	var e *sdlcerr.Error
+	if !errors.As(err, &e) {
+		t.Fatalf("err = %v, want an sdlcerr.Error", err)
+	}
+	if !strings.Contains(e.Why, "story number 2") {
+		t.Errorf("why = %q, want it to name which story has no id", e.Why)
+	}
+}
+
+func TestStoryNotFoundSaysTheBacklogIsEmpty(t *testing.T) {
+	s := newStore(t)
+	writeBacklog(t, s, `{"stories":[]}`)
+	_, _, err := s.Story("A-1")
+	var e *sdlcerr.Error
+	if !errors.As(err, &e) {
+		t.Fatalf("err = %v, want an sdlcerr.Error", err)
+	}
+	if !strings.Contains(e.Why, "no stories") {
+		t.Errorf("why = %q, want it to say the backlog has no stories", e.Why)
+	}
+}
+
+// describeBacklog shows only the first 8 ids and a count of the rest, so the
+// message stays readable against a backlog with hundreds of stories.
+func TestStoryNotFoundSummarisesALongBacklog(t *testing.T) {
+	s := newStore(t)
+	var stories []string
+	for i := 1; i <= 10; i++ {
+		stories = append(stories, fmt.Sprintf(`{"id":"A-%d","title":"T","status":"ready"}`, i))
+	}
+	writeBacklog(t, s, `{"stories":[`+strings.Join(stories, ",")+`]}`)
+
+	_, _, err := s.Story("Z-9")
+	var e *sdlcerr.Error
+	if !errors.As(err, &e) {
+		t.Fatalf("err = %v, want an sdlcerr.Error", err)
+	}
+	if !strings.Contains(e.Why, "A-1") || !strings.Contains(e.Why, "2 others") {
+		t.Errorf("why = %q, want the first 8 ids and a count of the rest", e.Why)
+	}
+	if strings.Contains(e.Why, "A-9") {
+		t.Errorf("why lists more than 8 ids: %q", e.Why)
+	}
+}
+
+// One more than shown is "1 other", not "1 others".
+func TestStoryNotFoundUsesTheSingularForExactlyOneMoreStory(t *testing.T) {
+	s := newStore(t)
+	var stories []string
+	for i := 1; i <= 9; i++ {
+		stories = append(stories, fmt.Sprintf(`{"id":"A-%d","title":"T","status":"ready"}`, i))
+	}
+	writeBacklog(t, s, `{"stories":[`+strings.Join(stories, ",")+`]}`)
+
+	_, _, err := s.Story("Z-9")
+	var e *sdlcerr.Error
+	if !errors.As(err, &e) {
+		t.Fatalf("err = %v, want an sdlcerr.Error", err)
+	}
+	if !strings.Contains(e.Why, "1 other") || strings.Contains(e.Why, "1 others") {
+		t.Errorf("why = %q, want the singular \"1 other\"", e.Why)
+	}
+}
+
+// ---------------------------------------------------------------- more SetStoryStatus
+
+func TestSetStoryStatusPropagatesABacklogReadError(t *testing.T) {
+	s := newStore(t)
+	if err := s.SetStoryStatus("A-1", model.StatusInProgress); codeOf(t, err) != sdlcerr.BacklogMissing {
+		t.Errorf("code = %v, want %s", err, sdlcerr.BacklogMissing)
+	}
+}
+
+func TestSetStoryStatusOnAnUnknownStoryFails(t *testing.T) {
+	s := newStore(t)
+	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"ready"}]}`)
+	if err := s.SetStoryStatus("Z-9", model.StatusInProgress); codeOf(t, err) != sdlcerr.StoryNotFound {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StoryNotFound)
+	}
+}
+
+// Moving a story to the status it already has writes nothing: the whole tree
+// is what a review is stamped with, and a write that changed only a timestamp
+// would send a reviewer back to work that had not changed.
+func TestSetStoryStatusToItsCurrentStatusWritesNothing(t *testing.T) {
+	s := newStore(t)
+	body := `{"stories":[{"id":"A-1","title":"One","status":"ready"}]}`
+	writeBacklog(t, s, body)
+
+	if err := s.SetStoryStatus("A-1", model.StatusReady); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(s.cfg.BacklogPath(s.root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != body {
+		t.Errorf("moving to the same status changed the file:\n%s", raw)
+	}
+}
+
+func TestMovingAStoryFailsWhenTheBacklogDirectoryIsNotWritable(t *testing.T) {
+	skipIfPermissionsDoNotBind(t)
+	s := newStore(t)
+	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"ready"}]}`)
+	dir := filepath.Dir(s.cfg.BacklogPath(s.root))
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	err := s.SetStoryStatus("A-1", model.StatusInProgress)
+	if codeOf(t, err) != sdlcerr.StateUnwritable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnwritable)
+	}
+}
+
+// ---------------------------------------------------------------- Acknowledge
+
+func TestAcknowledgedIsEmptyBeforeAnythingIsRecorded(t *testing.T) {
+	s := newStore(t)
+	sha, ok, err := s.Acknowledged()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok || sha != "" {
+		t.Errorf("Acknowledged = %q, %v, want empty/false", sha, ok)
+	}
+}
+
+func TestAcknowledgeRecordsTheCommitAndAcknowledgedReadsItBack(t *testing.T) {
+	s := newStore(t)
+	if err := s.Acknowledge("deadbeef"); err != nil {
+		t.Fatal(err)
+	}
+	sha, ok, err := s.Acknowledged()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || sha != "deadbeef" {
+		t.Errorf("Acknowledged = %q, %v, want deadbeef/true", sha, ok)
+	}
+}
+
+func TestAcknowledgedFailsWhenTheFileCannotBeRead(t *testing.T) {
+	s := newStore(t)
+	path := filepath.Join(s.root, filepath.FromSlash(AcknowledgedFile))
+	if err := os.MkdirAll(path, 0o755); err != nil { // a directory, not a file
+		t.Fatal(err)
+	}
+	if _, _, err := s.Acknowledged(); codeOf(t, err) != sdlcerr.StateUnreadable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnreadable)
+	}
+}
+
+// ---------------------------------------------------------------- Active
+
+func TestActiveFailsWhenTheFileCannotBeOpened(t *testing.T) {
+	s := newStore(t)
+	path := filepath.Join(s.root, filepath.FromSlash(activeFile))
+	if err := os.MkdirAll(path, 0o755); err != nil { // a directory, not a file
+		t.Fatal(err)
+	}
+	if _, err := s.Active(); codeOf(t, err) != sdlcerr.StateUnreadable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnreadable)
+	}
+}
+
+func TestClearActiveFailsWhenTheStateCannotBeRemoved(t *testing.T) {
+	skipIfPermissionsDoNotBind(t)
+	s := newStore(t)
+	if err := s.SetActive("A-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.bindSession("session-a"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(s.root, filepath.FromSlash(stateDir))
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	if err := s.ClearActive(); codeOf(t, err) != sdlcerr.StateUnwritable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnwritable)
+	}
+}
+
+// ---------------------------------------------------------------- sessions
+
+func TestBindSessionReadsTheEnvironmentAndWorkingSessionReadsItBack(t *testing.T) {
+	s := newStore(t)
+	t.Setenv(SessionEnv, "3f2c9e10-aa01-4b7e-9f00-5d1c2b3a4e5f")
+	id, err := s.BindSession(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "3f2c9e10-aa01-4b7e-9f00-5d1c2b3a4e5f" {
+		t.Errorf("BindSession = %q", id)
+	}
+	got, ok := s.WorkingSession()
+	if !ok || got != id {
+		t.Errorf("WorkingSession = %q, %v, want %q/true", got, ok, id)
+	}
+}
+
+// Outside Claude Code there is no session in the environment. Picking up an
+// iteration already under way leaves whatever is recorded alone; starting a
+// fresh one removes it.
+func TestBindSessionWithNoEnvironmentLeavesOrClearsTheRecord(t *testing.T) {
+	s := newStore(t)
+	t.Setenv(SessionEnv, "")
+	if err := s.bindSession("earlier"); err != nil {
+		t.Fatal(err)
+	}
+
+	id, err := s.BindSession(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "" {
+		t.Errorf("BindSession(true) = %q, want empty", id)
+	}
+	if got, ok := s.WorkingSession(); !ok || got != "earlier" {
+		t.Errorf("resuming cleared the session working the story: %q, %v", got, ok)
+	}
+
+	id, err = s.BindSession(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "" {
+		t.Errorf("BindSession(false) = %q, want empty", id)
+	}
+	if _, ok := s.WorkingSession(); ok {
+		t.Error("starting fresh with no session left one recorded")
+	}
+}
+
+func TestWorkingSessionIsFalseForAnUnsafeValue(t *testing.T) {
+	s := newStore(t)
+	path := filepath.Join(s.root, filepath.FromSlash(sessionFile))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("../../elsewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.WorkingSession(); ok {
+		t.Error("WorkingSession accepted a value that could be a path")
+	}
+}
+
+func TestBindSessionFailsWhenTheSessionFileCannotBeRemoved(t *testing.T) {
+	skipIfPermissionsDoNotBind(t)
+	s := newStore(t)
+	if err := s.bindSession("session-a"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(s.root, filepath.FromSlash(stateDir))
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	if err := s.bindSession(""); codeOf(t, err) != sdlcerr.StateUnwritable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnwritable)
+	}
+}
+
+// A clone can bring a link in place of the session file too, the same way it
+// can for the state directory as a whole. This is the path bindSession takes
+// with no session to record: clearing whatever is there, rather than writing
+// one.
+func TestBindSessionDoesNotClearThroughALinkOutOfTheRepository(t *testing.T) {
+	s := newStore(t)
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(s.root, ".sdlc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(s.root, ".sdlc", "state")); err != nil {
+		t.Skipf("this system cannot make a symlink: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "session"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.bindSession(""); codeOf(t, err) != sdlcerr.StateUnwritable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnwritable)
+	}
+	if raw, err := os.ReadFile(filepath.Join(outside, "session")); err != nil || string(raw) != "x\n" {
+		t.Errorf("bindSession removed through the link: %q, %v", raw, err)
+	}
+}
+
+// ---------------------------------------------------------------- the freeze
+
+func TestLockIsNilBeforeTheTestsAreFrozen(t *testing.T) {
+	s := newStore(t)
+	l, err := s.Lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l != nil {
+		t.Errorf("Lock = %+v, want nil", l)
+	}
+}
+
+func TestSaveLockThenLockRoundTripsAndClearLockRemovesIt(t *testing.T) {
+	s := newStore(t)
+	want := model.NewLock("A-1", map[string]string{"a_test.go": "deadbeef"}, s.Now())
+	if err := s.SaveLock(want); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Story != "A-1" || got.Files["a_test.go"] != "deadbeef" {
+		t.Errorf("Lock = %+v", got)
+	}
+
+	if err := s.ClearLock(); err != nil {
+		t.Fatal(err)
+	}
+	if l, err := s.Lock(); err != nil || l != nil {
+		t.Errorf("Lock after ClearLock = %+v, %v", l, err)
+	}
+	// Clearing twice is not an error.
+	if err := s.ClearLock(); err != nil {
+		t.Errorf("ClearLock on a clear store: %v", err)
+	}
+}
+
+func TestLockRejectsUnreadableOrCorruptFiles(t *testing.T) {
+	s := newStore(t)
+	path := filepath.Join(s.root, filepath.FromSlash(lockFile))
+	if err := os.MkdirAll(path, 0o755); err != nil { // a directory, not a file
+		t.Fatal(err)
+	}
+	if _, err := s.Lock(); codeOf(t, err) != sdlcerr.StateUnreadable {
+		t.Errorf("directory: code = %v, want %s", err, sdlcerr.StateUnreadable)
+	}
+
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Lock(); codeOf(t, err) != sdlcerr.StateUnreadable {
+		t.Errorf("malformed JSON: code = %v, want %s", err, sdlcerr.StateUnreadable)
+	}
+}
+
+func TestClearLockFailsWhenTheFileCannotBeRemoved(t *testing.T) {
+	skipIfPermissionsDoNotBind(t)
+	s := newStore(t)
+	if err := s.SaveLock(model.NewLock("A-1", nil, s.Now())); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(s.root, filepath.FromSlash(stateDir))
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	if err := s.ClearLock(); codeOf(t, err) != sdlcerr.StateUnwritable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnwritable)
+	}
+}
+
+// ---------------------------------------------------------------- HashFile
+
+func TestHashFileHashesContentAndFailsWhenItCannotBeRead(t *testing.T) {
+	s := newStore(t)
+	rel := "some/file_test.go"
+	path := filepath.Join(s.root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("package some\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sum := sha256.Sum256([]byte("package some\n"))
+	want := hex.EncodeToString(sum[:])
+	got, err := s.HashFile(rel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Errorf("HashFile = %q, want %q", got, want)
+	}
+
+	if _, err := s.HashFile("missing/file.go"); codeOf(t, err) != sdlcerr.StateUnreadable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnreadable)
+	}
+}
+
+// ---------------------------------------------------------------- records
+
+func TestRecordPropagatesAnUnsafeID(t *testing.T) {
+	s := newStore(t)
+	if _, err := s.Record("../../etc"); codeOf(t, err) != sdlcerr.UnsafeStoryID {
+		t.Errorf("code = %v, want %s", err, sdlcerr.UnsafeStoryID)
+	}
+}
+
+func TestRecordFailsWhenTheFileCannotBeOpened(t *testing.T) {
+	s := newStore(t)
+	dir, _ := s.StoryDir("A-1")
+	recordPath := filepath.Join(dir, recordFile)
+	if err := os.MkdirAll(recordPath, 0o755); err != nil { // a directory, not a file
+		t.Fatal(err)
+	}
+	if _, err := s.Record("A-1"); codeOf(t, err) != sdlcerr.StateUnreadable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnreadable)
+	}
+}
+
+func TestRecordFillsInGatesWhenTheFileHasNone(t *testing.T) {
+	s := newStore(t)
+	dir, _ := s.StoryDir("A-1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, recordFile), []byte(`{"story":"A-1"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := s.Record("A-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Gates == nil {
+		t.Fatal("Record left Gates nil for a record file that had none")
+	}
+	if len(r.Gates) != 0 {
+		t.Errorf("Gates = %v, want empty", r.Gates)
+	}
+}
+
+func TestSaveRecordPropagatesAnUnsafeID(t *testing.T) {
+	s := newStore(t)
+	r := model.NewRecord("../../etc", s.Now())
+	if err := s.SaveRecord(r); codeOf(t, err) != sdlcerr.UnsafeStoryID {
+		t.Errorf("code = %v, want %s", err, sdlcerr.UnsafeStoryID)
+	}
+}
+
+// ---------------------------------------------------------------- StoriesOnDisk
+
+func TestStoriesOnDiskListsOnlyDirectoriesWithSafeIDs(t *testing.T) {
+	s := newStore(t)
+	ids, err := s.StoriesOnDisk()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids != nil {
+		t.Errorf("StoriesOnDisk with nothing on disk = %v, want nil", ids)
+	}
+
+	for _, id := range []string{"A-1", "B-2"} {
+		dir, err := s.StoryDir(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	storiesRoot := filepath.Join(s.root, filepath.FromSlash(storiesDir))
+	if err := os.WriteFile(filepath.Join(storiesRoot, "not-a-dir"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(storiesRoot, "a b"), 0o755); err != nil { // a space: not a safe id
+		t.Fatal(err)
+	}
+
+	ids, err = s.StoriesOnDisk()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(ids)
+	if want := []string{"A-1", "B-2"}; !slices.Equal(ids, want) {
+		t.Errorf("StoriesOnDisk = %v, want %v", ids, want)
+	}
+}
+
+func TestStoriesOnDiskFailsWhenTheDirectoryCannotBeRead(t *testing.T) {
+	s := newStore(t)
+	storiesRoot := filepath.Join(s.root, filepath.FromSlash(storiesDir))
+	if err := os.MkdirAll(filepath.Dir(storiesRoot), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(storiesRoot, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StoriesOnDisk(); codeOf(t, err) != sdlcerr.StateUnreadable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnreadable)
+	}
+}
+
+// ---------------------------------------------------------------- artifacts and reviews
+
+func TestArtifactStoredReportsWhetherTheFileIsOnDisk(t *testing.T) {
+	s := newStore(t)
+	analysis, _ := model.FindArtifact("analysis")
+	if s.ArtifactStored("A-1", analysis) {
+		t.Error("ArtifactStored is true before anything is written")
+	}
+	if _, err := s.WriteArtifact("A-1", analysis, []byte("x\n")); err != nil {
+		t.Fatal(err)
+	}
+	if !s.ArtifactStored("A-1", analysis) {
+		t.Error("ArtifactStored is false after WriteArtifact")
+	}
+	// An unsafe id answers false rather than failing: every path that could
+	// have written the file has already refused it.
+	if s.ArtifactStored("../../etc", analysis) {
+		t.Error("ArtifactStored accepted a traversing id")
+	}
+}
+
+func TestWriteArtifactFailsWhenTheFileCannotBeWritten(t *testing.T) {
+	s := newStore(t)
+	analysis, _ := model.FindArtifact("analysis")
+	dir, _ := s.StoryDir("A-1")
+	// A directory where the artifact's file needs to be.
+	if err := os.MkdirAll(filepath.Join(dir, analysis.File), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WriteArtifact("A-1", analysis, []byte("x\n")); codeOf(t, err) != sdlcerr.StateUnwritable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnwritable)
+	}
+}
+
+func TestWriteReviewKeepsEachRoundAndReviewPathAgrees(t *testing.T) {
+	s := newStore(t)
+	path1, err := s.WriteReview("A-1", model.GateDesignReview, "architect", 1, []byte("first\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := ReviewPath("A-1", model.GateDesignReview, "architect", 1); path1 != want {
+		t.Errorf("path = %q, want %q", path1, want)
+	}
+	path2, err := s.WriteReview("A-1", model.GateDesignReview, "architect", 2, []byte("second\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path1 == path2 {
+		t.Fatal("a second round overwrote the first round's path")
+	}
+	for path, want := range map[string]string{path1: "first\n", path2: "second\n"} {
+		body, err := os.ReadFile(filepath.Join(s.root, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != want {
+			t.Errorf("%s: on disk %q, want %q", path, body, want)
+		}
+	}
+
+	if _, err := s.WriteReview("../../etc", model.GateDesignReview, "architect", 1, []byte("x")); err == nil {
+		t.Fatal("a review was written outside the stories directory")
+	} else if got := codeOf(t, err); got != sdlcerr.UnsafeStoryID {
+		t.Errorf("code = %s, want %s", got, sdlcerr.UnsafeStoryID)
+	}
+}
+
+func TestWriteReviewFailsWhenTheFileCannotBeWritten(t *testing.T) {
+	s := newStore(t)
+	dir, _ := s.StoryDir("A-1")
+	reviewPath := filepath.Join(dir, reviewsDir, reviewName(model.GateDesignReview, "architect", 1))
+	if err := os.MkdirAll(reviewPath, 0o755); err != nil { // a directory where the file needs to be
+		t.Fatal(err)
+	}
+	if _, err := s.WriteReview("A-1", model.GateDesignReview, "architect", 1, []byte("x")); codeOf(t, err) != sdlcerr.StateUnwritable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnwritable)
+	}
+}
+
+// ---------------------------------------------------------------- small helpers
+
+func TestRelativeFallsBackToTheFullPathWhenItWouldLeaveTheRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "x")
+	if got := relative(root, outside); got != outside {
+		t.Errorf("relative = %q, want %q", got, outside)
 	}
 }

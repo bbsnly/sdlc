@@ -7,10 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
 // Every test here points the lock at a directory of its own, because the real
@@ -489,5 +492,189 @@ func TestAnInterruptedCommandGivesTheLockBack(t *testing.T) {
 	ReleaseHeld(10 * time.Millisecond)
 	if _, err := os.Stat(stuck.path); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("an interrupted command left the lock held: %v", err)
+	}
+}
+
+// heldBy is the one message that has to explain a wait, and still has to say
+// something with no readable owner behind it.
+func TestHeldByNamesTheHolderOrSaysAnotherCommand(t *testing.T) {
+	if got := heldBy(filepath.Join(t.TempDir(), "missing")); got != "another command" {
+		t.Errorf("heldBy on a missing lock = %q, want %q", got, "another command")
+	}
+
+	lock := t.TempDir()
+	owner := guardOwner{PID: 4242, At: "2026-01-01T00:00:00Z", What: "review add", Token: "t"}
+	raw, err := json.Marshal(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lock, "owner.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if want := "`sdlc review add` (pid 4242, started 2026-01-01T00:00:00Z)"; heldBy(lock) != want {
+		t.Errorf("heldBy = %q, want %q", heldBy(lock), want)
+	}
+
+	// A malformed owner file, or one that names no command, still gets a
+	// sentence rather than an empty one.
+	if err := os.WriteFile(filepath.Join(lock, "owner.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := heldBy(lock); got != "another command" {
+		t.Errorf("heldBy on a malformed owner file = %q, want %q", got, "another command")
+	}
+}
+
+// holderAlive judges a lock with no readable owner as gone: there is nobody to
+// wait for.
+func TestHolderAliveIsFalseWithoutAReadableOwnerFile(t *testing.T) {
+	dir := t.TempDir()
+	if holderAlive(dir) {
+		t.Error("holderAlive is true with no owner file at all")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "owner.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if holderAlive(dir) {
+		t.Error("holderAlive is true with a malformed owner file")
+	}
+}
+
+func TestBreakIfStaleRetriesWhenTheLockIsAlreadyGone(t *testing.T) {
+	if !breakIfStale(filepath.Join(t.TempDir(), "missing")) {
+		t.Error("breakIfStale did not say to retry when the lock was already gone by the time it looked")
+	}
+}
+
+// A lock that is still held keeps itself young by touching its directory;
+// once it is no longer this holder's -- taken over after this process was
+// judged dead and broken open -- there is nothing left to keep young.
+func TestBeatStopsOnceTheLockIsNoLongerThisHoldersToKeep(t *testing.T) {
+	cacheDir(t)
+	guardBeat = 5 * time.Millisecond
+	t.Cleanup(func() { guardBeat = 30 * time.Second })
+
+	g, err := Lock(t.TempDir(), "gate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	if err := os.WriteFile(filepath.Join(g.path, "owner.json"),
+		[]byte(`{"pid":1,"at":"x","what":"y","token":"someone-else"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-g.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("beat kept running after the lock was no longer this holder's")
+	}
+}
+
+// The one message that explains a wait: a lock held past the whole wait is
+// reported rather than taken out from under its holder, and the holder still
+// has it afterwards.
+func TestALockHeldPastTheWholeWaitIsReportedRatherThanTaken(t *testing.T) {
+	cacheDir(t)
+	guardWait = 50 * time.Millisecond
+	t.Cleanup(func() { guardWait = 10 * time.Second })
+
+	root := t.TempDir()
+	holder, err := Lock(root, "review add")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Release()
+
+	_, err = Lock(root, "start")
+	if err == nil {
+		t.Fatal("a second command took the lock while the first still held it")
+	}
+	if got := codeOf(t, err); got != sdlcerr.StateUnwritable {
+		t.Errorf("code = %s, want %s", got, sdlcerr.StateUnwritable)
+	}
+	var e *sdlcerr.Error
+	if !errors.As(err, &e) {
+		t.Fatalf("err = %v, want an sdlcerr.Error", err)
+	}
+	if !strings.Contains(e.What, "still running") {
+		t.Errorf("what = %q, want it to say another command is still running", e.What)
+	}
+	// Who holds it and for how long is what tells a person whether to wait.
+	for _, want := range []string{"review add", guardWait.String()} {
+		if !strings.Contains(e.Why, want) {
+			t.Errorf("why = %q, want it to name %q", e.Why, want)
+		}
+	}
+	if !strings.Contains(e.Fix, holder.path) {
+		t.Errorf("fix = %q, want it to name the lock to delete if nothing is running", e.Fix)
+	}
+	if !holderAlive(holder.path) {
+		t.Error("the holder's lock was broken by the command that gave up waiting for it")
+	}
+}
+
+// guardPath falls back to the system temp directory rather than fail outright
+// when there is no cache directory to put the lock in: an unlocked command is
+// worse than one locked somewhere less private.
+func TestGuardPathFallsBackToTempDirWithNoCacheDirectory(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("LocalAppData", "")
+
+	path, err := guardPath(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(path, os.TempDir()) {
+		t.Errorf("guardPath = %q, want it under %q", path, os.TempDir())
+	}
+}
+
+func TestLockFailsWhenTheLockDirectoryCannotBeCreated(t *testing.T) {
+	cacheDir(t)
+	root := t.TempDir()
+	path, err := guardPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A plain file where the lock's parent directory needs to be.
+	if err := os.MkdirAll(filepath.Dir(filepath.Dir(path)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Dir(path), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Lock(root, "gate"); codeOf(t, err) != sdlcerr.StateUnwritable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnwritable)
+	}
+}
+
+func TestLockFailsOnAnUnexpectedMkdirError(t *testing.T) {
+	cacheDir(t)
+	mkdir = func(string, fs.FileMode) error {
+		return errors.New("disk exploded")
+	}
+	t.Cleanup(func() { mkdir = os.Mkdir })
+
+	if _, err := Lock(t.TempDir(), "gate"); codeOf(t, err) != sdlcerr.StateUnwritable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnwritable)
+	}
+}
+
+func TestLockFailsWhenTheOwnerFileCannotBeWritten(t *testing.T) {
+	skipIfPermissionsDoNotBind(t)
+	cacheDir(t)
+	mkdir = func(path string, perm fs.FileMode) error {
+		if err := os.Mkdir(path, perm); err != nil {
+			return err
+		}
+		// No write permission: describe's write of owner.json will fail.
+		return os.Chmod(path, 0o500)
+	}
+	t.Cleanup(func() { mkdir = os.Mkdir })
+
+	if _, err := Lock(t.TempDir(), "gate"); codeOf(t, err) != sdlcerr.StateUnwritable {
+		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnwritable)
 	}
 }
