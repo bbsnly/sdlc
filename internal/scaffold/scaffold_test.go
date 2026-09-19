@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -90,6 +91,22 @@ func TestDetectNodeOnlyWiresScriptsThatExist(t *testing.T) {
 	}
 	if !strings.Contains(s.Commands["fmt_check"], "prettier") {
 		t.Errorf("fmt_check = %q, want prettier: it is in devDependencies", s.Commands["fmt_check"])
+	}
+}
+
+// A project's own format script is wired to that, ahead of guessing from
+// prettier being a dependency.
+func TestDetectNodePrefersAnExplicitFormatScript(t *testing.T) {
+	root := t.TempDir()
+	touch(t, root, "package.json", `{"scripts":{"format":"biome format --write .",`+
+		`"format:check":"biome format ."},"devDependencies":{"prettier":"^3"}}`)
+
+	s, _ := Detect(root)
+	if s.Commands["fmt"] != "npm run format --silent" {
+		t.Errorf("fmt = %q, want the project's own format script", s.Commands["fmt"])
+	}
+	if s.Commands["fmt_check"] != "npm run format:check --silent" {
+		t.Errorf("fmt_check = %q, want the project's own format:check script", s.Commands["fmt_check"])
 	}
 }
 
@@ -526,5 +543,104 @@ func TestInitNamesTrunkWhatTheRepositoryCallsIt(t *testing.T) {
 	}
 	if cfg.Git.TrunkBranch != "master" {
 		t.Errorf("trunk_branch = %q in a repository on master", cfg.Git.TrunkBranch)
+	}
+}
+
+// ------------------------------------------------------------------ failures
+
+// A file that cannot be written is reported by name, and the reason points at
+// its own directory, not at whichever file happened to be written first.
+func TestInitReportsWhichFileCouldNotBeWritten(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not restrict a directory's owner on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	for name, tc := range map[string]struct {
+		setup func(t *testing.T, root string)
+		force bool
+		want  string
+	}{
+		"the configuration itself": {
+			setup: func(t *testing.T, root string) {
+				if err := os.MkdirAll(filepath.Join(root, ".sdlc"), 0o500); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "config.json could not be written",
+		},
+		"the story schema": {
+			setup: func(t *testing.T, root string) {
+				if err := os.MkdirAll(filepath.Join(root, ".sdlc"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.MkdirAll(filepath.Join(root, ".sdlc", "templates"), 0o500); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "story.schema.json could not be written",
+		},
+		"the starter backlog": {
+			setup: func(t *testing.T, root string) {
+				if _, err := Init(root, false); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(filepath.Join(root, "user_stories.json")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(root, 0o500); err != nil {
+					t.Fatal(err)
+				}
+			},
+			force: true,
+			want:  "user_stories.json could not be written",
+		},
+		"the contract in CLAUDE.md": {
+			setup: func(t *testing.T, root string) {
+				if _, err := Init(root, false); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(filepath.Join(root, claudeMDPath)); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(root, 0o500); err != nil {
+					t.Fatal(err)
+				}
+			},
+			force: true,
+			want:  "CLAUDE.md could not be written",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			// Restored before TempDir's own cleanup, which needs to remove
+			// what setup locked down.
+			t.Cleanup(func() {
+				_ = os.Chmod(root, 0o755)
+				_ = os.Chmod(filepath.Join(root, ".sdlc"), 0o755)
+				_ = os.Chmod(filepath.Join(root, ".sdlc", "templates"), 0o755)
+			})
+			tc.setup(t, root)
+
+			_, err := Init(root, tc.force)
+			if err == nil {
+				t.Fatal("Init succeeded despite an unwritable directory")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want it to say %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// jsonList renders the template's arrays. An empty one has to be "[]", not
+// the "null" json.Marshal gives a nil slice.
+func TestJSONListRendersOrEmpties(t *testing.T) {
+	if got := jsonList(nil); got != "[]" {
+		t.Errorf("jsonList(nil) = %q, want []", got)
+	}
+	if got := jsonList([]string{"a", "b"}); got != `["a","b"]` {
+		t.Errorf(`jsonList([a b]) = %q, want ["a","b"]`, got)
 	}
 }

@@ -109,12 +109,18 @@ func TestRunAlwaysEmitsExactlyOneJSONObject(t *testing.T) {
 	for _, tc := range []struct {
 		name, stdin string
 		args        []string
+		// wantExact pins the whole reply down, for the events whose payload is
+		// too broken to name a session or a file: nothing else has grounds to
+		// say anything at all.
+		wantExact string
 	}{
-		{"no args", "", nil},
-		{"event, empty stdin", "", []string{"PreToolUse"}},
-		{"event with payload", `{"tool_name":"Bash"}`, []string{"PreToolUse"}},
-		{"garbage stdin", "not json at all", []string{"PreToolUse"}},
-		{"null payload", "null", []string{"PreToolUse"}},
+		{"no args", "", nil, ""},
+		{"event, empty stdin", "", []string{"PreToolUse"}, ""},
+		{"event with payload", `{"tool_name":"Bash"}`, []string{"PreToolUse"}, ""},
+		{"garbage stdin", "not json at all", []string{"PreToolUse"}, `{"continue":true}`},
+		{"null payload", "null", []string{"PreToolUse"}, ""},
+		{"garbage stdin, Stop", "not json at all", []string{"Stop"}, `{"continue":true}`},
+		{"garbage stdin, PostToolUse", "not json at all", []string{"PostToolUse"}, `{"continue":true}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
@@ -130,6 +136,11 @@ func TestRunAlwaysEmitsExactlyOneJSONObject(t *testing.T) {
 			}
 			if lines := strings.Count(strings.TrimSpace(out.String()), "\n"); lines != 0 {
 				t.Errorf("stdout is more than one line: %q", out.String())
+			}
+			if tc.wantExact != "" {
+				if got := strings.TrimSpace(out.String()); got != tc.wantExact {
+					t.Errorf("stdout = %q, want exactly %q", got, tc.wantExact)
+				}
 			}
 		})
 	}
@@ -673,6 +684,16 @@ func TestTheBacklogIsNotEditedDuringAnIteration(t *testing.T) {
 	}
 }
 
+// backlog.path left empty in the configuration is not a backlog with no name:
+// the default backlog file is still protected.
+func TestABacklogPathLeftEmptyFallsBackToTheDefault(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, ".sdlc/config.json", `{"version":1,"backlog":{"path":""}}`)
+	if !denied(call(t, event(root, "Edit", "sdlc-implementer", "user_stories.json"), noEnv)) {
+		t.Error("an empty backlog path in the configuration left the default backlog unprotected")
+	}
+}
+
 // Claude Code gives the hook thirty seconds and lets a call through, without a
 // word, when it takes longer. A command naming the same paths in segment after
 // segment took that long, checked word by word again for every segment.
@@ -1019,6 +1040,185 @@ func TestATamperedActiveStoryTurnsEnforcementOffRatherThanBuildingABadPath(t *te
 				if r := call(t, inSession(stdin, "session-b"), noEnv); denied(r) || r.SystemMessage != "" {
 					t.Errorf("another session was told about a story it did not start: %+v", r)
 				}
+			}
+		})
+	}
+}
+
+// Two different loop projects, both reached from one call, that fail to read
+// their active story the same way produce the same warning text -- said once,
+// not once per project it happened in.
+func TestTheSameWarningIsNotSaidTwice(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	for _, dir := range []string{a, b} {
+		write(t, dir, ".sdlc/config.json", `{"version":1}`)
+		write(t, dir, ".sdlc/state/session", working+"\n")
+		write(t, dir, ".sdlc/state/active", "not a valid id\n")
+	}
+	raw, err := json.Marshal(map[string]any{
+		"hook_event_name": "PreToolUse", "session_id": working, "tool_name": "Write",
+		"cwd": b, "tool_input": map[string]string{"file_path": filepath.Join(b, "internal", "x.go")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	getenv := env(map[string]string{"CLAUDE_PROJECT_DIR": a})
+
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"PreToolUse"}, bytes.NewReader(raw), &out, &errOut, getenv); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	var r reply
+	if err := json.Unmarshal(out.Bytes(), &r); err != nil {
+		t.Fatalf("stdout is not JSON: %v (%q)", err, out.String())
+	}
+	const want = "does not name a story"
+	if got := strings.Count(r.SystemMessage, want); got != 1 {
+		t.Errorf("the warning appears %d times in systemMessage: %q", got, r.SystemMessage)
+	}
+	if got := strings.Count(errOut.String(), want); got != 1 {
+		t.Errorf("the warning was written to stderr %d times: %q", got, errOut.String())
+	}
+}
+
+// The warning from finding the loop project reaches the session on a Stop
+// event too, combined with whatever the stop guard itself has to say -- here,
+// nothing, since a story that failed open has nothing to report on stopping.
+func TestAStopStillCarriesTheLoopsOwnWarnings(t *testing.T) {
+	root := loopProject(t)
+	write(t, root, ".sdlc/state/active", "not a valid id\n")
+
+	r := stop(t, root, false, noEnv)
+	if r.Decision != "" {
+		t.Errorf("a stop with no story recognised was held: %+v", r)
+	}
+	if !strings.Contains(r.SystemMessage, "does not name a story") {
+		t.Errorf("a Stop event lost the warning that nothing is being enforced: %q", r.SystemMessage)
+	}
+}
+
+// A hook must always produce valid JSON, even when it has a bug of its own: a
+// value that cannot be marshalled still gets a plain "continue" rather than
+// broken output the host cannot parse.
+func TestEmitFallsBackToPlainContinueWhenTheValueWontMarshal(t *testing.T) {
+	var out bytes.Buffer
+	if code := emit(&out, make(chan int)); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if got := out.String(); got != `{"continue":true}` {
+		t.Errorf("an unmarshallable value was not answered with plain continue: %q", got)
+	}
+}
+
+// A tool that touches no file at all -- TodoWrite has no file_path and no
+// notebook_path -- is never mistaken for a test or a frozen one.
+func TestAToolWithNoFilePathIsNeverATestOrFrozen(t *testing.T) {
+	root := loopProject(t)
+	raw, err := json.Marshal(map[string]any{
+		"hook_event_name": "PreToolUse", "session_id": working, "tool_name": "TodoWrite",
+		"cwd": root, "tool_input": map[string]any{"todos": []string{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := call(t, string(raw), noEnv)
+	if denied(r) {
+		t.Errorf("a tool with no file path was refused: %+v", r)
+	}
+	if r.SystemMessage != "" {
+		t.Errorf("a tool with no file path produced a warning: %q", r.SystemMessage)
+	}
+}
+
+// A command that moves before a decision on a story, from a call that names no
+// working directory of its own at all, cannot be followed to know where it
+// ends up, so it is refused rather than assumed safe.
+func TestADecisionAfterAnUnknownMoveIsRefused(t *testing.T) {
+	a := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(a); err == nil {
+		a = resolved
+	}
+	write(t, a, ".sdlc/config.json", `{"version":1}`)
+	write(t, a, ".git/HEAD", "ref: refs/heads/main\n")
+
+	raw, err := json.Marshal(map[string]any{
+		"hook_event_name": "PreToolUse", "session_id": "session-b", "tool_name": "Bash",
+		"tool_input": map[string]string{"command": "cd ../b && sdlc approve A-1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	getenv := env(map[string]string{"CLAUDE_PROJECT_DIR": a})
+	if !denied(call(t, string(raw), getenv)) {
+		t.Error("a decision run after a move from an unnamed working directory was allowed")
+	}
+}
+
+// A story directory made before its first gate has written a record -- or one
+// whose record cannot be read for some other reason -- is skipped rather than
+// taken as waiting for a person, or as a reason the scan cannot finish.
+func TestAStoryDirectoryWithNoRecordYetIsNotTakenAsWaiting(t *testing.T) {
+	root := loopProject(t)
+	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".sdlc", "stories", "B-2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if denied(call(t, inSession(command(root, "", "sdlc approve B-2"), "session-b"), noEnv)) {
+		t.Error("a story directory with no record yet was treated as waiting for a person")
+	}
+}
+
+// The commit's freshness check needs the configuration, to work out whether
+// the story's risk tier waits for a person, and the working tree, to compare
+// against what the review saw. Either one failing to read is not read as
+// nothing to check: the commit goes through with a warning instead of being
+// refused over a file that has nothing to do with the review.
+func TestACommitWithReviewsGoesThroughWhenFreshnessCannotBeChecked(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		spoil func(t *testing.T, root string)
+	}{
+		{
+			name: "the configuration cannot be read",
+			spoil: func(t *testing.T, root string) {
+				write(t, root, ".sdlc/config.json", "{not json")
+			},
+		},
+		{
+			name: "the working tree cannot be measured",
+			spoil: func(*testing.T, string) {
+				// No git repository is initialised here, so there is nothing to
+				// measure the tree in.
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := loopProject(t)
+			at := time.Now()
+			record := model.NewRecord("A-1", at)
+			for _, g := range model.GateCommit.Before() {
+				record.SetGate(g, model.GatePass, "", at)
+			}
+			for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
+				for _, r := range model.ReviewersFor(gate) {
+					record.AddReview(model.Review{Gate: gate, Role: r.Role, Verdict: model.VerdictApprove, Subject: "x"}, at)
+				}
+			}
+			raw, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			write(t, root, ".sdlc/stories/A-1/gate-record.json", string(raw))
+			tc.spoil(t, root)
+
+			r := call(t, command(root, "", "git commit -m done"), noEnv)
+			if denied(r) {
+				t.Fatalf("a commit was refused: %s", r.HookSpecificOutput.PermissionDecisionReason)
+			}
+			if !strings.Contains(r.SystemMessage, "the working tree could not be measured") {
+				t.Errorf("no warning that the tree could not be measured: %q", r.SystemMessage)
 			}
 		})
 	}
@@ -1681,24 +1881,39 @@ func TestACommitOfAPausedStoryWaitsForAPersonsApproval(t *testing.T) {
 // reading it as "ready" made `rm` on the record the way to a commit no gate had
 // passed.
 func TestACommitWaitsForARecordThatReads(t *testing.T) {
-	for name, spoil := range map[string]func(t *testing.T, root string){
-		"missing": func(*testing.T, string) {},
-		"corrupt": func(t *testing.T, root string) {
+	for name, tc := range map[string]struct {
+		spoil func(t *testing.T, root string)
+		want  string
+	}{
+		"missing": {func(*testing.T, string) {}, "is missing"},
+		"corrupt": {func(t *testing.T, root string) {
 			write(t, root, ".sdlc/stories/A-1/gate-record.json", "{not json")
-		},
+		}, "is not valid JSON"},
+		// A directory where the record should be is neither missing nor
+		// invalid JSON: opening it fails a different way, and the refusal
+		// says so rather than picking either of the other two reasons.
+		"unreadable": {func(t *testing.T, root string) {
+			if err := os.MkdirAll(filepath.Join(root, ".sdlc", "stories", "A-1", "gate-record.json"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, "could not be read"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := loopProject(t)
-			spoil(t, root)
+			tc.spoil(t, root)
 			r := call(t, command(root, "", "git commit -m x"), noEnv)
 			if !denied(r) {
 				t.Fatal("a commit went through with no readable record of the gates")
 			}
 			// Blocking work the loop cannot explain is how a tool teaches
-			// people to switch it off, so the refusal has to name the file.
-			if !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "gate-record.json") {
-				t.Errorf("the refusal does not say which file is wrong: %q",
-					r.HookSpecificOutput.PermissionDecisionReason)
+			// people to switch it off, so the refusal has to name the file
+			// and the specific reason it could not be read.
+			reason := r.HookSpecificOutput.PermissionDecisionReason
+			if !strings.Contains(reason, "gate-record.json") {
+				t.Errorf("the refusal does not say which file is wrong: %q", reason)
+			}
+			if !strings.Contains(reason, tc.want) {
+				t.Errorf("the refusal does not say %q: %q", tc.want, reason)
 			}
 		})
 	}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -299,6 +300,112 @@ func TestAStopThatWaitedOnTheIterationEndingHandsNothingOver(t *testing.T) {
 	}
 	if _, ok := record.PendingEscalation(); ok {
 		t.Error("a story whose iteration had ended was handed to a person")
+	}
+}
+
+// The stop guard's own limit comes from loop.max_stop_blocks, but a
+// configuration that will not read is not a reason to stop enforcing it: the
+// default limit still applies.
+func TestAStopWithABrokenConfigurationStillUsesTheDefaultLimit(t *testing.T) {
+	root := storyUnderWay(t)
+	write(t, root, ".sdlc/config.json", "{not json")
+	if r := stop(t, root, false, noEnv); r.Decision != "block" {
+		t.Errorf("a broken configuration turned the stop guard off instead of falling back "+
+			"to the default limit: %+v", r)
+	}
+}
+
+// A story that has been started but has not been through Gate 1 yet has no
+// gate record for the stop guard to measure progress from. That is a file
+// that has simply not been written yet, not a reason to hold the session.
+func TestAStopBeforeAnyGateRecordExistsFailsOpen(t *testing.T) {
+	root := loopProject(t)
+	if r := stop(t, root, false, noEnv); r.Decision != "" {
+		t.Errorf("a stop before any gate record existed was held: %+v", r)
+	}
+}
+
+// Saving the count is not the point of the stop guard. A count that cannot be
+// written must not turn a session stopped mid-story into one held by an error
+// nobody sent back.
+func TestAStopThatCannotSaveItsCountFailsOpen(t *testing.T) {
+	root := storyUnderWay(t)
+	if err := os.MkdirAll(filepath.Join(root, ".sdlc", "state", "stop-blocks.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if r := stop(t, root, false, noEnv); r.Decision != "" {
+		t.Errorf("a stop guard that could not save its count was held: %+v", r)
+	}
+}
+
+// The stop guard takes the project's lock before reading anything. A lock it
+// cannot take at all -- its cache directory blocked by something that is not
+// a directory -- is not a reason to hold the session either.
+func TestAStopWaitingOnALockItCannotTakeFailsOpen(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the cache directory is found differently on Windows")
+	}
+	root := storyUnderWay(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cacheBase := filepath.Join(home, "cache")
+	if runtime.GOOS == "darwin" {
+		cacheBase = filepath.Join(home, "Library", "Caches")
+	} else {
+		t.Setenv("XDG_CACHE_HOME", cacheBase)
+	}
+	if err := os.MkdirAll(cacheBase, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A plain file named "sdlc" blocks the lock directory the guard needs to
+	// create beneath it.
+	if err := os.WriteFile(filepath.Join(cacheBase, "sdlc"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if r := stop(t, root, false, noEnv); r.Decision != "" {
+		t.Errorf("a stop guard that could not take its lock was held: %+v", r)
+	}
+}
+
+// A story that has passed every gate but has not had its iteration ended --
+// nobody has run `sdlc stop` yet -- is told to end it, not sent to work a
+// gate that no longer exists.
+func TestAStopAfterEveryGateHasPassedSaysToEndTheIteration(t *testing.T) {
+	root := storyUnderWay(t)
+	recordGates(t, root, model.Gates...)
+
+	r := stop(t, root, false, noEnv)
+	if r.Decision != "block" {
+		t.Fatal("a stop after every gate passed, with the iteration still open, went through without a word")
+	}
+	if !strings.Contains(r.Reason, "sdlc stop") {
+		t.Errorf("the reason does not say to end the iteration: %s", r.Reason)
+	}
+	if strings.Contains(r.Reason, "sdlc escalate") {
+		t.Errorf("a story with every gate passed was sent to escalate instead of ending: %s", r.Reason)
+	}
+}
+
+// Escalating is not guaranteed: the story might no longer be in the backlog by
+// the time the loop tries to hand it to a person. That failure must not be
+// mistaken for the session being held.
+func TestAStoryThatCannotBeEscalatedFailsOpenWithAWarning(t *testing.T) {
+	root := storyUnderWay(t)
+	for range 3 {
+		stop(t, root, false, noEnv)
+	}
+	write(t, root, "user_stories.json", `{"stories":[]}`+"\n")
+
+	r := stop(t, root, false, noEnv)
+	if r.Decision != "" {
+		t.Errorf("a stop that could not be escalated was held instead of failing open: %+v", r)
+	}
+	if !strings.Contains(r.SystemMessage, "could not be handed") {
+		t.Errorf("no warning that the hand-over failed: %q", r.SystemMessage)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
+		t.Error("the iteration ended even though the hand-over failed")
 	}
 }
 

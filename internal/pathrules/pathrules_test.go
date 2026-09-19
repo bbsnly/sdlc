@@ -172,6 +172,35 @@ func TestAbsJoinsOnlyWhatIsRelative(t *testing.T) {
 	}
 }
 
+// A path rooted with a leading backslash is on the base's own drive, whatever
+// that drive is -- on a platform with no drives at all, that is no drive, and
+// the path is returned as written.
+func TestAPathWithALeadingBackslashIsRootedOnTheBasesDrive(t *testing.T) {
+	base := project(t)
+	const p = `\repo\CLAUDE.md`
+	if got, ok := Abs(base, p); !ok || got != filepath.VolumeName(base)+p {
+		t.Errorf("Abs(%q) = %q, %v; want it rooted on the base's own drive", p, got, ok)
+	}
+}
+
+// A symlink cycle cannot be resolved. resolve falls back to the path as
+// written rather than losing it or hanging.
+func TestASymlinkCycleFallsBackToThePathItself(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need elevation on Windows")
+	}
+	root := project(t)
+	loop := filepath.Join(root, "loop")
+	if err := os.Symlink(loop, loop); err != nil {
+		t.Fatal(err)
+	}
+
+	res := NewResolver(loop)
+	if got, outside := res.Rel(filepath.Join(loop, "CLAUDE.md")); outside || got != "CLAUDE.md" {
+		t.Errorf("Rel through an unresolvable project root = %q, outside %v", got, outside)
+	}
+}
+
 // On Windows a path can be rooted without a drive, and filepath.IsAbs calls it
 // relative. Joined onto the project, `\repo\CLAUDE.md` became `repo/CLAUDE.md`,
 // which no rule protects, while the tool wrote the project's own CLAUDE.md.
@@ -233,6 +262,8 @@ func TestUnderIsDirectoryAware(t *testing.T) {
 		{".sdlcfoo/x", ".sdlc", false},
 		{".sdlc-other", ".sdlc", false},
 		{"internal/x.go", "internal/store", false},
+		// Fewer segments than dir: rel cannot be under it, whatever it says.
+		{"internal", "internal/store", false},
 		{"anything", "", true},
 		// Letters that fold to ASCII at a different byte length. Each of
 		// these is the protected path on APFS, and each was let through.
@@ -264,5 +295,16 @@ func TestUnderAny(t *testing.T) {
 	}
 	if UnderAny("src/main.go", ".sdlc", "CODEMAP.md") {
 		t.Error("UnderAny matched something it should not")
+	}
+}
+
+// SameName is Fold applied to two paths at once, for a caller comparing one
+// name rather than placing a whole path.
+func TestSameNameFoldsCaseTheWayTheFilesystemDoes(t *testing.T) {
+	if !SameName("CLAUDE.md", "claude.md") {
+		t.Error("SameName did not fold case")
+	}
+	if SameName("CLAUDE.md", "OTHER.md") {
+		t.Error("SameName matched two different names")
 	}
 }
