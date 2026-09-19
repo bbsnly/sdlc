@@ -56,10 +56,14 @@ import (
 // guardStale to do its work does not exist; a laptop that slept in the middle
 // of one does.
 const (
-	guardWait  = 10 * time.Second
 	guardStale = 2 * time.Minute
 	guardPoll  = 10 * time.Millisecond
 )
+
+// guardWait is a variable only so that a test can see a lock held past the
+// whole wait without spending the wait: the refusal that explains it was the
+// one message here no test reached, because reaching it took ten real seconds.
+var guardWait = 10 * time.Second
 
 // mkdir is os.Mkdir, and a variable only so that a test can make it fail the
 // way Windows does, or put another command in the gap before a break is held.
