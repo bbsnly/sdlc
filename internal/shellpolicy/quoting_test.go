@@ -43,4 +43,8 @@ func TestAQuoteOrAnEscapeDoesNotHideAPath(t *testing.T) {
 	} {
 		allowed(t, command, ready)
 	}
+
+	// A double quote never closed is read to the end of the line rather than
+	// dropped, the same as a substitution never closed is.
+	refused(t, `rm ".sdlc/state/active`, ready, "loop-state-through-the-tool")
 }

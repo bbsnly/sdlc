@@ -18,6 +18,7 @@ func TestFindPicksItsFilesByName(t *testing.T) {
 		"find -L . -name stop-blocks.json -delete",
 		"find . -name acknowledged -delete",
 		"find . -path '*state/active' -delete",
+		"find . -path '*state/activ?' -delete",
 		"find . -path './.sdlc/sta[t]e' -exec rm -rf {} +",
 		"find -name active -delete",
 		"find .. -name active -delete",
@@ -99,6 +100,9 @@ func TestFindPatternsMatchAsFindMatchesThem(t *testing.T) {
 		{"a.b", "axb", false},
 		{"[abc", "[abc", true},
 		{"ü*", "über", true},
+		// `?` matches exactly one character, the same as it does for -name.
+		{"./.sdlc/stat?", "./.sdlc/state", true},
+		{"./.sdlc/stat?", "./.sdlc/statee", false},
 	} {
 		re := findPattern(c.pattern)
 		if got := re != nil && re.MatchString(c.path); got != c.want {

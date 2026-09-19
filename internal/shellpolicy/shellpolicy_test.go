@@ -124,6 +124,16 @@ func TestADocumentIsTextHoweverItIsHandedOver(t *testing.T) {
 	refused(t, "@\"\nsdlc approve A-1\n\"@ | Invoke-Expression", ps, "approval-is-a-human-decision")
 	refused(t, "cat <<'EOF' | sh\ngit commit -m x\nEOF", notReady, "commit-gate")
 	refused(t, "source <<'EOF'\ngit commit -m x\nEOF", notReady, "commit-gate")
+
+	// An interpreter can be run with a variable set just for it, in front of
+	// the command as `FOO=bar python3` does, and a heredoc handed to it is
+	// still the program it runs, not a document about one.
+	refused(t, "FOO=bar python3 <<EOF\nsdlc stop\nEOF", ready, "stop-is-a-human-decision")
+
+	// `env` on its own does not run what a heredoc hands it: with nothing
+	// after it that could be a program, its body is read as a document, not
+	// commands.
+	allowed(t, "env <<EOF\nsdlc stop\nEOF", ready)
 }
 
 // A commit in another repository is not the story's to hold back: the session
@@ -386,6 +396,15 @@ func TestAWrappedCommandIsStillTheCommand(t *testing.T) {
 		"git checkout -- .sdlc/state/tests.lock",
 		`python3 -c "open('.sdlc/state/tests.lock','w').write('{}')"`,
 		`python3 -c "import os; os.remove('.sdlc/state/tests.lock')"`,
+		`php -r "unlink('.sdlc/state/tests.lock');"`,
+		`deno eval "Deno.removeSync('.sdlc/state/tests.lock')"`,
+		`node --eval "require('fs').unlinkSync('.sdlc/state/tests.lock')"`,
+		`node --eval="require('fs').unlinkSync('.sdlc/state/tests.lock')"`,
+		"python3 - <<'EOF'\nimport os; os.remove('.sdlc/state/tests.lock')\nEOF",
+		// `-` on its own means the program comes from standard input, piped
+		// rather than a here-document, so there is no `<<` on the line to
+		// notice it by.
+		`echo "import os; os.remove('.sdlc/state/tests.lock')" | python3 -`,
 		"for f in x; do rm .sdlc/state/tests.lock; done",
 		// A relative path, after a cd earlier in the same command.
 		"cd .sdlc/stories/A-1 && echo {} > gate-record.json",
@@ -430,6 +449,20 @@ func TestWrappedOrdinaryWorkIsStillOrdinary(t *testing.T) {
 		"ruby -Itest internal/x_test.go",
 		"cat .sdlc/stories/A-1/PLAN.md",
 		"xargs -n1 echo < files.txt",
+		// This program only prints what it reads, so the frozen test is an
+		// input and nothing more. That is a fact about this program, not about
+		// awk: one with its own print > "file" is a writer.
+		"awk '{print}' internal/x_test.go",
+		// A script file on disk, not a program on the line itself.
+		"python3 build.py internal/x_test.go",
+		"deno run internal/x_test.go",
+		// Every word is one of the interpreter's own flags, and none of them
+		// hands it a program to run.
+		"python3 --version",
+		// A bare wrapper or program, with nothing after it to run.
+		"git",
+		"sdlc",
+		"npx -y",
 	} {
 		allowed(t, command, frozen)
 	}
@@ -456,6 +489,9 @@ func TestAReviewIsTheReviewersOwn(t *testing.T) {
 		as("human-advocate"))
 	allowed(t, "sdlc review list --gate code_review", as("implementer"))
 	allowed(t, `sdlc gate code_review pass --note "code-reviewer approved"`, as(""))
+	// A gate and role the loop does not pair up names no reviewer to check
+	// against, so sdlc's own validation is left to catch the mistake.
+	allowed(t, "sdlc review add code_review not-a-role approve", as("implementer"))
 }
 
 // Every agent hands its review or its plan to sdlc as a here-document, and a

@@ -10,9 +10,14 @@ func TestASubstitutionIsPartOfItsWord(t *testing.T) {
 		"rm $(pwd)/.sdlc/state/active",
 		"rm `pwd`/.sdlc/state/active",
 		`rm "$(pwd)"/.sdlc/state/active`,
+		"rm \"`pwd`/.sdlc/state/active\"",
 		"rm $(git rev-parse --show-toplevel)/.sdlc/config.json",
 		"echo x > $(pwd)/.sdlc/state/active",
 		"cp x $(dirname $(pwd))/project/.sdlc/config.json",
+		// A closing parenthesis quoted inside the substitution is not the one
+		// that ends it: read as though it were, the substitution ended at
+		// `printf '%s' '`, and the real path after it was never seen.
+		`rm $(printf '%s' ')')/.sdlc/state/active`,
 		// What runs inside it is still read.
 		"echo $(rm .sdlc/state/active)/x",
 		"echo `rm .sdlc/state/active`/x",
