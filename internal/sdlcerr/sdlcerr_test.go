@@ -195,6 +195,86 @@ func TestErrorIsOneLineAndCarriesTheCode(t *testing.T) {
 	}
 }
 
+// Error() is for logs, not for a person to read at the command line, so unlike
+// Render it puts the cause in: a log with the code and nothing else is not
+// enough to debug from.
+func TestErrorAppendsTheCauseWhenThereIsOne(t *testing.T) {
+	err := New(StoryNotFound, `no story with id "AUTH-9"`, "the backlog has 3 stories").
+		WithCause(errors.New("open user_stories.json: permission denied"))
+	got := err.Error()
+	if !strings.HasSuffix(got, ": open user_stories.json: permission denied") {
+		t.Errorf("Error() = %q, want the cause after the code, separated by a colon", got)
+	}
+}
+
+// A code is API: scripts match on it and docs/troubleshooting.md is linked by
+// it, so the number behind each name is never changed or handed to another
+// error. The catalogue refuses a duplicate on its own; this is what refuses a
+// renumbering, by making it a second, deliberate edit. A new code adds a row.
+func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
+	released := []struct {
+		code Code
+		id   string
+	}{
+		{NotAGitRepo, "SDLC-E0001"},
+		{NotInitialised, "SDLC-E0002"},
+		{AlreadyInitialised, "SDLC-E0003"},
+		{ConfigUnreadable, "SDLC-E0004"},
+		{StateUnreadable, "SDLC-E0005"},
+		{StateUnwritable, "SDLC-E0006"},
+		{BacklogMissing, "SDLC-E0007"},
+		{BacklogUnreadable, "SDLC-E0008"},
+		{StoryNotFound, "SDLC-E0009"},
+		{NoRunnableStory, "SDLC-E0010"},
+		{NoActiveIteration, "SDLC-E0011"},
+		{IterationAlreadyActive, "SDLC-E0012"},
+		{StoryAlreadyFinished, "SDLC-E0033"},
+		{BadArgument, "SDLC-E0034"},
+		{NothingToApprove, "SDLC-E0035"},
+		{AwaitingPerson, "SDLC-E0036"},
+		{ApprovalRequired, "SDLC-E0037"},
+		{NotOnTrunk, "SDLC-E0038"},
+		{UncommittedWork, "SDLC-E0039"},
+		{TrunkBehind, "SDLC-E0040"},
+		{TrunkBroken, "SDLC-E0041"},
+		{DiffTooLarge, "SDLC-E0042"},
+		{UnfrozenTests, "SDLC-E0043"},
+		{NoAcceptanceCriteria, "SDLC-E0044"},
+		{UnknownGate, "SDLC-E0013"},
+		{UnknownGateStatus, "SDLC-E0014"},
+		{UnknownArtifact, "SDLC-E0016"},
+		{EmptyArtifact, "SDLC-E0017"},
+		{ArtifactUnreadable, "SDLC-E0018"},
+		{AlreadyFrozen, "SDLC-E0022"},
+		{NotFrozen, "SDLC-E0023"},
+		{NoTestsFound, "SDLC-E0024"},
+		{FreezeBroken, "SDLC-E0025"},
+		{ReasonRequired, "SDLC-E0026"},
+		{UnknownReviewer, "SDLC-E0027"},
+		{UnknownVerdict, "SDLC-E0028"},
+		{ReviewsMissing, "SDLC-E0029"},
+		{ReviewBlocks, "SDLC-E0030"},
+		{GateOutOfOrder, "SDLC-E0031"},
+		{TreeNotCommitted, "SDLC-E0032"},
+		{RepositoryUnreadable, "SDLC-E0021"},
+		{GateDocumentsMissing, "SDLC-E0020"},
+		{ArtifactTooLarge, "SDLC-E0019"},
+		{UnsafeStoryID, "SDLC-E0015"},
+		{ConfigInvalid, "SDLC-E0045"},
+		{TrunkMoved, "SDLC-E0046"},
+		{AcknowledgedUnknown, "SDLC-E0047"},
+		{SessionElsewhere, "SDLC-E0048"},
+	}
+	for _, r := range released {
+		if got := r.code.String(); got != r.id {
+			t.Errorf("%s now renders as %s: a released code was renumbered", r.id, got)
+		}
+	}
+	if len(released) != len(catalogue) {
+		t.Errorf("the catalogue has %d codes and %d are pinned here; add the new one", len(catalogue), len(released))
+	}
+}
+
 func TestRenderShowsWhatWhyFixAndAResolvableLink(t *testing.T) {
 	err := New(NotAGitRepo, "this is not a Git repository", "sdlc keeps its state beside your code")
 	got := err.Render()

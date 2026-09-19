@@ -103,6 +103,7 @@ func TestNextReadsTheNumbersInAnIDAsNumbers(t *testing.T) {
 		{"A-2", "A-02", 1},
 		{"v1.9", "v1.10", -1},
 		{"A-1", "A-01x", -1}, // the same story number, and the longer id after it
+		{"A-3", "A-2", 1},    // same width once trimmed, but a genuinely larger number
 	} {
 		if got := compareIDs(c.a, c.b); got != c.want {
 			t.Errorf("compareIDs(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
@@ -218,6 +219,57 @@ func TestStatusAndGateValidation(t *testing.T) {
 	}
 }
 
+// A verdict is typed by a reviewer, so anything outside the list is refused
+// before it is recorded rather than read as an approval later.
+func TestVerdictValidAcceptsOnlyTheKnownVerdicts(t *testing.T) {
+	for _, v := range Verdicts {
+		if !v.Valid() {
+			t.Errorf("%q is in Verdicts and is not valid", v)
+		}
+	}
+	for _, v := range []Verdict{"", "maybe", "Approve", "approve "} {
+		if v.Valid() {
+			t.Errorf("%q is valid and is not in Verdicts", v)
+		}
+	}
+}
+
+// GateNames is what a refusal lists when a person types a gate the loop does
+// not know, so every gate has to be in it, in order, and nothing else.
+func TestGateNamesListsEveryGateInOrder(t *testing.T) {
+	got := strings.Split(GateNames(), ", ")
+	if len(got) != len(Gates) {
+		t.Fatalf("GateNames() has %d entries, want %d: %q", len(got), len(Gates), GateNames())
+	}
+	for i, g := range Gates {
+		if got[i] != string(g) {
+			t.Errorf("GateNames()[%d] = %q, want %q", i, got[i], g)
+		}
+	}
+}
+
+// VerdictNames is the same kind of message for a verdict a reviewer typed
+// wrong.
+func TestVerdictNamesListsEveryVerdict(t *testing.T) {
+	got := strings.Split(VerdictNames(), ", ")
+	if len(got) != len(Verdicts) {
+		t.Fatalf("VerdictNames() has %d entries, want %d: %q", len(got), len(Verdicts), VerdictNames())
+	}
+	for i, v := range Verdicts {
+		if got[i] != string(v) {
+			t.Errorf("VerdictNames()[%d] = %q, want %q", i, got[i], v)
+		}
+	}
+}
+
+// Before has no earlier gates to name for a gate this version does not know,
+// which only happens when an old record names a gate a newer sdlc dropped.
+func TestBeforeIsNilForAGateThatIsNotInTheOrder(t *testing.T) {
+	if got := Gate("vibes").Before(); got != nil {
+		t.Errorf("Before() on an unknown gate = %v, want nil", got)
+	}
+}
+
 func TestRecordRecordsGatesAndHistory(t *testing.T) {
 	at := time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
 	r := NewRecord("A-1", at)
@@ -240,6 +292,17 @@ func TestRecordRecordsGatesAndHistory(t *testing.T) {
 	r.Append("loop_start", "iteration started", at)
 	if len(r.Events) != 1 || r.Events[0].At != "2026-09-10T08:30:00Z" {
 		t.Errorf("events = %+v", r.Events)
+	}
+}
+
+// A record read back from JSON with no "gates" key at all -- an old record, or
+// one written by the shell kit before a story reached its first gate -- has a
+// nil map. SetGate has to build it rather than panic on the first write.
+func TestSetGateBuildsTheGatesMapWhenItIsNil(t *testing.T) {
+	r := &Record{Story: "A-1"}
+	r.SetGate(GateDoR, GatePass, "ready", time.Now())
+	if !r.Pass(GateDoR) {
+		t.Error("SetGate on a record with a nil Gates map did not record the pass")
 	}
 }
 
@@ -291,6 +354,14 @@ func TestAnApprovalHoldsOnlyForTheWorkItWasGivenFor(t *testing.T) {
 	r.Decide(false, "no way back", "tree-1", at)
 	if why := r.WaitsForApproval("high", "tree-1"); !strings.Contains(why, `sent this work back, saying "no way back"`) {
 		t.Errorf("approved and then sent back: %q", why)
+	}
+
+	// A rejection with no reason given still says what happened, just without
+	// a quote to attribute.
+	r.Escalate("pre_commit_approval", "commit?", "tree-1", at)
+	r.Decide(false, "", "tree-1", at)
+	if why := r.WaitsForApproval("high", "tree-1"); why != "a person sent this work back" {
+		t.Errorf("rejected with no reason: %q", why)
 	}
 
 	// The reason is a person's words, read back to the assistant inside
@@ -539,6 +610,23 @@ func TestAFileNameMatchesWhateverCaseItArrivesIn(t *testing.T) {
 	}
 }
 
+// ArtifactsFor tells a gate what it is expected to have written, and must
+// name nothing else's documents.
+func TestArtifactsForListsOnlyThatGatesDocuments(t *testing.T) {
+	got := ArtifactsFor(GateAnalysis)
+	if len(got) != 2 {
+		t.Fatalf("ArtifactsFor(analysis) = %+v, want the analysis and threats documents", got)
+	}
+	for _, a := range got {
+		if a.Gate != GateAnalysis {
+			t.Errorf("%+v does not belong to the analysis gate", a)
+		}
+	}
+	if got := ArtifactsFor(GateCommit); got != nil {
+		t.Errorf("ArtifactsFor(commit) = %+v, want none: the commit gate writes no document", got)
+	}
+}
+
 // Where a resumed loop picks up. The skill reads this from `sdlc status`
 // rather than working the gate order out for itself, so it has to be the same
 // answer the gate ordering rule gives.
@@ -623,5 +711,89 @@ func TestTheFreezeHoldsWhateverTheCase(t *testing.T) {
 	accented := NewLock("US-1", map[string]string{"internal/caf\u00e9_test.go": "abc"}, time.Now())
 	if !accented.Holds("internal/cafe\u0301_test.go") {
 		t.Error("the freeze did not hold a file whose é was spelled decomposed")
+	}
+}
+
+// A nil lock is what "no freeze yet" means, and behaves like an empty one
+// rather than panicking the first time a caller forgets to check.
+func TestNilLockHoldsNothingAndListsNoPaths(t *testing.T) {
+	var l *Lock
+	if l.Holds("internal/invoice_test.go") {
+		t.Error("a nil lock holds a path")
+	}
+	if got := l.Paths(); got != nil {
+		t.Errorf("a nil lock lists paths: %v", got)
+	}
+}
+
+// Paths names the frozen files for a refusal message, in a stable order so
+// that the same freeze always reads the same way.
+func TestLockPathsListsTheFrozenFilesSorted(t *testing.T) {
+	lock := NewLock("US-1", map[string]string{"b_test.go": "2", "a_test.go": "1"}, time.Now())
+	if got := lock.Paths(); !slices.Equal(got, []string{"a_test.go", "b_test.go"}) {
+		t.Errorf("Paths() = %v, want the files sorted", got)
+	}
+}
+
+// StandingFreeze is asked when nothing has said one way or the other, so a
+// person unfreezing must clear it, and freezing again after that must bring
+// it back.
+func TestStandingFreezeTracksTheMostRecentFreezeAndUnfreeze(t *testing.T) {
+	at := time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
+	r := NewRecord("A-1", at)
+	if _, ok := r.StandingFreeze(); ok {
+		t.Error("a fresh record has a standing freeze")
+	}
+
+	r.Append("freeze", "3 files hashed", at)
+	if got, ok := r.StandingFreeze(); !ok || got != Timestamp(at) {
+		t.Errorf("StandingFreeze = %q, %v, want the freeze event's own time", got, ok)
+	}
+
+	r.Append("unfreeze", "a person lifted it", at)
+	if _, ok := r.StandingFreeze(); ok {
+		t.Error("an unfreeze after the last freeze must clear it")
+	}
+
+	r.Append("freeze", "refrozen", at)
+	if _, ok := r.StandingFreeze(); !ok {
+		t.Error("a freeze recorded after the unfreeze should stand again")
+	}
+}
+
+// A running total that only ever grows, so that a story's cost is what all of
+// its spend adds up to and never less.
+func TestAddSpendAccumulatesTheRunningTotal(t *testing.T) {
+	at := time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
+	r := NewRecord("A-1", at)
+	if got := r.SpentUSD(); got != 0 {
+		t.Errorf("a fresh record has spent %v, want 0", got)
+	}
+	if got := r.AddSpend(1.5, "gate 2", at); got != 1.5 {
+		t.Errorf("AddSpend returned %v, want the running total 1.5", got)
+	}
+	if got := r.AddSpend(2.25, "gate 4", at); got != 3.75 {
+		t.Errorf("AddSpend returned %v, want the running total 3.75", got)
+	}
+	if len(r.Spend) != 2 || r.Spend[1].Note != "gate 4" || r.Spend[1].At != Timestamp(at) {
+		t.Errorf("Spend = %+v", r.Spend)
+	}
+}
+
+// Until Gate 2 has decided, the safe answer is that a story is security
+// sensitive, because a reviewer skipped by mistake is worse than one asked
+// for nothing.
+func TestSecuritySensitiveDefaultsToYesUntilGate2Decides(t *testing.T) {
+	r := &Record{}
+	if !r.SecuritySensitive() {
+		t.Error("a record with no decision yet must default to security sensitive")
+	}
+	r.SetSecuritySensitive(false)
+	if r.SecuritySensitive() {
+		t.Error("SetSecuritySensitive(false) did not take")
+	}
+	r.SetSecuritySensitive(true)
+	if !r.SecuritySensitive() {
+		t.Error("SetSecuritySensitive(true) did not take")
 	}
 }

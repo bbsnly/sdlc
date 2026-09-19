@@ -307,6 +307,20 @@ func TestResearcherIsScopedToItsOwnStory(t *testing.T) {
 	}
 }
 
+// With no active story, there is no single story directory to scope a role
+// to, so the rule falls back to every story's directory rather than opening
+// up the whole repository.
+func TestWithNoActiveStoryTheScopeIsAnyStorysDirectory(t *testing.T) {
+	if got := Evaluate(Request{Tool: "Write", Agent: "sdlc-researcher", Path: "internal/x.go"}); got.Allowed {
+		t.Error("with no active story, the researcher could still write outside every story's directory")
+	}
+	if got := Evaluate(Request{
+		Tool: "Write", Agent: "sdlc-researcher", Path: ".sdlc/stories/OLD-9/notes.md",
+	}); !got.Allowed {
+		t.Errorf("with no active story, the researcher could not write into a story's own directory: %+v", got)
+	}
+}
+
 // The same agent arrives under a different name depending on how it was
 // installed. A rule that matched only one spelling would stop enforcing the
 // moment the install method changed.

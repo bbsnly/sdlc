@@ -154,6 +154,71 @@ func TestFindRootStopsWhereGitCeilingDirectoriesSays(t *testing.T) {
 	}
 }
 
+// The ceiling testenv sets so that git does not wander into whatever real
+// repository the temp directory happens to sit under would itself hide the
+// filesystem root from this test, so it is cleared to prove the climb goes
+// all the way up when nothing stops it sooner.
+func TestFindRootClimbsToTheFilesystemRootWithNoCeiling(t *testing.T) {
+	dir := t.TempDir()
+	for up := dir; ; up = filepath.Dir(up) {
+		if _, err := os.Lstat(filepath.Join(up, ".git")); err == nil {
+			t.Skipf("the temp directory is inside the repository at %s, which is what the ceiling is there to hide", up)
+		}
+		if up == filepath.Dir(up) {
+			break
+		}
+	}
+	t.Setenv("GIT_WORK_TREE", "")
+	t.Setenv("GIT_CEILING_DIRECTORIES", "")
+	_, err := FindRoot(dir)
+	if err == nil {
+		t.Fatal("FindRoot succeeded outside any repository")
+	}
+	if got := codeOf(t, err); got != sdlcerr.NotAGitRepo {
+		t.Errorf("code = %s, want %s", got, sdlcerr.NotAGitRepo)
+	}
+}
+
+// CeilingDirectories is what a diagnostic reads to say why the search stopped
+// where it did; it names the directories git resolves the entries to, not the
+// raw environment value.
+//
+// git stops resolving symlinks at the first empty entry, so an entry written
+// after one names the link itself, and sdlc has to read the list the same way.
+func TestCeilingDirectoriesResolvesEachEntry(t *testing.T) {
+	base := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(base); err == nil {
+		base = resolved
+	}
+	target := filepath.Join(base, "target")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("this platform will not make a symlink here: %v", err)
+	}
+	sep := string(filepath.ListSeparator)
+	getenv := func(value string) func(string) string {
+		return func(name string) string {
+			if name == "GIT_CEILING_DIRECTORIES" {
+				return value
+			}
+			return ""
+		}
+	}
+
+	if got := CeilingDirectories(getenv(link)); len(got) != 1 || got[0] != target {
+		t.Errorf("a symlinked entry = %v, want it resolved to %s", got, target)
+	}
+	if got := CeilingDirectories(getenv(sep + link)); len(got) != 1 || got[0] != link {
+		t.Errorf("an entry after an empty one = %v, want it left as %s", got, link)
+	}
+	if got := CeilingDirectories(getenv("")); len(got) != 0 {
+		t.Errorf("an unset variable produced ceilings: %v", got)
+	}
+}
+
 func TestFindRootHonoursGitWorkTree(t *testing.T) {
 	elsewhere := t.TempDir()
 	t.Setenv("GIT_WORK_TREE", elsewhere)
@@ -174,6 +239,48 @@ func TestLoadWithoutAConfig(t *testing.T) {
 	}
 	if got := codeOf(t, err); got != sdlcerr.NotInitialised {
 		t.Errorf("code = %s, want %s", got, sdlcerr.NotInitialised)
+	}
+}
+
+// A config.json that exists but cannot be opened -- here, a directory sitting
+// where the file is expected -- is a different failure from one that is
+// simply missing, and gets its own code and message.
+func TestLoadWhenTheConfigFileCannotBeOpened(t *testing.T) {
+	root := repo(t)
+	if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(File)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(root)
+	if err == nil {
+		t.Fatal("Load succeeded reading a directory as the config file")
+	}
+	if got := codeOf(t, err); got != sdlcerr.ConfigUnreadable {
+		t.Errorf("code = %s, want %s", got, sdlcerr.ConfigUnreadable)
+	}
+	if !strings.Contains(err.Error(), "could not be read") {
+		t.Errorf("error does not say opening it failed: %v", err)
+	}
+}
+
+// The file as a whole can be the wrong shape -- an array where an object is
+// expected -- which is a type error with no field name to report, so the
+// message falls back to naming the line and column instead.
+func TestLoadWhenTheWholeFileIsTheWrongShape(t *testing.T) {
+	root := repo(t)
+	writeConfig(t, root, `[1,2,3]`)
+	_, err := Load(root)
+	if err == nil {
+		t.Fatal("Load accepted a JSON array as the whole configuration")
+	}
+	if got := codeOf(t, err); got != sdlcerr.ConfigUnreadable {
+		t.Errorf("code = %s, want %s", got, sdlcerr.ConfigUnreadable)
+	}
+	var e *sdlcerr.Error
+	if !errors.As(err, &e) {
+		t.Fatalf("err = %v, want an sdlcerr.Error", err)
+	}
+	if !strings.Contains(e.Why, "line 1") {
+		t.Errorf("why = %q, want it to point at line 1", e.Why)
 	}
 }
 
@@ -229,7 +336,9 @@ func TestLoadPointsAtTheLineThatBrokeTheJSON(t *testing.T) {
 		t.Errorf("code = %s, want %s", got, sdlcerr.ConfigUnreadable)
 	}
 	var e *sdlcerr.Error
-	errors.As(err, &e)
+	if !errors.As(err, &e) {
+		t.Fatalf("err = %v, want an sdlcerr.Error", err)
+	}
 	if !strings.Contains(e.Why, "line 3") {
 		t.Errorf("why = %q, want it to name line 3", e.Why)
 	}
@@ -256,6 +365,11 @@ func TestLoadNamesTheSettingOfTheWrongType(t *testing.T) {
 		`{"thresholds":{"diff_size_cap":1.5}}`:             {"thresholds.diff_size_cap", "a whole number", "1.5"},
 		`{"paths":{"tests":{"dirs":"tests/"}}}`:            {"paths.tests.dirs", "a list", "a string"},
 		`{"freeze":{"allow_new_test_files":"yes"}}`:        {"freeze.allow_new_test_files", "true or false"},
+		`{"git":{"trunk_branch":1.5}}`:                     {"git.trunk_branch", "a string", "a number"},
+		`{"thresholds":{"coverage_min":true}}`:             {"thresholds.coverage_min", "a number", "true or false"},
+		`{"loop":{"max_stop_blocks":[1]}}`:                 {"loop.max_stop_blocks", "a whole number", "a list"},
+		`{"budget":{"per_story_usd":{}}}`:                  {"budget.per_story_usd", "a number", "an object"},
+		`{"commands":"nope"}`:                              {"commands", "an object", "a string"},
 	} {
 		root := repo(t)
 		writeConfig(t, root, body)
@@ -270,7 +384,9 @@ func TestLoadNamesTheSettingOfTheWrongType(t *testing.T) {
 			t.Errorf("%s: valid JSON was called invalid: %v", body, err)
 		}
 		var e *sdlcerr.Error
-		errors.As(err, &e)
+		if !errors.As(err, &e) {
+			t.Fatalf("err = %v, want an sdlcerr.Error", err)
+		}
 		for _, w := range want {
 			if !strings.Contains(e.Why, w) {
 				t.Errorf("%s: why = %q, want it to say %q", body, e.Why, w)
@@ -307,7 +423,9 @@ func TestLoadRefusesSettingsTheLoopCannotHonour(t *testing.T) {
 			t.Errorf("%s: code = %s, want %s", body, got, sdlcerr.ConfigInvalid)
 		}
 		var e *sdlcerr.Error
-		errors.As(err, &e)
+		if !errors.As(err, &e) {
+			t.Fatalf("err = %v, want an sdlcerr.Error", err)
+		}
 		if !strings.Contains(e.Why, want) {
 			t.Errorf("%s: why = %q, want it to say %q", body, e.Why, want)
 		}
@@ -352,6 +470,10 @@ func TestUnknownKeysNamesEveryMisspelledSetting(t *testing.T) {
 	if got := UnknownKeys(root); got != nil {
 		t.Errorf("a file that does not load named %q", got)
 	}
+
+	if got := UnknownKeys(t.TempDir()); got != nil {
+		t.Errorf("a project with no config file named %q", got)
+	}
 }
 
 func TestBacklogPathFallsBackWhenTheFileEmptiesIt(t *testing.T) {
@@ -361,6 +483,30 @@ func TestBacklogPathFallsBackWhenTheFileEmptiesIt(t *testing.T) {
 	want := filepath.Join(filepath.FromSlash("/repo"), "user_stories.json")
 	if got != want {
 		t.Errorf("BacklogPath = %q, want %q", got, want)
+	}
+}
+
+// Open is FindRoot and Load in sequence, and has to hand back whichever one
+// refuses first rather than masking it.
+func TestOpenPassesThroughFindRootsRefusal(t *testing.T) {
+	t.Setenv("GIT_WORK_TREE", "")
+	_, err := Open(t.TempDir())
+	if err == nil {
+		t.Fatal("Open succeeded outside a repository")
+	}
+	if got := codeOf(t, err); got != sdlcerr.NotAGitRepo {
+		t.Errorf("code = %s, want %s", got, sdlcerr.NotAGitRepo)
+	}
+}
+
+func TestOpenPassesThroughLoadsRefusal(t *testing.T) {
+	root := repo(t)
+	_, err := Open(root)
+	if err == nil {
+		t.Fatal("Open succeeded in a repository with no config file")
+	}
+	if got := codeOf(t, err); got != sdlcerr.NotInitialised {
+		t.Errorf("code = %s, want %s", got, sdlcerr.NotInitialised)
 	}
 }
 
