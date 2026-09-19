@@ -6,12 +6,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/bbsnly/sdlc/internal/model"
 )
+
+// skipIfPermissionsDoNotBind is for a test that denies a write by taking away
+// a directory's write permission: not on Windows, which does not carry Unix
+// permission bits, and not as root, which ignores them.
+func skipIfPermissionsDoNotBind(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("this platform does not restrict a directory owner's own writes by permission bits")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+}
 
 // reach does the real work of every gate before the one named, so that a test
 // about one gate starts from a story that genuinely got there.
@@ -551,6 +565,79 @@ func TestFinishingAStoryLiftsItsFreeze(t *testing.T) {
 	}
 	if at, standing := record.StandingFreeze(); standing {
 		t.Errorf("the record still shows the freeze taken at %s, so the story could never be frozen again", at)
+	}
+}
+
+// Ending a finished story writes two things -- that the iteration ended, and
+// that the freeze it held is lifted -- and a freeze that will not lift has to
+// stop the whole stop rather than leave the record half written.
+func TestStoppingAFinishedStoryRefusesWhenTheFreezeCannotBeLifted(t *testing.T) {
+	skipIfPermissionsDoNotBind(t)
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	reach(t, root, "")
+
+	state := filepath.Join(root, ".sdlc", "state")
+	if err := os.Chmod(state, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(state, 0o755) })
+
+	r := run(t, "stop")
+	if r.code == 0 {
+		t.Fatal("stop lifted a freeze it could not remove from a read-only state directory")
+	}
+	// releaseFreeze runs, and fails, before stop ever reaches ClearActive (loop.go),
+	// so this refusal must name the freeze rather than the active file -- otherwise
+	// the test cannot tell a deleted freeze release from the unrelated
+	// TestStopRefusesWhenTheActiveFileCannotBeCleared failure.
+	if !strings.Contains(r.stderr, "SDLC-E0006") || !strings.Contains(r.stderr, "test freeze") ||
+		!strings.Contains(r.stderr, "tests.lock") {
+		t.Errorf("the refusal does not name the freeze that could not be lifted:\n%s", r.stderr)
+	}
+	if strings.Contains(r.stderr, "the iteration could not be ended") {
+		t.Errorf("the refusal reads as ClearActive's failure, not the freeze release:\n%s", r.stderr)
+	}
+}
+
+// The iteration's end is written to the story's own record, and a record that
+// cannot be saved leaves stop with nothing to report other than the failure.
+func TestStopRefusesWhenTheRecordCannotBeSaved(t *testing.T) {
+	skipIfPermissionsDoNotBind(t)
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+
+	dir := filepath.Join(root, ".sdlc", "stories", "US-001")
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	if r := run(t, "stop"); r.code == 0 {
+		t.Fatal("stop reported success although the record could not be written to a read-only directory")
+	}
+}
+
+// Ending an iteration removes the active-story file, and a state directory
+// that will not give that up leaves the iteration recorded as ended on the
+// story but still running as far as `sdlc start` is concerned -- worth
+// refusing rather than leaving half done.
+func TestStopRefusesWhenTheActiveFileCannotBeCleared(t *testing.T) {
+	skipIfPermissionsDoNotBind(t)
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+
+	state := filepath.Join(root, ".sdlc", "state")
+	if err := os.Chmod(state, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(state, 0o755) })
+
+	if r := run(t, "stop"); r.code == 0 {
+		t.Fatal("stop reported success although .sdlc/state/active could not be removed")
 	}
 }
 

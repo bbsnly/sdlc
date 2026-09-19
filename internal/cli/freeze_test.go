@@ -584,3 +584,122 @@ func TestAnotherStorysFreezeIsNotThisStorysToLift(t *testing.T) {
 		t.Errorf("after dropping US-001 the freeze belongs to %q, want US-002", got)
 	}
 }
+
+// A freeze naming a story the backlog has never heard of any more -- not
+// dropped, gone entirely -- is not a leftover either: nobody can say it is
+// finished, so it still stands in the way.
+func TestAFreezeForAStoryRemovedFromTheBacklogIsNotALeftover(t *testing.T) {
+	root := frozenStory(t)
+	mustRun(t, "freeze")
+	mustRun(t, "gate", "tests_frozen", "pass", "--note", "frozen")
+	addStory(t, root, "US-002")
+	mustRun(t, "stop")
+	commitEverything(t, root)
+	writeFile(t, root, "user_stories.json", `{"stories":[
+	  {"id":"US-002","title":"Two","status":"ready","priority":2}]}`)
+	mustRun(t, "start")
+
+	r := run(t, "freeze")
+	if r.code == 0 {
+		t.Fatal("a freeze for a story no longer in the backlog was replaced without a word")
+	}
+	if !strings.Contains(r.stderr, "SDLC-E0022") {
+		t.Errorf("stderr = %s", r.stderr)
+	}
+	if got := lockOnDisk(t, root).Story; got != "US-001" {
+		t.Errorf("the freeze on disk now belongs to %q", got)
+	}
+}
+
+// paths.tests names nothing to freeze: freezing refuses rather than locking an
+// empty set and reporting success.
+func TestFreezingRefusesWhenTheProjectHasNotSaidWhatATestLooksLike(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	setConfigOnDisk(t, root, "paths", map[string]any{"tests": map[string]any{"dirs": []string{}, "file_globs": []string{}}})
+	mustRun(t, "start")
+
+	r := run(t, "freeze")
+	if r.code == 0 {
+		t.Fatal("a freeze was taken for a project that names no test files")
+	}
+	if !strings.Contains(r.stderr, "has not said what a test file looks like") {
+		t.Errorf("stderr = %s", r.stderr)
+	}
+}
+
+// Git that cannot run is said with its own reason: freeze asks it which files
+// are in the working tree, and a project without git on PATH cannot answer.
+func TestFreezeRefusesWithGitsOwnReasonWhenGitCannotRun(t *testing.T) {
+	gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	t.Setenv("PATH", t.TempDir())
+
+	r := run(t, "freeze")
+	if r.code == 0 {
+		t.Fatal("a freeze was taken with git not on PATH")
+	}
+	if !strings.Contains(r.stderr, "SDLC-E0021") || !strings.Contains(r.stderr, "did not finish") {
+		t.Errorf("the refusal does not carry git's own reason:\n%s", r.stderr)
+	}
+}
+
+// unfreeze with no iteration running has no story to lift a freeze from.
+func TestUnfreezeWithNoIterationSaysWhatToDo(t *testing.T) {
+	gitProject(t)
+	initialised(t)
+
+	r := run(t, "unfreeze", "--reason", "no reason at all")
+	if r.code == 0 || !strings.Contains(r.stderr, "no story being worked on") {
+		t.Errorf("stderr = %s", r.stderr)
+	}
+}
+
+// A record that will not read is a record unfreeze cannot lift the freeze on,
+// whether or not there is a freeze on disk to go with it.
+func TestUnfreezeRefusesWhenTheRecordCannotBeRead(t *testing.T) {
+	t.Run("with no freeze taken", func(t *testing.T) {
+		root := gitProject(t)
+		initialised(t)
+		mustRun(t, "start")
+		writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
+
+		r := run(t, "unfreeze", "--reason", "tidying up")
+		if r.code == 0 {
+			t.Fatal("unfreeze lifted a freeze it could not read the record for")
+		}
+		if !strings.Contains(r.stderr, "gate-record.json") || !strings.Contains(r.stderr, "SDLC-E0005") {
+			t.Errorf("stderr does not name the record:\n%s", r.stderr)
+		}
+	})
+	t.Run("with a freeze taken", func(t *testing.T) {
+		root := frozenStory(t)
+		mustRun(t, "freeze")
+		writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
+
+		r := run(t, "unfreeze", "--reason", "tidying up")
+		if r.code == 0 {
+			t.Fatal("unfreeze lifted a freeze it could not read the record for")
+		}
+		if !strings.Contains(r.stderr, "gate-record.json") || !strings.Contains(r.stderr, "SDLC-E0005") {
+			t.Errorf("stderr does not name the record:\n%s", r.stderr)
+		}
+	})
+}
+
+// paths.tests cleared after a freeze was taken leaves the freeze checking only
+// what it always did -- the frozen files themselves -- and stops looking for
+// test files it no longer has a setting to judge.
+func TestClearingPathsTestsAfterAFreezeStopsCheckingForUnheldOnes(t *testing.T) {
+	root := frozenStory(t)
+	mustRun(t, "freeze")
+	mustRun(t, "gate", "tests_frozen", "pass", "--note", "frozen")
+	mustRunWith(t, "# Plan\n", "artifact", "write", "plan")
+	setConfigOnDisk(t, root, "paths", map[string]any{"tests": map[string]any{"dirs": []string{}, "file_globs": []string{}}})
+	writeFile(t, root, "internal/later_test.go", "package internal\n")
+
+	if r := run(t, "gate", "plan", "pass"); r.code != 0 {
+		t.Errorf("a new test file was noticed after paths.tests was cleared: %s", r.stderr)
+	}
+}

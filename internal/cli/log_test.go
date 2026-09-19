@@ -421,3 +421,123 @@ func TestAStoryNotCommittedIsNotInTheLog(t *testing.T) {
 		t.Errorf("a story whose commit gate was reopened is in the log: %+v", payload.Entries)
 	}
 }
+
+// .sdlc/stories cannot be listed when something else occupies the name, and
+// the log has nowhere left to read a committed story's record from.
+func TestLogRefusesWhenTheStoriesDirectoryCannotBeListed(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	writeFile(t, root, ".sdlc/stories", "not a directory")
+
+	if r := run(t, "log"); r.code == 0 {
+		t.Fatal("log read a project whose stories directory is a plain file")
+	}
+}
+
+// A record among many that will not read stops the whole log, rather than
+// silently leaving that story out of it.
+func TestLogRefusesWhenAStorysRecordCannotBeRead(t *testing.T) {
+	root := finishedStory(t)
+	mustRun(t, "stop")
+	writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
+
+	r := run(t, "log")
+	if r.code == 0 {
+		t.Fatal("log read a record that is not valid JSON")
+	}
+	if !strings.Contains(r.stderr, "gate-record.json") {
+		t.Errorf("the refusal does not name the record:\n%s", r.stderr)
+	}
+}
+
+// A story taken out of the backlog after it landed is still in the log: its
+// commits are already on trunk, and the entry says it is not in the backlog
+// rather than showing an empty title.
+func TestALogEntryForAStoryNoLongerInTheBacklogSaysSo(t *testing.T) {
+	root := finishedStory(t)
+	mustRun(t, "stop")
+	writeFile(t, root, "user_stories.json", `{"stories":[]}`)
+
+	e := onlyEntry(t, decode[logPayload](t, mustRun(t, "log", "--json")))
+	if !e.NotInBacklog || e.Title != "" {
+		t.Errorf("entry = %+v, want not_in_backlog with no title", e)
+	}
+	out := mustRun(t, "log").stdout
+	if !strings.Contains(out, "(not in the backlog)") {
+		t.Errorf("the prose does not say the story left the backlog:\n%s", out)
+	}
+}
+
+// An older record with no commit named, on a branch that itself has no
+// commits, cannot be placed by its messages either: there is nothing in
+// history to search.
+func TestALogEntryWithNoRangeOnABranchWithNoCommitsIsUnknownRatherThanSearched(t *testing.T) {
+	root := finishedStory(t)
+	mustRun(t, "stop")
+	editRecord(t, root, "US-001", forgetRange)
+	gitOut(t, root, "checkout", "--quiet", "--orphan", "fresh")
+
+	e := onlyEntry(t, decode[logPayload](t, mustRun(t, "log", "--all", "--json")))
+	if e.RangeSource != rangeUnknown || e.Commit != "" || e.CommitBase != "" {
+		t.Errorf("entry = %+v, want an unknown range", e)
+	}
+}
+
+// --since with nothing after it, and with something, each say so in their own
+// words: the log is not always following the last commit acknowledged.
+func TestLogSaysWhatSinceFlagFoundInItsOwnWords(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	before := headOf(t, root)
+	reach(t, root, "")
+
+	withEntries := mustRun(t, "log", "--since", before).stdout
+	if !strings.Contains(withEntries, "Committed since "+before[:12]+":") {
+		t.Errorf("--since with a story after it does not say so:\n%s", withEntries)
+	}
+
+	after := headOf(t, root)
+	empty := mustRun(t, "log", "--since", after).stdout
+	if !strings.Contains(empty, "No story has been committed since "+after[:12]+".") {
+		t.Errorf("--since with nothing after it does not say so:\n%s", empty)
+	}
+}
+
+// Two stories in one log read as two paragraphs, not one run-on block.
+func TestTwoLogEntriesArePrintedWithABlankLineBetweenThem(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	addStory(t, root, "US-002")
+	for range 2 {
+		mustRun(t, "start")
+		reach(t, root, "")
+		mustRun(t, "stop")
+	}
+
+	out := mustRun(t, "log").stdout
+	if !strings.Contains(out, "US-001") || !strings.Contains(out, "US-002") {
+		t.Fatalf("both stories are not in the log:\n%s", out)
+	}
+	if idx := strings.Index(out, "US-001"); !strings.Contains(out[idx:], "\n\n") {
+		t.Errorf("the two entries are not separated by a blank line:\n%s", out)
+	}
+}
+
+// A record that names a commit but no base -- an older sdlc's, or one edited
+// by hand -- prints as a single commit, not a range with nothing before it.
+func TestALogEntryWithACommitButNoBaseHasNoRange(t *testing.T) {
+	root := finishedStory(t)
+	mustRun(t, "stop")
+	record := readRecord(t, root, "US-001")
+	editRecord(t, root, "US-001", func(r map[string]any) { delete(r, "commit_base") })
+
+	out := mustRun(t, "log").stdout
+	want := shortCommit(record.Commit) + "  US-001"
+	if !strings.Contains(out, want) {
+		t.Errorf("the log does not print the commit alone:\n%s", out)
+	}
+	if strings.Contains(out, ".."+shortCommit(record.Commit)) {
+		t.Errorf("the log invented a range with no base:\n%s", out)
+	}
+}

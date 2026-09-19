@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
 // project makes an empty Git repository, changes into it, and returns its path.
@@ -270,13 +271,148 @@ func TestAFailureInJSONCarriesTheSameFields(t *testing.T) {
 	}
 }
 
-func TestOutsideARepositoryTheErrorSaysSo(t *testing.T) {
-	t.Setenv("GIT_WORK_TREE", "")
-	t.Chdir(t.TempDir())
+// Every command resolves the project before it does anything else, so run
+// from outside a repository, each one fails the identical way: a non-zero
+// exit and SDLC-E0001 on stderr, whether it only reads the project (status,
+// cost, log, story list) or means to write to it (init, start, cost add).
+func TestOutsideARepositoryEveryCommandFailsTheSameWay(t *testing.T) {
+	for _, args := range [][]string{
+		{"status"},
+		{"init"},
+		{"cost"},
+		{"cost", "add", "--usd", "1"},
+		{"log"},
+		{"story", "list"},
+		{"start"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Setenv("GIT_WORK_TREE", "")
+			t.Chdir(t.TempDir())
 
-	r := run(t, "status")
-	if !strings.Contains(r.stderr, "SDLC-E0001") {
-		t.Errorf("stderr = %q", r.stderr)
+			r := run(t, args...)
+			if r.code == 0 {
+				t.Fatalf("sdlc %s exited 0 outside a repository", strings.Join(args, " "))
+			}
+			if !strings.Contains(r.stderr, "SDLC-E0001") {
+				t.Errorf("stderr = %q", r.stderr)
+			}
+		})
+	}
+}
+
+// A file the loop cannot parse -- a story's record, the freeze, the backlog --
+// leaves several commands with nothing to report, and each has to name the
+// file it could not read rather than fail as if there were nothing wrong, or
+// as it would for a file that genuinely does not exist.
+func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		setup    func(t *testing.T, root string)
+		wantFile string
+		wantCode string
+	}{
+		{
+			name: "approve reading a record that is not JSON",
+			args: []string{"approve", "US-001"},
+			setup: func(t *testing.T, root string) {
+				mustRun(t, "start")
+				writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
+			},
+			wantFile: "gate-record.json",
+			wantCode: "SDLC-E0005",
+		},
+		{
+			name: "cost reading a record that is not JSON",
+			args: []string{"cost"},
+			setup: func(t *testing.T, root string) {
+				mustRun(t, "start")
+				writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
+			},
+			wantFile: "gate-record.json",
+			wantCode: "SDLC-E0005",
+		},
+		{
+			name: "cost add reading a record that is not JSON",
+			args: []string{"cost", "add", "--usd", "1"},
+			setup: func(t *testing.T, root string) {
+				mustRun(t, "start")
+				writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
+			},
+			wantFile: "gate-record.json",
+			wantCode: "SDLC-E0005",
+		},
+		{
+			name: "status reading a waiting story's record that is not JSON",
+			args: []string{"status"},
+			setup: func(t *testing.T, root string) {
+				mustRun(t, "start")
+				mustRun(t, "escalate", "spec_unclear", "--message", "which one?")
+				writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
+			},
+			wantFile: "gate-record.json",
+			wantCode: "SDLC-E0005",
+		},
+		{
+			name: "status --json reading a waiting story's record that is not JSON",
+			args: []string{"status", "--json"},
+			setup: func(t *testing.T, root string) {
+				mustRun(t, "start")
+				mustRun(t, "escalate", "spec_unclear", "--message", "which one?")
+				writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
+			},
+			wantFile: "gate-record.json",
+			wantCode: "SDLC-E0005",
+		},
+		{
+			name: "status reading a freeze that is not JSON",
+			args: []string{"status"},
+			setup: func(t *testing.T, root string) {
+				mustRun(t, "start")
+				writeFile(t, root, ".sdlc/state/tests.lock", "{not json")
+			},
+			wantFile: "tests.lock",
+			wantCode: "SDLC-E0005",
+		},
+		{
+			name: "story list reading a backlog that is not JSON",
+			args: []string{"story", "list"},
+			setup: func(t *testing.T, root string) {
+				writeFile(t, root, "user_stories.json", "{not json")
+			},
+			wantFile: "user_stories.json",
+			wantCode: "SDLC-E0008",
+		},
+		{
+			name: "log reading a backlog that is not JSON",
+			args: []string{"log"},
+			setup: func(t *testing.T, root string) {
+				writeFile(t, root, "user_stories.json", "{not json")
+			},
+			wantFile: "user_stories.json",
+			wantCode: "SDLC-E0008",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := gitProject(t)
+			initialised(t)
+			tc.setup(t, root)
+
+			r := run(t, tc.args...)
+			if r.code == 0 {
+				t.Fatalf("sdlc %s succeeded reading a file that is not valid JSON", strings.Join(tc.args, " "))
+			}
+			// --json is a machine-readable surface: the failure is the payload,
+			// so it goes to stdout rather than stderr, the same as success does.
+			said := r.stderr + r.stdout
+			if !strings.Contains(said, tc.wantFile) {
+				t.Errorf("the refusal does not name %s:\n%s", tc.wantFile, said)
+			}
+			if !strings.Contains(said, tc.wantCode) {
+				t.Errorf("the refusal does not carry %s:\n%s", tc.wantCode, said)
+			}
+		})
 	}
 }
 
@@ -311,6 +447,60 @@ func TestInitJSONSaysWhatItDid(t *testing.T) {
 	}
 	if len(got.Created) < 3 {
 		t.Errorf("created = %v", got.Created)
+	}
+}
+
+// .sdlc as a plain file leaves init nowhere to write the configuration, and
+// the failure is the one a broken write always gives, not one that says the
+// project is already set up.
+func TestInitRefusesWhenSdlcDirectoryIsAFile(t *testing.T) {
+	root := project(t)
+	if err := os.WriteFile(filepath.Join(root, ".sdlc"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := run(t, "init")
+	if r.code == 0 {
+		t.Fatal("init wrote its configuration where .sdlc is a plain file")
+	}
+	if !strings.Contains(r.stderr, "config.json") {
+		t.Errorf("stderr = %s", r.stderr)
+	}
+}
+
+// A repository with more than one recognisable stack says so, rather than
+// picking one and leaving the others a surprise for whoever reads the
+// configuration next.
+func TestInitNamesEveryOtherStackItSaw(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{
+			"one other stack",
+			map[string]string{"go.mod": "module example.com/x\n", "package.json": "{}"},
+			"This repository also has Node in it",
+		},
+		{
+			"two other stacks",
+			map[string]string{"go.mod": "module example.com/x\n", "Cargo.toml": "[package]\n", "package.json": "{}"},
+			"This repository also has Rust and Node in it",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			project(t)
+			for name, body := range tc.files {
+				writeFile(t, ".", name, body)
+			}
+			out := mustRun(t, "init").stdout
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("stdout does not say %q:\n%s", tc.want, out)
+			}
+			if !strings.Contains(out, "check .sdlc/config.json before you rely on it") {
+				t.Errorf("stdout does not send the reader to check the guess:\n%s", out)
+			}
+		})
 	}
 }
 
@@ -553,6 +743,41 @@ func TestStartSaysWhenTheBacklogIsSimplyFinished(t *testing.T) {
 	}
 	if !strings.Contains(r.stderr, "every story in the backlog is finished") {
 		t.Errorf("stderr reads as a blockage rather than a finished backlog:\n%s", r.stderr)
+	}
+}
+
+// Neither of these is a finished backlog, and neither is a stuck one: an empty
+// file wants a story written, and a dropped story was abandoned, so calling the
+// backlog finished would credit the loop with work nobody did.
+func TestStartSaysWhyABacklogWithNothingLeftHasNothingToStart(t *testing.T) {
+	for _, c := range []struct {
+		name, backlog, want string
+	}{
+		{"no stories at all", `{"stories":[]}`, "the backlog has no stories in it"},
+		{"done and dropped", `{"stories":[
+		  {"id":"A-1","title":"One","status":"done"},
+		  {"id":"B-2","title":"Two","status":"dropped"}]}`,
+			"every story in the backlog is either finished or dropped"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			gitProject(t)
+			initialised(t)
+			writeFile(t, ".", "user_stories.json", c.backlog)
+
+			r := run(t, "start")
+			if r.code == 0 {
+				t.Fatal("start picked a story from a backlog with none to pick")
+			}
+			if !strings.Contains(r.stderr, sdlcerr.NoRunnableStory.String()) {
+				t.Errorf("stderr does not carry %s:\n%s", sdlcerr.NoRunnableStory, r.stderr)
+			}
+			if !strings.Contains(r.stderr, c.want) {
+				t.Errorf("stderr does not say %q:\n%s", c.want, r.stderr)
+			}
+			if strings.Contains(r.stderr, "is finished") {
+				t.Errorf("stderr calls this backlog finished:\n%s", r.stderr)
+			}
+		})
 	}
 }
 
@@ -1117,6 +1342,137 @@ func TestDoctorExitsNonZeroWhenSomethingIsWrong(t *testing.T) {
 	if !strings.Contains(r.stdout, "fix:") {
 		t.Errorf("stdout carried no fix:\n%s", r.stdout)
 	}
+}
+
+// A clean project is the ordinary case, and doctor has to actually say so
+// rather than only ever being seen reporting a problem.
+func TestDoctorSaysEverythingChecksOutOnACleanProject(t *testing.T) {
+	project(t)
+	// An unrecognised stack leaves commands.test and commands.lint blank,
+	// which is a problem of its own -- a Go module gives doctor a project
+	// with nothing left to complain about.
+	writeFile(t, ".", "go.mod", "module example.com/x\n")
+	mustRun(t, "init")
+
+	r := mustRun(t, "doctor")
+	if !strings.Contains(r.stdout, "Everything checks out.") {
+		t.Errorf("stdout = %s", r.stdout)
+	}
+	got := decode[doctorPayload](t, mustRun(t, "doctor", "--json"))
+	if !got.OK || got.Problems != 0 {
+		t.Errorf("payload = %+v", got)
+	}
+}
+
+// A recognised stack is named on the configuration check, so a person reading
+// doctor knows why the commands look the way they do.
+func TestDoctorNamesTheStackItRecognised(t *testing.T) {
+	project(t)
+	writeFile(t, ".", "go.mod", "module example.com/x\n")
+	mustRun(t, "init")
+
+	for _, c := range decode[doctorPayload](t, run(t, "doctor", "--json")).Checks {
+		if c.Name == "configuration" {
+			if !strings.Contains(c.Detail, "(Go project)") {
+				t.Errorf("configuration = %q, does not name the stack", c.Detail)
+			}
+			return
+		}
+	}
+	t.Fatal("doctor ran no configuration check")
+}
+
+// An empty iteration file names no story, and the loop state check has to say
+// so itself: nothing later reads it, so a session with this on disk would
+// otherwise pass as if nothing were running.
+func TestDoctorNamesAnIterationFileThatNamesNoStory(t *testing.T) {
+	root := gitProject(t)
+	mustRun(t, "init")
+	writeFile(t, root, ".sdlc/state/active", "")
+
+	got := decode[doctorPayload](t, run(t, "doctor", "--json"))
+	for _, c := range got.Checks {
+		if c.Name == "loop state" {
+			if c.State != stateProblem || !strings.Contains(c.Detail, "does not name a story") {
+				t.Errorf("loop state = %+v", c)
+			}
+			return
+		}
+	}
+	t.Fatal("doctor ran no loop state check")
+}
+
+// .sdlc/stories is where every gate record lives, and .sdlc/state/acknowledged
+// is where `sdlc log` remembers where a person left off; a project where either
+// will not read as the kind of thing it is (a directory in place of a file, a
+// file in place of a directory) has to be named by doctor, not folded into the
+// other's "fix its permissions" wording -- both fixes use that word, so only
+// the detail (which names the path) tells the two problems apart.
+func TestDoctorNamesLoopStatePathsThatAreTheWrongKindOfEntry(t *testing.T) {
+	tests := []struct {
+		name       string
+		corrupt    func(t *testing.T, root string)
+		wantDetail string
+	}{
+		{
+			name: "stories directory replaced by a file",
+			corrupt: func(t *testing.T, root string) {
+				writeFile(t, root, ".sdlc/stories", "not a directory")
+			},
+			wantDetail: ".sdlc/stories",
+		},
+		{
+			name: "acknowledged file replaced by a directory",
+			corrupt: func(t *testing.T, root string) {
+				if err := os.MkdirAll(filepath.Join(root, ".sdlc", "state", "acknowledged"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantDetail: ".sdlc/state/acknowledged",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := gitProject(t)
+			mustRun(t, "init")
+			tc.corrupt(t, root)
+
+			got := decode[doctorPayload](t, run(t, "doctor", "--json"))
+			for _, c := range got.Checks {
+				if c.Name == "loop state" {
+					if c.State != stateProblem || !strings.Contains(c.Detail, tc.wantDetail) {
+						t.Errorf("loop state = %+v, want Detail naming %s", c, tc.wantDetail)
+					}
+					return
+				}
+			}
+			t.Fatal("doctor ran no loop state check")
+		})
+	}
+}
+
+// Without HOME set, there is nowhere for the installers to have put the
+// binary, and doctor has to say the hooks find none rather than crediting a
+// path it never checked.
+func TestDoctorWithNoHomeFindsNothingWhereTheInstallersPutIt(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this platform is asked through LOCALAPPDATA, not HOME")
+	}
+	project(t)
+	mustRun(t, "init")
+	t.Setenv("HOME", "")
+	t.Setenv("SDLC_BIN", "")
+	t.Setenv("PATH", t.TempDir())
+
+	for _, c := range decode[doctorPayload](t, run(t, "doctor", "--json")).Checks {
+		if c.Name == "sdlc on PATH" {
+			if c.State != stateProblem || !strings.Contains(c.Fix, "npx @bbsnly/sdlc install") {
+				t.Errorf("sdlc on PATH = %+v", c)
+			}
+			return
+		}
+	}
+	t.Fatal("doctor ran no sdlc on PATH check")
 }
 
 func TestProgramsInFindsWhatWouldActuallyRun(t *testing.T) {

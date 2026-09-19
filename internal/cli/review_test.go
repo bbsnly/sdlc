@@ -387,3 +387,124 @@ func TestPerfStopsTheGateWhenItBlocksWithoutHavingToApprove(t *testing.T) {
 	mustRunWith(t, "# perf\n", "review", "add", "design_review", "perf", "note")
 	mustRun(t, "gate", "design_review", "pass", "--note", "within budget")
 }
+
+// review with no subcommand teaches rather than errors, like every other
+// command with subcommands of its own.
+func TestReviewWithNoSubcommandPrintsHelp(t *testing.T) {
+	project(t)
+	out := mustRun(t, "review").stdout
+	if !strings.Contains(out, "Available Commands") {
+		t.Errorf("bare review did not print help:\n%s", out)
+	}
+}
+
+// review add and review list both refuse a gate this version does not know,
+// the same way gate itself does.
+func TestReviewRefusesAGateThisVersionDoesNotKnow(t *testing.T) {
+	planned(t)
+
+	if r := run(t, "review", "add", "vibes", "architect", "approve"); r.code == 0 ||
+		!strings.Contains(r.stderr, "SDLC-E0013") {
+		t.Errorf("review add vibes: %s", r.stderr)
+	}
+	if r := run(t, "review", "list", "--gate", "vibes"); r.code == 0 ||
+		!strings.Contains(r.stderr, "SDLC-E0013") {
+		t.Errorf("review list --gate vibes: %s", r.stderr)
+	}
+}
+
+// A reviewer's block that gives no note still says who blocked, just nothing
+// after it: describeNote has nothing to add when there is nothing to add.
+func TestABlockWithNoNoteStillNamesWhoBlocked(t *testing.T) {
+	planned(t)
+	approveAll(t, model.GateDesignReview, "architect")
+	mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "block")
+
+	r := run(t, "gate", "design_review", "pass")
+	if r.code == 0 || !strings.Contains(r.stderr, "architect blocked") {
+		t.Errorf("stderr = %s", r.stderr)
+	}
+	if strings.Contains(r.stderr, "architect blocked:") {
+		t.Errorf("a block with no note still carries a colon:\n%s", r.stderr)
+	}
+}
+
+// A round that approved a plan is stale once the plan has changed, and review
+// list is where that shows up: nothing else about the round says its subject
+// moved on.
+func TestReviewListMarksARoundStaleWhenItsSubjectHasChanged(t *testing.T) {
+	root := planned(t)
+	mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "approve")
+	writeFile(t, root, ".sdlc/stories/US-001/PLAN.md", "# Plan\n\nchanged after the review\n")
+
+	got := decode[reviewListPayload](t, mustRun(t, "review", "list", "--gate", "design_review", "--json"))
+	var architect *reviewInfo
+	for i := range got.Reviews {
+		if got.Reviews[i].Role == "architect" {
+			architect = &got.Reviews[i]
+		}
+	}
+	if architect == nil || !architect.Stale || architect.Round != 1 {
+		t.Fatalf("architect's review = %+v, want round 1 and stale", architect)
+	}
+
+	out := mustRun(t, "review", "list", "--gate", "design_review").stdout
+	if !strings.Contains(out, "(round 1, stale -- what was reviewed has changed since)") {
+		t.Errorf("the prose does not flag the stale round:\n%s", out)
+	}
+}
+
+// A subject that cannot be read is said by the command reading it, whether
+// that is review add stamping a fresh round, or the gate re-checking one
+// already recorded.
+func TestASubjectThatCannotBeReadIsSaidByWhicheverCommandAsksForIt(t *testing.T) {
+	t.Run("review add", func(t *testing.T) {
+		root := planned(t)
+		if err := os.Remove(filepath.Join(root, ".sdlc", "stories", "US-001", "PLAN.md")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(filepath.Join(root, ".sdlc", "stories", "US-001", "PLAN.md"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		r := runWith(t, "# architect\n", "review", "add", "design_review", "architect", "approve")
+		if r.code == 0 {
+			t.Fatal("a review was stamped against a subject that could not be read")
+		}
+		if !strings.Contains(r.stderr, ".sdlc/stories/US-001/PLAN.md") || !strings.Contains(r.stderr, "SDLC-E0005") {
+			t.Errorf("the refusal does not name the subject it could not read:\n%s", r.stderr)
+		}
+	})
+	t.Run("the gate", func(t *testing.T) {
+		root := planned(t)
+		approveAll(t, model.GateDesignReview)
+		if err := os.Remove(filepath.Join(root, ".sdlc", "stories", "US-001", "PLAN.md")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(filepath.Join(root, ".sdlc", "stories", "US-001", "PLAN.md"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		r := run(t, "gate", "design_review", "pass")
+		if r.code == 0 {
+			t.Fatal("the gate passed while its subject could not be read")
+		}
+		if !strings.Contains(r.stderr, ".sdlc/stories/US-001/PLAN.md") || !strings.Contains(r.stderr, "SDLC-E0005") {
+			t.Errorf("the refusal does not name the subject it could not read:\n%s", r.stderr)
+		}
+	})
+}
+
+// The document is stored under the story's own reviews directory, which a
+// gate document written by some other means -- or left behind by an older
+// sdlc -- can occupy as a plain file instead.
+func TestAReviewCannotBeStoredWhenItsDirectoryIsAFile(t *testing.T) {
+	root := planned(t)
+	writeFile(t, root, ".sdlc/stories/US-001/reviews", "not a directory")
+
+	r := runWith(t, "# architect\n", "review", "add", "design_review", "architect", "approve")
+	if r.code == 0 {
+		t.Fatal("a review was stored where its directory is a plain file")
+	}
+	if !strings.Contains(r.stderr, ".sdlc/stories/US-001/reviews") || !strings.Contains(r.stderr, "SDLC-E0006") {
+		t.Errorf("the refusal does not name the path it could not write:\n%s", r.stderr)
+	}
+}

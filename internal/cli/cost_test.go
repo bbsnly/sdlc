@@ -174,6 +174,25 @@ func TestWithNoBudgetTheSpendIsStillKept(t *testing.T) {
 	}
 }
 
+// A directory left where the active-iteration file belongs cannot be read as
+// naming a story, and cost has to say so rather than treat it as nothing
+// running.
+func TestCostRefusesWhenTheActiveFileCannotBeRead(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	if err := os.MkdirAll(filepath.Join(root, ".sdlc", "state", "active"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	r := run(t, "cost")
+	if r.code == 0 {
+		t.Fatal("cost read a directory as no iteration running")
+	}
+	if !strings.Contains(r.stderr, ".sdlc/state/active") || !strings.Contains(r.stderr, "SDLC-E0005") {
+		t.Errorf("the refusal does not name the file it could not read:\n%s", r.stderr)
+	}
+}
+
 // setBudgetOnDisk rewrites the scaffolded budget, which is how a project that
 // does not want one says so.
 func setBudgetOnDisk(t *testing.T, root string, usd float64) {

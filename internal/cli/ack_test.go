@@ -172,3 +172,22 @@ func TestGitThatDoesNotRunIsNotACommitThatIsNotThere(t *testing.T) {
 		}
 	}
 }
+
+// A directory left in place of .sdlc/state/acknowledged cannot be read as the
+// commit acknowledged before, and ack has to say so rather than treat it as
+// nothing acknowledged yet.
+func TestAckRefusesWhenTheAcknowledgedFileIsADirectory(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	if err := os.MkdirAll(filepath.Join(root, ".sdlc", "state", "acknowledged"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	r := run(t, "ack", "--through", "HEAD")
+	if r.code == 0 {
+		t.Fatal("ack read a directory as nothing acknowledged")
+	}
+	if !strings.Contains(r.stderr, ".sdlc/state/acknowledged") || !strings.Contains(r.stderr, "SDLC-E0005") {
+		t.Errorf("the refusal does not name the file it could not read:\n%s", r.stderr)
+	}
+}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -57,6 +58,24 @@ func TestAControlSplitAcrossTwoWritesIsStillSpelledOut(t *testing.T) {
 	}
 	if got, want := buf.String(), "a"+spelled("009b")+`2J\x9b`+"\xe2"+`\x80`; got != want {
 		t.Errorf("wrote %q, want %q", got, want)
+	}
+}
+
+// erroringWriter fails every write, standing in for a terminal that has gone
+// away -- a closed pipe, a redirect to a full disk.
+type erroringWriter struct{ err error }
+
+func (e erroringWriter) Write([]byte) (int, error) { return 0, e.err }
+
+// The underlying writer's own error is what a caller acts on, not a made-up
+// count of bytes written.
+func TestAControlWriterPassesOnTheUnderlyingWritersError(t *testing.T) {
+	failure := errors.New("write: broken pipe")
+	w := &controls{w: erroringWriter{err: failure}}
+
+	n, err := w.Write([]byte("hello"))
+	if n != 0 || !errors.Is(err, failure) {
+		t.Errorf("Write() = %d, %v, want 0, %v", n, err, failure)
 	}
 }
 

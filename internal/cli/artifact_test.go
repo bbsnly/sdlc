@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -201,4 +203,92 @@ func TestAGateCanStillFailWithNothingStored(t *testing.T) {
 func TestAGateWithNoDocumentsPassesOnItsOwn(t *testing.T) {
 	storyUnderway(t)
 	mustRun(t, "gate", "dor", "pass", "--note", "criteria are testable")
+}
+
+// Run with no subcommand, artifact explains itself rather than doing nothing.
+func TestArtifactWithNoSubcommandPrintsHelp(t *testing.T) {
+	project(t)
+	r := run(t, "artifact")
+	if r.code != 0 {
+		t.Fatalf("sdlc artifact failed with %d:\n%s", r.code, r.stderr)
+	}
+	if !strings.Contains(r.stdout, "Usage:") || !strings.Contains(r.stdout, "Available Commands:") {
+		t.Errorf("stdout does not read like help:\n%s", r.stdout)
+	}
+}
+
+func TestListAsJSONNamesEveryDocumentAndWhereItBelongs(t *testing.T) {
+	project(t)
+	list := decode[artifactListPayload](t, mustRun(t, "artifact", "list", "--json"))
+	var found bool
+	for _, a := range list.Artifacts {
+		if a.Name == "analysis" {
+			found = true
+			if a.File != "ANALYSIS.md" || a.Gate != "analysis" {
+				t.Errorf("analysis = %+v", a)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("artifact list --json does not name analysis: %+v", list.Artifacts)
+	}
+}
+
+// A document already stored as a directory -- left by a hand edit or an older
+// build -- cannot be overwritten as a file, and write has to say so.
+func TestWritingADocumentRefusesWhenItsPathIsADirectory(t *testing.T) {
+	root := storyUnderway(t)
+	if err := os.MkdirAll(filepath.Join(root, ".sdlc", "stories", "US-001", "ANALYSIS.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	r := runWith(t, "# Analysis\n", "artifact", "write", "analysis")
+	if r.code == 0 {
+		t.Fatal("a document was written over a directory of the same name")
+	}
+	if !strings.Contains(r.stderr, ".sdlc/stories/US-001/ANALYSIS.md") || !strings.Contains(r.stderr, "SDLC-E0006") {
+		t.Errorf("the refusal does not name the path it could not write:\n%s", r.stderr)
+	}
+}
+
+// Storing the document and recording that it happened are two writes, and a
+// record that will not read fails the second even though the first succeeded:
+// the document is left on disk, and the refusal has to name the record rather
+// than read as the document itself having failed to store.
+func TestWritingADocumentRefusesWhenTheRecordCannotBeUpdatedAfterwards(t *testing.T) {
+	root := storyUnderway(t)
+	writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
+
+	r := runWith(t, "# Analysis\n", "artifact", "write", "analysis")
+	if r.code == 0 {
+		t.Fatal("artifact write reported success although the record could not be updated")
+	}
+	if !strings.Contains(r.stderr, "gate-record.json") || !strings.Contains(r.stderr, "SDLC-E0005") {
+		t.Errorf("the refusal does not name the record that could not be updated:\n%s", r.stderr)
+	}
+	stored, err := os.ReadFile(filepath.Join(root, ".sdlc", "stories", "US-001", "ANALYSIS.md"))
+	if err != nil || string(stored) != "# Analysis\n" {
+		t.Errorf("the document that was already stored before the record failed is gone: %v", err)
+	}
+}
+
+// failingReader reports the read failure a genuinely broken pipe would give
+// readDocument, without needing one.
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+// Standard input that fails part way through is not the same as standard
+// input with nothing on it, and the error has to say reading failed rather
+// than that the document was empty.
+func TestWritingADocumentRefusesWhenStandardInputFailsPartWayThrough(t *testing.T) {
+	storyUnderway(t)
+	var out, errb bytes.Buffer
+	code := Execute([]string{"artifact", "write", "analysis"}, failingReader{}, &out, &errb)
+	if code == 0 {
+		t.Fatal("a document was stored after standard input failed part way through")
+	}
+	if strings.Contains(errb.String(), "was empty") {
+		t.Errorf("a read failure was reported as an empty document:\n%s", errb.String())
+	}
 }

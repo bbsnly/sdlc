@@ -76,6 +76,32 @@ func TestAReviewerThatKeepsBlockingIsHandedToAPerson(t *testing.T) {
 	}
 }
 
+// Without --json the hand-over is a sentence, and it is the only place a
+// reader learns the story stopped: it has to say why, quote the note that
+// went unanswered, and name the commands that are a person's to run.
+func TestAHandOverFromAReviewSaysWhatAPersonDoesNext(t *testing.T) {
+	planned(t)
+
+	first := mustRunWith(t, "# architect\n",
+		"review", "add", "design_review", "architect", "block", "--note", "AC-3 has no step")
+	if strings.Contains(first.stdout, "handed to a person") {
+		t.Fatalf("the first block was announced as a hand-over:\n%s", first.stdout)
+	}
+	out := mustRunWith(t, "# architect\n",
+		"review", "add", "design_review", "architect", "block", "--note", "AC-3 still has no step").stdout
+	for _, want := range []string{
+		"US-001 is handed to a person",
+		"loop.max_review_rounds is 2",
+		"AC-3 still has no step",
+		"sdlc approve US-001",
+		`sdlc approve US-001 --reject "why"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the hand-over does not say %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestALimitOfZeroNeverHandsAStoryOver(t *testing.T) {
 	root := gitProject(t)
 	initialised(t)

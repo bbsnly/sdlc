@@ -155,3 +155,37 @@ func TestARejectionNeedsAReasonAndRecordsIt(t *testing.T) {
 		}
 	}
 }
+
+// A story named that the backlog has never heard of is refused before
+// anything is written, the same as gate --story and review add --story.
+func TestApproveRefusesAStoryThatIsNotInTheBacklog(t *testing.T) {
+	gitProject(t)
+	initialised(t)
+
+	if r := run(t, "approve", "NOPE-9"); r.code == 0 {
+		t.Fatal("an answer was recorded for a story the backlog has never heard of")
+	}
+}
+
+// The tree an approval is stamped with is asked of git, and git that cannot
+// run is said with its own reason rather than one that reads as a rejection.
+func TestApproveRefusesWithGitsOwnReasonWhenGitCannotRun(t *testing.T) {
+	gitProject(t)
+	initialised(t)
+	mustRun(t, "start")
+	mustRun(t, "escalate", "spec_unclear", "--message", "which one?")
+	t.Setenv("PATH", t.TempDir())
+
+	r := run(t, "approve", "US-001")
+	if r.code == 0 {
+		t.Fatal("approve stamped a tree with git not on PATH")
+	}
+	if !strings.Contains(r.stderr, "SDLC-E0021") || !strings.Contains(r.stderr, "did not finish") {
+		t.Errorf("the refusal does not carry git's own reason:\n%s", r.stderr)
+	}
+	// The approval itself never runs: this is git failing to measure the tree,
+	// not a person's decision, and the refusal must not read as one.
+	if strings.Contains(r.stderr, "nothing on") && strings.Contains(r.stderr, "is waiting for a decision") {
+		t.Errorf("the refusal reads as there being nothing to approve, not as git failing:\n%s", r.stderr)
+	}
+}

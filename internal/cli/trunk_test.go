@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -151,5 +153,76 @@ func TestARemoteThatCannotBeAskedDoesNotHoldAStoryBack(t *testing.T) {
 
 	if r := mustRun(t, "start"); !strings.Contains(r.stderr, "could not be asked") {
 		t.Errorf("start did not say it could not ask the remote:\n%s", r.stderr)
+	}
+}
+
+// git.trunk_branch left blank is not a project that named no trunk: the
+// default takes over, the same one a freshly scaffolded project has.
+// A blank trunk_branch is answered by config.Default, not by whatever branch
+// happens to be checked out, so this pins the name it falls back to rather
+// than only trying it from the branch the fallback and gitProject agree on.
+func TestABlankTrunkBranchFallsBackToTheDefault(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	setConfigOnDisk(t, root, "git", map[string]any{"trunk_branch": "", "remote": false})
+
+	// A blank setting that fell back to "" rather than "main" would refuse
+	// every branch, including this one, so a branch other than main has to be
+	// the one that is refused, and refused by name.
+	inGit(t, "switch", "--quiet", "--create", "spike")
+	if stderr := startRefused(t, "SDLC-E0038"); !strings.Contains(stderr, `"main"`) {
+		t.Errorf("the blank trunk_branch did not fall back to \"main\":\n%s", stderr)
+	}
+
+	inGit(t, "switch", "--quiet", "main")
+	mustRun(t, "start")
+}
+
+// A tree with a great many stray files is a refusal to read, not a refusal to
+// notice: the message names a few and counts the rest.
+func TestManyStrayFilesAreSummarisedRatherThanListed(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	for i := range 7 {
+		writeFile(t, root, fmt.Sprintf("idea-%d.md", i), "half a thought\n")
+	}
+
+	stderr := startRefused(t, "SDLC-E0039")
+	if !strings.Contains(stderr, "and 2 more") {
+		t.Errorf("7 stray files were not summarised as 5 and 2 more:\n%s", stderr)
+	}
+}
+
+// gitOnlyPath is a PATH with git on it and nothing else -- in particular
+// neither sh nor bash, which commands.smoke needs to run at all.
+func gitOnlyPath(t *testing.T) string {
+	t.Helper()
+	found, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git on PATH to isolate")
+	}
+	dir := t.TempDir()
+	name := "git"
+	if runtime.GOOS == "windows" {
+		name = "git.exe"
+	}
+	if err := os.Symlink(found, filepath.Join(dir, name)); err != nil {
+		t.Skipf("could not symlink git into an isolated PATH: %v", err)
+	}
+	return dir
+}
+
+// A project without a POSIX shell on PATH -- Windows outside Git Bash -- is
+// said out loud rather than refusing every story: the check that could not run
+// is not the same as one that ran and failed.
+func TestASmokeCheckWithNoShellDoesNotHoldAStoryBack(t *testing.T) {
+	root := gitProject(t)
+	initialised(t)
+	setConfigOnDisk(t, root, "commands", map[string]string{"smoke": "exit 1"})
+	t.Setenv("PATH", gitOnlyPath(t))
+
+	r := mustRun(t, "start")
+	if !strings.Contains(r.stderr, "sh nor bash") {
+		t.Errorf("start did not say commands.smoke could not run:\n%s", r.stderr)
 	}
 }
