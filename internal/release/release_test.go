@@ -196,3 +196,110 @@ func TestThisRepositoryIsCoherent(t *testing.T) {
 		t.Errorf("%s", p)
 	}
 }
+
+// A Problem without a file is a tag mismatch, which names no file; one with a
+// file always leads with it, so the person fixing it knows where to look.
+func TestProblemStringLeadsWithTheFileOnlyWhenThereIsOne(t *testing.T) {
+	if got := (Problem{File: "npm/package.json", Why: "says the wrong thing"}).String(); got != "npm/package.json: says the wrong thing" {
+		t.Errorf("String() = %q", got)
+	}
+	if got := (Problem{Why: "the tag does not match"}).String(); got != "the tag does not match" {
+		t.Errorf("String() = %q", got)
+	}
+}
+
+// Version is read straight from Source; a repository missing that file has
+// nothing to check against and must fail rather than report an empty version.
+func TestVersionFailsWhenTheSourceFileIsMissing(t *testing.T) {
+	if _, err := Version(t.TempDir()); err == nil {
+		t.Fatal("want an error when plugin.json does not exist")
+	} else if !strings.Contains(err.Error(), "plugin.json") {
+		t.Errorf("err should name the file it could not read, got %v", err)
+	}
+}
+
+func TestVersionFailsOnMalformedJSON(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, Source, "{not json")
+	if _, err := Version(root); err == nil {
+		t.Fatal("want an error on malformed JSON")
+	} else if !strings.Contains(err.Error(), filepath.ToSlash(Source)) {
+		t.Errorf("err should name the file, got %v", err)
+	}
+}
+
+func TestVersionFailsWhenTheVersionKeyIsMissing(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, Source, `{"name":"sdlc"}`)
+	if _, err := Version(root); err == nil || !strings.Contains(err.Error(), `has no "version"`) {
+		t.Errorf("err = %v, want it to say there is no version key", err)
+	}
+}
+
+// Check's own preflight is Version; a repository that fails that has nothing
+// for Check to report a Problem about, so Check must fail too, not report an
+// empty problem list as if the repository were coherent.
+func TestCheckFailsRatherThanReportingNothingWhenTheSourceIsMissing(t *testing.T) {
+	problems, err := Check(t.TempDir(), "")
+	if err == nil {
+		t.Fatal("want an error, not a silently empty problem list")
+	}
+	if problems != nil {
+		t.Errorf("problems = %v, want none alongside an error", problems)
+	}
+}
+
+// A carrier that fails to parse is a different failure from one that is merely
+// out of date, and Check must stop rather than silently skip it.
+func TestCheckFailsWhenACarrierFailsToParse(t *testing.T) {
+	root := fixture(t, "1.2.3", oneRelease)
+	write(t, root, carriers[0], "{not json")
+
+	problems, err := Check(root, "")
+	if err == nil {
+		t.Fatal("want an error, not a reported Problem, for a carrier that will not parse")
+	}
+	if problems != nil {
+		t.Errorf("problems = %v, want none alongside an error", problems)
+	}
+}
+
+// A changelog Check cannot even read is a different failure from one with no
+// section for this version; only the second is a Problem to report.
+func TestCheckFailsWhenTheChangelogCannotBeRead(t *testing.T) {
+	root := fixture(t, "1.2.3", oneRelease)
+	if err := os.Remove(filepath.Join(root, ChangelogFile)); err != nil {
+		t.Fatal(err)
+	}
+
+	problems, err := Check(root, "")
+	if err == nil {
+		t.Fatal("want an error, not a reported Problem, for a changelog that cannot be read at all")
+	}
+	if problems != nil {
+		t.Errorf("problems = %v, want none alongside an error", problems)
+	}
+}
+
+// prereleaseClaims reads the README to catch it saying there is no release;
+// when it cannot even read the page, Check must say so rather than reporting
+// a clean repository.
+func TestCheckFailsWhenThePrereleaseCheckCannotReadAPage(t *testing.T) {
+	root := fixture(t, "1.2.3", oneRelease)
+	if err := os.RemoveAll(filepath.Join(root, "README.md")); err != nil {
+		t.Fatal(err)
+	}
+	// A directory named README.md fails to read for a different reason than
+	// "does not exist", which is the one prereleaseClaims tolerates.
+	if err := os.MkdirAll(filepath.Join(root, "README.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	problems, err := Check(root, "v1.2.3") // only checked when a tag is being cut
+	if err == nil {
+		t.Fatal("want an error, not a reported Problem, when the page cannot be read")
+	}
+	if problems != nil {
+		t.Errorf("problems = %v, want none alongside an error", problems)
+	}
+}

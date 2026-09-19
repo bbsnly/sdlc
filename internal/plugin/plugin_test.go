@@ -402,6 +402,96 @@ func TestAListInTheFrontmatterReadsInEitherForm(t *testing.T) {
 	}
 }
 
+// Each loader reads its own file under its own root; a repository missing
+// that file has nothing to load and must fail rather than return a zero value
+// that reads as "this plugin has no name, no hooks".
+func TestLoadersFailWhenTheirFileDoesNotExist(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		load func(dir string) error
+	}{
+		{"manifest", func(dir string) error { _, err := LoadManifest(dir); return err }},
+		{"marketplace", func(dir string) error { _, err := LoadMarketplace(dir); return err }},
+		{"hooks", func(dir string) error { _, err := Hooks(dir); return err }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.load(t.TempDir()); err == nil {
+				t.Fatal("want an error when the file does not exist")
+			}
+		})
+	}
+}
+
+// JSON that fails to parse is a different failure from a file that is not
+// there, and readJSON has to name the file either way -- otherwise the person
+// fixing a broken plugin.json has to guess which of several files it meant.
+func TestLoadManifestFailsOnMalformedJSONAndNamesTheFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".claude-plugin", "plugin.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadManifest(dir); err == nil || !strings.Contains(err.Error(), filepath.ToSlash(path)) {
+		t.Errorf("err = %v, want it to name %s", err, path)
+	}
+}
+
+// Glob matches a directory just as readily as a file; components must fail
+// reading one rather than silently treating it as an empty component.
+func TestAgentsFailsWhenAMatchedEntryIsADirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "agents", "oops.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Agents(dir); err == nil {
+		t.Fatal("want an error reading a directory where a component file was expected")
+	}
+}
+
+// A component that fails to parse must say which file and why, not just that
+// something in the plugin's agents or skills is wrong.
+func TestAgentsWrapsAFrontmatterErrorWithThePathAndReason(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bad := filepath.Join(dir, "agents", "broken.md")
+	if err := os.WriteFile(bad, []byte("no frontmatter block here\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Agents(dir)
+	if err == nil {
+		t.Fatal("want an error for a component with no frontmatter")
+	}
+	if !strings.Contains(err.Error(), filepath.ToSlash(bad)) || !strings.Contains(err.Error(), "no frontmatter") {
+		t.Errorf("err = %v, want it to name the file and say why", err)
+	}
+}
+
+func TestSplitFrontmatterFailsWhenTheBlockIsNeverClosed(t *testing.T) {
+	if _, _, _, err := splitFrontmatter("---\nname: a\nnothing ever closes this\n"); err == nil {
+		t.Fatal("want an error for a frontmatter block with no closing ---")
+	}
+}
+
+// A line that is neither a key, a list item nor a comment -- a stray dash with
+// no space, or prose with no colon -- must be skipped without corrupting the
+// keys read before or after it.
+func TestSplitFrontmatterIgnoresLinesItCannotParse(t *testing.T) {
+	front, _, _, err := splitFrontmatter(
+		"---\nname: a\n-nospace\njust text, no colon\ndescription: still read\n---\nbody\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(front) != 2 || front["name"] != "a" || front["description"] != "still read" {
+		t.Errorf("front = %+v, want only name and description read", front)
+	}
+}
+
 // The file name and the frontmatter name both end up in the namespaced id a
 // user types, and a mismatch between them is invisible until it is typed.
 func TestAgentFileNamesMatchTheirFrontmatter(t *testing.T) {
