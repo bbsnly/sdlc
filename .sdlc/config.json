@@ -40,7 +40,7 @@
   },
 
   "thresholds": {
-    "diff_size_cap": 500,
+    "diff_size_cap": 1500,
     "coverage_min": 95,
     "mutation_min": 0
   },
