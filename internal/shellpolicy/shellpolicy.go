@@ -154,6 +154,63 @@ var interpreters = map[string]bool{
 	"python": true, "python3": true, "py": true, "ruby": true, "node": true, "deno": true, "bun": true, "php": true,
 }
 
+// pair is one reading of a command: the text the rules are applied to, and the
+// command the loop-state and freeze rules take their words from through m.words.
+// The two travel together because they have to agree; see readings.
+//
+// Called pair and not reading, which is the word the comments and the tests
+// use for it, because herestring_test.go declares `type reading int` and a
+// frozen file cannot move. A tidy-up that renames this collides with it.
+type pair struct {
+	text    string
+	command string
+}
+
+// readings is a command read as the released tool reads it and as the shell
+// that will run it reads it, which is twice, and three times where a marker
+// nothing closes makes the shell's reading two texts of its own. A rule refuses
+// the command when any reading refuses it, so this can only add refusals, never
+// take one away.
+//
+// The released reading is kept because the shell's reading is a reading of
+// PowerShell's grammar made without PowerShell. A header the strict test
+// declines that PowerShell would accept leaves the raw marker in the text, and
+// its quote swallows every command after it: a command refused before this would
+// then be allowed. Taking the released reading out is a person's decision, not a
+// clean-up, and TestTheShapesOnlyTheReleasedReadingRefusesStayRefused holds four
+// shapes it is the only refusal for.
+//
+// It is asked FIRST. The pair of readings is monotone in whether a command is
+// refused but not in which rule refuses it, and a rule name is what a person
+// reads and what the hook puts in its JSON, so a command refused before this
+// keeps the rule it was refused under.
+//
+// Each reading's text is made from that reading's own command and never from the
+// other's: read the input as it arrived and the lexer meets a live backtick,
+// which it reads as a substitution (commands.go:170-173), which is not what the
+// released tool answers.
+func readings(command string, powerShell bool) []pair {
+	released, shell := command, command
+	if powerShell {
+		released = strings.ReplaceAll(command, "`", "")
+		shell = withoutEscapes(command)
+	}
+	out := make([]pair, 0, 3)
+	// A reading another has already made is not made again: the two differ only
+	// where the command holds a here-string marker or a backtick, and a document
+	// handed over as a bash heredoc is one reading for both.
+	add := func(texts []string, spelling string) {
+		for _, text := range texts {
+			if p := (pair{text: text, command: spelling}); !slices.Contains(out, p) {
+				out = append(out, p)
+			}
+		}
+	}
+	add(withoutDocuments(released, powerShell, true), released)
+	add(withoutDocuments(shell, powerShell, false), shell)
+	return out
+}
+
 // Inspect reports the first rule that refuses this command.
 //
 // The rules do not depend on who is asking. A shell command that rewrites the
@@ -163,10 +220,26 @@ var interpreters = map[string]bool{
 // a test file, as the file-writing rules have it, and a review recorded by
 // anyone but the reviewer it names.
 func Inspect(command string, s State) (Finding, bool) {
-	if s.PowerShell {
-		command = strings.ReplaceAll(command, "`", "")
+	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}}
+	for _, r := range readings(command, s.PowerShell) {
+		if f, ok := inspectReading(r, s, m); ok {
+			return f, true
+		}
+		// What Resolve said of a word, and the folded freeze, are functions of
+		// their input, so what one reading worked out the next may have. What a
+		// rule has already looked at is not: m.first answers "this rule found
+		// nothing in this spelling", which is true of one reading and not of
+		// both, and m.line holds the words of a command the next reading spells
+		// differently. wordsIn over a 50 KB command is 262 us, so a later reader
+		// will see duplicated work here; sharing it is what would break the
+		// guarantee above.
+		m = &memo{checked: map[string]bool{}, resolved: m.resolved, folded: m.folded}
 	}
-	text := withoutDocuments(command)
+	return Finding{}, false
+}
+
+func inspectReading(r pair, s State, m *memo) (Finding, bool) {
+	text, command := r.text, r.command
 	for _, segment := range segments(text) {
 		if _, _, assigns := parse(segment); len(assigns) > 0 {
 			if f, ok := checkEnforcement(assigns); ok {
@@ -186,7 +259,6 @@ func Inspect(command string, s State) (Finding, bool) {
 	}
 	dir, lost := s.Dir, false
 	unsure := movesInAScript(text, s.PowerShell)
-	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}}
 	// Where the command is, for each subshell open around the segment being
 	// read. A `cd` in a subshell moves only that subshell: followed as a move
 	// of the shell around it, `cd internal && (cd /tmp && ls) && cp e x_test.go`
@@ -368,10 +440,22 @@ var setsSession = regexp.MustCompile(
 // not end the reading: `sdlc approve A-1; sdlc ack --through HEAD` is still an
 // acknowledgement.
 func HumanDecisions(command string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
-	if powerShell {
-		command = strings.ReplaceAll(command, "`", "")
+	// Both readings, as Inspect asks them and in the same order. This is the
+	// entry point the hook uses when no story is being worked on (hook.go:229),
+	// so it is where an approval, an unfreeze or an ack is reported at all: a
+	// decision one reading throws away as a document has to meet the other, or
+	// the shape the four rows of
+	// TestTheShapesOnlyTheReleasedReadingRefusesStayRefused hold for Inspect
+	// stops being reported here.
+	for _, r := range readings(command, powerShell) {
+		if f, ok := humanDecisionsOn(r.text, powerShell, storyWaits); ok {
+			return f, true
+		}
 	}
-	text := withoutDocuments(command)
+	return Finding{}, false
+}
+
+func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
 	runs, subshells := programsAt(text, powerShell)
 	if subshells.tooDeep {
 		return tooDeep, true
@@ -413,6 +497,9 @@ func HumanDecisions(command string, powerShell bool, storyWaits func(dir string)
 // find which project that is in.
 func Places(command string, powerShell bool) []string {
 	if powerShell {
+		// Not withoutEscapes, on purpose: here a place a shell would not read is
+		// harmless and a missed one is not, and taking an escaped quote off would
+		// glue two words into a path that is neither.
 		command = strings.ReplaceAll(command, "`", "")
 	}
 	seen := map[string]bool{}
@@ -1455,7 +1542,11 @@ func inAPath(r rune) bool {
 // `git commit`" was refused by the commit gate, and a review that warned
 // against `sdlc unfreeze` was refused as an unfreeze. A body that goes to a
 // shell or an interpreter is kept: that text is what runs.
-func withoutDocuments(command string) string {
+//
+// released and the shell pick which reading this is; see readings. It answers
+// one text, and two where a here-string marker nothing closes leaves the tail to
+// be read in two ways that cannot be put in one text.
+func withoutDocuments(command string, powerShell, released bool) []string {
 	lines := strings.Split(command, "\n")
 	kept := make([]string, 0, len(lines))
 	for i := 0; i < len(lines); i++ {
@@ -1467,13 +1558,42 @@ func withoutDocuments(command string) string {
 		// The markers are taken off either way. Left in, `@'` opened a quoted
 		// word that swallowed the body and the command on the closing line, so
 		// a body that does run, and `'@ | sdlc approve`, were never read.
-		if opener, quote, ok := hereString(lines[i]); ok {
+		if opener, quote, ok := header(lines[i], powerShell, released); ok {
 			end := i + 1
 			for end < len(lines) && !strings.HasPrefix(strings.TrimLeft(lines[end], " \t"), quote+"@") {
 				end++
 			}
 			if end == len(lines) {
-				continue
+				if released {
+					continue
+				}
+				// Nothing closes it, and the marker left in opened a quote that
+				// swallowed every line after it, so none was read. The marker
+				// goes, and what follows is read twice: with its quotes taken
+				// out, so a quote of its own cannot swallow the next line, and
+				// as written, so a `#` or a `<#` that taking the quotes out
+				// makes live cannot hide what comes after it. Only the tail
+				// -- taking the quotes off everything kept would unbalance
+				// the lines before the marker.
+				//
+				// The two are separate readings and not two halves of one text.
+				// One after the other, the `<#` that taking the quotes off `echo
+				// '<#'` makes live opened a block comment, which runs to `#>` or
+				// to the end of the text (commands.go:183), and it swallowed the
+				// copy written to expose the command; so did the `${` of `echo
+				// '${'`, which runs to its `}`. Apart, neither can reach the
+				// other, whatever a later arm of the lexer reads that way.
+				//
+				// The scan ends here: carried on, a thousand lines each ending
+				// in an unclosed marker would append the rest again for every
+				// one of them. That also leaves a `<<` document after an
+				// unclosed marker read as commands, which refuses more than it
+				// need, never less.
+				kept[len(kept)-1] = opener
+				before := strings.Join(kept, "\n") + "\n"
+				tail := strings.Join(lines[i+1:], "\n")
+				bare := strings.ReplaceAll(strings.ReplaceAll(tail, "'", ""), `"`, "")
+				return []string{before + bare, before + tail}
 			}
 			closer := strings.TrimPrefix(strings.TrimLeft(lines[end], " \t"), quote+"@")
 			kept[len(kept)-1] = opener
@@ -1512,7 +1632,7 @@ func withoutDocuments(command string) string {
 			}
 		}
 	}
-	return strings.Join(kept, "\n")
+	return []string{strings.Join(kept, "\n")}
 }
 
 // documentDelimiters lists the words that end the here-documents one line
@@ -1540,6 +1660,9 @@ func documentDelimiters(line string) []string {
 
 // hereString reports whether a line opens a PowerShell here-string, with the
 // line before the marker and the quote that closes it.
+//
+// Left as it was, so the released reading calls what the released tool called;
+// header is the strict test beside it.
 func hereString(line string) (opener, quote string, ok bool) {
 	trimmed := strings.TrimRight(line, " \t\r")
 	for _, q := range []string{"'", `"`} {
@@ -1548,6 +1671,155 @@ func hereString(line string) (opener, quote string, ok bool) {
 		}
 	}
 	return "", "", false
+}
+
+// header reports whether a line opens a here-string in the shell that will run
+// the command, with the line before the marker and the quote that closes it.
+//
+// Bash has no here-string: there `@'` is an `@` and an ordinary quote, and a
+// command wrapped in two of them ran while the classifier read the whole of it
+// as a document. PowerShell has one only where the marker starts a token, which
+// startsAToken settles. Under released neither test applies and any line ending
+// in the marker opens a document, in either shell, as it did before.
+func header(line string, powerShell, released bool) (opener, quote string, ok bool) {
+	opener, quote, ok = hereString(line)
+	if released {
+		return opener, quote, ok
+	}
+	if !ok || !powerShell || !startsAToken(line) {
+		return "", "", false
+	}
+	return opener, quote, true
+}
+
+// startsAToken reports whether the `@` of the marker a line ends in begins a
+// token, which is the only place PowerShell reads a here-string header.
+//
+// The last two characters are all the released test looks at, and five line
+// endings are not a header to PowerShell. Four are settled here: the closing
+// quote of an ordinary string, a marker inside a string, one inside a comment,
+// and one glued to a bare word. The fifth, a marker whose quote a backtick
+// escapes, is withoutEscapes's, which has taken it out before this is asked.
+//
+// The line is read for the lexer's quotes and for the comment opensAComment
+// has -- a second definition of the lexer's and not that one, as the comment
+// there says -- and no further. The lexer reads a line at commands.go:163-194;
+// there is no arm here for the backtick, for `$(`, for `${` or for the block
+// comment it opens at `<#` (:183). A marker after one of those is still taken
+// for a header, and what follows it is still skipped as a document. Nothing
+// before this line is read either: a string or a comment opened further up is
+// not read yet, so such a marker is still taken for a header here, as it was
+// before.
+func startsAToken(line string) bool {
+	trimmed := strings.TrimRight(line, " \t\r")
+	at := len(trimmed) - 2
+	var inSingle, inDouble bool
+	for i := 0; i < at; i++ {
+		switch c := trimmed[i]; {
+		case inSingle:
+			inSingle = c != '\''
+		case inDouble:
+			inDouble = c != '"'
+		case c == '\'':
+			inSingle = true
+		case c == '"':
+			inDouble = true
+		case opensAComment(trimmed, i):
+			return false
+		}
+	}
+	if inSingle || inDouble {
+		return false
+	}
+	// What may stand in front of the marker. Deliberately short: a character
+	// left out only means the released reading answers for that line, where a
+	// character wrongly let in would make a false header of a bare word.
+	return at == 0 || strings.IndexByte(" \t=;|&({,", trimmed[at-1]) >= 0
+}
+
+// opensAComment reports whether the byte at i begins a comment, which a `#` does
+// only where a token starts. Taken anywhere, `echo a#b @'` stopped being a
+// header and the body its closing line pipes to iex was hidden behind the raw
+// marker.
+//
+// A token starts after a line break or a space, and after the characters
+// startsAToken already takes a marker to start after: read as white space only,
+// `echo x;# @'` was not a comment, its apostrophe was counted as a delimiter,
+// and withoutEscapes deleted a real quote further down.
+//
+// This is a second definition of the rule the lexer keeps in `started`
+// (commands.go:192), not a reading of that one, and measured the two disagree
+// both ways. The set below opens a comment after `,` and `=` where the lexer
+// does not, so `echo a,# @'` and `$a =# @'` are declined as headers and
+// the raw marker's quote swallows the tail: they are NOT closed, though `;#`,
+// `|#`, `&#`, `(#` and `{#` are. It does not open one after `)` or `}` where
+// the lexer does (endCommand clears `started`), so `echo (1)# @'` is taken for
+// a header and its body skipped as a document.
+//
+// Matching the sets is not the fix, and not one line: adding `)` and `}` here
+// gains refusals and gives some up. `echo ${x}# @'` over a commit is refused
+// now and would stop being refused, because the lexer's `${` arm leaves a
+// token started, so to it the `#` is no comment, and a header declined leaves
+// the raw marker whose quote then swallows the tail. Over one corpus of 43,800
+// shapes it turned 438 from allowed to refused and 144 the other way. The
+// monotone fix is to give a declined header what the unclosed branch in
+// withoutDocuments already does -- drop the marker and read the tail twice --
+// so that declining one can never hide what follows. That is a change of its
+// own.
+func opensAComment(text string, i int) bool {
+	return text[i] == '#' && (i == 0 || strings.IndexByte(" \t\r\n=;|&({,", text[i-1]) >= 0)
+}
+
+// withoutEscapes takes PowerShell's escape character out of a command, leaving
+// what it escaped.
+//
+// A backtick escapes the character after it, so a quote behind one is a
+// character of the word and not a delimiter: deleting the backtick alone left a
+// live quote, and it swallowed the command on the next line. The two are read
+// together, so a doubled backtick cannot reach the quote after it.
+//
+// Whether a backtick escapes at all turns on what the quotes before it opened,
+// so the quotes counted are the ones that are delimiters. A quote inside a
+// comment or inside a double-quoted string is a character like any other:
+// counted, the apostrophe of a line `# @'` inverted every quote after it, and a
+// backtick further down then deleted a delimiter that was real, which left the
+// commit after it inside a quoted word and hid it.
+func withoutEscapes(command string) string {
+	if strings.IndexByte(command, '`') < 0 {
+		return command
+	}
+	var b strings.Builder
+	b.Grow(len(command))
+	var inSingle, inDouble, inComment bool
+	for i := 0; i < len(command); i++ {
+		c := command[i]
+		switch {
+		case inComment:
+			// Nothing in a comment runs and nothing in one is escaped.
+			inComment = c != '\n'
+		case inSingle:
+			// Inside a single-quoted string PowerShell escapes nothing, so there
+			// the backtick goes and the quote after it still closes the string:
+			// taking that quote off paired the quotes around a live command and
+			// hid it.
+			inSingle = c != '\''
+		case c == '`':
+			if i++; i < len(command) && strings.IndexByte("'\"`", command[i]) < 0 {
+				b.WriteByte(command[i])
+			}
+			continue
+		case c == '\'' && !inDouble:
+			inSingle = true
+		case c == '"':
+			inDouble = !inDouble
+		case !inDouble && opensAComment(command, i):
+			inComment = true
+		}
+		if c != '`' {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // runsAScript reports whether a command on this line could run the text it is

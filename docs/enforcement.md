@@ -287,7 +287,12 @@ session. And they read a path as the file it is on disk, so a link to `.sdlc`,
 or a Windows short name such as `SDLC~1`, is the file it reaches. The body of a
 here-document is text, not commands, so a plan or a review that mentions
 `git commit` is not refused for it — unless the text goes to a shell or an
-interpreter, which runs it.
+interpreter, which runs it. PowerShell's here-string, `@'` to `'@` or `@"` to
+`"@`, is a document too, but only in a `PowerShell` command and only when it is
+closed; the lines after one that is never closed are read as commands. In a
+`Bash` or `Monitor` command `@'` is an `@` and an ordinary quote, and the
+quotes are read as quotes: what is inside them is text, and what is outside
+them is commands.
 
 Which program a command runs is read with its quoting, so a commit message, a
 `--note` or a `--message` that mentions `sdlc approve` or `git commit` is text,
