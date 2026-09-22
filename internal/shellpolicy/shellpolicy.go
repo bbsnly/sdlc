@@ -132,9 +132,12 @@ var mutating = map[string]bool{
 	"tar": true, "rsync": true, "unzip": true, "cpio": true, "scp": true,
 	"curl": true, "wget": true,
 	// Editors that rewrite a file given on the command line. sed, perl, awk
-	// and the interpreters are not here: each can write through its program
-	// whatever it is asked to do, which changesFiles counts for the loop's
-	// record, and a frozen test is read with them, which changesAFile allows.
+	// and the interpreters are not here: what they write is decided by their
+	// program and not by their arguments, so changesFiles counts them for the
+	// loop's record whatever they are asked, and the freeze reads the program
+	// instead. Asked of the tool rather than of its program, `-i` was the only
+	// write the freeze could see, and `awk 'BEGIN{print "x" > "x_test.go"}'`
+	// went through.
 	"ed": true, "patch": true,
 	// Windows spellings, because Bash on Windows is not always a POSIX shell.
 	"del": true, "erase": true, "move": true, "copy": true, "ren": true, "rename": true,
@@ -853,6 +856,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 	// that way everywhere, a fixture's config.json made `cp config.example.json
 	// config.json` at the root a write to a frozen test.
 	inline := runsInlineCode(run.words, segment)
+	own := runsAProgramOfItsOwn(run.words)
 	byName := lost || inline || run.piped
 	if len(run.words) > 0 {
 		switch base(run.words[0]) {
@@ -864,7 +868,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 		}
 	}
 	candidates := append([]string{}, redirects...)
-	if inline {
+	if inline || own {
 		// `python3 -c '...'` is a program, not a list of arguments, and the
 		// file it opens is inside a string. There is no parsing this without
 		// being an interpreter, so the whole of it is searched instead: a
@@ -873,8 +877,29 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 		// segments, and a here-document puts the program on lines of its own.
 		// A plain argument is left out: it is a file the program is given to
 		// read, as in `perl -ne 'print' x_test.go`, and reading a frozen test
-		// is never refused.
+		// that way is never refused. Only that way: named anywhere else on the
+		// line, or beside a program that came from elsewhere, a read is refused
+		// along with the writes, which is the cost the whole-line reading is
+		// worth and what docs/enforcement.md is careful to say.
+		//
+		// awk's and sed's programs are the same case and arrive here without
+		// runsInlineCode, which they are deliberately kept out of: they get the
+		// whole-line reading without the bare-name matching byName would bring
+		// with it. Asked only what their arguments say, this allowed
+		// `awk 'BEGIN{print "x" > "internal/x_test.go"}'`, which was run
+		// against a scratch file with the real tool and overwrote it.
+		//
+		// The words come from line, which is the reading's command with its
+		// documents still in it, and not from the text the rules are applied
+		// to. `awk -f - <<'EOF'` puts the program in a body withoutDocuments
+		// takes out, and drawing the candidates from there would lose it with
+		// no test to notice.
 		plain := plainArguments(segment)
+		if tookItsProgramElsewhere(run.words) {
+			// Nothing on the line says which of the files is data, so none of
+			// them is left out.
+			plain = nil
+		}
 		for _, w := range m.words(line) {
 			if !plain[w] {
 				candidates = append(candidates, w)
@@ -1000,6 +1025,11 @@ func recordFinding(hit string) Finding {
 // change a file. One that only reads it is left alone: reading a frozen test is
 // how the implementer knows what to implement, and `sed -n 1,20p x_test.go` has
 // to go through.
+//
+// For sed, awk and gawk this is half of what the freeze asks. What their own
+// program writes is in no argument of theirs, so checkFrozenTests reads the
+// whole line for them as well through runsAProgramOfItsOwn; the read this keeps
+// allowed is the one named as a plain argument.
 func changesAFile(words []string) bool {
 	if len(words) == 0 {
 		return false
@@ -1172,6 +1202,98 @@ func runsInlineCode(words []string, segment string) bool {
 		}
 	}
 	return false
+}
+
+// runsAProgramOfItsOwn reports whether this is awk, gawk or sed: a tool whose
+// program writes files by means no argument of the command line shows. `print
+// > FILE` is awk's own output and `w` is sed's, neither of them a shell
+// redirect parse reads, and both were run against a scratch file with the real
+// tools while the freeze allowed the command.
+//
+// The same idea as runsInlineCode, and deliberately a second function rather
+// than three more names in that one. byName in checkFrozenTests is computed
+// from inline, so folding them together would match a bare name against the end
+// of every frozen path as well, and a fixture's main.go in another package was
+// an ordinary edit read as a write to a frozen test. runsInlineCode's other
+// caller is the loop-state rule, which this is not about.
+//
+// These three names are read at changesAFile and changesFiles too, both with
+// perl beside them. A spelling none of the three knows is open at all of them.
+func runsAProgramOfItsOwn(words []string) bool {
+	if len(words) == 0 {
+		return false
+	}
+	switch base(words[0]) {
+	case "awk", "gawk", "sed":
+		return true
+	}
+	return false
+}
+
+// tookItsProgramElsewhere reports whether awk, gawk or sed was given its
+// program somewhere other than its first argument: from a file with -f or
+// --file, or from -e/--source and gawk's -E/--exec. Then the first argument is
+// a data file like every one after it, and nothing on the line says which of
+// them the program only reads.
+//
+// Every word is read, and not only the first. Stopped at the first argument
+// that is not a flag, `awk -F : -f w.awk other.txt x_test.go` and `awk -v q=1
+// -f w.awk other.txt x_test.go` ended the scan on the option's own value, never
+// saw the -f, and overwrote the frozen test.
+func tookItsProgramElsewhere(words []string) bool {
+	// The name first and the flags only after it. A set applied by flag rather
+	// than by name puts perl's -e in it, and `perl -ne 'print' x_test.go` is a
+	// read the freeze has always allowed.
+	if !runsAProgramOfItsOwn(words) {
+		return false
+	}
+	// sed is the only one of the three without --source and --exec. Its -e is a
+	// program on the command line, which the freeze already reads where it
+	// stands, and its -E is extended regular expressions: inverting either
+	// would refuse `sed -e '1,5p' -n x_test.go` and `sed -E 's/a/b/' x_test.go`,
+	// both of them reads.
+	awk := base(words[0]) != "sed"
+	inverts, valued := "f", "efli"
+	if awk {
+		inverts, valued = "feE", "vFfeilE"
+	}
+	for _, a := range words[1:] {
+		switch {
+		case strings.HasPrefix(a, "--"):
+			name, _, _ := strings.Cut(a, "=")
+			if abbreviates(name, "--file") ||
+				awk && (abbreviates(name, "--source") || abbreviates(name, "--exec")) {
+				return true
+			}
+		case strings.HasPrefix(a, "-"):
+			for _, r := range a[1:] {
+				if strings.ContainsRune(inverts, r) {
+					return true
+				}
+				// What follows one of these is that option's value and not more
+				// flags. Read as flags, `awk -vf=1 '{print}' x_test.go` was a
+				// program taken from a file and an ordinary read was refused.
+				if strings.ContainsRune(valued, r) {
+					break
+				}
+			}
+		}
+	}
+	return false
+}
+
+// abbreviates reports whether name is a start of option that GNU accepts for
+// it: `--fil` is --file, and so is `--f`, which names --follow-symlinks and
+// --field-separator as well. Refusing the wider set is the direction this errs
+// in.
+//
+// Both bounds are load-bearing, and editsInPlace carries the same pair for the
+// same reasons. Without the first, the end-of-options `--` is a start of every
+// option and `sed -n 1p -- x_test.go` is refused. Without the second the slice
+// panics on `sed --line-length=80 -n l x_test.go`, and a panic in the hook
+// answers {"continue":true}: a refusal lost without a word to anyone.
+func abbreviates(name, option string) bool {
+	return len(name) >= 3 && len(name) <= len(option) && name == option[:len(name)]
 }
 
 // plainArguments are the words of a segment written as bare arguments: not an

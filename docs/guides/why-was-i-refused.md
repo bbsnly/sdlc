@@ -72,8 +72,11 @@ handed to a person and not yet answered, so are `sdlc approve` and
 `cd "$OLDPWD"`, they are refused as if a story waited.
 
 When the hook cannot do its job, it still lets the call through. This is
-failing open, and in the session working a story it does not happen silently.
-That session shows a system message that starts with `sdlc:`. For example:
+failing open, and in the session working a story it does not happen silently —
+with one exception it cannot warn you about, because by then it is no longer
+running: a hook that outlasts the timeout Claude Code gives it is killed, and a
+killed hook says nothing. Otherwise that session shows a system message that
+starts with `sdlc:`. For example:
 
 ```json
 {"continue":true,"systemMessage":"sdlc: .sdlc/config.json could not be read, so tests are being recognised by the default patterns until it can be. Run `sdlc doctor` to see why."}

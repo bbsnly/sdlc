@@ -42,12 +42,15 @@ The shell is covered too. Once the tests are frozen, the hook refuses:
 
 | A tool call that | Rule |
 | --- | --- |
-| writes, moves or deletes a frozen file from the shell | `frozen-test-through-the-tool` |
+| writes, moves or deletes a frozen file from the shell, or names one beside an interpreter other than as the file it reads | `frozen-test-through-the-tool` |
 | creates a new test file, with the file tools or the shell, unless the project allows it | `no-new-test-after-the-freeze` |
 | writes a test file as the implementer before the freeze, or with `freeze.allow_new_test_files` on | `implementer-does-not-write-tests` |
 | runs `sdlc unfreeze` | `unfreeze-is-a-human-decision` |
 
-Reading tests and running them is never refused.
+Running the tests is never refused, and neither is reading one with `cat`,
+`grep`, `head` or the file tools where `sed`, `awk`, `gawk`, `perl` or another
+interpreter is not in the command too. Those are narrower: see
+[`frozen-test-through-the-tool`](../enforcement.md#frozen-test-through-the-tool).
 
 The command checks too, for whatever reached the tree some other way. A pass at
 `tests_frozen`, `plan`, `implementation`, `verification` or `commit` refuses if

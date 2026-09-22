@@ -184,8 +184,14 @@ change on the record.
 
 Refuses a new test file once the tests are frozen, unless
 `freeze.allow_new_test_files` is on. A shell command that would create one — a
-redirect, `touch`, `cp` — is refused by the same rule. Removing a test file the
-freeze does not hold is not: that is what `SDLC-E0043` asks for.
+redirect, `touch`, `cp` — is refused by the same rule, and so is naming one in
+a command that runs `sed`, `awk`, `perl` or another interpreter other than
+plainly as the file it is given to read. Removing a test file the freeze does
+not hold is not: that is what `SDLC-E0043` asks for. "New" is what the freeze
+does not hold, not what was written recently, so a test file that has been
+there for years reports here too. A frozen test can be reported here rather
+than as a frozen test, depending on how it was named; what to do is the same
+either way.
 
 *Instead:* say which case is missing and stop. The frozen files are frozen too,
 so the case cannot go into one of them either: the person running the session
@@ -196,10 +202,14 @@ run `sdlc freeze` after adding the file, or `tests_frozen`, `plan`,
 ### `implementer-does-not-write-tests`
 
 Refuses the implementer writing any test file, frozen or not, before the freeze
-or after it, through the file tools or through the shell. This is not a
-setting: `freeze.allow_new_test_files` lets the test author add one, never the
-implementer. After the freeze, the rules above answer first: a frozen file is
-refused as `frozen-test-is-not-edited` and a new one as
+or after it, through the file tools or through the shell, and, where `sed`,
+`awk`, `perl` or another interpreter runs in the command, naming one other than
+plainly as the file it is given to read. Reading one is not:
+`sed -n 1,5p internal/x_test.go` names it plainly as the file `sed` reads.
+`cat internal/x_test.go | sed -n 1,5p` names it somewhere else, and is refused.
+This is not a setting: `freeze.allow_new_test_files` lets the test author add
+one, never the implementer. After the freeze, the rules above answer first: a
+frozen file is refused as `frozen-test-is-not-edited` and a new one as
 `no-new-test-after-the-freeze`, so this is the rule named only before the
 freeze, or once the setting lets a new file past.
 
@@ -346,16 +356,33 @@ wrong, stop and say what.
 
 Refuses a command that would write, rewrite or delete a frozen acceptance test:
 by redirection; through `rm`, `mv`, `cp`, `tee`, `sed -i`, `find -delete`,
-`git checkout` and their like; or from inside a program handed to an
-interpreter with `-c` or `-e`, or on standard input.
+`git checkout` and their like; or from inside a program handed to `sed`, `awk`,
+`perl` or another interpreter, on the command line or on standard input. A
+command given its program somewhere other than its first argument — with `-f`,
+`--file`, or gawk's `--source`/`-e` and `--exec`/`-E` — leaves nothing to say
+which of its files is data, so every file it names is treated as one the
+program could write.
 
 A patch applied with `git apply` or `patch` names its files inside the patch,
 where this cannot see them. `sdlc gate` still refuses a frozen test that
 changed, with `SDLC-E0025`.
 
-Reading one is never refused — `cat`, `grep`, `sed -n` and the test runner all
-work as they always did, and reading the tests is how the implementer knows
-what to implement. Before the freeze this rule does nothing at all.
+Reading one with `cat`, `grep`, `head` or the file tools is never refused where
+`sed`, `awk`, `gawk`, `perl` or another interpreter is not in the command too,
+and reading the tests is how the implementer knows what to implement. Those are
+narrower, because each writes through a program of its own that this cannot
+read. A frozen test named plainly as the file one of them is given to read —
+`sed -n 1,5p internal/x_test.go` — is allowed, unless that command was given its
+program somewhere other than its first argument, when every file it names is
+treated as one the program could write. Otherwise the name is looked for as a
+word of the command, not as the program would work it out, anywhere on a
+command line one of these tools runs on, and refused there: inside the program
+text, in quotes, or in another part of a pipeline or list. A `;`, `&&`, `||` or
+`|` inside the program counts as another part of the list, so
+`sed -n '1,5p;10,20p' internal/x_test.go` is refused too. The flags above are
+looked for in any word starting with `-`, wherever it stands and program text
+included, so `awk '$1 == "-f" {print $2}' internal/x_test.go` is refused as
+well. Before the freeze this rule does nothing at all.
 
 *Instead:* leave it alone. If it genuinely has to change, say which test and
 why; the person running the session lifts the freeze with
