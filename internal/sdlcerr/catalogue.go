@@ -75,9 +75,6 @@ var (
 	TrunkBroken = register("SDLC-E0041",
 		`fix trunk, or revert what broke it, then start again — commands.smoke in .sdlc/config.json is the check that failed`)
 
-	DiffTooLarge = register("SDLC-E0042",
-		`record the gate as failed and hand the story to a person to split — "sdlc escalate story_too_large --message ..." — rather than cutting the change down to fit`)
-
 	UnfrozenTests = register("SDLC-E0043",
 		`remove the test files the freeze does not hold, or have a person run "sdlc unfreeze --reason ..." in their own terminal and freeze again, so they are frozen with the rest`)
 

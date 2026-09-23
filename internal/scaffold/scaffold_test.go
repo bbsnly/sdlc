@@ -318,7 +318,7 @@ func TestInitForceKeepsTheUsersOwnFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	touch(t, root, "user_stories.json", `{"stories":[{"id":"MINE-1","title":"Mine","status":"ready"}]}`)
-	touch(t, root, config.File, `{"version":1,"thresholds":{"diff_size_cap":1}}`)
+	touch(t, root, config.File, `{"version":1,"thresholds":{"coverage_min":1}}`)
 
 	res, err := Init(root, true)
 	if err != nil {
@@ -334,7 +334,7 @@ func TestInitForceKeepsTheUsersOwnFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Thresholds.DiffSizeCap != config.Default().Thresholds.DiffSizeCap {
+	if cfg.Thresholds.CoverageMin != config.Default().Thresholds.CoverageMin {
 		t.Error("--force did not restore the default settings")
 	}
 }
@@ -350,7 +350,7 @@ func TestInitForceKeepsWhereTheStoriesAreAndWhatTrunkIs(t *testing.T) {
 	}
 	touch(t, root, "planning/stories.json", `{"stories":[{"id":"MINE-1","title":"Mine","status":"ready"}]}`)
 	touch(t, root, config.File, `{"version":1,"backlog":{"path":"planning/stories.json"},`+
-		`"git":{"trunk_branch":"trunk"},"thresholds":{"diff_size_cap":1}}`)
+		`"git":{"trunk_branch":"trunk"},"thresholds":{"coverage_min":1}}`)
 
 	if _, err := Init(root, true); err != nil {
 		t.Fatal(err)
@@ -363,7 +363,7 @@ func TestInitForceKeepsWhereTheStoriesAreAndWhatTrunkIs(t *testing.T) {
 		t.Errorf("--force reset where the stories are or what trunk is: backlog %q, trunk %q",
 			cfg.Backlog.Path, cfg.Git.TrunkBranch)
 	}
-	if cfg.Thresholds.DiffSizeCap != config.Default().Thresholds.DiffSizeCap {
+	if cfg.Thresholds.CoverageMin != config.Default().Thresholds.CoverageMin {
 		t.Error("--force did not restore the settings it is for")
 	}
 	if !strings.Contains(read(t, root, "planning/stories.json"), "MINE-1") {

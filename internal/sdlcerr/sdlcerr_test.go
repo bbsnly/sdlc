@@ -237,7 +237,6 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 		{UncommittedWork, "SDLC-E0039"},
 		{TrunkBehind, "SDLC-E0040"},
 		{TrunkBroken, "SDLC-E0041"},
-		{DiffTooLarge, "SDLC-E0042"},
 		{UnfrozenTests, "SDLC-E0043"},
 		{NoAcceptanceCriteria, "SDLC-E0044"},
 		{UnknownGate, "SDLC-E0013"},

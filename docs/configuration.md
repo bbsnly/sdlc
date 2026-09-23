@@ -28,7 +28,7 @@ empty for Go:
     "fmt_file": "case \"$FILE\" in *.go) gofmt -w \"$FILE\" ;; esac",
     "coverage": "go test ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'"
   },
-  "thresholds": { "diff_size_cap": 500, "coverage_min": 80, "mutation_min": 70 },
+  "thresholds": { "coverage_min": 80, "mutation_min": 70 },
   "paths": {
     "tests": { "dirs": ["testdata/"], "file_globs": ["*_test.go"] },
     "src": ["cmd/", "internal/", "pkg/"]
@@ -122,7 +122,6 @@ a project commits is the project's decision.
 
 | Key | What it means |
 | --- | --- |
-| `diff_size_cap` | the most lines one story's change may add and remove, counted by `git diff --numstat` against the last commit — tests included, `.sdlc/` and the backlog not. The analysis gate proposes a split rather than planning past it, and `implementation`, `verification` and `code_review` refuse a pass over it: [SDLC-E0042](troubleshooting.md#sdlc-e0042) |
 | `coverage_min` | the coverage the verifier holds the change to, when `commands.coverage` is configured |
 | `mutation_min` | the mutation score the verifier holds the change to, where a project measures one |
 

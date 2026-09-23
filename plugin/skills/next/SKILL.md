@@ -149,7 +149,7 @@ If either document was not stored, the gate refuses and says which. The agent's 
 document, and later gates read the document: hand it to a person with
 `sdlc escalate analysis_incomplete --message "..."` and stop.
 
-If the agent reports `open_questions` above zero, or `split_recommended`, do not pass the gate.
+If the agent reports `open_questions` above zero, do not pass the gate.
 Guessing an answer here is the most expensive mistake in the loop: everything downstream is built
 on it.
 
@@ -250,15 +250,6 @@ sdlc gate implementation pass --note "<n> files, frozen tests green"
 
 If the gate finds the freeze broken, something edited an acceptance test: hand it to a person with
 `sdlc escalate freeze_broken --message "..."` rather than freezing again over the top.
-
-`SDLC-E0042`, here or at Gate 6 or 7 after rework, means the change is bigger than
-`thresholds.diff_size_cap` lets one story be. Do not have it squeezed under the cap; record the
-failure and hand the split to a person:
-
-```bash
-sdlc gate implementation fail --note "<n> lines against a cap of <cap>"
-sdlc escalate story_too_large --message "<n> lines against a cap of <cap>: how should it be split?"
-```
 
 ## Gate 6 — Independent verification
 

@@ -49,17 +49,13 @@ shell builtins such as `test`. It does not run anything.
 
 | Key | Default | Used by |
 | --- | --- | --- |
-| `diff_size_cap` | `500` | the researcher, which recommends a split when a story will not fit; the implementer, which plans under it; and `sdlc gate`, which refuses a pass at `implementation`, `verification` and `code_review` over it |
 | `coverage_min` | `80` | the verifier, against the output of `commands.coverage` |
 | `mutation_min` | `70` | the verifier, against the output of `commands.mutation` |
 
-`diff_size_cap` is the one the `sdlc` binary checks itself, with
-[SDLC-E0042](../troubleshooting.md#sdlc-e0042). It counts the lines the change
-adds and removes against the last commit, tests included, `.sdlc/` and the
-backlog not. The other two are for the verifier to compare, and a missed one is
-a reason for it to block. A threshold of `0` is not enforced. No stack fills in
-`mutation`, so `mutation_min` has nothing to be compared with until you add
-the command.
+`coverage_min` and `mutation_min` are for the verifier to compare, and a missed
+one is a reason for it to block. A threshold of `0` is not enforced. No stack
+fills in `mutation`, so `mutation_min` has nothing to be compared with until you
+add the command.
 
 ## `paths.tests`
 

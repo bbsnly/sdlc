@@ -459,24 +459,9 @@ If the check itself is what is wrong — it fails on a trunk that works — chan
 
 ### SDLC-E0042
 
-The story's change is bigger than `thresholds.diff_size_cap`.
-
-The cap is the most lines one story may add and remove, counted the way
-`git diff --numstat` counts them against the last commit: tests included, a
-moved file only for what changed in it, and `.sdlc/` and the backlog not at all.
-`implementation`, `verification` and `code_review` all refuse a pass over it. A
-change bigger than the project trusts one review to read is not made smaller by
-reviewing it anyway, and it is not made better by being squeezed under the cap.
-
-Record the gate as failed, and hand the story to a person to split:
-
-```console
-$ sdlc gate implementation fail --note "740 lines against a cap of 500"
-$ sdlc escalate story_too_large --message "740 lines against a cap of 500: how should it be split?"
-```
-
-If the cap is wrong for this project, a person changes it in `.sdlc/config.json`.
-`0` turns it off.
+**Retired.** The loop no longer limits how large a change may be, so nothing raises this
+code. It refused a change over the loop's size limit, and the limit went because it only ever
+cost work and the loop needs to move fast. The number is not given to any other.
 
 ### SDLC-E0043
 
@@ -527,8 +512,8 @@ HEAD has moved since the story started.
 
 The story's work is committed at the commit gate, so a commit before it reached trunk with no
 gate passed. The gates between also measure the change against HEAD: work already committed is
-not in the diff the reviewers read, and not in the lines the size cap counts. The hook refuses
-the ways to commit it can read, and this catches the rest at the next gate before the commit.
+not in the diff the reviewers read. The hook refuses the ways to commit it can read, and this
+catches the rest at the next gate before the commit.
 
 Record the gate as failed and hand the story to a person:
 

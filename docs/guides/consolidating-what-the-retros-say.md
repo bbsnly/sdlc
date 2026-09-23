@@ -51,10 +51,10 @@ It writes them to `.sdlc/consolidation-<date>.md` and shows them in the session.
 Nothing else is written until you say which to apply.
 
 A proposal that loosens a check says so first and names what stops being
-checked: a tier taken out of `pre_commit_pause_tiers`, a higher
-`diff_size_cap`, the code reviewer made advisory, a loop limit turned off. A
-change to who waits for a person before a commit is never folded into another
-proposal. [Configuration](../configuration.md) says what each key does.
+checked: a tier taken out of `pre_commit_pause_tiers`, the code reviewer made
+advisory, a loop limit turned off. A change to who waits for a person before a
+commit is never folded into another proposal. [Configuration](../configuration.md)
+says what each key does.
 
 ## What it applies
 

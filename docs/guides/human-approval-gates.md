@@ -50,11 +50,10 @@ approving its own work. See
 | Where | What happened | What is recorded |
 | --- | --- | --- |
 | Gate 1 | a criterion describes an implementation, not a behaviour | `dor fail`, then `spec_unclear` |
-| Gate 2 | the researcher has open questions, or recommends a split | `analysis fail`, then `spec_unclear` |
+| Gate 2 | the researcher has open questions | `analysis fail`, then `spec_unclear` |
 | Gate 2 | a document the gate needs was not stored | `analysis_incomplete` |
 | Gate 3 | a criterion cannot be observed from outside | `tests_frozen fail`, then `untestable` |
 | Gate 5 | an acceptance test changed after the freeze | `freeze_broken` |
-| Gates 5 to 7 | the change is bigger than `thresholds.diff_size_cap` | the gate fails, then `story_too_large` |
 | any gate | a frozen test contradicts a criterion | `frozen_test_wrong` |
 | any gate | a rule in the `## SDLC Contract` blocks a gate | a hand-over that names the rule |
 | Gate 8 | the story's risk tier waits for a person | `pre_commit_approval` |

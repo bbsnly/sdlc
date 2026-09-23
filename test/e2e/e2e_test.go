@@ -970,7 +970,7 @@ func TestAC1TheRangeHoldsOnlyTheCommitsTheSessionMade(t *testing.T) {
 	// commits US-004's record swept up.
 	theirs := theirCommit(t, root, "from-the-terminal.md", "chore(sdlc): a person's own commit")
 	ours := ourCommit(t, binary, root, "US-001")
-	theirCommit(t, root, "and-again.md", "chore(sdlc): raise the diff size cap")
+	theirCommit(t, root, "and-again.md", "chore(sdlc): raise the coverage floor")
 	runTool(t, binary, root, "gate", "commit", "pass", "--note", "on trunk")
 
 	t.Run("AC-1 a person's commits in the window are not the story's", func(t *testing.T) {

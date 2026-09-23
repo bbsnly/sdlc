@@ -71,7 +71,6 @@ type Git struct {
 // Thresholds are the numbers a gate compares against. A zero means the gate
 // that reads it is not enforced.
 type Thresholds struct {
-	DiffSizeCap int     `json:"diff_size_cap"`
 	CoverageMin float64 `json:"coverage_min"`
 	MutationMin float64 `json:"mutation_min"`
 }
@@ -154,7 +153,7 @@ func Default() Config {
 		Backlog:    Backlog{Path: "user_stories.json"},
 		Git:        Git{TrunkBranch: "main"},
 		Commands:   map[string]string{},
-		Thresholds: Thresholds{DiffSizeCap: 500, CoverageMin: 80, MutationMin: 70},
+		Thresholds: Thresholds{CoverageMin: 80, MutationMin: 70},
 		Paths: Paths{
 			Tests: TestPaths{
 				Dirs: []string{"tests/", "test/"},
@@ -327,7 +326,6 @@ func (c Config) validate() error {
 		name  string
 		value float64
 	}{
-		{"thresholds.diff_size_cap", float64(c.Thresholds.DiffSizeCap)},
 		{"thresholds.coverage_min", c.Thresholds.CoverageMin},
 		{"thresholds.mutation_min", c.Thresholds.MutationMin},
 		{"loop.max_review_rounds", float64(c.Loop.MaxReviewRounds)},

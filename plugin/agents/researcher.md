@@ -49,9 +49,7 @@ Paths come from the brief you were given.
    `security_sensitive: true|false` with one sentence of reasoning — true if the change touches
    authentication, authorisation, secrets, money, personal data, external input parsing,
    cryptography, or a trust boundary.
-5. Size it against `thresholds.diff_size_cap`. If the story cannot fit in one atomic commit
-   under the cap, propose a split into two to four sub-stories with their own criteria.
-6. List the open questions: anything that would change the plan and that the specification does
+5. List the open questions: anything that would change the plan and that the specification does
    not settle. Do not guess answers. These are what the loop escalates.
 
 ## Outputs
@@ -83,7 +81,7 @@ Your final message is one JSON object and nothing else, with the paths the comma
 
 ```json
 {"analysis": "<path>", "threats": "<path>", "security_sensitive": false,
- "split_recommended": false, "open_questions": 0, "touched_files": 0}
+ "open_questions": 0, "touched_files": 0}
 ```
 
 ## Rules

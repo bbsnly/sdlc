@@ -287,18 +287,18 @@ func TestLoadWhenTheWholeFileIsTheWrongShape(t *testing.T) {
 // A hand-edited file that names two settings must not silently zero the rest.
 func TestLoadKeepsDefaultsForAbsentFields(t *testing.T) {
 	root := repo(t)
-	writeConfig(t, root, `{"thresholds":{"diff_size_cap":40}}`)
+	writeConfig(t, root, `{"thresholds":{"coverage_min":40}}`)
 
 	cfg, err := Load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Thresholds.DiffSizeCap != 40 {
-		t.Errorf("DiffSizeCap = %d, want the file's 40", cfg.Thresholds.DiffSizeCap)
+	if cfg.Thresholds.CoverageMin != 40 {
+		t.Errorf("CoverageMin = %v, want the file's 40", cfg.Thresholds.CoverageMin)
 	}
-	if cfg.Thresholds.CoverageMin != Default().Thresholds.CoverageMin {
-		t.Errorf("CoverageMin = %v, want the default %v",
-			cfg.Thresholds.CoverageMin, Default().Thresholds.CoverageMin)
+	if cfg.Thresholds.MutationMin != Default().Thresholds.MutationMin {
+		t.Errorf("MutationMin = %v, want the default %v",
+			cfg.Thresholds.MutationMin, Default().Thresholds.MutationMin)
 	}
 	if cfg.Backlog.Path != Default().Backlog.Path {
 		t.Errorf("Backlog.Path = %q, want the default %q", cfg.Backlog.Path, Default().Backlog.Path)
@@ -362,7 +362,7 @@ func TestLoadReadsAFileWithAByteOrderMark(t *testing.T) {
 func TestLoadNamesTheSettingOfTheWrongType(t *testing.T) {
 	for body, want := range map[string][]string{
 		"{\n  \"loop\": {\"max_stop_blocks\": \"3\"}\n}\n": {"loop.max_stop_blocks", "a whole number", "a string", "line 2"},
-		`{"thresholds":{"diff_size_cap":1.5}}`:             {"thresholds.diff_size_cap", "a whole number", "1.5"},
+		`{"loop":{"max_review_rounds":1.5}}`:               {"loop.max_review_rounds", "a whole number", "1.5"},
 		`{"paths":{"tests":{"dirs":"tests/"}}}`:            {"paths.tests.dirs", "a list", "a string"},
 		`{"freeze":{"allow_new_test_files":"yes"}}`:        {"freeze.allow_new_test_files", "true or false"},
 		`{"git":{"trunk_branch":1.5}}`:                     {"git.trunk_branch", "a string", "a number"},
@@ -404,7 +404,6 @@ func TestLoadRefusesSettingsTheLoopCannotHonour(t *testing.T) {
 		`{"backlog":{"path":"../stories.json"}}`:      "backlog.path",
 		`{"backlog":{"path":"/srv/stories.json"}}`:    "backlog.path",
 		`{"backlog":{"path":"stories/../../x.json"}}`: "backlog.path",
-		`{"thresholds":{"diff_size_cap":-5}}`:         "thresholds.diff_size_cap is -5",
 		`{"thresholds":{"coverage_min":-1}}`:          "thresholds.coverage_min",
 		`{"thresholds":{"mutation_min":-1}}`:          "thresholds.mutation_min",
 		`{"loop":{"max_review_rounds":-1}}`:           "loop.max_review_rounds",
@@ -442,7 +441,7 @@ func TestLoadRefusesSettingsTheLoopCannotHonour(t *testing.T) {
 	for _, body := range []string{
 		`{"version":1,"backlog":{"path":"./stories/backlog.json"}}`,
 		`{"backlog":{"path":"stories/../user_stories.json"}}`,
-		`{"loop":{"max_stop_blocks":0},"thresholds":{"diff_size_cap":0},"budget":{"per_story_usd":0}}`,
+		`{"loop":{"max_stop_blocks":0},"thresholds":{"coverage_min":0},"budget":{"per_story_usd":0}}`,
 	} {
 		root := repo(t)
 		writeConfig(t, root, body)

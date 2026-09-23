@@ -39,11 +39,10 @@ import (
 // directory elsewhere.
 //
 // The loop now keeps state in two roots, so anything that later enumerates
-// what the loop knows about a story -- sdlc doctor, an audit, sizing per
-// commit -- has to look here as well as under .sdlc/. And a linked worktree
-// has its own git directory, so a story worked from two worktrees of one
-// repository has two sets of observations, and a gate run in either sees only
-// its own.
+// what the loop knows about a story -- sdlc doctor, an audit -- has to look
+// here as well as under .sdlc/. And a linked worktree has its own git
+// directory, so a story worked from two worktrees of one repository has two
+// sets of observations, and a gate run in either sees only its own.
 
 // commitsDir is where observations go, under the git directory.
 const commitsDir = "sdlc/commits"

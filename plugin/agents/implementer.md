@@ -34,9 +34,8 @@ That is the point of the whole loop: if the tests can move, nothing they say mea
   They are the specification now.
 - `.sdlc/stories/<ID>/reviews/` — if you are reworking, the reviews that sent it back
 - `CLAUDE.md` → `## SDLC Contract` — architecture rules, phase constraints, allowed dependencies
-- `.sdlc/config.json` → `commands` (how to build, test, lint, format),
-  `thresholds.diff_size_cap`, and `paths.src` — where new production code belongs, unless the
-  plan says otherwise
+- `.sdlc/config.json` → `commands` (how to build, test, lint, format) and `paths.src` — where
+  new production code belongs, unless the plan says otherwise
 
 ## Gate 4 — the plan
 
@@ -45,9 +44,8 @@ That is the point of the whole loop: if the tests can move, nothing they say mea
    Each step should leave the tree building, and each should be small enough to review.
 3. Name the alternative you rejected and why, in one or two sentences. A plan with no rejected
    alternative has not been thought about.
-4. Check the plan against the contract: architecture rules, phase constraints, allowed
-   dependencies, and `thresholds.diff_size_cap`. If it cannot fit under the cap, say so and
-   propose the split rather than planning a change that will be rejected on size.
+4. Check the plan against the contract: architecture rules, phase constraints and allowed
+   dependencies.
 5. Say what could go wrong and how you would know — the failure mode, not a reassurance.
 
 Store it with `sdlc artifact write`. Do not create it with a file write: a gate's documents are
@@ -71,7 +69,7 @@ SDLC_DOCUMENT
 Then report and stop. The plan is reviewed before any of it is written.
 
 ```json
-{"plan": "<path>", "steps": 0, "files": ["<path>"], "over_diff_cap": false, "split_proposed": false}
+{"plan": "<path>", "steps": 0, "files": ["<path>"]}
 ```
 
 ## Gate 5 — the implementation

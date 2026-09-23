@@ -189,13 +189,9 @@ rather than inventing an interpretation.
 Problems with a story can still surface after Gate 1:
 
 - **Gate 2, `analysis`,** fails when the researcher finds questions the
-  specification does not settle, or recommends a split because the story will
-  not fit `thresholds.diff_size_cap`.
+  specification does not settle.
 - **Gate 3, `tests_frozen`,** fails when the test author reports a criterion it
   cannot test.
-- **Gates 5 to 7** refuse a pass once the change grows past
-  `thresholds.diff_size_cap` ([SDLC-E0042](../troubleshooting.md#sdlc-e0042)),
-  and the runbook asks a person how to split the story.
 
 In each case the runbook records the failure and hands the question to a person
 with `sdlc escalate`. That ends the iteration and marks the story
