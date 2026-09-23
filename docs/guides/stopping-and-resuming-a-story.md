@@ -104,7 +104,9 @@ another story. Finish US-001 (`sdlc stop`, then `sdlc start US-001`), or mark it
 
 Stopping and resuming does not make any review stale. `sdlc stop` on an
 unfinished story writes only under `.sdlc/`, which is left out of what reviews
-are stamped with. `sdlc start` on a story that is already `in_progress` writes
+are stamped with. Stopping a finished story also removes what the hook wrote
+down about its commits, in the repository's git directory, which reviews never
+see either. `sdlc start` on a story that is already `in_progress` writes
 nothing to the backlog.
 
 What you do while the story is down is another matter. A review at

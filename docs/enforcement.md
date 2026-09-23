@@ -481,6 +481,21 @@ fields `sdlc` writes into the backlog, and a change anywhere else makes them
 stale; the refusal names whose. Measuring the tree takes a moment, so it is done
 only for `git commit`.
 
+A commit this rule lets through is also written down: the HEAD it is made on,
+in the repository's git directory at `<git-dir>/sdlc/commits/<story>/`, so that
+the commit gate can tell the story's commits from anybody else's. Only a command
+that commits now is: not one that sets an alias, rehearses with `--dry-run` or
+leaves the change uncommitted. Nor is one whose repository the command's words
+do not identify as this one, such as after `cd "$HOME/other"`, with
+`git -C "$DIR"` or with `GIT_DIR` set, or in a repository nested inside the
+project: this rule holds such a commit back in case it is this repository's,
+and writing it down on the same guess would record this repository's HEAD for
+a commit made elsewhere. It is written only for the session working the
+story, never refuses anything itself, and is never committed or pushed. The
+commit gate believes it, so it is a claim the hook saw a commit coming rather
+than proof; [Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md#ranges-to-read-with-care)
+says what that leaves open.
+
 A story whose risk tier is in `human_gates.pre_commit_pause_tiers` is also
 refused until a person has approved that same tree with `sdlc approve`. A story
 missing from the backlog is refused too, because its tier cannot be known.
@@ -572,6 +587,7 @@ not actually happen:
 | a frozen test changed or vanished | `SDLC-E0025` |
 | a test file the freeze does not hold, at `tests_frozen`, `plan`, `implementation`, `verification` and `commit` | `SDLC-E0043` |
 | the commit gate, with work still uncommitted | `SDLC-E0032` |
+| the commit gate, with a note naming a commit its range does not hold | `SDLC-E0049` |
 | any gate before the commit, once HEAD has moved since `sdlc start` | `SDLC-E0046` |
 
 A `fail` is always recordable. A gate can fail precisely because its work could

@@ -56,14 +56,20 @@ type logEntry struct {
 	// this repository does not have at all: rewritten away, or never fetched.
 	// Neither can be placed against the commit the log starts after, so both
 	// are always listed.
-	OffBranch   bool            `json:"off_branch,omitempty"`
-	Missing     bool            `json:"missing,omitempty"`
-	Rounds      map[string]int  `json:"rounds,omitempty"`
-	Blocks      []logBlock      `json:"blocks,omitempty"`
-	Reopened    []logEvent      `json:"reopened,omitempty"`
-	Unfrozen    []logEvent      `json:"unfrozen,omitempty"`
-	Escalations []logEscalation `json:"escalations,omitempty"`
-	SpentUSD    float64         `json:"spent_usd"`
+	OffBranch bool `json:"off_branch,omitempty"`
+	// RangeUnknown says which kind of unknown: the commit gate recorded no
+	// range deliberately, rather than recording none at all.
+	RangeUnknown bool `json:"range_unknown,omitempty"`
+	// HeadPastCommit is HEAD when the commit gate passed, where it was past
+	// the range's end.
+	HeadPastCommit string          `json:"head_past_commit,omitempty"`
+	Missing        bool            `json:"missing,omitempty"`
+	Rounds         map[string]int  `json:"rounds,omitempty"`
+	Blocks         []logBlock      `json:"blocks,omitempty"`
+	Reopened       []logEvent      `json:"reopened,omitempty"`
+	Unfrozen       []logEvent      `json:"unfrozen,omitempty"`
+	Escalations    []logEscalation `json:"escalations,omitempty"`
+	SpentUSD       float64         `json:"spent_usd"`
 }
 
 type logBlock struct {
@@ -250,6 +256,13 @@ func describeCommitted(r *model.Record, b *model.Backlog) logEntry {
 // range, and the one before the oldest starts it. Nothing else is guessed: a
 // range worked out from timestamps would look right and be wrong.
 func placeRange(ctx context.Context, root, head string, e *logEntry, r *model.Record) error {
+	// Above the fall-through on purpose: the commit gate watched this story's
+	// commits and said no single range holds only them, and the messages are
+	// text a session wrote -- the answer this record has ruled out.
+	if r.RangeUnknown && r.Commit == "" {
+		e.RangeSource, e.RangeUnknown = rangeUnknown, true
+		return nil
+	}
 	if r.Commit == "" {
 		e.RangeSource = rangeUnknown
 		if head == gitx.NoCommits {
@@ -269,6 +282,7 @@ func placeRange(ctx context.Context, root, head string, e *logEntry, r *model.Re
 	// git saying there is no such commit makes it missing: git that stopped
 	// running has said nothing about it.
 	e.CommitBase, e.Commit, e.RangeSource = r.CommitBase, r.Commit, rangeFromRecord
+	e.HeadPastCommit = r.HeadPastCommit
 	commit, unresolved := gitx.Resolve(ctx, root, r.Commit)
 	if unresolved != nil {
 		e.Missing = gitx.NamesNoCommit(unresolved)
@@ -333,6 +347,8 @@ func printLog(w io.Writer, p logPayload) {
 		}
 		fmt.Fprintf(w, "%s  %s  %s\n", describeRange(e), e.Story, title)
 		switch {
+		case e.RangeUnknown:
+			fmt.Fprintln(w, "  range      unknown: "+noSingleRange)
 		case e.RangeSource == rangeUnknown:
 			fmt.Fprintf(w, "  range      unknown: the record names no commit, and no commit message names %s\n", e.Story)
 		case e.Missing:
@@ -341,6 +357,9 @@ func printLog(w io.Writer, p logPayload) {
 			fmt.Fprintln(w, "  range      not on this branch")
 		case e.RangeSource == rangeFromMessage:
 			fmt.Fprintln(w, "  range      inferred from commit messages")
+		}
+		if e.HeadPastCommit != "" {
+			fmt.Fprintln(w, "  range      "+headPast(e.HeadPastCommit, e.Commit))
 		}
 		var rounds []string
 		for _, g := range model.Gates {
@@ -385,6 +404,13 @@ func describeRange(e logEntry) string {
 		return shortCommit(e.Commit)
 	}
 	return shortCommit(e.CommitBase) + ".." + shortCommit(e.Commit)
+}
+
+// headPast says a range stops short of the HEAD its commit gate saw, in the
+// same words wherever it is printed.
+func headPast(head, end string) string {
+	return fmt.Sprintf("head is %s, past %s: nothing that landed after %s was watched",
+		shortCommit(head), shortCommit(end), shortCommit(end))
 }
 
 func shortCommit(sha string) string { return oneLine(sha[:min(len(sha), 12)]) }

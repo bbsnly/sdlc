@@ -264,6 +264,7 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 		{TrunkMoved, "SDLC-E0046"},
 		{AcknowledgedUnknown, "SDLC-E0047"},
 		{SessionElsewhere, "SDLC-E0048"},
+		{NoteOutsideRange, "SDLC-E0049"},
 	}
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {

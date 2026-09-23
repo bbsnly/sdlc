@@ -180,15 +180,22 @@ a person as well. The conversation hands it over with `sdlc escalate` and stops,
 and the commit is refused until somebody has approved the work as it stands. See
 [`human_gates`](configuration.md#human_gates).
 
-Passing the gate records the commits the story landed in, as a range. The
-range runs from HEAD when code review first passed to HEAD when the commit gate
-last passed. It holds every commit the story made, and can hold commits
-somebody else made in that window: ones that together left the reviewed code as
-it was, such as commits touching only `.sdlc/` or a story's `status` and
-`updated`, or ones made before a later review. The last commit holds all of the
-reviewed work, but need not be one that changed code. The end goes when the
-commit gate stops standing, and the next pass records it again. The start
-stays: a finished story reopened later keeps it, so its range also spans
+Passing the gate records the commits the story landed in, as a range: the ones
+since code review first passed that the loop watched the session land, as far as
+the hook could tell a command was a commit. A person's commit made in that
+window is left out. Where no single range holds only the watched commits —
+somebody else's sits between two of the story's — the gate records no range,
+and says so, rather than one that would hold theirs. Where the hook watched
+nothing, the range runs from HEAD when code review first passed to HEAD when the
+commit gate last passed, as it always did, and can hold anybody's commits. It is
+not proof, and not complete: a commit the hook did not watch is missing from it,
+and history rewritten under the loop can put a person's commit in it.
+[`sdlc gate`](commands.md#sdlc-gate-gate-status) has what the pass prints, and
+[Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md#ranges-to-read-with-care)
+what to read with care. A hash the note names has to be inside the range
+([`SDLC-E0049`](troubleshooting.md#sdlc-e0049)). The end goes when the commit
+gate stops standing, and the next pass records its answer again. The start
+stays: a finished story reopened later keeps it, so its range can also span
 everything that landed on trunk in between.
 
 **Refused without it:** a pass while anything is uncommitted, with a broken

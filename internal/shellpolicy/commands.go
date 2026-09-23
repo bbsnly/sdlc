@@ -2,6 +2,7 @@ package shellpolicy
 
 import (
 	"path"
+	"slices"
 	"strings"
 )
 
@@ -425,12 +426,15 @@ func subcommand(args []string) string {
 // the directory a -C in front of it moves it to. The word `commit` anywhere
 // after git was a commit, so `git log --grep commit` met the commit gate.
 func gitCommand(args []string) (sub, dir string) {
-	sub, dir, _ = gitCall(args)
+	sub, dir, _, _ = gitCall(args)
 	return sub, dir
 }
 
-// gitCall is gitCommand with the arguments written after the subcommand.
-func gitCall(args []string) (sub, dir string, rest []string) {
+// gitCall is gitCommand with the arguments written after the subcommand, and,
+// when the subcommand is an inline alias, the words the alias expands to: in
+// `git -c alias.ci="commit --dry-run" ci` the flag is inside a word that does
+// not start with a dash.
+func gitCall(args []string) (sub, dir string, rest, alias []string) {
 	aliases := map[string]string{}
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
@@ -457,12 +461,13 @@ func gitCall(args []string) (sub, dir string, rest []string) {
 		default:
 			// `git -c alias.ci=commit ci` runs commit.
 			if value, ok := aliases[strings.ToLower(a)]; ok {
-				return aliasedCommand(value), dir, args[i+1:]
+				sub, alias := aliasedCommand(value)
+				return sub, dir, args[i+1:], alias
 			}
-			return a, dir, args[i+1:]
+			return a, dir, args[i+1:], nil
 		}
 	}
-	return "", dir, nil
+	return "", dir, nil, nil
 }
 
 // inThisRepository reports whether a git command run in dir works on the
@@ -499,15 +504,77 @@ func inThisRepository(words []string, dir string, s State) bool {
 	return s.Resolve == nil || s.Resolve(repository) != ""
 }
 
-// aliasedCommand is the git subcommand an alias runs: `commit -a`, or
-// `!git commit -a` handed to the shell.
-func aliasedCommand(value string) string {
+// ownRepository reports whether a git command run in dir, a directory the words
+// placed it in, commits to the project's own repository: not one that -C or
+// --git-dir name in words the shell has yet to expand, and not one nested
+// inside the project. inThisRepository answers "might it be this one", which
+// is the refusal's question; this answers "is it", which is the recorder's.
+func ownRepository(words []string, dir string, s State) bool {
+	if !placedGit(words[1:]) {
+		return false
+	}
+	resolve := func(p string) string {
+		if s.Resolve == nil {
+			return path.Clean(p)
+		}
+		return s.Resolve(p)
+	}
+	_, to := gitCommand(words[1:])
+	switch {
+	case isAbsolute(to) || strings.HasPrefix(to, "~"):
+		dir = to
+	case to != "":
+		dir = path.Join(dir, to)
+	}
+	if gitDir := gitDirOf(words[1:]); gitDir != "" {
+		if !isAbsolute(gitDir) && !strings.HasPrefix(gitDir, "~") {
+			gitDir = path.Join(dir, gitDir)
+		}
+		return resolve(gitDir) == ".git"
+	}
+	// Asked through its .git, as inThisRepository asks, because the root
+	// itself resolves to nothing.
+	repository := resolve(path.Join(dir, ".git"))
+	return repository != "" && (s.Nested == nil || !s.Nested(path.Dir(repository)))
+}
+
+// placedGit reports whether every -C and --git-dir in front of git's
+// subcommand is spelled out in the words, rather than expanded by the shell
+// into a directory they do not show: `git -C "$OTHER"` and `git
+// --git-dir="$G"` are anywhere, and inThisRepository reads them as the
+// project, which is right for the refusal and wrong for the recorder.
+func placedGit(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case (a == "-C" || a == "--git-dir") && i+1 < len(args):
+			i++
+			// Empty is where a substitution was: `git -C "$(mktemp -d)"`.
+			if args[i] == "" || !placedWords(args[i:i+1]) {
+				return false
+			}
+		case strings.HasPrefix(a, "--git-dir="):
+			if a == "--git-dir=" || !placedWords([]string{strings.TrimPrefix(a, "--git-dir=")}) {
+				return false
+			}
+		case a == "-c" || a == "--work-tree" || a == "--namespace" ||
+			a == "--config-env" || a == "--attr-source":
+			i++
+		case !strings.HasPrefix(a, "-"):
+			return true
+		}
+	}
+	return true
+}
+
+// aliasedCommand is the git subcommand an alias runs, and the words it runs it
+// with: `commit -a`, or `!git commit -a` handed to the shell.
+func aliasedCommand(value string) (string, []string) {
 	fields := strings.Fields(value)
 	if len(fields) > 0 && base(fields[0]) == "git" {
 		fields = fields[1:]
 	}
 	sub, _ := gitCommand(fields)
-	return sub
+	return sub, fields
 }
 
 // makesCommits are the git subcommands that put a commit on the branch.
@@ -551,7 +618,8 @@ func makesACommit(words []string, sub string) bool {
 		// An alias set now is a commit later: `git config alias.ci commit`.
 		for i := 1; i+1 < len(words); i++ {
 			if strings.HasPrefix(strings.ToLower(words[i]), "alias.") {
-				return makesCommits[aliasedCommand(words[i+1])]
+				sub, _ := aliasedCommand(words[i+1])
+				return makesCommits[sub]
 			}
 		}
 		return false
@@ -563,6 +631,249 @@ func makesACommit(words []string, sub string) bool {
 	// that: in `git merge -m --abort wip` it is the message.
 	n := len(words)
 	return words[n-2] != sub || words[n-1] != "--abort" && words[n-1] != "--quit"
+}
+
+// commitsNow reports whether a git command that makesACommit calls a commit
+// makes one now, rather than later or never. The refusal asks whether a command
+// could put a commit on the branch; the loop writes down the HEAD a commit is
+// made on, and asks whether this one will. An observation planted by a command
+// that commits nothing says the session was about to commit on this HEAD, so
+// the next commit made on it -- a person's, from their own terminal -- is
+// recorded as the story's. So it is makesACommit minus: an alias, which is a
+// commit somebody makes later; commit-tree, which writes an object and moves no
+// ref; and a flag in the subcommand's own row below that makes it commit
+// nothing. The flags are looked for in args, git's words after `git`, and again
+// in an inline alias's expansion. Reading git's own options before the
+// subcommand with the subcommand's row can only drop an observation: a value
+// there read as a flag is at worst an excluded one, and a word there wrongly
+// read as taking the next one can take no further than the subcommand's name,
+// which is never a flag, so no flag written after it is skipped.
+//
+// Each row is read the way git reads the subcommand's own options, measured
+// against git 2.55.0 rather than read off a manual page, because the rows
+// differ: -s is --strategy for merge and --signoff for commit, cherry-pick and
+// revert, and a rule reading merge's table for every subcommand stopped
+// looking one word early in four of them. A word is considered only when the
+// word before it did not take it as a value. `--<name>`, with any `=<value>`
+// cut off, fires when name is a non-empty prefix of an excluded long option:
+// git takes an unambiguous abbreviation, and an ambiguous one exits 129 and
+// commits nothing, so the prefix over-matches for free. `-<letters>` is walked
+// left to right: an excluded letter fires, and a letter whose value is the rest
+// of the word stops the walk -- and takes the next word too when it is last and
+// that letter takes one. A long option that takes a value takes the next word
+// when it has no `=`, and, for commit and merge, when it is abbreviated:
+// `git commit --mess --dry-run` commits, with the flag as the message. Cherry-pick and revert take no
+// abbreviation of any long option, so there only the whole word takes a value.
+// No option of commit or merge has a whole name that is a proper prefix of one
+// that takes a value, so an abbreviation is never another option spelled out.
+//
+// --commit and --no-commit (and -n) are read in order, because git takes the
+// last: `git merge --commit --no-commit side`, `git revert --commit
+// --no-commit HEAD` and `git cherry-pick --commit -n side` all exit 0 and make
+// no commit, and `git cherry-pick -n --commit side` makes one. --squash does not
+// give way to --commit, because git refuses the pair.
+//
+// The two directions of error are not the same size. Reading a word as a value
+// when git reads it as a flag records a command that commits nothing, which is
+// the defect this exists to fix; so a word takes the next one only where that
+// was measured. Reading a flag where git reads a value loses an observation and
+// shortens a story's range; where a row is in doubt it errs that way.
+//
+// What it was tried against, on git 2.55.0 with a change staged (MOVED means
+// HEAD moved, "no" that it did not):
+//
+//	git commit -m msg                              MOVED      records (the control)
+//	git commit -m msg --dry-run / --dry / --dr     no         excluded
+//	git commit -m msg --porcelain / --short / --long / --null / -z   no  excluded
+//	git commit -m msg --por / --sho / --lo / --nu / --l    no  excluded
+//	git commit -m msg --s / --n / --d / --p        rc 129     excluded, ambiguous
+//	git commit -h, --help; git commit -sh, -s -h   rc 129     excluded
+//	git commit -zm msg, -azm msg                   no         excluded
+//	git commit -m msg --dry-run=1                  rc 129     excluded, =1 cut first
+//	git commit -m msg --dry-run-x                  rc 129     records: a prefix of nothing
+//	git commit -sz -m msg, -m msg -s -z, -nsz -m msg       no  excluded: -s is --signoff
+//	git commit -m msg -s --dry-run / --porcelain / --short  no  excluded
+//	git commit -s -m msg, -m msg -s                MOVED      records
+//	git commit -am chore, -amchore:x, -amz         MOVED      records: the walk stops at m
+//	git commit -am --dry-run, -sm --dry-run, -am --porcelain   MOVED  records
+//	git commit -au --dry-run, -as --dry-run        no         excluded: -u's value is glued only
+//	git commit -m --dry-run, --message --dry-run, -F --dry-run   MOVED  records
+//	git commit --mess --dry-run, --m --dry-run     MOVED      records: --m abbreviates --message
+//	git commit --cleanup verbatim -m msg           MOVED      records
+//	git commit --cl verbatim --dry-run, --reu HEAD --dry-run   no  excluded
+//	git commit -m msg --no-dry-run / --status / --quiet / --amend / -- f   MOVED  records
+//	git commit -X --dry-run                        rc 129     excluded: -X is not commit's
+//	git commit -X ours, --strategy ours, --mainline 1    rc 129    records, as every failing commit
+//	git merge --sq side, --squ side                no         excluded
+//	git merge --no-com side, --no-c side, --s side rc 129     excluded, ambiguous
+//	git merge -sh side                             rc 1       records: h is the strategy
+//	git merge --mess --no-commit side, --me --squash side   MOVED  never asked: leavesItUncommitted
+//	                                                          reads the flag, so makesACommit says no
+//	git merge --mess x --no-commit side, --int x --no-commit side   no  excluded
+//	git merge --commit --no-commit side            no         excluded: the last one wins
+//	git merge --no-commit --commit side            MOVED      makesACommit's to answer; records
+//	git cherry-pick -ne side, git revert -ne HEAD  no         excluded: n is --no-commit
+//	git cherry-pick -n --commit side               MOVED      records
+//	git cherry-pick --commit -n side               no         excluded
+//	git cherry-pick -sh side, git revert -sh HEAD  rc 129     excluded
+//	git cherry-pick --no-comm side, --clean strip side   rc 128/129  records or excluded: git
+//	                                                          takes no abbreviation here
+//	git -c alias.ci="commit --dry-run" ci          no         excluded, from the expansion
+//	git -c alias.dr="commit --dry-run" dr -m msg   no         excluded
+//	git -c alias.ci="commit -m aliased" ci         MOVED      records
+//
+// Recorded though they commit nothing, and accepted: a command git refuses
+// (--dry-run-x, --DRY-RUN, --cleanup -h, a bad --author, a rejecting hook,
+// nothing staged) and one that succeeds having nothing to do (`git merge <an
+// ancestor>`, `git rebase <up to date>`, `git am -s` reading an empty mailbox,
+// `git rebase --edit-todo` and `--show-current-patch` outside a rebase). No
+// reading of the words can tell those from a commit in advance. Excluded
+// though they commit, and accepted because it is the honest direction: a
+// pathspec that looks like a flag (`git commit -m x -- --dry-run`), a value
+// split across an inline alias and the words after it (`git -c
+// alias.ci="commit -m" ci --dry-run`), `git merge --no-commit --comm side`
+// (--comm is not read as --commit), and --squash undone by --no-squash. One
+// that under-excludes and is contrived: an alias's expansion is split on
+// spaces, not by a shell, so `alias.x='commit "--dry-run"'` keeps its quotes
+// and the flag is not seen. Nor is a flag the shell spells for it: `$'--dry-run'`,
+// `--dry-\run` and `$DRY` are recorded, and only the first two could be read.
+//
+// Which repository the commit is made in is checkCommit's to answer, through
+// ownRepository, and not this function's; the refusal guesses the project when
+// the words do not say, and the recorder takes no guess. What that was tried
+// against, through Inspect with every gate passed, the refusal before the gates
+// the same for every one:
+//
+//	git commit -m x; cd internal && git commit; git -C internal commit     records
+//	cd /proj && git commit; git -C /proj commit; --git-dir=/proj/.git   records
+//	cd "$O"; cd /proj && git commit (placed again by an absolute cd)     records
+//	(cd "$O") && git commit (the move stays in its subshell)            records
+//	cd "$HOME/other", pushd "$O", cd ~, cd -, cd, popd, then git commit  nothing written
+//	cd /work/proj*, cd a/$X/../.., cd "$HOME" && cd other, then commit  nothing written
+//	builtin cd "$O", command cd "$O", sh -c 'cd "$O" && git commit'      nothing written
+//	source ./env.sh, . ./env.sh, eval "$CD", CDPATH=/tmp cd other       nothing written
+//	GIT_DIR=/tmp/x git commit; export GIT_DIR=/tmp/x; git commit        nothing written
+//	git -C "$O", -C ~-, -C ~+, -C "$PWD", -C %USERPROFILE%, -C "$(mktemp -d)"   nothing written
+//	git -C 'a/$X/../..', git -C internal -C "$O", git --git-dir="$G"    nothing written
+//	cd vendor/lib, git -C vendor/lib/src (a repository nested in this)  nothing written
+//
+// `git -C "$PWD"` and `git -C ~+` are this repository and lose their
+// observation, which leaves the story with no range rather than a wrong one.
+func commitsNow(args []string, sub string, alias []string) bool {
+	row, ok := commitRows[sub]
+	if !ok {
+		// config and commit-tree: a commit made later, or no ref moved.
+		return false
+	}
+	return !row.commitsNothing(args) && !row.commitsNothing(alias)
+}
+
+// commitRow is one subcommand's options, as far as telling whether it commits
+// now needs them.
+type commitRow struct {
+	// never are the long options that make the command commit nothing, and
+	// letters the short ones.
+	never   []string
+	letters string
+	// held and heldLetters make it commit nothing unless a --commit comes
+	// after them.
+	held        []string
+	heldLetters string
+	// ends are the letters whose value is the rest of the word, and next those
+	// of them that take the next word when nothing is written after them.
+	ends, next string
+	// valued are the long options that take the next word, abbreviated where
+	// abbreviates says git takes an abbreviation.
+	valued      []string
+	abbreviates bool
+}
+
+var commitRows = map[string]commitRow{
+	"commit": {
+		never: []string{"dry-run", "porcelain", "short", "long", "null", "help"}, letters: "zh",
+		ends: "mFcCtuS", next: "mFcCt",
+		valued:      []string{"message", "file", "reuse-message", "reedit-message", "template", "cleanup"},
+		abbreviates: true,
+	},
+	"merge": {
+		never: []string{"squash", "help"}, letters: "h", held: []string{"no-commit"},
+		ends: "mFsSX", next: "mFsX",
+		valued:      []string{"message", "file", "strategy", "strategy-option", "into-name", "cleanup"},
+		abbreviates: true,
+	},
+	"cherry-pick": {
+		never: []string{"help"}, letters: "h", held: []string{"no-commit"}, heldLetters: "n",
+		ends: "mSX", next: "mX", valued: []string{"mainline", "strategy", "strategy-option", "cleanup"},
+	},
+	"revert": {
+		never: []string{"help"}, letters: "h", held: []string{"no-commit"}, heldLetters: "n",
+		ends: "mSX", next: "mX", valued: []string{"mainline", "strategy", "strategy-option", "cleanup"},
+	},
+	"am":     {never: []string{"help"}, letters: "h", ends: "CpS"},
+	"rebase": {never: []string{"help"}, letters: "h", ends: "sSX", next: "sX"},
+}
+
+// commitsNothing reports whether words hold a flag of this row's that makes the
+// command commit nothing.
+func (r commitRow) commitsNothing(words []string) bool {
+	held := false
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+		switch {
+		case w == "--commit":
+			held = false
+		case strings.HasPrefix(w, "--"):
+			name, _, valued := strings.Cut(w[2:], "=")
+			if name == "" {
+				continue
+			}
+			if prefixOfAny(name, r.never) {
+				return true
+			}
+			if prefixOfAny(name, r.held) {
+				held = true
+			}
+			if !valued && r.takesNext(name) {
+				i++
+			}
+		case strings.HasPrefix(w, "-") && len(w) > 1:
+			for j := 1; j < len(w); j++ {
+				c := w[j : j+1]
+				if strings.Contains(r.letters, c) {
+					return true
+				}
+				if strings.Contains(r.heldLetters, c) {
+					held = true
+				}
+				if strings.Contains(r.ends, c) {
+					if j == len(w)-1 && strings.Contains(r.next, c) {
+						i++
+					}
+					break
+				}
+			}
+		}
+	}
+	return held
+}
+
+// takesNext reports whether the long option name takes the next word as its
+// value.
+func (r commitRow) takesNext(name string) bool {
+	if r.abbreviates {
+		return prefixOfAny(name, r.valued)
+	}
+	return slices.Contains(r.valued, name)
+}
+
+// prefixOfAny reports whether name is a non-empty prefix of one of options.
+func prefixOfAny(name string, options []string) bool {
+	for _, o := range options {
+		if strings.HasPrefix(o, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // gitDirOf is the repository a --git-dir in front of git's subcommand names.

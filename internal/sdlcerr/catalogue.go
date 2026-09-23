@@ -155,6 +155,9 @@ var (
 
 	SessionElsewhere = register("SDLC-E0048",
 		`a person takes the story over by typing /sdlc:next in this Claude Code session, or runs the command in their own terminal, outside Claude Code; an assistant stops and tells the person that the story is being worked on in another session and only they can move it here, and does not run "sdlc start"`)
+
+	NoteOutsideRange = register("SDLC-E0049",
+		`re-run "sdlc gate commit pass --note \"...\"" with the sha corrected or dropped`)
 )
 
 // entry is one row of the catalogue.

@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -835,6 +836,233 @@ func TestReviewersRecordingAtTheSameTimeAllLand(t *testing.T) {
 		if strings.Contains(line, "not reviewed") {
 			t.Errorf("%s reported an approval that was discarded:\n%s", role, listed)
 		}
+	}
+}
+
+// ------------------------------------------------- which commits are a story's
+
+// gitOut runs git in the project and returns what it printed.
+func gitOut(t *testing.T, root string, args ...string) string {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", args...)
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %s: %v", strings.Join(args, " "), err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func headOf(t *testing.T, root string) string {
+	t.Helper()
+	return gitOut(t, root, "rev-parse", "HEAD")
+}
+
+// revList is what a recorded range holds, newest first. It is the meaning of
+// the pair rather than the pair itself: git leaves the base out and takes the
+// end in, so a range naming one commit lists one.
+func revList(t *testing.T, root, base, end string) []string {
+	t.Helper()
+	if base == "" || end == "" {
+		return nil
+	}
+	return strings.Fields(gitOut(t, root, "rev-list", base+".."+end))
+}
+
+// recordedRange is the range on the story's gate record.
+func recordedRange(t *testing.T, root, id string) (string, string) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(root, ".sdlc", "stories", id, "gate-record.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record struct {
+		CommitBase string `json:"commit_base"`
+		Commit     string `json:"commit"`
+	}
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	return record.CommitBase, record.Commit
+}
+
+// loggedRange is where `sdlc log` puts a story, and where it says it got it.
+func loggedRange(t *testing.T, binary, root, id string) (base, commit, source string) {
+	t.Helper()
+	var logged struct {
+		Entries []struct {
+			Story       string `json:"story"`
+			CommitBase  string `json:"commit_base"`
+			Commit      string `json:"commit"`
+			RangeSource string `json:"range_source"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(runTool(t, binary, root, "log", "--all", "--json")), &logged); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range logged.Entries {
+		if e.Story == id {
+			return e.CommitBase, e.Commit, e.RangeSource
+		}
+	}
+	t.Fatalf("sdlc log does not list %s at all: %+v", id, logged.Entries)
+	return "", "", ""
+}
+
+// allowed asks the hook about a command the session is about to run, the way
+// Claude Code asks it. A commit the hook allowed is a commit it watched the
+// session make; one it was never asked about is nobody's business but the
+// person who made it.
+func allowed(t *testing.T, binary, root, command string) {
+	t.Helper()
+	r := parse(t, launcher(t, binary, root, shell(root, "", command)))
+	if r.HookSpecificOutput.PermissionDecision == "deny" {
+		t.Fatalf("the hook refused %q: %s", command, r.HookSpecificOutput.PermissionDecisionReason)
+	}
+}
+
+func commitAs(t *testing.T, root string, args ...string) string {
+	t.Helper()
+	git(t, root, append([]string{"-c", "user.email=t@example.com", "-c", "user.name=Test"}, args...)...)
+	return headOf(t, root)
+}
+
+// ourCommit is one of the session's own: the hook is asked first, and the
+// commit follows.
+func ourCommit(t *testing.T, binary, root, message string) string {
+	t.Helper()
+	allowed(t, binary, root, `git commit -m "`+message+`"`)
+	git(t, root, "add", "-A")
+	return commitAs(t, root, "commit", "--quiet", "-m", message)
+}
+
+// theirCommit is a commit the hook never saw, made the way a person makes one:
+// in their own terminal, with nothing asked. It touches only .sdlc/, which the
+// review subject leaves out, so it moves HEAD without making anybody's approval
+// stale -- the shape of the `chore(sdlc)` commit US-004's record took for the
+// story's own.
+func theirCommit(t *testing.T, root, name, message string) string {
+	t.Helper()
+	rel := ".sdlc/" + name
+	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), []byte(message+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, root, "add", "--", rel)
+	return commitAs(t, root, "commit", "--quiet", "-m", message)
+}
+
+// US-004 finished with a range of three commits for a story whose work was one:
+// the gate wrote down HEAD, and HEAD had moved on to a person's `.gitignore`
+// commit and a later `chore(sdlc)`. A commit is the story's when the hook
+// watched the session make it, so this drives both halves the way Claude Code
+// does -- the shipped launcher in front of the session's commits, and nothing
+// at all in front of a person's.
+func TestAC1TheRangeHoldsOnlyTheCommitsTheSessionMade(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the POSIX launcher does not run here")
+	}
+	binary := build(t)
+	root := project(t, binary)
+	runTool(t, binary, root, "start")
+	walk(t, binary, root)
+
+	// A person commits before the session does, and again after it: the two
+	// commits US-004's record swept up.
+	theirs := theirCommit(t, root, "from-the-terminal.md", "chore(sdlc): a person's own commit")
+	ours := ourCommit(t, binary, root, "US-001")
+	theirCommit(t, root, "and-again.md", "chore(sdlc): raise the diff size cap")
+	runTool(t, binary, root, "gate", "commit", "pass", "--note", "on trunk")
+
+	t.Run("AC-1 a person's commits in the window are not the story's", func(t *testing.T) {
+		start, end := recordedRange(t, root, "US-001")
+		if start != theirs || end != ours {
+			t.Fatalf("the record names %q..%q, want %s..%s", start, end, theirs, ours)
+		}
+		if held := revList(t, root, start, end); len(held) != 1 || held[0] != ours {
+			t.Errorf("the range holds %v, want the session's one commit %s", held, ours)
+		}
+	})
+
+	t.Run("AC-2 sdlc log prints a range naming that one commit and no other", func(t *testing.T) {
+		base, commit, source := loggedRange(t, binary, root, "US-001")
+		// From the record: reading the story's id back out of the commit
+		// messages would land on the same commit here and be a guess.
+		if held := revList(t, root, base, commit); len(held) != 1 || held[0] != ours || source != "record" {
+			t.Errorf("sdlc log places US-001 at %q..%q (from %s), which holds %v, want just %s from the record",
+				base, commit, source, held, ours)
+		}
+		if out := runTool(t, binary, root, "log", "--all"); !strings.Contains(out, theirs[:12]+".."+ours[:12]) {
+			t.Errorf("sdlc log does not print the story's own range:\n%s", out)
+		}
+	})
+
+	// Now somebody else's commit lands between two of the session's, and no
+	// commit_base..commit can hold the session's without holding theirs too.
+	// An honest gap beats a plausible lie, so the record names none -- and says
+	// it decided that, rather than leaving `sdlc log` to read the story's id out
+	// of the commit messages, which is the guess this record has ruled out.
+	//
+	// The gate still passes: recording nothing is an outcome, not a refusal,
+	// and the note names a commit the record now does not, which is AC-4 with
+	// only one of its two sides present and so nothing to disagree with.
+	t.Run("AC-3 commits interleaved with somebody else's are recorded as no range", func(t *testing.T) {
+		theirCommit(t, root, "once-more.md", "chore(sdlc): and one more of a person's")
+		ourCommit(t, binary, root, "US-001: the last of it")
+		passed := runTool(t, binary, root, "gate", "commit", "pass", "--note", "the work is in "+ours)
+
+		if strings.Contains(passed, "landed in") {
+			t.Errorf("the gate claimed a range it cannot have:\n%s", passed)
+		}
+		if _, end := recordedRange(t, root, "US-001"); end != "" {
+			t.Errorf("the record names %s as the story's last commit, want no range at all", end)
+		}
+		if base, commit, source := loggedRange(t, binary, root, "US-001"); source != "unknown" || commit != "" {
+			t.Errorf("sdlc log places US-001 at %q..%q from %q, want it reported as unknown",
+				base, commit, source)
+		}
+		if out := runTool(t, binary, root, "log", "--all"); !strings.Contains(out, "range      unknown") {
+			t.Errorf("sdlc log does not say the range is unknown:\n%s", out)
+		}
+	})
+}
+
+// `git commit` is not the only way onto the branch, and the recorder has to
+// call a commit what the classifier calls one. makesCommits
+// (internal/shellpolicy/commands.go:513-566) covers commit, commit-tree, merge,
+// cherry-pick, revert, am and rebase, and the hook refuses every one of them
+// before the gates have passed. A recorder that reads only `git commit` would
+// write down none of the others, so the story's own work would fall out of its
+// range after the gates opened -- with nobody told, because the commit went
+// through as it should have.
+//
+// Its own project, because the session's commits have to run next to each
+// other: commit_base..commit names a contiguous stretch of history, so a story
+// whose commits somebody else's sit between cannot be named by one at all, and
+// the answer there is no range -- which the AC-3 subtest above covers. Here the
+// person's commit is at the front of the window, where a range can start after
+// it.
+func TestAC1TheRangeHoldsACommitLandedBySomeSpellingOtherThanGitCommit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the POSIX launcher does not run here")
+	}
+	binary := build(t)
+	root := project(t, binary)
+	runTool(t, binary, root, "start")
+	walk(t, binary, root)
+
+	theirs := theirCommit(t, root, "from-the-terminal.md", "chore(sdlc): a person's own commit")
+	first := ourCommit(t, binary, root, "US-001")
+	// The second lands by reverting the person's, which is a commit the hook
+	// would have refused before the gates and has to write down after them.
+	allowed(t, binary, root, "git revert --no-edit "+theirs)
+	second := commitAs(t, root, "revert", "--no-edit", theirs)
+	runTool(t, binary, root, "gate", "commit", "pass", "--note", "on trunk")
+
+	start, end := recordedRange(t, root, "US-001")
+	held, want := revList(t, root, start, end), []string{second, first}
+	if !slices.Equal(held, want) {
+		t.Errorf("the range %q..%q holds %v, want the session's two commits %v and not %s, a person's",
+			start, end, held, want, theirs)
 	}
 }
 

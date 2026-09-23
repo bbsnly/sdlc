@@ -43,6 +43,19 @@ type State struct {
 	// measuring the working tree.
 	Fresh func() (bool, string)
 
+	// Commits, when set, is told about a commit this package allows in this
+	// repository that commits now, so that the loop can write down the HEAD it
+	// is made on. It is asked by the same classification the refusal is, never
+	// by a second reading of "is this a commit" somewhere else.
+	Commits func()
+
+	// Nested, when set, reports whether a directory, repository-relative and
+	// slash-separated, is inside a repository of its own within the project:
+	// a submodule, or a fixture a test made. A commit there is that
+	// repository's, and the recorder must not write down this one's HEAD for
+	// it; the refusal holds it back all the same.
+	Nested func(dir string) bool
+
 	// Frozen is every acceptance test the freeze holds, repository-relative
 	// and slash-separated. Empty before the freeze, and before then there is
 	// nothing here to protect.
@@ -353,14 +366,27 @@ func checkPrograms(text string, s State) (Finding, bool) {
 	// PowerShell: `$env:GIT_DIR='C:\project\.git'; cd \; git commit`. Asked once:
 	// asked for every command in it, a long command took seconds.
 	gitDirSet := setsGitDir.MatchString(text)
+	// Where each subshell is, as far as the words place it. The refusal reads
+	// a directory it cannot place as the project, which errs toward holding a
+	// commit back; the recorder cannot err that way, because a commit made in
+	// another repository then wrote down this one's HEAD: `cd "$HOME/other" &&
+	// git commit` planted an observation a person's next commit here was
+	// recorded on. So a directory reached by a guess is lost, and a commit
+	// made from it is allowed as before and written down nowhere.
+	lost := map[int]bool{0: gitDirSet}
+	// CDPATH sends a relative `cd` through the directories it lists. Any
+	// mention will do, since the cost of reading one wrongly is an observation.
+	cdPath := strings.Contains(strings.ToLower(text), "cdpath")
 	for _, r := range runs {
 		words := r.words
 		dir, ok := dirs[r.group]
+		unplaced := lost[r.group]
 		for g := r.group; !ok; {
 			g = subshells.parent[g]
 			dir, ok = dirs[g]
+			unplaced = lost[g]
 		}
-		dirs[r.group] = dir
+		dirs[r.group], lost[r.group] = dir, unplaced
 		if f, ok := checkUnfreeze(words); ok {
 			return f, true
 		}
@@ -383,16 +409,29 @@ func checkPrograms(text string, s State) (Finding, bool) {
 		if gitDirSet {
 			dir = ""
 		}
-		if f, ok := checkCommit(words, dir, s); ok {
+		if f, ok := checkCommit(words, dir, !unplaced, s); ok {
 			return f, true
 		}
 		if next, ok := changedDir(dir, words); ok {
 			// A glob can match this repository as well as any other:
 			// `cd /work/proj* && git commit`.
-			if strings.ContainsAny(next, "*?[") {
+			glob := strings.ContainsAny(next, "*?[")
+			if glob {
 				next = ""
 			}
+			// Lost as the other loop is lost, and further: a word the shell
+			// expands can be anywhere even when what is left of it looks
+			// placed (`cd a/$X/../..` cleans to the root), a relative `cd` is
+			// where CDPATH says, and `pushd +1` turns a stack the words do not
+			// show.
 			dirs[r.group] = next
+			lost[r.group] = next == "" || glob || !placedWords(words[1:]) ||
+				(unplaced || cdPath) && !isAbsolute(next)
+		} else if len(words) > 0 && (runsHere[base(words[0])] || words[0] == "" || !placedWords(words[:1])) {
+			// A script run by this shell can move it anywhere, and so can a
+			// command the shell has yet to expand: `source ./env.sh && git
+			// commit`, and `eval "$CD"`, which is read as the command `$CD`.
+			lost[r.group] = true
 		}
 	}
 	return Finding{}, false
@@ -414,6 +453,26 @@ var tooDeep = Finding{
 // one: a commit message that said "unset GIT_DIR", or `grep 'GIT_DIR'`, was a
 // commit in the project wherever it was made.
 var setsGitDir = regexp.MustCompile(`(?i)\bgit_dir=|env:[\\/]?git_dir\b|setenvironmentvariable\(\s*['"]git_dir['"]`)
+
+// runsHere are the commands that run a script in the shell that calls them,
+// where a `cd` inside it moves the command line around it.
+var runsHere = map[string]bool{
+	"source": true, ".": true, "eval": true, "iex": true, "invoke-expression": true,
+}
+
+// placedWords reports whether none of words is one the shell expands into a
+// directory the words do not show: a variable, a substitution, a glob, a
+// brace list, the directory stack, or an option of pushd and popd that turns
+// it.
+func placedWords(words []string) bool {
+	for _, w := range words {
+		if strings.ContainsAny(w, "$%`*?[{") || shellDirectory(clean(w)) ||
+			strings.HasPrefix(w, "+") || len(w) > 1 && w[0] == '-' && w[1] >= '0' && w[1] <= '9' {
+			return false
+		}
+	}
+	return true
+}
 
 // setsSession matches an assignment to CLAUDE_CODE_SESSION_ID: `NAME=`, and
 // PowerShell's `$env:NAME = `, `Set-Item env:NAME` and
@@ -732,11 +791,18 @@ var ValueFlags = map[string]bool{
 // repository: dir is where the command runs, and a commit made in another
 // repository -- by `cd`, `git -C`, or a session opened elsewhere -- is not this
 // story's to hold back.
-func checkCommit(words []string, dir string, s State) (Finding, bool) {
+//
+// placed is whether the words put the command in dir rather than a guess did.
+// A commit is written down only when they and its own -C and --git-dir place it
+// in the project's own repository: the refusal takes the project as its guess,
+// and the recorder taking the same guess wrote down this project's HEAD for a
+// commit made in another repository, and a person's next commit here was
+// recorded as the story's on that observation.
+func checkCommit(words []string, dir string, placed bool, s State) (Finding, bool) {
 	if !isGit(words) {
 		return Finding{}, false
 	}
-	sub, _ := gitCommand(words[1:])
+	sub, _, _, alias := gitCall(words[1:])
 	if !makesACommit(words, sub) || !inThisRepository(words, dir, s) {
 		return Finding{}, false
 	}
@@ -748,6 +814,12 @@ func checkCommit(words []string, dir string, s State) (Finding, bool) {
 		ready, why = s.Fresh()
 	}
 	if ready {
+		// Only a commit this rule allows: the recorder writes down a head only
+		// once the whole command has been allowed, and a refused one never
+		// happened.
+		if s.Commits != nil && placed && ownRepository(words, dir, s) && commitsNow(words[1:], sub, alias) {
+			s.Commits()
+		}
 		return Finding{}, false
 	}
 	return Finding{
@@ -1107,7 +1179,7 @@ var readers = map[string]bool{
 // gitChangesFiles reports whether a git command rewrites or removes the files
 // named after it: `git rm`, `git mv`, `git checkout -- path`, `git restore`.
 func gitChangesFiles(args []string) bool {
-	switch sub, _, rest := gitCall(args); sub {
+	switch sub, _, rest, _ := gitCall(args); sub {
 	case "mv", "checkout":
 		return true
 	case "stash":

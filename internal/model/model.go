@@ -669,34 +669,52 @@ type Record struct {
 	// work that reached trunk past the gates.
 	Base string `json:"base,omitempty"`
 	// CommitBase and Commit bound the story's commits: they are the ones after
-	// CommitBase, up to and including Commit. The range holds every commit the
-	// story made, and can hold commits somebody else made in that window: ones
-	// that together left the reviewed code as it was, such as commits touching
-	// only .sdlc/ or a story's status and updated, or ones made before a later
-	// review.
+	// CommitBase, up to and including Commit. Where the hook watched the
+	// session commit, the range holds only commits it watched the session land,
+	// and when no single range holds only those the commit gate records none and
+	// says so with RangeUnknown. Where it watched nothing, the range is the
+	// whole window from the code review to HEAD, as before the loop watched,
+	// and can hold commits somebody else made in it.
 	//
-	// CommitBase is HEAD when code_review first passed. The hook refuses the
-	// story's commits until then, so it is trunk before any of them. It stays
+	// CommitBase starts as HEAD when code_review first passed. The hook refuses
+	// the story's commits until then, so it is trunk before any of them. Where
+	// the commit gate records a watched range, it moves CommitBase to that
+	// range's start, the parent of the oldest commit the loop watched, so after
+	// that pass it no longer says where code review started. Otherwise it stays
 	// through rework, and on a finished story reopened later, whose range then
 	// spans everything that landed on trunk in between. It is empty when that
 	// first pass had no commit to name, or was recorded by an sdlc that did not
 	// keep it. It is not Base, which follows HEAD once code review has passed.
 	CommitBase string `json:"commit_base,omitempty"`
-	// Commit is HEAD when the commit gate last passed. Its tree holds all of the
-	// reviewed work, and it is usually the story's last commit, but it need not
-	// be the only one, nor one that changed code. It goes when the commit gate
-	// stops standing passed, so a record never names an end the story has since
-	// gone back on.
-	Commit      string              `json:"commit,omitempty"`
-	Gates       map[Gate]GateResult `json:"gates"`
-	Events      []Event             `json:"events"`
-	Escalations []Escalation        `json:"escalations"`
-	Approvals   []Approval          `json:"approvals"`
-	Reviews     []Review            `json:"reviews,omitempty"`
-	Security    *bool               `json:"security_sensitive,omitempty"`
-	Flags       map[string]any      `json:"flags,omitempty"`
-	Metrics     map[string]any      `json:"metrics,omitempty"`
-	Spend       []Spend             `json:"spend,omitempty"`
+	// Commit is the end of the range the commit gate last recorded: the newest
+	// commit the loop watched the session land, or, where it watched nothing,
+	// HEAD when the gate passed. It is usually the story's last commit, but it
+	// need not be the only one, nor one that changed code, and HEAD can be past
+	// it (HeadPastCommit). It is empty when the gate recorded no range
+	// (RangeUnknown), and it goes when the commit gate stops standing passed, so
+	// a record never names an end the story has since gone back on.
+	Commit string `json:"commit,omitempty"`
+	// RangeUnknown is the commit gate saying, deliberately, that it recorded
+	// no range: the loop watched the story's commits and no single range holds
+	// only them. Without it a record with no Commit reads as one nobody wrote,
+	// and `sdlc log` guesses the story's commits from their messages -- the
+	// answer this record has ruled out.
+	RangeUnknown bool `json:"range_unknown,omitempty"`
+	// HeadPastCommit is HEAD at the commit gate's pass, kept only where it was
+	// past Commit: the range stops short of it, and nothing that landed after
+	// Commit was watched. Without it, a range read after the story is done looks
+	// the same whether HEAD was its end or had moved on, and the observations
+	// that could tell the two apart are gone once the story is stopped.
+	HeadPastCommit string              `json:"head_past_commit,omitempty"`
+	Gates          map[Gate]GateResult `json:"gates"`
+	Events         []Event             `json:"events"`
+	Escalations    []Escalation        `json:"escalations"`
+	Approvals      []Approval          `json:"approvals"`
+	Reviews        []Review            `json:"reviews,omitempty"`
+	Security       *bool               `json:"security_sensitive,omitempty"`
+	Flags          map[string]any      `json:"flags,omitempty"`
+	Metrics        map[string]any      `json:"metrics,omitempty"`
+	Spend          []Spend             `json:"spend,omitempty"`
 }
 
 // Spend is one amount recorded against the story, in US dollars.
@@ -960,6 +978,8 @@ func (r *Record) Reopen(g Gate, why string, at time.Time) []string {
 func (r *Record) forgetCommit() {
 	if !r.Pass(GateCommit) {
 		r.Commit = ""
+		r.RangeUnknown = false
+		r.HeadPastCommit = ""
 	}
 }
 

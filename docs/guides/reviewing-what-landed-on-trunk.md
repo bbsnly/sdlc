@@ -63,12 +63,67 @@ It does not mark anything read. When it is done it names the commit to pass to
 
 ## Ranges to read with care
 
-A range runs from HEAD when the story's code review first passed to HEAD when
-its commit gate last passed. That holds every commit the story made, and can
-hold commits somebody else made in the same window. A story reopened after it
-was committed spans everything that landed in between. A range is a list to
-read, not a list to revert, and the skill never reverts, resets or rewrites a
-commit.
+A range is the commits the loop watched the story's session land, as far as the
+hook could tell a command was a commit. The hook writes down the HEAD each such
+command starts from, in the repository's git directory at
+`<git-dir>/sdlc/commits/<story>/`, one small file per HEAD; `git rev-parse
+--absolute-git-dir` names the git directory. The commit gate takes the commits
+whose first parent is one of those, checks that exactly they and nothing else
+lie between the pair it picks, and records that pair. So a person's commit made
+after the story's is left out, and a story whose commits somebody else's sits
+between records no range at all, rather than one that would hold theirs. It says
+the session **landed** those commits, not that it wrote them: a fast-forward
+merge the session ran lands commits somebody else made.
+
+The check is that the pair holds exactly the commits the loop watched, never
+that it holds everything the story did. Three things it cannot catch, each with
+what to do about it:
+
+- **A commit the hook did not watch is missing, and leaves no sign.** A command
+  the hook could not tell was a commit, one whose repository its words did not
+  identify as this one (after `cd "$DIR"`, with `git -C "$DIR"`, with `GIT_DIR`
+  set), or the second commit of one Bash call that made two, is not in the
+  range; at the start, the story's first commits
+  then read as somebody else's, and at the end the range stops short. When the
+  range stops before HEAD the commit gate says `head is <head>, past <end>:
+  nothing that landed after <end> was watched`, which is usually a person's
+  commit and is sometimes this. When the range ends *at* HEAD there is no such
+  line and no signal at all: a commit nobody watched, made straight on a HEAD
+  the hook had written down — after a command that went through and committed
+  nothing, say — is taken into the range, and nothing says so. Read the last
+  commit of every range as one that may not be the story's.
+- **History rewritten under the loop can hand a person's commit to the story.**
+  A rebase that replays the story's commit on top of one a person made on trunk
+  leaves the person's commit in the range and the story's own rewritten commit
+  out of it. The same follows from anybody rewriting trunk while a story is under
+  way — a force-push, a squash, a tidy of history — not only from the session.
+  The `head is` line fires in that case, because HEAD is the rewritten commit and
+  the range ends before it. Read a range whose story saw a rebase or a
+  force-push against its commits by hand.
+- **What the hook writes down is believed.** Anyone who can write into the git
+  directory can plant a HEAD, and the commit gate cannot tell. What that buys is
+  not a fake commit, which git would not resolve, but the parent of a real,
+  unrelated commit already on trunk: the next commit gate takes that commit into
+  the story's range, the check passes, and an unreviewed commit reads as the
+  story's. The git directory is protected from the session's tools and shell
+  commands by the same rules that protect `.git/hooks`, and those rules have
+  known gaps.
+
+What the hook wrote down is removed when a finished story is stopped, which the
+loop does straight after its last gate, so it is not there to look at when you
+review later. What survives is on the story's record, and `sdlc log` reads it
+back: the range, `range      unknown` where the gate recorded none, and, where
+the gate saw HEAD past the range's end, the same `head is <head>, past <end>`
+line beneath it, with the full HEAD as `head_past_commit` in `sdlc log --json`.
+An entry with no such line had a range ending at HEAD when it was recorded.
+
+Where the hook watched nothing — the plugin was not installed, enforcement was
+switched off, or the story was already under way when the version that watches
+arrived — the range is the older, wider one: from HEAD when code review first
+passed to HEAD when the commit gate last passed, which can hold commits somebody
+else made in that window. A story reopened after it was committed spans
+everything that landed in between. A range is a list to read, not a list to
+revert, and the skill never reverts, resets or rewrites a commit.
 
 Some entries need more care still:
 
@@ -76,6 +131,11 @@ Some entries need more care still:
   found by the commit messages that name it, and the entry says so. A commit
   that forgot the id is missed, and a later one that names it, such as
   `Revert US-001`, moves the end of the range.
+- **No single range.** The commit gate watched the story's commits and no one
+  range holds only them, so it recorded none, and the log says
+  `range      unknown: the loop watched this story's commits, but no single
+  range holds only them`. The commit messages are not read for it: the story's
+  commits are somewhere since its code review, with somebody else's among them.
 - **Unknown, missing, or off this branch.** When no message names the story, or
   its commit is not in this repository or not in HEAD's history, nothing is
   guessed. These entries are listed every time, whatever you acknowledge, so

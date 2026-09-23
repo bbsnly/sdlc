@@ -48,7 +48,7 @@ func takenAway(words []string) []string {
 			return roots
 		}
 	case "git":
-		sub, moved, rest := gitCall(args)
+		sub, moved, rest, _ := gitCall(args)
 		var named []string
 		switch sub {
 		case "rm", "checkout", "restore":
@@ -86,7 +86,7 @@ func removes(words []string) bool {
 	case "rm", "unlink", "del", "erase", "remove-item", "ri":
 		return true
 	case "git":
-		sub, _, _ := gitCall(words[1:])
+		sub, _, _, _ := gitCall(words[1:])
 		return sub == "rm"
 	}
 	return false
@@ -102,7 +102,7 @@ func discardsTheWorkTree(words []string) bool {
 	if !isGit(words) {
 		return false
 	}
-	sub, _, rest := gitCall(words[1:])
+	sub, _, rest, _ := gitCall(words[1:])
 	switch sub {
 	case "stash":
 		return len(rest) == 0 || !stashKeeps[rest[0]] && wholeTree(stashPaths(rest))

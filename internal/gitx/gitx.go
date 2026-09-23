@@ -191,6 +191,51 @@ type Commit struct {
 	Parent string
 }
 
+// GitDir is the repository's git directory, absolute and in the platform's own
+// separators. It is where the loop keeps what must never be seen by `git
+// status`: anything in the working tree is, and the commit gate refuses a tree
+// with anything uncommitted in it. A linked worktree has a git directory of its
+// own.
+func GitDir(ctx context.Context, root string) (string, error) {
+	out, err := git(ctx, root, nil, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", err
+	}
+	return filepath.FromSlash(firstLine(string(out))), nil
+}
+
+// CommitsBetween lists the commits after base up to and including end, newest
+// first, each with its first parent -- what `git rev-list base..end` lists. A
+// revision git does not have is a failure rather than an empty range: read as
+// empty, it would say the story committed nothing. A revision that starts with
+// a dash is refused before git sees it, as Resolve refuses one.
+func CommitsBetween(ctx context.Context, root, base, end string) ([]Commit, error) {
+	for _, rev := range []string{base, end} {
+		if strings.HasPrefix(rev, "-") || rev == "" {
+			return nil, notACommit{sdlcerr.New(sdlcerr.RepositoryUnreadable,
+				strconv.Quote(rev)+" is not a commit",
+				"no revision is empty or starts with a dash, and git would read one that does as an option")}
+		}
+	}
+	out, err := git(ctx, root, nil, "rev-list", "--parents", base+".."+end, "--")
+	if err != nil {
+		return nil, err
+	}
+	var commits []Commit
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		c := Commit{Hash: fields[0]}
+		if len(fields) > 1 {
+			c.Parent = fields[1]
+		}
+		commits = append(commits, c)
+	}
+	return commits, nil
+}
+
 // CommitsNaming lists the commits in HEAD's history whose message names word,
 // newest first. Git finds the candidates by fixed string, and the whole word is
 // checked here: US-1 is not named by "US-10" or "US-1.2", and is by "US-1.".

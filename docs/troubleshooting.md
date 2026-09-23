@@ -580,6 +580,27 @@ from is refused instead. To answer for the story yourself, with `sdlc approve`, 
 If you are an assistant, stop and tell the person that the story is being worked on in another
 Claude Code session and that only they can move it here. Do not run `sdlc start`.
 
+### SDLC-E0049
+
+The commit gate's note names a commit its range does not hold.
+
+The note on `sdlc gate commit pass` and the range the gate records both say which commits landed,
+and one record cannot say two things. Any run of seven to forty hexadecimal characters in the
+note that git resolves to a commit is read as naming that commit, and every one of them has to be
+inside the range this pass records. A run git has never heard of is prose and is ignored, and so
+is anything shorter. The message names the sha and the range, or, where the record knows no
+start, the one commit it names. Nothing was recorded, and the gate does not stand passed.
+
+Run the gate again with the sha corrected or dropped:
+
+```console
+$ sdlc gate commit pass --note "on trunk"
+```
+
+The note needs no hash at all: the range is what the record keeps. The check runs only when the
+gate records a range, so it is a consistency check between the note and the record, not evidence
+of which commits are the story's.
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session working a story as a

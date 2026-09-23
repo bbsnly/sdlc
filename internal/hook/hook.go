@@ -341,15 +341,24 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 			dir = rel
 		}
 	}
+	// Created just before the parse, and started only at the first git call.
+	budget, cancel := gitBudget(context.Background(), time.Now)
+	defer cancel()
+	commits := false
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
 		Backlog: backlogPath(project), PowerShell: p.ToolName == "PowerShell",
 		StoryFinished: storyFinished(project, story),
 		Resolve:       func(word string) string { return onDisk(resolver, word) },
-		Fresh:         func() (bool, string) { return reviewsFresh(project, story, warn) },
+		Fresh:         func() (bool, string) { return reviewsFresh(project, story, warn, budget) },
+		Commits:       func() { commits = true },
+		Nested:        func(dir string) bool { return nestedRepository(project, dir) },
 	})
 	if !refused {
+		if commits {
+			observe(project, story, budget)
+		}
 		return policy.Allowed
 	}
 	return policy.Verdict{Rule: finding.Rule, Reason: finding.Reason, Route: finding.Route}
@@ -509,8 +518,9 @@ const treeTimeout = 20 * time.Second
 //
 // It measures the tree only when there is something to compare it with, and a
 // tree it cannot measure lets the commit through with a warning: git failing
-// here is git failing for the commit too.
-func reviewsFresh(project, story string, warn func(string)) (bool, string) {
+// here is git failing for the commit too. Git runs under budget, which the
+// whole command shares (see gitBudget).
+func reviewsFresh(project, story string, warn func(string), budget func() context.Context) (bool, string) {
 	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "stories", story, model.RecordFile))
 	if err != nil {
 		return true, "" // commitReady has already refused over this
@@ -552,9 +562,7 @@ func reviewsFresh(project, story string, warn func(string)) (bool, string) {
 		return true, ""
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), treeTimeout)
-	defer cancel()
-	tree, err := s.ReviewSubject(ctx)
+	tree, err := s.ReviewSubject(budget())
 	if err != nil {
 		slog.Debug("hook could not measure the working tree", "err", err)
 		warn(unmeasuredTree)

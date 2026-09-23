@@ -314,7 +314,27 @@ sdlc gate commit pass --note "<what reached trunk, in one line>"
 ```
 
 The gate refuses while anything is uncommitted, or if an acceptance test changed since the freeze.
-The note needs no hash.
+The note needs no hash. A hash it does name has to be inside the range this pass records, or the
+gate refuses (SDLC-E0049): run it again with the hash corrected or dropped.
+
+The pass says which commits it recorded, and the person should hear it in the same words:
+
+- `landed in <start>..<end>`: the commits the loop watched this session land.
+- `head is <head>, past <end>: nothing that landed after <end> was watched`, under it: HEAD has
+  moved past the range. Usually a person committed after you did; say so, and name both commits.
+- `no range recorded: ...`, in place of `landed in`: no single range holds only the watched
+  commits. It does not say why: someone else's commit between the story's, a merged side
+  branch, rewritten history, or git unable to read the start or the hook's notes. The work is
+  fine; say there is no range, give all four causes, pick none.
+
+Do not work a range out yourself, and do not rewrite history to make one.
+
+Before Gate 9, show the person any `head is` line again, and tell them where the hook wrote down
+what it watched: `<git-dir>/sdlc/commits/<story>/`, one file per HEAD (`git rev-parse
+--absolute-git-dir` names the git directory). `sdlc stop` at the end of Gate 9 removes that
+directory, so it is the person's one chance to read it. Do not read it yourself: the hook keeps the
+session out of the git directory. The record keeps only the range and the `head is` fact, which
+`sdlc log` shows later.
 
 ## Gate 9 — Retro
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -404,6 +405,7 @@ func newStopCmd() *cobra.Command {
 						if err := releaseFreeze(s, active); err != nil {
 							return err
 						}
+						forgetWatched(cmd.Context(), s, active)
 					}
 				}
 			}
@@ -445,6 +447,10 @@ type gatePayload struct {
 	// Commit. CommitBase is left out when it is not known.
 	CommitBase string `json:"commit_base,omitempty"`
 	Commit     string `json:"commit,omitempty"`
+	// RangeUnknown is the commit gate recording, deliberately, no range.
+	RangeUnknown bool `json:"range_unknown,omitempty"`
+	// HeadPastCommit is HEAD at this pass, where it was past Commit.
+	HeadPastCommit string `json:"head_past_commit,omitempty"`
 	// Done reports that this gate was the last one: the story left the backlog.
 	Done bool `json:"done"`
 	// HandedOver is the kind of escalation, when this failure was one too many
@@ -506,6 +512,27 @@ func releaseFreeze(s *store.Store, id string) error {
 		return err
 	}
 	return appendEvent(s, id, "unfreeze", finishedUnfreeze)
+}
+
+// forgetWatched clears what the hook wrote down about a finished story's
+// commits, in the git directory, where nothing else would ever remove it. It
+// runs where the freeze is lifted, on a story with nothing left to do, and not
+// at a gate: a commit gate passed a second time needs the first pass's
+// observations. Best effort, because stop is the way out of a broken state and
+// a leftover observation costs one small file.
+//
+// Two things can leave one behind. The hook asks only for the gates before the
+// commit, so a commit made after the commit gate passed is still watched, and
+// that write can land after this clear: one file for a finished story, cleared
+// the next time it finishes. And a second session that runs /sdlc:next mid-story
+// takes the story over, so the first session's later commits are neither
+// refused nor watched, and drop out of what the gate reads: whichever session
+// most recently claimed the story is the one watched, which under-claims and
+// answers no range rather than a wrong one.
+func forgetWatched(ctx context.Context, s *store.Store, id string) {
+	if err := s.ClearObservedCommits(ctx, id); err != nil {
+		slog.Debug("stop could not forget the commits the loop watched", "story", id, "err", err)
+	}
 }
 
 // finishedUnfreeze is what lifting a finished story's freeze says on its
@@ -580,8 +607,9 @@ func newGateCmd() *cobra.Command {
 				record.SetSecuritySensitive(securitySensitive)
 			}
 			record.SetGate(gate, status, note, s.Now())
-			// The story's commits are the ones after HEAD when code review first
-			// passed, up to and including HEAD when the commit gate last passed.
+			// The story's commits are among the ones after HEAD when code review
+			// first passed, up to and including HEAD when the commit gate last
+			// passed.
 			//
 			// The hook refuses them until code review has passed, and
 			// requireUnmoved has just held HEAD to where the story started, so
@@ -592,9 +620,9 @@ func newGateCmd() *cobra.Command {
 			// name, or one an older sdlc recorded, leaves the start unknown.
 			//
 			// The commit gate refused anything uncommitted, so HEAD at its pass
-			// holds all of the reviewed work. It is usually the story's last
-			// commit, but need not be its only one, nor one that changed code.
-			// A commit pass that cannot say which commit that is is not recorded.
+			// holds all of the reviewed work, and a pass where HEAD names no
+			// commit is not recorded. Which of the commits since the code review
+			// are the story's is placeCommits' to say.
 			if status == model.GatePass {
 				switch {
 				case gate == model.GateCodeReview &&
@@ -603,13 +631,20 @@ func newGateCmd() *cobra.Command {
 						return err
 					}
 				case gate == model.GateCommit:
-					if record.Commit, err = headCommit(cmd.Context(), s.Root()); err != nil {
+					var head string
+					if head, err = headCommit(cmd.Context(), s.Root()); err != nil {
 						return err
 					}
-					if record.Commit == "" {
+					// Keyed on HEAD, not on what the record ends up naming: no
+					// range is an outcome now, and a pass everywhere else.
+					if head == "" {
 						return sdlcerr.New(sdlcerr.RepositoryUnreadable,
 							"HEAD names no commit, so the commit gate cannot record where the story landed",
 							"the gate records the commit that holds the story's work, and git reports none")
+					}
+					landed := placeCommits(cmd.Context(), s, id, record, head)
+					if err := requireNoteInRange(cmd.Context(), s.Root(), landed, note); err != nil {
+						return err
 					}
 				}
 			}
@@ -633,14 +668,16 @@ func newGateCmd() *cobra.Command {
 				}
 			}
 
-			start, end := "", ""
+			start, end, past := "", "", ""
 			if gate == model.GateCommit {
-				start, end = record.CommitBase, record.Commit
+				start, end, past = record.CommitBase, record.Commit, record.HeadPastCommit
 			}
 			if wantJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), gatePayload{
 					OK: true, Story: id, Gate: string(gate), Status: string(status), Note: note,
-					CommitBase: start, Commit: end, Done: done, HandedOver: handedOver,
+					CommitBase: start, Commit: end, RangeUnknown: gate == model.GateCommit && record.RangeUnknown,
+					HeadPastCommit: past,
+					Done:           done, HandedOver: handedOver,
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n", id, gate, status)
@@ -653,6 +690,17 @@ func newGateCmd() *cobra.Command {
 					landed = start[:min(len(start), 12)] + ".." + landed
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "  landed in %s\n", landed)
+				// Not a refusal: the sign that the range may stop short, kept on
+				// the record for `sdlc log`, and true in every case it fires, the
+				// ordinary one included, where a person committed after the
+				// session did. The reverse carries no sign: an end that is HEAD
+				// can still be somebody else's commit.
+				if past != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), "  "+headPast(past, end))
+				}
+			}
+			if gate == model.GateCommit && record.RangeUnknown {
+				fmt.Fprintln(cmd.OutOrStdout(), "  no range recorded: "+noSingleRange)
 			}
 			if done {
 				fmt.Fprintf(cmd.OutOrStdout(), "\n%s is done: every gate has passed.\n", id)

@@ -11,9 +11,9 @@ marked the log read. You read, compare and propose. What has been read, and what
 is theirs to decide.
 
 Nothing here changes trunk. Do not revert, reset, amend, rebase or rewrite a commit, and do not
-treat a story's range as a list of commits to undo: a range can hold commits somebody else made
-in the same window, and a story reopened after its commit spans everything that landed in
-between.
+treat a story's range as a list of commits to undo: a range is what the loop saw the session land,
+not proof; a range recorded where the loop watched nothing can hold commits somebody else made in
+the same window; and a story reopened after its commit spans everything that landed in between.
 
 ## Before anything else
 
@@ -65,7 +65,17 @@ When `commit_base` is empty only the end is known: run `git show --stat <commit>
 start of the range is not recorded. Read the diffs you need with `git show`. Then say what the
 range is worth:
 
-- `range_source` is `record`: the commit gate recorded it.
+- `range_source` is `record`: the commit gate recorded it, from the commits the loop watched the
+  session land. Its last commit may still not be the story's: a commit nobody watched, made on a
+  HEAD the loop had seen, joins the range with no sign. Read the last commit against the story
+  before you count it as the story's work.
+- `range_source` is `record` with `head_past_commit`: HEAD had moved past the range's end when
+  the commit gate recorded it, and nothing after the end was watched. Usually a person committed
+  after the session; it can also be a story commit the hook missed, or history rewritten under
+  the loop. Name that commit, and look at what it changed against the story.
+- `range_source` is `unknown` with `range_unknown`: the commit gate watched the story's commits
+  and somebody else's sat between them, so it recorded no range on purpose. Say so, and do not
+  work one out.
 - `range_source` is `message`: it was inferred from the commit messages that name the story. It
   can miss a commit that did not name it, and a later one that did, such as a revert, moves its
   end.

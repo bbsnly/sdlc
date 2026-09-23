@@ -113,9 +113,16 @@ range, the commit before the oldest one starts it, and the entry says the range
 was inferred. A later commit that names the id, such as `Revert US-001`, moves
 that end, and can bring a story already acknowledged back into the log. When no
 message names the story either, its range is `unknown`, and nothing is guessed.
-A story that cannot be placed — its range is unknown, or ends in a commit that
-is not on this branch (`off_branch`) or not in this repository (`missing`) — is
-always listed.
+A story whose commit gate recorded no range on purpose, because no single range
+holds only the commits the loop watched it land, is `unknown` too, and says so:
+`range      unknown: the loop watched this story's commits, but no single range
+holds only them`, with `range_unknown` in `--json`. Its commit messages are
+not read for it. A recorded range whose commit gate saw HEAD past its end
+says so beneath it, in the gate's own words — `range      head is <head>, past
+<end>: nothing that landed after <end> was watched` — with the full HEAD as
+`head_past_commit` in `--json`. A story that cannot be placed — its range is
+unknown, or ends in a commit that is not on this branch (`off_branch`) or not in
+this repository (`missing`) — is always listed.
 
 In `--json`, `range_source` is `record`, `message` or `unknown`, and
 `since_source` says where the log started: `acknowledged`, `flag` for
@@ -123,9 +130,15 @@ In `--json`, `range_source` is `record`, `message` or `unknown`, and
 the full commit it started after, and `spent_usd` is always there, `0` for a
 story with no spend recorded.
 
-A range can hold commits somebody else made in the same window, and a story
-reopened after it was committed spans everything that landed in between. It is a
-list to read, not a list to revert.
+A range is what the loop saw the story's session land, as far as the hook could
+tell a command was a commit: a person's commit made in the same window is left
+out of it, and a story whose commits somebody else's sits between has no range at
+all. It is not proof, and it is not complete: a commit the hook did not watch is
+missing from it, and a range recorded where the hook watched nothing is the
+whole window, which can hold anybody's commits.
+[Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md#ranges-to-read-with-care)
+says what to read with care. A story reopened after it was committed spans
+everything that landed in between. It is a list to read, not a list to revert.
 
 To go through the log with the assistant, run `/sdlc:trunk-review`: see
 [Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md).
@@ -215,9 +228,11 @@ Stopping does not undo anything. The gates already recorded stay recorded, the
 story stays in progress, and starting again resumes it.
 
 A story whose gates have all passed is a different case, and `stop` says so: it
-is done, the test freeze it was holding is lifted, and the next `sdlc start`
-moves on to the next story instead of reopening it. An unfinished story keeps
-its freeze, so stopping and starting again cannot be a way round it.
+is done, the test freeze it was holding is lifted, what the hook wrote down about
+its commits is removed from the repository's git directory, and the next
+`sdlc start` moves on to the next story instead of reopening it. An unfinished
+story keeps its freeze and what was written down, so stopping and starting again
+cannot be a way round either.
 
 ## `sdlc gate GATE STATUS`
 
@@ -244,20 +259,70 @@ Gates: `dor`, `analysis`, `tests_frozen`, `plan`, `design_review`,
 requires. A `fail` is always recordable — a gate can fail precisely because its
 work could not be done, and the loop has to have somewhere to put that.
 
-The first `code_review` pass records where the story's commits start, HEAD at
-that moment. Each `commit` pass records where they end, HEAD then, and says so:
-`landed in <start>..<end>`, with each hash cut to 12 characters, or
-`commit_base` and `commit` in full with `--json`. The range runs from HEAD when
-code review first passed to HEAD when the commit gate last passed. It holds
-every commit the story made, and can hold commits somebody else made in that
-window: ones that together left the reviewed code as it was, such as commits
-touching only `.sdlc/` or a story's `status` and `updated`, or ones made before
-a later review. The start is left out, and the output says `landed in <end>`,
-when it is not known: the repository had no commits yet when code review first
-passed, or an older `sdlc` passed it. The end is forgotten when the commit gate
-stops standing, and the next pass records it again. The start stays, even when
-a finished story is reopened later, so that story's range also spans everything
-that landed on trunk in between.
+The first `code_review` pass records HEAD at that moment, where the story's
+commits can start. Each `commit` pass records the range the story landed in and
+says so: `landed in <start>..<end>`, with each hash cut to 12 characters, or
+`commit_base` and `commit` in full with `--json`.
+
+The range is worked out from what the hook watched. Each time it lets the
+session's command through and can tell the command commits, it writes down the
+HEAD the command starts from, in the repository's git directory at
+`<git-dir>/sdlc/commits/<story>/` — never in the working tree, never committed,
+and never pushed. The story's commits are the ones since the code review whose
+first parent is a HEAD the hook wrote down, and the range is the one pair of
+commits that holds exactly those: a person's commit made after the story's is
+left out of it. The gate puts the pair back to git before it records it; where
+no single range holds only the watched commits — somebody else's commit sits
+between two of the story's, or a merge brought in a side branch — it records no
+range, sets `range_unknown` in `--json`, and says so in place of `landed in`:
+
+```text
+  no range recorded: the loop watched this story's commits, but no single range holds only them
+```
+
+When the range it records ends before HEAD, it says which commit HEAD is:
+
+```text
+  landed in 3f1c2a9d4b7e..8a0e5d6c1f2b
+  head is c4d9e2f7a130, past 8a0e5d6c1f2b: nothing that landed after 8a0e5d6c1f2b was watched
+```
+
+It keeps that HEAD on the story's record, so the fact outlasts the output:
+`head_past_commit` in `--json` holds it in full, and [`sdlc log`](#sdlc-log)
+repeats the line. Each pass replaces what the last one kept, and a range whose
+end is HEAD keeps nothing.
+
+That is usually a person's commit made after the session's, and is then as it
+should be. It is also the only sign of the two cases where the range stops short
+of the story's work: a command that committed twice, of which the hook watched
+only the start, and history rewritten under the loop. When the range's end *is*
+HEAD there is no signal at all that anything unwatched landed: a commit the hook
+did not see, made straight on a HEAD it did, joins the range and nothing says
+so. What the hook wrote down is removed when the finished story is stopped, so
+look at it before `sdlc stop` if the line gives you a reason to.
+
+Where the hook watched nothing — the plugin is not installed, enforcement is
+switched off for the session, or the story was already under way when this
+version arrived — the range is what it always was: from HEAD when code review
+first passed to HEAD when the commit gate passes, which can hold commits
+somebody else made in that window. The start is left out, and the output says
+`landed in <end>`, when it is not known: the repository had no commits yet when
+code review first passed, or an older `sdlc` passed it.
+
+A hash in the note has to be inside the range this pass records, or the pass is
+refused with [SDLC-E0049](troubleshooting.md#sdlc-e0049): seven to forty
+hexadecimal characters that git resolves to a commit count as naming it, and
+anything else is prose. Where the start is not known, the one commit the record
+names is the range the note is held to. The note needs no hash. The check is
+skipped when no range is recorded, so it is a consistency check between the
+note and the record, not evidence of which commits are the story's.
+
+The end is forgotten when the commit gate stops standing, and every pass records
+its answer over the last one's. A pass that records a watched range moves the
+start to that range's start as well, so `commit_base` is then no longer where
+code review began. When the hook watched nothing the start stays, even when a
+finished story is reopened later, so that story's range can also span
+everything that landed on trunk in between.
 
 Recording the last gate is also what finishes the story: when no gate is left
 unpassed, the story's status becomes `done` and it leaves the backlog. That is
