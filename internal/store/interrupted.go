@@ -22,8 +22,24 @@ var interruptedWrite = regexp.MustCompile(`^\..+\.tmp[0-9]+$`)
 // The caller holds the project's lock. Every write this looks for is made
 // under it, so none of them can still be in progress.
 func (s *Store) ClearInterruptedWrites() {
-	for _, dir := range []string{stateDir, storiesDir} {
-		root := filepath.Join(s.root, filepath.FromSlash(dir))
+	dirs := []string{filepath.Join(s.root, filepath.FromSlash(stateDir))}
+	shared, err := s.shared()
+	if err == nil {
+		// The records are the main checkout's. A worktree's own copy of them,
+		// checked out by git, is nobody's to sweep.
+		dirs = append(dirs, filepath.Join(shared, filepath.FromSlash(storiesDir)))
+	}
+	if claims, ok := s.claimsPath(); ok {
+		// In the git directory, which is no checkout's: the leaves check below
+		// is about links out of a checkout, and this is not in one.
+		entries, _ := os.ReadDir(claims)
+		for _, e := range entries {
+			if interruptedWrite.MatchString(e.Name()) {
+				removeLeftover(filepath.Join(claims, e.Name()))
+			}
+		}
+	}
+	for _, root := range dirs {
 		// Where a link out of the repository leads, the files are not the
 		// loop's, whatever they are called.
 		if s.leaves(root) {
@@ -39,7 +55,10 @@ func (s *Store) ClearInterruptedWrites() {
 
 	// The backlog is the user's file, in a directory that is theirs, so only a
 	// write of the backlog itself is looked for there.
-	backlog := s.cfg.BacklogPath(s.root)
+	if err != nil {
+		return
+	}
+	backlog := s.cfg.BacklogPath(shared)
 	if resolved, err := filepath.EvalSymlinks(backlog); err == nil {
 		backlog = resolved
 	}

@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bbsnly/sdlc/internal/config"
@@ -56,16 +57,88 @@ const (
 var safeID = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9_-])?$`)
 
 // Store reads and writes one project's loop state.
+//
+// A checkout keeps its own iteration: the story it is working, the session, the
+// freeze and the Stop hook's count. The backlog and the story records are the
+// repository's, and in a linked worktree they are the main checkout's, which
+// is where every checkout reads and writes them.
 type Store struct {
-	root string
-	cfg  config.Config
-	now  func() time.Time
+	root  string
+	cfg   config.Config
+	now   func() time.Time
+	place *placement
+}
+
+// placement is where the checkout the store was opened in sits in its
+// repository, found the first time something needs it: most calls the hook
+// makes read only the checkout's own state, and pay nothing for it.
+type placement struct {
+	once sync.Once
+	co   config.Checkout
+	err  error
 }
 
 // New opens the store for a project.
 func New(p *config.Project) *Store {
-	return &Store{root: p.Root, cfg: p.Config, now: time.Now}
+	return &Store{root: p.Root, cfg: p.Config, now: time.Now, place: &placement{}}
 }
+
+// NewIn opens the store for a project whose checkout the caller has already
+// found, so that one call finds it once.
+func NewIn(p *config.Project, co config.Checkout, err error) *Store {
+	s := New(p)
+	s.place.once.Do(func() { s.place.co, s.place.err = co, err })
+	return s
+}
+
+// checkout is where the store's checkout sits in its repository.
+func (s *Store) checkout() (config.Checkout, error) {
+	s.place.once.Do(func() { s.place.co, s.place.err = config.FindCheckout(s.root) })
+	return s.place.co, s.place.err
+}
+
+// shared is the directory the backlog and the story records are kept under:
+// the main checkout, which in any checkout that is not a linked worktree is the
+// store's own root, spelled as it was opened.
+func (s *Store) shared() (string, error) {
+	co, err := s.checkout()
+	switch {
+	case err != nil:
+		return "", err
+	case co.Linked():
+		return co.Main, nil
+	}
+	return s.root, nil
+}
+
+// SharedErr is why the backlog and the story records cannot be reached from
+// this checkout, and nil when they can.
+func (s *Store) SharedErr() error {
+	_, err := s.shared()
+	return err
+}
+
+// LockRoot is the directory the repository's one lock is keyed on: the main
+// checkout, so that every checkout of a repository takes the same lock over
+// the one backlog, or this checkout where the main checkout cannot be found.
+func (s *Store) LockRoot() string {
+	if shared, err := s.shared(); err == nil {
+		return shared
+	}
+	return s.root
+}
+
+// BacklogPath is the backlog file this checkout reads and writes.
+func (s *Store) BacklogPath() string {
+	if shared, err := s.shared(); err == nil {
+		return s.cfg.BacklogPath(shared)
+	}
+	return s.cfg.BacklogPath(s.root)
+}
+
+// Checkout is where the store's checkout sits in its repository, and why the
+// main checkout could not be found where it could not.
+func (s *Store) Checkout() (config.Checkout, error) { return s.checkout() }
 
 // WithClock returns a copy that reads the time from now, for tests and for any
 // caller that needs every timestamp in one operation to match.
@@ -136,7 +209,11 @@ func (s *Store) StoryDir(id string) (string, error) {
 	if err := CheckID(id); err != nil {
 		return "", err
 	}
-	return filepath.Join(s.root, filepath.FromSlash(storiesDir), id), nil
+	shared, err := s.shared()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(shared, filepath.FromSlash(storiesDir), id), nil
 }
 
 // ---------------------------------------------------------------- backlog
@@ -150,7 +227,11 @@ func (s *Store) Backlog() (*model.Backlog, error) {
 // readBacklog returns the backlog's bytes with the stories read from them, so
 // that an edit is made to the same bytes that were checked.
 func (s *Store) readBacklog() ([]byte, *model.Backlog, error) {
-	path := s.cfg.BacklogPath(s.root)
+	shared, err := s.shared()
+	if err != nil {
+		return nil, nil, err
+	}
+	path := s.cfg.BacklogPath(shared)
 	raw, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -256,7 +337,7 @@ func (s *Store) SetStoryStatus(id string, status model.Status) error {
 		return nil
 	}
 
-	path := s.cfg.BacklogPath(s.root)
+	path := s.BacklogPath()
 	edited, ok := editStory(raw, id,
 		change{"status", jsonString(string(status))},
 		change{"updated", jsonString(model.Timestamp(s.now()))})
@@ -462,7 +543,22 @@ func (s *Store) ClearLock() error {
 
 // HashFile is the content of one file, as the freeze records it.
 func (s *Store) HashFile(rel string) (string, error) {
-	f, err := os.Open(filepath.Join(s.root, filepath.FromSlash(rel)))
+	return hashFile(filepath.Join(s.root, filepath.FromSlash(rel)), rel)
+}
+
+// HashArtifact is the content of one of a story's documents, where every
+// checkout keeps them: in the repository's main checkout.
+func (s *Store) HashArtifact(story string, a model.Artifact) (string, error) {
+	dir, err := s.StoryDir(story)
+	if err != nil {
+		return "", err
+	}
+	return hashFile(filepath.Join(dir, a.File), ArtifactPath(story, a))
+}
+
+// hashFile is the content of the file at path, which messages call rel.
+func hashFile(path, rel string) (string, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		return "", sdlcerr.New(sdlcerr.StateUnreadable,
 			rel+" could not be read",
@@ -513,7 +609,11 @@ func (s *Store) Record(id string) (*model.Record, error) {
 // StoriesOnDisk lists the stories that have a directory under .sdlc/stories,
 // in name order. A directory whose name could not be a story id is not one.
 func (s *Store) StoriesOnDisk() ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(s.root, filepath.FromSlash(storiesDir)))
+	shared, err := s.shared()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(filepath.Join(shared, filepath.FromSlash(storiesDir)))
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return nil, nil
@@ -541,7 +641,9 @@ func (s *Store) SaveRecord(r *model.Record) error {
 }
 
 // WriteArtifact stores one of a gate's documents inside the story's directory
-// and returns the path it was written to, relative to the repository root.
+// and returns the path it was written to, relative to the checkout the story's
+// records are kept in. Relative to this one, a linked worktree's, it was the
+// main checkout's absolute path, and the record it went into is committed.
 func (s *Store) WriteArtifact(story string, a model.Artifact, content []byte) (string, error) {
 	dir, err := s.StoryDir(story)
 	if err != nil {
@@ -551,7 +653,7 @@ func (s *Store) WriteArtifact(story string, a model.Artifact, content []byte) (s
 	if err := s.writeFile(path, content); err != nil {
 		return "", err
 	}
-	return relative(s.root, path), nil
+	return relative(s.rootOf(path), path), nil
 }
 
 // ArtifactStored reports whether a gate's document is on disk. An unsafe story
@@ -566,7 +668,8 @@ func (s *Store) ArtifactStored(story string, a model.Artifact) bool {
 }
 
 // WriteReview stores one reviewer's document inside the story's own reviews
-// directory and returns the path, relative to the repository root.
+// directory and returns the path, relative to the checkout the story's records
+// are kept in, as WriteArtifact does.
 //
 // Rounds are kept rather than overwritten: "what did the architect say last
 // time" is a question the next round needs answered.
@@ -579,7 +682,7 @@ func (s *Store) WriteReview(story string, gate model.Gate, role string, round in
 	if err := s.writeFile(path, content); err != nil {
 		return "", err
 	}
-	return relative(s.root, path), nil
+	return relative(s.rootOf(path), path), nil
 }
 
 // ReviewPath is where a review lives, relative to the repository root and
@@ -629,8 +732,25 @@ const (
 // count into that directory, and every other write of the loop state would have
 // followed it there.
 func (s *Store) leaves(path string) bool {
-	_, outside := pathrules.Rel(s.root, path)
+	_, outside := pathrules.Rel(s.rootOf(path), path)
 	return outside
+}
+
+// rootOf is the checkout a path the store builds belongs to: this one, or the
+// main checkout for the backlog and the story records.
+func (s *Store) rootOf(path string) string {
+	if within(s.root, path) {
+		return s.root
+	}
+	if shared, err := s.shared(); err == nil && within(shared, path) {
+		return shared
+	}
+	return s.root
+}
+
+func within(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // writeFile writes atomically, so an interrupted write leaves the old file

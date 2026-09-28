@@ -100,6 +100,39 @@ then fails with [SDLC-E0022](../troubleshooting.md#sdlc-e0022), naming US-001.
 another story. Finish US-001 (`sdlc stop`, then `sdlc start US-001`), or mark it
 `dropped` in the backlog, which releases its freeze.
 
+## In another checkout
+
+In a repository with linked worktrees, a stopped story stays with the checkout
+that started it. `sdlc stop` and `sdlc escalate` both keep its claim, so
+`sdlc start` in another checkout passes over it and picks the next story, and
+naming it there is refused with
+[SDLC-E0050](../troubleshooting.md#sdlc-e0050), which names the checkout that
+holds it. Pick it up again in that checkout.
+
+To carry on somewhere else, a person releases it first, in their own terminal:
+
+```console
+$ sdlc release US-001 --reason "carrying on in the main checkout"
+Released US-001: the checkout at "/home/dev/project-wt" no longer holds it. "sdlc start US-001" picks it up in any checkout.
+Anything the checkout at "/home/dev/project-wt" has not committed stays there, and is not moved.
+```
+
+Only the hold moves. Work the old checkout has not committed stays there, so
+commit it there, or bring it across yourself, before you carry on;
+`sdlc start` in the new checkout says so again. The test freeze is that
+checkout's too: in the new one, lift it with `sdlc unfreeze --reason ...` and
+freeze again with `sdlc freeze`, which freezes the tests as they are there.
+Release refuses while an iteration is running on the story: `sdlc stop` in the
+checkout named ends it first. When the checkout that held a story is gone, every
+command on the story says so ([SDLC-E0051](../troubleshooting.md#sdlc-e0051))
+until it is released.
+
+Where two checkouts both name one story as their current one, as a worktree cut
+from a commit carrying `.sdlc/state` does, neither holds it, and each is refused
+it. Keep the checkout with the story's work in it and the session you are
+working in, and run `sdlc stop` in every other one. Stop there writes nothing to
+the story's record.
+
 ## When reviews go stale
 
 Stopping and resuming does not make any review stale. `sdlc stop` on an

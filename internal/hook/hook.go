@@ -32,7 +32,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
-	"os/user"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -235,7 +234,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 	}
 
 	if shellpolicy.Tools[p.ToolName] {
-		return inspectShell(project, story, p, warn), event, true
+		return inspectShell(placeOf(project), story, p, warn), event, true
 	}
 
 	rel, outside := pathrules.Rel(project, path)
@@ -278,23 +277,9 @@ func backlogPath(project string) string {
 // when it is outside the repository, where the shell rules have nothing to
 // protect.
 func onDisk(resolver pathrules.Resolver, word string) string {
-	// The shell expands ~ before the command sees it. Read as a directory
-	// called ~ in the repository, the user's own ~/.claude was the project's.
-	if rest, ok := strings.CutPrefix(word, "~"); ok && (rest == "" || rest[0] == '/') {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			// Somebody's home, even when HOME is not set to say where.
-			return ""
-		}
-		word = filepath.ToSlash(home) + rest
-	} else if name, after, named := strings.Cut(rest, "/"); ok && named {
-		// `~someone/.claude` is someone's home, not the project's; but the
-		// someone can be the user running the session, with the project in it.
-		u, err := user.Lookup(name)
-		if err != nil || u.HomeDir == "" {
-			return ""
-		}
-		word = filepath.ToSlash(u.HomeDir) + "/" + after
+	word, ok := expandHome(word)
+	if !ok {
+		return ""
 	}
 	// `C:.sdlc\state` is relative to a working directory on that drive, which
 	// only the shell knows. Read as outside, it was nobody's to protect; read
@@ -311,12 +296,13 @@ func onDisk(resolver pathrules.Resolver, word string) string {
 
 // inspectShell applies the shell rules, which exist because every other rule in
 // this tool governs the file-writing tools and a shell command is not one.
-func inspectShell(project, story string, p payload, warn func(string)) policy.Verdict {
-	ready, why := commitReady(project, story)
+func inspectShell(pl place, story string, p payload, warn func(string)) policy.Verdict {
+	project := pl.project
+	ready, why := commitReady(pl, story)
 	slog.Debug("hook considering a command",
 		"agent", p.AgentType, "story", story, "commit_ready", ready, "why", why)
 
-	frozen, isTest, newTest := frozenTests(project, story, warn)
+	frozen, isTest, newTest := frozenTestsIn(pl, story, warn)
 	var implementerTest func(string) bool
 	if policy.NormalizeAgent(p.AgentType) == "implementer" {
 		// A configuration that will not read is said by the rules that read it
@@ -345,16 +331,22 @@ func inspectShell(project, story string, p payload, warn func(string)) policy.Ve
 	budget, cancel := gitBudget(context.Background(), time.Now)
 	defer cancel()
 	commits := false
-	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, shellpolicy.State{
+	state := shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
 		Backlog: backlogPath(project), PowerShell: p.ToolName == "PowerShell",
-		StoryFinished: storyFinished(project, story),
+		StoryFinished: storyFinished(pl, story),
 		Resolve:       func(word string) string { return onDisk(resolver, word) },
-		Fresh:         func() (bool, string) { return reviewsFresh(project, story, warn, budget) },
+		Fresh:         func() (bool, string) { return reviewsFresh(pl, story, warn, budget) },
 		Commits:       func() { commits = true },
 		Nested:        func(dir string) bool { return nestedRepository(project, dir) },
-	})
+	}
+	// The repository's other checkouts are held as this one is. Where it is
+	// the only one, nothing is asked and nothing changes.
+	if l := newLandings(pl, resolver); l != nil {
+		state.Shared = l.land
+	}
+	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, state)
 	if !refused {
 		if commits {
 			observe(project, story, budget)
@@ -376,6 +368,11 @@ const (
 		"being treated as frozen until it can be. Run `sdlc doctor` to see why."
 )
 
+// unfoundRecordFreeze is the warning where the story's record cannot be read
+// because the main checkout it is kept in cannot be found.
+const unfoundRecordFreeze = "the story's record is kept in the repository's main checkout, which could " +
+	"not be found, so every test file is being treated as frozen until it can be. Run `sdlc doctor` to see why."
+
 func lostFreeze(story string) string {
 	return ".sdlc/state/tests.lock does not hold the freeze " + story + "'s record says its tests " +
 		"are under, so every test file is being treated as frozen until it does. Run `sdlc doctor` to see why."
@@ -386,17 +383,19 @@ func lostFreeze(story string) string {
 // freeze for the story: deleting tests.lock, or writing another story's name
 // or none into it, was otherwise the way to unfreeze the tests. A record that
 // does not read says nothing here; the commit is refused over it anyway.
-func freezeRecorded(project, story string) bool {
-	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "stories", story, model.RecordFile))
+//
+// found is false where the record's main checkout could not be found, and a
+// freeze is then taken to stand: what cannot be read is not a freeze lifted.
+func freezeRecorded(pl place, story string) (standing, found bool) {
+	record, found, err := pl.record(story)
+	if !found {
+		return true, false
+	}
 	if err != nil {
-		return false
+		return false, true
 	}
-	var record model.Record
-	if json.Unmarshal(raw, &record) != nil {
-		return false
-	}
-	_, standing := record.StandingFreeze()
-	return standing
+	_, standing = record.StandingFreeze()
+	return standing, true
 }
 
 // frozenTests is what the freeze holds, for the shell rules to refuse writes
@@ -410,6 +409,14 @@ func freezeRecorded(project, story string) bool {
 // patterns say what a test is, and it says so. So is a freeze that went while
 // the story's record still holds it.
 func frozenTests(project, story string, warn func(string)) (frozen []string, isTest, newTest func(string) bool) {
+	return frozenTestsIn(placeOf(project), story, warn)
+}
+
+// frozenTestsIn is frozenTests for a project already placed among its
+// repository's checkouts. The freeze is the checkout's own; the record that
+// says one stands is kept in the main checkout.
+func frozenTestsIn(pl place, story string, warn func(string)) (frozen []string, isTest, newTest func(string) bool) {
+	project := pl.project
 	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "tests.lock"))
 	var lock model.Lock
 	switch {
@@ -419,15 +426,22 @@ func frozenTests(project, story string, warn func(string)) (frozen []string, isT
 		err = json.Unmarshal(raw, &lock)
 	}
 	// A freeze belonging to another story says nothing about this one.
-	if gone := lock.Story != story && freezeRecorded(project, story); err != nil || gone {
+	gone, found := false, true
+	if lock.Story != story {
+		gone, found = freezeRecorded(pl, story)
+	}
+	if err != nil || gone {
 		cfg, cfgErr := config.Load(project)
 		if cfgErr != nil {
 			warn(unreadableFreezeAndConfig)
 			return nil, testset.New(config.Default().Paths.Tests).Match, nil
 		}
-		if err != nil {
+		switch {
+		case err != nil:
 			warn(unreadableFreeze)
-		} else {
+		case !found:
+			warn(unfoundRecordFreeze)
+		default:
 			warn(lostFreeze(story))
 		}
 		return nil, testset.New(cfg.Paths.Tests).Match, nil
@@ -465,9 +479,13 @@ func frozenTests(project, story string, warn func(string)) (frozen []string, isT
 // every gate -- silently. The refusal explains itself, and `sdlc stop` still
 // ends an iteration whose record cannot be read, so it blocks nothing a person
 // cannot see a way through.
-func commitReady(project, story string) (bool, string) {
+func commitReady(pl place, story string) (bool, string) {
 	rel := ".sdlc/stories/" + story + "/" + model.RecordFile
-	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "stories", story, model.RecordFile))
+	dir, found := pl.records()
+	if !found {
+		return false, noMainCheckout
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, ".sdlc", "stories", story, model.RecordFile))
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, rel + " is missing, so no gate can be shown to have passed " +
 			"(`sdlc doctor` says more)"
@@ -491,13 +509,9 @@ func commitReady(project, story string) (bool, string) {
 
 // storyFinished reports whether every gate on the story has passed. A record
 // that is missing or will not read is not a finished story.
-func storyFinished(project, story string) bool {
-	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "stories", story, model.RecordFile))
-	if err != nil {
-		return false
-	}
-	var record model.Record
-	if json.Unmarshal(raw, &record) != nil {
+func storyFinished(pl place, story string) bool {
+	record, _, err := pl.record(story)
+	if record == nil || err != nil {
 		return false
 	}
 	_, remaining := record.NextGate()
@@ -520,14 +534,11 @@ const treeTimeout = 20 * time.Second
 // tree it cannot measure lets the commit through with a warning: git failing
 // here is git failing for the commit too. Git runs under budget, which the
 // whole command shares (see gitBudget).
-func reviewsFresh(project, story string, warn func(string), budget func() context.Context) (bool, string) {
-	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "stories", story, model.RecordFile))
-	if err != nil {
+func reviewsFresh(pl place, story string, warn func(string), budget func() context.Context) (bool, string) {
+	project := pl.project
+	record, _, err := pl.record(story)
+	if record == nil || err != nil {
 		return true, "" // commitReady has already refused over this
-	}
-	var record model.Record
-	if err := json.Unmarshal(raw, &record); err != nil {
-		return true, ""
 	}
 	type stamped struct {
 		gate    model.Gate
@@ -551,7 +562,7 @@ func reviewsFresh(project, story string, warn func(string), budget func() contex
 		}
 		return true, ""
 	}
-	s := store.New(&config.Project{Root: project, Config: cfg})
+	s := store.NewIn(&config.Project{Root: project, Config: cfg}, pl.co, pl.err)
 	tier, pauses, err := s.CommitPause(story)
 	if err != nil {
 		slog.Debug("hook could not read the story's risk tier", "err", err)
@@ -626,8 +637,12 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 	if lock == nil || lock.Story != story {
 		// Nor is one that went, or that was rewritten to name another story or
 		// none, while the story's record still holds it.
-		if freezeRecorded(project, story) {
-			warn(lostFreeze(story))
+		if standing, found := freezeRecorded(placeOf(project), story); standing {
+			if found {
+				warn(lostFreeze(story))
+			} else {
+				warn(unfoundRecordFreeze)
+			}
 			t.Frozen, t.Locked = true, t.IsTest
 		}
 		return t
@@ -716,11 +731,13 @@ func findLoop(getenv func(string) string, p payload, target string, warn func(st
 		}
 	}
 	walked, ceilings := map[string]bool{}, config.CeilingDirectories(getenv)
+	var reached []string
 	for _, start := range starts(getenv, p, target) {
 		root, ok := projectRoot(start, walked, ceilings)
 		if !ok {
 			continue
 		}
+		reached = append(reached, root)
 		// The session first, so that a session the story is not held in hears
 		// nothing about the state of a story that is not its own.
 		if !heldHere(root, p.SessionID) {
@@ -729,6 +746,37 @@ func findLoop(getenv func(string) string, p payload, target string, warn func(st
 		}
 		if story := activeStory(root, warn); story != "" {
 			return root, story
+		}
+	}
+	return heldElsewhere(reached, p.SessionID)
+}
+
+// heldElsewhere is the checkout of a reached project's repository the session
+// holds a story in, and that story, where it is not a checkout the call
+// reached. A session held in a linked worktree that worked from the main
+// checkout, or named its files, was judged where it held nothing, and every
+// rule was off for it there.
+//
+// Every checkout a claim names is asked, and then as many linked worktrees as
+// store.SessionScanLimit allows, for an iteration nothing has claimed yet. A
+// repository with no other checkout asks nothing.
+func heldElsewhere(reached []string, session string) (project, story string) {
+	if !store.CheckSession(session) {
+		return "", ""
+	}
+	for _, root := range reached {
+		pl := placeOf(root)
+		if !pl.co.Pointer() && !pl.co.HasWorktrees() {
+			continue
+		}
+		cfg, err := config.Load(root)
+		if err != nil {
+			cfg = config.Default()
+		}
+		s := store.NewIn(&config.Project{Root: root, Config: cfg}, pl.co, pl.err)
+		if checkout, id := s.SessionHolder(session, store.SessionScanLimit); checkout != "" {
+			slog.Debug("hook: the session holds a story in another checkout", "checkout", checkout, "story", id)
+			return checkout, id
 		}
 	}
 	return "", ""
@@ -756,7 +804,7 @@ func storyWaits(getenv func(string) string, p payload, reached []string) func(di
 	waits := func(root string) bool {
 		w, seen := known[root]
 		if !seen {
-			w = awaitsDecision(root)
+			w = awaitsDecision(placeOf(root))
 			known[root] = w
 		}
 		return w
@@ -783,12 +831,20 @@ func storyWaits(getenv func(string) string, p payload, reached []string) func(di
 // was handed to a person and nobody has answered. These are the states in which
 // `sdlc unfreeze` and `sdlc approve` do anything. A file that will not read says
 // nothing is waiting, as it does to those commands.
-func awaitsDecision(project string) bool {
-	sdlc := filepath.Join(project, ".sdlc")
-	if raw, err := os.ReadFile(filepath.Join(sdlc, "state", "active")); err == nil &&
+//
+// The records are the main checkout's, and where it cannot be found, a
+// decision is taken to be waiting: an escalation ends the iteration, so the
+// record is all that says one is, and not reading it was approving.
+func awaitsDecision(pl place) bool {
+	if raw, err := os.ReadFile(filepath.Join(pl.project, ".sdlc", "state", "active")); err == nil &&
 		store.CheckID(strings.TrimSpace(string(raw))) == nil {
 		return true
 	}
+	shared, found := pl.records()
+	if !found {
+		return true
+	}
+	sdlc := filepath.Join(shared, ".sdlc")
 	stories, err := os.ReadDir(filepath.Join(sdlc, "stories"))
 	if err != nil {
 		return false

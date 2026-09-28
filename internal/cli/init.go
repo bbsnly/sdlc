@@ -50,6 +50,17 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// A linked worktree's backlog is the main checkout's, so that is
+			// where the starter one goes, and a repository with no main
+			// checkout has nowhere to put it: refused before anything is written.
+			co, err := config.FindCheckout(root)
+			if err != nil {
+				return err
+			}
+			shared := root
+			if co.Linked() {
+				shared = co.Main
+			}
 			// The running story is held to the settings it started under, and
 			// the file rules keep an agent's hands off them; --force put the
 			// defaults back from the shell, which no rule was looking at.
@@ -61,7 +72,7 @@ func newInitCmd() *cobra.Command {
 						WithFix(`finish the story, or run "sdlc stop" to end the iteration, then "sdlc init --force"`)
 				}
 			}
-			res, err := scaffold.Init(root, force)
+			res, err := scaffold.InitAt(root, shared, force)
 			if err != nil {
 				return err
 			}

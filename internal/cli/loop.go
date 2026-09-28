@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -53,102 +54,104 @@ func newStartCmd() *cobra.Command {
 			if len(args) == 1 {
 				asked = args[0]
 			}
-			if err := checkTrunkForNewWork(cmd, asked); err != nil {
-				return err
+			if asked == "" {
+				// A store that will not open is said by the start that opens it.
+				if s, _, err := openStore(); err == nil {
+					noteGoneHolders(cmd.ErrOrStderr(), s)
+				}
 			}
-			s, _, unlock, err := openStoreForWriting(cmd)
+			checked, err := checkTrunkForNewWork(cmd, asked, false)
 			if err != nil {
 				return err
 			}
-			defer unlock()
-
-			active, err := s.Active()
-			if err != nil {
+			unchecked, err := startLocked(cmd, asked, checked)
+			if err != nil || !unchecked {
 				return err
 			}
-			if active != "" {
-				if asked != "" && asked != active {
-					return sdlcerr.New(sdlcerr.IterationAlreadyActive,
-						"an iteration is already running on "+quote(active),
-						"the loop works one story at a time, which is what keeps a diff small "+
-							"enough to review honestly")
-				}
-				finished, err := refuseIfFinished(s, active)
-				if err != nil {
-					return err
-				}
-				if finished != nil {
-					return finished.WithFix(`run "sdlc stop" to end the iteration -- ` +
-						"the story is done, and there is nothing left to resume")
-				}
-				// Picked up in another session, the story is that session's now.
-				session, err := s.BindSession(true)
-				if err != nil {
-					return err
-				}
-				return reportStart(cmd, s, active, true, session)
-			}
-
-			id := asked
-			if id == "" {
-				if id, err = nextRunnable(s); err != nil {
-					return err
-				}
-			}
-
-			story, backlog, err := s.Story(id)
-			if err != nil {
+			// What start begins was decided again under the lock, and another
+			// checkout had moved the story on in between: trunk is checked for
+			// it now, outside the lock, and start decides once more.
+			if _, err := checkTrunkForNewWork(cmd, asked, true); err != nil {
 				return err
 			}
-			finished, err := refuseIfFinished(s, id)
-			if err != nil {
-				return err
-			}
-			if finished != nil {
-				return finished
-			}
-			if err := refuseIfWaiting(s, id); err != nil {
-				return err
-			}
-			if !resuming(story.Status) {
-				if err := refuseIfNotRunnable(backlog, story); err != nil {
-					return err
-				}
-			}
-			// A story that is already in progress is being picked up again,
-			// whether or not the iteration that started it is still running.
-			resume := resuming(story.Status)
-			// Picking a story up again is the no-op the help promises it is:
-			// SetStoryStatus writes nothing when the status is already the one
-			// asked for, which keeps a resume out of the tree the reviewers
-			// were stamped against.
-			if err := s.SetStoryStatus(id, model.StatusInProgress); err != nil {
-				return err
-			}
-			if err := s.SetActive(id); err != nil {
-				return err
-			}
-			session, err := s.BindSession(false)
-			if err != nil {
-				return err
-			}
-
-			record, err := s.Record(id)
-			if err != nil {
-				return err
-			}
-			// Where trunk is now is where this iteration's work starts from.
-			// Outside a repository there is no trunk to hold it to.
-			if head, err := gitx.Head(cmd.Context(), s.Root()); err == nil {
-				record.Base = head
-			}
-			record.Append("loop_start", "iteration started", s.Now())
-			if err := s.SaveRecord(record); err != nil {
-				return err
-			}
-			return reportStart(cmd, s, id, resume, session)
+			_, err = startLocked(cmd, asked, true)
+			return err
 		},
 	}
+}
+
+// startLocked is start under the repository's lock. It does nothing and says so
+// when the story it would begin is new and trunk has not been checked for it:
+// the check runs the project's own command, and is never run holding the lock.
+func startLocked(cmd *cobra.Command, asked string, checked bool) (unchecked bool, err error) {
+	s, _, unlock, err := openStoreForWriting(cmd)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+
+	plan, err := decideStart(s, asked, os.Getenv(store.SessionEnv))
+	switch {
+	case err != nil:
+		return false, err
+	case plan.fresh && !checked:
+		return true, nil
+	case plan.refused != nil:
+		return false, plan.refused
+	case plan.running:
+		// Picked up in another session, the story is that session's now.
+		session, err := s.BindSession(true)
+		if err != nil {
+			return false, err
+		}
+		if err := s.Claim(plan.id); err != nil {
+			return false, err
+		}
+		return false, reportStart(cmd, s, plan.id, true, session)
+	}
+
+	id := plan.id
+	// A story that is already in progress is being picked up again, whether
+	// or not the iteration that started it is still running.
+	resume := !plan.fresh
+	// Picking a story up again is the no-op the help promises it is:
+	// SetStoryStatus writes nothing when the status is already the one asked
+	// for, which keeps a resume out of the tree the reviewers were stamped
+	// against.
+	if err := s.SetStoryStatus(id, model.StatusInProgress); err != nil {
+		return false, err
+	}
+	if err := s.SetActive(id); err != nil {
+		return false, err
+	}
+	session, err := s.BindSession(false)
+	if err != nil {
+		return false, err
+	}
+
+	record, err := s.Record(id)
+	if err != nil {
+		return false, err
+	}
+	released := releasedSinceStart(record)
+	// Where trunk is now is where this iteration's work starts from. Outside a
+	// repository there is no trunk to hold it to.
+	if head, err := gitx.Head(cmd.Context(), s.Root()); err == nil {
+		record.Base = head
+	}
+	record.Append("loop_start", "iteration started", s.Now())
+	if err := s.SaveRecord(record); err != nil {
+		return false, err
+	}
+	// Last, so that a start killed before it leaves a story in progress,
+	// which the next start in any checkout picks up first.
+	if err := s.Claim(id); err != nil {
+		return false, err
+	}
+	if released {
+		noteRelease(cmd.ErrOrStderr(), id)
+	}
+	return false, reportStart(cmd, s, id, resume, session)
 }
 
 // refuseIfNotRunnable holds a story named to `sdlc start` to what picking one
@@ -227,17 +230,25 @@ func refuseIfFinished(s *store.Store, id string) (*sdlcerr.Error, error) {
 
 // nextRunnable picks the story to work on, and explains itself when there is
 // none rather than just refusing.
+//
+// A story another checkout holds is not there to pick, and one waiting on it
+// waits as if it were not done: resuming the first story under way handed a
+// worktree the story the main checkout was working.
 func nextRunnable(s *store.Store) (string, error) {
 	backlog, err := s.Backlog()
 	if err != nil {
 		return "", err
 	}
-	if sel, ok := backlog.Next(); ok {
+	held, err := heldElsewhere(s, backlog)
+	if err != nil {
+		return "", err
+	}
+	if sel, ok := backlog.Without(held...).Next(); ok {
 		return sel.Story.ID, nil
 	}
 	return "", sdlcerr.New(sdlcerr.NoRunnableStory,
 		"there is no story to start",
-		describeWhyNothingRuns(backlog))
+		describeWhyNothingRuns(backlog)+heldNote(held))
 }
 
 func describeWhyNothingRuns(b *model.Backlog) string {
@@ -294,11 +305,12 @@ func writeAStory(path string) string {
 }
 
 // nothingToStart is what `sdlc status` says when no story can be started.
-func nothingToStart(b *model.Backlog, path string) string {
+// held is every story another checkout holds.
+func nothingToStart(b *model.Backlog, path string, held []string) string {
 	if len(b.Stories) == 0 {
 		return "\nThe backlog is empty. " + writeAStory(path)
 	}
-	said := "\nNothing to start: " + describeWhyNothingRuns(b) + ".\n"
+	said := "\nNothing to start: " + describeWhyNothingRuns(b) + heldNote(held) + ".\n"
 	if nothingLeftToStart(b) {
 		return said + writeAStory(path)
 	}
@@ -373,7 +385,11 @@ func newStopCmd() *cobra.Command {
 				return err
 			}
 			done := false
+			onRecord, closing := true, ""
 			if active != "" {
+				onRecord, closing = onTheRecord(cmd, s, active)
+			}
+			if active != "" && onRecord {
 				record, err := s.Record(active)
 				var unreadable *sdlcerr.Error
 				switch {
@@ -406,6 +422,10 @@ func newStopCmd() *cobra.Command {
 							return err
 						}
 						forgetWatched(cmd.Context(), s, active)
+					} else if err := s.KeepClaim(active); err != nil {
+						// Put down, the story stays this checkout's until it is
+						// finished or a person releases it.
+						return err
 					}
 				}
 			}
@@ -424,6 +444,8 @@ func newStopCmd() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(),
 					"Ended the iteration on %s. Every gate passed, so the story is done "+
 						"and `sdlc start` moves on to the next one.\n", active)
+			case closing != "":
+				fmt.Fprint(cmd.OutOrStdout(), closing)
 			default:
 				fmt.Fprintf(cmd.OutOrStdout(),
 					"Stopped the iteration on %s. Nothing was recorded; `sdlc start` picks it up again.\n",
@@ -431,6 +453,44 @@ func newStopCmd() *cobra.Command {
 			}
 			return nil
 		},
+	}
+}
+
+// onTheRecord reports whether stop writes to the story's record. It does not
+// where this checkout has no business writing it: with no main checkout to keep
+// it in, or when another checkout holds the story. Stop is the way out of
+// either, so it says why nothing is recorded and ends the iteration anyway.
+//
+// closing is the line stop ends with instead of its usual one, where that one
+// would send the reader to a start that refuses the story or passes it over.
+func onTheRecord(cmd *cobra.Command, s *store.Store, active string) (onRecord bool, closing string) {
+	if s.SharedErr() != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), "sdlc: the backlog and the story's record are kept in the repository's "+
+			"main checkout, and this repository has none, so this stop is not written to any record. "+
+			"Run `sdlc doctor` to see why.")
+		return false, ""
+	}
+	h, elsewhere, err := s.HeldElsewhere(active)
+	switch {
+	case err != nil || !elsewhere:
+		// What cannot be read is said by the stop that reads it.
+		return true, ""
+	case h.Tied():
+		fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s is named by more than one checkout of this repository, "+
+			"so this stop puts it down here and writes nothing to its record.\n", active)
+		return false, "Stopped the iteration on " + active + " in this checkout. Nothing was recorded; " +
+			"once one checkout alone names it, `sdlc start` there picks it up again.\n"
+	case !h.Live:
+		fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s is held by a checkout that no longer exists, "+
+			"so this stop puts down this checkout's copy and writes nothing to its record.\n", active)
+		return false, "Stopped the iteration on " + active + " in this checkout. Nothing was recorded; " +
+			"the checkout that holds it is gone: a person runs `sdlc release " + active + " --reason \"...\"` " +
+			"in their own terminal, then `sdlc start " + active + "`.\n"
+	default:
+		fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s is held by another checkout of this repository, "+
+			"so this stop puts down this checkout's copy and writes nothing to its record.\n", active)
+		return false, "Stopped the iteration on " + active + " in this checkout. Nothing was recorded; " +
+			"the story carries on in the checkout that holds it.\n"
 	}
 }
 
@@ -476,7 +536,11 @@ func settleStory(s *store.Store, id string, record *model.Record) (bool, error) 
 	_, remaining := record.NextGate()
 	switch {
 	case !remaining && story.Status != model.StatusDone:
-		return true, s.SetStoryStatus(id, model.StatusDone)
+		if err := s.SetStoryStatus(id, model.StatusDone); err != nil {
+			return false, err
+		}
+		// Finished, the story is nobody's to hold.
+		return true, s.ReleaseClaim(id)
 	case remaining && story.Status == model.StatusDone:
 		return false, s.SetStoryStatus(id, model.StatusInProgress)
 	}
@@ -577,6 +641,9 @@ func newGateCmd() *cobra.Command {
 				if id, err = activeStory(s, "gate records an outcome for the story being worked on"); err != nil {
 					return err
 				}
+			}
+			if err := refuseIfHeldElsewhere(s, id, "what a gate records is measured on the work in that checkout, not this one"); err != nil {
+				return err
 			}
 
 			// A gate is recorded against a story in the backlog, and the

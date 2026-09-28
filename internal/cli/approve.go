@@ -114,6 +114,9 @@ func newApproveCmd() *cobra.Command {
 			} else if id, err = activeStory(s, "approve answers for the story named, or the one being worked on"); err != nil {
 				return err
 			}
+			if err := refuseIfHeldElsewhere(s, id, "a person's answer is about the work in that checkout, not this one"); err != nil {
+				return err
+			}
 			if _, _, err := s.Story(id); err != nil {
 				return err
 			}
@@ -141,6 +144,9 @@ func newApproveCmd() *cobra.Command {
 			}
 			if err := s.SetStoryStatus(id, model.StatusInProgress); err != nil {
 				return err
+			}
+			if releasedSinceStart(record) {
+				noteRelease(cmd.ErrOrStderr(), id)
 			}
 
 			if wantJSON(cmd) {

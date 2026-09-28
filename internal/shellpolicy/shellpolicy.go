@@ -104,6 +104,26 @@ type State struct {
 	// empty for none. It is protected as CLAUDE.md is, and is not in that list
 	// only because the configuration says where it is.
 	Backlog string
+
+	// Shared, when set, says where a word of the command lands among the
+	// repository's other checkouts: the main checkout, where the backlog and
+	// the story records are kept, and every linked worktree. Nil where the
+	// project is its repository's only checkout. A word landing in the project
+	// itself lands nowhere here, and Resolve judges it.
+	Shared func(word string) []Landing
+}
+
+// A Landing is where a word of a command lands in another checkout of the
+// project's repository.
+type Landing struct {
+	// Rel is the path relative to that checkout, slash-separated: "." for
+	// the checkout itself, and under ".git" for the git directory it keeps.
+	// It is absolute where the repository's checkouts could not be told
+	// apart at all, and every word outside the project might be one of them.
+	Rel string
+	// Own is the project's own git directory, outside it, as a linked
+	// worktree's is: this checkout's, but a place no command writes by hand.
+	Own bool
 }
 
 // Finding is a refusal. An empty Rule means nothing objected.
@@ -236,7 +256,7 @@ func readings(command string, powerShell bool) []pair {
 // a test file, as the file-writing rules have it, and a review recorded by
 // anyone but the reviewer it names.
 func Inspect(command string, s State) (Finding, bool) {
-	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}}
+	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}, landed: map[string][]Landing{}}
 	for _, r := range readings(command, s.PowerShell) {
 		if f, ok := inspectReading(r, s, m); ok {
 			return f, true
@@ -249,7 +269,7 @@ func Inspect(command string, s State) (Finding, bool) {
 		// differently. wordsIn over a 50 KB command is 262 us, so a later reader
 		// will see duplicated work here; sharing it is what would break the
 		// guarantee above.
-		m = &memo{checked: map[string]bool{}, resolved: m.resolved, folded: m.folded}
+		m = &memo{checked: map[string]bool{}, resolved: m.resolved, landed: m.landed, folded: m.folded}
 	}
 	return Finding{}, false
 }
@@ -396,6 +416,9 @@ func checkPrograms(text string, s State) (Finding, bool) {
 		if f, ok := checkAck(words); ok {
 			return f, true
 		}
+		if f, ok := checkRelease(words); ok {
+			return f, true
+		}
 		if f, ok := checkStop(words, s); ok {
 			return f, true
 		}
@@ -537,6 +560,9 @@ func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) 
 		}
 		places[r.group] = here
 		if f, ok := checkAck(r.words); ok {
+			return f, true
+		}
+		if f, ok := checkRelease(r.words); ok {
 			return f, true
 		}
 		f, onAStory := checkUnfreeze(r.words)
@@ -702,6 +728,22 @@ func checkApprove(words []string) (Finding, bool) {
 	}, true
 }
 
+// checkRelease keeps moving a story between checkouts with a person. An agent
+// that could release a story could take another checkout's story from under
+// it, or let go of the one it is held to and so of every rule holding it.
+func checkRelease(words []string) (Finding, bool) {
+	if !runsSubcommand(words, "release") {
+		return Finding{}, false
+	}
+	return Finding{
+		Rule: "release-is-a-human-decision",
+		Reason: "releasing a story takes it from the checkout holding it, and an agent that did it " +
+			"could take a story another checkout is working, or let go of the one it is held to",
+		Route: "say which checkout holds the story and stop; a person runs " +
+			"`sdlc release <ID> --reason \"...\"` in their own terminal if it is to move",
+	}, true
+}
+
 // checkAck keeps acknowledging the log with the person who read it.
 //
 // `sdlc log` starts after the commit acknowledged, so moving it forward takes
@@ -803,7 +845,13 @@ func checkCommit(words []string, dir string, placed bool, s State) (Finding, boo
 		return Finding{}, false
 	}
 	sub, _, _, alias := gitCall(words[1:])
-	if !makesACommit(words, sub) || !inThisRepository(words, dir, s) {
+	if !makesACommit(words, sub) {
+		return Finding{}, false
+	}
+	if f, ok := commitElsewhere(words, dir, s); ok {
+		return f, true
+	}
+	if !inThisRepository(words, dir, s) {
 		return Finding{}, false
 	}
 	ready, why := s.CommitReady, s.CommitWhy
@@ -880,12 +928,32 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 			return recordFinding(".sdlc/state"), true
 		}
 	}
-	if discardsTheWorkTree(run.words) && inThisRepository(run.words, dir, s) {
+	if discardsTheWorkTree(run.words) && (inThisRepository(run.words, dir, s) || inAnotherCheckout(run.words, dir, s, m)) {
 		return recordFinding(".sdlc/state"), true
+	}
+	// Another checkout taken away takes its loop state with it.
+	for _, w := range m.spell(s, dir, takenAway(run.words)) {
+		for _, l := range m.shared(s, w) {
+			if l.Rel == "." {
+				return Finding{
+					Rule: "loop-state-through-the-tool",
+					Reason: clean(w) + " is another checkout of this repository, and taking it away takes " +
+						"its loop state and its uncommitted work with it",
+					Route: "leave the other checkouts to the people and sessions working in them; " +
+						"removing one is for a person to do, in their own terminal",
+				}, true
+			}
+		}
 	}
 	spelled := withGlobs(m.spell(s, dir, candidates), func() []string { return protectedShapes(s.Backlog) })
 	for _, c := range spelled {
-		if !m.first("loop state", c) || m.outside(s, c) {
+		if !m.first("loop state", c) {
+			continue
+		}
+		if f, ok := sharedState(c, s, m); ok {
+			return f, true
+		}
+		if m.outside(s, c) {
 			continue
 		}
 		if hit, ok := protectedPath(c, s.Backlog); ok {
@@ -908,6 +976,47 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 		} else if ok {
 			return recordFinding(hit), true
 		}
+	}
+	return Finding{}, false
+}
+
+// sharedState is checkLoopState for a word landing in another checkout of the
+// repository. Another checkout's backlog, records, configuration and git
+// directory are protected as the project's are: a session held in one
+// checkout wrote the main checkout's records, where the story's evidence is,
+// by naming them in full, and every rule stopped at its own checkout's edge.
+func sharedState(word string, s State, m *memo) (Finding, bool) {
+	for _, l := range m.shared(s, word) {
+		protected, byName := protectedPath(l.Rel, s.Backlog)
+		hit, state := loopState(l.Rel)
+		switch {
+		case !byName && !state:
+			continue
+		case isAbsolute(l.Rel):
+			return Finding{
+				Rule: "loop-state-through-the-tool",
+				Reason: clean(word) + " could be this repository's own evidence: its main checkout could " +
+					"not be found, so anything outside this checkout that might be it is refused",
+				Route: "run `sdlc doctor` to see why the main checkout could not be found",
+			}, true
+		case byName:
+			return Finding{
+				Rule: "protected-path-through-the-tool",
+				Reason: protected + " in another checkout of this repository is protected while a story is " +
+					"being worked on, and a shell command is the one way around the rule that protects it",
+				Route: "change it by hand outside a running iteration; if what it says is " +
+					"wrong, stop and say what rather than editing it",
+			}, true
+		case hit == ".sdlc/config.json":
+			return Finding{
+				Rule: "loop-state-through-the-tool",
+				Reason: clean(word) + " is the configuration of another checkout of this repository, and " +
+					"a shell command is the one way around every rule that protects it",
+				Route: "configuration is changed by hand, by the person running the session, " +
+					"outside a running iteration; say which setting is wrong and stop",
+			}, true
+		}
+		return recordFinding(hit), true
 	}
 	return Finding{}, false
 }
@@ -1575,10 +1684,11 @@ func isLetter(b byte) bool {
 // hundred `echo ... | xargs rm` took longer than Claude Code gives the hook,
 // which then let the command through without a word.
 type memo struct {
-	checked  map[string]bool   // a rule and a spelling it has found nothing in
-	resolved map[string]string // what Resolve said of a word
-	folded   []string          // the freeze, folded
-	line     []string          // the words of the whole command
+	checked  map[string]bool      // a rule and a spelling it has found nothing in
+	resolved map[string]string    // what Resolve said of a word
+	landed   map[string][]Landing // what Shared said of a word
+	folded   []string             // the freeze, folded
+	line     []string             // the words of the whole command
 	split    bool
 }
 
@@ -1656,6 +1766,24 @@ func (m *memo) resolve(s State, c string) string {
 		m.resolved[c] = r
 	}
 	return r
+}
+
+// shared is what Shared says of a word, asked once per command. A word the
+// shell has yet to expand is somewhere this cannot know.
+func (m *memo) shared(s State, word string) []Landing {
+	if s.Shared == nil {
+		return nil
+	}
+	c := clean(word)
+	if c == "" || strings.HasPrefix(c, "-") || shellDirectory(c) || strings.ContainsAny(c, "$%") {
+		return nil
+	}
+	l, ok := m.landed[c]
+	if !ok {
+		l = s.Shared(c)
+		m.landed[c] = l
+	}
+	return l
 }
 
 // outside reports whether a word names a path the lookup puts outside the

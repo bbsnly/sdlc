@@ -89,6 +89,9 @@ func newCostAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := refuseIfHeldElsewhere(s, id, "what the story costs is added up where it is worked"); err != nil {
+				return err
+			}
 			record, err := s.Record(id)
 			if err != nil {
 				return err

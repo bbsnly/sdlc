@@ -155,6 +155,15 @@ var (
 
 	NoteOutsideRange = register("SDLC-E0049",
 		`re-run "sdlc gate commit pass --note \"...\"" with the sha corrected or dropped`)
+
+	StoryHeldElsewhere = register("SDLC-E0050",
+		`a person runs the command in the checkout that holds the story, named above, or moves the story here with "sdlc release <ID> --reason \"...\"" in their own terminal, then "sdlc start <ID>" in this checkout; an assistant stops and tells the person which checkout holds the story, and runs neither "sdlc start" nor "sdlc release"`)
+
+	HoldingCheckoutMissing = register("SDLC-E0051",
+		`if that checkout is gone for good, a person runs "sdlc release <ID> --reason \"...\"" in their own terminal, after which "sdlc start <ID>" works in any checkout; until then no checkout can record anything for the story; an assistant stops and tells the person, and does not run it`)
+
+	NoMainCheckout = register("SDLC-E0052",
+		`work in a clone made without --bare, or in the main checkout of a repository made with "git init --separate-git-dir", where the backlog, the story records and the claims on stories can be kept`)
 )
 
 // entry is one row of the catalogue.

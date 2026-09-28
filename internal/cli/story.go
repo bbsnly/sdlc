@@ -17,6 +17,11 @@ type storyRow struct {
 	Priority  *int     `json:"priority,omitempty"`
 	BlockedBy []string `json:"blocked_by,omitempty"`
 	Next      bool     `json:"next,omitempty"`
+	// HeldBy is the checkout holding the story, where the repository has
+	// more than one.
+	HeldBy string `json:"held_by,omitempty"`
+	// heldIn is HeldBy as a person reads it.
+	heldIn string
 	// waiting is BlockedBy as a person reads it, with the reason a dependency
 	// will never be done. --json keeps the ids a script can look up.
 	waiting []string
@@ -58,8 +63,9 @@ func newStoryListCmd() *cobra.Command {
 				return err
 			}
 
+			holders, shown := holdersShown(s)
 			nextID := ""
-			if sel, ok := backlog.Next(); ok {
+			if sel, ok := pickable(backlog, holders).Next(); ok {
 				nextID = sel.Story.ID
 			}
 
@@ -75,18 +81,21 @@ func newStoryListCmd() *cobra.Command {
 					waiting:   backlog.Waiting(story),
 					Next:      story.ID == nextID,
 				})
+				if h, ok := holders[story.ID]; ok && shown {
+					rows[i].HeldBy, rows[i].heldIn = h.Checkout, heldIn(story.ID, h)
+				}
 			}
 
 			if wantJSON(cmd) {
 				return emitJSON(cmd.OutOrStdout(), storyListPayload{OK: true, Stories: rows})
 			}
-			printStories(cmd, backlog, s.Config().Backlog.Path, rows)
+			printStories(cmd, backlog, s.Config().Backlog.Path, rows, elsewhere(backlog, holders))
 			return nil
 		},
 	}
 }
 
-func printStories(cmd *cobra.Command, backlog *model.Backlog, path string, rows []storyRow) {
+func printStories(cmd *cobra.Command, backlog *model.Backlog, path string, rows []storyRow, held []string) {
 	w := cmd.OutOrStdout()
 	if len(rows) == 0 {
 		fmt.Fprint(w, "The backlog is empty.\n\n"+writeAStory(path))
@@ -113,6 +122,9 @@ func printStories(cmd *cobra.Command, backlog *model.Backlog, path string, rows 
 		if len(r.waiting) > 0 {
 			line += "  (waiting on " + strings.Join(r.waiting, ", ") + ")"
 		}
+		if r.heldIn != "" {
+			line += "  (" + r.heldIn + ")"
+		}
 		fmt.Fprintln(w, line)
 	}
 
@@ -124,5 +136,5 @@ func printStories(cmd *cobra.Command, backlog *model.Backlog, path string, rows 
 	}
 	// The table above already shows every status, so this says why without the
 	// fault framing that "nothing is runnable" carries into a finished backlog.
-	fmt.Fprintf(w, "\nNothing to start: %s.\n", describeWhyNothingRuns(backlog))
+	fmt.Fprintf(w, "\nNothing to start: %s%s.\n", describeWhyNothingRuns(backlog), heldNote(held))
 }

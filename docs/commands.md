@@ -64,6 +64,16 @@ decide what to do:
 | `next` | the story `sdlc start` would pick up. Only present when nothing is active, and absent while a story waits for a person |
 | `waiting` | every story handed to a person with `sdlc escalate` and not yet answered, with the question it asks |
 
+In a repository with linked worktrees, status also lists every story a checkout
+holds, on a `held` line naming the checkout, and `held` in `--json` has one
+entry per story, with its `checkout`, `here` for the one you ran it in, `gone`
+for a checkout that is no longer there, and `contenders` when more than one
+checkout names the story and none holds it. `next up` passes over what another
+checkout holds. A story this checkout names as its own that another holds, or
+that nobody holds, says so on its line, because `sdlc start` here will not carry
+it on, and status then ends with what a person does about it instead of sending
+them to carry on ([more than one checkout](the-loop.md#more-than-one-checkout)).
+
 ## `sdlc story list`
 
 List the backlog, and say what is holding each story back.
@@ -76,6 +86,11 @@ $ sdlc story list --json
 Marks the story `sdlc start` would choose and shows every story's status. A
 story waiting on a `depends_on` story that is not done names it, and says when
 that one is dropped or not in the backlog, because then it never will be.
+
+In a repository with linked worktrees, a story a checkout holds ends with
+`(held in "<checkout>")`, and `held_by` in `--json`; the mark is what
+`sdlc start` would pick in the checkout you run it in, which is never a story
+another checkout holds.
 
 ## `sdlc log`
 
@@ -129,6 +144,10 @@ In `--json`, `range_source` is `record`, `message` or `unknown`, and
 `--since`, `all` for `--all`, or `none` when nothing is acknowledged. `since` is
 the full commit it started after, and `spent_usd` is always there, `0` for a
 story with no spend recorded.
+
+An entry for a story that is not finished, in a repository with linked
+worktrees, names the checkout that holds it on a `held` line, and as `held_by`
+in `--json`.
 
 A range is what the loop saw the story's session land, as far as the hook could
 tell a command was a commit: a person's commit made in the same window is left
@@ -209,6 +228,17 @@ It also refuses a story whose gates have all passed, rather than putting
 finished work back in progress. The way back into a finished story is to record
 the gate that failed — see [SDLC-E0033](troubleshooting.md#sdlc-e0033).
 
+In a repository with linked worktrees, the checkout that starts a story holds
+it until it is finished or a person runs [`sdlc release`](#sdlc-release). With
+no story named, start passes over what another checkout holds, and first says on
+standard error which story it passes over because the checkout holding it is
+gone, as it is for a single checkout moved while its story was stopped; naming
+one is refused with [SDLC-E0050](troubleshooting.md#sdlc-e0050), or
+[SDLC-E0051](troubleshooting.md#sdlc-e0051) when the checkout holding it is
+gone. A Claude Code session already working a story in one checkout is refused
+another in the next. See
+[more than one checkout](the-loop.md#more-than-one-checkout).
+
 Before it begins a new story — not one it is picking up again — it checks that
 trunk is somewhere to start from: HEAD is on `git.trunk_branch`, nothing is
 uncommitted outside `.sdlc/` and the backlog, trunk is not behind `origin` when
@@ -233,6 +263,11 @@ its commits is removed from the repository's git directory, and the next
 `sdlc start` moves on to the next story instead of reopening it. An unfinished
 story keeps its freeze and what was written down, so stopping and starting again
 cannot be a way round either.
+
+In a checkout whose `.sdlc/state/active` names a story another checkout holds,
+or that more than one checkout names, stop puts this checkout's copy down and
+writes nothing to the story's record, and its last line says where the story
+carries on rather than that `sdlc start` picks it up here.
 
 ## `sdlc gate GATE STATUS`
 
@@ -511,6 +546,40 @@ answers for the story being worked on. The answer goes on the record with the
 tree it was given for, the story goes back to `in_progress`, and `sdlc start`
 picks it up again.
 
+## `sdlc release`
+
+Let a story go from the checkout holding it, so that any checkout can start it.
+
+```console
+$ sdlc release US-001 --reason "the worktree it was started in was deleted"
+Released US-001: the checkout at "/home/dev/project-wt" no longer holds it. "sdlc start US-001" picks it up in any checkout.
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--reason` | why the story is moving to another checkout. Required |
+
+Every checkout of a repository, the main checkout and each linked worktree, works
+the one backlog. A story is held by the checkout that started it until it is
+finished or dropped, and no other checkout can start it, record a gate for it, or
+answer for it ([SDLC-E0050](troubleshooting.md#sdlc-e0050)). Release it when that
+checkout is gone ([SDLC-E0051](troubleshooting.md#sdlc-e0051)), or when you want
+the story worked somewhere else.
+
+Run it in your own terminal: the hook refuses it from a tool call, because an
+agent that could run it could take another checkout's story. It refuses while an
+iteration is running on the story ([SDLC-E0012](troubleshooting.md#sdlc-e0012)):
+`sdlc stop` in the checkout named ends it first. A story nothing holds is not an
+error: it says `Nothing to release` and changes nothing.
+
+Nothing is moved. Anything the checkout that held the story has not committed
+stays there, and the output says so while that checkout exists. The reason goes
+on the story's record; the checkout's path does not, and `sdlc start` and
+`sdlc approve` repeat that the uncommitted work stayed behind. A freeze does not
+move either: in the checkout that picks the story up, `sdlc unfreeze --reason ...`
+lifts it and `sdlc freeze` takes it again. In `--json` the output is `ok`,
+`story` and `checkout`, the checkout that held it, absent when none did.
+
 ## `sdlc cost`
 
 What the story has cost so far, against what it was expected to.
@@ -573,6 +642,11 @@ the loop's state files the hook reads on every tool call and the commit
 configured commands would run, and whether `sdlc` is on your `PATH`. Every
 problem comes with the command that fixes it. Exits non-zero when something is
 wrong, so it works in a script.
+
+In a repository with linked worktrees it names the checkout holding each story
+under "loop state", in whichever checkout you run it. In a linked worktree it
+reads the backlog and the records from the main checkout, and reports
+[SDLC-E0052](troubleshooting.md#sdlc-e0052) when the repository has none.
 
 It does not run your test suite. This is meant to be the fast answer to "why is
 this not working".

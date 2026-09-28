@@ -74,6 +74,83 @@ func (res Resolver) Rel(p string) (rel string, outside bool) {
 	return r, false
 }
 
+// Place is where p lands on disk, absolute: the file a program that writes p
+// writes, with every link on the way followed as the filesystem follows it. ok
+// is false for a path whose place cannot be known from here.
+//
+// Nothing is cleaned before the links are read. Rel cleans first, and so reads
+// `link/../x` as x beside the link, where the filesystem goes to x beside what
+// the link leads to: through a link into another checkout, a record there was
+// written under a name that was nowhere near it. So the longest part of p that
+// exists is left to the filesystem, `..` and all, and only what is not there
+// yet, where there is no link left to follow, is taken apart by name.
+func (res Resolver) Place(p string) (string, bool) {
+	var abs string
+	switch {
+	case p == "":
+		return "", false
+	case filepath.IsAbs(p):
+		abs = p
+	case filepath.VolumeName(p) != "":
+		return "", false
+	case strings.HasPrefix(p, `\`) || strings.HasPrefix(p, "/"):
+		abs = filepath.VolumeName(res.project) + p
+	default:
+		abs = res.project + string(filepath.Separator) + p
+	}
+	volume := filepath.VolumeName(abs)
+	parts := strings.FieldsFunc(abs[len(volume):], func(r rune) bool { return r == '/' || r == filepath.Separator })
+	sep := string(filepath.Separator)
+
+	// Down from the root, as resolveExisting goes, and for the same reason.
+	existing, i := volume+sep, 0
+	for ; i < len(parts); i++ {
+		next := existing + parts[i]
+		if _, err := os.Lstat(next); err != nil {
+			break
+		}
+		existing = next + sep
+	}
+	resolved := volume + sep
+	if i > 0 {
+		resolved = resolve(strings.TrimSuffix(existing, sep))
+	}
+	base := filepath.VolumeName(resolved)
+	kept := strings.FieldsFunc(resolved[len(base):], func(r rune) bool { return r == '/' || r == filepath.Separator })
+	for _, part := range parts[i:] {
+		switch part {
+		case ".":
+		case "..":
+			if len(kept) > 0 {
+				kept = kept[:len(kept)-1]
+			}
+		default:
+			kept = append(kept, part)
+		}
+	}
+	return base + sep + strings.Join(kept, sep), true
+}
+
+// Within is p relative to root, slash-separated, when p is root or inside it,
+// comparing as the filesystem compares names. Both are absolute and resolved.
+func Within(root, p string) (string, bool) {
+	r, err := filepath.Rel(root, p)
+	if err == nil {
+		r = filepath.ToSlash(r)
+		if r != ".." && !strings.HasPrefix(r, "../") {
+			return r, true
+		}
+	}
+	rel, inside := foldedRel(root, p)
+	if inside && rel == "" {
+		rel = "."
+	}
+	return rel, inside
+}
+
+// Root is the project, resolved.
+func (res Resolver) Root() string { return res.root }
+
 // foldedRel is p relative to root where the filesystem folds case, as macOS's
 // and Windows' do and filepath.Rel does not: `/PRIVATE/VAR/.../.sdlc/state`,
 // or `\\?\C:\project\.sdlc\state`, is the project's loop state, and read as

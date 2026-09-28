@@ -105,6 +105,13 @@ all. They are read from `.sdlc/config.json` in the repository, and a clone can
 bring `.sdlc/state/active` with it, so in a repository you did not write, read
 its `commands` before you work in it, as you would its `.claude/settings.json`.
 
+Each checkout reads its own `.sdlc/config.json`: a linked worktree made with
+`git worktree add` runs the commands and uses the trunk that its own copy
+names, while its backlog and story records are the main checkout's
+([more than one checkout](the-loop.md#more-than-one-checkout)). A second clone
+is another repository altogether, with a backlog and records of its own, and
+nothing stops two clones working the same story.
+
 One thing worth knowing about the guessed `coverage` command: it writes a
 coverage profile to `.sdlc/state/cover.out`. That is a build artefact rather
 than loop state, and Gate 8 commits the whole story with `git add -A`, so if

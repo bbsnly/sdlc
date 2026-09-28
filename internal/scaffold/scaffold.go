@@ -63,6 +63,13 @@ type Result struct {
 // force is set, and it never overwrites a backlog or a CLAUDE.md: those hold
 // the user's own words.
 func Init(root string, force bool) (*Result, error) {
+	return InitAt(root, root, force)
+}
+
+// InitAt is Init with the backlog and its schema in shared: the main checkout
+// of the repository, where every checkout of it reads them. It is root except
+// in a linked worktree, whose own copy of the backlog nothing reads.
+func InitAt(root, shared string, force bool) (*Result, error) {
 	configPath := filepath.Join(root, filepath.FromSlash(config.File))
 	if fsx.Exists(configPath) && !force {
 		return nil, sdlcerr.New(sdlcerr.AlreadyInitialised,
@@ -106,7 +113,7 @@ func Init(root string, force bool) (*Result, error) {
 	if err != nil {
 		return nil, embedFailure(err)
 	}
-	if err := res.write(root, schemaPath, schema, true); err != nil {
+	if err := res.write(shared, schemaPath, schema, true); err != nil {
 		return nil, err
 	}
 
@@ -114,7 +121,7 @@ func Init(root string, force bool) (*Result, error) {
 	if err != nil {
 		return nil, embedFailure(err)
 	}
-	if err := res.write(root, backlogPath, backlog, false); err != nil {
+	if err := res.write(shared, backlogPath, backlog, false); err != nil {
 		return nil, err
 	}
 
@@ -124,10 +131,14 @@ func Init(root string, force bool) (*Result, error) {
 	return res, nil
 }
 
-// write puts one file in place. When overwrite is false an existing file is
-// kept and recorded, because the file holds something the user wrote.
-func (r *Result) write(root, rel string, data []byte, overwrite bool) error {
-	path := filepath.Join(root, filepath.FromSlash(rel))
+// write puts one file in place, under dir. When overwrite is false an existing
+// file is kept and recorded, because the file holds something the user wrote.
+// A file outside the root being set up is recorded by its full path.
+func (r *Result) write(dir, rel string, data []byte, overwrite bool) error {
+	path := filepath.Join(dir, filepath.FromSlash(rel))
+	if dir != r.Root {
+		rel = path
+	}
 	if !overwrite && fsx.Exists(path) {
 		r.Kept = append(r.Kept, rel)
 		return nil

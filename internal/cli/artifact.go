@@ -124,6 +124,9 @@ func newArtifactWriteCmd() *cobra.Command {
 				// directory that no gate will ever read.
 				return err
 			}
+			if err := refuseIfHeldElsewhere(s, id, "a gate's documents are about the work in that checkout, not this one"); err != nil {
+				return err
+			}
 
 			path, err := s.WriteArtifact(id, artifact, content)
 			if err != nil {

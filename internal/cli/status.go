@@ -41,6 +41,9 @@ type statusPayload struct {
 	// Waiting is every story handed to a person and not yet answered. The
 	// iteration ended when it was handed over, so nothing else here says so.
 	Waiting []waitingStory `json:"waiting,omitempty"`
+	// Held is every story a checkout of the repository holds, where the
+	// repository has more than one checkout.
+	Held []heldStory `json:"held,omitempty"`
 }
 
 // waitingStory is one question the loop stopped to ask a person.
@@ -100,7 +103,11 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
+			holders, shown := holdersShown(s)
 			payload := statusPayload{OK: true, Active: active, Backlog: countStatuses(backlog), Waiting: waiting}
+			if shown {
+				payload.Held = heldStories(backlog, holders)
+			}
 			var record *model.Record
 			if active != "" {
 				if story, ok := backlog.Find(active); ok {
@@ -125,7 +132,7 @@ func newStatusCmd() *cobra.Command {
 				if id, held := s.WorkingSession(); held {
 					payload.Session = id
 				}
-			} else if sel, ok := backlog.Next(); ok && !isWaiting(waiting, sel.Story.ID) {
+			} else if sel, ok := pickable(backlog, holders).Next(); ok && !isWaiting(waiting, sel.Story.ID) {
 				// A waiting story is the one start would pick, and start refuses
 				// it, so offering it as next up would send the reader into a wall.
 				payload.Next = &nextUp{Story: sel.Story.ID, Title: sel.Story.Title}
@@ -139,6 +146,10 @@ func newStatusCmd() *cobra.Command {
 			// down, and calling that "in progress" would invite a session to
 			// carry on working something that has nothing left to work.
 			finished := active != "" && payload.NextGate == ""
+			notHere, notHereNext := "", ""
+			if active != "" {
+				notHere, notHereNext = notHeldHere(active, finished, holders, shown, s.HasLinkedWorktree())
+			}
 
 			w := cmd.OutOrStdout()
 			if active == "" {
@@ -152,7 +163,7 @@ func newStatusCmd() *cobra.Command {
 				if payload.NotInBacklog {
 					title = "(not in the backlog)"
 				}
-				fmt.Fprintf(w, "%s  %s  %s\n\n", active, state, title)
+				fmt.Fprintf(w, "%s  %s  %s%s\n\n", active, state, title, notHere)
 				printGates(w, record)
 				printFreeze(w, payload.Freeze)
 				printCost(w, payload.Cost)
@@ -164,7 +175,7 @@ func newStatusCmd() *cobra.Command {
 				// sessions in the repository so: the hook speaks only in the one
 				// working it. Not for a story that cannot be carried on, where it
 				// would send the reader towards a commit that is refused.
-				if payload.Session == "" && !finished && !payload.NotInBacklog {
+				if payload.Session == "" && !finished && !payload.NotInBacklog && notHereNext == "" {
 					fmt.Fprint(w, "\n  No Claude Code session is working it, so nothing is enforced "+
 						"until a person picks it up by typing /sdlc:next in Claude Code.\n")
 				}
@@ -172,6 +183,9 @@ func newStatusCmd() *cobra.Command {
 			fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))
 			for _, ws := range payload.Waiting {
 				fmt.Fprintf(w, "  waiting  %s  %s: %s\n", ws.Story, oneLine(ws.Type), oneLine(ws.Message))
+			}
+			for _, hs := range payload.Held {
+				fmt.Fprintf(w, "  held     %s  %s\n", hs.Story, strings.TrimPrefix(heldIn(hs.Story, holders[hs.Story]), "held "))
 			}
 			switch {
 			case payload.NotInBacklog:
@@ -181,6 +195,8 @@ func newStatusCmd() *cobra.Command {
 					"Put it back, or run `sdlc stop` to end the iteration.\n", active, s.Config().Backlog.Path)
 			case finished:
 				fmt.Fprint(w, "\nEvery gate has passed. Run `sdlc stop` to end the iteration.\n")
+			case notHereNext != "":
+				fmt.Fprintf(w, "\n%s\n", notHereNext)
 			case active == "" && payload.Next == nil && len(payload.Waiting) > 0:
 				fmt.Fprintf(w, "\nA person answers first, in their own terminal: `sdlc approve %s`, "+
 					"or `sdlc approve %s --reject \"why\"`.\n", payload.Waiting[0].Story, payload.Waiting[0].Story)
@@ -191,11 +207,49 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprintf(w, "  next up  %s  %s\n", payload.Next.Story, oneLine(payload.Next.Title))
 				fmt.Fprint(w, "\nA person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.\n")
 			default:
-				fmt.Fprint(w, nothingToStart(backlog, s.Config().Backlog.Path))
+				fmt.Fprint(w, nothingToStart(backlog, s.Config().Backlog.Path, elsewhere(backlog, holders)))
 			}
 			return nil
 		},
 	}
+}
+
+// notHeldHere is what the story line adds about an iteration this checkout is
+// not the one to carry on: its active names a story another checkout holds, or
+// one nobody holds, which start passes over where there is another checkout.
+// next is what status then closes with instead of sending the reader to carry
+// on, which start here would refuse. Nothing for a finished story, which only
+// "sdlc stop" is left to do.
+//
+// linked is whether the repository has a linked worktree. Without one, start
+// carries on an active nothing holds, as decideStart does, so status says
+// nothing about it: a claim naming a gone checkout shows holders, and status
+// said start would not resume a story it did.
+func notHeldHere(active string, finished bool, holders map[string]store.Holder, shown, linked bool) (mark, next string) {
+	if !shown || finished {
+		return "", ""
+	}
+	h, ok := holders[active]
+	switch {
+	case !ok && !linked:
+		return "", ""
+	case !ok:
+		return `  (held by no checkout: "sdlc start" here does not resume it, and picks from the backlog)`,
+			"`sdlc start` here will not carry " + active + " on; a person runs `sdlc stop` to put it down."
+	case h.Tied():
+		return "  (" + heldIn(active, h) + ")",
+			"More than one checkout names " + active + ": a person keeps the one whose session they recognise, " +
+				"and runs `sdlc stop` in each of the others."
+	case !h.Live:
+		return "  (" + heldIn(active, h) + ")",
+			"The checkout holding " + active + " is gone: a person moves it here with " +
+				"`sdlc release " + active + " --reason \"...\"` in their own terminal, then `sdlc start " + active + "`."
+	case !h.Here:
+		return "  (" + heldIn(active, h) + ")",
+			"This checkout's copy of " + active + " is stale: a person runs `sdlc stop` here to put it down, " +
+				"and the story carries on in the checkout named above."
+	}
+	return "", ""
 }
 
 // waitingStories is every story handed to a person that nobody has answered.

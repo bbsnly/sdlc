@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -26,50 +27,28 @@ const remoteTimeout = 60 * time.Second
 const smokeOutputLimit = 2000
 
 // checkTrunkForNewWork runs checkTrunk when start is about to begin a story
-// rather than pick one up again. It runs before start takes the lock, because
-// the smoke check is the project's own command and can run for longer than a
-// lock is trusted to be held.
+// rather than pick one up again, and reports whether it ran. It runs before
+// start takes the lock, because the smoke check is the project's own command
+// and can run for longer than a lock is trusted to be held.
 //
-// Whatever would refuse the start anyway -- nothing runnable, a story finished
-// or waiting on a person -- refuses here first, in the words start would use,
-// because it says more than trunk would. A running iteration is start's own to
-// resume or refuse.
-func checkTrunkForNewWork(cmd *cobra.Command, asked string) error {
+// Whatever would refuse the start anyway -- nothing runnable, a story finished,
+// waiting on a person or held by another checkout -- refuses here first, in the
+// words start would use, because it says more than trunk would: it is the same
+// decision start makes under the lock. A named story that is not runnable is
+// the exception, refused after trunk as it always was. force skips the
+// decision, for a start that has already made it under the lock.
+func checkTrunkForNewWork(cmd *cobra.Command, asked string, force bool) (bool, error) {
 	s, _, err := openStore()
 	if err != nil {
-		return err
+		return false, err
 	}
-	active, err := s.Active()
-	if err != nil {
-		return err
-	}
-	if active != "" {
-		return nil
-	}
-	id := asked
-	if id == "" {
-		if id, err = nextRunnable(s); err != nil {
-			return err
+	if !force {
+		plan, err := decideStart(s, asked, os.Getenv(store.SessionEnv))
+		if err != nil || !plan.fresh {
+			return false, err
 		}
 	}
-	story, _, err := s.Story(id)
-	if err != nil {
-		return err
-	}
-	if resuming(story.Status) {
-		return nil
-	}
-	finished, err := refuseIfFinished(s, id)
-	if err != nil {
-		return err
-	}
-	if finished != nil {
-		return finished
-	}
-	if err := refuseIfWaiting(s, id); err != nil {
-		return err
-	}
-	return checkTrunk(cmd, s)
+	return true, checkTrunk(cmd, s)
 }
 
 // checkTrunk is what new work asks first: that trunk is somewhere a story can

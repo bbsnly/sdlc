@@ -473,35 +473,127 @@ func gitCall(args []string) (sub, dir string, rest, alias []string) {
 // inThisRepository reports whether a git command run in dir works on the
 // project's own repository, wherever its -C and --git-dir send it.
 func inThisRepository(words []string, dir string, s State) bool {
+	// Another repository is a directory outside the project. Its .git is
+	// asked about rather than the directory, which for the project root
+	// itself resolves to nothing, the same as outside: `cd /path/to/project &&
+	// git commit`, the usual way to spell it, went past the gate.
+	repository := repositoryOf(words, gitPlace(words, dir))
+	if s.Resolve == nil || s.Resolve(repository) != "" {
+		return true
+	}
+	// A linked worktree keeps its git directory outside itself, and named in
+	// full, that is still this checkout's repository.
+	if s.Shared != nil {
+		for _, l := range s.Shared(clean(repository)) {
+			if l.Own {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// gitPlace is the directory a git command run in dir works in, once its -C
+// have moved it. A directory not followed is "", which is the project.
+func gitPlace(words []string, dir string) string {
 	_, to := gitCommand(words[1:])
 	switch {
 	case strings.ContainsAny(to, "$%") || shellDirectory(to):
 		// `git -C "$OLDPWD"`, or `git -C ~-`, is somewhere this cannot know,
 		// which is not another repository.
-		dir = ""
+		return ""
 	case isAbsolute(to) || strings.HasPrefix(to, "~"):
 		// The lookup reads ~ as the home it names.
-		dir = to
+		return to
 	case to != "":
-		dir = path.Join(dir, to)
+		return path.Join(dir, to)
 	}
-	// Another repository is a directory outside the project. Its .git is
-	// asked about rather than the directory, which for the project root
-	// itself resolves to nothing, the same as outside: `cd /path/to/project &&
-	// git commit`, the usual way to spell it, went past the gate. A directory
-	// not followed is "", which is the project.
-	repository := path.Join(dir, ".git")
+	return dir
+}
+
+// repositoryOf is the git directory a git command working in dir uses: the
+// .git there, or the one --git-dir names.
+func repositoryOf(words []string, dir string) string {
 	switch gitDir := gitDirOf(words[1:]); {
 	case strings.ContainsAny(gitDir, "$%") || shellDirectory(gitDir):
 		// Wherever the command runs, `--git-dir` can name this repository:
 		// `cd /tmp && git --git-dir="$PROJECT/.git" commit`.
-		repository = ".git"
+		return ".git"
 	case isAbsolute(gitDir) || strings.HasPrefix(gitDir, "~"):
-		repository = gitDir
+		return gitDir
 	case gitDir != "":
-		repository = path.Join(dir, gitDir)
+		return path.Join(dir, gitDir)
 	}
-	return s.Resolve == nil || s.Resolve(repository) != ""
+	return path.Join(dir, ".git")
+}
+
+// workTreeOf is the work tree a git command working in dir is given with
+// --work-tree, or "" where it is given none, or one the shell has yet to expand.
+func workTreeOf(words []string, dir string) string {
+	args, tree := words[1:], ""
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--work-tree" && i+1 < len(args):
+			i++
+			tree = clean(args[i])
+		case strings.HasPrefix(a, "--work-tree="):
+			tree = clean(strings.TrimPrefix(a, "--work-tree="))
+		case a == "-C" || a == "-c" || a == "--git-dir" || a == "--namespace" ||
+			a == "--config-env" || a == "--attr-source":
+			i++
+		case !strings.HasPrefix(a, "-"):
+			i = len(args)
+		}
+	}
+	switch {
+	case tree == "" || strings.ContainsAny(tree, "$%") || shellDirectory(tree):
+		return ""
+	case isAbsolute(tree) || strings.HasPrefix(tree, "~"):
+		return tree
+	}
+	return path.Join(dir, tree)
+}
+
+// inAnotherCheckout reports whether a git command run in dir works on another
+// checkout of the project's repository, through its git directory or its work
+// tree, or on the project's own git directory named in full.
+func inAnotherCheckout(words []string, dir string, s State, m *memo) bool {
+	dir = gitPlace(words, dir)
+	for _, p := range []string{repositoryOf(words, dir), workTreeOf(words, dir)} {
+		if p != "" && len(m.shared(s, p)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// commitElsewhere refuses a commit made in another checkout of the project's
+// repository. The story's gates were passed on the work in the checkout it is
+// held in, and a commit in another one records work nobody reviewed: that the
+// story may commit says nothing about it.
+func commitElsewhere(words []string, dir string, s State) (Finding, bool) {
+	if s.Shared == nil {
+		return Finding{}, false
+	}
+	dir = gitPlace(words, dir)
+	m := &memo{landed: map[string][]Landing{}}
+	for _, p := range []string{repositoryOf(words, dir), workTreeOf(words, dir)} {
+		if p == "" {
+			continue
+		}
+		for _, l := range m.shared(s, p) {
+			if !l.Own {
+				return Finding{
+					Rule: "commit-in-another-checkout",
+					Reason: "this commit would be made in another checkout of this repository, and the " +
+						"story's gates cover only the checkout it is held in: what they reviewed is not " +
+						"what would be committed there",
+					Route: "commit from the checkout the story is held in",
+				}, true
+			}
+		}
+	}
+	return Finding{}, false
 }
 
 // ownRepository reports whether a git command run in dir, a directory the words

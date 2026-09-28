@@ -104,6 +104,20 @@ func (b *Backlog) IDs() []string {
 	return out
 }
 
+// Without is a copy of the backlog with the named stories left out: what
+// another checkout of the repository holds, so that choosing from what is left
+// is choosing as if they were not there. A story that depends on one of them is
+// left waiting, as it is on any story the backlog does not have done.
+func (b *Backlog) Without(ids ...string) *Backlog {
+	out := &Backlog{Schema: b.Schema, Stories: make([]Story, 0, len(b.Stories))}
+	for _, s := range b.Stories {
+		if !slices.Contains(ids, s.ID) {
+			out.Stories = append(out.Stories, s)
+		}
+	}
+	return out
+}
+
 // Selection is the answer to "what should I work on now", with the reason
 // attached so that a user who disagrees can see what drove it.
 type Selection struct {

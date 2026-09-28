@@ -46,6 +46,17 @@ security defect rather than a bug:
   classification that protects `.git/hooks`. A way for a session to write or
   remove one, or to make the gate record a commit the session did not land
   without one of the limits below, is in scope.
+- **Which checkout holds a story.** In a repository with linked worktrees, the
+  checkout that starts a story holds it, and a claim at
+  `<git-dir>/sdlc/claims/<ID>.json`, in the git directory every checkout
+  shares, names that checkout's path. Git never shows, commits or pushes it,
+  and the path in it is only compared, printed and used to find that
+  checkout's session; it is not written to any record. A session held in one
+  checkout is held to the same rules in every other checkout of the repository.
+  A way for a held session to write another checkout's backlog, records or
+  claims, to commit there, or to leave the hook's reach by adding worktrees, is
+  in scope; the limits `docs/enforcement.md` lists under "A repository with more
+  than one checkout" are known.
 
 What the commit gate checks is that its range holds exactly the commits it was
 told about, never that it holds every commit the story made. The known limits,

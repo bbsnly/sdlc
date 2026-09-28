@@ -46,6 +46,62 @@ saying a document exists is not the document.
 All of it is text in your repository, which is what makes it reviewable. Whether
 you commit it is your decision; the loop does not write a `.gitignore`.
 
+## More than one checkout
+
+A repository can have more than one **checkout**: the **main checkout**, the one
+`git clone` or `git init` made, and any number of **linked worktrees** made from
+it with `git worktree add`. Every checkout of one repository works the same
+backlog and the same record of each story, and those are kept in the main
+checkout. A command run in a linked worktree reads and writes them there, and
+the copies git checked out in the worktree are never read or written. What is
+under `.sdlc/state` is each checkout's own: the story it is running, the
+session working it, its freeze and its Stop guard's count. So is
+`.sdlc/config.json`, which each checkout reads for itself, trunk included.
+
+Several checkouts can each work a story they hold at once. A new story,
+though, begins on trunk, and git keeps a branch checked out in one checkout at
+a time: until `sdlc start` makes a worktree itself, a new story begins in the
+checkout that has trunk checked out, and in a linked worktree made by hand
+`sdlc start` refuses a new story with
+[`SDLC-E0038`](troubleshooting.md#sdlc-e0038). A linked worktree works the
+stories it already holds, and a story under way that a person released to it,
+which `sdlc start` picks up rather than begins.
+
+The checkout that starts a story **holds** it, and a **claim** says so: a small
+file, `<git-dir>/sdlc/claims/<ID>.json`, in the git directory every checkout of
+the repository shares, where git never shows it, commits it or pushes it. It names
+the story and the checkout's path, and nothing else. A story stays held while it
+is stopped part-way or waiting for a person, and the claim goes when the story is
+done or dropped.
+
+Another checkout's `sdlc start` passes over a story that is held, and a story
+that depends on one waits as it would on any story not done. Naming a held story
+to `sdlc start`, `gate`, `artifact write`, `review add`, `cost add`, `freeze`,
+`unfreeze`, `escalate` or `approve` in another checkout is refused, and the
+refusal names the checkout that holds it
+([`SDLC-E0050`](troubleshooting.md#sdlc-e0050)). A held story moves only when a
+person **releases** it with [`sdlc release`](commands.md#sdlc-release), after
+which `sdlc start` picks it up in any checkout; what the old checkout had not
+committed stays there. A checkout that is gone holds its story until then
+([`SDLC-E0051`](troubleshooting.md#sdlc-e0051)).
+
+An iteration that was running when this release was installed has no claim.
+The checkout whose `.sdlc/state/active` names it holds it, as before, and the
+first `sdlc` command there that writes records the claim. Where more than one
+checkout names the same story that way, which a worktree cut from a commit
+carrying `.sdlc/state` does, none of them holds it: each is refused until a
+person runs `sdlc stop` in all but the one they are working in. With a linked
+worktree about, an `active` naming a story nobody holds, such as one a person
+set to `blocked` by hand, is passed over by `sdlc start`; in a repository with
+one checkout it is resumed as it always was.
+
+A repository with no main checkout to keep the backlog in — a worktree of a
+bare clone, or of one made with `git init --separate-git-dir` — is refused
+([`SDLC-E0052`](troubleshooting.md#sdlc-e0052)). Every checkout runs the
+`sdlc` on your `PATH`, so every one of them runs the same release.
+[Enforcement](enforcement.md#a-repository-with-more-than-one-checkout) says how
+the hook holds a session to its own checkout.
+
 ## Gate 1 — `dor`, definition of ready
 
 **Who:** the conversation. **Produces:** nothing.

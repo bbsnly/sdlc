@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -166,9 +168,9 @@ func runChecks(ctx context.Context) []check {
 		add(check{Name: "configuration", State: stateOK, Detail: detail})
 	}
 
-	project := &config.Project{Root: root, Config: cfg}
-	add(backlogCheck(store.New(project), cfg.BacklogPath(root), root))
-	add(stateCheck(ctx, store.New(project)))
+	s := store.New(&config.Project{Root: root, Config: cfg})
+	add(backlogCheck(s, root))
+	add(stateCheck(ctx, s))
 	add(contractCheck(root))
 	out = append(out, commandChecks(cfg)...)
 	add(binaryCheck())
@@ -189,11 +191,18 @@ func stateCheck(ctx context.Context, s *store.Store) check {
 		details = append(details, detail)
 		fixes = append(fixes, fix)
 	}
+	// Said once: every record is kept where the backlog is, and each of them
+	// failing to read for the one reason says nothing more.
+	shared := s.SharedErr()
+	var e *sdlcerr.Error
+	if errors.As(shared, &e) {
+		problem(noMainCheckout(e))
+	}
 	active, err := s.Active()
 	if err != nil {
 		problem(err.Error(), "nothing is enforced until .sdlc/state/active names a story: "+
 			`a person runs "sdlc stop" to remove it, then "sdlc start" or types /sdlc:next in Claude Code to begin again`)
-	} else if active != "" {
+	} else if active != "" && shared == nil {
 		// Record starts a fresh record when there is none, which is right for
 		// the command and wrong here: `sdlc start` always writes one, so a
 		// missing record mid-iteration is damage, and the hook refuses the
@@ -214,9 +223,11 @@ func stateCheck(ctx context.Context, s *store.Store) check {
 	// started, and a record that does not read stops that start with an error
 	// that calls itself a bug. So every record is read here, not only the
 	// active story's.
-	stories, err := s.StoriesOnDisk()
-	if err != nil {
-		problem(err.Error(), "no story can be started until .sdlc/stories can be listed: fix its permissions")
+	var stories []string
+	if shared == nil {
+		if stories, err = s.StoriesOnDisk(); err != nil {
+			problem(err.Error(), "no story can be started until .sdlc/stories can be listed: fix its permissions")
+		}
 	}
 	for _, id := range stories {
 		if id == active {
@@ -232,7 +243,7 @@ func stateCheck(ctx context.Context, s *store.Store) check {
 		problem(err.Error(), "every test is treated as frozen until .sdlc/state/tests.lock reads: "+
 			`restore it if you keep a copy, or lift it on the record with "sdlc unfreeze --reason ..." `+
 			`in your own terminal and run "sdlc freeze", which freezes the tests as they are now`)
-	} else if active != "" && (lock == nil || lock.Story != active) {
+	} else if active != "" && shared == nil && (lock == nil || lock.Story != active) {
 		// The hook treats every test as frozen over this, and sends people here.
 		if record, err := s.Record(active); err == nil {
 			if at, standing := record.StandingFreeze(); standing {
@@ -258,11 +269,21 @@ func stateCheck(ctx context.Context, s *store.Store) check {
 			}
 		}
 	}
+	if co, err := s.Checkout(); err == nil || co.Common != "" {
+		if n := len(co.Worktrees()); n > store.SessionScanLimit {
+			problem(fmt.Sprintf("this repository has %d linked worktrees, counting ones never pruned; the hook "+
+				"looks through only the first %d for a session whose story no claim records yet, so such a "+
+				"session in the rest is not held to the rules protecting the other checkouts until its first "+
+				"writing command", n, store.SessionScanLimit),
+				`run "git worktree prune", and remove worktrees no longer used`)
+		}
+	}
+	held := describeHolders(s)
 	if len(details) > 0 {
 		return check{Name: "loop state", State: stateProblem,
-			Detail: strings.Join(details, "; "), Fix: strings.Join(fixes, "; ")}
+			Detail: strings.Join(details, "; ") + held, Fix: strings.Join(fixes, "; ")}
 	}
-	detail := "the iteration, every gate record, the test freeze and the commit acknowledged all read"
+	detail := "the iteration, every gate record, the test freeze and the commit acknowledged all read" + held
 	// Not a problem: a story started from a terminal is picked up in a session
 	// when a person types /sdlc:next. Until then the hook holds no session to it, and says so
 	// nowhere, so this does.
@@ -302,17 +323,43 @@ func skipRest(after, because string) []check {
 	return out
 }
 
-func backlogCheck(s *store.Store, path, root string) check {
+// noMainCheckout is E0052 as a check reports it, with the why that says which
+// of the layouts this is.
+func noMainCheckout(e *sdlcerr.Error) (detail, fix string) {
+	return e.What + ": " + e.Why + " (" + e.Code.String() + ")", e.Fix
+}
+
+// describeHolders is which checkout holds each story, where the repository has
+// more than one.
+func describeHolders(s *store.Store) string {
+	holders, shown := holdersShown(s)
+	if !shown || len(holders) == 0 {
+		return ""
+	}
+	ids := slices.Sorted(maps.Keys(holders))
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = id + " " + heldIn(id, holders[id])
+	}
+	return "; " + strings.Join(parts, "; ")
+}
+
+func backlogCheck(s *store.Store, root string) check {
+	path := s.BacklogPath()
 	backlog, err := s.Backlog()
 	if err != nil {
 		// "sdlc init" creates a backlog that is not there, and leaves one that is
 		// alone, so it is the fix only for a missing one.
-		fix := "correct " + relativeTo(root, path) + ", or point backlog.path at the file you use"
+		detail, fix := err.Error(), "correct "+relativeTo(root, path)+", or point backlog.path at the file you use"
 		var e *sdlcerr.Error
-		if errors.As(err, &e) && e.Code == sdlcerr.BacklogMissing {
+		switch {
+		case !errors.As(err, &e):
+		case e.Code == sdlcerr.BacklogMissing:
 			fix = `run "sdlc init" to create it, or point backlog.path at the file you use`
+		case e.Code == sdlcerr.NoMainCheckout:
+			detail, fix = noMainCheckout(e)
 		}
-		return check{Name: "backlog", State: stateProblem, Detail: err.Error(), Fix: fix}
+		return check{Name: "backlog", State: stateProblem, Detail: detail, Fix: fix}
 	}
 	if len(backlog.Stories) == 0 {
 		return check{Name: "backlog", State: stateProblem,
@@ -324,7 +371,8 @@ func backlogCheck(s *store.Store, path, root string) check {
 		noun = "story"
 	}
 	runnable := "none runnable"
-	if _, ok := backlog.Next(); ok {
+	holders, _ := holdersShown(s)
+	if _, ok := pickable(backlog, holders).Next(); ok {
 		runnable = "one runnable"
 	}
 	return check{Name: "backlog", State: stateOK, Detail: fmt.Sprintf("%s  (%d %s, %s)",

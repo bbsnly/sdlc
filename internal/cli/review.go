@@ -122,6 +122,9 @@ func newReviewAddCmd() *cobra.Command {
 				// review that no gate will ever read.
 				return err
 			}
+			if err := refuseIfHeldElsewhere(s, id, "a review is of the work in that checkout, not this one"); err != nil {
+				return err
+			}
 			record, err := s.Record(id)
 			if err != nil {
 				return err
@@ -298,7 +301,7 @@ func gateSubject(ctx context.Context, s *store.Store, id string, gate model.Gate
 		if !ok || !s.ArtifactStored(id, plan) {
 			return "", nil
 		}
-		return s.HashFile(store.ArtifactPath(id, plan))
+		return s.HashArtifact(id, plan)
 	case model.GateVerifierReview, model.GateCodeReview:
 		return s.ReviewSubject(ctx)
 	default:

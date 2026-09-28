@@ -55,6 +55,9 @@ func newFreezeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := refuseIfHeldElsewhere(s, id, "the freeze holds the tests in that checkout, not this one's"); err != nil {
+				return err
+			}
 
 			lock, err := s.Lock()
 			if err != nil {
@@ -257,6 +260,9 @@ func newUnfreezeCmd() *cobra.Command {
 			defer unlock()
 			id, err := activeStory(s, "unfreeze lifts the freeze on the story being worked on")
 			if err != nil {
+				return err
+			}
+			if err := refuseIfHeldElsewhere(s, id, "the freeze holds the tests in that checkout, not this one's"); err != nil {
 				return err
 			}
 			// A freeze that will not read, or one that went missing without

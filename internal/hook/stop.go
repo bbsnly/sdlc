@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 
 	"github.com/bbsnly/sdlc/internal/config"
-	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
@@ -61,18 +58,24 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string)) turnR
 	if limit <= 0 {
 		return allow
 	}
-	s := store.New(&config.Project{Root: project, Config: cfg})
+	pl := placeOf(project)
+	s := store.NewIn(&config.Project{Root: project, Config: cfg}, pl.co, pl.err)
 	// Decided from what is there once the lock is held. Read before it, a stop
 	// that arrived while a command was recording progress counted the record as
 	// it was, and handed the story to a person the moment after it moved; two
 	// sessions stopping at once each kept a count the other overwrote.
-	g, err := store.Lock(project, "hook Stop")
+	g, err := store.Lock(s.LockRoot(), "hook Stop")
 	if err != nil {
 		slog.Debug("stop guard could not take the lock", "err", err)
 		return allow
 	}
 	defer g.Release()
 	if active, err := s.Active(); err != nil || active != story {
+		return allow
+	}
+	// A copy of a story another checkout holds is not this session's to be
+	// sent back to: the work carries on where it is held.
+	if _, elsewhere, err := s.HeldElsewhere(story); err == nil && elsewhere {
 		return allow
 	}
 	progress, err := s.RecordProgress(story)
@@ -92,22 +95,19 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string)) turnR
 		slog.Debug("stop guard could not keep its count", "err", err)
 		return allow
 	}
-	return turnReply{Continue: true, Decision: "block", Reason: stopReason(project, story, count.Blocks, limit)}
+	return turnReply{Continue: true, Decision: "block", Reason: stopReason(pl, story, count.Blocks, limit)}
 }
 
 // stopReason says what to do instead of stopping, naming the gate to work.
-func stopReason(project, story string, blocks, limit int) string {
+func stopReason(pl place, story string, blocks, limit int) string {
 	next := "the next gate"
-	if raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "stories", story, model.RecordFile)); err == nil {
-		var record model.Record
-		if json.Unmarshal(raw, &record) == nil {
-			gate, remaining := record.NextGate()
-			if !remaining {
-				return fmt.Sprintf("every gate on %s has passed and the iteration is still open: "+
-					"end it with `sdlc stop`.", story)
-			}
-			next = string(gate)
+	if record, _, err := pl.record(story); record != nil && err == nil {
+		gate, remaining := record.NextGate()
+		if !remaining {
+			return fmt.Sprintf("every gate on %s has passed and the iteration is still open: "+
+				"end it with `sdlc stop`.", story)
 		}
+		next = string(gate)
 	}
 	return fmt.Sprintf("%s is still being worked on. Work %s and record it, or hand the story to a "+
 		"person with `sdlc escalate <type> --message \"...\"` if it needs one. If the /sdlc:next "+
@@ -129,9 +129,15 @@ func handOver(s *store.Store, story string, blocks int) turnReply {
 
 	ctx, cancel := context.WithTimeout(context.Background(), treeTimeout)
 	defer cancel()
+	// Read from a linked worktree, the record is not beside the reader: the
+	// worktree's own copy, if git checked one out, is not it.
+	where := ""
+	if co, err := s.Checkout(); err == nil && co.Linked() {
+		where = " in the repository's main checkout"
+	}
 	question := fmt.Sprintf("the session stopped %d times in a row without recording anything on "+
-		"the story. Read .sdlc/stories/%s/gate-record.json for where it got to, and answer with "+
-		"`sdlc approve %s` to let the loop carry on.", blocks+1, story, story)
+		"the story. Read .sdlc/stories/%s/gate-record.json%s for where it got to, and answer with "+
+		"`sdlc approve %s` to let the loop carry on.", blocks+1, story, where, story)
 	if _, err := s.Escalate(ctx, story, "loop_stalled", question); err != nil {
 		slog.Debug("stop guard could not escalate", "err", err)
 		reply.SystemMessage = failed

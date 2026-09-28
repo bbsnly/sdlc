@@ -133,6 +133,10 @@ Finish the current story, or run `sdlc stop` to end the iteration without record
 `sdlc init --force` is refused with this code too. The story under way is held to the settings it
 started under, so the defaults go back once it has ended.
 
+`sdlc release` is refused with this code too, while an iteration is running on the story in any
+checkout: this time it is the same story, not another. Run `sdlc stop` in each checkout the
+message names, then release it.
+
 ### SDLC-E0013
 
 You named a gate this version does not know.
@@ -412,6 +416,14 @@ $ sdlc start
 Only new work is held to this. A story already under way is picked up again as
 it is.
 
+In a linked worktree made with `git worktree add`, switching to trunk fails,
+because git keeps a branch checked out in one checkout at a time and trunk is
+checked out in the main checkout. Until `sdlc start` makes a worktree itself, a
+new story begins in the checkout that has trunk checked out; a linked worktree
+works the stories it already holds, and picks up a story under way that a person
+released to it. See
+[more than one checkout](the-loop.md#more-than-one-checkout).
+
 ### SDLC-E0039
 
 There is uncommitted work that belongs to no story, and a new story would take
@@ -585,6 +597,101 @@ $ sdlc gate commit pass --note "on trunk"
 The note needs no hash at all: the range is what the record keeps. The check runs only when the
 gate records a range, so it is a consistency check between the note and the record, not evidence
 of which commits are the story's.
+
+### SDLC-E0050
+
+A command named a story that another checkout of this repository holds.
+
+Every linked worktree of a repository shares the main checkout's backlog and story records, and a
+story is held by one checkout at a time: the one that started it. The message names that checkout.
+`sdlc start` does not pick up a story another checkout holds, and `sdlc gate`, `sdlc artifact
+write`, `sdlc review add`, `sdlc cost add`, `sdlc approve`, `sdlc escalate`, `sdlc freeze` and
+`sdlc unfreeze` refuse it, because what each records is measured on the holding checkout's working
+tree. `sdlc start` also refuses a Claude Code session that already holds a story in another
+checkout: one session works one story. Open a new Claude Code session in this checkout to work
+another story here, or go back to the checkout the message names to carry on with that one.
+Nothing was changed.
+
+The same code covers two cases that start from this checkout's own `.sdlc/state/active`:
+
+- It names a story another checkout claims, usually because this worktree was made from a commit
+  that carried `.sdlc/state/`. Run `sdlc stop` here to put this checkout's stale copy down; the
+  story carries on where it is held.
+- It names a story no checkout claims, and so does another checkout's. Neither holds it until a
+  person decides. The message lists each of them with when its `active` was written and what its
+  `.sdlc/state/session` names. Keep the one whose session you recognise as the one you are working
+  in, and run `sdlc stop` in each of the others. The details are a courtesy, not a proof: anyone
+  who can write those files can make two of them look alike.
+
+If you are the person running the session, run the command in the checkout the message names, or
+move the story here: run `sdlc release <ID> --reason "..."` in your own terminal, outside Claude
+Code, in any checkout, then `sdlc start <ID>` in this one. Releasing leaves behind anything the
+other checkout has not committed.
+
+If you are an assistant, stop and tell the person which checkout holds the story. Do not run
+`sdlc start` or `sdlc release`.
+
+### SDLC-E0051
+
+The checkout that holds the story no longer exists.
+
+A claim on a story lasts until the story is `done` or `dropped`, or until a person releases it:
+`sdlc stop`, `sdlc escalate` and the Stop hook's hand-over all leave it in place, because the
+story's uncommitted work is in that checkout. This one names a directory that is gone, or is no
+longer a checkout of this repository. No checkout can start the story or record anything for it
+until the claim is released. Nothing was changed.
+
+A repository with one checkout, moved or copied with `mv` or `cp` while its story is running, does
+not meet this: where git has no linked worktree entry and this checkout's `.sdlc/state/active`
+names the story, a claim naming the old path is read as this checkout's, and the next `sdlc`
+command that writes rewrites it.
+
+Moved or copied while the story is stopped or waiting for a person, it is held by the old path,
+because the claim alone cannot tell a moved checkout from a worktree that was removed and pruned.
+Then:
+
+- `sdlc start` with no story named passes the story over, as it passes over any story another
+  checkout holds, and first says so on standard error, with the commands below. It then begins the
+  next story, or refuses over the uncommitted work, which is the stopped story's own: do not
+  discard it.
+- `sdlc start <ID>` and `sdlc approve <ID>` are refused with this code.
+
+If that checkout is gone for good, or this is the same checkout moved, a person runs, in their own
+terminal:
+
+```console
+$ sdlc release US-001 --reason "the worktree was deleted with its disk"
+```
+
+and then runs the refused command again: `sdlc approve US-001` for a story waiting for a person,
+`sdlc start US-001` otherwise, in any checkout. If the story's tests were frozen and the checkout
+that holds the story's work is a new one, the freeze is on the story's record and not in that
+checkout's `.sdlc/state/tests.lock`: until a person runs `sdlc unfreeze --reason "..."` and then
+`sdlc freeze` there, every test file is treated as frozen. A checkout that was moved took its
+`tests.lock` with it, and its freeze stands.
+
+If you are an assistant, stop and tell the person. Do not run `sdlc release`.
+
+### SDLC-E0052
+
+This checkout's repository has no main checkout in which to keep the backlog.
+
+The backlog, the story records and the claims on stories are kept in the repository's main
+checkout, the directory whose `.git` is the repository's own git directory. This checkout is a
+linked worktree of a repository that has none, or whose main checkout cannot be found from git's
+own files:
+
+- a bare repository, where `core.bare` is true;
+- a repository made with `git init --separate-git-dir`, whose git directory is not a checkout's
+  `.git`;
+- a submodule's worktree, whose git directory sits inside another repository's.
+
+The message says which check failed. Every command that reads or writes the backlog is refused,
+`sdlc init` included. `sdlc stop` still works, to end an iteration: it clears this checkout's own
+state and writes nothing to any record. `sdlc doctor` reports the problem.
+
+Work in a clone made without `--bare`, or in the main checkout of a repository made with
+`--separate-git-dir`.
 
 ## Warnings the hook prints
 

@@ -146,6 +146,14 @@ $ sdlc story list
 > is what `sdlc start` would pick.
 ```
 
+In a repository with linked worktrees, every checkout picks from the one
+backlog, kept in the main checkout, and passes over a story another checkout
+holds: one it started and has not finished, whether running, stopped or waiting
+for a person. A story that depends on a held story waits, as it does on any story
+that is not done. So two checkouts that start at once never pick the same story.
+`sdlc story list` says which checkout holds each story, and marks what start
+would pick in the checkout you run it in.
+
 `sdlc start AUTH-4` names a story directly. That puts it ahead of the priority
 order and changes nothing else. A story that is `dropped`, `blocked` or `done`,
 or that waits on a dependency that is not done, is refused with
@@ -157,8 +165,8 @@ or that waits on a dependency that is not done, is refused with
 | --- | --- | --- |
 | `todo` | yes, exactly like `ready` | you |
 | `ready` | yes | you |
-| `in_progress` | resumed first | `sdlc start` and `sdlc approve`; also a gate recorded as failed on a story that was done |
-| `awaiting_human` | resumed first, once a person has answered | `sdlc escalate`, and the loop when it hands a story to a person |
+| `in_progress` | resumed first, in the checkout that holds it | `sdlc start` and `sdlc approve`; also a gate recorded as failed on a story that was done |
+| `awaiting_human` | resumed first, once a person has answered, in the checkout that holds it | `sdlc escalate`, and the loop when it hands a story to a person |
 | `blocked` | no | you |
 | `done` | no | the tool, when the last gate passes |
 | `dropped` | no | you |

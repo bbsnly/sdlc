@@ -59,6 +59,7 @@ func New(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newUnfreezeCmd(),
 		newEscalateCmd(),
 		newApproveCmd(),
+		newReleaseCmd(),
 		newCostCmd(),
 		newDoctorCmd(),
 		newVersionCmd(),
@@ -241,7 +242,9 @@ func openStoreForWriting(cmd *cobra.Command) (*store.Store, *config.Project, fun
 	if err != nil {
 		return nil, nil, nothing, err
 	}
-	g, err := store.Lock(p.Root, strings.TrimPrefix(cmd.CommandPath(), "sdlc "))
+	// One lock for every checkout of the repository: they share one backlog,
+	// and two checkouts starting at once took a lock each and the same story.
+	g, err := store.Lock(s.LockRoot(), strings.TrimPrefix(cmd.CommandPath(), "sdlc "))
 	if err != nil {
 		return nil, nil, nothing, err
 	}
@@ -260,6 +263,9 @@ func openStoreForWriting(cmd *cobra.Command) (*store.Store, *config.Project, fun
 	// Holding the lock, nothing else is part-way through a write, so what a
 	// killed command left behind can be cleared before it blocks the commit gate.
 	s.ClearInterruptedWrites()
+	// An iteration running when this release was installed holds its story by
+	// its active alone; the first command that writes makes that a claim.
+	s.TidyClaims()
 	return s, p, g.Release, nil
 }
 

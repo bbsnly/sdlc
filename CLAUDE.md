@@ -102,8 +102,9 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
 
 ### Security and data rules (sdlc:security uses these)
 
-- Data classes present: no personal data and no secrets. The only identifier stored is the Claude
-  Code session id in `.sdlc/state/session`.
+- Data classes present: no personal data and no secrets. The only identifiers stored are the Claude
+  Code session id in `.sdlc/state/session` and, in the claim on a story, the path of the checkout
+  that holds it.
 - `risk_tier: high` for anything that touches: `internal/hook`, `internal/shellpolicy`,
   `internal/policy`, `internal/pathrules`, the freeze (`internal/testset`, `sdlc freeze`,
   `unfreeze`), what separates a person from a model (`approve`, `ack`, the session check),

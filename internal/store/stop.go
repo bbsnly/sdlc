@@ -61,10 +61,11 @@ func (s *Store) ClearStopCount() error {
 // moves a story writes to its record, so a different answer means something
 // happened.
 func (s *Store) RecordProgress(id string) (string, error) {
-	if err := CheckID(id); err != nil {
+	dir, err := s.StoryDir(id)
+	if err != nil {
 		return "", err
 	}
-	return s.HashFile(storiesDir + "/" + id + "/" + recordFile)
+	return hashFile(filepath.Join(dir, recordFile), storiesDir+"/"+id+"/"+recordFile)
 }
 
 // Escalate hands the story to a person: the question goes on its record, bound
@@ -80,6 +81,13 @@ func (s *Store) Escalate(ctx context.Context, id, kind, message string) (string,
 	// with the iteration still running.
 	if _, _, err := s.Story(id); err != nil {
 		return "", err
+	}
+	// Another checkout's story is measured on that checkout's tree, and its
+	// question asked there.
+	if h, elsewhere, err := s.HeldElsewhere(id); err != nil {
+		return "", err
+	} else if elsewhere {
+		return "", HeldElsewhereError(id, h, "a story is handed to a person from the checkout working it")
 	}
 	tree, err := s.ReviewSubject(ctx)
 	if err != nil {
@@ -102,6 +110,11 @@ func (s *Store) Escalate(ctx context.Context, id, kind, message string) (string,
 		return "", err
 	}
 	if active == id {
+		// The story's uncommitted work is in this checkout, and after a person's
+		// answer the story resumes here.
+		if err := s.keepClaim(id); err != nil {
+			return "", err
+		}
 		if err := s.ClearActive(); err != nil {
 			return "", err
 		}

@@ -71,6 +71,8 @@ directory's, or one a path in the command names).
 
 - `sdlc ack` is refused there always. The log of what landed on trunk is always
   there for a person to read.
+- `sdlc release` is refused there always. It takes a story from the checkout
+  holding it ([`release-is-a-human-decision`](#release-is-a-human-decision)).
 - `sdlc approve` and `sdlc unfreeze` are refused while a project the call
   reaches, or the one the command moves to with `cd`, has a story a person could
   decide on: one under way, whichever session holds it or none, or one handed to
@@ -101,6 +103,92 @@ The exceptions are the files a rule exists to protect. A test freeze or a gate
 record that cannot be read is not treated as absent, because then breaking one
 would be the way round it: tests stay frozen and the commit waits until the file
 reads. `sdlc doctor` names it under "loop state".
+
+## A repository with more than one checkout
+
+Every checkout of a repository, the main checkout and each linked worktree made
+with `git worktree add`, works one backlog and one record of each story, kept in
+the main checkout. Its `.sdlc/state` is its own. A session is held in the
+checkout it started its story in, and the rules follow it into the others.
+
+**Finding the session.** A call is judged as the session's wherever it runs.
+When no checkout the call reaches holds the session, the hook asks the
+repository: first every checkout a claim names, whatever their number, and then
+the first 64 linked worktrees, for an iteration that was running when this
+release was installed and has no claim yet. The first `sdlc` command that writes
+there turns that into a claim, and `sdlc doctor` says when a repository has more
+than 64 worktree entries, since a session past the 64th is not found until then.
+Adding worktrees does not move a checkout a claim names out of reach, and the
+claims are refused to a held session wherever it names them.
+
+**The other checkouts.** From any checkout, a session held in one is refused,
+in every other checkout of the repository, what it is refused in its own:
+writing the backlog, `.sdlc/` (the story records, the configuration and that
+checkout's own `.sdlc/state`), `.git/` (the claims included), `.claude/` and
+`CLAUDE.md`, by an absolute path, a link, `..` through a link, `~`, `cd`,
+`find`, `xargs` or code handed to an interpreter; discarding what that checkout
+holds with `git -C … reset --hard` and its like; taking the checkout away; and
+committing there ([`commit-in-another-checkout`](#commit-in-another-checkout)).
+Reading anything, and writing files no rule protects, are not refused. The file
+tools are refused everything outside the checkout the session is held in, as
+they always were.
+
+Which checkout a path is in is worked out from where it lands on disk, links
+followed, by walking up to the nearest directory whose `.git` belongs to this
+repository. A `.git` that leads elsewhere is walked past rather than stopped
+at, so a repository made with `git init` inside a checkout cannot hide that
+checkout's files. The price is that an unrelated repository inside a checkout,
+such as vendored code or a submodule never initialised, is under the `.git`
+name rule like any other path in that checkout, and a commit made in it is
+refused as a commit in that checkout. A worktree nested inside the
+project, as one under `.sdlc/` would be, counts as another checkout for what it
+holds.
+
+**Failing closed.** When the main checkout cannot be found — a bare repository,
+`core.bare` set, a rewritten `commondir` — the hook does not read the
+worktree's own copy of the records. The commit is refused, every test counts as
+frozen, no story counts as finished, and a person's decision counts as waiting.
+Where not even git's directory can be read, every path outside the checkout that
+might be the main checkout's evidence is refused by name, and the refusal says
+to run `sdlc doctor`.
+
+**Not held.** These are known and not closed here:
+
+- A session's own `git worktree remove`, `git worktree move` and
+  `git worktree prune`, and `mv` of its own checkout. Each ends its own hold,
+  because the claim names the old path. They are for the next story (US-029.2,
+  decided 2026-09-24T18:44:45Z).
+- A commit in a linked worktree the walk cannot find: one whose `.git` does not
+  lead into this repository, or that was moved. A repository or work tree named
+  through a variable the shell has yet to expand is judged as the project, as it
+  always was; so is one set with `GIT_DIR` or `GIT_WORK_TREE` in the
+  environment, by any spelling: `export`, an assignment in front of the
+  command, or `env`. A `--work-tree` outside every checkout is not held.
+- Another checkout's work tree reached through git's configuration rather than
+  its flags. `git -c core.worktree=<main> commit` is judged as a commit in the
+  session's own checkout, and meets the commit gate there, where
+  `git --work-tree=<main> commit` is refused; so is `git --work-tree=<main> add`
+  followed by a plain `git commit`. Once the session's own story is ready to
+  commit, either lands the other checkout's changes on its branch.
+- Removing a directory above another checkout, such as `rm -rf <main>/..` or a
+  directory that holds every checkout. Taking a checkout away is refused only
+  where the command names the checkout itself, as it is for the project's own
+  root and the directories above it.
+- The file tools and a worktree nested inside the main checkout, such as
+  `<main>/wts/W`. To a session held in the main checkout, that worktree's
+  `.sdlc/state` and `.sdlc/config.json` are paths inside its own checkout, and
+  the file tools' rules match from the checkout's root, so they can be written
+  with the file tools. The shell is refused the same writes.
+- A finished story between its retro and `sdlc stop`. Its claim goes when the
+  story is done, and a checkout's `active` holds only a story in progress or
+  waiting for a person, so from a call that reaches only other checkouts the
+  session working it is not found, and is held there to nothing until
+  `sdlc stop` ends the iteration. In its own checkout it is held as before.
+- A session that holds nothing can write or remove a claim or another
+  checkout's `.sdlc/state/active`, and so make two checkouts name one story. Each
+  is then refused it until a person runs `sdlc stop` in all but one. What the
+  refusal says about each checkout is read from files anybody can write: it
+  helps a person choose, and proves nothing.
 
 ## Rules on writing files
 
@@ -434,6 +522,20 @@ started one as much as during a story.
 *Instead:* say what `sdlc log` lists, and stop. The person reads it and runs
 `sdlc ack --through <commit>` in their own terminal.
 
+### `release-is-a-human-decision`
+
+Refuses `sdlc release` run from a tool call, however `sdlc` is reached, in any
+session, in any project with `.sdlc/config.json` the call reaches, whether or
+not a story is being worked on.
+
+Releasing a story takes it from the checkout of the repository that holds it,
+after which any checkout can start it. An agent that could run it could take a
+story another checkout is working, or let go of the one it is held to and with
+it every rule holding it.
+
+*Instead:* say which checkout holds the story and stop. A person runs
+`sdlc release <ID> --reason "..."` in their own terminal if it is to move.
+
 ### `stop-is-a-human-decision`
 
 Refuses `sdlc stop` run from a tool call while the story still has a gate to
@@ -510,6 +612,22 @@ Committing without them is for the person running the session to decide:
 `sdlc stop`, which turns this rule off along with the iteration, is refused from
 a tool call until they have passed
 ([`stop-is-a-human-decision`](#stop-is-a-human-decision)).
+
+### `commit-in-another-checkout`
+
+Refuses a commit, or a command that makes one as `commit-gate` counts them, in
+another checkout of the repository: with `git -C` or `cd` into the main checkout
+or another linked worktree, with `--git-dir` naming the main checkout's `.git`
+or another worktree's git directory, or with `--work-tree` naming another
+checkout. It refuses whatever the story's gates say.
+
+The gates were passed on the work in the checkout the story is held in. A commit
+in another checkout records work nobody reviewed, and that the story may commit
+says nothing about it. `--git-dir` naming the session's own worktree's git
+directory is its own checkout, and meets `commit-gate` as a plain `git commit`
+does.
+
+*Instead:* commit from the checkout the story is held in.
 
 ### `enforcement-stays-on`
 

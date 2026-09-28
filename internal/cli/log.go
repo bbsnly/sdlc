@@ -70,6 +70,10 @@ type logEntry struct {
 	Unfrozen       []logEvent      `json:"unfrozen,omitempty"`
 	Escalations    []logEscalation `json:"escalations,omitempty"`
 	SpentUSD       float64         `json:"spent_usd"`
+	// HeldBy is the checkout holding a story not yet finished, where the
+	// repository has more than one.
+	HeldBy string `json:"held_by,omitempty"`
+	heldIn string
 }
 
 type logBlock struct {
@@ -152,6 +156,7 @@ func newLogCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			holders, shown := holdersShown(s)
 			for _, id := range ids {
 				record, err := s.Record(id)
 				if err != nil {
@@ -161,6 +166,9 @@ func newLogCmd() *cobra.Command {
 					continue
 				}
 				entry := describeCommitted(record, backlog)
+				if h, ok := holders[id]; ok && shown {
+					entry.HeldBy, entry.heldIn = h.Checkout, heldIn(id, h)
+				}
 				if err := placeRange(ctx, s.Root(), head, &entry, record); err != nil {
 					return err
 				}
@@ -392,6 +400,9 @@ func printLog(w io.Writer, p logPayload) {
 		}
 		if e.SpentUSD > 0 {
 			fmt.Fprintf(w, "  spent      %s\n", money(e.SpentUSD))
+		}
+		if e.heldIn != "" {
+			fmt.Fprintf(w, "  held       %s\n", strings.TrimPrefix(e.heldIn, "held "))
 		}
 	}
 }
