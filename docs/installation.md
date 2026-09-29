@@ -294,7 +294,7 @@ A project's own `.sdlc/` directory is yours; nothing removes it for you.
 | | |
 | --- | --- |
 | Claude Code | 2.1.265 or newer |
-| git | in the project you run the loop on |
+| git | 2.17 or newer, in the project you run the loop on |
 | an OS | macOS, Linux, or Windows 10 or newer |
 
 Nothing else. The binary is static and has no runtime dependencies; Go and

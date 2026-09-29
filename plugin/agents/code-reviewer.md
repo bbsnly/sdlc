@@ -22,8 +22,14 @@ why.
 
 ## Inputs
 
-- the diff: `git diff` against the trunk branch in `.sdlc/config.json`, and the whole of every
-  file it touches. A diff read without its surroundings misses the thing it broke.
+With a story worktree, the code is under the worktree the brief names, and commands run there;
+the backlog and `.sdlc/stories/<ID>/` stay in the main checkout, at the absolute paths the brief
+gives.
+
+- the diff: `git diff $(git merge-base <trunk> HEAD)`, run in the worktree the brief names, where
+  `<trunk>` is `git.trunk_branch` in `.sdlc/config.json`: the merge base is the commit the story's
+  branch was cut from, so what trunk gained since does not show as the story's change. Read the
+  whole of every file it touches. A diff read without its surroundings misses the thing it broke.
 - every new file: the story's work is not committed yet, and `git diff` does not show a file
   git has never seen. `git status --short` lists them as `??`; read each one in full.
 - the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names

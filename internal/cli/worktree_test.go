@@ -111,7 +111,18 @@ type wtStory struct {
 
 // wtRepository is a main checkout with the loop set up and the stories given,
 // each a priority lower than the one before, all committed.
+//
+// Story worktrees are off, committed, so every worktree made from it has them
+// off too: these are US-029.1's tests, of checkouts a person made, and `sdlc
+// start` in them is the released tool's (US-029.2 AC-9).
 func wtRepository(t *testing.T, stories ...wtStory) string {
+	t.Helper()
+	return wtRepositoryWith(t, func(root string) { worktreesOff(t, root) }, stories...)
+}
+
+// wtRepositoryWith is wtRepository with configure, when there is one, run on
+// the new project before it is committed.
+func wtRepositoryWith(t *testing.T, configure func(root string), stories ...wtStory) string {
 	t.Helper()
 	wtNoGitEnv(t)
 	root := wtTempDir(t)
@@ -119,6 +130,9 @@ func wtRepository(t *testing.T, stories ...wtStory) string {
 	wtMust(t, root, "", "", "init")
 	if len(stories) > 0 {
 		wtSetStories(t, root, stories...)
+	}
+	if configure != nil {
+		configure(root)
 	}
 	wtCommit(t, root, "the project")
 	return root

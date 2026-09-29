@@ -267,6 +267,7 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 		{StoryHeldElsewhere, "SDLC-E0050"},
 		{HoldingCheckoutMissing, "SDLC-E0051"},
 		{NoMainCheckout, "SDLC-E0052"},
+		{WorktreeNotMade, "SDLC-E0053"},
 	}
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
@@ -275,6 +276,24 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	}
 	if len(released) != len(catalogue) {
 		t.Errorf("the catalogue has %d codes and %d are pinned here; add the new one", len(catalogue), len(released))
+	}
+}
+
+// A fix is printed as it is written, and a person copies the command out of
+// it. SDLC-E0049, SDLC-E0050 and SDLC-E0051 were held as raw strings with the
+// quotes escaped, so their fixes printed --reason \"...\" and --note \"...\",
+// which no shell needs and a reader takes for part of the command (US-029.2,
+// carried from US-029.1's Gate 7).
+func TestAFixPrintsItsCommandWithoutBackslashes(t *testing.T) {
+	for _, code := range []Code{NoteOutsideRange, StoryHeldElsewhere, HoldingCheckoutMissing} {
+		if fix := fixFor(code); strings.Contains(fix, `\`) {
+			t.Errorf("%s's fix prints a backslash: %s", code, fix)
+		}
+	}
+	for _, e := range catalogue {
+		if strings.Contains(e.fix, `\"`) {
+			t.Errorf("%s's fix prints an escaped quote: %s", e.code.id, e.fix)
+		}
 	}
 }
 

@@ -43,7 +43,8 @@ func build(t *testing.T) string {
 	return out
 }
 
-// project makes a real Git repository with the tool set up in it.
+// project makes a real Git repository with the tool set up in it, and story
+// worktrees turned off.
 func project(t *testing.T, binary string) string {
 	t.Helper()
 	root := t.TempDir()
@@ -55,6 +56,10 @@ func project(t *testing.T, binary string) string {
 		t.Fatal(err)
 	}
 	runTool(t, binary, root, "init")
+	// Off, because the tests built on this hold `sdlc start` to what the released
+	// tool does in one checkout: the story is held where start runs (US-029.2
+	// AC-9). storyworktree_test.go has what it does with them on.
+	worktreesOff(t, root)
 	// Committed, as a project is before its first story: `sdlc start` begins new
 	// work only from a trunk with nothing uncommitted on it.
 	git(t, root, "add", "-A")

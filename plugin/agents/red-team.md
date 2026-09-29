@@ -19,6 +19,10 @@ is one nobody looks for.
 
 ## Inputs
 
+With a story worktree, the code is under the worktree the brief names, and commands run there;
+the backlog and `.sdlc/stories/<ID>/` stay in the main checkout, at the absolute paths the brief
+gives.
+
 - `.sdlc/stories/<ID>/PLAN.md`, `ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md`
 - the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names
 - the frozen acceptance tests — read them as an attacker would

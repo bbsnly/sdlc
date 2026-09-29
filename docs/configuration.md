@@ -63,8 +63,32 @@ with `..`, is refused.
 
 | Key | What it means |
 | --- | --- |
-| `trunk_branch` | the branch a story starts from, is committed to, and is diffed against. `sdlc start` begins new work only there. `sdlc init` writes the branch `origin`'s `HEAD` names, else `main` or `master` if the repository has one, else the branch it is on; `main` when none of those answers |
+| `trunk_branch` | the branch a new story starts from. With `worktrees` on, each story's branch is cut from it; with `worktrees` off, `sdlc start` begins new work only there, and the story is committed straight to it. `sdlc init` writes the branch `origin`'s `HEAD` names, else `main` or `master` if the repository has one, else the branch it is on; `main` when none of those answers |
 | `remote` | whether this repository has an `origin` to keep up with. With it on, `sdlc start` fetches trunk from `origin` and will not begin new work while trunk is behind it. Off by default, and the loop never pushes either way |
+| `worktrees` | whether `sdlc start` gives each new story a worktree and a branch of its own: `true` or `false`. Left out, it is on |
+
+With `worktrees` on, `sdlc start` makes a new story's worktree at
+`.sdlc/worktrees/<ID>` in the main checkout, on a new branch `story/<ID>` cut
+from the tip of the local trunk branch, and the story is worked and committed
+there. The main checkout keeps its branch, its index and its files, apart from
+the loop's own bookkeeping, and need not be on trunk
+([more than one checkout](the-loop.md#more-than-one-checkout)). The first start
+writes `.sdlc/worktrees/.gitignore`, holding `*`, so that `git status` in the
+main checkout does not list the worktrees and `git add -A` does not take them
+in; your own `.gitignore` and `.git/info/exclude` are left alone. That file is
+never rewritten: one without a `*` line, or with a line starting `!`, is refused
+([SDLC-E0053](troubleshooting.md#sdlc-e0053)). It needs git 2.17 or later, and
+`sdlc doctor` says when yours is older.
+
+The worktree has only what trunk commits, and it reads trunk's committed
+`.sdlc/config.json`, not the copy in your checkout: a change to `commands`,
+`thresholds` or any other setting reaches a new story only once it is committed
+to trunk. `worktrees` itself is read from the checkout `sdlc start` runs in.
+
+`false` is how `sdlc start` worked before: a new story begins in the checkout
+it runs in, which has to be on trunk with nothing uncommitted, as
+[SDLC-E0038](troubleshooting.md#sdlc-e0038) to
+[SDLC-E0041](troubleshooting.md#sdlc-e0041) say.
 
 ## `commands`
 
@@ -82,10 +106,31 @@ are installed.
 | `fmt_file` | the hook, on each file a tool writes while a story is being worked on |
 | `coverage` | the verifier, compared against `thresholds.coverage_min` |
 | `mutation` | the verifier, compared against `thresholds.mutation_min` |
-| `smoke` | `sdlc start`, on trunk, before each new story. Keep it fast: it runs before every story |
+| `smoke` | `sdlc start`, before each new story: in the story's new worktree, or on trunk with `git.worktrees` off. Keep it fast: it runs before every story |
 
 Any key you add is available to the agents; these are the ones the loop looks
 for by name. A key you leave out is simply not run.
+
+With [`git.worktrees`](#git) on, `smoke` runs in the story's new worktree, and
+so does every command a later gate runs, so what the smoke check installs is
+what they use. A new worktree has only what trunk commits: no `node_modules`, no
+virtual environment and no generated files. A project whose build needs them
+installs them in `smoke`, as a Node project does with:
+
+```json
+"smoke": "npm ci && npm run build --silent"
+```
+
+Commit that to trunk before the next story starts: the worktree reads trunk's
+committed `.sdlc/config.json`, so an edit to any command that is not committed
+does not reach a new story.
+
+Tools that look upward from where they run find the main checkout's copies from
+inside `.sdlc/worktrees/<ID>`: Go's `go.work`, Node's `node_modules`, and
+configuration that cascades, such as ESLint's `.eslintrc` and `.editorconfig`. A
+`go.work` at the main checkout's root takes over the worktree's build: set
+`GOWORK=off` in the commands, or commit a workspace that works from there.
+Installing in `smoke` gives the worktree a `node_modules` of its own.
 
 `fmt_file` is run by `sh` from the repository root, with `$FILE` set to the file
 that was written. It runs for every file, so a formatter that understands only
@@ -105,10 +150,10 @@ all. They are read from `.sdlc/config.json` in the repository, and a clone can
 bring `.sdlc/state/active` with it, so in a repository you did not write, read
 its `commands` before you work in it, as you would its `.claude/settings.json`.
 
-Each checkout reads its own `.sdlc/config.json`: a linked worktree made with
-`git worktree add` runs the commands and uses the trunk that its own copy
-names, while its backlog and story records are the main checkout's
-([more than one checkout](the-loop.md#more-than-one-checkout)). A second clone
+Each checkout reads its own `.sdlc/config.json`: a linked worktree, a story's
+own or one made with `git worktree add`, runs the commands and uses the trunk
+that its own copy names, while its backlog and story records are the main
+checkout's ([more than one checkout](the-loop.md#more-than-one-checkout)). A second clone
 is another repository altogether, with a backlog and records of its own, and
 nothing stops two clones working the same story.
 

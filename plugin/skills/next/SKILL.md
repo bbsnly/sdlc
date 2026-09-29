@@ -19,8 +19,7 @@ do not work from memory: tell the person to type `/sdlc:next` again, which picks
 where it is, and stop.
 
 Everything you know about the loop's state comes from the `sdlc` command, not the conversation.
-Do not write to `.sdlc/state/` yourself — a hook refuses it, because a record the assistant can
-edit is not a record.
+Do not write to `.sdlc/state/` yourself: a record the assistant can edit is not a record.
 
 ## Before anything else
 
@@ -31,15 +30,14 @@ Run `sdlc status --json`.
   Linux, `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex` on Windows.
   Both check the download against the release's checksums. If they say yes, run it and check
   again. If it is still not found, say which directory the installer reported, that a new session
-  will see it, and stop. Do not work the gates by hand: a loop with no record behind it is the
-  failure this exists to prevent.
+  will see it, and stop. Do not work the gates by hand.
 - `SDLC-E0002`: the project is not set up. Tell the user, offer to run `sdlc init`, and stop until
   they answer.
 - `SDLC-E0001`: this is not a Git repository. Say so and stop.
 - Otherwise read `active` and `next_gate`, the first gate that has not passed. With a story
   active, run `sdlc start --json` first: it changes nothing about the story, and makes this session
-  the one the hook holds to the loop's rules. Check its `session` as Gate 1 says, then go straight
-  to the section for `next_gate`.
+  the one the hook holds to the loop's rules. Check its `session` as Gate 1 says, and its
+  `worktree`, then go straight to the section for `next_gate`.
 - With no story active, start at Gate 1.
 
 Each gate is delegated to an agent that ships with the plugin. Begin every brief you give an
@@ -47,7 +45,18 @@ agent with `sdlc:next runbook, story <ID>`, and the gate. An agent stops on a br
 because it works only the gates of a story a person started; if one says so, give it the brief
 again with that line first. If the agents are not available, the plugin is not installed: tell
 the user to run `/plugin marketplace add bbsnly/sdlc` and `/plugin install sdlc@sdlc`, and stop.
-A loop you run yourself end to end is a checklist you mark off about your own work.
+
+## Where the story is worked
+
+When `sdlc start --json` prints `worktree`, the story is worked there, on the branch in `branch`;
+`main` is the main checkout. Each command starts where the session was opened, so begin every
+Bash command of the iteration, `sdlc` ones included, with `cd -- '<worktree>' && <command>`:
+single quotes, and any `'` in the path written as `'\''`.
+
+Every brief names the worktree and its branch, the backlog as `<main>/<backlog.path>` and the
+story's documents as `<main>/.sdlc/stories/<ID>/`, all absolute, and says every code file the
+agent reads or writes is under the worktree: the main checkout is the person's, and nothing stops
+a write there. Without `worktree`, every path is this checkout's.
 
 ## Handing a decision to a person
 
@@ -59,14 +68,13 @@ sdlc escalate <type> --message "<the question, and what you found>"
 ```
 
 Then stop, and tell the user what you asked. The iteration has ended, and the story waits until a
-person answers with `sdlc approve <ID>` in their own terminal. Do not run `sdlc approve` yourself
-— the hook refuses it — and do not start the story again before they have answered.
+person answers with `sdlc approve <ID>` in their own terminal, in the story's worktree if it has
+one. Do not run `sdlc approve` yourself, and do not start the story again before they have
+answered.
 
-Do not end your turn mid-story any other way. The plugin's Stop hook sends a stop back, naming
-the gate to work next; finishing a gate is not a place to stop. Only handing the story to a person
-ends it, or `sdlc stop` once every gate has passed; the hook refuses `sdlc stop` before then.
-After `loop.max_stop_blocks` stops with nothing recorded in between, it hands the story to a
-person itself.
+Do not end your turn mid-story any other way: finishing a gate is not a place to stop, and the
+plugin's Stop hook sends you back. Only handing the story to a person ends it, or `sdlc stop` once
+every gate has passed.
 
 ## If a command fails
 
@@ -80,15 +88,15 @@ that has not changed.
 sdlc start --json
 ```
 
-This picks up a story already under way, or takes the next runnable one.
+This picks up a story already under way, or takes the next runnable one. Take `worktree`,
+`branch` and `main` from it.
 
 If it succeeds and `session` in the output is empty, sdlc could not tell which Claude Code session
-this is, so nothing would hold this session to the loop's rules: no edit, commit or stop would be
-refused. Tell the user that plainly, and that it happens where Claude Code does not pass
-`CLAUDE_CODE_SESSION_ID` to the commands it runs, such as an older Claude Code or an app that
-does not pass it on, while `/sdlc:next` in Claude Code in a terminal does. Tell them the story is
-now in progress, and that `/sdlc:next` in a session that passes it on picks it up where it is.
-Then stop. Do not work the story without it.
+this is, so nothing would hold this session to the loop's rules. Tell the user that plainly, and
+that it happens where Claude Code does not pass `CLAUDE_CODE_SESSION_ID` to the commands it runs
+(an older Claude Code, or an app that does not). Tell them the story is now in progress, and that
+`/sdlc:next` in a session that passes it on picks it up where it is. Then stop. Do not work the
+story without it.
 
 If it fails with `SDLC-E0010` there is nothing to work on: show the user the `why` field, run
 `sdlc story list`, and stop.
@@ -96,12 +104,12 @@ If it fails with `SDLC-E0010` there is nothing to work on: show the user the `wh
 If the output has `"resume": true`, the story's earlier gates stand: go straight to the section
 for the `next_gate` it reports.
 
-If it fails with `SDLC-E0038`, `SDLC-E0039`, `SDLC-E0040` or `SDLC-E0041`, trunk is not somewhere
-a new story can start from: another branch, uncommitted work that belongs to no story, behind
-`origin`, or failing its smoke check. Show the error and stop. Do not commit, stash, discard or fix
-anything on trunk to get past it — nothing the loop records would account for that work.
+If it fails with `SDLC-E0040`, `SDLC-E0041`, `SDLC-E0053`, or with `git.worktrees` false
+`SDLC-E0038` or `SDLC-E0039`, a new story cannot start from trunk as it is. Each is the person's
+to fix: show the error and stop. Do not commit, stash, discard or fix anything on trunk to get
+past it.
 
-Read the story from the backlog file named by `backlog.path` in `.sdlc/config.json`. Each
+Read the story from the backlog file named by `backlog.path`, in the main checkout. Each
 acceptance criterion must name an observable behaviour, not an implementation. One that cannot
 become a failing test is a Definition-of-Ready problem: record it, and hand the question to a
 person rather than inventing an interpretation:
@@ -132,8 +140,7 @@ Delegate to `sdlc:researcher`, with:
   `sdlc artifact write threats`
 
 Do not do this analysis yourself: the agent's fresh context cannot inherit an assumption from
-this conversation. Nobody edits a gate's documents in place, the agent included; they go through
-`sdlc artifact write`, and the hook refuses anything else.
+this conversation.
 
 When it returns, read its JSON result and record the gate:
 
@@ -145,13 +152,12 @@ Always pass the flag: `--security-sensitive` when the researcher reported
 `security_sensitive: true`, `--security-sensitive=false` when it reported false. It decides whether
 the security reviewer can block Gates 4 and 7, and left unset the loop assumes yes.
 
-If either document was not stored, the gate refuses and says which. The agent's summary is not the
-document, and later gates read the document: hand it to a person with
+If either document was not stored, the gate refuses and says which: the agent's summary is not
+the document. Hand it to a person with
 `sdlc escalate analysis_incomplete --message "..."` and stop.
 
-If the agent reports `open_questions` above zero, do not pass the gate.
-Guessing an answer here is the most expensive mistake in the loop: everything downstream is built
-on it.
+If the agent reports `open_questions` above zero, do not pass the gate. Guessing an answer here
+is the most expensive mistake in the loop.
 
 ```bash
 sdlc gate analysis fail --note "<n> open questions the specification does not settle"
@@ -193,12 +199,13 @@ From then on nobody can edit the tests, you and their author included. Lifting t
 yours to do: the hook refuses `sdlc unfreeze` from you and every agent. If a frozen test is wrong,
 hand it to a person with
 `sdlc escalate frozen_test_wrong --message "<which test, and the criterion it gets wrong>"` and
-stop. In their own terminal they run `sdlc approve <ID>`, then `sdlc start <ID>`, then
-`sdlc unfreeze --reason "..."`, which opens this gate and every one after it again.
+stop. In their own terminal, in the story's worktree if it has one, they run `sdlc approve <ID>`,
+then `sdlc start <ID>`, then `sdlc unfreeze --reason "..."`, which opens this gate and every one
+after it again.
 
-A test file added after the freeze stops `tests_frozen`, `plan`, `implementation`, `verification`
-and `commit` (`SDLC-E0043`) until the freeze holds it. Only with `freeze.allow_new_test_files` on
-may the test author add one; run `sdlc freeze` again after it does.
+A test file added after the freeze stops every gate the freeze guards (`SDLC-E0043`) until the
+freeze holds it. Only with `freeze.allow_new_test_files` on may the test author add one; run
+`sdlc freeze` again after it does.
 
 ## Gate 4 — The plan, and its review
 
@@ -210,9 +217,9 @@ Delegate to `sdlc:implementer` with the backlog file and the paths to `ANALYSIS.
 sdlc gate plan pass --note "<n> steps, <what it changes>"
 ```
 
-Then delegate the review to all five at once, each with the path to `PLAN.md`. They do not read
-each other's work; run in sequence, the later ones only agree with the earlier. Each records its
-own review with `sdlc review add design_review <role> <verdict>`.
+Then delegate the review to all five at once, each with the path to `PLAN.md`, never one after
+another: reviewers that run in sequence only agree with the earlier ones. Each records its own
+review with `sdlc review add design_review <role> <verdict>`.
 
 | Agent | Verdict decides the gate? |
 | --- | --- |
@@ -227,10 +234,10 @@ sdlc review list --gate design_review
 sdlc gate design_review pass --note "<what the architect said, in one clause>"
 ```
 
-The gate refuses until every reviewer has reported and the blocking ones have approved; perf
-refuses it only by blocking; a revised plan needs its reviewers to look again. Do not edit the plan
-yourself to satisfy a reviewer — send it back to the implementer with the findings. A block from a
-reviewer that decides the gate is not a failure to route around:
+The gate refuses until every reviewer has reported and the blocking ones have approved; a
+revised plan needs its reviewers to look again. Do not edit the plan yourself to satisfy a
+reviewer — send it back to the implementer with the findings. A block from a reviewer that decides
+the gate is not a failure to route around:
 
 ```bash
 sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
@@ -254,8 +261,8 @@ If the gate finds the freeze broken, something edited an acceptance test: hand i
 ## Gate 6 — Independent verification
 
 Delegate to `sdlc:verifier`, with nothing from this conversation beyond the paths: it re-derives
-the criteria from the specification without having seen how the code came to be. It stores
-`VERIFICATION.md` and records a blocking verdict with
+the criteria without having seen how the code came to be. It stores `VERIFICATION.md` and
+records a blocking verdict with
 `sdlc review add verifier_review verifier approve|block`.
 
 ```bash
@@ -295,8 +302,9 @@ sdlc escalate pre_commit_approval --message "<what changed, what to look at, and
 An approval holds only for the work it was given for: change anything after it, and it needs
 approving again. Once approved, a person types `/sdlc:next` again, and it resumes here.
 
-Commit the whole story as one change, the code and the loop's record of it, with a message about
-the change and why, in the project's own style:
+Commit the whole story as one change, with a message about the change and why, in the project's
+own style. With a worktree, commit there, on `story/<ID>`, never with `git -C` on the main
+checkout, where the loop's record stays. Without one, the record goes in with the code:
 
 ```bash
 git add -A
@@ -308,13 +316,13 @@ The gate refuses while anything is uncommitted, or if an acceptance test changed
 The note needs no hash. A hash it does name has to be inside the range this pass records, or the
 gate refuses (SDLC-E0049): run it again with the hash corrected or dropped.
 
-The pass says which commits it recorded, and the person should hear it in the same words:
+The pass says which commits it recorded; tell the person in the same words:
 
 - `landed in <start>..<end>`: the commits the loop watched this session land.
-- `head is <head>, past <end>: nothing that landed after <end> was watched`, under it: HEAD has
-  moved past the range. Usually a person committed after you did; say so, and name both commits.
+- `head is <head>, past <end>: nothing that landed after <end> was watched`, under it: HEAD moved
+  past the range, usually a person's commit after yours; say so, and name both commits.
 - `no range recorded: ...`, in place of `landed in`: no single range holds only the watched
-  commits. It does not say why: someone else's commit between the story's, a merged side
+  commits, for a cause it does not name: someone else's commit between the story's, a merged side
   branch, rewritten history, or git unable to read the start or the hook's notes. The work is
   fine; say there is no range, give all four causes, pick none.
 
@@ -322,10 +330,8 @@ Do not work a range out yourself, and do not rewrite history to make one.
 
 Before Gate 9, show the person any `head is` line again, and tell them where the hook wrote down
 what it watched: `<git-dir>/sdlc/commits/<story>/`, one file per HEAD (`git rev-parse
---absolute-git-dir` names the git directory). `sdlc stop` at the end of Gate 9 removes that
-directory, so it is the person's one chance to read it. Do not read it yourself: the hook keeps the
-session out of the git directory. The record keeps only the range and the `head is` fact, which
-`sdlc log` shows later.
+--absolute-git-dir` names the git directory). `sdlc stop` at the end of Gate 9 removes it, so it
+is their one chance to read it. Do not read it yourself.
 
 ## Gate 9 — Retro
 
@@ -340,8 +346,15 @@ sdlc stop
 
 That finishes the story: it becomes `done` and leaves the backlog, its freeze is lifted, and the
 next time a person types `/sdlc:next` it takes the next story. Tell the user what was built, what
-deviated from the plan, and what the retro says to do differently. Commit the retro if the project
-keeps it, along with the backlog file, which now records the story as done.
+deviated from the plan, and what the retro says to do differently.
+
+Without a worktree, commit the retro if the project keeps it, with the backlog file, which now
+records the story as done. With one, commit only the bookkeeper's `CODEMAP.md` change, if any, in
+`<worktree>` as its own `docs:` commit, and tell the user: "`<ID>` is done on `story/<ID>`, in
+`<worktree>`; trunk does not have it yet. A person brings it to trunk in the main checkout, with
+trunk checked out: `git merge --ff-only story/<ID>`. If git cannot fast-forward, trunk has moved:
+in `<worktree>`, run `git rebase <trunk>` and the tests, then merge again. Bring it to trunk
+before starting a story that depends on it."
 
 ## Rework, at any gate
 
@@ -352,10 +365,10 @@ sdlc gate <gate> fail --note "<what went wrong>"
 ```
 
 Do not pass a gate to keep moving, do a gate's work yourself because delegating it was refused, or
-lift the freeze to make something pass. Do not change the contract to get past a gate either:
-`CLAUDE.md` is refused while a story runs. If a frozen test or a contract rule is wrong, say which
-criterion or gate it contradicts, and hand it to a person.
+lift the freeze to make something pass. Do not change the contract to get past a gate either. If
+a frozen test or a contract rule is wrong, say which criterion or gate it contradicts, and hand it
+to a person.
 
-After `loop.max_rework_rounds` failures of the same gate, or `loop.max_review_rounds` blocks from
-the same reviewer, `sdlc gate` or `sdlc review add` hands the story over, ends the iteration, and
-says so — `handed_over` in its `--json`. Stop there: another attempt would meet the same wall.
+After `loop.max_rework_rounds` failures of one gate, or `loop.max_review_rounds` blocks from one
+reviewer, `sdlc gate` or `sdlc review add` hands the story over itself and says so — `handed_over`
+in its `--json`. Stop there: another attempt would meet the same wall.

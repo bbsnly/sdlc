@@ -127,11 +127,20 @@ writing the backlog, `.sdlc/` (the story records, the configuration and that
 checkout's own `.sdlc/state`), `.git/` (the claims included), `.claude/` and
 `CLAUDE.md`, by an absolute path, a link, `..` through a link, `~`, `cd`,
 `find`, `xargs` or code handed to an interpreter; discarding what that checkout
-holds with `git -C … reset --hard` and its like; taking the checkout away; and
-committing there ([`commit-in-another-checkout`](#commit-in-another-checkout)).
-Reading anything, and writing files no rule protects, are not refused. The file
-tools are refused everything outside the checkout the session is held in, as
-they always were.
+holds with `git -C … reset --hard` and its like; taking the checkout away, or a
+directory that holds it
+([`loop-state-through-the-tool`](#loop-state-through-the-tool)); and committing
+there, however git is pointed at it
+([`commit-in-another-checkout`](#commit-in-another-checkout)). Every
+`git worktree` action but `list` is refused in any checkout
+([`worktree-through-the-tool`](#worktree-through-the-tool)), and so is changing
+`core.worktree` or `core.bare`
+([`worktree-setting-through-the-tool`](#worktree-setting-through-the-tool)).
+Reading anything, and writing with the shell files no rule protects, are not
+refused. The file tools are refused everything outside the checkout the session
+is held in, as they always were, and every other checkout nested inside it,
+such as a story's worktree under `.sdlc/worktrees/` seen from the main checkout
+([`write-outside-repository`](#write-outside-repository)).
 
 Which checkout a path is in is worked out from where it lands on disk, links
 followed, by walking up to the nearest directory whose `.git` belongs to this
@@ -140,9 +149,12 @@ at, so a repository made with `git init` inside a checkout cannot hide that
 checkout's files. The price is that an unrelated repository inside a checkout,
 such as vendored code or a submodule never initialised, is under the `.git`
 name rule like any other path in that checkout, and a commit made in it is
-refused as a commit in that checkout. A worktree nested inside the
-project, as one under `.sdlc/` would be, counts as another checkout for what it
-holds.
+refused as a commit in that checkout. A worktree nested inside the project, as
+a story's worktree under `.sdlc/worktrees/` is inside the main checkout, counts
+as another checkout for what it holds, to the shell and to the file tools. A
+linked worktree moved by hand to somewhere outside the project is still a
+checkout of this repository, even where git's own record of it names its old
+place.
 
 **Failing closed.** When the main checkout cannot be found — a bare repository,
 `core.bare` set, a rewritten `commondir` — the hook does not read the
@@ -152,43 +164,157 @@ Where not even git's directory can be read, every path outside the checkout that
 might be the main checkout's evidence is refused by name, and the refusal says
 to run `sdlc doctor`.
 
-**Not held.** These are known and not closed here:
+**Not held.** These are known and not closed. Each says what could happen, and
+how you would notice.
 
-- A session's own `git worktree remove`, `git worktree move` and
-  `git worktree prune`, and `mv` of its own checkout. Each ends its own hold,
-  because the claim names the old path. They are for the next story (US-029.2,
-  decided 2026-09-24T18:44:45Z).
-- A commit in a linked worktree the walk cannot find: one whose `.git` does not
-  lead into this repository, or that was moved. A repository or work tree named
-  through a variable the shell has yet to expand is judged as the project, as it
-  always was; so is one set with `GIT_DIR` or `GIT_WORK_TREE` in the
-  environment, by any spelling: `export`, an assignment in front of the
-  command, or `env`. A `--work-tree` outside every checkout is not held.
-- Another checkout's work tree reached through git's configuration rather than
-  its flags. `git -c core.worktree=<main> commit` is judged as a commit in the
-  session's own checkout, and meets the commit gate there, where
-  `git --work-tree=<main> commit` is refused; so is `git --work-tree=<main> add`
-  followed by a plain `git commit`. Once the session's own story is ready to
-  commit, either lands the other checkout's changes on its branch.
-- Removing a directory above another checkout, such as `rm -rf <main>/..` or a
-  directory that holds every checkout. Taking a checkout away is refused only
-  where the command names the checkout itself, as it is for the project's own
-  root and the directories above it.
-- The file tools and a worktree nested inside the main checkout, such as
-  `<main>/wts/W`. To a session held in the main checkout, that worktree's
-  `.sdlc/state` and `.sdlc/config.json` are paths inside its own checkout, and
-  the file tools' rules match from the checkout's root, so they can be written
-  with the file tools. The shell is refused the same writes.
-- A finished story between its retro and `sdlc stop`. Its claim goes when the
-  story is done, and a checkout's `active` holds only a story in progress or
+- **Trunk, or another story's branch, moved from a story's worktree.** A
+  session working a story in its worktree can move trunk without committing on
+  it: `git update-ref refs/heads/<trunk> HEAD`, or
+  `git checkout --ignore-other-worktrees <trunk>` and then a commit. Trunk then
+  holds work no gate passed on trunk. In the main checkout, `git status` shows
+  changes nobody made there, the difference reversed, because the branch moved
+  and its files did not; `git reflog <trunk>` shows when trunk moved. The same
+  commands can move or delete another story's branch, `story/<ID>`, as
+  `git update-ref -d refs/heads/story/<ID>` does; that story's next gate
+  reports it ([SDLC-E0046](troubleshooting.md#sdlc-e0046)).
+- **A commit in the next call.** Each call is read on its own. A call that
+  stages another checkout's work into the session's index, with
+  `git --work-tree=<main> add` or `GIT_INDEX_FILE`, followed by a plain
+  `git commit` in a later call, puts that work in the story's commit. The commit
+  gate then does not pass: the reviews no longer match the tree
+  ([SDLC-E0029](troubleshooting.md#sdlc-e0029)), or the tree no longer matches
+  the commit ([SDLC-E0032](troubleshooting.md#sdlc-e0032)), and
+  `git show --stat HEAD` in the story's worktree lists files the story never
+  touched.
+- **What the persistent shell keeps.** The Bash tool keeps one shell from call
+  to call, and the hook sees only the environment the session started with. A
+  variable exported in an earlier call, such as `export GIT_DIR=<main>/.git`,
+  or set by a file run with `source` or `.`, is not seen, so a later
+  `git commit` can land on the branch another checkout has checked out, trunk
+  included. `git log` there shows a commit no gate passed, and `git reflog`
+  when it came. A variable kept that way can also change which story a
+  person's decision acts on, and the rules judge the decision only by what
+  the command itself names. The story's `gate-record.json` lists every
+  approval and unfreeze with when it was made.
+- **A program the rules do not read through.** The rules read past the
+  wrappers [the shell rules](#rules-on-shell-commands) list, and no others. A
+  command that any other program runs, or that code handed to an interpreter
+  runs as a command of its own, is not read for what it runs. A commit, the
+  removal of a worktree or a checkout, and a person's decisions all get past
+  the rules that way. `git log` and `git reflog` show a commit no gate passed,
+  `git worktree list` a worktree gone or prunable, and the story's
+  `gate-record.json` every approval and unfreeze with when it was made.
+- **A command line for another kind of shell.** A string handed to a shell of
+  another kind than the tool's, such as `pwsh -Command` or `powershell -c` in
+  a `Bash` command, or `bash -c` or `sh -c` in a `PowerShell` one, is read
+  with the rules of the tool the command came from, not as that shell reads
+  it. So PowerShell's ways of setting a variable are not read in a string
+  handed to PowerShell from `Bash`, nor `${NAME:=…}` and `${NAME=…}` in one
+  handed to a POSIX shell from `PowerShell`, and a `git commit` after them can
+  land in another checkout as a plain commit, which only
+  [`commit-gate`](#commit-gate) holds. Where that shell's quoting and escapes
+  make a word into something other than the tool's would, the word is read as
+  the tool's would make it, by every rule that turns on which program a
+  command runs. `git log` and `git reflog` in the other checkout show a commit
+  no gate passed, and when it came; `git worktree list` shows a worktree gone,
+  or marks it prunable; and the story's `gate-record.json` lists every
+  approval and unfreeze with when it was made.
+- **`parallel`'s own command lines.** GNU `parallel` runs its command once
+  for each argument after `:::`, with the argument put after it, and runs
+  each argument as a command line of its own where no command comes before
+  `:::`. The rules read the command, `:::` and its arguments as one command
+  line instead, so an argument run as a command line of its own is not read
+  for what it runs. A commit, the removal of a worktree or a checkout, and a
+  write to the loop's own record can each get past that way. `git log` and
+  `git reflog` show a commit no gate passed, `git worktree list` a worktree
+  gone or prunable, and `sdlc doctor` a loop record it can no longer read.
+- **Other ways of setting git's place.** `GIT_DIR`, `GIT_WORK_TREE` and
+  `GIT_INDEX_FILE` are read only where they are set in the ways
+  [`commit-in-another-checkout`](#commit-in-another-checkout) lists. Set
+  another way, as a `for` or `select` loop's variable, through a name
+  reference (`declare -n`), with bash's `+=`, `mapfile`, `getopts` or
+  arithmetic, with PowerShell's `Copy-Item` or `Rename-Item` on `Env:`, with
+  a parameter PowerShell binds in a way the rules do not follow, or with a
+  name held in a variable, as in `Set-Item "Env:$n"`, a later `git commit`
+  can land in another checkout as a plain commit, which only
+  [`commit-gate`](#commit-gate) holds. `git log` and `git reflog` in the other
+  checkout show a commit no gate passed, and when it came.
+- **Your own git configuration.** Aliases and includes in `~/.gitconfig`, the
+  system configuration, a file `GIT_CONFIG_GLOBAL` or `GIT_CONFIG_SYSTEM` named
+  when the session started, and anything those include, are not read. A bare
+  alias of yours, such as `git st`, is allowed; so would be one whose value
+  removes a worktree or makes a commit. `git config --show-origin
+  --get-regexp '^alias\.'` lists every alias git would run, and where it came
+  from.
+- **A path given as a default.** `${X:-…}`, `${X:=…}` and `${X=…}` are read
+  without the default, so `rm -rf "${D:-..}"` or `rm -rf "${D:=..}"`, run from
+  a story's worktree, is not taken for removing the directory that holds the
+  checkout.
+- **Code that works out its own path.** A program handed to an interpreter is
+  read for the paths it names outright, not for a path relative to where it
+  runs or one it works out, such as its own current directory. So
+  `node -e 'require("fs").rmSync("..", {recursive: true})'` and
+  `python3 -c 'import os, shutil; shutil.rmtree(os.getcwd())'` are not
+  refused. For this and the entry above, you would notice the checkout gone:
+  `git worktree list` marks it prunable, and every `sdlc` command on its story
+  says the checkout holding it no longer exists
+  ([SDLC-E0051](troubleshooting.md#sdlc-e0051)).
+- **PowerShell spellings of git.** `& (Get-Command git) worktree prune`,
+  dot-sourcing a variable, as in `. $G worktree prune`, and a git command whose
+  output is assigned, as in `$x = git worktree prune`, are not read as git, so
+  no git rule refuses them. A commit made this way is refused at the next gate
+  instead ([SDLC-E0046](troubleshooting.md#sdlc-e0046)); anything else shows
+  only in what it did, such as a worktree `git worktree list` no longer lists,
+  or lists as prunable.
+- **Words or a script from standard input, or from a file.** The rules read a
+  command as it is written. What reaches a program on its standard input, or
+  in a file it is told to read, is not read for what it runs:
+  `echo prune | xargs git worktree`, `xargs -a args.txt git worktree`,
+  `echo 'git worktree prune' | sh`, `echo commit -m x | xargs git -C <main>`,
+  and a script run from a file, such as `sh tidy.sh`. Such a command can remove
+  or prune a worktree, or commit in another checkout, and the same holds for
+  every rule that turns on which program a command runs. `git worktree list`
+  shows a worktree gone, or marks it prunable; `git log` and `git reflog` in
+  the other checkout show a commit no gate passed, and when it came; and the
+  story's `gate-record.json` lists every approval and unfreeze with when it was
+  made.
+- **Deleting through the Finder.** AppleScript run with `osascript`, telling
+  the Finder to delete a checkout or move it to the Trash, is not read. The
+  checkout is then in the Trash, and can be put back from there. Until it is,
+  `git worktree list` marks it prunable, and every `sdlc` command on its story
+  says the checkout holding it no longer exists
+  ([SDLC-E0051](troubleshooting.md#sdlc-e0051)).
+- **The shell command a `!` alias runs.** An alias whose value starts with `!`
+  runs a shell command. The rules on git and on commits read that command, so
+  `git -c alias.x='!git worktree prune' x` is refused, but no other rule
+  reads it: a file it writes is not refused, nor is anything else only the
+  other rules would refuse. `git status` shows a file it changed, and the
+  story's `gate-record.json` lists every approval and unfreeze with when it
+  was made, so one nobody remembers making shows there.
+- **Ordinary files in another checkout.** The shell can write a file no rule
+  protects in another checkout: a story worktree's source from the main
+  checkout, or the main checkout's from a story's worktree. Another story's
+  frozen tests are among them. `git status` in that checkout shows the change,
+  and a frozen test changed that way is reported by that story's next gate as
+  a broken freeze ([SDLC-E0025](troubleshooting.md#sdlc-e0025)).
+- **`GIT_WORK_TREE` around `sdlc` itself.** An `sdlc` command run with
+  `GIT_WORK_TREE` set treats that directory as the checkout, `sdlc start`
+  included. The paths `sdlc start` prints say where it made and recorded the
+  story.
+- **A finished story between its retro and `sdlc stop`.** Its claim goes when
+  the story is done, and a checkout's `active` holds only a story in progress or
   waiting for a person, so from a call that reaches only other checkouts the
   session working it is not found, and is held there to nothing until
   `sdlc stop` ends the iteration. In its own checkout it is held as before.
-- A session that holds nothing can write or remove a claim or another
-  checkout's `.sdlc/state/active`, and so make two checkouts name one story. Each
-  is then refused it until a person runs `sdlc stop` in all but one. What the
-  refusal says about each checkout is read from files anybody can write: it
-  helps a person choose, and proves nothing.
+  Nothing says so; the runbook runs `sdlc stop` straight after the retro, which
+  closes it.
+- **Claims written by a session that holds nothing.** Such a session can write
+  or remove a claim or another checkout's `.sdlc/state/active`, and so make two
+  checkouts name one story. Each is then refused it
+  ([SDLC-E0050](troubleshooting.md#sdlc-e0050), which lists them) until a person
+  runs `sdlc stop` in all but one. What the refusal says about each checkout is
+  read from files anybody can write: it helps a person choose, and proves
+  nothing.
 
 ## Rules on writing files
 
@@ -199,7 +325,17 @@ searching and running things are nobody's business here.
 
 Refuses a write that resolves outside the repository, symlinks followed.
 
-*Instead:* work inside the repository; if you need a file elsewhere, ask.
+It also refuses a write into another checkout of this repository nested inside
+the one the session is held in: a story's worktree under `.sdlc/worktrees/`,
+written from a session held in the main checkout, by its path or through a
+link. A file there is that checkout's work, not this story's, and its freeze and
+loop state are that checkout's too. The refusal names the checkout the file is
+in.
+
+*Instead:* work inside the repository; if you need a file elsewhere, ask. A
+file in another checkout of this repository belongs to that checkout's story:
+work in the checkout this session holds, and leave that one to the session
+holding its story.
 
 ### `write-protected-path`
 
@@ -370,35 +506,55 @@ the person's decision.
 Every rule above governs the file-writing tools, and two of them —
 `no-new-test-after-the-freeze` and `implementer-does-not-write-tests` — hold
 against a shell command too. The rest would leave
-`cat > .sdlc/stories/A-1/ANALYSIS.md` walking past them. These nine close
+`cat > .sdlc/stories/A-1/ANALYSIS.md` walking past them. The rules below close
 that, and nothing else about your shell is touched: your tests, your build and
 your tooling run exactly as before.
 
 They apply to every tool that runs a command: `Bash`, `PowerShell` and
-`Monitor`. They read past what only wraps a command — `( … )`, `env`, `sudo`,
-`sh -c`, `cmd /c`, `xargs` and their like — as well as a command sent to the
-background with `&` or run with PowerShell's `&`. They know PowerShell's
+`Monitor`. They read past what only wraps a command — `( … )`, `env` with the
+values its `-u`, `-C` and `-P` take, `sudo`, `nice`, `nohup`, `setsid`,
+`ionice`, `chrt`, `unbuffer`, `taskset`, `chronic`, `ts`, `firejail`,
+`systemd-run`, `unshare`, `nsenter`, `busybox` and `toybox`, `sh -c`, `cmd /c`
+and `xargs`; `env -S`, `flock` and `script` with the command line each is
+given; `watch` and `parallel`, which hand their words to a shell, their words
+read as one command line, with `parallel`'s `:::` and the arguments after it
+among them ([not held](#a-repository-with-more-than-one-checkout)) — as well
+as a command sent to the background with `&` or run with PowerShell's `&`. A
+program that runs another and is not on this list is read as itself, not for
+what it runs ([not held](#a-repository-with-more-than-one-checkout)). They know PowerShell's
 cmdlets and their aliases, a parameter given as `-Path:file`, and a backtick
 used as an escape. They read a relative path from where the command runs:
-after a `cd` earlier in the same command, or where an earlier call left the
-session. And they read a path as the file it is on disk, so a link to `.sdlc`,
-or a Windows short name such as `SDLC~1`, is the file it reaches. The body of a
-here-document is text, not commands, so a plan or a review that mentions
-`git commit` is not refused for it — unless the text goes to a shell or an
-interpreter, which runs it. PowerShell's here-string, `@'` to `'@` or `@"` to
-`"@`, is a document too, but only in a `PowerShell` command and only when it is
-closed; the lines after one that is never closed are read as commands. In a
+after a `cd` earlier in the same command, where an earlier call left the
+session, or where `env -C`, `sudo -D`, `systemd-run --working-directory` or
+`unshare -w` runs it, as a `cd` in front of it would. And they read a path as
+the file it is on disk, so a link to `.sdlc`, or a Windows short name such as
+`SDLC~1`, is the file it reaches. The body of a here-document is text, not
+commands, so a plan or a review that mentions `git commit` is not refused for
+it — unless the text goes to a shell or an interpreter, which runs it.
+PowerShell's here-string, `@'` to `'@` or `@"` to `"@`, is a document too, but
+only in a `PowerShell` command and only when it is closed; the lines after one
+that is never closed are read as commands. In a
 `Bash` or `Monitor` command `@'` is an `@` and an ordinary quote, and the
 quotes are read as quotes: what is inside them is text, and what is outside
 them is commands.
 
 Which program a command runs is read with its quoting, so a commit message, a
 `--note` or a `--message` that mentions `sdlc approve` or `git commit` is text,
-not a command. A string handed to `bash -c`, `cmd /c`, PowerShell's `-Command`
-or `eval`, and a command inside `$(…)` or backticks, is read for what it runs. A
-commit in another repository, after a `cd` or with `git -C` or `--git-dir`, is
-not held to the story's gates. A commit with `GIT_DIR` set is, and so is one in
-a repository inside the project, such as a submodule.
+not a command. Quotes and escapes are read as the tool's shell reads them:
+`$'…'` with its escapes decoded, a backslash before an ordinary character
+dropped, so `g\it com\mit` and `git $'commit'` are `git commit`, and an escaped
+quote, as in `'it'\''s'`, a quote inside the word rather than the start of a
+string. A string handed to `bash -c`, `cmd /c`, PowerShell's `-Command` or
+`eval`, and a command inside `$(…)` or backticks, is read for the commands it
+runs, with the rules of the tool the command came from: a string for a shell
+of another kind, such as `pwsh -Command` in a `Bash` command or `bash -c` in a
+`PowerShell` one, is read as the tool's own shell would read it, not as that
+shell does ([not held](#a-repository-with-more-than-one-checkout)). A commit
+in another repository, after a `cd` or with `git -C` or `--git-dir`, is not
+held to the story's gates. A commit with `GIT_DIR` set is, and so is one in a
+repository inside the project, such as a submodule; where `GIT_DIR` names
+another checkout of this repository, it is refused as a commit there
+([`commit-in-another-checkout`](#commit-in-another-checkout)).
 
 This is pattern matching, not a shell. It is deliberately narrow.
 
@@ -415,10 +571,43 @@ files with `cat`, `grep`, `head` or the file tools is never refused; `sed`,
 `awk`, `perl` and interpreters are refused on them whatever they are asked to
 do, because each can write through its own program.
 
+It also refuses taking away a checkout of this repository, or a directory that
+holds one: the session's own, the main checkout, or another story's worktree,
+each with the story and the loop state it holds. That is removing or moving it
+with `rm`, `rmdir`, `mv` and their PowerShell and `cmd` twins, moving it to the
+trash with `trash`, `trash-put` or `gio trash`, or away with `gio move` or
+`gio rename`, the destination of `rsync` with `--delete`, what `find` could
+remove with `-delete` or `-exec rm`, a remover at the end of a pipe such as
+`xargs rm`, and a remover in code handed to an interpreter. The checkout can
+be named any way the shell has for it: by its path, `.`, `$PWD`, `~+` or
+`$(pwd)`, and `$OLDPWD` or `~-` for where the shell was before its last `cd`;
+in PowerShell, `(Get-Location)`; `..` and the directories above; and a glob or
+a brace list that could match it, such as `rm -rf ../*` from a story's
+worktree. A glob is refused for what it could
+match, which is a guess, so the refusal names the checkout it could reach.
+`rsync --delete` into a checkout, or a directory holding one, is refused
+because it removes there whatever the source lacks. `rm -rf ./build/*`,
+`rm -rf node_modules`, `find . -name '*.pyc' -delete` and, from a story's
+worktree, `find .. -empty -delete`, which removes nothing that holds a
+checkout, take away no checkout and are not refused. Three that take away none
+are refused all the same: `rm -rf build/.*`, because `.*` is read as matching
+`..`, as the refusal says; PowerShell's
+`[IO.Directory]::Delete((Join-Path $PWD 'build'), $true)`, because `$PWD` names
+the checkout; and a `find` that deletes all it finds, with no name to look
+for, from `.` at a checkout's root or from `..` just below it, as
+`find . -type d -empty -delete` there does, whatever else it tests, because it
+is read as taking that checkout away with the loop's record in it. The refusal
+names the checkout: at your own checkout's root it gives the loop-state reason,
+and where the checkout is another it gives the take-away reason, and either way
+the way round is to name the directory itself, as in `rm -rf build` or
+`find build -type d -empty -delete`.
+
 *Instead:* `sdlc artifact write`, `sdlc review add`, `sdlc gate`. The freeze is
 lifted by the person running the session. For `.sdlc/config.json` there is no
 command: the person running the session changes it by hand, outside a running
-iteration.
+iteration. Remove only what the story made, by naming it inside the checkout,
+such as `rm -rf build`; a checkout is removed by a person, in their own
+terminal.
 
 ### `protected-path-through-the-tool`
 
@@ -570,9 +759,12 @@ refusal names the first one that has not. The git commands that make commits of
 their own are refused the same way: `merge`, `cherry-pick`, `revert`, `am`,
 `rebase` and `commit-tree`, apart from `--abort` or `--quit` on its own, and a
 `--no-commit`, `merge --squash` or `cherry-pick -n` that leaves the change in the
-working tree for `git commit`. So is an
-alias to one of them set with `git -c` or `git config`; an alias already in your
-git configuration is not read. A commit made in a way the hook cannot read is
+working tree for `git commit`. So is an alias to one of them, set with
+`git -c`, `git config`, `--config-env` or the `GIT_CONFIG_*` variables, in the
+command or in the environment the session started with; an alias in your own
+git configuration file is not read, and one the hook cannot read at all is
+refused ([`git-command-cannot-be-read`](#git-command-cannot-be-read)). A commit
+made in a way the hook cannot read is
 refused at the next gate instead, which will not pass once HEAD has moved since
 the story started ([`SDLC-E0046`](troubleshooting.md#sdlc-e0046)).
 
@@ -616,18 +808,137 @@ a tool call until they have passed
 ### `commit-in-another-checkout`
 
 Refuses a commit, or a command that makes one as `commit-gate` counts them, in
-another checkout of the repository: with `git -C` or `cd` into the main checkout
-or another linked worktree, with `--git-dir` naming the main checkout's `.git`
-or another worktree's git directory, or with `--work-tree` naming another
-checkout. It refuses whatever the story's gates say.
+another checkout of the repository: with `git -C`, `cd`, `env -C` or
+`sudo -D` into the main checkout or another linked worktree, with `--git-dir`
+naming the main checkout's `.git` or another worktree's git directory, or with
+`--work-tree` naming another checkout. It refuses whatever the story's gates
+say.
 
-The gates were passed on the work in the checkout the story is held in. A commit
-in another checkout records work nobody reviewed, and that the story may commit
-says nothing about it. `--git-dir` naming the session's own worktree's git
+It reads the same places however git is given them in these ways, and only
+these, each read with the rules of the tool the command came from, so a string
+handed to a shell of another kind is not read for that shell's own ways
+([not held](#a-repository-with-more-than-one-checkout)). `GIT_DIR` names the
+repository, `GIT_WORK_TREE` the work tree and `GIT_INDEX_FILE` the index, set
+anywhere earlier in the command:
+
+- as an assignment, in front of the command or on its own, read as handed on
+  to git whether or not it is exported; or with `export`, `declare`,
+  `typeset`, `local`, `readonly` or `env`;
+- with `printf -v NAME`, with or without `--` after the name;
+- with `read` from a here-string (`<<<`); what `read` takes from anywhere else
+  is not in the command, so cannot be placed;
+- in a `Bash` or `Monitor` command, with `${NAME:=…}` or `${NAME=…}`, read as
+  setting it whether or not it was set before, and inside single quotes too;
+- in a `PowerShell` command, with `$env:NAME =` or `${env:NAME} =`, with `+=`
+  for either, with `[Environment]::SetEnvironmentVariable`, or with
+  `Set-Item`, `New-Item`, `Set-Content` or `Add-Content`, or their aliases
+  `si`, `ni`, `sc` and `ac`, on a path that starts with `Env:`. Their
+  parameters are read in any order, each named after a `-` in full, or cut
+  short to a part that names it alone, with its value after a space, a `:` or
+  both; a switch the cmdlet takes, by that name, given bare or with its value
+  joined to the `:`; one path, quoted or not, given with `-Path`, with
+  `-LiteralPath` or its aliases `-PSPath` and `-LP`, or first; `New-Item`'s
+  `-Name` under `Env:` itself; and the value given with `-Value`, or next.
+  `Add-Content` and `+=` are read as setting what they add. A value that comes
+  down the pipeline is not in the command, so cannot be placed.
+
+`core.worktree` names the work tree, given with `git -c`, `--config-env` or the
+`GIT_CONFIG_*` variables. The same variables in the environment the session
+started with count too. An index in another checkout's git directory, such as
+the main checkout's `.git/index`, is that checkout's. A place that cannot be
+placed, given through a variable the shell has yet to expand or in one of the
+ways above, is refused as though it were another checkout. So is a commit
+later in the same command than a `git add`, `rm`, `mv`, `restore`, `reset` or
+other index write run with another checkout's work tree or index.
+
+The story's gates cover only the checkout it is held in: what they reviewed is
+not what would be committed in another, and that the story may commit says
+nothing about it. `--git-dir` naming the session's own worktree's git
 directory is its own checkout, and meets `commit-gate` as a plain `git commit`
-does.
+does, and so does `GIT_DIR`, `GIT_WORK_TREE` or `GIT_INDEX_FILE` naming its own.
 
 *Instead:* commit from the checkout the story is held in.
+
+### `worktree-through-the-tool`
+
+Refuses `git worktree` for every action but `list`: `add`, `remove`, `move`,
+`prune`, `lock`, `unlock`, `repair`, and an action the hook cannot read,
+however git is reached, an alias included, in any checkout. `git worktree list`,
+`git worktree -h`, `git help worktree` and `man git-worktree` are not refused.
+
+`git worktree` makes, moves or takes away a checkout of this repository, and
+each story is held in the checkout git lists for it: its claim names that
+checkout's path. Moving or removing a worktree ends the hold on the story in it,
+pruning forgets one, and adding one can put a checkout where a story's worktree
+is about to go.
+
+*Instead:* `sdlc start` makes a story's worktree; a person adds, removes, prunes
+or repairs one in their own terminal. To read another branch, use
+`git show <branch>:<path>` or `git diff <branch>`.
+
+### `worktree-setting-through-the-tool`
+
+Refuses `git config` changing `core.worktree` or `core.bare`, in any scope,
+whether it sets, adds, replaces or unsets them, and removing or renaming the
+`core` section. Reading them is not refused.
+
+Changing either changes which directory a checkout of this repository works in,
+and it can move the main checkout's work tree out from under it, and with it
+every story that checkout holds.
+
+*Instead:* a person changes `core.worktree` and `core.bare` in their own
+terminal. If git says this is not a work tree, stop and tell them.
+
+### `git-command-cannot-be-read`
+
+Refuses a git command whose subcommand, or an alias it defines or runs, the
+hook cannot read, and one whose configuration comes from somewhere the hook
+cannot read:
+
+- a subcommand the shell has yet to expand, such as `git $CMD prune` or
+  `git "$(echo worktree)" prune`; a brace list such as `git {worktree,} prune`
+  is expanded first, and each word it makes is read, and one that makes more
+  words than the rules read is refused;
+- a program the shell has yet to expand is read as git, so `$G worktree prune`
+  and `"$(command -v git)" commit` are judged as git commands; where the word
+  after it has yet to be expanded too, as in `$X $Y`, that word would be git's
+  subcommand, and cannot be read. That refuses commands that never run git:
+  `$EDITOR "$FILE"`, `$CC $CFLAGS -o x x.c`, and
+  `for f in ./t/*; do "$f" "$ARG"; done`, which runs each script in `t`, are
+  refused, and the refusal says to name the program itself;
+- aliases nested deeper than the rules read, or an alias that leads back to
+  itself;
+- `!` aliases whose shell command lines, counted each time one runs, come to
+  more than the rules read in one command, 64 KB: an alias that runs another
+  many times, a few levels deep, is refused rather than read for longer than the
+  hook is given, and the refusal says to run what the aliases would run as
+  commands of their own, a few at a time;
+- an alias whose value cannot be read, wherever it is set: `-c alias.x=…`,
+  `git config alias.x …`, `--config-env=alias.x=VAR` with no assignment to
+  `VAR` in the command, or `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and
+  `GIT_CONFIG_VALUE_<n>`, or `GIT_CONFIG_PARAMETERS`, whose value the shell has
+  yet to expand or that will not parse;
+- an include, `include.path` or `includeIf.<condition>.path`, given in the
+  command, or `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM` or `GIT_CONFIG` set in
+  it to a file other than `/dev/null`; `git config` writing an include is
+  refused too.
+
+The rules for git read what git would run. An alias set in the command is read
+as its value, so `git -c alias.x='worktree remove --force' x .` is judged as
+`git worktree remove`, an alias defined with `git config` is judged by what it
+would run, and one whose value starts with `!` by the shell command it runs. A
+git in that shell command runs with the settings of the git command around it,
+which git hands on, so in
+`git -c alias.a='!git b' -c alias.b='worktree prune' a` the `git b` is
+`git worktree prune`.
+What the hook cannot read, it cannot judge, and every other git rule would let
+it pass unread. An alias in your own git configuration, such as `git st`, is
+not read and not refused ([not held](#a-repository-with-more-than-one-checkout)).
+
+*Instead:* spell git's subcommand and any alias out in the command itself, with
+no include or configuration file. Where the program is not git, name it, such
+as `python3`, rather than a variable. Where aliases hand the shell more than the
+rules read, run what they would run as commands of their own, a few at a time.
 
 ### `enforcement-stays-on`
 
@@ -716,10 +1027,11 @@ picked up again is not held to it, because its own work is in the tree:
 
 | Refused | Code |
 | --- | --- |
-| HEAD is not on `git.trunk_branch` | `SDLC-E0038` |
-| uncommitted work that belongs to no story | `SDLC-E0039` |
+| HEAD is not on `git.trunk_branch`, with `git.worktrees` false | `SDLC-E0038` |
+| uncommitted work that belongs to no story, with `git.worktrees` false | `SDLC-E0039` |
 | trunk is behind `origin`, with `git.remote` on | `SDLC-E0040` |
-| trunk fails `commands.smoke` | `SDLC-E0041` |
+| trunk fails `commands.smoke`, in the story's new worktree with `git.worktrees` on | `SDLC-E0041` |
+| the story's worktree or branch cannot be made, with `git.worktrees` on | `SDLC-E0053` |
 
 ## Turning it off
 

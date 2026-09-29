@@ -74,9 +74,12 @@ decision is yours, and you make it in your own terminal.
 
 ## Lift the freeze, on the record
 
-`sdlc unfreeze` acts on the story being worked on. An escalation ended the
-iteration, and `sdlc start` refuses a story that is waiting for a person, so
-answer it first and pick the story up again:
+`sdlc unfreeze` acts on the story being worked on in the checkout it runs in.
+With [`git.worktrees`](../configuration.md#git) on, the default, that is the
+story's worktree, `.sdlc/worktrees/US-001` in the main checkout: run every
+command on this page there. An escalation ended the iteration, and
+`sdlc start` refuses a story that is waiting for a person, so answer it first
+and pick the story up again:
 
 ```console
 $ sdlc approve US-001
@@ -115,7 +118,8 @@ The reason becomes an `unfreeze` event in the story's gate record, next to the
 With the freeze lifted, the separation of duties still holds. The implementer
 may never write a test file, and the main conversation writes no code or tests
 during an iteration. Either delegate the change to `sdlc:sdet`, or run
-`sdlc stop` in your own terminal, edit the test yourself, and `sdlc start` again.
+`sdlc stop` in your own terminal, edit the test yourself, and `sdlc start` again,
+in the story's worktree with `git.worktrees` on.
 
 Then freeze again, with the story active, and pass the gate the unfreeze
 reopened:

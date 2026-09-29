@@ -8,10 +8,12 @@
 // session only in the checkout it started in, so the records it guards were
 // out of its reach from the next directory along.
 //
-// The worktrees here are made with `git worktree add`, as a person makes one:
-// making them is US-029.2's. Each is on a branch of its own, and its own
-// .sdlc/config.json names that branch as trunk, because each checkout keeps
-// reading its own configuration and a new story starts only on trunk.
+// The worktrees here are made with `git worktree add`, as a person makes one,
+// and `sdlc start` makes none of its own: project turns story worktrees off,
+// and storyworktree_test.go has US-029.2's. Each is on a branch of its own,
+// and its own .sdlc/config.json names that branch as trunk, because each
+// checkout keeps reading its own configuration and, with story worktrees off,
+// a new story starts only on trunk.
 package e2e
 
 import (
@@ -1617,7 +1619,8 @@ var (
 // A single checkout is where every project is today, and nothing here may move
 // for it: what each command prints, its exit code, and what it leaves under
 // .sdlc/ apart from the record of the claim. The outputs are those of the
-// released tool at 64e7b4d.
+// released tool at 64e7b4d, which story worktrees turned off keep (US-029.2
+// AC-9): project turns them off.
 func TestAC10ASingleCheckoutPrintsAndLeavesWhatTheReleasedToolDoes(t *testing.T) {
 	binary := build(t)
 	root := project(t, binary)

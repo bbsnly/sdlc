@@ -52,6 +52,11 @@ func startRefused(t *testing.T, code string) string {
 // commands.smoke and git.remote were written into the configuration and read
 // by nothing, and trunk_branch was only ever advice: a story could be started
 // anywhere, on top of anything.
+//
+// Every test in this file runs with git.worktrees off, which initialised sets:
+// there, start begins a story in the checkout it runs in, and SDLC-E0038 to
+// SDLC-E0041 are the released tool's (US-029.2 AC-9). With story worktrees on,
+// storyworktree_test.go holds which of them still apply.
 func TestANewStoryStartsOnlyOnTrunk(t *testing.T) {
 	gitProject(t)
 	initialised(t)
@@ -125,7 +130,7 @@ func TestATrunkBehindItsRemoteHoldsANewStoryBack(t *testing.T) {
 	root := gitProject(t)
 	initialised(t)
 	inGit(t, "remote", "add", "origin", bareRemote(t))
-	setConfigOnDisk(t, root, "git", map[string]any{"trunk_branch": "main", "remote": true})
+	setConfigOnDisk(t, root, "git", map[string]any{"trunk_branch": "main", "remote": true, "worktrees": false})
 	commitEverything(t, root)
 	inGit(t, "push", "--quiet", "origin", "main")
 
@@ -149,7 +154,7 @@ func TestARemoteThatCannotBeAskedDoesNotHoldAStoryBack(t *testing.T) {
 	root := gitProject(t)
 	initialised(t)
 	inGit(t, "remote", "add", "origin", filepath.Join(t.TempDir(), "nowhere.git"))
-	setConfigOnDisk(t, root, "git", map[string]any{"trunk_branch": "main", "remote": true})
+	setConfigOnDisk(t, root, "git", map[string]any{"trunk_branch": "main", "remote": true, "worktrees": false})
 
 	if r := mustRun(t, "start"); !strings.Contains(r.stderr, "could not be asked") {
 		t.Errorf("start did not say it could not ask the remote:\n%s", r.stderr)
@@ -164,7 +169,7 @@ func TestARemoteThatCannotBeAskedDoesNotHoldAStoryBack(t *testing.T) {
 func TestABlankTrunkBranchFallsBackToTheDefault(t *testing.T) {
 	root := gitProject(t)
 	initialised(t)
-	setConfigOnDisk(t, root, "git", map[string]any{"trunk_branch": "", "remote": false})
+	setConfigOnDisk(t, root, "git", map[string]any{"trunk_branch": "", "remote": false, "worktrees": false})
 
 	// A blank setting that fell back to "" rather than "main" would refuse
 	// every branch, including this one, so a branch other than main has to be

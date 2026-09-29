@@ -176,7 +176,16 @@ any attempt by the assistant to write `CLAUDE.md`
     gate-record.json            sdlc start creates it; every gate, event and review
     ANALYSIS.md ... RETRO.md    sdlc artifact write
     reviews/                    sdlc review add
+  worktrees/
+    .gitignore                  sdlc start writes it, holding *
+    <ID>/                       the story's own worktree, on the branch story/<ID>
 ```
+
+With [`git.worktrees`](../configuration.md#git) on, the default, `sdlc start`
+writes `state/` in the story's worktree, `.sdlc/worktrees/<ID>`, rather than in
+the main checkout: every checkout has a `state/` of its own. `config.json` there
+is trunk's committed copy. The backlog and `stories/` stay in the main
+checkout, where every checkout reads and writes them.
 
 - **`config.json`** makes a project take part. Without it the hook allows
   everything, and `sdlc status`, `sdlc start` and the other loop commands stop
@@ -213,7 +222,9 @@ That is your call. These are the facts it rests on:
   anything, untracked files included. When it runs, every file under `.sdlc/`
   must be either committed or ignored.
 - The runbook commits a story with `git add -A`, so anything not ignored goes
-  into the same commit as the code.
+  into the same commit as the code. With `git.worktrees` on, that commit is made
+  in the story's worktree, on `story/<ID>`: the backlog and the story's records,
+  kept in the main checkout, are not in it, and wait there for you to commit.
 - Review approvals are stamped with a hash of the tree that leaves out `.sdlc/`
   and the `status` and `updated` fields of the backlog's stories. Committing
   loop files does not make an approval stale.

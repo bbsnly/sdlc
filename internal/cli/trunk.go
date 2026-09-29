@@ -37,18 +37,19 @@ const smokeOutputLimit = 2000
 // decision start makes under the lock. A named story that is not runnable is
 // the exception, refused after trunk as it always was. force skips the
 // decision, for a start that has already made it under the lock.
-func checkTrunkForNewWork(cmd *cobra.Command, asked string, force bool) (bool, error) {
+func checkTrunkForNewWork(cmd *cobra.Command, asked string, force bool, said *startSaid) (bool, error) {
 	s, _, err := openStore()
 	if err != nil {
 		return false, err
 	}
 	if !force {
 		plan, err := decideStart(s, asked, os.Getenv(store.SessionEnv))
+		said.passed = plan.passedOver
 		if err != nil || !plan.fresh {
 			return false, err
 		}
 	}
-	return true, checkTrunk(cmd, s)
+	return true, checkTrunk(cmd, s, len(said.passed) > 0)
 }
 
 // checkTrunk is what new work asks first: that trunk is somewhere a story can
@@ -56,7 +57,11 @@ func checkTrunkForNewWork(cmd *cobra.Command, asked string, force bool) (bool, e
 // committed, behind its remote, or on a trunk that is already broken inherits
 // all of it -- its commit carries changes that are not its own, and its tests
 // cannot tell their failures from the ones that were already there.
-func checkTrunk(cmd *cobra.Command, s *store.Store) error {
+//
+// passedOver is a start that passed over a story whose checkout no longer
+// exists. If this checkout was moved from there, what it has not committed is
+// that story's work, and it is not to be discarded to make room for the next.
+func checkTrunk(cmd *cobra.Command, s *store.Store, passedOver bool) error {
 	ctx := cmd.Context()
 	cfg := s.Config()
 	trunk := strings.TrimSpace(cfg.Git.TrunkBranch)
@@ -84,10 +89,17 @@ func checkTrunk(cmd *cobra.Command, s *store.Store) error {
 		return err
 	}
 	if stray := strayChanges(changes, cfg.Backlog.Path); len(stray) > 0 {
-		return sdlcerr.New(sdlcerr.UncommittedWork,
+		refusal := sdlcerr.New(sdlcerr.UncommittedWork,
 			"there is uncommitted work that belongs to no story: "+listPaths(stray),
 			"a story is committed with everything in the working tree, so this "+
 				"would be reviewed and committed as part of the next one")
+		if passedOver {
+			return refusal.WithFix("if this checkout was moved from the checkout the note above names, this may be " +
+				"the passed-over story's own work, kept here: a person releases that story here and starts it again, " +
+				"as the note says; otherwise commit it or stash it, then start again -- the loop's own files under " +
+				".sdlc/ and the backlog do not count")
+		}
+		return refusal
 	}
 
 	if cfg.Git.Remote {
@@ -151,28 +163,42 @@ func checkRemote(cmd *cobra.Command, root, trunk string) error {
 // runSmoke runs commands.smoke. A check that could not run is said, like an
 // unreachable remote; only one that ran and failed refuses.
 func runSmoke(cmd *cobra.Command, root, command string) error {
+	failed, said, err := smoke(cmd, root, command, nil)
+	if err != nil || failed == nil {
+		return err
+	}
+	why := "it exited with " + failed.Error() + " before the story has changed anything, " +
+		"so every failure the story meets would look like its own"
+	if said != "" {
+		why += "\n\n" + said
+	}
+	return sdlcerr.New(sdlcerr.TrunkBroken, "trunk does not pass commands.smoke", why)
+}
+
+// smoke runs commands.smoke in dir, with env where it is not nil, and returns
+// how it failed and the end of what it printed, or nil where it passed or did
+// not run.
+func smoke(cmd *cobra.Command, dir, command string, env []string) (failed error, said string, err error) {
 	command = strings.TrimSpace(command)
 	if command == "" {
-		return nil
+		return nil, "", nil
 	}
-	smoke, err := shellx.Command(cmd.Context(), root, command)
+	check, err := shellx.Command(cmd.Context(), dir, command)
 	if errors.Is(err, shellx.ErrNoShell) {
 		fmt.Fprintf(cmd.ErrOrStderr(),
 			"sdlc: commands.smoke was not run, because %v, so this starts without knowing whether trunk works\n", err)
-		return nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return err
+		return nil, "", err
+	}
+	if env != nil {
+		check.Env = env
 	}
 	var out bytes.Buffer
-	smoke.Stdout, smoke.Stderr = &out, &out
-	if err := smoke.Run(); err != nil {
-		why := "it exited with " + err.Error() + " before the story has changed anything, " +
-			"so every failure the story meets would look like its own"
-		if said := shellx.Tail(out.String(), smokeOutputLimit); said != "" {
-			why += "\n\n" + said
-		}
-		return sdlcerr.New(sdlcerr.TrunkBroken, "trunk does not pass commands.smoke", why)
+	check.Stdout, check.Stderr = &out, &out
+	if err := check.Run(); err != nil {
+		return err, shellx.Tail(out.String(), smokeOutputLimit), nil
 	}
-	return nil
+	return nil, "", nil
 }

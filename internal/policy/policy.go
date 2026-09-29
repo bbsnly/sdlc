@@ -21,9 +21,13 @@ type Request struct {
 	Agent   string // the role asking; empty is the main conversation
 	Path    string // repository-relative, slash-separated
 	Outside bool   // the path resolves outside the repository
-	Story   string // the story the iteration is on
-	Tests   Tests  // what the freeze says about this path
-	Backlog string // the backlog file, as Path is; empty for none
+	// OtherCheckout is a path in another checkout of the repository nested in
+	// this one, as a story's worktree is in the main checkout: its files are
+	// that checkout's work, and no rule of this one's reaches them.
+	OtherCheckout bool
+	Story         string // the story the iteration is on
+	Tests         Tests  // what the freeze says about this path
+	Backlog       string // the backlog file, as Path is; empty for none
 }
 
 // Tests is the freeze, as it applies to one path. The caller works these out --
@@ -84,6 +88,9 @@ type Rule struct {
 	Route string
 	// check returns the reason when the rule refuses, and "" when it does not.
 	check func(Request) string
+	// routeFor, where a rule has one, is the route for a request Route does
+	// not fit, or "" for Route.
+	routeFor func(Request) string
 }
 
 // ProtectedPaths are the paths nobody writes during an iteration. Configuration is the human's, and loop state is the CLI's:
@@ -106,11 +113,24 @@ var Rules = []Rule{
 		ID:    "write-outside-repository",
 		Route: "work inside the repository; if you need a file elsewhere, ask the user to create it",
 		check: func(r Request) string {
-			if !r.Outside {
+			switch {
+			case r.OtherCheckout:
+				return "this path is in another checkout of this repository, nested in the one " +
+					"this story is held in, and a file there is that checkout's work, not this story's"
+			case r.Outside:
+				return "this path is outside the repository, and the loop only governs " +
+					"what it can review"
+			}
+			return ""
+		},
+		// The path is in the repository, so working inside it is not the answer:
+		// the file is another story's.
+		routeFor: func(r Request) string {
+			if !r.OtherCheckout {
 				return ""
 			}
-			return "this path is outside the repository, and the loop only governs " +
-				"what it can review"
+			return "the file belongs to another story's checkout; work in the checkout this session " +
+				"holds, and leave that one to the session holding its story"
 		},
 	},
 	{
@@ -329,12 +349,18 @@ func Evaluate(r Request) Verdict {
 	if !governedTools[r.Tool] {
 		return Allowed
 	}
-	if r.Path == "" && !r.Outside {
+	if r.Path == "" && !r.Outside && !r.OtherCheckout {
 		return Allowed
 	}
 	for _, rule := range Rules {
 		if reason := rule.check(r); reason != "" {
-			return Verdict{Rule: rule.ID, Reason: reason, Route: rule.Route}
+			route := rule.Route
+			if rule.routeFor != nil {
+				if special := rule.routeFor(r); special != "" {
+					route = special
+				}
+			}
+			return Verdict{Rule: rule.ID, Reason: reason, Route: route}
 		}
 	}
 	return Allowed

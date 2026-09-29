@@ -41,10 +41,49 @@ func gitProject(t *testing.T) string {
 // initialised is `sdlc init` with what it wrote committed, which is where a
 // project is when its first story starts: `sdlc start` begins new work only from
 // a trunk with nothing uncommitted on it.
+//
+// Story worktrees are turned off: these tests are about one checkout, and hold
+// what `sdlc start` does there to the released tool (US-029.2 AC-9). What start
+// does with them on is storyworktree_test.go's.
 func initialised(t *testing.T) {
 	t.Helper()
 	mustRun(t, "init")
+	worktreesOff(t, ".")
 	commitEverything(t, ".")
+}
+
+// worktreesOff sets git.worktrees to false in root's configuration, keeping
+// the rest of the git section as it is.
+func worktreesOff(t *testing.T, root string) {
+	t.Helper()
+	setGitOnDisk(t, root, "worktrees", false)
+}
+
+// setGitOnDisk sets one key of the configuration's git section.
+func setGitOnDisk(t *testing.T, root, key string, value any) {
+	t.Helper()
+	path := filepath.Join(root, ".sdlc", "config.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	section, _ := cfg["git"].(map[string]any)
+	if section == nil {
+		section = map[string]any{}
+	}
+	section[key] = value
+	cfg["git"] = section
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(out, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // frozenStory is a project with an iteration running and one acceptance test

@@ -36,6 +36,13 @@ type startPayload struct {
 	// that session to the loop's rules, so a runbook that finds it empty has
 	// nothing enforcing anything, and stops.
 	Session string `json:"session"`
+	// Worktree and Branch are the story's own worktree and its branch, where
+	// the checkout the story is held by is one; Main is then the main
+	// checkout, where the backlog and the story's record are kept. A story
+	// held anywhere else has none of the three.
+	Worktree string `json:"worktree,omitempty"`
+	Branch   string `json:"branch,omitempty"`
+	Main     string `json:"main,omitempty"`
 }
 
 func newStartCmd() *cobra.Command {
@@ -54,36 +61,49 @@ func newStartCmd() *cobra.Command {
 			if len(args) == 1 {
 				asked = args[0]
 			}
-			if asked == "" {
-				// A store that will not open is said by the start that opens it.
-				if s, _, err := openStore(); err == nil {
-					noteGoneHolders(cmd.ErrOrStderr(), s)
-				}
-			}
-			checked, err := checkTrunkForNewWork(cmd, asked, false)
-			if err != nil {
-				return err
-			}
-			unchecked, err := startLocked(cmd, asked, checked)
-			if err != nil || !unchecked {
-				return err
-			}
-			// What start begins was decided again under the lock, and another
-			// checkout had moved the story on in between: trunk is checked for
-			// it now, outside the lock, and start decides once more.
-			if _, err := checkTrunkForNewWork(cmd, asked, true); err != nil {
-				return err
-			}
-			_, err = startLocked(cmd, asked, true)
+			said := &startSaid{}
+			err := runStart(cmd, asked, said)
+			// Once start knows where it went on to, if anywhere. A refusal is
+			// printed after the command returns, so this still comes first.
+			notePassedOver(cmd.ErrOrStderr(), said)
 			return err
 		},
 	}
 }
 
+// runStart is start: in a worktree of the story's own where git.worktrees is
+// on in this checkout, and in this checkout, as the released tool did,
+// where it is off.
+func runStart(cmd *cobra.Command, asked string, said *startSaid) error {
+	// A store that will not open is said by the start below that opens it.
+	if s, _, err := openStore(); err == nil {
+		if s.Config().Git.WorktreesOn() {
+			return startInWorktree(cmd, asked, said)
+		}
+		slog.Debug("start begins new work in this checkout: git.worktrees is false")
+	}
+	checked, err := checkTrunkForNewWork(cmd, asked, false, said)
+	if err != nil {
+		return err
+	}
+	unchecked, err := startLocked(cmd, asked, checked, said)
+	if err != nil || !unchecked {
+		return err
+	}
+	// What start begins was decided again under the lock, and another
+	// checkout had moved the story on in between: trunk is checked for it now,
+	// outside the lock, and start decides once more.
+	if _, err := checkTrunkForNewWork(cmd, asked, true, said); err != nil {
+		return err
+	}
+	_, err = startLocked(cmd, asked, true, said)
+	return err
+}
+
 // startLocked is start under the repository's lock. It does nothing and says so
 // when the story it would begin is new and trunk has not been checked for it:
 // the check runs the project's own command, and is never run holding the lock.
-func startLocked(cmd *cobra.Command, asked string, checked bool) (unchecked bool, err error) {
+func startLocked(cmd *cobra.Command, asked string, checked bool, said *startSaid) (unchecked bool, err error) {
 	s, _, unlock, err := openStoreForWriting(cmd)
 	if err != nil {
 		return false, err
@@ -91,6 +111,7 @@ func startLocked(cmd *cobra.Command, asked string, checked bool) (unchecked bool
 	defer unlock()
 
 	plan, err := decideStart(s, asked, os.Getenv(store.SessionEnv))
+	said.passed = plan.passedOver
 	switch {
 	case err != nil:
 		return false, err
@@ -98,16 +119,32 @@ func startLocked(cmd *cobra.Command, asked string, checked bool) (unchecked bool
 		return true, nil
 	case plan.refused != nil:
 		return false, plan.refused
-	case plan.running:
+	}
+	// The iteration's own files go to the checkout that holds the story: the
+	// story's worktree, where the plan names it, or this checkout. The backlog
+	// and the record are the repository's, and go through this store.
+	target := s
+	if plan.at != "" {
+		if target, err = s.At(plan.at); err != nil {
+			return false, err
+		}
+	}
+	if plan.running {
 		// Picked up in another session, the story is that session's now.
-		session, err := s.BindSession(true)
+		was, _ := target.WorkingSession()
+		session, err := target.BindSession(true)
 		if err != nil {
 			return false, err
 		}
-		if err := s.Claim(plan.id); err != nil {
+		if session != "" && was != "" && was != session {
+			slog.Debug("start took the story over from the session working it",
+				"story", plan.id, "checkout", target.Root(), "from", was, "to", session)
+		}
+		if err := target.Claim(plan.id); err != nil {
 			return false, err
 		}
-		return false, reportStart(cmd, s, plan.id, true, session)
+		said.went = plan.id
+		return false, reportStart(cmd, target, plan.id, true, session, plan.at != "")
 	}
 
 	id := plan.id
@@ -121,10 +158,10 @@ func startLocked(cmd *cobra.Command, asked string, checked bool) (unchecked bool
 	if err := s.SetStoryStatus(id, model.StatusInProgress); err != nil {
 		return false, err
 	}
-	if err := s.SetActive(id); err != nil {
+	if err := target.SetActive(id); err != nil {
 		return false, err
 	}
-	session, err := s.BindSession(false)
+	session, err := target.BindSession(false)
 	if err != nil {
 		return false, err
 	}
@@ -136,7 +173,7 @@ func startLocked(cmd *cobra.Command, asked string, checked bool) (unchecked bool
 	released := releasedSinceStart(record)
 	// Where trunk is now is where this iteration's work starts from. Outside a
 	// repository there is no trunk to hold it to.
-	if head, err := gitx.Head(cmd.Context(), s.Root()); err == nil {
+	if head, err := gitx.Head(cmd.Context(), target.Root()); err == nil {
 		record.Base = head
 	}
 	record.Append("loop_start", "iteration started", s.Now())
@@ -145,13 +182,14 @@ func startLocked(cmd *cobra.Command, asked string, checked bool) (unchecked bool
 	}
 	// Last, so that a start killed before it leaves a story in progress,
 	// which the next start in any checkout picks up first.
-	if err := s.Claim(id); err != nil {
+	if err := target.Claim(id); err != nil {
 		return false, err
 	}
 	if released {
-		noteRelease(cmd.ErrOrStderr(), id)
+		noteRelease(cmd.ErrOrStderr(), target, id)
 	}
-	return false, reportStart(cmd, s, id, resume, session)
+	said.went = id
+	return false, reportStart(cmd, target, id, resume, session, plan.at != "")
 }
 
 // refuseIfNotRunnable holds a story named to `sdlc start` to what picking one
@@ -234,19 +272,23 @@ func refuseIfFinished(s *store.Store, id string) (*sdlcerr.Error, error) {
 // A story another checkout holds is not there to pick, and one waiting on it
 // waits as if it were not done: resuming the first story under way handed a
 // worktree the story the main checkout was working.
-func nextRunnable(s *store.Store) (string, error) {
+//
+// It also returns the stories it passed over because the checkout holding
+// them no longer exists, whether or not it found one to pick.
+func nextRunnable(s *store.Store) (string, []goneHolder, error) {
 	backlog, err := s.Backlog()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	held, err := heldElsewhere(s, backlog)
+	holders, err := s.Holders()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
+	held, passed := elsewhere(backlog, holders), goneHolders(backlog, holders)
 	if sel, ok := backlog.Without(held...).Next(); ok {
-		return sel.Story.ID, nil
+		return sel.Story.ID, passed, nil
 	}
-	return "", sdlcerr.New(sdlcerr.NoRunnableStory,
+	return "", passed, sdlcerr.New(sdlcerr.NoRunnableStory,
 		"there is no story to start",
 		describeWhyNothingRuns(backlog)+heldNote(held))
 }
@@ -317,7 +359,9 @@ func nothingToStart(b *model.Backlog, path string, held []string) string {
 	return said + "`sdlc story list` shows what is holding each story back.\n"
 }
 
-func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool, session string) error {
+// reportStart says what start did. elsewhere is whether it ran in another
+// checkout than the one it acted in, the story's worktree.
+func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool, session string, elsewhere bool) error {
 	story, _, err := s.Story(id)
 	if err != nil {
 		return err
@@ -326,8 +370,10 @@ func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool, ses
 	if err != nil {
 		return err
 	}
+	tree := storyTreeOf(cmd.Context(), s, id)
 	if wantJSON(cmd) {
-		payload := startPayload{OK: true, Story: id, Title: story.Title, Resume: resume, Session: session}
+		payload := startPayload{OK: true, Story: id, Title: story.Title, Resume: resume, Session: session,
+			Worktree: tree.path, Branch: tree.branch, Main: tree.main}
 		if next, ok := record.NextGate(); ok {
 			payload.NextGate = string(next)
 		}
@@ -339,9 +385,49 @@ func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool, ses
 		verb = "Resumed"
 	}
 	fmt.Fprintf(w, "%s %s  %s\n\n", verb, id, oneLine(story.Title))
+	if tree.path == "" {
+		printGates(w, record)
+		fmt.Fprint(w, "\nNext: a person types /sdlc:next in Claude Code to work the story.\n")
+		return nil
+	}
+	fmt.Fprintf(w, "Worktree: %s\nBranch: %s\n\n", quote(tree.path), tree.branch)
 	printGates(w, record)
-	fmt.Fprint(w, "\nNext: a person types /sdlc:next in Claude Code to work the story.\n")
+	if elsewhere {
+		// A session opened here holds no story, so /sdlc:next here starts
+		// again, and passes this story over as held by its worktree. The
+		// session that ran start holds it, which is why a new one is named.
+		fmt.Fprint(w, "\nNext: a person opens Claude Code in the worktree above and types /sdlc:next there to work "+
+			"the story; /sdlc:next typed in a new session in this checkout begins the next story instead.\n")
+		return nil
+	}
+	fmt.Fprint(w, "\nNext: a person types /sdlc:next in Claude Code, opened in this checkout or in the worktree above, "+
+		"to work the story there.\n")
 	return nil
+}
+
+// storyTree is where a story's own worktree is, as start reports it.
+type storyTree struct{ path, branch, main string }
+
+// storyTreeOf is the story's own worktree, where s is it, and nothing for any
+// other checkout: a story the main checkout holds, or a worktree a person made,
+// is reported as the released tool reported it. The path is the one start
+// makes it at, spelled the same from every checkout, so that a runbook can
+// compare what two starts said.
+func storyTreeOf(ctx context.Context, s *store.Store, id string) storyTree {
+	if of, ok := s.StoryWorktreeOf(); !ok || of != id {
+		return storyTree{}
+	}
+	path, err := s.StoryWorktree(id)
+	if err != nil {
+		return storyTree{}
+	}
+	co, _ := s.Checkout()
+	branch, err := gitx.Branch(ctx, s.Root())
+	if err != nil || branch == "" {
+		// Detached, or unreadable: the branch start made it on.
+		branch = store.StoryBranch(id)
+	}
+	return storyTree{path: path, branch: branch, main: co.Main}
 }
 
 // ---------------------------------------------------------------- stop
@@ -1039,10 +1125,14 @@ func requireCommitted(ctx context.Context, s *store.Store) error {
 		return err
 	}
 	if !clean {
-		return sdlcerr.New(sdlcerr.TreeNotCommitted,
-			"the commit gate cannot pass while there is uncommitted work",
-			"the gate records that this story reached trunk, and a working tree with "+
-				"changes in it has not")
+		why := "the gate records that this story reached trunk, and a working tree with changes in it has not"
+		if id, ok := s.StoryWorktreeOf(); ok {
+			// In its worktree the story is committed on its branch, and trunk
+			// does not move until a person brings it there.
+			why = "the gate records that the story is committed on " + store.StoryBranch(id) +
+				", and a working tree with changes in it is not"
+		}
+		return sdlcerr.New(sdlcerr.TreeNotCommitted, "the commit gate cannot pass while there is uncommitted work", why)
 	}
 	return nil
 }

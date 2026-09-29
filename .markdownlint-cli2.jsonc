@@ -34,10 +34,13 @@
   // The pull request template is a fragment written into a text box, not a
   // document: a heading above the first section would render as a title
   // inside every PR body.
+  // A story worktree under .sdlc/worktrees is a copy of this repository at its
+  // story's state; its documents are linted where they are committed, not twice.
   "ignores": [
     ".github/PULL_REQUEST_TEMPLATE.md",
     "plan/**",
     "internal/scaffold/templates/**",
-    "**/node_modules/**"
+    "**/node_modules/**",
+    ".sdlc/worktrees/**"
   ]
 }

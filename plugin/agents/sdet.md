@@ -25,7 +25,9 @@ beside its implementation tests the implementation, not the criterion.
 
 ## Inputs
 
-Paths come from the brief you were given.
+Paths come from the brief you were given. With a story worktree, the code is under the worktree
+the brief names, and commands run there; the backlog and `.sdlc/stories/<ID>/` stay in the main
+checkout, at the absolute paths the brief gives.
 
 - the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names — and its
   acceptance criteria (AC-1..n)

@@ -8,12 +8,12 @@ import (
 )
 
 // takenAway are the words a command takes away whole, a directory as much as a
-// file: what rm -r, rmdir and del remove, what mv moves from, what tar
-// --remove-files and rsync --remove-source-files copy and delete, what git rm,
-// checkout, restore and clean put back or clear out, and find's roots when it
-// deletes everything it finds. Not where anything goes: `cp new.go
-// internal/calc/` and `mv new.go internal/calc` leave the directory where it
-// was.
+// file: what rm -r, rmdir and del remove, what mv and `gio move` move from,
+// what trash and `gio trash` move to the trash, what tar --remove-files and
+// rsync --remove-source-files copy and delete, what git rm, checkout, restore
+// and clean put back or clear out, and find's roots when it deletes everything
+// it finds. Not where anything goes: `cp new.go internal/calc/` and `mv new.go
+// internal/calc` leave the directory where it was.
 func takenAway(words []string) []string {
 	if len(words) == 0 {
 		return nil
@@ -29,6 +29,18 @@ func takenAway(words []string) []string {
 		return args
 	case "mv", "move", "move-item", "mi", "ren", "rename", "rename-item", "rni":
 		return sources(args)
+	case "trash", "trash-put", "gvfs-trash":
+		// A directory moved to the trash, with no -r asked for, is gone from
+		// where it was as much as one rm -rf removed.
+		return args
+	case "gio":
+		switch {
+		case len(args) == 0:
+		case args[0] == "trash":
+			return args[1:]
+		case args[0] == "move" || args[0] == "rename":
+			return sources(args[1:])
+		}
 	case "tar":
 		// Each file goes once it is in the archive.
 		if hasWord(args, "--remove-files") {

@@ -157,7 +157,11 @@ tasks:
         else
           echo "sdlc: could not get Go ${toolchain}; checking with the gofmt on PATH, which CI may disagree with" >&2
         fi
-        unformatted=$("$gofmt" -l . 2>/dev/null)
+        # Each story worktree under .sdlc/worktrees is a whole copy of the
+        # source at its story's state; `gofmt -l .` walked into them and
+        # reported their files as this checkout's.
+        unformatted=$(find . -path ./.sdlc/worktrees -prune -o -type f -name '*.go' -print0 |
+          xargs -0 "$gofmt" -l 2>/dev/null)
         if [ -n "$unformatted" ]; then
           echo "sdlc: these files are not gofmt-clean:" >&2
           echo "$unformatted" >&2

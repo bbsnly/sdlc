@@ -2,6 +2,8 @@ package hook
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"os/user"
 	"path"
@@ -88,6 +90,8 @@ type landings struct {
 	// where every word outside it might be the main checkout's.
 	unplaced bool
 	belong   map[string]bool
+	// there is whether each directory a walk started from is on disk.
+	there map[string]bool
 }
 
 func newLandings(pl place, resolver pathrules.Resolver) *landings {
@@ -96,7 +100,7 @@ func newLandings(pl place, resolver pathrules.Resolver) *landings {
 		return nil
 	}
 	l := &landings{resolver: resolver, project: resolver.Root(), candidates: candidates,
-		unplaced: !readable, belong: map[string]bool{}}
+		unplaced: !readable, belong: map[string]bool{}, there: map[string]bool{}}
 	if pl.co.GitDir != "" {
 		if _, inside := pathrules.Within(l.project, pl.co.GitDir); !inside {
 			l.own = pl.co.GitDir
@@ -118,18 +122,60 @@ func (l *landings) land(word string) []shellpolicy.Landing {
 	if !ok || word == "" {
 		return nil
 	}
+	var out []shellpolicy.Landing
+	for _, abs := range l.readings(word) {
+		out = append(out, l.at(abs)...)
+	}
+	return out
+}
+
+// readings is where a path lands, read both of the ways land reads a word.
+func (l *landings) readings(word string) []string {
 	word = filepath.FromSlash(word)
 	abs, ok := l.resolver.Place(word)
 	if !ok {
 		return nil
 	}
-	out := l.at(abs)
+	out := []string{abs}
 	if lexical, ok := pathrules.Abs(l.resolver.Root(), word); ok {
 		if cleaned, ok := l.resolver.Place(filepath.Clean(lexical)); ok && cleaned != abs {
-			out = append(out, l.at(cleaned)...)
+			out = append(out, cleaned)
 		}
 	}
 	return out
+}
+
+// nestedCheckout reports whether a file tool's path is in another checkout of
+// the project's repository nested inside the project: a story's worktree under
+// .sdlc/worktrees, or one a person made there. Judged as the project's own, a
+// file there was under .sdlc, where the main conversation may write and no
+// freeze of the project's reaches, and another story's code, frozen tests and
+// loop state were all writable (THREATS T7).
+//
+// The path is read as a shell word is, through links and by name, so that a
+// link in the project leading into a worktree is caught too. A relative path
+// is read against the project and against where the call runs, which a file
+// tool may mean either of.
+func nestedCheckout(pl place, path, cwd string) bool {
+	if path == "" {
+		return false
+	}
+	l := newLandings(pl, pathrules.NewResolver(pl.project))
+	if l == nil {
+		return false
+	}
+	words := []string{path}
+	if !filepath.IsAbs(path) && cwd != "" {
+		words = append(words, filepath.Join(cwd, path))
+	}
+	for _, word := range words {
+		for _, abs := range l.readings(word) {
+			if _, inside := pathrules.Within(l.project, abs); inside && len(l.walk(abs, l.project, nil)) > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (l *landings) at(abs string) []shellpolicy.Landing {
@@ -156,9 +202,10 @@ func (l *landings) at(abs string) []shellpolicy.Landing {
 }
 
 // walk adds a landing for every directory from abs up to stop, not including
-// it, that is a checkout of this repository.
+// it, that is a checkout of this repository. Only a directory that is there
+// can be one, so the walk starts at the deepest part of abs on disk.
 func (l *landings) walk(abs, stop string, out []shellpolicy.Landing) []shellpolicy.Landing {
-	for dir := abs; ; {
+	for dir := l.deepest(abs); ; {
 		if stop != "" {
 			if rel, inside := pathrules.Within(stop, dir); inside && rel == "." {
 				break
@@ -175,6 +222,36 @@ func (l *landings) walk(abs, stop string, out []shellpolicy.Landing) []shellpoli
 		dir = parent
 	}
 	return out
+}
+
+// deepest is the deepest part of abs that is on disk, found down from the root
+// with each directory asked once. Walked up from where it landed, every word
+// asked each directory it named for its git directory, and 2,500 words naming
+// nothing on disk were 2,500 more questions. A directory that could not be
+// asked for a reason other than not being there is taken to be there, and is
+// asked as before.
+func (l *landings) deepest(abs string) string {
+	volume := filepath.VolumeName(abs)
+	parts := strings.FieldsFunc(abs[len(volume):], func(r rune) bool { return r == '/' || r == filepath.Separator })
+	sep := string(filepath.Separator)
+	existing := volume + sep
+	for _, part := range parts {
+		next := existing + part
+		there, asked := l.there[next]
+		if !asked {
+			_, err := os.Lstat(next)
+			there = !errors.Is(err, fs.ErrNotExist)
+			l.there[next] = there
+		}
+		if !there {
+			break
+		}
+		existing = next + sep
+	}
+	if len(existing) > len(volume)+1 {
+		existing = strings.TrimSuffix(existing, sep)
+	}
+	return existing
 }
 
 // belongs reports whether dir is a checkout of this repository: its .git is a
@@ -218,7 +295,18 @@ func (l *landings) decide(dir string) bool {
 	if !filepath.IsAbs(back) {
 		back = filepath.Join(gitdir, back)
 	}
-	return config.SamePath(back, dotgit)
+	if config.SamePath(back, dotgit) {
+		return true
+	}
+	// A worktree a person moved by hand still commits into this repository:
+	// its .git leads here, and git's way back names where it was, where there
+	// is nothing now. Outside the project that is enough, because a checkout
+	// found there only adds refusals. A pointer copied out of a worktree that
+	// is still where git says is not that worktree; and inside the project the
+	// way back is always asked for, because a .git anybody wrote there would
+	// otherwise make the session's own frozen tests another checkout's.
+	_, inside := pathrules.Within(l.project, dir)
+	return !inside && !exists(back)
 }
 
 func (l *landings) candidate(p string) bool {

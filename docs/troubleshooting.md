@@ -125,10 +125,15 @@ take `--story`, which is how a runner records what a session cost after its iter
 
 ### SDLC-E0012
 
-An iteration is already active on another story. The loop runs one story at a time on purpose:
-that is what keeps a diff small enough to review honestly.
+An iteration is already active on another story. A checkout works one story at a time, and so
+does a Claude Code session: the gates measure the checkout's working tree, and the hook holds a
+session to the one story it started.
 
-Finish the current story, or run `sdlc stop` to end the iteration without recording a result.
+Finish the current story, or run `sdlc stop` to end the iteration without recording a result. To
+work a second story at the same time, start it from the main checkout in a second Claude Code
+session: with [`git.worktrees`](configuration.md#git) on, the default, it gets a worktree of its
+own. In a story's worktree that is the whole of the fix, since `sdlc stop` there would end the
+story the worktree was made for.
 
 `sdlc init --force` is refused with this code too. The story under way is held to the settings it
 started under, so the defaults go back once it has ended.
@@ -321,10 +326,11 @@ If an earlier gate failed, record it again once it genuinely passes. There is no
 
 The commit gate cannot pass while there is uncommitted work.
 
-The gate records that this story reached trunk. Commit the change, or stash what does not belong
-to this story by path, `git stash push -- <path>`, and then record the gate. A stash of the whole
-work tree is refused while a story is being worked on, because it takes the loop's own record
-with it.
+The gate records that this story reached trunk; in a story's worktree, that it is committed on
+its branch, `story/<ID>`, and the refusal says so. Commit the change, or stash what does not
+belong to this story by path, `git stash push -- <path>`, and then record the gate. A stash of
+the whole work tree is refused while a story is being worked on, because it takes the loop's own
+record with it.
 
 ### SDLC-E0033
 
@@ -403,10 +409,15 @@ The same refusal comes from the hook, before `git commit`, as
 A new story starts from trunk, and HEAD is somewhere else: on another branch, or
 detached.
 
-The loop commits every story straight to the branch `git.trunk_branch` names in
-`.sdlc/config.json` — the trunk `sdlc init` found — so a story begun anywhere
-else is not where its commit is recorded as landing. Switch back, and start
-again; if the name is not your trunk's, correct it in the file first:
+This check is made only with [`git.worktrees`](configuration.md#git) set to
+false. With it on, the default, a new story begins in a worktree of its own, cut
+from trunk, and the branch this checkout is on does not matter.
+
+With it off, the loop commits every story straight to the branch
+`git.trunk_branch` names in `.sdlc/config.json` — the trunk `sdlc init` found —
+so a story begun anywhere else is not where its commit is recorded as landing.
+Switch back, and start again; if the name is not your trunk's, correct it in the
+file first:
 
 ```console
 $ git switch main
@@ -416,12 +427,13 @@ $ sdlc start
 Only new work is held to this. A story already under way is picked up again as
 it is.
 
-In a linked worktree made with `git worktree add`, switching to trunk fails,
-because git keeps a branch checked out in one checkout at a time and trunk is
-checked out in the main checkout. Until `sdlc start` makes a worktree itself, a
-new story begins in the checkout that has trunk checked out; a linked worktree
-works the stories it already holds, and picks up a story under way that a person
-released to it. See
+In a linked worktree made by hand with `git worktree add`, switching to trunk
+fails, because git keeps a branch checked out in one checkout at a time and
+trunk is checked out in the main checkout. With `git.worktrees` false, a new
+story begins in the checkout that has trunk checked out; a linked worktree works
+the stories it already holds, and picks up a story under way that a person
+released to it. Turn `git.worktrees` back on, or leave it out, and `sdlc start`
+gives each new story a worktree of its own. See
 [more than one checkout](the-loop.md#more-than-one-checkout).
 
 ### SDLC-E0039
@@ -429,9 +441,14 @@ released to it. See
 There is uncommitted work that belongs to no story, and a new story would take
 it with it.
 
-Gate 8 commits a story with everything in the working tree, so work left lying
-around is reviewed and committed as part of whatever starts next. The refusal
-names what it found. Commit it, stash it, or discard it:
+This check is made only with [`git.worktrees`](configuration.md#git) set to
+false. With it on, the default, a new story begins in a worktree cut from
+trunk's commits, so what is uncommitted in this checkout stays here and is not
+part of the story.
+
+With it off, Gate 8 commits a story with everything in the working tree, so work
+left lying around is reviewed and committed as part of whatever starts next. The
+refusal names what it found. Commit it, stash it, or discard it:
 
 ```console
 $ git stash --include-untracked
@@ -442,18 +459,37 @@ The loop's own files do not count: everything under `.sdlc/`, and the backlog,
 whose statuses the loop writes. Straight after `sdlc init`, what is left is
 usually the contract section it added to `CLAUDE.md` — commit it.
 
+If `sdlc start` first said that it passed over a story whose checkout no longer
+exists, the work it found may be that story's own: this checkout, moved while
+its story was stopped. Do not discard it. A person releases the story here and
+starts it again, as [SDLC-E0051](#sdlc-e0051) says; otherwise commit it or stash
+it.
+
+Clearing untracked files with `git clean`, leave out `-x`. The story worktrees
+under `.sdlc/worktrees/` are ignored, and `git clean -x` with `-f` given twice
+removes every one of them, with the work nobody committed there.
+
 ### SDLC-E0040
 
 `git.remote` is on, and trunk is behind `origin`.
 
 A story started on an old trunk is planned, tested and reviewed against code
 that has already changed, and meets the difference only when it is committed.
-Bring trunk up to date first:
+The check counts what `origin` has that the local branch `git.trunk_branch`
+names does not, whichever branch this checkout is on. Bring trunk up to date
+first:
 
 ```console
 $ git pull --rebase
 $ sdlc start
 ```
+
+That is with trunk checked out. With [`git.worktrees`](configuration.md#git) on,
+this checkout may be on another branch, and `git pull` brings up to date only
+the branch it runs on. Run `git pull --ff-only` in a checkout that has trunk
+checked out; where none has, `git fetch origin <trunk>:<trunk>`, with the
+branch `git.trunk_branch` names, brings trunk up to date without checking it
+out.
 
 When `origin` cannot be asked at all, `sdlc start` says so and goes ahead:
 working offline is not the same as being behind.
@@ -468,6 +504,30 @@ Fix trunk, or revert the commit that broke it, and start again.
 
 If the check itself is what is wrong — it fails on a trunk that works — change
 `commands.smoke` in `.sdlc/config.json`. Leaving it out turns the check off.
+
+With [`git.worktrees`](configuration.md#git) on, the default, the check runs in
+the story's new worktree, `.sdlc/worktrees/<ID>`, and a failure removes the
+worktree and its branch again; where it cannot, the message says what is left,
+and [SDLC-E0053](#sdlc-e0053) says how to take it away. A new worktree has only
+what trunk commits: no installed dependencies, such as `node_modules` or a
+virtual environment, and no generated files. A check that passes in your own
+checkout can fail there for that alone. Make `commands.smoke` install what it
+needs first, for example
+`"smoke": "npm ci && npm run build --silent"`, and commit that to trunk: the new
+worktree reads trunk's committed `.sdlc/config.json`, not the copy in your
+checkout, so an edit nobody committed does not reach it. Or set `git.worktrees`
+to false in this checkout's `.sdlc/config.json`, which `sdlc start` reads where
+it runs, and the check runs here as it did before.
+
+Tools that look upward from where they run find the main checkout's copies from
+inside `.sdlc/worktrees/<ID>`. Node resolves a package the worktree does not
+have from `node_modules` in the main checkout, so a Node check can pass on the
+packages you installed rather than on trunk's lockfile, and every later gate
+then runs on them too. A smoke command that installs what it needs gives the
+worktree its own.
+
+`git worktree add` runs the repository's `post-checkout` hook, if it has one,
+before the check. Removing the worktree cannot undo what that hook did.
 
 ### SDLC-E0042
 
@@ -588,7 +648,8 @@ inside the range this pass records. A run git has never heard of is prose and is
 is anything shorter. The message names the sha and the range, or, where the record knows no
 start, the one commit it names. Nothing was recorded, and the gate does not stand passed.
 
-Run the gate again with the sha corrected or dropped:
+Re-run the gate with the sha corrected or dropped: `sdlc gate commit pass --note "..."`. For
+example:
 
 ```console
 $ sdlc gate commit pass --note "on trunk"
@@ -611,6 +672,11 @@ tree. `sdlc start` also refuses a Claude Code session that already holds a story
 checkout: one session works one story. Open a new Claude Code session in this checkout to work
 another story here, or go back to the checkout the message names to carry on with that one.
 Nothing was changed.
+
+A story held in its own story worktree, `.sdlc/worktrees/<ID>`, is the one exception for
+`sdlc start`: named in any other checkout, the main checkout included, it is picked up there, in
+its worktree, and a session already working it carries on. A worktree made by hand is not a story
+worktree, and naming its story is refused as above.
 
 The same code covers two cases that start from this checkout's own `.sdlc/state/active`:
 
@@ -656,14 +722,15 @@ Then:
   discard it.
 - `sdlc start <ID>` and `sdlc approve <ID>` are refused with this code.
 
-If that checkout is gone for good, or this is the same checkout moved, a person runs, in their own
-terminal:
+If that checkout is gone for good, or this is the same checkout moved, a person runs
+`sdlc release <ID> --reason "..."` in their own terminal, after which `sdlc start <ID>` works in
+any checkout; until then no checkout can record anything for the story. For example:
 
 ```console
 $ sdlc release US-001 --reason "the worktree was deleted with its disk"
 ```
 
-and then runs the refused command again: `sdlc approve US-001` for a story waiting for a person,
+Then they run the refused command again: `sdlc approve US-001` for a story waiting for a person,
 `sdlc start US-001` otherwise, in any checkout. If the story's tests were frozen and the checkout
 that holds the story's work is a new one, the freeze is on the story's record and not in that
 checkout's `.sdlc/state/tests.lock`: until a person runs `sdlc unfreeze --reason "..."` and then
@@ -692,6 +759,118 @@ state and writes nothing to any record. `sdlc doctor` reports the problem.
 
 Work in a clone made without `--bare`, or in the main checkout of a repository made with
 `--separate-git-dir`.
+
+### SDLC-E0053
+
+`sdlc start` could not make the new story's worktree, and nothing was started.
+
+With [`git.worktrees`](configuration.md#git) on, the default, a new story begins in a worktree
+of its own, `.sdlc/worktrees/<ID>` in the main checkout, on a new branch `story/<ID>` cut from
+the local trunk branch. The message says what was in the way. A refused start removes what it
+made, the worktree and the branch, and changes nothing in the backlog, the story's record or the
+claims.
+
+Each cause has its own fix, and the message gives it. Setting `git.worktrees` to false in
+`.sdlc/config.json` gets past any of them: the story then starts in the checkout you run
+`sdlc start` in, as it did before.
+
+- **Trunk has no committed `.sdlc/config.json`.** This is the usual first run after `sdlc init`.
+  The worktree holds only what trunk commits, and reads its settings from there. Commit
+  `.sdlc/config.json` and `CLAUDE.md` to trunk, then start again. `sdlc doctor` says so too,
+  under `story worktrees`.
+- **The `.sdlc/config.json` trunk commits cannot be read.** Correct it and commit it to trunk,
+  then start again.
+- **Trunk is not a branch with a commit here.** In the main checkout, create the branch
+  `git.trunk_branch` names, with a commit on it, or set `git.trunk_branch` to the branch that is
+  trunk. Where `git.trunk_branch` is empty or starts with `-`, set it to the name of the trunk
+  branch.
+- **Git will not take `story/<ID>` as a branch name**, for an id such as `A..B` or one ending in
+  `.lock`; `git check-ref-format --branch story/<ID>` says whether it does. Rename the story, or
+  set `git.worktrees` to false.
+- **`.sdlc/worktrees`, or the story's directory in it, is a file or a link.** sdlc never writes
+  through a link. Move the file or the link named in the message out of the way.
+- **`.sdlc/worktrees/.gitignore` does not hide the worktrees.** It has no line `*`, or has a
+  line starting with `!` that shows something again, and without it `git status` and
+  `git add -A` in the main checkout take in every story worktree. sdlc writes that file only
+  where there is none, and never rewrites one already there. Put a line `*` in it and nothing
+  that starts with `!`, or remove the file, then start again.
+- **The story's directory already has files in it.** Start never writes over or removes what it
+  did not make: move them somewhere else, then start again.
+- **The backlog kept changing while start was making the worktree**, because other starts ran,
+  or the backlog was edited, at the same moment. Run `sdlc start` again.
+- **The story's branch or worktree is already there**, below.
+
+Where a refused start could not take away all it made, the message says what is left. On
+Windows that is most often a file something still has open in the worktree. First close whatever
+has a file open in `.sdlc/worktrees/<ID>`, then, in the main checkout, run
+`git worktree remove .sdlc/worktrees/<ID>` and `git branch -d story/<ID>`, and then follow the
+fix for the cause.
+
+A start that was interrupted leaves a branch or a worktree behind, and so does a story that
+finished on its branch, until a person removes it. A start that failed once it had named the
+story in its new worktree says so under the code of what failed, and leaves both: put that
+right, and then `sdlc start <ID>` picks the story up there, or, where the story was not yet in
+progress, `sdlc start <ID>` finds them in the way and says so with this code.
+
+Before removing anything, check that no `sdlc start` is still running for the story; if one is,
+let it finish and run `sdlc start` again. Then, in the main checkout, with trunk checked out
+(`main` here):
+
+```console
+$ git log --oneline main..story/US-001
+```
+
+Commits it lists are the story's work. Bring them to trunk first, or keep them on a branch of
+another name with `git branch -m story/US-001 <new name>`:
+
+```console
+$ git merge --ff-only story/US-001
+```
+
+If git says it cannot fast-forward, trunk has moved since the story was cut: in the story's
+worktree, run `git rebase main` and the project's tests, then merge again.
+
+The worktree may be on no branch: a rebase stopped part-way leaves it so, and so does a HEAD
+somebody detached. A commit on no branch is lost when its worktree is removed, and
+`git worktree remove` does not ask for `--force` first. The message then says the worktree is
+on no branch and how many commits its HEAD has that trunk does not, and gives no command that
+removes the worktree or the branch. Look at them first:
+
+```console
+$ git -C .sdlc/worktrees/US-001 log --oneline main..HEAD
+```
+
+Where a rebase stopped part-way, finish it or abort it in the worktree. Otherwise keep what is
+wanted on a branch, and bring that to trunk as above:
+
+```console
+$ git -C .sdlc/worktrees/US-001 branch <new name>
+```
+
+With nothing listed by either, or once it is on trunk, remove both:
+
+```console
+$ git worktree remove .sdlc/worktrees/US-001
+$ git branch -d story/US-001
+```
+
+`git worktree remove` refuses a worktree with changes nobody committed, and suggests `--force`.
+Look at them first, with `git -C .sdlc/worktrees/US-001 status`: anything outside `.sdlc/state`
+may be the story's work. Only the loop's own files under `.sdlc/state` are safe to remove with
+`--force`. `git branch -d` compares the branch with the one the main checkout has checked out,
+which is why that has to be trunk; where it says the branch is not fully merged, its commits are
+the story's work. Never use `git branch -D`, which deletes them. Where the worktree's directory
+was deleted by hand, `git worktree prune` clears git's record of it.
+
+Do not tidy up with `git clean`. `.sdlc/worktrees/` ignores itself, so that `git status` in the
+main checkout does not list it, and `git clean -x` with `-f` given twice removes every story
+worktree in it, with the work nobody committed there.
+
+`git worktree add` runs the repository's `post-checkout` hook, if it has one. A refused start
+removes the worktree and the branch it made, and cannot undo what that hook did.
+
+If you are an assistant, stop and tell the person what the message says. Every fix here is
+theirs.
 
 ## Warnings the hook prints
 

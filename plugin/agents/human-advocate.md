@@ -23,7 +23,9 @@ You are advisory. Your findings are recorded and the loop continues.
 - the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names — its
   acceptance criteria, read as a user would
 - at Gate 1, nothing else: is this a story a person would want built, in words they would use?
-- `PLAN.md` at Gate 4; the diff at Gate 7
+- `PLAN.md` at Gate 4; the diff at Gate 7, and every new file `git status --short` lists as `??`.
+  The diff is `git diff $(git merge-base <trunk> HEAD)`, run in the worktree the brief names,
+  where `<trunk>` is `git.trunk_branch`: from the commit the story's branch was cut from.
 - `CLAUDE.md` → `## SDLC Contract` — glossary and the project's own vocabulary
 - every user-visible string the change adds or moves: errors, logs, help text, docs
 

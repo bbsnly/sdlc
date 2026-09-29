@@ -1,9 +1,10 @@
 # Writing stories the loop can run
 
-The loop works on one story at a time: one iteration, one commit. This guide
-covers where stories live and what one may contain. It shows how to write
-acceptance criteria that can become frozen tests, how the next story is
-chosen, and what stops a story before any work starts.
+Each checkout, and each Claude Code session, works on one story at a time: one
+iteration, one commit. This guide covers where stories live and what one may
+contain. It shows how to write acceptance criteria that can become frozen
+tests, how the next story is chosen, and what stops a story before any work
+starts.
 
 ## The backlog file
 
@@ -152,7 +153,12 @@ holds: one it started and has not finished, whether running, stopped or waiting
 for a person. A story that depends on a held story waits, as it does on any story
 that is not done. So two checkouts that start at once never pick the same story.
 `sdlc story list` says which checkout holds each story, and marks what start
-would pick in the checkout you run it in.
+would pick in the checkout you run it in. With
+[`git.worktrees`](../configuration.md#git) on, the default, every new story gets
+a worktree of its own, so this is every repository once a story has started. A
+story that depends on another is cut from trunk, so it starts only once that
+story is done, and sees that story's work only once a person has brought it to
+trunk ([more than one checkout](../the-loop.md#more-than-one-checkout)).
 
 `sdlc start AUTH-4` names a story directly. That puts it ahead of the priority
 order and changes nothing else. A story that is `dropped`, `blocked` or `done`,

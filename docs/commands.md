@@ -87,10 +87,18 @@ Marks the story `sdlc start` would choose and shows every story's status. A
 story waiting on a `depends_on` story that is not done names it, and says when
 that one is dropped or not in the backlog, because then it never will be.
 
-In a repository with linked worktrees, a story a checkout holds ends with
-`(held in "<checkout>")`, and `held_by` in `--json`; the mark is what
-`sdlc start` would pick in the checkout you run it in, which is never a story
-another checkout holds.
+In a repository with linked worktrees, a story a checkout holds ends with where
+it is held, and `held_by` in `--json` names that checkout:
+
+| Ends with | What it means |
+| --- | --- |
+| `(held in "<checkout>")` | another checkout holds it |
+| `(held in "<checkout>", this checkout)` | the checkout you ran it in holds it |
+| `(held in "<checkout>", gone: see sdlc release <ID> --reason "...")` | the checkout that holds it no longer exists ([SDLC-E0051](troubleshooting.md#sdlc-e0051)) |
+| `(held by none: more than one checkout names it ("<checkout>", "<checkout>"))` | several checkouts name it and none holds it until a person runs `sdlc stop` in all but one |
+
+The mark is what `sdlc start` would pick in the checkout you run it in, which is
+never a story another checkout holds.
 
 ## `sdlc log`
 
@@ -228,21 +236,65 @@ It also refuses a story whose gates have all passed, rather than putting
 finished work back in progress. The way back into a finished story is to record
 the gate that failed — see [SDLC-E0033](troubleshooting.md#sdlc-e0033).
 
+With [`git.worktrees`](configuration.md#git) on, the default, a new story begins
+in a worktree of its own. Start makes `.sdlc/worktrees/<ID>` in the main
+checkout, on a new branch `story/<ID>` cut from the local trunk branch, runs
+`commands.smoke` there, and records the story as held by that worktree, whose
+`.sdlc/state` it writes rather than this checkout's. It says where, under the
+story's title:
+
+```text
+Worktree: "/home/dev/project/.sdlc/worktrees/US-001"
+Branch: story/US-001
+```
+
+and ends `Next: a person opens Claude Code in the worktree above and types
+/sdlc:next there to work the story; /sdlc:next typed in a new session in this
+checkout begins the next story instead.` A new session opened in the checkout
+start ran in holds no story, so `/sdlc:next` there starts again, and passes
+this story over as held. A Claude Code session that ran start itself holds the
+story, and `/sdlc:next` there carries it on, in this checkout or in the
+worktree.
+Run in the story's worktree, start ends `Next: a person types /sdlc:next in
+Claude Code, opened in this checkout or in the worktree above, to work the
+story there.` With `--json` it adds `worktree`, the worktree's absolute path,
+`branch`, and `main`, the main checkout's absolute path, where the backlog and
+the story's record are kept.
+Picking up a story its worktree holds prints the same path and branch, from the
+main checkout or from the worktree, and makes nothing. A story the main
+checkout holds, or a worktree made by hand, prints neither, and the output is
+as it was with `git.worktrees` false.
+
 In a repository with linked worktrees, the checkout that starts a story holds
 it until it is finished or a person runs [`sdlc release`](#sdlc-release). With
-no story named, start passes over what another checkout holds, and first says on
-standard error which story it passes over because the checkout holding it is
-gone, as it is for a single checkout moved while its story was stopped; naming
-one is refused with [SDLC-E0050](troubleshooting.md#sdlc-e0050), or
+no story named, start passes over what another checkout holds, and says on
+standard error which story it passed over because the checkout holding it is
+gone, as it is for a single checkout moved while its story was stopped: if this
+checkout was moved from there, what it has not committed is that story's own.
+Naming a story another checkout holds is refused with
+[SDLC-E0050](troubleshooting.md#sdlc-e0050), or
 [SDLC-E0051](troubleshooting.md#sdlc-e0051) when the checkout holding it is
-gone. A Claude Code session already working a story in one checkout is refused
-another in the next. See
+gone, except a story held in its own worktree under `.sdlc/worktrees/`: named
+in any other checkout, the main checkout included, it is picked up there, in
+its worktree. Picked up in
+another Claude Code session, the story is taken over, and the session that was
+working it is refused the story's `sdlc` commands from then on
+([SDLC-E0048](troubleshooting.md#sdlc-e0048)). A Claude Code session already
+working a story in one checkout is refused another in the next
+([SDLC-E0050](troubleshooting.md#sdlc-e0050)). See
 [more than one checkout](the-loop.md#more-than-one-checkout).
 
 Before it begins a new story — not one it is picking up again — it checks that
-trunk is somewhere to start from: HEAD is on `git.trunk_branch`, nothing is
-uncommitted outside `.sdlc/` and the backlog, trunk is not behind `origin` when
-`git.remote` is on, and `commands.smoke` passes. Each has its own refusal, from
+trunk is somewhere to start from. With `git.worktrees` on: trunk is not behind
+`origin` when `git.remote` is on
+([SDLC-E0040](troubleshooting.md#sdlc-e0040)), and `commands.smoke` passes in
+the new worktree ([SDLC-E0041](troubleshooting.md#sdlc-e0041)); a worktree that
+cannot be made is [SDLC-E0053](troubleshooting.md#sdlc-e0053), and a refused
+start takes its worktree and branch away again, or says what it could not. With
+it off: HEAD is on
+`git.trunk_branch`, nothing is uncommitted outside `.sdlc/` and the backlog,
+trunk is not behind `origin` when `git.remote` is on, and `commands.smoke`
+passes. Each has its own refusal, from
 [SDLC-E0038](troubleshooting.md#sdlc-e0038) to
 [SDLC-E0041](troubleshooting.md#sdlc-e0041).
 
@@ -521,10 +573,13 @@ story's record, bound to the work as it stands. The story becomes
 carrying on past the question. `sdlc start` refuses the story until somebody
 answers, and `sdlc status` lists it as waiting.
 
-Nothing else starts in the meantime either: `sdlc start` picks up a story
-already under way before a new one, so it picks the waiting story and refuses
-it. That is deliberate. The work waiting for an answer is still in the tree, and
-a second story started on top of it would end up in the same commit.
+Nothing else starts in that checkout in the meantime either: `sdlc start` picks
+up a story already under way before a new one, so it picks the waiting story and
+refuses it. That is deliberate. The work waiting for an answer is still in the
+tree, and a second story started on top of it would end up in the same commit.
+With [`git.worktrees`](configuration.md#git) on, a story waiting in its own
+worktree is held there, and `sdlc start` in the main checkout passes it over
+and begins the next story in a worktree of its own.
 
 ## `sdlc approve`
 
@@ -574,11 +629,15 @@ error: it says `Nothing to release` and changes nothing.
 
 Nothing is moved. Anything the checkout that held the story has not committed
 stays there, and the output says so while that checkout exists. The reason goes
-on the story's record; the checkout's path does not, and `sdlc start` and
-`sdlc approve` repeat that the uncommitted work stayed behind. A freeze does not
-move either: in the checkout that picks the story up, `sdlc unfreeze --reason ...`
-lifts it and `sdlc freeze` takes it again. In `--json` the output is `ok`,
-`story` and `checkout`, the checkout that held it, absent when none did.
+on the story's record; the checkout's path does not. `sdlc start` and
+`sdlc approve` then say that work the old checkout had not committed stayed
+with it, and that if this checkout is that one, moved here, the work is here. A
+freeze does not move either: in a checkout that picks the story up without it,
+`sdlc unfreeze --reason ...` lifts it and `sdlc freeze` takes it again. Release
+says so only where the checkout it runs in does not hold the story's freeze. A
+checkout that was moved took its freeze with it, and start and approve then say
+nothing about where the work is. In `--json` the output is `ok`, `story` and
+`checkout`, the checkout that held it, absent when none did.
 
 ## `sdlc cost`
 
@@ -647,6 +706,54 @@ In a repository with linked worktrees it names the checkout holding each story
 under "loop state", in whichever checkout you run it. In a linked worktree it
 reads the backlog and the records from the main checkout, and reports
 [SDLC-E0052](troubleshooting.md#sdlc-e0052) when the repository has none.
+
+With [`git.worktrees`](configuration.md#git) on, the git command check is a
+problem below git 2.17, the oldest that can remove a worktree again: install a
+newer git, or set `git.worktrees` to false to begin each story in the checkout
+`sdlc start` runs in. A `story worktrees` check appears only when there is
+something to do:
+
+- trunk has no `.sdlc/config.json` committed, so `sdlc start` would refuse to
+  begin a story ([SDLC-E0053](troubleshooting.md#sdlc-e0053)): commit it and
+  `CLAUDE.md` to trunk, or set `git.worktrees` to false in this checkout's
+  `.sdlc/config.json`;
+- git lists a worktree under `.sdlc/worktrees/` that no checkout holds, such as
+  a finished story's or one an interrupted start left. It says what is true of
+  each, and what a person does about it, in the order a person takes it, and
+  never counts the loop's own files under `.sdlc/state` as somebody's changes:
+  - its directory is gone: `git worktree prune` in the main checkout makes git
+    forget it;
+  - it has changes nobody committed, which may be somebody's work: keep what is
+    wanted, committed on `story/<ID>` or copied elsewhere, before removing
+    anything;
+  - `story/<ID>` holds commits trunk does not have, which are the story's work,
+    and come after the changes where there are both: bring them to trunk, with
+    trunk checked out, with `git merge --ff-only story/<ID>` in the main
+    checkout, before removing either, and if git cannot fast-forward, first
+    rebase `story/<ID>` on trunk in its worktree and run the tests;
+  - it is on a branch other than `story/<ID>`, which start did not make: the
+    branch is named as a shell reads it back without expanding anything, in
+    single quotes where it needs them, and no command is built from it. A
+    person looks at what it holds, with
+    `git -C .sdlc/worktrees/<ID> log --oneline <trunk>..HEAD` in the main
+    checkout, before merging or removing anything;
+  - it is on no branch, and its HEAD has commits trunk does not have, as a
+    rebase stopped part-way leaves it: "a commit on no branch is lost when its
+    worktree is removed", so no command removes it. A person looks at them
+    with that `git log`, and keeps what is wanted on a branch, with
+    `git -C .sdlc/worktrees/<ID> branch <new name>`, before merging or removing
+    anything;
+  - git could not read what it holds: a person looks with that `git log`
+    before removing anything;
+  - its HEAD, on `story/<ID>` or on no branch, has nothing trunk does not: if
+    no `sdlc start` is running for the story, remove it with
+    `git worktree remove .sdlc/worktrees/<ID>`, and `git branch -d story/<ID>`
+    where it is on that branch, in the main checkout. Where the loop's own
+    files are all it has, it says they are safe to lose if git refuses over
+    them.
+
+It never suggests `git branch -D` or `--force`. See
+[more than one checkout](the-loop.md#more-than-one-checkout).
 
 It does not run your test suite. This is meant to be the fast answer to "why is
 this not working".

@@ -957,6 +957,9 @@ func TestWorkCommittedBeforeTheReviewHoldsTheGatesBack(t *testing.T) {
 func TestWorkCommittedInANewRepositorysFirstStoryHoldsTheGatesBack(t *testing.T) {
 	root := gitProject(t)
 	mustRun(t, "init")
+	// One checkout, as the released tool starts it (US-029.2 AC-9): a story
+	// worktree has no trunk commit to be cut from here.
+	worktreesOff(t, root)
 	// A story starts from a tree with nothing uncommitted, which with no
 	// commits is a tree whose files git does not track.
 	writeFile(t, root, ".git/info/exclude", "CLAUDE.md\n")

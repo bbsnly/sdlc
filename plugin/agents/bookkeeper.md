@@ -20,6 +20,10 @@ You decide nothing. Every gate is already recorded, and you do not change any of
 
 ## Inputs
 
+With a story worktree, the code is under the worktree the brief names, and commands run there;
+the backlog and `.sdlc/stories/<ID>/` stay in the main checkout, at the absolute paths the brief
+gives.
+
 - `.sdlc/stories/<ID>/gate-record.json` — every gate, every event, every review, in order
 - `.sdlc/stories/<ID>/` — the analysis, the threats, the test plan, the plan, the verification,
   and everything under `reviews/`

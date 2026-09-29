@@ -65,9 +65,10 @@ them nothing to hold the work to.
 You do not need all of it. The three that earn their keep first are the
 architecture rules, the test conventions, and the glossary.
 
-Then commit it, with everything `init` wrote. A new story starts only from a
-trunk with nothing uncommitted on it, because the story's own commit takes the
-whole working tree:
+Then commit it, with everything `init` wrote. Each new story starts in a
+worktree of its own, cut from trunk's commits, so only what is committed is
+there. A story started before this commit is refused, because its worktree has
+no `.sdlc/config.json` ([SDLC-E0053](troubleshooting.md#sdlc-e0053)):
 
 ```console
 $ git add .sdlc user_stories.json CLAUDE.md
@@ -149,6 +150,8 @@ than guessing when the specification does not settle something.
 ## What you will see happen
 
 1. **Gate 1** checks your acceptance criteria are testable and picks the story.
+   `sdlc start` gives it a worktree of its own, `.sdlc/worktrees/<ID>`, on a
+   new branch `story/<ID>` cut from trunk, and every gate after this works there.
 2. **Gate 2** sends a researcher into a fresh context to read the story against
    your codebase and write down what it touches and what could go wrong.
 3. **Gate 3** turns each criterion into a test that fails, then freezes every
@@ -158,8 +161,11 @@ than guessing when the specification does not settle something.
 6. **Gate 6** sends a verifier that has not seen any of it to re-derive the
    criteria and hunt for tests that pass without the behaviour being there.
 7. **Gate 7** reviews the diff in a context that never saw the reasoning.
-8. **Gate 8** commits — and not before.
-9. **Gate 9** writes the retro, and the story leaves the backlog.
+8. **Gate 8** commits — and not before — on `story/<ID>`.
+9. **Gate 9** writes the retro, and the story leaves the backlog. Bringing it
+   to trunk is yours: `git merge --ff-only story/<ID>`, with trunk checked out
+   in your checkout. [The loop](the-loop.md#more-than-one-checkout) says what to
+   do when git cannot fast-forward, and how to remove the worktree after.
 
 At any point:
 

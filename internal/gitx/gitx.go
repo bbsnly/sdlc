@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,7 +74,7 @@ func TreeHash(ctx context.Context, root string, overrides ...Override) (string, 
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
-	env := append(os.Environ(), "GIT_INDEX_FILE="+filepath.Join(dir, "index"))
+	env := []string{"GIT_INDEX_FILE=" + filepath.Join(dir, "index")}
 	if _, err := git(ctx, root, env, "add", "-A", "--", ".", ":(exclude).sdlc"); err != nil {
 		return "", err
 	}
@@ -328,10 +329,17 @@ func Changes(ctx context.Context, root string) ([]string, error) {
 
 // Branch is the branch HEAD is on, or "" when HEAD is detached. A repository
 // with no commits yet is on the branch its first commit will be made on.
+//
+// The full ref, with refs/heads/ taken off: git shortens a name that a tag
+// shares to heads/<name>, so with a tag called main, HEAD on main read as a
+// branch called heads/main.
 func Branch(ctx context.Context, root string) (string, error) {
-	out, err := git(ctx, root, nil, "symbolic-ref", "--quiet", "--short", "HEAD")
+	out, err := git(ctx, root, nil, "symbolic-ref", "--quiet", "HEAD")
 	if err == nil {
-		return firstLine(string(out)), nil
+		if name, ok := strings.CutPrefix(firstLine(string(out)), "refs/heads/"); ok {
+			return name, nil
+		}
+		return "", nil
 	}
 	if head, headErr := git(ctx, root, nil, "rev-parse", "--abbrev-ref", "HEAD"); headErr == nil &&
 		firstLine(string(head)) == "HEAD" {
@@ -360,15 +368,33 @@ func Trunk(ctx context.Context, root string) string {
 	return branch
 }
 
-// Behind fetches branch from remote and counts the commits on it that HEAD does
-// not have. It never prompts: a remote that wants a password it has not been
-// given is a remote that could not be asked.
+// Behind fetches branch from remote and counts the commits on it that this
+// repository's own branch of that name does not have. It never prompts: a
+// remote that wants a password it has not been given is a remote that could
+// not be asked.
+//
+// It counts from the branch and not from HEAD, because a story is cut from the
+// branch wherever HEAD is: counted from HEAD, a checkout on a branch that had
+// the remote's commits hid a trunk two behind. A branch this repository does
+// not have has no tip to count from, and is a failure rather than none behind.
 func Behind(ctx context.Context, root, remote, branch string) (int, error) {
-	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if _, err := git(ctx, root, env, "fetch", "--quiet", remote, branch); err != nil {
+	for _, name := range []string{remote, branch} {
+		if name == "" || strings.HasPrefix(name, "-") {
+			return 0, sdlcerr.New(sdlcerr.RepositoryUnreadable,
+				strconv.Quote(name)+" cannot be asked about",
+				"no remote or branch is empty or starts with a dash, and git would read one that does as an option")
+		}
+	}
+	local := "refs/heads/" + branch
+	if _, err := git(ctx, root, nil, "rev-parse", "--verify", "--quiet", local+"^{commit}"); err != nil {
+		return 0, sdlcerr.New(sdlcerr.RepositoryUnreadable,
+			strconv.Quote(branch)+" is not a branch with a commit in this repository",
+			"trunk is counted from the branch of that name here, and there is none to count from").WithCause(err)
+	}
+	if _, err := git(ctx, root, []string{"GIT_TERMINAL_PROMPT=0"}, "fetch", "--quiet", remote, branch); err != nil {
 		return 0, err
 	}
-	out, err := git(ctx, root, nil, "rev-list", "--count", "HEAD..FETCH_HEAD")
+	out, err := git(ctx, root, nil, "rev-list", "--count", local+"..FETCH_HEAD")
 	if err != nil {
 		return 0, err
 	}
@@ -388,15 +414,28 @@ type Override struct {
 	Content []byte
 }
 
-func git(ctx context.Context, root string, env []string, args ...string) ([]byte, error) {
-	return gitInput(ctx, root, env, nil, args...)
+// git runs git in root, the root of a checkout, with the environment extra adds
+// to Environ's.
+func git(ctx context.Context, root string, extra []string, args ...string) ([]byte, error) {
+	return gitInput(ctx, root, extra, nil, args...)
 }
 
 // gitInput is git with something on its standard input.
-func gitInput(ctx context.Context, root string, env []string, stdin []byte, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+//
+// It is told the work tree as well as run in it. --work-tree outranks
+// core.worktree from any of git's configuration channels, a file or the
+// environment, either of which could otherwise send what gitx measures, or the
+// worktree start makes, to another directory.
+func gitInput(ctx context.Context, root string, extra []string, stdin []byte, args ...string) ([]byte, error) {
+	full := args
+	if root != "" {
+		if abs, err := filepath.Abs(root); err == nil {
+			full = append([]string{"--work-tree=" + abs}, args...)
+		}
+	}
+	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Dir = root
-	cmd.Env = env
+	cmd.Env = Environ(extra...)
 	if stdin != nil {
 		cmd.Stdin = strings.NewReader(string(stdin))
 	}
@@ -410,6 +449,32 @@ func gitInput(ctx context.Context, root string, env []string, stdin []byte, args
 			describeGitFailure(stderr.String())).WithCause(err)
 	}
 	return out, nil
+}
+
+// locationVariables are what git reads, before the directory it runs in, to
+// decide which repository, index and objects it works on.
+var locationVariables = []string{
+	"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX",
+}
+
+// Environ is this process's environment without git's location variables,
+// followed by extra, for a git command, or a command of the project's, run in
+// a checkout that is named. Inherited, each of them sent what the loop
+// measured -- the commit a story's base is taken from, the tree its reviews
+// are stamped with -- to whatever repository it named: the test harness set
+// two of them, and a git hook sets GIT_INDEX_FILE for everything it runs.
+// Names are compared as Windows compares them, without regard to case.
+func Environ(extra ...string) []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env)+len(extra))
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		if !slices.ContainsFunc(locationVariables, func(v string) bool { return strings.EqualFold(v, name) }) {
+			out = append(out, kv)
+		}
+	}
+	return append(out, extra...)
 }
 
 func describeGitFailure(stderr string) string {

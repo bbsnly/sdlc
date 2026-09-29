@@ -234,7 +234,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 	}
 
 	if shellpolicy.Tools[p.ToolName] {
-		return inspectShell(placeOf(project), story, p, warn), event, true
+		return inspectShell(placeOf(project), story, p, getenv, warn), event, true
 	}
 
 	rel, outside := pathrules.Rel(project, path)
@@ -247,9 +247,12 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 		Agent:   p.AgentType,
 		Path:    rel,
 		Outside: outside && path != "",
-		Story:   story,
-		Tests:   testState(project, story, rel, warn),
-		Backlog: backlogPath(project),
+		// Asked only of a path inside the project, and only where the
+		// repository has another checkout that could be nested in it.
+		OtherCheckout: !outside && nestedCheckout(placeOf(project), path, p.CWD),
+		Story:         story,
+		Tests:         testState(project, story, rel, warn),
+		Backlog:       backlogPath(project),
 	}), event, true
 }
 
@@ -296,7 +299,7 @@ func onDisk(resolver pathrules.Resolver, word string) string {
 
 // inspectShell applies the shell rules, which exist because every other rule in
 // this tool governs the file-writing tools and a shell command is not one.
-func inspectShell(pl place, story string, p payload, warn func(string)) policy.Verdict {
+func inspectShell(pl place, story string, p payload, getenv func(string) string, warn func(string)) policy.Verdict {
 	project := pl.project
 	ready, why := commitReady(pl, story)
 	slog.Debug("hook considering a command",
@@ -317,7 +320,10 @@ func inspectShell(pl place, story string, p payload, warn func(string)) policy.V
 	// the next, and the payload's cwd is where that left it.
 	// A session in another directory altogether keeps that directory, so that a
 	// commit made there is known to be another repository's.
-	resolver := pathrules.NewResolver(project)
+	// Memoised, because every word of the command is placed on disk, most of
+	// them down the same directories, and the disk does not change while one
+	// command is judged.
+	resolver := pathrules.NewResolver(project).Memoised()
 	dir := ""
 	if p.CWD != "" {
 		switch rel, outside := resolver.Rel(p.CWD); {
@@ -340,6 +346,10 @@ func inspectShell(pl place, story string, p payload, warn func(string)) policy.V
 		Fresh:         func() (bool, string) { return reviewsFresh(pl, story, warn, budget) },
 		Commits:       func() { commits = true },
 		Nested:        func(dir string) bool { return nestedRepository(project, dir) },
+		// What git reads from the session's environment: the hook runs with
+		// the environment Claude Code runs the session's commands with.
+		Carried:   getenv,
+		Checkouts: func() shellpolicy.CheckoutSet { return checkoutSet(pl, resolver) },
 	}
 	// The repository's other checkouts are held as this one is. Where it is
 	// the only one, nothing is asked and nothing changes.

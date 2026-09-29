@@ -12,15 +12,16 @@ matters: see [Omitted is not empty](#omitted-is-not-empty).
 
 ## `commands`
 
-Commands run from the repository root, in a shell. Most are run by the agents;
-two are run by `sdlc` itself.
+Commands run from the root of the checkout the story is worked in, in a shell:
+with [`git.worktrees`](../configuration.md#git) on, the story's own worktree.
+Most are run by the agents; two are run by `sdlc` itself.
 
 | Key | Who runs it |
 | --- | --- |
 | `test` | the test author at Gate 3 (every new test must fail), the implementer after each plan step, the verifier at Gate 6 |
 | `build`, `lint`, format | the implementer, once the frozen tests pass |
 | `build`, `lint`, `fmt_check`, `coverage`, `mutation` | the verifier at Gate 6, which blocks on any that fails |
-| `smoke` | `sdlc start`, on trunk, before each new story; a failure refuses the start with [SDLC-E0041](../troubleshooting.md#sdlc-e0041) |
+| `smoke` | `sdlc start`, before each new story: in the story's new worktree, or on trunk with `git.worktrees` off; a failure refuses the start with [SDLC-E0041](../troubleshooting.md#sdlc-e0041) |
 | `fmt_file` | the hook, on each file a tool writes while a story is being worked on, with `$FILE` set to that file |
 
 Any key you add stays available for the agents to read, but nothing runs it by
@@ -33,6 +34,12 @@ A few rules follow from who runs them:
 - **It has to exit.** A test script that starts a watcher never returns.
 - **`smoke` runs before every new story**, so keep it fast. A story picked up
   again is not held to it.
+- **`smoke` runs in a tree with nothing installed.** With
+  [`git.worktrees`](../configuration.md#git) on, the default, it runs in the
+  story's new worktree, which has only what trunk commits, and every later
+  command runs there too. A build that needs installed dependencies installs
+  them in `smoke`, and the change is committed to trunk, because the worktree
+  reads trunk's committed `.sdlc/config.json`.
 - **`fmt_file` runs for every file written**, whatever its type. A formatter
   that understands only some files should say which, as the commands `init`
   writes do with `case "$FILE" in ...`.
@@ -163,7 +170,7 @@ coverage for Node. This project keeps component tests beside the code as
 
 ```json
 "commands": {
-  "smoke": "npm run build --silent",
+  "smoke": "npm ci && npm run build --silent",
   "build": "npm run build --silent",
   "test": "npm test --silent",
   "lint": "npm run lint --silent",
@@ -180,6 +187,12 @@ coverage for Node. This project keeps component tests beside the code as
   "src": ["src/", "lib/"]
 }
 ```
+
+`smoke` installs from the lockfile before it builds. `init` writes the build
+alone, which assumes `node_modules` is there, and a story's new worktree has
+none of its own: the build fails, or Node finds the main checkout's
+`node_modules` from inside `.sdlc/worktrees/` and the story builds against what
+you installed rather than what trunk locks.
 
 `*.test.tsx` matches a component test at any depth, inside `src/` or not.
 `src/**/*.test.tsx` would hold only the ones under `src/`. `__snapshots__/` is a

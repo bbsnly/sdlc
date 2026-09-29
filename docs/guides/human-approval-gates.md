@@ -36,9 +36,12 @@ A person answers first, in their own terminal: `sdlc approve US-001`, or `sdlc a
 
 Until somebody answers, `sdlc start` refuses the story with
 [SDLC-E0036](../troubleshooting.md#sdlc-e0036). It refuses to start anything
-else as well, because it picks up a story already under way before a new one.
-The waiting work is still in the tree, and a second story started on top of it
-would end up in the same commit.
+else in that checkout as well, because it picks up a story already under way
+before a new one. The waiting work is still in the tree, and a second story
+started on top of it would end up in the same commit. With
+[`git.worktrees`](../configuration.md#git) on, the default, the story waits in
+its own worktree, `.sdlc/worktrees/<ID>`, and `sdlc start` in the main checkout
+passes it over and begins the next story in a worktree of its own.
 
 The assistant cannot answer for you. The hook refuses `sdlc approve` from a tool
 call, however `sdlc` is reached, because an agent that could answer would be
@@ -104,7 +107,10 @@ it does not stop the gate, and it goes stale if the story changes after it.
 ## Answer
 
 Read what the story is waiting on. `sdlc status` shows the question, and the
-work is in the tree for you to look at. Then answer in your own terminal:
+work is in the tree for you to look at. Then answer in your own terminal, in the
+checkout that holds the story: with `git.worktrees` on, its worktree,
+`.sdlc/worktrees/US-001`. In any other checkout `sdlc approve` is refused with
+[SDLC-E0050](../troubleshooting.md#sdlc-e0050), which names the one to use.
 
 ```console
 $ sdlc approve US-001
@@ -147,16 +153,19 @@ that has gone from the backlog cannot be committed: `sdlc status` reports it as
 `not in the backlog`.
 
 **A frozen test that is wrong.** Run `sdlc approve <ID>`, then `sdlc start <ID>`
-and `sdlc unfreeze --reason "..."`: the escalation ended the iteration, and the
-freeze is lifted on the story being worked on. The reason is your decision on
-the record. See
+and `sdlc unfreeze --reason "..."`, all three in the story's worktree with
+`git.worktrees` on: the escalation ended the iteration, and the freeze is lifted
+on the story being worked on in the checkout the command runs in. The reason is
+your decision on the record. See
 [When a frozen test is wrong](when-a-frozen-test-is-wrong.md).
 
 **A contract rule or a setting.** While a story is being worked on, the hook
 refuses the assistant any write to `CLAUDE.md` or `.sdlc/config.json`: a rule
 the assistant can edit is a rule that stopped applying to it. The hand-over has
 ended the iteration, so make the change yourself, then answer with
-`sdlc approve`.
+`sdlc approve`. A story in its own worktree reads that worktree's copies, so
+make the change there for it to reach the story, and commit it to trunk for the
+stories after it.
 
 **The gate itself.** The note on a gate outcome is a one-line record of why.
 When you record an outcome yourself, say what was decided:
@@ -193,7 +202,8 @@ Those reviewers look again before the gate, or the commit, will pass.
 
 The pause is the way to see a story before it lands. Without it, you can still
 put a story down at the right moment. Once `sdlc status` shows `commit` as the
-next gate, every gate before it has passed:
+next gate, every gate before it has passed. In the story's worktree, with
+`git.worktrees` on, where `git diff` shows the story's work:
 
 ```console
 $ sdlc stop

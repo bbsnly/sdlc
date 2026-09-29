@@ -146,7 +146,7 @@ func newApproveCmd() *cobra.Command {
 				return err
 			}
 			if releasedSinceStart(record) {
-				noteRelease(cmd.ErrOrStderr(), id)
+				noteRelease(cmd.ErrOrStderr(), s, id)
 			}
 
 			if wantJSON(cmd) {

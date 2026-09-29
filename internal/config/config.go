@@ -66,7 +66,15 @@ type Backlog struct {
 type Git struct {
 	TrunkBranch string `json:"trunk_branch"`
 	Remote      bool   `json:"remote"`
+	// Worktrees is whether `sdlc start` gives each new story a worktree of its
+	// own. A pointer, because a key left out means on and is not the same as
+	// one set to false: a project that never heard of the switch has it on.
+	Worktrees *bool `json:"worktrees,omitempty"`
 }
+
+// WorktreesOn reports whether `sdlc start` gives each new story a worktree of
+// its own: unless git.worktrees is false.
+func (g Git) WorktreesOn() bool { return g.Worktrees == nil || *g.Worktrees }
 
 // Thresholds are the numbers a gate compares against. A zero means the gate
 // that reads it is not enforced.

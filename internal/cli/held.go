@@ -26,6 +26,21 @@ type startPlan struct {
 	// checked, where it always has, so that a person sees the same refusal
 	// first that they saw before.
 	refused error
+	// at is the checkout start acts in where it is not this one: the story's
+	// own worktree, which holds the story or has the session bound in it.
+	at string
+	// passedOver is every story start passed over when it picked, because the
+	// checkout holding it no longer exists. It is filled even where picking
+	// then fails, which is when a person most needs to hear it.
+	passedOver []goneHolder
+}
+
+// goneHolder is a story held by a checkout that no longer exists.
+type goneHolder struct {
+	id, checkout string
+	// waiting is a story waiting on a person, which carries on with `sdlc
+	// approve` rather than `sdlc start`.
+	waiting bool
 }
 
 // decideStart is the whole of what start decides, from reads alone. It is asked
@@ -34,6 +49,20 @@ type startPlan struct {
 // answers cannot drift apart.
 func decideStart(s *store.Store, asked, session string) (startPlan, error) {
 	if checkout, id := s.SessionHolder(session, 0); checkout != "" {
+		// A session working a story in the story's own worktree carries it on
+		// from the main checkout as it would from the worktree: the worktree is
+		// where start put it, and a person types /sdlc:next in either.
+		if (asked == "" || asked == id) && s.IsStoryWorktree(checkout, id) {
+			finished, err := refuseIfFinished(s, id)
+			if err != nil {
+				return startPlan{}, err
+			}
+			if finished != nil {
+				return startPlan{}, finished.WithFix(`run "sdlc stop" in the story's worktree, .sdlc/worktrees/` + id +
+					" in the main checkout, to end the iteration -- the story is done, and there is nothing left to resume")
+			}
+			return startPlan{id: id, running: true, at: checkout}, nil
+		}
 		return startPlan{}, sdlcerr.New(sdlcerr.StoryHeldElsewhere,
 			"this Claude Code session is working "+quote(id)+" in another checkout of this repository",
 			"the checkout at "+quote(checkout)+" holds it, and .sdlc/state/session there records this "+
@@ -50,6 +79,18 @@ func decideStart(s *store.Store, asked, session string) (startPlan, error) {
 		return startPlan{}, err
 	}
 	if active != "" {
+		if of, ok := s.StoryWorktreeOf(); ok && of == active && asked != "" && asked != active &&
+			store.CheckID(asked) == nil {
+			// Not the single checkout's why and fix: stories run side by side
+			// here, each in a worktree of its own, and sdlc stop would end
+			// this one. The id is checked because the fix is a command a
+			// person pastes.
+			return startPlan{}, sdlcerr.New(sdlcerr.IterationAlreadyActive,
+				"an iteration is already running on "+quote(active),
+				"this checkout is the worktree of "+quote(active)+", and a checkout works one story at a time").
+				WithFix(`a person runs "sdlc start ` + asked + `" in the main checkout, which gives it a worktree of ` +
+					"its own, and works it there in another Claude Code session; an assistant stops and tells the person")
+		}
 		if asked != "" && asked != active {
 			return startPlan{}, sdlcerr.New(sdlcerr.IterationAlreadyActive,
 				"an iteration is already running on "+quote(active),
@@ -96,33 +137,59 @@ func decideStart(s *store.Store, asked, session string) (startPlan, error) {
 		// story this checkout is working: start picks as if it named none.
 	}
 
+	var plan startPlan
 	id := asked
 	if id == "" {
-		if id, err = nextRunnable(s); err != nil {
-			return startPlan{}, err
+		if id, plan.passedOver, err = nextRunnable(s); err != nil {
+			return plan, err
 		}
 	}
 	story, backlog, err := s.Story(id)
 	if err != nil {
-		return startPlan{}, err
+		return plan, err
 	}
 	finished, err := refuseIfFinished(s, id)
 	if err != nil {
-		return startPlan{}, err
+		return plan, err
 	}
 	if finished != nil {
-		return startPlan{}, finished
+		return plan, finished
+	}
+	// Named, a story held in its own worktree is picked up there: resumed, or
+	// taken over by this session. A worktree a person made keeps its story to
+	// itself, as every other checkout does.
+	if at, ok, err := heldInItsWorktree(s, id); err != nil || ok {
+		if err == nil {
+			err = refuseIfWaiting(s, id)
+		}
+		if err != nil {
+			return plan, err
+		}
+		plan.id, plan.at, plan.running = id, at, store.ActiveIn(at) == id
+		return plan, nil
 	}
 	if err := refuseIfHeldElsewhere(s, id, "a story is worked in one checkout at a time"); err != nil {
-		return startPlan{}, err
+		return plan, err
 	}
 	if err := refuseIfWaiting(s, id); err != nil {
-		return startPlan{}, err
+		return plan, err
 	}
+	plan.id = id
 	if resuming(story.Status) {
-		return startPlan{id: id}, nil
+		return plan, nil
 	}
-	return startPlan{id: id, fresh: true, refused: refuseIfNotRunnable(backlog, story)}, nil
+	plan.fresh, plan.refused = true, refuseIfNotRunnable(backlog, story)
+	return plan, nil
+}
+
+// heldInItsWorktree is the story's own worktree, at .sdlc/worktrees/<ID>,
+// where that worktree is another checkout than this one and holds the story.
+func heldInItsWorktree(s *store.Store, id string) (string, bool, error) {
+	h, elsewhere, err := s.HeldElsewhere(id)
+	if err != nil || !elsewhere || h.Tied() || !h.Live || !s.IsStoryWorktree(h.Checkout, id) {
+		return "", false, err
+	}
+	return h.Checkout, true, nil
 }
 
 // refuseIfHeldElsewhere keeps a command off a story another checkout of the
@@ -135,16 +202,8 @@ func refuseIfHeldElsewhere(s *store.Store, id, why string) error {
 	return store.HeldElsewhereError(id, h, why)
 }
 
-// heldElsewhere is every story another checkout holds, or that more than one
+// elsewhere is every story another checkout holds, or that more than one
 // names, in the order the backlog has them.
-func heldElsewhere(s *store.Store, b *model.Backlog) ([]string, error) {
-	holders, err := s.Holders()
-	if err != nil {
-		return nil, err
-	}
-	return elsewhere(b, holders), nil
-}
-
 func elsewhere(b *model.Backlog, holders map[string]store.Holder) []string {
 	var out []string
 	for i := range b.Stories {
@@ -225,9 +284,10 @@ func heldIn(id string, h store.Holder) string {
 }
 
 // releaseNote is what start and approve say about a story a person moved
-// here with `sdlc release`. The record names no checkout, so neither does it.
-const releaseNote = "sdlc: %s was released from the checkout that held it; anything that checkout had " +
-	"not committed stayed there and is not in this one.\n"
+// here with `sdlc release`. The record names no checkout, so neither does it,
+// and it cannot tell a checkout moved here from any other.
+const releaseNote = "sdlc: %s was released from the checkout that held it. Work the old checkout had " +
+	"not committed stayed with that checkout. If this checkout is that one, moved here, the work is here.\n"
 
 // releasedSinceStart reports whether the story was released since its
 // iteration last started.
@@ -243,40 +303,68 @@ func releasedSinceStart(record *model.Record) bool {
 	return false
 }
 
-func noteRelease(w io.Writer, id string) {
+// noteRelease says nothing in a checkout whose freeze is the story's: that is
+// the checkout the story was released from, moved here, and its work is here.
+// Told the work was somewhere else, a person went looking for what they had.
+func noteRelease(w io.Writer, s *store.Store, id string) {
+	if frozenHere(s, id) {
+		return
+	}
 	fmt.Fprintf(w, releaseNote, id)
 }
 
-// noteGoneHolders tells the person, before a start that picks does anything
-// else, about each story it passes over because the checkout holding it no
-// longer exists. A single checkout moved while its story was stopped is one:
-// its claim still names the old path, and start then began the next story, or
-// refused over the stopped story's own work, with nothing said about either.
-// Where start carries this checkout's own iteration on, or refuses it, it
-// picks nothing and passes nothing over.
-func noteGoneHolders(w io.Writer, s *store.Store) {
-	if !s.OthersMayHold() {
-		return
+// frozenHere reports whether this checkout's .sdlc/state/tests.lock is the
+// story's freeze.
+func frozenHere(s *store.Store, id string) bool {
+	lock, err := s.Lock()
+	return err == nil && lock != nil && lock.Story == id
+}
+
+// startSaid is what start says once it knows how it ended: the stories it
+// passed over, and the one it went on to.
+type startSaid struct {
+	passed []goneHolder
+	went   string
+}
+
+// notePassedOver tells the person about each story start passed over because
+// the checkout holding it no longer exists. A single checkout moved while its
+// story was stopped is one: its claim still names the old path, and start then
+// began the next story, or refused over the stopped story's own work, with
+// nothing said about either. Start cannot tell a checkout that was deleted from
+// one that was moved, so the note says what to do in both. Where start carries
+// a story on, or refuses one it was asked for, it picks nothing and passes
+// nothing over.
+func notePassedOver(w io.Writer, said *startSaid) {
+	for _, g := range said.passed {
+		on := ""
+		if said.went != "" {
+			on = " and went on to " + said.went
+		}
+		last := "sdlc start " + g.id
+		if g.waiting {
+			last = "sdlc approve " + g.id
+		}
+		fmt.Fprintf(w, "sdlc: %s is held by a checkout that no longer exists, %s, so start passed it over%s. "+
+			"If this checkout was moved from there, the work this checkout has not committed is %s's own and is kept; "+
+			"an assistant stops and tells the person, who carries %s on here with `sdlc release %s --reason \"...\"` "+
+			"and then `%s`.\n",
+			g.id, quote(g.checkout), on, g.id, g.id, g.id, last)
 	}
-	active, err := s.Active()
-	if err != nil {
-		return
-	}
-	holders, err := s.Holders()
-	if err != nil {
-		// Said by the start that reads it.
-		return
-	}
-	if _, held := holders[active]; active != "" && (held || !s.HasLinkedWorktree()) {
-		return
-	}
+}
+
+// goneHolders is every story a checkout that no longer exists holds, in the
+// order of their ids.
+func goneHolders(b *model.Backlog, holders map[string]store.Holder) []goneHolder {
+	var out []goneHolder
 	for _, id := range slices.Sorted(maps.Keys(holders)) {
 		if h := holders[id]; !h.Tied() && !h.Live {
-			fmt.Fprintf(w, "sdlc: %s is held by a checkout that no longer exists, %s, so start passes it over; "+
-				"a person carries it on here with `sdlc release %s --reason \"...\"` and then `sdlc start %s`.\n",
-				id, quote(h.Checkout), id, id)
+			story, _ := b.Find(id)
+			out = append(out, goneHolder{id: id, checkout: h.Checkout,
+				waiting: story != nil && story.Status == model.StatusAwaitingHuman})
 		}
 	}
+	return out
 }
 
 // heldNote is the part of "nothing to start" that is about stories other

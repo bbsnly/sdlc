@@ -15,6 +15,12 @@ Stopped the iteration on US-001. Nothing was recorded; `sdlc start` picks it up 
 Stopping ends the iteration and nothing else. No gate changes, the story stays
 `in_progress` in the backlog, and the gate record gets one `loop_end` event.
 
+With [`git.worktrees`](../configuration.md#git) on, the default, a story runs in
+its own worktree, `.sdlc/worktrees/<ID>` in the main checkout, so that is where
+`sdlc stop` ends it: run it there. The commands on this page that act on the
+story being worked on, `sdlc stop`, `sdlc unfreeze` and `sdlc freeze`, all act
+in the checkout they run in.
+
 It also turns the hook off. Every rule in [enforcement](../enforcement.md) only
 applies while `.sdlc/state/active` names a story, and only in the Claude Code
 session working it, so once you have stopped you can edit code, tests or
@@ -66,9 +72,18 @@ leave it to the skill, a story with `"resume": true` goes straight to
 is active, `sdlc status` shows the same gate on its `next` line, and
 `sdlc status --json` as `next_gate`.
 
+A story in its own worktree says where, in both forms. The text has a
+`Worktree:` line with the worktree's path and a `Branch:` line with
+`story/US-001`, and the JSON has `worktree`, `branch` and `main`, the main
+checkout's path. `/sdlc:next` reads `worktree` too, and works the story there.
+Run in the main checkout, `sdlc start US-001` picks the story up in its
+worktree; a plain `sdlc start` there passes it over, as a story another checkout
+holds, and begins the next one.
+
 A resumed story is not held to the trunk checks a new one is. `sdlc start`
-refuses to begin a new story from a trunk that is on another branch, has
-uncommitted work, is behind `origin` or fails its smoke check
+refuses to begin a new story from a trunk that is behind `origin`, or that
+fails its smoke check in the story's new worktree; with `git.worktrees` off, it
+also refuses a checkout on another branch or with uncommitted work
 ([SDLC-E0038](../troubleshooting.md#sdlc-e0038) to
 [SDLC-E0041](../troubleshooting.md#sdlc-e0041)). A story already in progress has
 its own work in the tree, so those checks are skipped when it is picked up.
@@ -98,7 +113,9 @@ progress, provided trunk passes the checks above, but OTHER-1's `sdlc freeze`
 then fails with [SDLC-E0022](../troubleshooting.md#sdlc-e0022), naming US-001.
 `sdlc unfreeze` will not help: it refuses to lift a freeze that belongs to
 another story. Finish US-001 (`sdlc stop`, then `sdlc start US-001`), or mark it
-`dropped` in the backlog, which releases its freeze.
+`dropped` in the backlog, which releases its freeze. That is one checkout's
+freeze: with `git.worktrees` on, OTHER-1 starts in a worktree of its own, with a
+freeze of its own.
 
 ## In another checkout
 
@@ -107,7 +124,9 @@ that started it. `sdlc stop` and `sdlc escalate` both keep its claim, so
 `sdlc start` in another checkout passes over it and picks the next story, and
 naming it there is refused with
 [SDLC-E0050](../troubleshooting.md#sdlc-e0050), which names the checkout that
-holds it. Pick it up again in that checkout.
+holds it. Pick it up again in that checkout. A story in its own worktree under
+`.sdlc/worktrees/` can also be picked up by name in any other checkout, the main
+checkout included, which carries it on in the worktree.
 
 To carry on somewhere else, a person releases it first, in their own terminal:
 

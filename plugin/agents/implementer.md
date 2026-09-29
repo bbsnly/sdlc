@@ -27,6 +27,10 @@ That is the point of the whole loop: if the tests can move, nothing they say mea
 
 ## Inputs
 
+With a story worktree, the code is under the worktree the brief names, and commands run there;
+the backlog and `.sdlc/stories/<ID>/` stay in the main checkout, at the absolute paths the brief
+gives.
+
 - the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names — and its
   acceptance criteria
 - `.sdlc/stories/<ID>/ANALYSIS.md`, `THREATS.md` — Gate 2's facts, with `file:line`

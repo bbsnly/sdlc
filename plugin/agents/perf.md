@@ -19,7 +19,10 @@ in which case block.
 
 ## Inputs
 
-- `PLAN.md` at Gate 4; the diff and the changed files at Gate 7
+- `PLAN.md` at Gate 4; the diff and the changed files at Gate 7, including every new file
+  `git status --short` lists as `??`. The diff is `git diff $(git merge-base <trunk> HEAD)`, run
+  in the worktree the brief names, where `<trunk>` is `git.trunk_branch`: from the commit the
+  story's branch was cut from.
 - `CLAUDE.md` → `## SDLC Contract` — any stated budget: latency, memory, startup, query count
 - the code the change touches, and the code that calls it
 

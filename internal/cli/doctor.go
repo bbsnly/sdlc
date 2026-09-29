@@ -130,9 +130,11 @@ func runChecks(ctx context.Context) []check {
 		return append(out, skipRest("git repository", "git repository")...)
 	}
 	add(check{Name: "git repository", State: stateOK, Detail: root})
-	add(gitCheck())
 
 	cfg, err := config.Load(root)
+	// Which git is old enough depends on whether start makes each story a
+	// worktree, which only a configuration that reads can say.
+	add(gitCheck(ctx, err == nil && cfg.Git.WorktreesOn()))
 	if err != nil {
 		// The error's own words: its cause alone said nothing of which setting
 		// was wrong, and "sdlc init" does not fix a file that is already there.
@@ -171,6 +173,9 @@ func runChecks(ctx context.Context) []check {
 	s := store.New(&config.Project{Root: root, Config: cfg})
 	add(backlogCheck(s, root))
 	add(stateCheck(ctx, s))
+	if c, ok := storyWorktreesCheck(ctx, s); ok {
+		add(c)
+	}
 	add(contractCheck(root))
 	out = append(out, commandChecks(cfg)...)
 	add(binaryCheck())
@@ -383,14 +388,186 @@ func backlogCheck(s *store.Store, root string) check {
 // which files are part of the working tree, and a review is stamped with the
 // hash of what it reviewed -- both fail at the moment they are needed, which is
 // the middle of a story, if git is not on the PATH.
-func gitCheck() check {
+//
+// With worktrees on, it also holds git to the oldest version that has every
+// worktree command start runs, which otherwise fails the first time a story
+// begins.
+func gitCheck(ctx context.Context, worktrees bool) check {
 	if _, err := exec.LookPath("git"); err != nil {
 		return check{Name: "git command", State: stateProblem,
 			Detail: "git is not on your PATH",
 			Fix: "install git -- the test freeze and every review are recorded " +
 				"against what git says is in the working tree"}
 	}
+	if worktrees {
+		least := gitx.MinimumVersion
+		major, minor, err := gitx.Version(ctx)
+		if err == nil && (major < least[0] || major == least[0] && minor < least[1]) {
+			return check{Name: "git command", State: stateProblem,
+				Detail: fmt.Sprintf("git is %d.%d, and sdlc start makes each story's worktree with commands "+
+					"that came in git %d.%d", major, minor, least[0], least[1]),
+				Fix: fmt.Sprintf("install git %d.%d or newer, or set git.worktrees to false in .sdlc/config.json "+
+					"to begin each story in the checkout sdlc start runs in", least[0], least[1])}
+		}
+	}
 	return check{Name: "git command", State: stateOK, Detail: "found on PATH"}
+}
+
+// storyWorktreesCheck is what start's worktrees leave for a person to do: a
+// trunk a new worktree would find no configuration on, and a story worktree
+// that no checkout holds. It appears only where there is one of them, and so
+// is not among the checks a failure earlier on reports as skipped.
+//
+// Each worktree is described by what is true of it, never by a guess at how
+// it came to be there, and the fix never forces anything away: what is in it
+// may be a start still running, or somebody's work.
+func storyWorktreesCheck(ctx context.Context, s *store.Store) (check, bool) {
+	co, err := s.Checkout()
+	if err != nil {
+		return check{}, false
+	}
+	trunk := trunkOf(s.Config())
+	var details, fixes []string
+	if s.Config().Git.WorktreesOn() {
+		if has, err := gitx.Holds(ctx, co.Main, "refs/heads/"+trunk, config.File); err == nil && !has {
+			details = append(details, "trunk, "+quote(trunk)+", has no "+config.File+
+				" committed, and a story's worktree has only what trunk commits, so sdlc start refuses to begin one")
+			fixes = append(fixes, "commit "+config.File+" and CLAUDE.md to trunk, or set git.worktrees to false in "+
+				"this checkout's "+config.File)
+		}
+	}
+	trees, err := gitx.Worktrees(ctx, co.Main)
+	if err != nil {
+		trees = nil
+	}
+	holders, err := s.Holders()
+	if err != nil {
+		// The backlog check has said why.
+		trees = nil
+	}
+	within := filepath.Join(co.Main, config.Dir, "worktrees")
+	for _, w := range trees {
+		id := filepath.Base(w.Path)
+		if store.CheckID(id) != nil || !config.SamePath(filepath.Dir(w.Path), within) || holdsIt(holders[id], w.Path) {
+			continue
+		}
+		detail, fix := unheldWorktree(ctx, w, id, trunk)
+		details, fixes = append(details, detail), append(fixes, fix)
+	}
+	if len(details) == 0 {
+		return check{}, false
+	}
+	return check{Name: "story worktrees", State: stateProblem,
+		Detail: strings.Join(details, "; "), Fix: strings.Join(fixes, "; ")}, true
+}
+
+// holdsIt reports whether the checkout at dir holds the story, or is one of
+// the checkouts naming it, whose tie the loop state check describes.
+func holdsIt(h store.Holder, dir string) bool {
+	if config.SamePath(h.Checkout, dir) {
+		return true
+	}
+	return slices.ContainsFunc(h.Contenders, func(c store.Contender) bool { return config.SamePath(c.Checkout, dir) })
+}
+
+// unheldWorktree says which case a story worktree no checkout holds is, and
+// what a person does about it. Both the changes nobody committed and the
+// commits trunk lacks are said, in the order a person takes them, as SDLC-E0053
+// has them: what is kept is committed on the branch before the branch goes to
+// trunk. The loop's own files under .sdlc/state are not somebody's changes:
+// every story worktree has them uncommitted, so a finished story's worktree
+// read as "may be somebody's work", and its merge was never said.
+//
+// The commits are counted from the worktree's HEAD, whatever it has checked
+// out: one on no branch, as a rebase stopped part-way leaves it, was called
+// empty, and removing it as advised lost what only its HEAD had. Removal is
+// offered only where both were read, and neither had anything.
+//
+// Every command in the fix is built from the story's id, which has passed
+// CheckID, and trunk, and never from the branch git lists: a session can
+// rename its own worktree's branch, git takes shell syntax in a name, and
+// doctor had put that name into a merge a person was told to paste. A
+// worktree on any other branch is named with the branch as a shell reads it
+// back unexpanded, and gets no command built from it.
+func unheldWorktree(ctx context.Context, w gitx.Worktree, id, trunk string) (detail, fix string) {
+	rel := worktreeIn(id)
+	if w.Gone {
+		return id + "'s worktree, " + rel + ", is gone, and git still lists it",
+			`"git worktree prune" in the main checkout makes git forget it`
+	}
+	branch := store.StoryBranch(id)
+	own := w.Branch == branch
+	changes, loops, err := workChanges(ctx, w.Path)
+	n, countErr := gitx.HeadAhead(ctx, w.Path, trunk)
+	err = errors.Join(err, countErr)
+	var details, fixes []string
+	if len(changes) > 0 {
+		kept := "there"
+		if own {
+			kept = "on " + branch
+		}
+		details = append(details, id+"'s worktree, "+rel+", has changes nobody committed, and no checkout holds "+id)
+		fixes = append(fixes, "the changes nobody committed may be somebody's work: a person keeps what is wanted, "+
+			"committed "+kept+" or copied elsewhere, before removing anything")
+	}
+	switch {
+	case w.Branch != "" && !own:
+		details = append(details, id+"'s worktree, "+rel+", is on the branch "+shellWord(w.Branch)+", not "+branch+
+			", and no checkout holds "+id)
+		fixes = append(fixes, "that is not the branch start made: a person looks at what it holds, with "+
+			lookAt(id, trunk)+" in the main checkout, before merging or removing anything")
+	case err != nil:
+		details = append(details, id+"'s worktree, "+rel+", is held by no checkout, and git could not read what it "+
+			"holds")
+		fixes = append(fixes, "a person looks at what it holds, with "+lookAt(id, trunk)+
+			" in the main checkout, before removing anything")
+	case n == 0:
+	case own:
+		details = append(details, fmt.Sprintf("%s's worktree, %s, and %s hold %d %s trunk does not have",
+			id, rel, branch, n, plural(n, "commit", "commits")))
+		fixes = append(fixes, fmt.Sprintf("the %s on %s %s the story's work: a person brings %s to trunk, "+
+			`with trunk checked out, with "git merge --ff-only %s" in the main checkout, before removing `+
+			"either; if git cannot fast-forward, a person first rebases %s on trunk in its worktree and runs "+
+			"the tests", plural(n, "commit", "commits"), branch, plural(n, "is", "are"), plural(n, "it", "them"),
+			branch, branch))
+	default:
+		details = append(details, fmt.Sprintf("%s's worktree, %s, is on no branch, its HEAD has %d %s trunk "+
+			"does not have, and no checkout holds %s", id, rel, n, plural(n, "commit", "commits"), id))
+		fixes = append(fixes, fmt.Sprintf("%s: a person looks at %s, with %s in the main checkout, and keeps what "+
+			"is wanted on a branch, with %s, before merging or removing anything", lostWithIt, plural(n, "it", "them"),
+			lookAt(id, trunk), keepOn(id)))
+	}
+	if len(details) > 0 {
+		return strings.Join(details, "; "), strings.Join(fixes, "; then ")
+	}
+	remove := `"git worktree remove ` + rel + `"`
+	if own {
+		remove += ` and "git branch -d ` + branch + `"`
+	}
+	detail = id + "'s worktree, " + rel + ", is held by no checkout, and has nothing trunk does not"
+	fix = `if no "sdlc start" is running for ` + id + `, a person can remove it with ` + remove + " in the main checkout"
+	if loops {
+		detail += " but the loop's own files under .sdlc/state"
+		fix += "; those files are safe to lose where git refuses to remove the worktree over them"
+	}
+	return detail, fix
+}
+
+// workChanges are the changes in a checkout that could be somebody's work,
+// and whether the loop's own files under .sdlc/state were among its changes.
+func workChanges(ctx context.Context, dir string) (changes []string, loops bool, err error) {
+	all, err := gitx.Changes(ctx, dir)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, p := range all {
+		if strings.HasPrefix(p, config.Dir+"/state/") {
+			loops = true
+			continue
+		}
+		changes = append(changes, p)
+	}
+	return changes, loops, nil
 }
 
 func contractCheck(root string) check {

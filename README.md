@@ -90,8 +90,9 @@ $ sdlc doctor
 and adds the contract section to your `CLAUDE.md`. It never overwrites your own
 files, and it writes no `.gitignore`: what a project commits is the project's
 decision. `doctor` checks the result and names the command that fixes anything
-it does not like. Commit what `init` wrote before the first story: a new story
-starts only from a trunk with nothing uncommitted on it.
+it does not like. Commit what `init` wrote before the first story: each new
+story starts in a worktree cut from trunk's commits, so only what is committed
+is there.
 
 ## Using it
 
@@ -106,6 +107,13 @@ committed and its retro is written, or until a gate needs a person. Run it again
 after that, or after a session that ended part-way, and it picks up at the first
 gate that has not passed. Nothing else is needed, and nothing else is the
 intended way in.
+
+Each new story is worked in a worktree of its own, `.sdlc/worktrees/<ID>`, on a
+branch `story/<ID>` cut from trunk, and committed there, so your checkout is
+left as it was and a second session can work a second story at the same time.
+Bringing a finished story to trunk is yours: `git merge --ff-only story/<ID>`.
+[The loop](https://github.com/bbsnly/sdlc/blob/main/docs/the-loop.md#more-than-one-checkout)
+says how, and `git.worktrees` in the configuration turns it off.
 
 Underneath, everything the skill does is the `sdlc` command, and you can run any
 of it yourself — to see where a story is, to take over a gate, or to script the
@@ -216,8 +224,8 @@ reviewer.
 ## Prerequisites
 
 - **Claude Code** 2.1.265 or newer
-- **git**, and on Windows [Git for Windows](https://git-scm.com/download/win)
-  (WSL is not required)
+- **git** 2.17 or newer, and on Windows
+  [Git for Windows](https://git-scm.com/download/win) (WSL is not required)
 - **Go** 1.26 or newer, only to build from source or use `go install`
 
 ## Documentation

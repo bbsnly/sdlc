@@ -92,7 +92,9 @@ func newReleaseCmd() *cobra.Command {
 				fmt.Fprintf(w, "Anything the checkout at %s has not committed stays there, and is not moved.\n",
 					quote(h.Checkout))
 			}
-			if _, frozen := record.StandingFreeze(); frozen {
+			// Not where this checkout's own freeze is the story's: it is the checkout the
+			// story was released from, moved here, and the freeze is here with it.
+			if _, frozen := record.StandingFreeze(); frozen && !frozenHere(s, id) {
 				fmt.Fprintln(w, "Its tests were frozen in that checkout, and the freeze does not move with it: "+
 					`in the checkout that picks it up, a person lifts it with "sdlc unfreeze --reason ..." `+
 					`in their own terminal, and the tests are frozen again with "sdlc freeze".`)

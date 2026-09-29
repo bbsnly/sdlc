@@ -166,34 +166,46 @@ func braces(word string) []string {
 
 // braceGroup finds the first group in w with a comma at its own depth, and
 // returns where it opens and closes and what is between the commas.
+//
+// It is one pass, with the groups still open on a stack. Scanning on from each
+// `{` in turn was quadratic, and a word of a hundred thousand braces that
+// never closed took seconds, past the time Claude Code gives the hook.
 func braceGroup(w string) (int, int, []string) {
-	for open := 0; open < len(w); open++ {
-		if w[open] != '{' || open > 0 && w[open-1] == '$' {
-			continue
-		}
-		depth, start := 0, open+1
-		var parts []string
-	group:
-		for i := open; i < len(w); i++ {
-			switch w[i] {
-			case '{':
-				depth++
-			case '}':
-				depth--
-				if depth > 0 {
-					continue
-				}
-				if parts != nil {
-					return open, i, append(parts, w[start:i])
-				}
-				break group
-			case ',':
-				if depth == 1 {
-					parts = append(parts, w[start:i])
-					start = i + 1
-				}
+	type group struct {
+		open   int
+		commas []int
+		name   bool // `${`, a variable and never a list
+	}
+	var stack []group
+	best, bestEnd := -1, -1
+	var bestCommas []int
+	for i := 0; i < len(w); i++ {
+		switch w[i] {
+		case '{':
+			stack = append(stack, group{open: i, name: i > 0 && w[i-1] == '$'})
+		case ',':
+			if len(stack) > 0 {
+				stack[len(stack)-1].commas = append(stack[len(stack)-1].commas, i)
+			}
+		case '}':
+			if len(stack) == 0 {
+				continue
+			}
+			g := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if !g.name && len(g.commas) > 0 && (best < 0 || g.open < best) {
+				best, bestEnd, bestCommas = g.open, i, g.commas
 			}
 		}
 	}
-	return -1, -1, nil
+	if best < 0 {
+		return -1, -1, nil
+	}
+	parts := make([]string, 0, len(bestCommas)+1)
+	from := best + 1
+	for _, c := range bestCommas {
+		parts = append(parts, w[from:c])
+		from = c + 1
+	}
+	return best, bestEnd, append(parts, w[from:bestEnd])
 }

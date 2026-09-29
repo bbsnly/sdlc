@@ -21,9 +21,15 @@ stops the gate; if not, your findings are recorded and the loop continues. Eithe
 
 ## Inputs
 
+With a story worktree, the code is under the worktree the brief names, and commands run there;
+the backlog and `.sdlc/stories/<ID>/` stay in the main checkout, at the absolute paths the brief
+gives.
+
 - `.sdlc/stories/<ID>/THREATS.md` — Gate 2's threat pass. Start here, and say where it was wrong.
-- `PLAN.md` at Gate 4; the diff (`git diff`) and the changed files at Gate 7, including every
-  new file `git status --short` lists as `??`, which `git diff` does not show
+- `PLAN.md` at Gate 4; the diff and the changed files at Gate 7, including every new file
+  `git status --short` lists as `??`, which `git diff` does not show. The diff is
+  `git diff $(git merge-base <trunk> HEAD)`, run in the worktree the brief names, where `<trunk>`
+  is `git.trunk_branch`: from the commit the story's branch was cut from.
 - the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names;
   `ANALYSIS.md`; the frozen tests
 - `CLAUDE.md` → `## SDLC Contract`

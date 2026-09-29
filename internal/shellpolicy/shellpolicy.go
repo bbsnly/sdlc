@@ -111,6 +111,22 @@ type State struct {
 	// project is its repository's only checkout. A word landing in the project
 	// itself lands nowhere here, and Resolve judges it.
 	Shared func(word string) []Landing
+
+	// Checkouts, when set, is where the repository's checkouts are on disk, for
+	// the rule that refuses taking one away. It is asked once, and only by a
+	// command that could take something away.
+	Checkouts func() CheckoutSet
+
+	// Carried, when set, is a variable of the environment the session started
+	// with, or "" where it is not set. git reads GIT_DIR, GIT_WORK_TREE and
+	// its configuration variables from there as well as from the command, and
+	// a session that carries GIT_WORK_TREE commits there with a plain `git
+	// commit`.
+	Carried func(name string) string
+
+	// undecoded is set by Inspect for a reading that another decodes; see
+	// pair.
+	undecoded bool
 }
 
 // A Landing is where a word of a command lands in another checkout of the
@@ -200,13 +216,24 @@ var interpreters = map[string]bool{
 type pair struct {
 	text    string
 	command string
+	// undecoded is a reading that takes `$'status'` for the variable
+	// `$status`, where another reading decodes it. That reading has every
+	// expansion this one has, so the git rules leave a word the shell has yet
+	// to expand to it: read here, `git $'status'` was refused for a `$status`
+	// that is not there.
+	undecoded bool
 }
 
-// readings is a command read as the released tool reads it and as the shell
-// that will run it reads it, which is twice, and three times where a marker
+// readings is a command read as the released tool reads it, as the shell that
+// will run it reads it, and, where a POSIX shell would decode `$'...'`, take a
+// backslash out or expand a brace list, as it reads once it has. A marker
 // nothing closes makes the shell's reading two texts of its own. A rule refuses
-// the command when any reading refuses it, so this can only add refusals, never
-// take one away.
+// the command when any reading refuses it, so the readings can only add
+// refusals to one another. The released reading is not quite the released
+// tool's: its lexer reads `\'` and `\"` outside quotes as the shell does, one
+// character of the word, where the released lexer opened a string. That drops
+// only refusals of text no shell runs, and `echo \'; git commit -m x; echo \'`,
+// read as one echo, had hidden a commit.
 //
 // The released reading is kept because the shell's reading is a reading of
 // PowerShell's grammar made without PowerShell. A header the strict test
@@ -235,15 +262,42 @@ func readings(command string, powerShell bool) []pair {
 	// A reading another has already made is not made again: the two differ only
 	// where the command holds a here-string marker or a backtick, and a document
 	// handed over as a bash heredoc is one reading for both.
-	add := func(texts []string, spelling string) {
+	add := func(texts []string, spelling string, undecoded bool) {
 		for _, text := range texts {
-			if p := (pair{text: text, command: spelling}); !slices.Contains(out, p) {
-				out = append(out, p)
+			if !slices.ContainsFunc(out, func(p pair) bool { return p.text == text && p.command == spelling }) {
+				out = append(out, pair{text: text, command: spelling, undecoded: undecoded})
 			}
 		}
 	}
-	add(withoutDocuments(released, powerShell, true), released)
-	add(withoutDocuments(shell, powerShell, false), shell)
+	add(withoutDocuments(released, powerShell, true), released, false)
+	add(withoutDocuments(shell, powerShell, false), shell, false)
+	// A third, where a POSIX shell decodes `$'...'` or takes a backslash out,
+	// and only then: a command with neither pays nothing for it. Decoded after
+	// the documents are taken out, because a document is text and its quote --
+	// the apostrophe of "don't" -- would otherwise open a string that hid every
+	// line after it.
+	if !powerShell {
+		if d := decoded(shell); d != shell {
+			for i := range out {
+				out[i].undecoded = true
+			}
+			// Each undecoded text is decoded, the released reading's too, so
+			// that every reading that leaves a word to a decoded one has one.
+			for _, released := range []bool{true, false} {
+				texts := withoutDocuments(shell, false, released)
+				for i, text := range texts {
+					texts[i] = decoded(text)
+				}
+				add(texts, d, false)
+			}
+		}
+		// And each once more with its brace lists expanded, where it has one.
+		for _, p := range slices.Clone(out) {
+			if text := bracesExpanded(p.text); text != p.text {
+				add([]string{text}, bracesExpanded(p.command), p.undecoded)
+			}
+		}
+	}
 	return out
 }
 
@@ -256,8 +310,10 @@ func readings(command string, powerShell bool) []pair {
 // a test file, as the file-writing rules have it, and a review recorded by
 // anyone but the reviewer it names.
 func Inspect(command string, s State) (Finding, bool) {
-	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}, landed: map[string][]Landing{}}
+	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}, landed: map[string][]Landing{},
+		disk: &diskAnswers{}}
 	for _, r := range readings(command, s.PowerShell) {
+		s.undecoded = r.undecoded
 		if f, ok := inspectReading(r, s, m); ok {
 			return f, true
 		}
@@ -269,7 +325,7 @@ func Inspect(command string, s State) (Finding, bool) {
 		// differently. wordsIn over a 50 KB command is 262 us, so a later reader
 		// will see duplicated work here; sharing it is what would break the
 		// guarantee above.
-		m = &memo{checked: map[string]bool{}, resolved: m.resolved, landed: m.landed, folded: m.folded}
+		m = &memo{checked: map[string]bool{}, resolved: m.resolved, landed: m.landed, folded: m.folded, disk: m.disk}
 	}
 	return Finding{}, false
 }
@@ -285,7 +341,7 @@ func inspectReading(r pair, s State, m *memo) (Finding, bool) {
 	}
 	// PowerShell sets a variable as a statement of its own, which parse does not
 	// read as an assignment: `$env:CLAUDE_CODE_SESSION_ID='x'; sdlc start`.
-	if setsSession.MatchString(text) {
+	if mayName(text, "CLAUDE_CODE_SESSION_ID") && setsSession.MatchString(text) {
 		if f, ok := checkEnforcement([]string{"CLAUDE_CODE_SESSION_ID"}); ok {
 			return f, true
 		}
@@ -302,21 +358,26 @@ func inspectReading(r pair, s State, m *memo) (Finding, bool) {
 	// unknown, `(cd web && npm run build) && cp config.example.json config.json`
 	// wrote a frozen fixture's config.json. PowerShell's parentheses and $( )
 	// run in the scope around them, so there a cd moves the command.
+	//
+	// old is where the command was before its last `cd`, which $OLDPWD and ~-
+	// name: before the first, somewhere this command does not show.
 	type place struct {
 		dir  string
 		lost bool
+		old  string
 	}
+	old := unknownDir
 	var outer []place
 	ticked := false
 	for _, marked := range markedSegments(pathText(text, s.PowerShell)) {
 		segment, opens, closes := subshellMarks(marked, &ticked)
 		if !s.PowerShell {
 			for ; closes > 0 && len(outer) > 0; closes-- {
-				dir, lost = outer[len(outer)-1].dir, outer[len(outer)-1].lost
+				dir, lost, old = outer[len(outer)-1].dir, outer[len(outer)-1].lost, outer[len(outer)-1].old
 				outer = outer[:len(outer)-1]
 			}
 			for ; opens > 0; opens-- {
-				outer = append(outer, place{dir, lost})
+				outer = append(outer, place{dir, lost, old})
 			}
 		}
 		words, redirects, _ := parse(segment)
@@ -324,20 +385,51 @@ func inspectReading(r pair, s State, m *memo) (Finding, bool) {
 			continue
 		}
 		run := program(words)
-		if f, ok := checkLoopState(command, segment, run, redirects, dir, lost, s, m); ok {
+		// A relative `cd` from somewhere unknown leads somewhere unknown. So
+		// does a glob, which names whichever directory it matches; it is kept
+		// as written, so that the paths under it are matched as globs too:
+		// dropped, `cd .sdl? && rm state/active` was a file at the root.
+		movedTo := func(next string) bool {
+			return next == "" || strings.ContainsAny(next, "*?[") || lost && !isAbsolute(next)
+		}
+		// env -C runs the command in the directory it names, as a cd in front
+		// of it would, and leaves the shell where it was. Read from where the
+		// shell was, `env -C .. rm -rf B-2` took another story's worktree away,
+		// and `env -C .sdlc rm -rf state` the loop's own record.
+		at, atLost := dir, lost
+		if run.chdir != "" {
+			at, _ = changedDir(dir, []string{"cd", run.chdir})
+			atLost = movedTo(at)
+		}
+		away := takeAway{s: s, m: m, dir: at, lost: atLost, pwd: dir, pwdLost: lost, old: old}
+		// A glob that can come back through `..` is refused for that first,
+		// under the same rule: refused for the `.sdlc` it could match as well,
+		// `rm -rf build/.*` was sent to `sdlc artifact write` when it had asked
+		// to clear a directory.
+		if backThroughDotDot(run.words) {
+			if f, ok := checkTakesACheckout(command, segment, run, away); ok {
+				return f, true
+			}
+		}
+		if f, ok := checkLoopState(command, segment, run, redirects, at, atLost, s, m); ok {
 			return f, true
 		}
-		if f, ok := checkFrozenTests(command, segment, run, redirects, dir, lost || unsure, s, m); ok {
+		if f, ok := checkFrozenTests(command, segment, run, redirects, at, atLost || unsure, s, m); ok {
+			return f, true
+		}
+		// After the rules a command was refused under before there was one, so
+		// that it keeps the rule it was refused under.
+		if f, ok := checkTakesACheckout(command, segment, run, away); ok {
 			return f, true
 		}
 		// A script handed to a shell runs in a process of its own, and its cd is
 		// movesInAScript's.
 		if next, ok := changedDir(dir, run.words); ok && !run.shell {
-			// A relative `cd` from somewhere unknown leads somewhere unknown. So
-			// does a glob, which names whichever directory it matches; it is kept
-			// as written, so that the paths under it are matched as globs too:
-			// dropped, `cd .sdl? && rm state/active` was a file at the root.
-			dir, lost = next, next == "" || strings.ContainsAny(next, "*?[") || lost && !isAbsolute(next)
+			old = dir
+			if lost {
+				old = unknownDir
+			}
+			dir, lost = next, movedTo(next)
 		}
 	}
 	return Finding{}, false
@@ -353,6 +445,9 @@ func movesInAScript(text string, powerShell bool) bool {
 	runs, subshells := programsAt(text, powerShell)
 	moved := map[int]bool{}
 	for _, r := range runs {
+		if len(r.words) == 0 || r.extra {
+			continue
+		}
 		script := subshells.scriptOf(r.group)
 		if script == 0 {
 			continue
@@ -384,8 +479,13 @@ func checkPrograms(text string, s State) (Finding, bool) {
 	// GIT_DIR names the repository whatever the directory, and an assignment to
 	// it can be anywhere in the command, or a statement of its own in
 	// PowerShell: `$env:GIT_DIR='C:\project\.git'; cd \; git commit`. Asked once:
-	// asked for every command in it, a long command took seconds.
-	gitDirSet := setsGitDir.MatchString(text)
+	// asked for every command in it, a long command took seconds. printf -v and
+	// read set it too, in words no pattern tells from a mention.
+	gitDirSet := mayName(text, "GIT_DIR") && setsGitDir.MatchString(text) ||
+		slices.ContainsFunc(runs, func(r ran) bool {
+			_, ok := assigned(r.sets, "GIT_DIR")
+			return ok
+		})
 	// Where each subshell is, as far as the words place it. The refusal reads
 	// a directory it cannot place as the project, which errs toward holding a
 	// commit back; the recorder cannot err that way, because a commit made in
@@ -397,6 +497,9 @@ func checkPrograms(text string, s State) (Finding, bool) {
 	// CDPATH sends a relative `cd` through the directories it lists. Any
 	// mention will do, since the cost of reading one wrongly is an observation.
 	cdPath := strings.Contains(strings.ToLower(text), "cdpath")
+	// What git will run, read with the variables each command runs with.
+	env := newEnvironment(text, s, subshells)
+	git := &gitRules{s: s, m: &memo{landed: map[string][]Landing{}}}
 	for _, r := range runs {
 		words := r.words
 		dir, ok := dirs[r.group]
@@ -407,6 +510,16 @@ func checkPrograms(text string, s State) (Finding, bool) {
 			unplaced = lost[g]
 		}
 		dirs[r.group], lost[r.group] = dir, unplaced
+		env.record(r)
+		if r.extra {
+			if _, f, ok := git.check(r, dir, env, 0, false); ok {
+				return f, true
+			}
+			continue
+		}
+		if len(words) == 0 {
+			continue
+		}
 		if f, ok := checkUnfreeze(words); ok {
 			return f, true
 		}
@@ -428,12 +541,23 @@ func checkPrograms(text string, s State) (Finding, bool) {
 		if f, ok := checkNestedSession(words); ok {
 			return f, true
 		}
+		// Asked before the commit gate and answered after it, so that a commit
+		// the gate refused before git was read this way keeps the rule it was
+		// refused under.
+		commit, gitFinding, refused := git.check(r, dir, env, 0, false)
+		// env -C runs the command where it says, as a cd in front of it
+		// would. Read from where the shell was, `env -C <main checkout> git
+		// commit` was a commit in this one.
+		at, placed := ranIn(r, dir)
 		// A directory of "" is the project.
 		if gitDirSet {
-			dir = ""
+			dir, at = "", ""
 		}
-		if f, ok := checkCommit(words, dir, !unplaced, s); ok {
+		if f, ok := git.commit(r, at, commit, placed && !unplaced, false); ok {
 			return f, true
+		}
+		if refused {
+			return gitFinding, true
 		}
 		if next, ok := changedDir(dir, words); ok {
 			// A glob can match this repository as well as any other:
@@ -498,15 +622,27 @@ func placedWords(words []string) bool {
 }
 
 // setsSession matches an assignment to CLAUDE_CODE_SESSION_ID: `NAME=`, and
-// PowerShell's `$env:NAME = `, `Set-Item env:NAME` and
-// `[Environment]::SetEnvironmentVariable('NAME', ...)`. `sdlc start` records the
+// PowerShell's `$env:NAME = `, `${env:NAME} = `, Set-Item, New-Item,
+// Set-Content and Add-Content on `env:NAME`, and
+// `[Environment]::SetEnvironmentVariable('NAME', ...)`, the spellings
+// powerShellSets reads. `sdlc start` records the
 // session it finds there as the one the story holds, so setting it hands the
 // story to a session that does not exist. Unlike setsGitDir it is a refusal, so
 // a read is not one: `echo $env:CLAUDE_CODE_SESSION_ID` is allowed.
 var setsSession = regexp.MustCompile(
-	`(?i)\bclaude_code_session_id=|\$env:claude_code_session_id\s*=|` +
-		`\b(set-item|new-item|si|ni)\s+(-path\s+)?env:[\\/]?claude_code_session_id\b|` +
+	`(?i)\bclaude_code_session_id=|\$env:claude_code_session_id\s*=|\$\{env:claude_code_session_id\}\s*=|` +
+		`\b(set-item|new-item|set-content|add-content|si|ni|sc|ac)\s+(-path\s+)?env:[\\/]?claude_code_session_id\b|` +
 		`setenvironmentvariable\(\s*['"]claude_code_session_id['"]`)
+
+// mayName reports whether text could name the variable name, an upper-case
+// one, where setsSession or setsGitDir could match: upper-casing folds each of
+// the letters of these names as their (?i) does, `ſ` to S included. Asked
+// first, because either pattern takes milliseconds over a long command, and
+// almost none names either variable: over 60 KB of rm, setsSession took 8 ms
+// of every call once it read Set-Content as well.
+func mayName(text, name string) bool {
+	return strings.Contains(strings.ToUpper(text), name)
+}
 
 // HumanDecisions reports a command that makes one of the decisions the loop
 // keeps for a person: approving work handed over, lifting the freeze, or
@@ -553,6 +689,9 @@ func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) 
 	}
 	places := map[int]place{0: {dir: "."}}
 	for _, r := range runs {
+		if len(r.words) == 0 || r.extra {
+			continue
+		}
 		here, ok := places[r.group]
 		for g := r.group; !ok; {
 			g = subshells.parent[g]
@@ -569,12 +708,21 @@ func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) 
 		if !onAStory {
 			f, onAStory = checkApprove(r.words)
 		}
-		if onAStory && (here.lost || storyWaits(here.dir)) {
+		moved := func(next string) place {
+			unread := r.substituted || next == "" || strings.ContainsAny(next, "$`%(){}*?[")
+			return place{dir: next, lost: unread || here.lost && !isAbsolute(next)}
+		}
+		// Where env -C sends it, as a cd in front of it would.
+		at := here
+		if r.chdir != "" {
+			next, _ := changedDir(here.dir, []string{"cd", r.chdir})
+			at = moved(next)
+		}
+		if onAStory && (at.lost || storyWaits(at.dir)) {
 			return f, true
 		}
 		if next, ok := changedDir(here.dir, r.words); ok {
-			unread := r.substituted || next == "" || strings.ContainsAny(next, "$`%(){}*?[")
-			places[r.group] = place{dir: next, lost: unread || here.lost && !isAbsolute(next)}
+			places[r.group] = moved(next)
 		}
 	}
 	return Finding{}, false
@@ -840,7 +988,7 @@ var ValueFlags = map[string]bool{
 // and the recorder taking the same guess wrote down this project's HEAD for a
 // commit made in another repository, and a person's next commit here was
 // recorded as the story's on that observation.
-func checkCommit(words []string, dir string, placed bool, s State) (Finding, bool) {
+func checkCommit(words []string, dir string, placed bool, s State, away bool) (Finding, bool) {
 	if !isGit(words) {
 		return Finding{}, false
 	}
@@ -848,7 +996,7 @@ func checkCommit(words []string, dir string, placed bool, s State) (Finding, boo
 	if !makesACommit(words, sub) {
 		return Finding{}, false
 	}
-	if f, ok := commitElsewhere(words, dir, s); ok {
+	if f, ok := commitElsewhere(words, dir, s, away); ok {
 		return f, true
 	}
 	if !inThisRepository(words, dir, s) {
@@ -892,9 +1040,11 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 				candidates = append(candidates, w)
 			}
 		}
-		if run.piped {
+		if run.piped && m.first("loop state on a piped line", dir) {
 			// `echo .sdlc/state/tests.lock | xargs rm` names the file in
-			// another segment altogether.
+			// another segment altogether. The line is read once from each
+			// directory: every word of it was spelled again for each `xargs`
+			// in it, and a hundred of them took most of a 60 KB command's time.
 			candidates = append(candidates, m.words(line)...)
 		}
 	}
@@ -1495,6 +1645,10 @@ type invocation struct {
 	words []string // the program and its arguments
 	piped bool     // its arguments also arrive on standard input, through xargs
 	shell bool     // a shell was taken off the front, so the words are a script it runs
+	// assigns are the variables env sets for the program, NAME=value.
+	assigns []string
+	// chdir is where env -C runs the program, or "".
+	chdir string
 }
 
 // program takes off the front of a segment whatever only runs the command after
@@ -1514,16 +1668,77 @@ func program(words []string) invocation {
 			words = words[1:]
 		case "xargs":
 			run.piped = true
-			words = skipOptions(words[1:])
+			// Read as flags, the value of `xargs -I {} rm {}` was the program.
+			words = skipOptions(skipValued(words[1:], "-I", "-n", "-P", "-L", "-d", "-s", "-E", "-a",
+				"--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-lines", "--max-chars",
+				"--replace", "--eof"))
 		case "env":
+			words = run.env(words[1:])
+		case "command", "builtin", "nohup", "nice", "caffeinate", "setsid", "unbuffer", "chronic", "firejail":
 			words = skipOptions(words[1:])
-			for len(words) > 0 && isAssignment(words[0]) {
+		case "busybox", "toybox":
+			// The applet after it is the program: `busybox rm -rf dir`.
+			words = words[1:]
+		case "taskset":
+			// Its options, then the CPUs, then the command.
+			if words = skipValued(words[1:]); len(words) > 0 {
 				words = words[1:]
 			}
-		case "command", "builtin", "exec", "nohup", "nice", "stdbuf", "caffeinate":
-			words = skipOptions(words[1:])
+		case "ts":
+			// task-spooler queues the command after its options.
+			words = skipOptions(skipValued(words[1:], "-L", "-D", "-N", "-W"))
+		case "nsenter":
+			words = skipValued(words[1:], "-t", "--target", "-S", "--setuid", "-G", "--setgid")
+		case "unshare":
+			words = run.skipValuedTo(words[1:], []string{"-w", "--wd"}, "-S", "--setuid", "-G", "--setgid",
+				"-R", "--root", "--propagation", "--setgroups", "--map-user", "--map-group", "--map-users",
+				"--map-groups")
+		case "systemd-run":
+			words = run.skipValuedTo(words[1:], []string{"--working-directory"}, "-u", "--unit", "-p",
+				"--property", "--description", "--slice", "-E", "--setenv", "--uid", "--gid", "--nice", "-M",
+				"--machine", "-H", "--host", "--service-type", "--on-active", "--on-boot", "--on-startup",
+				"--on-unit-active", "--on-unit-inactive", "--on-calendar", "--path-property",
+				"--socket-property", "--timer-property")
+		case "watch":
+			// watch hands its words to sh -c, as one command line.
+			run.shell = true
+			words = skipValued(words[1:], "-n", "--interval", "-q", "--equexit", "-s", "--shotsdir")
+		case "parallel":
+			// GNU parallel runs its command through a shell, once for each
+			// argument after :::, which are left among its words, and takes
+			// them from standard input where there are none.
+			run.shell, run.piped = true, true
+			words = skipValued(words[1:], "-j", "--jobs", "-P", "--max-procs", "-n", "--max-args", "-N",
+				"--max-replace-args", "-L", "--max-lines", "-s", "--max-chars", "-a", "--arg-file", "-d",
+				"--delimiter", "-E", "-I", "-C", "--colsep", "-S", "--sshlogin", "--sshloginfile", "--slf",
+				"--results", "--res", "--joblog", "--timeout", "--delay", "--memfree", "--load", "--tmpdir",
+				"--workdir", "--wd", "--tagstring", "--env", "--header", "--retries", "--halt", "--basefile",
+				"--bf", "--return", "--transferfile", "--tf", "--nice", "--rpl")
+		case "exec":
+			words = skipOptions(skipValued(words[1:], "-a"))
+		case "stdbuf":
+			words = skipOptions(skipValued(words[1:], "-i", "-o", "-e"))
+		case "ionice":
+			words = skipValued(words[1:], "-c", "-n", "-p", "-P", "-u",
+				"--class", "--classdata", "--pid", "--pgid", "--uid")
+		case "chrt":
+			// Its options, then the priority, then the command.
+			words = skipValued(words[1:], "-T", "-P", "-D", "--sched-runtime", "--sched-period", "--sched-deadline")
+			if len(words) > 0 && strings.Trim(words[0], "0123456789") == "" {
+				words = words[1:]
+			}
+		case "flock", "script":
+			// With a command line of their own they are sh -c.
+			var line bool
+			if base(first) == "flock" {
+				words, line = flocked(words[1:])
+			} else {
+				words, line = scripted(words[1:])
+			}
+			run.shell = run.shell || line
 		case "sudo", "doas":
-			words = skipValued(words[1:], "-u", "-g", "-h", "-p", "-C", "-D", "-R", "-r", "-t", "-T", "-U")
+			words = run.skipValuedTo(words[1:], []string{"-D", "--chdir"},
+				"-u", "-g", "-h", "-p", "-C", "-R", "-r", "-t", "-T", "-U")
 		case "sh", "bash", "zsh", "dash", "ksh", "pwsh", "powershell":
 			run.shell = true
 			words = skipOptions(words[1:])
@@ -1575,6 +1790,25 @@ func skipValued(words []string, valued ...string) []string {
 	for len(words) > 0 && strings.HasPrefix(words[0], "-") {
 		if hasWord(valued, words[0]) && len(words) > 1 {
 			words = words[1:]
+		}
+		words = words[1:]
+	}
+	return words
+}
+
+// skipValuedTo is skipValued for a wrapper with an option that runs the
+// command in another directory, as env -C does, which it keeps as where the
+// command runs: `sudo -D <main checkout> git commit` commits there.
+func (run *invocation) skipValuedTo(words, moves []string, valued ...string) []string {
+	for len(words) > 0 && strings.HasPrefix(words[0], "-") {
+		name, value, glued := strings.Cut(words[0], "=")
+		moved := hasWord(moves, name)
+		if (moved && !glued || hasWord(valued, words[0])) && len(words) > 1 {
+			words = words[1:]
+			value = words[0]
+		}
+		if moved {
+			run.chdir = value
 		}
 		words = words[1:]
 	}
@@ -1690,6 +1924,49 @@ type memo struct {
 	folded   []string             // the freeze, folded
 	line     []string             // the words of the whole command
 	split    bool
+	disk     *diskAnswers // what the hook said of the checkouts, for every reading
+}
+
+// diskAnswers is what State.Checkouts said, asked once for a command, and where
+// each word it was asked about is.
+type diskAnswers struct {
+	asked  bool
+	tree   *checkoutTree
+	placed map[string][]string
+}
+
+// checkouts is the tree of the repository's checkouts, or nil where the hook
+// gave none.
+func (m *memo) checkouts(s State) *checkoutTree {
+	if m.disk == nil {
+		m.disk = &diskAnswers{}
+	}
+	if !m.disk.asked {
+		m.disk.asked = true
+		if s.Checkouts != nil {
+			m.disk.tree = newCheckoutTree(s.Checkouts())
+		}
+	}
+	return m.disk.tree
+}
+
+// place is where the tree's Place puts a word, asked once per command.
+func (m *memo) place(t *checkoutTree, word string) []string {
+	if t.place == nil {
+		if isAbsolute(word) {
+			return []string{word}
+		}
+		return nil
+	}
+	if m.disk.placed == nil {
+		m.disk.placed = map[string][]string{}
+	}
+	p, ok := m.disk.placed[word]
+	if !ok {
+		p = t.place(word)
+		m.disk.placed[word] = p
+	}
+	return p
 }
 
 // first reports whether this is the first time a rule looks at a spelling in
@@ -2204,9 +2481,17 @@ func segments(command string) []string {
 func pathText(text string, powerShell bool) string {
 	if !powerShell {
 		text = escapedSeparators.Replace(text)
+	} else {
+		text = locationCalls.ReplaceAllString(text, "${1}$$PWD")
 	}
 	return glued(shortMagic(text))
 }
+
+// locationCalls are PowerShell's names for where it is, in parentheses, which
+// split as the path rules split a command were a word `(Get-Location` and a
+// command `)`: `Remove-Item -Recurse (Get-Location)`. `$(Get-Location)` is
+// glued's.
+var locationCalls = regexp.MustCompile(`(?i)(^|[^$])\((?:get-location|gl|pwd)\)(?:\.path)?`)
 
 // shortMagic is a command with git's long pathspec magic written the short way,
 // which has no parenthesis for the command to be split at: `git stash push --
@@ -2261,7 +2546,12 @@ func glued(text string) string {
 			continue
 		}
 		if i == 0 || startsAWord(text[i-1]) || isQuote(text[i-1]) && (i == 1 || startsAWord(text[i-2])) {
-			b.WriteString("$SUB")
+			// `pwd` is where the command is, which the shell calls $PWD.
+			if hereIs(body) {
+				b.WriteString("$PWD")
+			} else {
+				b.WriteString("$SUB")
+			}
 		}
 		inner = append(inner, glued(body))
 		i = end
@@ -2270,6 +2560,16 @@ func glued(text string) string {
 		b.WriteString("\n(" + in + ")")
 	}
 	return b.String()
+}
+
+// hereIs reports whether a substitution's command prints where the command is:
+// `pwd`, `pwd -L` or `pwd -P`, and PowerShell's Get-Location and its aliases.
+func hereIs(body string) bool {
+	switch strings.ToLower(strings.Join(strings.Fields(body), " ")) {
+	case "pwd", "pwd -l", "pwd -p", "get-location", "gl", "(get-location).path", "$pwd", "$pwd.path":
+		return true
+	}
+	return false
 }
 
 // substitutionAt is the command inside a `$(...)` or a backquoted one that

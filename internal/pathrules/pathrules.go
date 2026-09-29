@@ -33,11 +33,58 @@ func Rel(project, p string) (rel string, outside bool) {
 // project again for each was most of the cost of a long one.
 type Resolver struct {
 	project, root string
+	// disk, where it is set, is what the filesystem said of each path, asked
+	// once. Every word of a command was walked down from the root on its own,
+	// and 2,500 words from 50 directories took 28 s of the hook's 30.
+	disk *diskAnswers
+}
+
+// diskAnswers is whether each path asked about is there, and where each
+// existing path leads with its links followed.
+type diskAnswers struct {
+	there    map[string]bool
+	resolved map[string]string
 }
 
 // NewResolver resolves the project's own path, once.
 func NewResolver(project string) Resolver {
 	return Resolver{project: project, root: resolve(project)}
+}
+
+// Memoised is res asking the filesystem about each path once, for as long as
+// it is used. It is for one decision, over which the disk is taken not to
+// change: a Resolver kept while files come and go would answer from before.
+func (res Resolver) Memoised() Resolver {
+	res.disk = &diskAnswers{there: map[string]bool{}, resolved: map[string]string{}}
+	return res
+}
+
+// there reports whether p is on disk, its last element not followed.
+func (res Resolver) there(p string) bool {
+	if res.disk == nil {
+		_, err := os.Lstat(p)
+		return err == nil
+	}
+	ok, asked := res.disk.there[p]
+	if !asked {
+		_, err := os.Lstat(p)
+		ok = err == nil
+		res.disk.there[p] = ok
+	}
+	return ok
+}
+
+// resolve is resolve(p), asked once where res is memoised.
+func (res Resolver) resolve(p string) string {
+	if res.disk == nil {
+		return resolve(p)
+	}
+	out, asked := res.disk.resolved[p]
+	if !asked {
+		out = resolve(p)
+		res.disk.resolved[p] = out
+	}
+	return out
 }
 
 // Rel is Rel(project, p).
@@ -52,7 +99,7 @@ func (res Resolver) Rel(p string) (rel string, outside bool) {
 	abs = filepath.Clean(abs)
 
 	root := res.root
-	resolved := resolveExisting(abs)
+	resolved := res.resolveExisting(abs)
 
 	r, err := filepath.Rel(root, resolved)
 	if err != nil {
@@ -106,14 +153,14 @@ func (res Resolver) Place(p string) (string, bool) {
 	existing, i := volume+sep, 0
 	for ; i < len(parts); i++ {
 		next := existing + parts[i]
-		if _, err := os.Lstat(next); err != nil {
+		if !res.there(next) {
 			break
 		}
 		existing = next + sep
 	}
 	resolved := volume + sep
 	if i > 0 {
-		resolved = resolve(strings.TrimSuffix(existing, sep))
+		resolved = res.resolve(strings.TrimSuffix(existing, sep))
 	}
 	base := filepath.VolumeName(resolved)
 	kept := strings.FieldsFunc(resolved[len(base):], func(r rune) bool { return r == '/' || r == filepath.Separator })
@@ -228,9 +275,11 @@ func resolve(p string) string {
 // first part that is not there, since nothing can exist below it. Walking up
 // from the far end cost a lookup per level, and a path tens of thousands of
 // levels deep, which fits in one tool call, took longer than the hook is given.
-func resolveExisting(p string) string {
-	if _, err := os.Lstat(p); err == nil {
-		return resolve(p)
+func (res Resolver) resolveExisting(p string) string {
+	// Memoised, the walk below asks the disk only about what no earlier word
+	// passed through, and a path that is not there costs nothing more.
+	if res.disk == nil && res.there(p) {
+		return res.resolve(p)
 	}
 	sep := string(filepath.Separator)
 	volume := filepath.VolumeName(p)
@@ -239,12 +288,12 @@ func resolveExisting(p string) string {
 	i := 0
 	for ; i < len(parts); i++ {
 		next := filepath.Join(existing, parts[i])
-		if _, err := os.Lstat(next); err != nil {
+		if !res.there(next) {
 			break
 		}
 		existing = next
 	}
-	return filepath.Join(append([]string{resolve(existing)}, parts[i:]...)...)
+	return filepath.Join(append([]string{res.resolve(existing)}, parts[i:]...)...)
 }
 
 // Under reports whether rel is dir itself or something inside it. Both are

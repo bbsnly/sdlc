@@ -22,11 +22,18 @@ and the code, in that order.
 
 ## Inputs
 
+With a story worktree, the code is under the worktree the brief names, and commands run there;
+the backlog and `.sdlc/stories/<ID>/` stay in the main checkout, at the absolute paths the brief
+gives.
+
 - the story's acceptance criteria, in the backlog file that `backlog.path` in
   `.sdlc/config.json` names. **Read these first**, before any test and before any code, and
   write down what each one would mean in observable terms.
-- the diff: `git diff` and `git diff --stat` against the trunk branch in `.sdlc/config.json`,
-  and every new file `git status --short` lists as `??` — the work is not committed yet, and
+- the diff: `git diff $(git merge-base <trunk> HEAD)` and the same with `--stat`, run in the
+  worktree the brief names, where `<trunk>` is `git.trunk_branch` in `.sdlc/config.json`. The
+  merge base is the commit the story's branch was cut from, so what trunk gained since does not
+  show as the story's change.
+- every new file `git status --short` lists as `??` — the work is not committed yet, and
   `git diff` does not show a file git has never seen
 - `.sdlc/stories/<ID>/TEST-PLAN.md` and the frozen tests
 - `.sdlc/stories/<ID>/reviews/design_review-red-team-*.md` — the gaming vectors somebody already
