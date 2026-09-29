@@ -266,9 +266,9 @@ func TestAC6TheEnvironmentTheSessionStartedWithPointsGitAsTheCommandWould(t *tes
 		vars    map[string]string
 	}{
 		{"git commit -m x", map[string]string{"GIT_DIR": "/work/own/gitdir"}},
-		{"git commit -m x", map[string]string{"HOME": "/home/me"}},
+		{"git commit -m x", map[string]string{"HOME": "/home/dev"}},
 		{"git status", map[string]string{"GIT_CONFIG_PARAMETERS": "garbage"}},
-		{"git status", map[string]string{"GIT_CONFIG_GLOBAL": "/home/me/.gitconfig"}},
+		{"git status", map[string]string{"GIT_CONFIG_GLOBAL": "/home/dev/.gitconfig"}},
 		// The command line's own value is the one git runs with.
 		{"GIT_WORK_TREE=/work/project git commit -m x", map[string]string{"GIT_WORK_TREE": "/work/main"}},
 	} {

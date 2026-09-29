@@ -21,7 +21,7 @@ const (
 	a1Main   = "/work/main"
 	a1Other  = "/work/main/.sdlc/worktrees/B-2"
 	a1GitDir = "/work/main/.git/worktrees/A-1"
-	a1Home   = "/home/me"
+	a1Home   = "/home/dev"
 )
 
 // a1Abs is where a word of a command lands on disk, as the hook's Place puts
