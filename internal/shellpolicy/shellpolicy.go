@@ -37,6 +37,17 @@ type State struct {
 	// round every rule at once.
 	StoryFinished bool
 
+	// Committed is whether the story's commit gate has passed. After it, the
+	// one rebase the session may run is its own branch onto trunk's, so that a
+	// story trunk has moved past can still land.
+	Committed bool
+
+	// Trunk, when set, is the name of trunk's branch, and IsTrunk reports
+	// whether a name git reads in the session's own checkout is trunk's branch
+	// ref: a tag or another ref with trunk's short name is not.
+	Trunk   func() string
+	IsTrunk func(name string) bool
+
 	// Fresh, when set, reports whether the work a commit would record is the
 	// work that was reviewed, and says what changed when it is not. It is asked
 	// only for a commit whose gates have passed, because answering it means
@@ -127,6 +138,9 @@ type State struct {
 	// undecoded is set by Inspect for a reading that another decodes; see
 	// pair.
 	undecoded bool
+
+	// hold is the branch rule's finding for this call of Inspect, set by it.
+	hold *branchHold
 }
 
 // A Landing is where a word of a command lands in another checkout of the
@@ -312,7 +326,13 @@ func readings(command string, powerShell bool) []pair {
 func Inspect(command string, s State) (Finding, bool) {
 	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}, landed: map[string][]Landing{},
 		disk: &diskAnswers{}}
+	s.hold = &branchHold{}
 	for _, r := range readings(command, s.PowerShell) {
+		// With a branch move found, a reading is started only within the
+		// bound, and its text is charged to it before it is parsed.
+		if s.hold.charge(len(r.text)) {
+			return s.hold.finding, true
+		}
 		s.undecoded = r.undecoded
 		if f, ok := inspectReading(r, s, m); ok {
 			return f, true
@@ -326,6 +346,10 @@ func Inspect(command string, s State) (Finding, bool) {
 		// will see duplicated work here; sharing it is what would break the
 		// guarantee above.
 		m = &memo{checked: map[string]bool{}, resolved: m.resolved, landed: m.landed, folded: m.folded, disk: m.disk}
+	}
+	// The branch rule answers last, where nothing else refused the command.
+	if s.hold.found {
+		return s.hold.finding, true
 	}
 	return Finding{}, false
 }
@@ -370,6 +394,9 @@ func inspectReading(r pair, s State, m *memo) (Finding, bool) {
 	var outer []place
 	ticked := false
 	for _, marked := range markedSegments(pathText(text, s.PowerShell)) {
+		if s.hold.charge(1) {
+			return s.hold.finding, true
+		}
 		segment, opens, closes := subshellMarks(marked, &ticked)
 		if !s.PowerShell {
 			for ; closes > 0 && len(outer) > 0; closes-- {
@@ -511,6 +538,7 @@ func checkPrograms(text string, s State) (Finding, bool) {
 		}
 		dirs[r.group], lost[r.group] = dir, unplaced
 		env.record(r)
+		git.lost = unplaced
 		if r.extra {
 			if _, f, ok := git.check(r, dir, env, 0, false); ok {
 				return f, true
@@ -994,6 +1022,11 @@ func checkCommit(words []string, dir string, placed bool, s State, away bool) (F
 	}
 	sub, _, _, alias := gitCall(words[1:])
 	if !makesACommit(words, sub) {
+		return Finding{}, false
+	}
+	// Once the gates have passed, a rebase is the branch rule's to judge, and
+	// its freshness is not asked: the landing checks the change it makes.
+	if s.CommitReady && sub == "rebase" {
 		return Finding{}, false
 	}
 	if f, ok := commitElsewhere(words, dir, s, away); ok {

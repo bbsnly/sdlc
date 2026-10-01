@@ -197,7 +197,7 @@ func smoke(cmd *cobra.Command, dir, command string, env []string) (failed error,
 	}
 	var out bytes.Buffer
 	check.Stdout, check.Stderr = &out, &out
-	if err := check.Run(); err != nil {
+	if err := shellx.Run(check); err != nil {
 		return err, shellx.Tail(out.String(), smokeOutputLimit), nil
 	}
 	return nil, "", nil

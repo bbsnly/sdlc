@@ -78,7 +78,16 @@ main checkout does not list the worktrees and `git add -A` does not take them
 in; your own `.gitignore` and `.git/info/exclude` are left alone. That file is
 never rewritten: one without a `*` line, or with a line starting `!`, is refused
 ([SDLC-E0053](troubleshooting.md#sdlc-e0053)). It needs git 2.17 or later, and
-`sdlc doctor` says when yours is older.
+`sdlc doctor` says when yours is older. In each new worktree start also writes
+`.sdlc/state/.gitignore`, holding `*`, where there is none, so that what the loop
+writes there is never the story's to commit. Ignoring a file does not untrack
+it: where trunk tracks files under `.sdlc/state`, no story worked in a worktree
+can land until trunk stops tracking them, and `sdlc doctor` says so before one
+starts.
+
+A story worked in its worktree lands on the trunk the main checkout's
+`trunk_branch` names, by fast-forward
+([more than one checkout](the-loop.md#more-than-one-checkout)).
 
 The worktree has only what trunk commits, and it reads trunk's committed
 `.sdlc/config.json`, not the copy in your checkout: a change to `commands`,
@@ -155,7 +164,47 @@ own or one made with `git worktree add`, runs the commands and uses the trunk
 that its own copy names, while its backlog and story records are the main
 checkout's ([more than one checkout](the-loop.md#more-than-one-checkout)). A second clone
 is another repository altogether, with a backlog and records of its own, and
-nothing stops two clones working the same story.
+nothing stops two clones working the same story. Landing a story is the
+exception, below.
+
+### At landing
+
+A story worked in its worktree lands when `sdlc stop` runs there after the retro
+([the loop](the-loop.md#more-than-one-checkout)). Where the story was rebased
+onto a trunk that had moved, or its change is not the one the reviewers saw, the
+landing runs `build`, `test`, `lint`, `fmt_check`, `coverage` and `mutation`,
+those that are set, in that order, in the story's worktree, on the commit that
+would land. It reads them, and `thresholds`, from `.sdlc/config.json` as trunk
+commits it at the tip the landing would move from, never from a checkout's copy
+on disk: an uncommitted edit that would make a failing command pass changes
+nothing. Trunk is the main checkout's `git.trunk_branch`.
+
+A command passes when it exits 0. `coverage` and `mutation` must also print a
+number on standard output, and the last one printed has to reach
+`thresholds.coverage_min` or `thresholds.mutation_min`; with the threshold at 0,
+no number is needed. The number is looked for in the last 64 KB of standard
+output, so a command that prints more than that after its figure, with no digit
+in it, is refused as printing none. What a command prints on standard error is
+shown when it fails, and is never read for the number. After each command, HEAD,
+`story/<ID>` and every tracked file must be as they were: a command that
+rewrites a tracked file, as a formatter that writes does, refuses the landing
+([SDLC-E0055](troubleshooting.md#sdlc-e0055)). Each command runs in a process
+group of its own, a job object on Windows, and a stop that is interrupted kills
+the whole group before it lets the story go. On Windows a stop killed outright
+takes the job with it too, and anything a command leaves running when it ends
+is ended with the job; a process the command starts in the moment before it
+joins its job is not in it.
+
+The landing sets no time limit of its own. The runbook runs `sdlc stop` with the
+Bash tool's longest timeout, 600 seconds, and where the commands need longer, a
+person runs that stop in their own terminal. That stop runs the story's code,
+and whatever git settings the repository holds, with the person's own
+privileges and credentials: read the story before you run it.
+
+With several stories worked at once, trunk moves each time one lands, so each of
+the others is refused with [SDLC-E0054](troubleshooting.md#sdlc-e0054), rebased,
+and has its commands run before it lands. With n stories open, the last to land
+can go round n - 1 times, which is one more reason to keep the commands fast.
 
 One thing worth knowing about the guessed `coverage` command: it writes a
 coverage profile to `.sdlc/state/cover.out`. That is a build artefact rather

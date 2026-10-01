@@ -37,23 +37,26 @@ var storyBookkeeping = []string{"status", "updated"}
 // reviewer approved, and counting it sent both reviewers back to work that had
 // not changed. Everything else in the backlog -- the acceptance criteria above
 // all -- still counts.
-func (s *Store) ReviewSubject(ctx context.Context) (string, error) {
+//
+// also are further files measured as other than they are on disk: the hook
+// measures a finished story's CODEMAP.md as HEAD has it.
+func (s *Store) ReviewSubject(ctx context.Context, also ...gitx.Override) (string, error) {
 	path := s.cfg.BacklogPath(s.root)
 	rel, err := filepath.Rel(s.root, path)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return gitx.TreeHash(ctx, s.root)
+		return gitx.TreeHash(ctx, s.root, also...)
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return gitx.TreeHash(ctx, s.root)
+		return gitx.TreeHash(ctx, s.root, also...)
 	}
 	// A backlog that does not parse is hashed as it is. That is still the same
 	// answer every time for the same bytes, which is all a subject has to be.
 	normal, ok := withoutStoryFields(raw, storyBookkeeping...)
 	if !ok {
-		return gitx.TreeHash(ctx, s.root)
+		return gitx.TreeHash(ctx, s.root, also...)
 	}
-	return gitx.TreeHash(ctx, s.root, gitx.Override{Path: filepath.ToSlash(rel), Content: normal})
+	return gitx.TreeHash(ctx, s.root, append([]gitx.Override{{Path: filepath.ToSlash(rel), Content: normal}}, also...)...)
 }
 
 // byteOrderMark is what Windows PowerShell 5 starts a file it saves with. The

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/bbsnly/sdlc/internal/config"
+	"github.com/bbsnly/sdlc/internal/fsx"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
@@ -125,6 +126,38 @@ func EnsureWorktreesIgnored(main string) error {
 		return CheckWorktreesIgnored(main)
 	}
 	return notIgnored(main, "it could not be written: "+err.Error())
+}
+
+// stateIgnore is the file that keeps the loop's state out of a story
+// worktree's `git status`.
+const stateIgnore = config.Dir + "/state/.gitignore"
+
+// EnsureStateIgnored keeps the loop's own state out of the changes git sees in
+// the story's worktree wt, whatever trunk's .gitignore says: what the loop
+// writes there would otherwise be uncommitted work in the landing's way, or
+// something a story could commit. It writes .sdlc/state/.gitignore holding
+// `*`, whole, where there is none, and never rewrites one: an ignore file a
+// person wrote is theirs. Ignoring untracks nothing, so a file trunk tracks
+// there still shows when it changes, which is what doctor warns of.
+func (s *Store) EnsureStateIgnored(wt string) error {
+	for _, dir := range []string{config.Dir, config.Dir + "/state"} {
+		p := filepath.Join(wt, filepath.FromSlash(dir))
+		if info, err := os.Lstat(p); err == nil && !info.IsDir() {
+			return sdlcerr.New(sdlcerr.StateUnwritable,
+				"the loop's state in "+quote(wt)+" could not be kept out of git's view",
+				quote(p)+" is a link or a file where a directory belongs, and nothing is written through one")
+		}
+	}
+	path := filepath.Join(wt, filepath.FromSlash(stateIgnore))
+	if _, err := os.Lstat(path); err == nil || !errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err := fsx.WriteFileAtomic(path, []byte("*\n"), 0o644); err != nil {
+		return sdlcerr.New(sdlcerr.StateUnwritable,
+			"the loop's state in "+quote(wt)+" could not be kept out of git's view",
+			quote(path)+" could not be written").WithCause(err)
+	}
+	return nil
 }
 
 // CheckWorktreesIgnored says whether a .sdlc/worktrees/.gitignore already in

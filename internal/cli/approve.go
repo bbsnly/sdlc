@@ -155,6 +155,12 @@ func newApproveCmd() *cobra.Command {
 					Reason: approval.Reason, Tree: tree,
 				})
 			}
+			if _, remaining := record.NextGate(); !rejected && !remaining && inItsWorktree(s, id) {
+				// Start refuses a finished story, and the stop here lands it.
+				fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n\n`sdlc stop` in %s lands it: run it in your own terminal, "+
+					"or type /sdlc:next in Claude Code.\n", id, oneLine(event), worktreeIn(id))
+				return nil
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n\nA person runs `sdlc start %s`, or types /sdlc:next in Claude Code, to carry on.\n",
 				id, oneLine(event), id)
 			return nil

@@ -29,6 +29,17 @@ never held to a story it did not start or pick up, and resuming the story
 there with `/sdlc:next` makes it that session's. Stopping is the sanctioned
 route when the loop refuses something and you want to take over.
 
+Once every gate has passed, though, stop in the story's worktree does not put
+it down: it lands it on trunk ([below](#when-the-story-is-finished)). To put a
+finished story down without landing it, hand it to a person instead:
+
+```console
+$ sdlc escalate hold_landing --message "US-001 is finished; it lands once the release branch is cut"
+```
+
+It then waits for a person's answer, and nothing reaches trunk until a stop in
+its worktree lands it.
+
 ## Start again
 
 With nothing running, `sdlc status` names the story that `sdlc start` would pick
@@ -212,6 +223,16 @@ the next story can take its own. A finished story cannot be started again
 gate as failed, naming the story since no iteration is running —
 `sdlc gate code_review fail --story US-001 --note "..."` — which puts the story
 back to `in_progress`.
+
+A story worked in its own worktree is different: passing the retro does not
+mark it done, because trunk does not have its commits yet. The stop in its
+worktree lands it, moving trunk to the story's commits by fast-forward, and only
+then is it done and its worktree taken away
+([`sdlc stop`](../commands.md#landing-a-story-from-its-worktree) shows the
+output, and [the loop](../the-loop.md#more-than-one-checkout) what it checks).
+A refused landing leaves trunk where it was, and the story finished and waiting
+in its worktree; the refusal says what to do. To keep a finished story off trunk
+for now, escalate it, as [above](#stop-the-iteration).
 
 ## Getting out of a broken state
 

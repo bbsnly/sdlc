@@ -25,11 +25,21 @@ type place struct {
 	// err is why the main checkout, where the backlog and the story records
 	// are kept, could not be found.
 	err error
+	// read is each story record read in this call. The rules for one command
+	// ask for the record five times, and it does not change while the command
+	// is judged.
+	read map[string]recordRead
+}
+
+type recordRead struct {
+	record *model.Record
+	found  bool
+	err    error
 }
 
 func placeOf(project string) place {
 	co, err := config.FindCheckout(project)
-	return place{project: project, co: co, err: err}
+	return place{project: project, co: co, err: err, read: map[string]recordRead{}}
 }
 
 // records is the directory the backlog and the story records are kept under:
@@ -49,6 +59,17 @@ func (pl place) records() (string, bool) {
 // record reads the story's record from where it is kept. found is false where
 // the main checkout could not be found; err is the record's own failure.
 func (pl place) record(story string) (record *model.Record, found bool, err error) {
+	if r, ok := pl.read[story]; ok {
+		return r.record, r.found, r.err
+	}
+	record, found, err = pl.readRecord(story)
+	if pl.read != nil {
+		pl.read[story] = recordRead{record, found, err}
+	}
+	return record, found, err
+}
+
+func (pl place) readRecord(story string) (record *model.Record, found bool, err error) {
 	dir, found := pl.records()
 	if !found {
 		return nil, false, nil

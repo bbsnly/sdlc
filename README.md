@@ -111,9 +111,10 @@ intended way in.
 Each new story is worked in a worktree of its own, `.sdlc/worktrees/<ID>`, on a
 branch `story/<ID>` cut from trunk, and committed there, so your checkout is
 left as it was and a second session can work a second story at the same time.
-Bringing a finished story to trunk is yours: `git merge --ff-only story/<ID>`.
+Gate 9 brings a finished story to trunk: `sdlc stop` in its worktree checks it,
+moves trunk to it by fast-forward and takes the worktree away.
 [The loop](https://github.com/bbsnly/sdlc/blob/main/docs/the-loop.md#more-than-one-checkout)
-says how, and `git.worktrees` in the configuration turns it off.
+says what it checks, and `git.worktrees` in the configuration turns it off.
 
 Underneath, everything the skill does is the `sdlc` command, and you can run any
 of it yourself — to see where a story is, to take over a gate, or to script the

@@ -125,24 +125,51 @@ the session that was working it are refused from then on
 `sdlc start` logs the takeover with both sessions' ids
 ([seeing what happened](enforcement.md#seeing-what-happened)).
 
-**Done, on its branch.** Until `sdlc` brings a finished story to trunk itself, a
-story worked in its worktree is done once its commit is on `story/<ID>`. Trunk
-does not have it yet, and a story that depends on it is cut from trunk. Its
-record and its status in the backlog are written in the main checkout, not on
-the branch, and wait there for a person to commit them. A person brings the
-story to trunk, in the main checkout, with trunk checked out:
+**Done when it lands.** A story worked in its worktree is not done when its
+last gate passes. It is done when it **lands**: when trunk moves to the story's
+commits by fast-forward, which `sdlc stop` does in the story's worktree once
+every gate has passed. Until then trunk does not have it, and a story that
+depends on it waits. The landing checks, in order:
 
-```console
-$ git merge --ff-only story/US-001
-```
+- the worktree is clean and on `story/<ID>`, with no rebase or merge part-way;
+- trunk has not moved past the story. Where it has, the landing refuses with
+  [`SDLC-E0054`](troubleshooting.md#sdlc-e0054) and gives the rebase to run: in
+  the story's worktree, `git rebase <trunk>`, and then `sdlc stop` again;
+- the commits that would land are the story's alone, with no merge among them,
+  change nothing under `.sdlc/` or in the backlog, and leave the root
+  `CODEMAP.md` a plain file;
+- the frozen tests are as the freeze holds them;
+- the change is the one the reviewers saw. A rebase that only moved it keeps the
+  reviews, and one that changed it needs them again
+  ([`SDLC-E0029`](troubleshooting.md#sdlc-e0029));
+- where the story was rebased or changed since the commit gate, the configured
+  commands pass on it, as trunk's committed configuration has them
+  ([configuration](configuration.md#commands)), and a story in a tier that waits
+  for a person is approved again.
 
-If git says it cannot fast-forward, trunk has moved since the story was cut,
-usually because another story reached it first: in the story's worktree, run
-`git rebase <trunk>` and the project's tests, then merge again. Bring a story to
-trunk before starting any story that depends on it.
+Then trunk moves, by fast-forward and never by merge, and nothing is pushed.
+The record names the commits that reached trunk, the story becomes `done`, its
+claim and its freeze are let go, and its worktree and branch are removed. The
+record and the backlog change are written in the main checkout and wait there
+for a person to commit them. A refusal changes nothing: trunk stays where it
+was, and says so. `sdlc stop` run in the story's worktree with no iteration
+running lands a finished story too, after a person has answered an escalation.
 
-**Removing a finished worktree.** Each worktree is a whole checkout, and they
-stay until a person removes them. Once the story is on trunk, in the main
+**Parallel stories and `CODEMAP.md`.** Both stories' bookkeepers usually edit
+the root `CODEMAP.md`, so the second story's rebase often stops on a conflict in
+its bookkeeper's commit. The runbook abandons the rebase and hands the story to
+a person, who resolves `CODEMAP.md` in their own terminal, answers with
+`sdlc approve <ID>` in the story's worktree, and runs `sdlc stop` there. No
+review is asked for again, because the change the reviewers saw leaves
+`CODEMAP.md` out; the commands run, because the story was rebased. A project
+that wants fewer of these can mark `CODEMAP.md` in `.gitattributes` with git's
+built-in union merge, `CODEMAP.md merge=union`, which keeps both sides' lines.
+That is the project's choice, and `sdlc` does not write it.
+
+**Removing a worktree.** Each worktree is a whole checkout. The landing removes
+the story's own, with the files git ignored in it, and its branch; it keeps one
+holding changes nobody committed, or one a person locked, names it, and the
+story is still done. Any other stays until a person removes it. In the main
 checkout, with trunk checked out:
 
 ```console
@@ -308,8 +335,9 @@ tree rather than the plan.
 `git commit` is refused by the hook until every gate above has passed, and the
 refusal names the one that has not. With [`git.worktrees`](configuration.md#git)
 on, the commit is made in the story's worktree, on `story/<ID>`, and trunk does
-not move: a person brings the story to trunk
-([more than one checkout](#more-than-one-checkout)).
+not move until the story lands at the end of Gate 9
+([more than one checkout](#more-than-one-checkout)). The pass then says
+`committed on story/<ID> in <start>..<end>` rather than `landed in`.
 
 The gate also asks the verifier and the code reviewer about the tree as it is
 now, not as it was when they approved. An approval goes stale the moment the
@@ -353,17 +381,21 @@ was deliberately left undone.
 
 **Refused without it:** a pass with the retro missing.
 
-Passing it is also what finishes the story. With no gate left unpassed, the
+Passing it is also what finishes the story. With `git.worktrees` off, or for a
+story worked in the checkout that started it, no gate is left unpassed, so the
 story's status becomes `done` and it leaves the backlog. End the iteration with
 `sdlc stop`, and the next `sdlc start` takes the next story rather than
-reopening this one — it refuses to start a finished story at all. With
-`git.worktrees` off, commit the backlog change along with the retro. With it on,
-the one thing committed after `sdlc stop` is the bookkeeper's change to
-`CODEMAP.md`, if it made one: in the story's worktree, on `story/<ID>`, as a
-`docs:` commit of its own after the story's. The record and the backlog change
-wait in the main checkout, and the person's `git merge --ff-only story/<ID>`
-brings both commits to trunk
-([more than one checkout](#more-than-one-checkout)).
+reopening this one — it refuses to start a finished story at all. Commit the
+backlog change along with the retro.
+
+In a story's worktree the story is done when it lands. The session commits the
+bookkeeper's change to `CODEMAP.md`, if it made one, on `story/<ID>` as a
+`docs:` commit of its own — the one commit the hook allows after the retro, and
+only of that file — and then runs `sdlc stop` in the worktree, which lands both
+commits on trunk ([more than one checkout](#more-than-one-checkout)). Until it
+does, `sdlc start` there says the story waits to land, and `sdlc status` says
+so too. The record and the backlog change wait in the main checkout for a person
+to commit them.
 
 ## Rework
 

@@ -35,9 +35,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bbsnly/sdlc/internal/config"
+	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/policy"
@@ -337,13 +339,31 @@ func inspectShell(pl place, story string, p payload, getenv func(string) string,
 	budget, cancel := gitBudget(context.Background(), time.Now)
 	defer cancel()
 	commits := false
+	// Each asked at most once for the command, however many of its commands
+	// ask: every one of them is a read of the disk or a run of git.
+	trunk := sync.OnceValue(func() string { return trunkOf(pl) })
+	resolved := map[string]bool{}
+	isTrunk := func(name string) bool {
+		if is, ok := resolved[name]; ok {
+			return is
+		}
+		t := trunk()
+		is, err := gitx.ResolvesTo(budget(), project, name, "refs/heads/"+t)
+		is = is && err == nil && t != ""
+		resolved[name] = is
+		return is
+	}
+	fresh := sync.OnceValues(func() (bool, string) { return reviewsFresh(pl, story, warn, budget) })
 	state := shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
 		Backlog: backlogPath(project), PowerShell: p.ToolName == "PowerShell",
 		StoryFinished: storyFinished(pl, story),
+		Committed:     storyCommitted(pl, story),
+		Trunk:         trunk,
+		IsTrunk:       isTrunk,
 		Resolve:       func(word string) string { return onDisk(resolver, word) },
-		Fresh:         func() (bool, string) { return reviewsFresh(pl, story, warn, budget) },
+		Fresh:         fresh,
 		Commits:       func() { commits = true },
 		Nested:        func(dir string) bool { return nestedRepository(project, dir) },
 		// What git reads from the session's environment: the hook runs with
@@ -528,6 +548,28 @@ func storyFinished(pl place, story string) bool {
 	return !remaining
 }
 
+// storyCommitted reports whether the story's commit gate has passed, after
+// which the one rebase its session may run is onto trunk.
+func storyCommitted(pl place, story string) bool {
+	record, _, err := pl.record(story)
+	return record != nil && err == nil && record.Pass(model.GateCommit)
+}
+
+// trunkOf is trunk's name as the main checkout's configuration has it on disk.
+// A worktree's copy of the configuration is the one its branch checked out,
+// and says what trunk was when the story started, or what the session wrote.
+func trunkOf(pl place) string {
+	dir, found := pl.records()
+	if !found {
+		return ""
+	}
+	cfg, err := config.Load(dir)
+	if err != nil {
+		return ""
+	}
+	return cfg.Git.TrunkBranch
+}
+
 // treeTimeout bounds measuring the working tree for a commit. A repository big
 // enough to take longer than this is one where the hook should say it could not
 // check, not hold the session. hooks.json has to give the hook longer than this:
@@ -583,7 +625,35 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 		return true, ""
 	}
 
-	tree, err := s.ReviewSubject(budget())
+	// Route R1: once the retro has passed, the bookkeeper's CODEMAP.md at the
+	// root is committed on the story's branch, a plain file the reviews did not
+	// see change. Measured as HEAD has it, that first commit is the work the
+	// reviews saw, and a second, or one with any other file, is not.
+	var also []gitx.Override
+	if _, remaining := record.NextGate(); !remaining {
+		if head, err := gitx.Head(budget(), project); err == nil && head != gitx.NoCommits {
+			also = append(also, gitx.Override{Path: "CODEMAP.md", At: head})
+		}
+	}
+	tree, err := s.ReviewSubject(budget(), also...)
+	if errors.Is(err, gitx.ErrOverrideNotAFile) {
+		// Files beneath CODEMAP.md are a shape the session chose, not a tree
+		// that could not be measured: answering fresh there let R1's one
+		// commit carry anything under that name.
+		return false, "CODEMAP.md at the root holds files beneath it, so it is not the bookkeeper's plain file " +
+			"and this commit is not what was reviewed; after the retro only CODEMAP.md, as a plain file, is " +
+			"committed on its own"
+	}
+	if err != nil && len(also) > 0 {
+		// The override could not be applied where the tree measures without
+		// it: the path holds something git will not take in its place, which
+		// is an answer about the work, and not one that fails open.
+		if _, plain := s.ReviewSubject(budget()); plain == nil {
+			slog.Debug("hook could not measure the tree with CODEMAP.md as HEAD has it", "err", err)
+			return false, "CODEMAP.md at the root could not be measured as HEAD has it, so this commit is not " +
+				"what was reviewed; after the retro only CODEMAP.md, as a plain file, is committed on its own"
+		}
+	}
 	if err != nil {
 		slog.Debug("hook could not measure the working tree", "err", err)
 		warn(unmeasuredTree)

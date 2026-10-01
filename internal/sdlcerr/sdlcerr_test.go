@@ -268,6 +268,9 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 		{HoldingCheckoutMissing, "SDLC-E0051"},
 		{NoMainCheckout, "SDLC-E0052"},
 		{WorktreeNotMade, "SDLC-E0053"},
+		{BranchBehindTrunk, "SDLC-E0054"},
+		{LandingCheckFailed, "SDLC-E0055"},
+		{UncommittedOnTrunk, "SDLC-E0056"},
 	}
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
@@ -276,6 +279,33 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	}
 	if len(released) != len(catalogue) {
 		t.Errorf("the catalogue has %d codes and %d are pinned here; add the new one", len(catalogue), len(released))
+	}
+}
+
+// US-029.3 lands a finished story on trunk, and adds a code for each way that
+// landing is refused on its own account: trunk moved since the story's branch
+// was cut (AC-3), a configured command failing on the tree about to land
+// (AC-4), and the checkout that has trunk checked out holding changes the
+// fast-forward would write over (AC-6). Each is a heading a person is sent to
+// from the refusal, and each fix says what to do next.
+func TestAC3AC4AndAC6TheLandingCodesAreDocumentedAndSayWhatToDo(t *testing.T) {
+	documented := documentedCodes(t)
+	for _, c := range []struct {
+		code Code
+		id   string
+		// fix is a word the fix has to carry for a person to act on it.
+		fix string
+	}{
+		{BranchBehindTrunk, "SDLC-E0054", "rebase"},
+		{LandingCheckFailed, "SDLC-E0055", "commands"},
+		{UncommittedOnTrunk, "SDLC-E0056", "commit"},
+	} {
+		if body, ok := documented[c.id]; !ok || isRetired(body) {
+			t.Errorf("%s has no live `### %s` section in %s", c.id, c.id, troubleshootingPath)
+		}
+		if fix := fixFor(c.code); !strings.Contains(fix, c.fix) {
+			t.Errorf("%s's fix does not say %q: %s", c.id, c.fix, fix)
+		}
 	}
 }
 

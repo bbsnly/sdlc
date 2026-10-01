@@ -129,7 +129,11 @@ it lists every story. A file that names no commit git has is refused —
 acknowledged.
 
 The range is the one the commit gate recorded; see
-[`sdlc gate`](#sdlc-gate-gate-status). A story committed by an `sdlc` that did
+[`sdlc gate`](#sdlc-gate-gate-status). For a story that landed from its
+worktree, it is the commits that reached trunk, as they are after any rebase,
+and it prints the same in every checkout. The record's `landed` event says how
+trunk moved, and, where some of the reviewed change was on trunk before the
+landing, the commit it began at. A story committed by an `sdlc` that did
 not record one is found by its commit messages instead: the newest commit in
 HEAD's history whose message names the story's id as a whole word ends the
 range, the commit before the oldest one starts it, and the entry says the range
@@ -321,6 +325,60 @@ or that more than one checkout names, stop puts this checkout's copy down and
 writes nothing to the story's record, and its last line says where the story
 carries on rather than that `sdlc start` picks it up here.
 
+### Landing a story from its worktree
+
+In a story's own worktree, `.sdlc/worktrees/<ID>`, with every gate passed, stop
+**lands** the story instead: it moves trunk to the story's commits by
+fast-forward, and the story is done
+([the loop](the-loop.md#more-than-one-checkout) lists what it checks first). The
+same holds with no iteration running, for a finished story the worktree holds,
+such as one a person answered for after an escalation.
+
+```console
+$ sdlc stop
+sdlc: running commands.test on 8a0e5d6c1f2b in .sdlc/worktrees/US-001
+main moved from 3f1c2a9d4b7e to 8a0e5d6c1f2b by fast-forward; the files in "/home/dev/project", which has main checked out, moved with it.
+The backlog and US-001's record are changed in the main checkout and not committed.
+Ended the iteration on US-001. Every gate passed, so the story is done and `sdlc start` moves on to the next one.
+Removed .sdlc/worktrees/US-001, with the files git ignored in it, and story/US-001.
+```
+
+The `running` lines go to standard error, one for each configured command the
+landing runs, and only where the story was rebased or its change is not the one
+reviewed ([configuration](configuration.md#at-landing)). Where no checkout has
+trunk checked out, the first line ends `no checkout has main checked out, so
+only the branch moved.` instead. Where trunk already held the story, it says
+`US-001 was already on main at 8a0e5d6c1f2b; recorded it as landed.` Where
+some of the reviewed change was on trunk before, a line follows that names the
+commit it began at and the range the record keeps as what landed. With no
+iteration running, the third line starts `Every gate on US-001 passed` instead
+of `Ended the iteration`. A worktree holding changes nobody committed, or one a
+person locked, is kept, and the last line says so, names the files, and sends
+you to `sdlc doctor`:
+
+```text
+Kept .sdlc/worktrees/US-001 and story/US-001: it holds changes nobody committed, "notes.txt". `sdlc doctor` in the main checkout says what to do with it.
+```
+
+With `--json` these lines go to standard error, and standard output has `ok`,
+`story`, `was_active` and `done`, which is `true`.
+
+Every refusal leaves trunk where it was, and ends with `Nothing landed: main is
+unchanged, and the iteration on US-001 is still running`, or, with no iteration
+running, `... and US-001 waits in .sdlc/worktrees/US-001`. Trunk has moved past
+the story: [SDLC-E0054](troubleshooting.md#sdlc-e0054). The worktree, its
+commits or a command are not fit to land:
+[SDLC-E0055](troubleshooting.md#sdlc-e0055). A checkout with trunk checked out
+has changes nobody committed that the fast-forward would write over:
+[SDLC-E0056](troubleshooting.md#sdlc-e0056). The change is not the one the
+reviewers saw: [SDLC-E0029](troubleshooting.md#sdlc-e0029). Another stop is
+landing it already: [SDLC-E0006](troubleshooting.md#sdlc-e0006). The others each
+have an "At landing" paragraph in [troubleshooting](troubleshooting.md).
+
+Stop in a story's worktree always lands a finished story. To put one down
+without landing it, hand it to a person with
+[`sdlc escalate`](#sdlc-escalate).
+
 ## `sdlc gate GATE STATUS`
 
 Record the outcome of one gate.
@@ -349,7 +407,12 @@ work could not be done, and the loop has to have somewhere to put that.
 The first `code_review` pass records HEAD at that moment, where the story's
 commits can start. Each `commit` pass records the range the story landed in and
 says so: `landed in <start>..<end>`, with each hash cut to 12 characters, or
-`commit_base` and `commit` in full with `--json`.
+`commit_base` and `commit` in full with `--json`. In a story's own worktree it
+says `committed on story/<ID> in <start>..<end>` instead, because trunk has none
+of it until the story lands, and the pass that leaves no gate unpassed ends
+`` Every gate on <ID> has passed. `sdlc stop` in .sdlc/worktrees/<ID> lands it on <trunk>. ``
+When the story lands, the record's range is replaced by the commits that reached
+trunk.
 
 The range is worked out from what the hook watched. Each time it lets the
 session's command through and can tell the command commits, it writes down the
@@ -717,6 +780,11 @@ something to do:
   begin a story ([SDLC-E0053](troubleshooting.md#sdlc-e0053)): commit it and
   `CLAUDE.md` to trunk, or set `git.worktrees` to false in this checkout's
   `.sdlc/config.json`;
+- trunk tracks files under `.sdlc/state`, the loop's own state, which every
+  story worktree writes to, so no story worked in a worktree could land
+  ([SDLC-E0055](troubleshooting.md#sdlc-e0055)): a person stops tracking them on
+  trunk with `git rm -r --cached .sdlc/state` in the main checkout, adds
+  `/.sdlc/state/` to `.gitignore`, and commits both;
 - git lists a worktree under `.sdlc/worktrees/` that no checkout holds, such as
   a finished story's or one an interrupted start left. It says what is true of
   each, and what a person does about it, in the order a person takes it, and
@@ -751,6 +819,10 @@ something to do:
     where it is on that branch, in the main checkout. Where the loop's own
     files are all it has, it says they are safe to lose if git refuses over
     them.
+
+Where there is more than one thing to say, each is a line of its own, followed
+by its own `fix:` line, and in `--json` the detail and the fix hold the lines in
+the same order, one to a line.
 
 It never suggests `git branch -D` or `--force`. See
 [more than one checkout](the-loop.md#more-than-one-checkout).

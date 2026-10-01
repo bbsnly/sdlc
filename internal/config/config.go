@@ -287,6 +287,13 @@ func Load(root string) (Config, error) {
 			File+" could not be read",
 			"opening it failed").WithCause(err)
 	}
+	return Parse(raw)
+}
+
+// Parse is Load for the bytes of a configuration file, read from wherever they
+// are: the landing reads the commands and thresholds trunk commits, from git's
+// objects, and never the file on disk.
+func Parse(raw []byte) (Config, error) {
 	// Windows PowerShell 5 saves a file with a byte order mark, and the file is
 	// otherwise fine.
 	raw = bytes.TrimPrefix(raw, []byte("\ufeff"))

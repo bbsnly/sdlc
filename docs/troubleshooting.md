@@ -79,6 +79,13 @@ without its holder refreshing it and that process is no longer running, or delet
 directory the message names. A holder that is still running, however long ago it took the
 lock, is waited for: a laptop asleep in the middle of a command still has a change to write.
 
+**At landing**, it means another `sdlc stop` is landing the same story. A story is landed by one
+stop at a time, and the second is refused at once rather than waiting, since it would only check
+again what the first is changing. The message names the lock's path, quoted. Wait for that stop
+to finish, and run `sdlc stop` in the story's worktree again if the story has not landed. A stop
+that was killed leaves the lock, which breaks open once it is two minutes old and nothing holds
+it. Another story's landing, and every other command, go on meanwhile.
+
 ### SDLC-E0007
 
 The backlog file named by `backlog.path` in `.sdlc/config.json` does not exist.
@@ -134,6 +141,10 @@ work a second story at the same time, start it from the main checkout in a secon
 session: with [`git.worktrees`](configuration.md#git) on, the default, it gets a worktree of its
 own. In a story's worktree that is the whole of the fix, since `sdlc stop` there would end the
 story the worktree was made for.
+
+Once every gate on that story has passed, `sdlc stop` in its worktree does more than end the
+iteration: it lands the story on trunk, and [SDLC-E0054](#sdlc-e0054) to
+[SDLC-E0056](#sdlc-e0056) say what can stop it.
 
 `sdlc init --force` is refused with this code too. The story under way is held to the settings it
 started under, so the defaults go back once it has ended.
@@ -267,6 +278,17 @@ decision somebody can review rather than something that happened quietly.
 lock the tests as they are now, whatever happened to them since. If the file was removed on
 purpose, lift the freeze on the record with `sdlc unfreeze` first.
 
+**At landing**, it means a frozen test on the story's branch is not what was frozen, most often
+because trunk changed it and a rebase brought the change in. Nothing is frozen again at landing.
+A person restores the frozen tests on `story/<ID>` and runs `sdlc stop` in the story's worktree
+again. Where trunk's change is to stay, they reopen the story instead: they answer the escalation
+first, with `sdlc approve <ID>` or `sdlc approve <ID> --reject "..."` in `.sdlc/worktrees/<ID>`,
+then run `sdlc gate code_review fail --story <ID> --note "..."` there and type `/sdlc:next`.
+Once the iteration is running, `sdlc unfreeze --reason "..."` there, in their own terminal, sends
+the story back to have its tests frozen again: `sdlc unfreeze` needs an iteration running, and it
+reopens Gate 3 and every gate after it. An assistant hands the story to a person with
+`sdlc escalate` and stops.
+
 ### SDLC-E0026
 
 Lifting the freeze needs a reason.
@@ -303,6 +325,29 @@ that has since changed is not an approval.
 
 Send the change back to the reviewers that are outstanding; `sdlc review list` names them.
 
+**At landing**, it means `story/<ID>` is not the change its reviewers saw: a commit came after
+the commit gate, or a rebase changed what the story's commits do. The fix says which of two cases
+it is.
+
+- **The reviews can be recorded again.** Trunk still holds the commit the reviewed change began
+  at. In the story's worktree, with nothing uncommitted, the verifier and the code reviewers
+  review the branch again as it is committed, and their reviews are recorded with
+  `sdlc review add` (`sdlc review list` names who). Then `sdlc stop` there again, which runs the
+  configured commands on it. If one of them blocks, the story goes to a person.
+- **A person's.** Trunk no longer holds that commit, or already holds the story in a form the
+  reviewers did not see, so the change cannot be told apart from what the branch holds now. A
+  person reads the branch against trunk and decides. Where the story's own commits are still the
+  change that was reviewed and trunk does not hold them yet, they replay only those onto trunk in
+  the worktree and run `sdlc stop` there again. Otherwise, to have it reviewed and committed
+  again, they reopen it: they answer the escalation first, with `sdlc approve <ID>` or
+  `sdlc approve <ID> --reject "..."` in `.sdlc/worktrees/<ID>`, then run
+  `sdlc gate code_review fail --story <ID> --note "..."` there and type `/sdlc:next`. Until the
+  escalation is answered, the story waits for a person and the loop does not carry it on
+  (SDLC-E0036). An assistant hands the story to a person with `sdlc escalate` and stops.
+
+The root `CODEMAP.md` is left out of the comparison, so the bookkeeper's commit after the retro
+never causes this.
+
 ### SDLC-E0030
 
 A blocking reviewer blocked — or perf did, on a performance budget the contract states.
@@ -332,6 +377,11 @@ belong to this story by path, `git stash push -- <path>`, and then record the ga
 the whole work tree is refused while a story is being worked on, because it takes the loop's own
 record with it.
 
+**At landing**, it means the story's worktree has changes nobody committed, and the configured
+commands would run with them in the tree that lands. Commit them on `story/<ID>`, after which the
+change is not the one reviewed and the reviews are recorded again, or stash them with
+`git stash push -- <path>`, in the worktree; then `sdlc stop` there again.
+
 ### SDLC-E0033
 
 The story you asked to start has passed every gate. Starting it would put work that is already
@@ -347,6 +397,14 @@ $ sdlc gate code_review fail --story US-001 --note "AC-2 turned out to be untest
 `--story` names it because no iteration is running. That puts the story back to `in_progress`
 and says on the record why it came back. Being done is a reading of the gate record, not a door
 that locks behind you.
+
+**At landing.** A story worked in its own worktree is not done when its last gate passes: it waits
+to land, and `sdlc start` refuses it with this code, saying `every gate on it has passed, and it
+waits to land on <trunk>`. The fix is to run `sdlc stop` in the story's worktree,
+`.sdlc/worktrees/<ID>` in the main checkout, which lands it. With no iteration running, the fix
+also gives the way to rework it instead, as above. `sdlc stop` in the worktree refuses with this
+code too where the latest answer a person gave the story was a rejection: reopen it by recording a
+gate as failed in the worktree, then type `/sdlc:next`.
 
 ### SDLC-E0034
 
@@ -385,6 +443,12 @@ $ sdlc approve US-001 --reject "the migration has no way back"
 
 Either answer lets the story start again, and both go on its record.
 
+**At landing**, `sdlc stop` in a finished story's worktree refuses with this code while an
+escalation waits, and lands nothing. A person answers first, in their own terminal, in
+`.sdlc/worktrees/<ID>`, the checkout that holds the story: `sdlc approve <ID>`, after which
+`sdlc stop` there lands it, or `sdlc approve <ID> --reject "..."`, to send the work back. An
+assistant stops and tells the person.
+
 ### SDLC-E0037
 
 The story's risk tier is one the project holds for a person before it is
@@ -397,6 +461,13 @@ loop hands the story over and stops:
 ```console
 $ sdlc escalate pre_commit_approval --message "ready to commit: what changed, and why"
 ```
+
+**At landing**, it means the story was rebased, or its change is not the one reviewed, in a tier
+that pauses, and nobody has approved the work as it now is: an approval holds for the work it
+was given for. Hand the story to a person with
+`sdlc escalate pre_commit_approval --message "..."` and stop; once they have run
+`sdlc approve <ID>` in `.sdlc/worktrees/<ID>`, `sdlc stop` there lands it. A tier pauses where
+the main checkout's configuration or trunk's committed one says it does.
 
 A person reads the work and runs `sdlc approve` in their own terminal. An
 approval is bound to the work as it stands, so a change made after it needs
@@ -549,6 +620,15 @@ freeze, and from then on they are held like the rest. Otherwise remove them, or 
 really needs them — have a person run `sdlc unfreeze --reason "..."` in their own terminal and
 freeze again.
 
+**At landing**, it means `story/<ID>` holds test files the freeze does not, usually ones a rebase
+brought in from trunk. A person decides whether they belong with the story's: they take them out
+of the branch and run `sdlc stop` in the story's worktree again. To keep them, they reopen the
+story, as under SDLC-E0025: they answer the escalation first in `.sdlc/worktrees/<ID>`, record
+`sdlc gate code_review fail --story <ID> --note "..."` there, type `/sdlc:next`, and once the
+iteration is running, run `sdlc unfreeze --reason "..."` there in their own terminal, which sends
+the story back to have its tests frozen again with them. An assistant hands the story to a person
+with `sdlc escalate` and stops.
+
 ### SDLC-E0044
 
 Definition of ready cannot pass for a story with no acceptance criteria.
@@ -577,6 +657,17 @@ one, so a single edit fixes them all:
 - **A limit, threshold or budget is negative.** `0` is how each of them is turned off.
 
 Change the settings and run `sdlc doctor`.
+
+**At landing**, it has two more causes. In both the fix is a person's, and an assistant hands the
+story to a person with `sdlc escalate` and stops:
+
+- **The trunk `git.trunk_branch` names is not a branch here.** There is nothing to land the story
+  on. A person makes the branch again, or sets `git.trunk_branch` in the main checkout's
+  configuration to the branch the project lands on, then runs `sdlc stop` in the story's
+  worktree again.
+- **Trunk's committed `.sdlc/config.json` could not be read.** The landing takes its commands,
+  and what passing them means, from trunk as it commits them. A person commits a configuration
+  on trunk that `sdlc` reads, then runs the stop again.
 
 ### SDLC-E0046
 
@@ -871,6 +962,106 @@ removes the worktree and the branch it made, and cannot undo what that hook did.
 
 If you are an assistant, stop and tell the person what the message says. Every fix here is
 theirs.
+
+### SDLC-E0054
+
+`sdlc stop` in a finished story's worktree did not land the story, because trunk cannot be
+fast-forwarded to `story/<ID>` as it stands. Nothing landed: trunk is unchanged, and the story
+waits in `.sdlc/worktrees/<ID>`.
+
+The landing only ever moves trunk forward to the story's commits, the way
+`git merge --ff-only` does. The message says which of these it met:
+
+- **Trunk moved on** since the story was cut, and still holds the commit the story's reviewed
+  change began from. The fix gives the plain rebase, which the session may run itself in the
+  story's worktree:
+
+  ```console
+  $ git rebase main
+  ```
+
+  Then run `sdlc stop` there again. The story was rebased, so the configured commands run on the
+  rebased tree before anything lands, and a story in a tier that pauses is approved again.
+- **Trunk was rewritten, or went back behind the commit the story's change began from.** A plain
+  rebase would carry commits that are not the story's, so the fix gives the rebase a person runs:
+  one that replays only the story's own commits onto trunk. An assistant hands the story to a
+  person with `sdlc escalate` and stops.
+- **`story/<ID>` has a merge commit.** A fast-forward would carry the merge onto trunk. Rebase
+  instead, so that the story's commits sit on trunk in a line.
+- **Trunk moved while the landing ran**, most often because another story landed first. Rebase
+  and stop again, as in the first case.
+
+A rebase that stops on a conflict is abandoned with `git rebase --abort`, and the story is handed
+to a person with `sdlc escalate`: resolving a conflict is a person's.
+
+### SDLC-E0055
+
+`sdlc stop` in a finished story's worktree did not land the story, because one of the landing's
+checks found something only a person can put right. Nothing landed: trunk is unchanged, and the
+story waits in `.sdlc/worktrees/<ID>`.
+
+The message says which check, and the fix is for that state:
+
+- **A configured command failed** on the tree about to land. The landing runs `build`, `test`,
+  `lint`, `fmt_check`, `coverage` and `mutation` from [`commands`](configuration.md#commands), as
+  trunk commits them, in the story's worktree, whenever the story was rebased or its change is not
+  the one that was reviewed. The message names the command, as trunk commits it, its exit status,
+  and the last of what it printed, set apart under `commands.<key> printed:`. For `coverage` and
+  `mutation`, the last number the command prints on standard output has to reach the threshold.
+- **A command moved a branch, or changed a tracked file.** The tree that passed would not be the
+  tree that lands.
+- **The worktree is part-way through a rebase, a merge, a cherry-pick, a revert or a bisect, or
+  on no branch.** Finish it or abort it in the worktree, then stop again.
+- **The worktree is on another branch.** Keep what that branch holds, then switch the worktree
+  back with `git switch story/<ID>` in `.sdlc/worktrees/<ID>`.
+- **`story/<ID>` is gone.** Where the worktree's HEAD is the story's work, make the branch again
+  there with `git branch story/<ID>`, switch to it and stop again. Otherwise reopen the story:
+  answer the escalation first in `.sdlc/worktrees/<ID>`, then record
+  `sdlc gate implementation fail --story <ID> --note "..."` there and type `/sdlc:next`.
+- **The story's commits change something under `.sdlc/`, or the backlog.** No story lands the
+  loop's own files: a person takes those changes out of the story's commits, or brings them to
+  trunk themselves. Where the files are loop state that trunk tracks, stop tracking them on trunk,
+  and ignore them, first.
+- **The story's commits change the root `CODEMAP.md` as something other than a plain file.** The
+  story's change is measured without the bookkeeper's `CODEMAP.md`, so the landing takes that path
+  only as a plain file by exactly that name. A directory, a link or a submodule there, files
+  beneath it, or a name that differs from it only in case would reach trunk with no reviewer
+  having seen them: a person takes those changes out of the story's commits.
+- **Trunk already holds the story's commits, with a merge among them.** A person brought the
+  story in by hand.
+
+Where a command failed on trunk's account, a person puts trunk right, rebases `story/<ID>` onto
+it, and runs `sdlc stop` in `.sdlc/worktrees/<ID>` again. Otherwise they reopen the story: answer
+the escalation first, with `sdlc approve <ID>` or `sdlc approve <ID> --reject "..."` in
+`.sdlc/worktrees/<ID>`, then record the gate as failed there, and type `/sdlc:next`:
+
+```console
+$ sdlc gate implementation fail --story US-001 --note "the tests fail on trunk's new API"
+```
+
+`sdlc stop`, run by a person, runs the story's code and the repository's git settings with that
+person's own privileges and credentials. Read the story's changes first.
+
+If you are an assistant, hand the story to a person with `sdlc escalate` and stop.
+
+### SDLC-E0056
+
+`sdlc stop` in a finished story's worktree did not land the story, because a checkout that has
+trunk checked out is in a state the fast-forward would write over. Nothing landed: trunk is
+unchanged, nothing was written in any checkout, and the story waits in `.sdlc/worktrees/<ID>`.
+
+When trunk moves, every checkout that has it checked out moves with it, the way
+`git merge --ff-only` moves one. The message names the checkout, quoted, and what is in the way:
+
+- **Changes nobody committed, or untracked files, where the story's commits write.** Stash them,
+  or commit them. A commit moves trunk, so the story is then rebased before it lands.
+- **A merge, a cherry-pick or a revert part-way, or trunk being rebased or bisected there.**
+  Finish it or abort it in that checkout.
+- **Its index is locked.** If no git command is running there, remove the lock file the message
+  names.
+
+Then run `sdlc stop` in the story's worktree again. These are a person's changes: if you are an
+assistant, hand the story to a person with `sdlc escalate` and stop.
 
 ## Warnings the hook prints
 

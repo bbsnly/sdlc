@@ -58,8 +58,7 @@ func decideStart(s *store.Store, asked, session string) (startPlan, error) {
 				return startPlan{}, err
 			}
 			if finished != nil {
-				return startPlan{}, finished.WithFix(`run "sdlc stop" in the story's worktree, .sdlc/worktrees/` + id +
-					" in the main checkout, to end the iteration -- the story is done, and there is nothing left to resume")
+				return startPlan{}, waitingToLand(id, trunkName(s), true)
 			}
 			return startPlan{id: id, running: true, at: checkout}, nil
 		}
@@ -102,6 +101,9 @@ func decideStart(s *store.Store, asked, session string) (startPlan, error) {
 			return startPlan{}, err
 		}
 		if finished != nil {
+			if inItsWorktree(s, active) {
+				return startPlan{}, waitingToLand(active, trunkName(s), true)
+			}
 			return startPlan{}, finished.WithFix(`run "sdlc stop" to end the iteration -- ` +
 				"the story is done, and there is nothing left to resume")
 		}
@@ -153,6 +155,16 @@ func decideStart(s *store.Store, asked, session string) (startPlan, error) {
 		return plan, err
 	}
 	if finished != nil {
+		// A story held in its own worktree waits to land there, and start never
+		// resumes it: stop lands it.
+		if at, ok, err := heldInItsWorktree(s, id); err != nil {
+			return plan, err
+		} else if ok {
+			return plan, waitingToLand(id, trunkName(s), store.ActiveIn(at) == id)
+		}
+		if story.Status != model.StatusDone && inItsWorktree(s, id) {
+			return plan, waitingToLand(id, trunkName(s), store.ActiveIn(s.Root()) == id)
+		}
 		return plan, finished
 	}
 	// Named, a story held in its own worktree is picked up there: resumed, or

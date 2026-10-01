@@ -1104,8 +1104,11 @@ func TestAC6ASessionWorksItsStoryInItsWorktreeTheWayTheRunbookSaysTo(t *testing.
 			if got := gitOut(t, main.dir, "rev-parse", "refs/heads/main"); got != cut {
 				t.Errorf("trunk moved to %s while the story was worked in its worktree", got)
 			}
-			s.run("", "stop")
+			// Checked before the stop: since US-029.3, the stop of a finished
+			// story in its worktree lands it, which moves trunk in the main
+			// checkout by design. Working the story is what leaves it alone.
 			before.same(t, viewOf(t, main, "US-001"), "working the story in its worktree")
+			s.run("", "stop")
 		})
 	}
 }

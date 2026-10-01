@@ -91,8 +91,22 @@ func printChecks(w io.Writer, checks []check, problems int) {
 	fmt.Fprintln(w, "sdlc doctor")
 	fmt.Fprintln(w)
 	for _, c := range checks {
-		fmt.Fprintf(w, "  %-8s %-20s %s\n", c.State, c.Name, c.Detail)
-		if c.Fix != "" {
+		// A check about several things has one to a line, each with its fix
+		// beside it: joined into one line, five worktrees' descriptions and
+		// then five fixes left a person matching them up by counting.
+		details, fixes := strings.Split(c.Detail, "\n"), strings.Split(c.Fix, "\n")
+		paired := len(details) > 1 && len(details) == len(fixes)
+		for i, d := range details {
+			if i == 0 {
+				fmt.Fprintf(w, "  %-8s %-20s %s\n", c.State, c.Name, d)
+			} else {
+				fmt.Fprintf(w, "           %-20s %s\n", "", d)
+			}
+			if paired {
+				fmt.Fprintf(w, "           %-20s fix: %s\n", "", fixes[i])
+			}
+		}
+		if c.Fix != "" && !paired {
 			fmt.Fprintf(w, "           %-20s fix: %s\n", "", c.Fix)
 		}
 	}
@@ -414,9 +428,11 @@ func gitCheck(ctx context.Context, worktrees bool) check {
 }
 
 // storyWorktreesCheck is what start's worktrees leave for a person to do: a
-// trunk a new worktree would find no configuration on, and a story worktree
-// that no checkout holds. It appears only where there is one of them, and so
-// is not among the checks a failure earlier on reports as skipped.
+// trunk a new worktree would find no configuration on, one that tracks the
+// loop's state, and a story worktree that no checkout holds. It appears only
+// where there is one of them, and so is not among the checks a failure earlier
+// on reports as skipped. Each is a line of the detail, and its fix the same
+// line of the fix.
 //
 // Each worktree is described by what is true of it, never by a guess at how
 // it came to be there, and the fix never forces anything away: what is in it
@@ -434,6 +450,9 @@ func storyWorktreesCheck(ctx context.Context, s *store.Store) (check, bool) {
 				" committed, and a story's worktree has only what trunk commits, so sdlc start refuses to begin one")
 			fixes = append(fixes, "commit "+config.File+" and CLAUDE.md to trunk, or set git.worktrees to false in "+
 				"this checkout's "+config.File)
+		}
+		if detail, fix, ok := trackedStateCheck(ctx, co.Main, trunk); ok {
+			details, fixes = append(details, detail), append(fixes, fix)
 		}
 	}
 	trees, err := gitx.Worktrees(ctx, co.Main)
@@ -458,7 +477,23 @@ func storyWorktreesCheck(ctx context.Context, s *store.Store) (check, bool) {
 		return check{}, false
 	}
 	return check{Name: "story worktrees", State: stateProblem,
-		Detail: strings.Join(details, "; "), Fix: strings.Join(fixes, "; ")}, true
+		Detail: strings.Join(details, "\n"), Fix: strings.Join(fixes, "\n")}, true
+}
+
+// trackedStateCheck says, before a story starts, that trunk tracks files under
+// the loop's state directory. Every story worktree writes there, and the
+// landing refuses a story whose worktree is not clean or whose commits carry
+// the loop's files, so no story worked in a worktree could land.
+func trackedStateCheck(ctx context.Context, main, trunk string) (detail, fix string, ok bool) {
+	state := config.Dir + "/state"
+	if tracks, err := gitx.Holds(ctx, main, "refs/heads/"+trunk, state); err != nil || !tracks {
+		return "", "", false
+	}
+	return "trunk, " + quote(trunk) + ", tracks files under " + state + ", the loop's own state, which every " +
+			"story worktree writes to, so no story worked in a worktree can land on trunk until trunk stops tracking them",
+		`a person stops tracking them on trunk, with "git rm -r --cached ` + state + `" in the main checkout with ` +
+			`trunk checked out, adds "/` + state + `/" to .gitignore, and commits both`,
+		true
 }
 
 // holdsIt reports whether the checkout at dir holds the story, or is one of
@@ -534,7 +569,7 @@ func unheldWorktree(ctx context.Context, w gitx.Worktree, id, trunk string) (det
 		details = append(details, fmt.Sprintf("%s's worktree, %s, is on no branch, its HEAD has %d %s trunk "+
 			"does not have, and no checkout holds %s", id, rel, n, plural(n, "commit", "commits"), id))
 		fixes = append(fixes, fmt.Sprintf("%s: a person looks at %s, with %s in the main checkout, and keeps what "+
-			"is wanted on a branch, with %s, before merging or removing anything", lostWithIt, plural(n, "it", "them"),
+			"is wanted on a branch, with %s, before merging or removing anything", lostWithIt(n), plural(n, "it", "them"),
 			lookAt(id, trunk), keepOn(id)))
 	}
 	if len(details) > 0 {

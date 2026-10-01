@@ -125,6 +125,23 @@ else made in that window. A story reopened after it was committed spans
 everything that landed in between. A range is a list to read, not a list to
 revert, and the skill never reverts, resets or rewrites a commit.
 
+A story worked in its own worktree reaches trunk only when `sdlc stop` lands it,
+and the landing replaces the commit gate's range with the commits that reached
+trunk, as they are after any rebase onto it. Everything in that range was
+checked before trunk moved: no merge commit, nothing under `.sdlc/` and no
+backlog change, the reviewed change or reviews recorded again, and the
+configured commands passing where it was rebased
+([the loop](../the-loop.md#more-than-one-checkout) lists the checks). Two things
+are still worth a look:
+
+- **`CODEMAP.md`.** The bookkeeper's commit after the retro is the one change in
+  the range no reviewer saw. Read its diff.
+- **Where the reviewed change began.** Where some of the story's commits reached
+  trunk before the landing, the landed event on its record names the commit its
+  reviewed change began at, and the range starts later. The commits between are
+  the story's too, among whatever else trunk gained meanwhile, and the log does
+  not tell them apart.
+
 Some entries need more care still:
 
 - **Inferred.** A story committed by an `sdlc` that did not record its range is

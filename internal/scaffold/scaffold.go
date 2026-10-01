@@ -4,7 +4,10 @@
 // against, a starter backlog, and the contract section the assistant reads from
 // CLAUDE.md. It writes no .gitignore: what a project commits is the project's
 // decision, and the loop's state is useful in version control for exactly the
-// same reasons the code is.
+// same reasons the code is. The one exception is .sdlc/state: every story
+// worktree writes its own there, so a story worked in one cannot land on a
+// trunk that tracks it. Start ignores it inside each new worktree, and doctor
+// says when trunk tracks it; neither writes the project's own .gitignore.
 package scaffold
 
 import (

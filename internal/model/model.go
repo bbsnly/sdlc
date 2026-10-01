@@ -719,16 +719,36 @@ type Record struct {
 	// Commit was watched. Without it, a range read after the story is done looks
 	// the same whether HEAD was its end or had moved on, and the observations
 	// that could tell the two apart are gone once the story is stopped.
-	HeadPastCommit string              `json:"head_past_commit,omitempty"`
-	Gates          map[Gate]GateResult `json:"gates"`
-	Events         []Event             `json:"events"`
-	Escalations    []Escalation        `json:"escalations"`
-	Approvals      []Approval          `json:"approvals"`
-	Reviews        []Review            `json:"reviews,omitempty"`
-	Security       *bool               `json:"security_sensitive,omitempty"`
-	Flags          map[string]any      `json:"flags,omitempty"`
-	Metrics        map[string]any      `json:"metrics,omitempty"`
-	Spend          []Spend             `json:"spend,omitempty"`
+	HeadPastCommit string `json:"head_past_commit,omitempty"`
+	// Cut is the commit a story's own branch was cut from, where the story
+	// began in a worktree of its own. It stays however the story is reworked.
+	Cut string `json:"cut,omitempty"`
+	// Change is the fingerprint of the change the reviewers saw, taken at the
+	// commit gate from ChangeBase to HEAD, for a story in its own worktree. A
+	// landing lands that change, or one reviewed again. Both go when the
+	// commit gate stops standing passed.
+	Change     string `json:"change,omitempty"`
+	ChangeBase string `json:"change_base,omitempty"`
+	// Landing is the mark a landing leaves between moving trunk and writing
+	// this record, so that a landing cut short there is finished by the next
+	// one with its whole range.
+	Landing     *Mark               `json:"landing,omitempty"`
+	Gates       map[Gate]GateResult `json:"gates"`
+	Events      []Event             `json:"events"`
+	Escalations []Escalation        `json:"escalations"`
+	Approvals   []Approval          `json:"approvals"`
+	Reviews     []Review            `json:"reviews,omitempty"`
+	Security    *bool               `json:"security_sensitive,omitempty"`
+	Flags       map[string]any      `json:"flags,omitempty"`
+	Metrics     map[string]any      `json:"metrics,omitempty"`
+	Spend       []Spend             `json:"spend,omitempty"`
+}
+
+// Mark is a landing between its two writes: trunk moved from From to To, and
+// the record did not yet say so.
+type Mark struct {
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 // Spend is one amount recorded against the story, in US dollars.
@@ -880,6 +900,14 @@ func (r *Record) Decide(approved bool, reason, tree string, at time.Time) (Appro
 	return a, true
 }
 
+// LatestDecision is the latest answer a person gave, on whatever work.
+func (r *Record) LatestDecision() (Approval, bool) {
+	if len(r.Approvals) == 0 {
+		return Approval{}, false
+	}
+	return r.Approvals[len(r.Approvals)-1], true
+}
+
 // DecisionFor is the latest decision a person gave on the work as tree has it.
 // The latest one counts, so work approved and then sent back is sent back.
 func (r *Record) DecisionFor(tree string) (Approval, bool) {
@@ -994,6 +1022,9 @@ func (r *Record) forgetCommit() {
 		r.Commit = ""
 		r.RangeUnknown = false
 		r.HeadPastCommit = ""
+		r.Change = ""
+		r.ChangeBase = ""
+		r.Landing = nil
 	}
 }
 

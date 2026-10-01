@@ -444,9 +444,17 @@ type stopPayload struct {
 func newStopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
-		Short: "End the current iteration without recording a result",
+		Short: "End the iteration; in a finished story's worktree, land it on trunk",
 		Long: "stop ends the iteration. It records nothing about the story and changes no\n" +
 			"gate: the work stays exactly where it was, and starting again picks it up.\n\n" +
+			"In a finished story's own worktree, .sdlc/worktrees/<ID>, stop lands the story\n" +
+			"instead: it checks the story's branch against trunk, runs the configured\n" +
+			"commands where the story was rebased or its change is not the one reviewed,\n" +
+			"moves trunk to the story's commits by fast-forward, marks the story done, and\n" +
+			"takes the worktree and its branch away. A finished story a person answered for\n" +
+			"after an escalation lands the same way, with no iteration running. To put a\n" +
+			"finished story down without landing it, hand it to a person with\n" +
+			"`sdlc escalate`.\n\n" +
 			"Stopping when nothing is running is not an error.",
 		Example: "  sdlc stop",
 		Args:    cobra.NoArgs,
@@ -455,7 +463,9 @@ func newStopCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer unlock()
+			// Called through the variable: a landing lets the lock go while
+			// its commands run, and takes it again.
+			defer func() { unlock() }()
 			active, err := s.Active()
 			var unusable *sdlcerr.Error
 			switch {
@@ -469,6 +479,11 @@ func newStopCmd() *cobra.Command {
 				active = ""
 			case err != nil:
 				return err
+			}
+			if err == nil {
+				if landed, err := landIfFinished(cmd, s, active, &unlock); landed || err != nil {
+					return err
+				}
 			}
 			done := false
 			onRecord, closing := true, ""
@@ -621,6 +636,10 @@ func settleStory(s *store.Store, id string, record *model.Record) (bool, error) 
 	}
 	_, remaining := record.NextGate()
 	switch {
+	case !remaining && story.Status != model.StatusDone && inItsWorktree(s, id):
+		// In its own worktree a story is done once trunk has its commits, and
+		// only the landing gives it them: until then it keeps its claim.
+		return false, nil
 	case !remaining && story.Status != model.StatusDone:
 		if err := s.SetStoryStatus(id, model.StatusDone); err != nil {
 			return false, err
@@ -799,6 +818,11 @@ func newGateCmd() *cobra.Command {
 					if err := requireNoteInRange(cmd.Context(), s.Root(), landed, note); err != nil {
 						return err
 					}
+					if inItsWorktree(s, id) {
+						if err := recordChange(cmd, s, id, record, head); err != nil {
+							return err
+						}
+					}
 				}
 			}
 			record.Append(model.EventGate, model.GateEvent(gate, status), s.Now())
@@ -842,7 +866,13 @@ func newGateCmd() *cobra.Command {
 				if start != "" {
 					landed = start[:min(len(start), 12)] + ".." + landed
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "  landed in %s\n", landed)
+				if inItsWorktree(s, id) {
+					// Committed on its branch: trunk has none of it until the
+					// story lands.
+					fmt.Fprintf(cmd.OutOrStdout(), "  committed on %s in %s\n", store.StoryBranch(id), landed)
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "  landed in %s\n", landed)
+				}
 				// Not a refusal: the sign that the range may stop short, kept on
 				// the record for `sdlc log`, and true in every case it fires, the
 				// ordinary one included, where a person committed after the
@@ -857,6 +887,9 @@ func newGateCmd() *cobra.Command {
 			}
 			if done {
 				fmt.Fprintf(cmd.OutOrStdout(), "\n%s is done: every gate has passed.\n", id)
+			} else if _, remaining := record.NextGate(); !remaining && inItsWorktree(s, id) {
+				fmt.Fprintf(cmd.OutOrStdout(), "\nEvery gate on %s has passed. `sdlc stop` in %s lands it on %s.\n",
+					id, worktreeIn(id), trunkName(s))
 			}
 			if handedOver != "" {
 				sayHandedOver(cmd.OutOrStdout(), id, message)
@@ -1128,7 +1161,7 @@ func requireCommitted(ctx context.Context, s *store.Store) error {
 		why := "the gate records that this story reached trunk, and a working tree with changes in it has not"
 		if id, ok := s.StoryWorktreeOf(); ok {
 			// In its worktree the story is committed on its branch, and trunk
-			// does not move until a person brings it there.
+			// does not move until the story lands.
 			why = "the gate records that the story is committed on " + store.StoryBranch(id) +
 				", and a working tree with changes in it is not"
 		}

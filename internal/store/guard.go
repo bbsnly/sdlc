@@ -112,13 +112,52 @@ func Lock(root, what string) (*Guard, error) {
 	if err != nil {
 		return nil, err
 	}
+	return take(path, what, guardWait, func() error {
+		return sdlcerr.New(sdlcerr.StateUnwritable,
+			"another sdlc command is still running",
+			heldBy(path)+" has held the loop's state for longer than "+
+				guardWait.String()+", and two commands writing it at once "+
+				"would lose one of the changes").
+			WithFix("wait for it to finish, or delete " + path +
+				" if nothing is running")
+	})
+}
+
+// LockLanding takes the lock one sdlc stop holds while it lands story id,
+// from its first check to its last write, the configured commands included.
+// It is the project's lock at a path of the story's own beside it, keyed on
+// the main checkout, so that another story's landing and every other command
+// go on meanwhile. It is taken without waiting: a second stop of the same
+// story would only run its checks again on what the first one is changing.
+func (s *Store) LockLanding(id string) (*Guard, error) {
+	if err := CheckID(id); err != nil {
+		return nil, err
+	}
+	project, err := guardPath(s.LockRoot())
+	if err != nil {
+		return nil, err
+	}
+	path := project + "-landing-" + id
+	return take(path, "stop "+id, 0, func() error {
+		return sdlcerr.New(sdlcerr.StateUnwritable,
+			"another sdlc stop is landing "+id,
+			heldBy(path)+" holds the lock at "+quote(path)+", and a story is landed by one stop at a time").
+			WithFix("wait for that stop to finish, then run \"sdlc stop\" again if the story has not landed; " +
+				"if that stop was killed, its lock breaks open once it is " + guardStale.String() +
+				" old and nothing holds it")
+	})
+}
+
+// take takes the lock at path, waiting up to wait for whoever has it, and
+// returns busy's refusal once it has waited that long.
+func take(path, what string, wait time.Duration, busy func() error) (*Guard, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, sdlcerr.New(sdlcerr.StateUnwritable,
 			"the lock directory could not be created",
 			filepath.Dir(path)+" is not writable").WithCause(err)
 	}
 
-	deadline := time.Now().Add(guardWait)
+	start := time.Now()
 	for {
 		err := mkdir(path, 0o755)
 		if err == nil {
@@ -137,9 +176,10 @@ func Lock(root, what string) (*Guard, error) {
 			held.Unlock()
 			return g, nil
 		}
-		// A denial is waited for rather than failed: on Windows it is how a lock
-		// being released looks (see above). One that outlasts the wait is not
-		// that, and says what it really is.
+		// A denial is waited for rather than failed, however short the wait for
+		// a holder: on Windows it is how a lock being released looks (see
+		// above). One that outlasts the wait is not that, and says what it
+		// really is.
 		denied := errors.Is(err, fs.ErrPermission)
 		if !denied && !errors.Is(err, fs.ErrExist) {
 			return nil, sdlcerr.New(sdlcerr.StateUnwritable,
@@ -149,19 +189,13 @@ func Lock(root, what string) (*Guard, error) {
 		if !denied && breakIfStale(path) {
 			continue
 		}
-		if time.Now().After(deadline) {
-			if denied {
-				return nil, sdlcerr.New(sdlcerr.StateUnwritable,
-					"the loop's state could not be locked",
-					path+" could not be created").WithCause(err)
-			}
+		switch waited := time.Since(start); {
+		case denied && waited > guardWait:
 			return nil, sdlcerr.New(sdlcerr.StateUnwritable,
-				"another sdlc command is still running",
-				heldBy(path)+" has held the loop's state for longer than "+
-					guardWait.String()+", and two commands writing it at once "+
-					"would lose one of the changes").
-				WithFix("wait for it to finish, or delete " + path +
-					" if nothing is running")
+				"the loop's state could not be locked",
+				path+" could not be created").WithCause(err)
+		case !denied && waited >= wait:
+			return nil, busy()
 		}
 		time.Sleep(guardPoll)
 	}

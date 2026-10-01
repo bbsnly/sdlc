@@ -127,7 +127,9 @@ writing the backlog, `.sdlc/` (the story records, the configuration and that
 checkout's own `.sdlc/state`), `.git/` (the claims included), `.claude/` and
 `CLAUDE.md`, by an absolute path, a link, `..` through a link, `~`, `cd`,
 `find`, `xargs` or code handed to an interpreter; discarding what that checkout
-holds with `git -C … reset --hard` and its like; taking the checkout away, or a
+holds, with `git stash`, `git reset --hard`, `--merge` or `--keep`, a forced
+`checkout` or `switch`, `git read-tree -u`, or a clean, restore or checkout of
+the whole tree, however git is pointed there; taking the checkout away, or a
 directory that holds it
 ([`loop-state-through-the-tool`](#loop-state-through-the-tool)); and committing
 there, however git is pointed at it
@@ -141,6 +143,48 @@ refused. The file tools are refused everything outside the checkout the session
 is held in, as they always were, and every other checkout nested inside it,
 such as a story's worktree under `.sdlc/worktrees/` seen from the main checkout
 ([`write-outside-repository`](#write-outside-repository)).
+
+**Branches.** While a session holds a story, the hook refuses it any command
+that moves trunk or a story branch, the story's own or another story's, other
+than by the story's own gated commit, from the story's worktree and from the
+main checkout alike ([`branch-through-the-tool`](#branch-through-the-tool)). By
+class, it refuses:
+
+- a ref written directly, with `git update-ref` (`--stdin` included) or the
+  other plumbing that writes refs;
+- a branch forced, deleted, renamed or copied with `git branch`;
+- a checkout or switch that resets a branch that exists (`-B`, `-C`,
+  `--force-create`), or checks out one another worktree has
+  (`--ignore-other-worktrees`);
+- `git symbolic-ref` writing HEAD;
+- `git push`, `git fetch`, `git pull` and `git remote update`, whatever they
+  name;
+- a `git reset` naming a commit in another checkout, and in the session's own
+  once the story is committed;
+- a rebase, but for the one below;
+- a merge or any other commit in another checkout
+  ([`commit-in-another-checkout`](#commit-in-another-checkout)), and
+  `git worktree add` with a forced branch
+  ([`worktree-through-the-tool`](#worktree-through-the-tool)).
+
+Each is refused however git is spelled, aliased or pointed at the checkout, as
+far as the rules read those, and nothing that only reads branches is. Refusing
+every push and fetch while a story is held, one to another repository included,
+is a choice: the words cannot always tell another repository from a path to one
+of this repository's own checkouts, and the loop never pushes.
+
+Two moves of the story's own branch are the session's. After the commit gate,
+the plain rebase of its worktree's branch onto trunk, `git rebase <trunk>`,
+named by trunk's branch or as `refs/heads/<trunk>` and with nothing but
+`--quiet`, which the landing asks for when trunk has moved; and a bare
+`git rebase --abort` there. After the retro, one commit of the root
+`CODEMAP.md` alone, the bookkeeper's. The landing checks what either did before
+trunk moves, and it holds the purpose whatever the spelling: nothing lands that
+is not the story's reviewed change on top of trunk, with no merge in it,
+nothing under `.sdlc/` or in the backlog, and the root `CODEMAP.md` only as a
+plain file by exactly that name. Those last checks are the landing's, so they
+hold only for stories worked in their own worktree: with `git.worktrees` off, a
+story's commit can carry any of them, as it always could.
 
 Which checkout a path is in is worked out from where it lands on disk, links
 followed, by walking up to the nearest directory whose `.git` belongs to this
@@ -167,16 +211,78 @@ to run `sdlc doctor`.
 **Not held.** These are known and not closed. Each says what could happen, and
 how you would notice.
 
-- **Trunk, or another story's branch, moved from a story's worktree.** A
-  session working a story in its worktree can move trunk without committing on
-  it: `git update-ref refs/heads/<trunk> HEAD`, or
-  `git checkout --ignore-other-worktrees <trunk>` and then a commit. Trunk then
-  holds work no gate passed on trunk. In the main checkout, `git status` shows
+- **A branch moved by a spelling the rules do not read.** Every way below of
+  getting a command past the rules unread gets a branch move past
+  [`branch-through-the-tool`](#branch-through-the-tool) as well. Trunk moved
+  that way holds work no gate passed: in the main checkout, `git status` shows
   changes nobody made there, the difference reversed, because the branch moved
-  and its files did not; `git reflog <trunk>` shows when trunk moved. The same
-  commands can move or delete another story's branch, `story/<ID>`, as
-  `git update-ref -d refs/heads/story/<ID>` does; that story's next gate
-  reports it ([SDLC-E0046](troubleshooting.md#sdlc-e0046)).
+  and its files did not, and `git reflog <trunk>` shows when. Another story's
+  branch moved or deleted that way is reported by that story's next gate
+  ([SDLC-E0046](troubleshooting.md#sdlc-e0046)). A story's own branch moved
+  that way does not land: the landing refuses what is not the reviewed change
+  on top of trunk ([SDLC-E0054](troubleshooting.md#sdlc-e0054),
+  [SDLC-E0029](troubleshooting.md#sdlc-e0029)).
+- **A reset of the session's own branch before the commit gate.** It is the
+  session's own work, and the next gate names it
+  ([SDLC-E0046](troubleshooting.md#sdlc-e0046)).
+- **A commit after the commit gate that the commit rule allows.** The landing
+  lands only the change that was reviewed, or one whose reviews are recorded
+  again and whose commands pass, so a person sees
+  [SDLC-E0029](troubleshooting.md#sdlc-e0029) at `sdlc stop`.
+- **The root `CODEMAP.md` reaches trunk with no reviewer.** The bookkeeper's
+  commit after the retro changes the one path in the landed range outside the
+  reviewed change. The landing takes it only as a plain file by exactly that
+  name, and refuses a directory, link or submodule there, or a name that
+  differs from it only in case
+  ([SDLC-E0055](troubleshooting.md#sdlc-e0055)); the hook's check of that
+  commit answers not fresh for files beneath it, and wherever the tree cannot
+  be measured with `CODEMAP.md` as that commit has it. Read its diff in the range
+  `sdlc log` prints.
+- **Git settings that name a program.** The session can write settings such as
+  `core.hooksPath`, `core.fsmonitor` or a filter in `.gitattributes`, and git
+  runs the program they name during commands the rules allow, the bookkeeper's
+  commit and the allowed rebase among them, and while the landing's
+  fast-forward checks and writes the files of a checkout with trunk checked
+  out: a clean filter runs as it hashes them, before anything is written. Such a
+  program can do anything a branch move can. The landing refuses what it did to
+  trunk's history, the loop's files and the change, and a person notices the
+  program only by reading the repository's configuration with
+  `git config --show-origin --list` and its `.gitattributes`; `sdlc` does not
+  report it.
+- **Repository configuration that changes what the allowed rebase does to other
+  refs.** The landing refuses a range that is not the story's alone. A person
+  sees other refs move in `git reflog` for them.
+- **A ref of another kind with trunk's short name, made earlier in the same
+  command as the allowed rebase.** A tag named as trunk, made before the
+  command, makes the rebase by trunk's short name refused; made in the same
+  command, it is not seen. The landing refuses the result
+  ([SDLC-E0054](troubleshooting.md#sdlc-e0054) or
+  [SDLC-E0029](troubleshooting.md#sdlc-e0029)), and a person sees the ref in
+  `git show-ref`.
+- **The hold ending before the landing.** Escalating ends the iteration, and so
+  does `sdlc stop`'s way out of a broken state. Until a person answers, the
+  session holds nothing and none of this binds it. The escalation is on the
+  record and in `sdlc status`, the way out prints its own line on standard
+  error, and the landing still asks every check.
+- **Ignored files in the story's worktree take part in the commands.**
+  Workspace files, local environment files and caches the story's worktree
+  ignores can make a command pass there that would fail on trunk, and nothing
+  in the stop's output shows them. List them with
+  `git -C .sdlc/worktrees/<ID> status --ignored` before trusting a pass.
+- **A person's stop runs what the session planted.** A stop a person runs,
+  after the 600 seconds the runbook gives it or after answering an escalation,
+  runs the story's code and the repository's program-naming settings with that
+  person's privileges and credentials. [SDLC-E0055](troubleshooting.md#sdlc-e0055),
+  the runbook and [configuration](configuration.md#at-landing) say so before
+  sending a person there.
+- **Two identical stretches of context give one fingerprint.** The change the
+  reviewers saw is compared with its hunk headers cut down to their marker, so a
+  change that moved to an identical stretch elsewhere in a file compares equal.
+  A person reading the landed range sees where the lines went.
+- **A shallow repository** can only hide ancestry, and the landing then refuses
+  with [SDLC-E0054](troubleshooting.md#sdlc-e0054).
+- **Ignored files go with a landed story's worktree.** They are removed with it,
+  and the stop's last line says so.
 - **A commit in the next call.** Each call is read on its own. A call that
   stages another checkout's work into the session's index, with
   `git --work-tree=<main> add` or `GIT_INDEX_FILE`, followed by a plain
@@ -301,13 +407,14 @@ how you would notice.
   `GIT_WORK_TREE` set treats that directory as the checkout, `sdlc start`
   included. The paths `sdlc start` prints say where it made and recorded the
   story.
-- **A finished story between its retro and `sdlc stop`.** Its claim goes when
-  the story is done, and a checkout's `active` holds only a story in progress or
-  waiting for a person, so from a call that reaches only other checkouts the
-  session working it is not found, and is held there to nothing until
-  `sdlc stop` ends the iteration. In its own checkout it is held as before.
-  Nothing says so; the runbook runs `sdlc stop` straight after the retro, which
-  closes it.
+- **A finished story between its retro and `sdlc stop`, outside a worktree.**
+  Its claim goes when the story is done, and a checkout's `active` holds only a
+  story in progress or waiting for a person, so from a call that reaches only
+  other checkouts the session working it is not found, and is held there to
+  nothing until `sdlc stop` ends the iteration. In its own checkout it is held
+  as before. Nothing says so; the runbook runs `sdlc stop` straight after the
+  retro, which closes it. A story worked in its own worktree is not done until
+  it lands, and keeps its claim until then.
 - **Claims written by a session that holds nothing.** Such a session can write
   or remove a claim or another checkout's `.sdlc/state/active`, and so make two
   checkouts name one story. Each is then refused it
@@ -766,7 +873,9 @@ git configuration file is not read, and one the hook cannot read at all is
 refused ([`git-command-cannot-be-read`](#git-command-cannot-be-read)). A commit
 made in a way the hook cannot read is
 refused at the next gate instead, which will not pass once HEAD has moved since
-the story started ([`SDLC-E0046`](troubleshooting.md#sdlc-e0046)).
+the story started ([`SDLC-E0046`](troubleshooting.md#sdlc-e0046)). Once the
+gates before the commit have passed, a rebase is
+[`branch-through-the-tool`](#branch-through-the-tool)'s to judge instead.
 
 Once they have, it also refuses a commit of work that has changed since the
 verifier and the code reviewers approved it. Their reviews are stamped with the
@@ -888,6 +997,52 @@ every story that checkout holds.
 
 *Instead:* a person changes `core.worktree` and `core.bare` in their own
 terminal. If git says this is not a work tree, stop and tell them.
+
+### `branch-through-the-tool`
+
+Refuses a command that moves trunk or a story branch other than by the story's
+own gated commit, by what the command does to a branch rather than by which
+branch it names, in the story's worktree and in any other checkout:
+
+- `git update-ref` in every form, `-d` and `--stdin` included, and the plumbing
+  that writes refs: `filter-branch`, `fast-import`, `send-pack`, `receive-pack`
+  and `http-push`;
+- `git branch` with `-f`, `--force`, `-d`, `-D`, `--delete`, `-m`, `-M`,
+  `--move`, `-c`, `-C` or `--copy`, or an abbreviation git takes of one;
+- `git checkout -B`, `git switch -C` or `--force-create`, and either with
+  `--ignore-other-worktrees`;
+- `git symbolic-ref` given a ref to write, `-m` or `-d`;
+- `git push`, `git fetch`, `git pull` and `git remote update`;
+- `git reset` naming a commit other than HEAD with no paths, in another
+  checkout, or anywhere once the story's commit gate has passed;
+- a rebase once the gates before the commit have passed: before the commit gate
+  every one but `git rebase --abort` and `git rebase --quit`, which make no
+  commit and move no branch wherever they are pointed, though an abort in
+  another checkout throws away the rebase in progress there; after it every one
+  but the plain rebase of the session's own worktree onto trunk and a bare
+  `git rebase --abort` there.
+
+The plain rebase names trunk by its full branch ref, `refs/heads/<trunk>`, or by
+its short name where git reads that name as trunk's branch in the session's
+checkout; a tag or another ref with trunk's short name makes it refused. It
+takes `-q` or `--quiet` and nothing else: no other option, no `git -c`, alias,
+`--git-dir` or `GIT_DIR`, and no `-C` but one into the session's own worktree.
+`--continue`, `--skip` and `--quit` are refused after the commit gate: the
+runbook abandons a rebase that stops, and never resumes one. Trunk is the one
+the main checkout's configuration names.
+
+A git command the words place in another repository altogether, such as a
+fixture in a temporary directory, is not this repository's branches, and is not
+refused. One they cannot place is.
+
+It answers last: a command another rule refuses keeps that rule, and once a
+branch move is found, the rest of the command is read only within a bound, past
+which the refusal is this rule's.
+
+*Instead:* leave branches to the loop. `sdlc stop` in a finished story's
+worktree lands it on trunk, and a person moves, deletes, pushes or fetches a
+branch in their own terminal. To read one, use `git log`, `git show` or
+`git diff`.
 
 ### `git-command-cannot-be-read`
 

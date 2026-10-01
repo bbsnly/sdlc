@@ -148,6 +148,9 @@ func beginInWorktree(cmd *cobra.Command, s *store.Store, asked string, plan star
 	if err := store.EnsureWorktreesIgnored(co.Main); err != nil {
 		return false, rolledBack(err, id, undo())
 	}
+	if err := s.EnsureStateIgnored(wt); err != nil {
+		return false, rolledBack(err, id, undo())
+	}
 	// The worktree's own configuration, which is trunk's as committed: the
 	// loop in the worktree reads it, so the smoke check is the one it names.
 	wtCfg, err := config.Load(wt)
@@ -220,9 +223,12 @@ func recordInWorktree(cmd *cobra.Command, asked string, plan startPlan, wt strin
 		return false, leftBegun(err, id, true)
 	}
 	released := releasedSinceStart(record)
-	// The commit the branch was cut from, which the story is measured from.
+	// The commit the branch was cut from, which the story is measured from,
+	// and which its change is measured from at the commit gate however the
+	// branch is reworked.
 	if head, err := gitx.Head(cmd.Context(), wt); err == nil {
 		record.Base = head
+		record.Cut = head
 	}
 	record.Append("loop_start", "iteration started", s.Now())
 	if err := s.SaveRecord(record); err != nil {
@@ -279,9 +285,15 @@ func lookAt(id, trunk string) string {
 // on a new branch, which a person names.
 func keepOn(id string) string { return `"git -C ` + worktreeIn(id) + ` branch <new name>"` }
 
-// lostWithIt is why a worktree on no branch is never offered for removal: git
-// removes a clean one without --force, and its HEAD's reflog goes with it.
-const lostWithIt = "a commit on no branch is lost when its worktree is removed"
+// lostWithIt is why a worktree on no branch is never offered for removal, said
+// of its n commits, or of commits git could not count where n is 0: git removes
+// a clean one without --force, and its HEAD's reflog goes with it.
+func lostWithIt(n int) string {
+	if n == 1 {
+		return "a commit on no branch is lost when its worktree is removed"
+	}
+	return "commits on no branch are lost when their worktree is removed"
+}
 
 // shellWord is s as a person can paste it into a shell and have it read back
 // unchanged: bare where it is letters, digits and "-._/+@" alone, and otherwise
@@ -386,13 +398,13 @@ func inTheWayFix(ctx context.Context, main, wt, id, trunk string) string {
 		switch {
 		case err != nil:
 			steps = append(steps, "the worktree is on no branch, and git could not count the commits its HEAD has "+
-				"that trunk does not: "+lostWithIt+", so look at them with "+lookAt(id, trunk)+", and keep what is "+
+				"that trunk does not: "+lostWithIt(0)+", so look at them with "+lookAt(id, trunk)+", and keep what is "+
 				"wanted on a branch, with "+keepOn(id)+", before merging or removing anything")
 			mayLose = true
 		case n > 0:
 			steps = append(steps, fmt.Sprintf("the worktree is on no branch, and its HEAD has %d %s trunk does not "+
 				"have: %s, so look at %s with %s, and keep what is wanted on a branch, with %s, before merging or "+
-				"removing anything", n, plural(n, "commit", "commits"), lostWithIt, plural(n, "it", "them"),
+				"removing anything", n, plural(n, "commit", "commits"), lostWithIt(n), plural(n, "it", "them"),
 				lookAt(id, trunk), keepOn(id)))
 			mayLose = true
 		}

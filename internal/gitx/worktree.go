@@ -287,6 +287,9 @@ type Worktree struct {
 	Branch string
 	// Gone is a checkout whose directory git can no longer find.
 	Gone bool
+	// Locked is a checkout somebody locked with git worktree lock, which is
+	// never taken away without them.
+	Locked bool
 }
 
 // Worktrees is every checkout git lists for the repository, the main checkout
@@ -299,15 +302,15 @@ func Worktrees(ctx context.Context, root string) ([]Worktree, error) {
 	out := make([]Worktree, len(listed))
 	for i, w := range listed {
 		branch, _ := strings.CutPrefix(w.branch, "refs/heads/")
-		out[i] = Worktree{Path: w.path, Branch: branch, Gone: w.prunable}
+		out[i] = Worktree{Path: w.path, Branch: branch, Gone: w.prunable, Locked: w.locked}
 	}
 	return out, nil
 }
 
 // listedWorktree is one entry of `git worktree list --porcelain`.
 type listedWorktree struct {
-	path, head, branch string
-	prunable           bool
+	path, head, branch     string
+	prunable, locked, bare bool
 }
 
 func listWorktrees(ctx context.Context, root string) ([]listedWorktree, error) {
@@ -315,6 +318,11 @@ func listWorktrees(ctx context.Context, root string) ([]listedWorktree, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseWorktrees(out), nil
+}
+
+// parseWorktrees reads what `git worktree list --porcelain` printed.
+func parseWorktrees(out []byte) []listedWorktree {
 	var listed []listedWorktree
 	for _, line := range strings.Split(string(out), "\n") {
 		key, value, _ := strings.Cut(strings.TrimRight(line, "\r"), " ")
@@ -328,9 +336,13 @@ func listWorktrees(ctx context.Context, root string) ([]listedWorktree, error) {
 			listed[len(listed)-1].branch = value
 		case key == "prunable":
 			listed[len(listed)-1].prunable = true
+		case key == "locked":
+			listed[len(listed)-1].locked = true
+		case key == "bare":
+			listed[len(listed)-1].bare = true
 		}
 	}
-	return listed, nil
+	return listed
 }
 
 // refuseLinks refuses a link, or a file, at dir or at a directory between root

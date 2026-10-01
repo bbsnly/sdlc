@@ -87,6 +87,19 @@ func TreeHash(ctx context.Context, root string, overrides ...Override) (string, 
 		if !inTree {
 			continue
 		}
+		if o.At != "" {
+			// A path holding files beneath it is a directory where the
+			// override stands in for one file. git refuses the entry then, and
+			// a caller that read that as a tree it could not measure let the
+			// shape through unchecked.
+			if holdsBeneath(string(staged), o.Path) {
+				return "", ErrOverrideNotAFile
+			}
+			if err := takeAt(ctx, root, env, o); err != nil {
+				return "", err
+			}
+			continue
+		}
 		blob, err := gitInput(ctx, root, env, o.Content, "hash-object", "-w", "--stdin", "--path="+o.Path)
 		if err != nil {
 			return "", err
@@ -101,6 +114,45 @@ func TreeHash(ctx context.Context, root string, overrides ...Override) (string, 
 		return "", err
 	}
 	return firstLine(string(out)), nil
+}
+
+// ErrOverrideNotAFile is an override taken from a commit whose path the tree
+// holds files beneath: a directory where the override stands in for one file.
+var ErrOverrideNotAFile = errors.New("the override's path holds files beneath it")
+
+// holdsBeneath reports whether the output of ls-files --stage names any entry
+// beneath path rather than path itself.
+func holdsBeneath(staged, path string) bool {
+	for line := range strings.Lines(staged) {
+		if _, name, ok := strings.Cut(strings.TrimRight(line, "\n"), "\t"); ok && name != path {
+			return true
+		}
+	}
+	return false
+}
+
+// takeAt puts o.Path into the index env names as the commit o.At has it: its
+// entry, mode and object together, and out of the index where the commit has
+// no file there. The object is the commit's, so no content is read or written.
+func takeAt(ctx context.Context, root string, env []string, o Override) error {
+	if err := fullHashes(o.At); err != nil {
+		return err
+	}
+	out, err := git(ctx, root, env, "ls-tree", "-z", o.At, "--", o.Path)
+	if err != nil {
+		return err
+	}
+	for _, entry := range strings.Split(string(out), "\x00") {
+		meta, name, ok := strings.Cut(entry, "\t")
+		fields := strings.Fields(meta)
+		if !ok || name != o.Path || len(fields) != 3 || fields[1] != "blob" {
+			continue
+		}
+		_, err := git(ctx, root, env, "update-index", "--cacheinfo", fields[0]+","+fields[2]+","+o.Path)
+		return err
+	}
+	_, err = git(ctx, root, env, "update-index", "--force-remove", "--", o.Path)
+	return err
 }
 
 // Clean reports whether the working tree has nothing uncommitted, which is what
@@ -168,22 +220,6 @@ func (e notACommit) Unwrap() error { return e.error }
 func NamesNoCommit(err error) bool {
 	var refused notACommit
 	return errors.As(err, &refused)
-}
-
-// IsAncestor reports whether ancestor is in descendant's history, which a
-// commit is in its own. Git says no with exit status 1; anything else it says,
-// such as a commit it does not have, is a failure rather than a no. Both are
-// full hashes git has printed, so neither can be read as an option.
-func IsAncestor(ctx context.Context, root, ancestor, descendant string) (bool, error) {
-	_, err := git(ctx, root, nil, "merge-base", "--is-ancestor", ancestor, descendant)
-	var exit *exec.ExitError
-	switch {
-	case err == nil:
-		return true, nil
-	case errors.As(err, &exit) && exit.ExitCode() == 1:
-		return false, nil
-	}
-	return false, err
 }
 
 // Commit is one commit, with its first parent: "" for a root commit.
@@ -408,10 +444,12 @@ func Behind(ctx context.Context, root, remote, branch string) (int, error) {
 }
 
 // Override is content to hash in place of a file's own; see TreeHash. Path is
-// repository-relative and slash-separated.
+// repository-relative and slash-separated. Where At names a commit, the file is
+// hashed as that commit has it, and Content is not read.
 type Override struct {
 	Path    string
 	Content []byte
+	At      string
 }
 
 // git runs git in root, the root of a checkout, with the environment extra adds

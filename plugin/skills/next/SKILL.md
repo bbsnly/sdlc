@@ -93,13 +93,13 @@ This picks up a story already under way, or takes the next runnable one. Take `w
 
 If it succeeds and `session` in the output is empty, sdlc could not tell which Claude Code session
 this is, so nothing would hold this session to the loop's rules. Tell the user that plainly, and
-that it happens where Claude Code does not pass `CLAUDE_CODE_SESSION_ID` to the commands it runs
-(an older Claude Code, or an app that does not). Tell them the story is now in progress, and that
-`/sdlc:next` in a session that passes it on picks it up where it is. Then stop. Do not work the
-story without it.
+that it happens where Claude Code does not pass `CLAUDE_CODE_SESSION_ID` to the commands it runs.
+Tell them the story is now in progress, and that `/sdlc:next` in a session that passes it on
+picks it up where it is. Then stop. Do not work the story without it.
 
 If it fails with `SDLC-E0010` there is nothing to work on: show the user the `why` field, run
-`sdlc story list`, and stop.
+`sdlc story list`, and stop. `SDLC-E0033` in a story's worktree means it waits to land: go to
+Gate 9's `sdlc stop`.
 
 If the output has `"resume": true`, the story's earlier gates stand: go straight to the section
 for the `next_gate` it reports.
@@ -313,48 +313,49 @@ sdlc gate commit pass --note "<what reached trunk, in one line>"
 ```
 
 The gate refuses while anything is uncommitted, or if an acceptance test changed since the freeze.
-The note needs no hash. A hash it does name has to be inside the range this pass records, or the
-gate refuses (SDLC-E0049): run it again with the hash corrected or dropped.
+The note needs no hash; one it names must be in the range this pass records (SDLC-E0049).
 
 The pass says which commits it recorded; tell the person in the same words:
 
-- `landed in <start>..<end>`: the commits the loop watched this session land.
+- `landed in <start>..<end>` (with a worktree, `committed on story/<ID> in ...`, which trunk
+  lacks until Gate 9): the commits the loop watched this session make.
 - `head is <head>, past <end>: nothing that landed after <end> was watched`, under it: HEAD moved
   past the range, usually a person's commit after yours; say so, and name both commits.
 - `no range recorded: ...`, in place of `landed in`: no single range holds only the watched
-  commits, for a cause it does not name: someone else's commit between the story's, a merged side
-  branch, rewritten history, or git unable to read the start or the hook's notes. The work is
-  fine; say there is no range, give all four causes, pick none.
+  commits, for a cause it does not name: another's commit among the story's, a merge, rewritten
+  history, or git unable to read the start or the notes. The work is fine; say there is no range,
+  give all four causes, pick none.
 
 Do not work a range out yourself, and do not rewrite history to make one.
 
-Before Gate 9, show the person any `head is` line again, and tell them where the hook wrote down
-what it watched: `<git-dir>/sdlc/commits/<story>/`, one file per HEAD (`git rev-parse
---absolute-git-dir` names the git directory). `sdlc stop` at the end of Gate 9 removes it, so it
-is their one chance to read it. Do not read it yourself.
+Before Gate 9, show the person any `head is` line again, and where the hook wrote down what it
+watched: `<git-dir>/sdlc/commits/<story>/` (`git rev-parse --absolute-git-dir` names
+`<git-dir>`). Gate 9's `sdlc stop` removes it. Do not read it yourself.
 
 ## Gate 9 — Retro
 
-Delegate to `sdlc:bookkeeper`. It reads the gate record and the story's directory and stores
-`RETRO.md`. If the session knows what it has cost, record it with `sdlc cost add --usd <amount>`
-while the story is still active. Then:
+Delegate to `sdlc:bookkeeper`, which stores `RETRO.md`. If the session knows what it has cost,
+record it with `sdlc cost add --usd <amount>` while the story is still active. Then run
+`sdlc gate retro pass --note "<n> deviations, <n> lessons"`.
 
-```bash
-sdlc gate retro pass --note "<n> deviations, <n> lessons"
-sdlc stop
-```
+Without a worktree, run `sdlc stop`, then commit the retro if the project keeps it, with the
+backlog file.
 
-That finishes the story: it becomes `done` and leaves the backlog, its freeze is lifted, and the
-next time a person types `/sdlc:next` it takes the next story. Tell the user what was built, what
-deviated from the plan, and what the retro says to do differently.
+With one, commit only the bookkeeper's `CODEMAP.md` change, if any, in `<worktree>` as its own
+`docs:` commit, then run `sdlc stop` there with the Bash tool's longest timeout, 600000 ms, to
+land it on trunk. If its commands need longer, a person runs that stop in their own terminal,
+after reading the story: it runs the story's code as them. Once it lands, run later commands in
+`<main>`.
 
-Without a worktree, commit the retro if the project keeps it, with the backlog file, which now
-records the story as done. With one, commit only the bookkeeper's `CODEMAP.md` change, if any, in
-`<worktree>` as its own `docs:` commit, and tell the user: "`<ID>` is done on `story/<ID>`, in
-`<worktree>`; trunk does not have it yet. A person brings it to trunk in the main checkout, with
-trunk checked out: `git merge --ff-only story/<ID>`. If git cannot fast-forward, trunk has moved:
-in `<worktree>`, run `git rebase <trunk>` and the tests, then merge again. Bring it to trunk
-before starting a story that depends on it."
+- `SDLC-E0054`: if its fix gives the plain `git rebase <trunk>`, run it in `<worktree>` and stop
+  again; else escalate. On a conflict, `CODEMAP.md` included, run `git rebase --abort` and
+  escalate.
+- `SDLC-E0029`: if the fix says it is a person's, escalate. Otherwise run Gate 6's verifier and
+  Gate 7's reviewers again, record their reviews and stop again; escalate only if one blocks.
+- Any other code, or a second refusal: escalate with its text.
+
+Tell the user what was built, what deviated from the plan, and what the retro says to do
+differently.
 
 ## Rework, at any gate
 

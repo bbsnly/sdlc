@@ -172,6 +172,17 @@ var (
 	// one is fixed text and names no path, for a cause nothing else describes.
 	WorktreeNotMade = register("SDLC-E0053",
 		`see the message above for what is in the way, then start again, or set git.worktrees to false in .sdlc/config.json; an assistant stops and tells the person`)
+
+	// The landing gives each state it refuses a fix of its own; these are the
+	// general ones, for a reader who arrives from the code alone.
+	BranchBehindTrunk = register("SDLC-E0054",
+		`in the story's worktree, .sdlc/worktrees/<ID> in the main checkout, rebase story/<ID> onto trunk, then run "sdlc stop" there again, which runs the configured commands on the rebased tree; a rebase that stops on a conflict is abandoned with "git rebase --abort", and an assistant hands the story to a person with "sdlc escalate" and stops`)
+
+	LandingCheckFailed = register("SDLC-E0055",
+		"read what the message above says the check or the configured commands found; then a person either puts trunk right, if the failure is trunk's, rebases story/<ID> onto it and runs \"sdlc stop\" in .sdlc/worktrees/<ID> again, or reopens the story: answer the escalation first with \"sdlc approve <ID>\" or its --reject in .sdlc/worktrees/<ID>, then run `sdlc gate implementation fail --story <ID> --note \"...\"` there, then /sdlc:next; \"sdlc stop\" run by a person runs the story's code and the repository's git settings with that person's own privileges, so read the story's changes first; an assistant hands the story to a person with \"sdlc escalate\" and stops")
+
+	UncommittedOnTrunk = register("SDLC-E0056",
+		`in the checkout named above, stash the changes it names, or commit them (a commit moves trunk, so the story is rebased before it lands), then run "sdlc stop" in the story's worktree again; they are a person's changes, so an assistant hands the story to a person with "sdlc escalate" and stops`)
 )
 
 // entry is one row of the catalogue.

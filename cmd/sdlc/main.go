@@ -15,6 +15,7 @@ import (
 	"github.com/bbsnly/sdlc/internal/cli"
 	"github.com/bbsnly/sdlc/internal/hook"
 	"github.com/bbsnly/sdlc/internal/logging"
+	"github.com/bbsnly/sdlc/internal/shellx"
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
@@ -26,12 +27,16 @@ func main() {
 // exitOnInterrupt ends the process on Ctrl+C or a request to terminate, as it
 // would have ended anyway, but gives back the project's lock first. Without it,
 // a command interrupted while it held the lock left every other sdlc command in
-// the project refusing until the lock was old enough to break open.
+// the project refusing until the lock was old enough to break open. The
+// commands a landing runs, with everything they started, are killed before its
+// lock goes, or a second stop could land the story while the first one's
+// commands still ran; StopAll returns once they have been.
 func exitOnInterrupt() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		sig := <-signals
+		shellx.StopAll()
 		store.ReleaseHeld(2 * time.Second)
 		code := 1
 		if s, ok := sig.(syscall.Signal); ok {

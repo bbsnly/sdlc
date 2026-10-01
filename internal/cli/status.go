@@ -193,6 +193,9 @@ func newStatusCmd() *cobra.Command {
 				// whose risk tier it cannot read.
 				fmt.Fprintf(w, "\n%s is not in %s any more, so it cannot be committed. "+
 					"Put it back, or run `sdlc stop` to end the iteration.\n", active, s.Config().Backlog.Path)
+			case finished && inItsWorktree(s, active):
+				// Not done until it lands, and the stop here is what lands it.
+				fmt.Fprintf(w, "\nEvery gate has passed. Run `sdlc stop` here to land it on %s.\n", trunkName(s))
 			case finished:
 				fmt.Fprint(w, "\nEvery gate has passed. Run `sdlc stop` to end the iteration.\n")
 			case notHereNext != "":

@@ -515,6 +515,9 @@ type gitRules struct {
 	staged bool
 	// aliasText is how much command line aliases have handed the shell so far.
 	aliasText int
+	// lost is whether the command being judged runs somewhere its words do
+	// not show.
+	lost bool
 }
 
 // gitCommit is what the commit rules need of a git command read as git runs
@@ -610,6 +613,9 @@ func (j *gitRules) judge(g gitRead, r ran, dir string, e *environment, program s
 		if f, ok := j.script(g.script, r, here, e, g.settings, depth, defining); ok {
 			return c, f, true
 		}
+	}
+	if f, ok := j.branch(g, r, dir, e, asGit, depth, defining); ok {
+		return c, f, true
 	}
 	places := pointedAt(g, r, e)
 	if !defining && indexWriters[g.sub] && j.elsewhere(places, here, "ti") {
