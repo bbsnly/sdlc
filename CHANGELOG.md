@@ -7,6 +7,100 @@ All notable changes to this project are documented here. The format follows
 Error codes are part of the interface: once published, a code's meaning does
 not change and it is never reused.
 
+## [0.3.0](https://github.com/bbsnly/sdlc/releases/tag/v0.3.0) - 2026-10-01
+
+### Added
+
+- A repository with more than one checkout — a worktree linked to the main one — now keeps the
+  backlog, the story records and the claim on who is working a story in the main checkout alone,
+  found from git's own files rather than guessed from wherever a command happens to run. Two
+  checkouts of one repository can no longer each start the same story, and `status`, `story list`,
+  `log` and `doctor` report for the whole repository, naming the checkout that holds a story where
+  more than one exists. A plain `sdlc start` passes over a story another checkout holds; naming the
+  story refuses it instead, pointing at the checkout that holds it (`SDLC-E0050`). When the holding
+  checkout no longer exists, `sdlc start` and `sdlc approve` refuse with `SDLC-E0051` and point at
+  the new `sdlc release <ID> --reason "..."`, which the hook refuses from a tool call so only a
+  person runs it. A bare repository refuses every command that needs the backlog (`SDLC-E0052`). A
+  worktree made before this release keeps its own, now-diverged, copy of the backlog and the story
+  records until someone reconciles them by hand.
+- `sdlc start` on a new story no longer works it in the checkout you already have open: it cuts a
+  branch from trunk, makes a worktree for it under `.sdlc/worktrees/<ID>`, runs the project's smoke
+  check there, and claims the story for that worktree. `start`'s `--json` gains `worktree`, `branch`
+  and `main`, and its text output a line saying where the session carries on. Setting
+  `git.worktrees` to `false` keeps the single-checkout behaviour of 0.2.0. A start that cannot make
+  its worktree is refused with `SDLC-E0053`, taking back whatever it made and naming what stands in
+  the way; where a worktree in the way holds commits trunk lacks, the refusal says how to look at
+  them and how to keep them on a branch, rather than suggesting they be thrown away. The shell
+  policy now also refuses `git worktree` commands and worktree-related git settings run outside the
+  tool, a git command whose subcommand it cannot read, and the removal of a checkout or of a
+  directory holding one; it reads more kinds of quoting, more wrappers and more ways of setting
+  git's working directory than it did in 0.2.0, so a command that went unread before may now be
+  refused. `sdlc doctor` also reports git older than 2.17, a trunk with no committed configuration,
+  and a story worktree that no checkout holds.
+- `sdlc stop`, run in a finished story's own worktree, now lands it on trunk instead of leaving its
+  commits on the story branch for someone to merge by hand. It fast-forwards trunk to the reviewed
+  commits, refusing rather than writing anything if trunk has moved since the story's worktree was
+  cut (`SDLC-E0054`) or if the project's test and quality commands fail on the landed tree after a
+  rebase or a change to the reviewed work (`SDLC-E0055`), and it updates every other checkout that
+  has trunk checked out. A landed range may not touch `.sdlc/`, the backlog file, or anything under
+  the root `CODEMAP.md` besides a plain file of that name, and uncommitted work in a checkout the
+  landing has to write to is refused rather than overwritten (`SDLC-E0056`). A landed story's
+  worktree, branch and claim are removed; a worktree still holding uncommitted work is kept and
+  named instead. The story's record gains `cut`, `change`, `change_base` and `landing`, and
+  `sdlc log` reports the range that reached trunk. Once a story is held, only a plain rebase onto
+  trunk, and its abort, pass through the shell policy after the commit gate; moving a branch is
+  refused. Commands the landing runs are grouped so that stopping the landing stops them too (a job
+  object on Windows). `sdlc doctor` also warns when trunk itself tracks the loop's own state.
+
+### Changed
+
+- The example story `sdlc init` writes now carries every field the schema allows — a criterion's
+  EARS pattern, a decision, and `created`/`updated` timestamps — rather than leaving someone
+  learning the backlog format to find them in the schema or the guides.
+
+### Removed
+
+- The limit on how large a change could be (`thresholds.diff_size_cap`) before implementation,
+  verification or code review would refuse it is gone outright, not merely switched off: the
+  setting, the check, `SDLC-E0042` and the hand-over it drove are deleted, along with their tests
+  and every place the docs and the runbook described them. It never caught a problem worth its
+  cost, counted frozen acceptance tests as part of a change before any code existed, and pushed
+  towards splitting work that needed to stay whole. Nobody should expect anything to replace it as
+  a backstop against an oversized change. A configuration written by an older release still loads;
+  `sdlc doctor` names `thresholds.diff_size_cap` among the settings it no longer recognises until
+  the line is deleted. The `SDLC-E0042` heading in the troubleshooting page stays, marked retired,
+  and its number is never reused.
+
+### Fixed
+
+- The commit gate recorded a story's range of landed commits as running from `HEAD` at its first
+  code-review pass to `HEAD` at its last `commit` pass, so a commit a person made on trunk in
+  between, or straight after, was credited to the story, and `sdlc log` and trunk review read that
+  range as the story's own work. The hook now writes down `HEAD` for every allowed command that
+  commits in this project's repository, and the commit gate takes a range only when the commits it
+  watched are exactly the commits between the oldest one's parent and the newest; otherwise it
+  records no range (`range_unknown`) rather than naming commits that are not the story's, and a
+  `HEAD` that has since moved past the range's end is recorded as `head_past_commit`. An observation
+  is written only when a command's own words place it in this repository; a `cd`, a `GIT_DIR`
+  assignment, or a repository the words do not identify as this one writes nothing, rather than
+  credit the wrong checkout. `sdlc gate commit pass --note` now refuses a note naming a commit the
+  range does not hold (`SDLC-E0049`). The range a story with watched commits gets now differs from
+  what 0.2.0 recorded, and the record, the gate's JSON and `sdlc log --json` gain `range_unknown`
+  and `head_past_commit`; with nothing watched, output is unchanged.
+- A command could wrap a commit, an approval, an unfreeze, or a write to the frozen tests in a
+  PowerShell here-string and have the shell policy strip it out before reading what the command
+  actually ran, because it read a here-string the same way regardless of which shell was going to
+  run it. Every command is now read twice — once as the released tool reads it and once as the
+  shell that will run it would — and a refusal from either reading refuses the command, so nothing
+  the shell policy allowed before this release becomes newly allowed.
+- `awk`, `gawk` and `sed` write a file from inside their own program text, so handing them their
+  program somewhere other than their first argument could carry a write to a frozen test past the
+  check that catches in-place editing. They are now refused when a command names a frozen test and
+  was handed its program anywhere other than its first argument; the scan reads every word after
+  the tool's name rather than stopping at the first one, so a field separator or a variable
+  assignment can no longer carry the program argument past it unseen. Naming a frozen test plainly
+  as the file one of these tools is told to read is still allowed.
+
 ## [0.2.0](https://github.com/bbsnly/sdlc/releases/tag/v0.2.0) - 2026-09-18
 
 ### Added

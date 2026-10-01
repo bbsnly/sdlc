@@ -1,6 +1,6 @@
 {
   "name": "@bbsnly/sdlc",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Install sdlc: a story-driven delivery loop for Claude Code, with gates a model cannot talk its way past.",
   "license": "MIT",
   "author": "Anatoliy Babushka <anatoliybabushka@gmail.com>",
