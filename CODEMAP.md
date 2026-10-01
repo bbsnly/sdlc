@@ -178,3 +178,77 @@ Package `shellpolicy`. Works out what `env`, `flock` and `script` run, so that
 `env`, that covers its options that take a value, and `-S` or
 `--split-string`, whose string is read as a command line. Standard library
 only.
+
+## internal/cli/landing.go
+
+Package `cli`. Runs the landing a finished worktree story's `sdlc stop`
+performs: `(*lander).land()` works through checks L0 to L12 — `check` (trunk,
+range and change), `runLandingCommands` (trunk's committed `build`, `test`,
+`lint`, `fmt_check`, `coverage` and `mutation` commands, each through
+`shellx.InGroup`), `move` (the fast-forward and the record write) and
+`cleanUp` (worktree and branch removal). `landIfFinished`, called from `stop`,
+is the entry point; it applies only where `store.StoryWorktreeOf` names the
+story's own worktree. `mainSettingsOf` reads the trunk's name and the
+backlog's path from the main checkout's own configuration, never the story
+branch's. `codemapCheck`, backed by `gitx.ModeAt`, refuses any change at or
+under the root `CODEMAP.md` other than a plain or executable file there, so
+the fingerprint's exclusion of that path (`leftOut`) cannot carry anything
+else to trunk unreviewed. Builds the landing-specific `WithFix` text for
+`SDLC-E0054`, `SDLC-E0055` and `SDLC-E0056`, and for reused codes reopened at
+landing. Imports `config`, `gitx`, `model`, `sdlcerr`, `shellx`, `store`.
+
+## internal/gitx/landing.go and internal/gitx/fastforward.go
+
+Package `gitx`. `landing.go` defines every sealed git call the landing uses to
+read the repository: `sealed`/`sealedCall` run each one in its own
+`os.MkdirTemp` directory, with no hooks, no replacement objects, the
+commit-graph and filesystem monitor off, and the variables in `unsealed`
+stripped from the environment. `BranchTip`, `IsAncestor`, `MergeBase`,
+`HasMerges`, `ChangedUnder`, `ModeAt`, `FileAt`, `Uncommitted`, `InProgress`,
+`ResolvesTo` and `CheckedOut` are sealed reads; `Fingerprint` hashes the patch
+between two commits with `leaveOut` turned into literal exclude pathspecs
+(`.sdlc`, the root `CODEMAP.md`) and every diff-shaping git option fixed on
+the command line. `fastforward.go` defines `FastForward(ctx, root, trunk,
+from, to)`, the package's only function that moves a branch: `checkCheckout`
+inspects every checkout that has trunk checked out for anything in the way
+before any write; the write phase takes in paths already holding the target
+content, then moves each checkout's index and working tree from `from` to
+`to` by a two-tree read-tree merge; the ref itself moves by one
+compare-and-swap, and `putBack` reverses every checkout already written if a
+later one refuses. `RemoveLandedWorktree` removes a landed worktree and
+deletes its branch only where that branch is exactly at the landed commit.
+Neither file runs a hook, a merge commit or a push.
+
+## internal/shellpolicy/refs.go
+
+Package `shellpolicy`. Defines the rule `branch-through-the-tool`
+(`branchRule`), asked from `gitRules.judge` for every git command a held
+session runs: refuses forcing, deleting, renaming or copying a branch, a
+checkout or switch that creates one over an existing one or ignores another
+worktree, symbolic-ref's writing forms, a reset naming a commit elsewhere, and
+`worktree add` with a forced branch, in every placement `gitcalls.go` already
+reads. Its finding is held in a `branchHold` value made fresh for each
+`Inspect` call, not package state, until every earlier rule has passed the
+whole command; `maxHeldWork` (1<<20 work units, charged by run, segment and
+reading) bounds how much more of the command is read once a finding is held,
+so past that bound `Inspect` answers the held finding without reading
+further. `rebaseAllowed`, called from `checkCommit`, admits exactly two forms
+once the commit gate has passed: the plain rebase of the session's own
+checkout onto trunk's branch ref (`isTrunk`), and a bare `git rebase
+--abort`.
+
+## internal/shellx/group_other.go and internal/shellx/group_windows.go
+
+Package `shellx`. Each defines `InGroup(cmd *exec.Cmd)` under its own build
+tag (`!windows` / `windows`); `Run` calls it before starting a command so the
+whole tree the command spawns stops when the command does. On `!windows`,
+`InGroup` sets `cmd.SysProcAttr.Setpgid` and a `cmd.Cancel` that sends
+`SIGKILL` to the process group. On Windows, `InGroup` makes a kill-on-close
+job object (`newJob`), with the `kernel32` procedures it needs looked up
+lazily inside the function rather than held as package-level values, and the
+process is assigned to the job only once `Run` has started it (`joinGroup`);
+a child the command starts in the gap between `Start` and that assignment is
+not in the job and outlives a stop. `shellx.StopAll()` cancels every
+registered group; `cmd/sdlc/main.go`'s signal handler calls it before
+`store.ReleaseHeld`, so a second stop cannot take the landing lock while the
+first one's commands still run.
