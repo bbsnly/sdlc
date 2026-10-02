@@ -23,6 +23,7 @@ func acknowledgedIn(t *testing.T, root string) (string, bool) {
 }
 
 func TestAcknowledgingWritesTheCommitInFull(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	head := headOf(t, root)
@@ -47,8 +48,8 @@ func TestAcknowledgingWritesTheCommitInFull(t *testing.T) {
 }
 
 func TestAcknowledgingAnEarlierCommitListsTheStoriesAfterItAgain(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	addStory(t, root, "US-002")
 	for range 2 {
 		mustRun(t, "start")
@@ -76,6 +77,7 @@ func TestAcknowledgingAnEarlierCommitListsTheStoriesAfterItAgain(t *testing.T) {
 }
 
 func TestAcknowledgingNeedsACommitOnThisBranch(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	elsewhere := gitOut(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test",
@@ -104,6 +106,7 @@ func TestAcknowledgingNeedsACommitOnThisBranch(t *testing.T) {
 // The log refuses a file that names no commit git has, and ack is how it is put
 // right: it has to write over what it cannot read.
 func TestAcknowledgingReplacesACommitGitDoesNotHave(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	writeFile(t, root, ".sdlc/state/acknowledged", "0123456789abcdef\n")
@@ -120,6 +123,7 @@ func TestAcknowledgingReplacesACommitGitDoesNotHave(t *testing.T) {
 // Doctor is where a person checks the loop's own files, and the log refuses one
 // of them when it names no commit git has.
 func TestDoctorNamesAnAcknowledgedCommitGitDoesNotHave(t *testing.T) {
+	t.Parallel()
 	root := gitProject(t)
 	mustRun(t, "init")
 	commitNamed(t, root, "take part in the loop")
@@ -177,8 +181,8 @@ func TestGitThatDoesNotRunIsNotACommitThatIsNotThere(t *testing.T) {
 // commit acknowledged before, and ack has to say so rather than treat it as
 // nothing acknowledged yet.
 func TestAckRefusesWhenTheAcknowledgedFileIsADirectory(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	if err := os.MkdirAll(filepath.Join(root, ".sdlc", "state", "acknowledged"), 0o755); err != nil {
 		t.Fatal(err)
 	}

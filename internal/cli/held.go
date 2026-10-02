@@ -64,7 +64,7 @@ func decideStart(s *store.Store, asked, session string) (startPlan, error) {
 		}
 		return startPlan{}, sdlcerr.New(sdlcerr.StoryHeldElsewhere,
 			"this Claude Code session is working "+quote(id)+" in another checkout of this repository",
-			"the checkout at "+quote(checkout)+" holds it, and .sdlc/state/session there records this "+
+			"the checkout at "+sdlcerr.QuotePath(checkout)+" holds it, and .sdlc/state/session there records this "+
 				"session as the one working it: a session works one story, in the checkout that holds it").
 			// Not E0050's fix, which moves a story: this one is running, and
 			// what the person wants is a second session, not the story here.
@@ -127,7 +127,7 @@ func decideStart(s *store.Store, asked, session string) (startPlan, error) {
 			return startPlan{}, sdlcerr.New(sdlcerr.StoryHeldElsewhere,
 				"this checkout's .sdlc/state/active names "+quote(active)+
 					", which another checkout of this repository holds",
-				"the checkout at "+quote(h.Checkout)+" holds it, and a story is worked in one checkout at a time").
+				"the checkout at "+sdlcerr.QuotePath(h.Checkout)+" holds it, and a story is worked in one checkout at a time").
 				WithFix(`a person runs "sdlc stop" in this checkout to put its stale copy of the story down, ` +
 					`and the story carries on in the checkout named above; an assistant stops and tells the person`)
 		case !s.HasLinkedWorktree():
@@ -284,15 +284,15 @@ func heldIn(id string, h store.Holder) string {
 	case h.Tied():
 		named := make([]string, len(h.Contenders))
 		for i, c := range h.Contenders {
-			named[i] = quote(c.Checkout)
+			named[i] = sdlcerr.QuotePath(c.Checkout)
 		}
 		return "held by none: more than one checkout names it (" + strings.Join(named, ", ") + ")"
 	case !h.Live:
-		return "held in " + quote(h.Checkout) + `, gone: see sdlc release ` + id + ` --reason "..."`
+		return "held in " + sdlcerr.QuotePath(h.Checkout) + `, gone: see sdlc release ` + id + ` --reason "..."`
 	case h.Here:
-		return "held in " + quote(h.Checkout) + ", this checkout"
+		return "held in " + sdlcerr.QuotePath(h.Checkout) + ", this checkout"
 	}
-	return "held in " + quote(h.Checkout)
+	return "held in " + sdlcerr.QuotePath(h.Checkout)
 }
 
 // releaseNote is what start and approve say about a story a person moved
@@ -361,7 +361,7 @@ func notePassedOver(w io.Writer, said *startSaid) {
 			"If this checkout was moved from there, the work this checkout has not committed is %s's own and is kept; "+
 			"an assistant stops and tells the person, who carries %s on here with `sdlc release %s --reason \"...\"` "+
 			"and then `%s`.\n",
-			g.id, quote(g.checkout), on, g.id, g.id, g.id, last)
+			g.id, sdlcerr.QuotePath(g.checkout), on, g.id, g.id, g.id, last)
 	}
 }
 

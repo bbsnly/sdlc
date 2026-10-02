@@ -40,6 +40,7 @@ func page(t *testing.T, name string) string {
 // one version and the installation page said "any recent version". Three
 // statements about the same requirement, none of them checked.
 func TestEveryPageAgreesOnTheClaudeCodeVersion(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join("..", "..", ".claude-code-version"))
 	if err != nil {
 		t.Fatal(err)
@@ -115,6 +116,7 @@ func path(c *cobra.Command) string {
 }
 
 func TestEveryCommandIsDocumented(t *testing.T) {
+	t.Parallel()
 	doc := page(t, "commands.md")
 	for _, c := range commands(t) {
 		if c.HasSubCommands() && !c.Runnable() {
@@ -129,6 +131,7 @@ func TestEveryCommandIsDocumented(t *testing.T) {
 }
 
 func TestEveryFlagIsDocumented(t *testing.T) {
+	t.Parallel()
 	doc := page(t, "commands.md")
 	for _, c := range commands(t) {
 		c.LocalNonPersistentFlags().VisitAll(func(f *pflag.Flag) {
@@ -145,12 +148,14 @@ func TestEveryFlagIsDocumented(t *testing.T) {
 // Every command that fails has to be lookupable, and the page that tells a
 // reader where to look is the one they are already reading.
 func TestTheCommandPageSendsPeopleToTheCodes(t *testing.T) {
+	t.Parallel()
 	if !strings.Contains(page(t, "commands.md"), "troubleshooting.md") {
 		t.Error("docs/commands.md never mentions the troubleshooting page")
 	}
 }
 
 func TestEveryGateIsDocumented(t *testing.T) {
+	t.Parallel()
 	loop, commandsDoc := page(t, "the-loop.md"), page(t, "commands.md")
 	for _, g := range model.Gates {
 		if !strings.Contains(loop, string(g)) {
@@ -163,6 +168,7 @@ func TestEveryGateIsDocumented(t *testing.T) {
 }
 
 func TestEveryDocumentAGateProducesIsDocumented(t *testing.T) {
+	t.Parallel()
 	loop, commandsDoc := page(t, "the-loop.md"), page(t, "commands.md")
 	for _, a := range model.Artifacts {
 		if !strings.Contains(loop, a.File) {
@@ -177,6 +183,7 @@ func TestEveryDocumentAGateProducesIsDocumented(t *testing.T) {
 // A rule that refuses something a reader cannot look up is a rule they will
 // work around.
 func TestEveryRuleIsDocumented(t *testing.T) {
+	t.Parallel()
 	doc := page(t, "enforcement.md")
 	for _, r := range policy.Rules {
 		if !strings.Contains(doc, "### `"+r.ID+"`") {
@@ -216,6 +223,7 @@ func shellRules(t *testing.T) []string {
 }
 
 func TestEveryAgentIsDocumented(t *testing.T) {
+	t.Parallel()
 	doc := page(t, "agents.md")
 	entries, err := os.ReadDir(filepath.Join("..", "..", "plugin", "agents"))
 	if err != nil {
@@ -232,6 +240,7 @@ func TestEveryAgentIsDocumented(t *testing.T) {
 // Every reviewer the loop waits for has to be an agent that exists, or the gate
 // waits forever.
 func TestEveryReviewerHasAnAgent(t *testing.T) {
+	t.Parallel()
 	for _, r := range model.Reviewers {
 		if _, err := os.Stat(filepath.Join("..", "..", "plugin", "agents", r.Role+".md")); err != nil {
 			t.Errorf("%s reviews %s, but there is no sdlc:%s agent", r.Role, r.Gate, r.Role)
@@ -242,6 +251,7 @@ func TestEveryReviewerHasAnAgent(t *testing.T) {
 // Every agent named as a role in the registry or in the artifact table has to
 // exist too, for the same reason.
 func TestEveryRoleThatOwnsWorkHasAnAgent(t *testing.T) {
+	t.Parallel()
 	for _, a := range model.Artifacts {
 		if _, err := os.Stat(filepath.Join("..", "..", "plugin", "agents", a.Role+".md")); err != nil {
 			t.Errorf("%s is produced by %s, but there is no sdlc:%s agent", a.File, a.Role, a.Role)
@@ -253,6 +263,7 @@ func TestEveryRoleThatOwnsWorkHasAnAgent(t *testing.T) {
 // wrote one: the story is in the backlog. An agent sent to a file that is not
 // there guesses at the acceptance criteria instead.
 func TestThePluginNamesOnlyStoryFilesTheLoopKeeps(t *testing.T) {
+	t.Parallel()
 	kept := map[string]bool{model.RecordFile: true, "reviews": true}
 	for _, a := range model.Artifacts {
 		kept[a.File] = true
@@ -285,6 +296,7 @@ func TestThePluginNamesOnlyStoryFilesTheLoopKeeps(t *testing.T) {
 // Rust was detected and written a whole set of commands, and no page said so:
 // a reader with a Cargo.toml had no way to know init would recognise it.
 func TestEveryStackInitRecognisesIsDocumented(t *testing.T) {
+	t.Parallel()
 	doc := page(t, "commands.md")
 	for _, name := range scaffold.StackNames() {
 		if !strings.Contains(doc, name+" (`") {
@@ -295,6 +307,7 @@ func TestEveryStackInitRecognisesIsDocumented(t *testing.T) {
 
 // A setting nobody documented is a setting nobody can use.
 func TestEverySettingIsDocumented(t *testing.T) {
+	t.Parallel()
 	doc := page(t, "configuration.md")
 	for _, key := range jsonKeys(reflect.TypeOf(config.Default())) {
 		if !strings.Contains(doc, key) {
@@ -325,6 +338,7 @@ func jsonKeys(t reflect.Type) []string {
 // The example in the configuration page is the first thing a reader copies, so
 // it has to be a file this version would actually accept.
 func TestTheConfigurationExampleIsAConfiguration(t *testing.T) {
+	t.Parallel()
 	doc := page(t, "configuration.md")
 	_, rest, ok := strings.Cut(doc, "```json\n")
 	if !ok {
@@ -346,6 +360,7 @@ func TestTheConfigurationExampleIsAConfiguration(t *testing.T) {
 // source dirs init never chose. So it is checked against init itself, leaving
 // out only the explanatory "_" keys and the commands a Go project gets empty.
 func TestTheConfigurationExampleIsWhatInitWrites(t *testing.T) {
+	t.Parallel()
 	doc := page(t, "configuration.md")
 	_, rest, _ := strings.Cut(doc, "```json\n")
 	body, _, _ := strings.Cut(rest, "```")
@@ -354,10 +369,10 @@ func TestTheConfigurationExampleIsWhatInitWrites(t *testing.T) {
 		t.Fatalf("the example is not JSON: %v", err)
 	}
 
-	project(t)
-	writeFile(t, ".", "go.mod", "module example.com/x\n")
+	root := project(t)
+	writeFile(t, root, "go.mod", "module example.com/x\n")
 	mustRun(t, "init")
-	raw, err := os.ReadFile(filepath.Join(".sdlc", "config.json"))
+	raw, err := os.ReadFile(filepath.Join(root, ".sdlc", "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,6 +403,7 @@ func TestTheConfigurationExampleIsWhatInitWrites(t *testing.T) {
 // no backlog has, where the real one is "_schema". Decoded strictly, a field
 // the loop would silently ignore is a failure here.
 func TestTheStoryExampleIsABacklog(t *testing.T) {
+	t.Parallel()
 	_, rest, ok := strings.Cut(page(t, "getting-started.md"), "## Write a story")
 	if !ok {
 		t.Fatal("docs/getting-started.md no longer shows how to write a story")
@@ -411,6 +427,7 @@ func TestTheStoryExampleIsABacklog(t *testing.T) {
 
 // Every page has to be reachable, or it is a page nobody reads.
 func TestEveryPageIsLinkedFromSomewhere(t *testing.T) {
+	t.Parallel()
 	docs := filepath.Join("..", "..", "docs")
 	var pages []string
 	err := filepath.WalkDir(docs, func(p string, d fs.DirEntry, err error) error {

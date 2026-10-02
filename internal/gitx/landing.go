@@ -447,7 +447,7 @@ func partWay(gitDir string) (string, error) {
 			return op.what, nil
 		case !errors.Is(err, fs.ErrNotExist):
 			return "", sdlcerr.New(sdlcerr.RepositoryUnreadable,
-				"git's own files in "+strconv.Quote(gitDir)+" could not be read", err.Error()).WithCause(err)
+				"git's own files in "+sdlcerr.QuotePath(gitDir)+" could not be read", err.Error()).WithCause(err)
 		}
 	}
 	return "", nil

@@ -1395,7 +1395,12 @@ func TestStoriesOnDiskListsOnlyDirectoriesWithSafeIDs(t *testing.T) {
 	}
 }
 
-func TestStoriesOnDiskFailsWhenTheDirectoryCannotBeRead(t *testing.T) {
+// AC-2: `.sdlc/stories` replaced by a file is loop state that cannot be read,
+// SDLC-E0005, not a backlog with no story records -- on every platform. On
+// Windows, os.ReadDir's open of a file fails with ERROR_PATH_NOT_FOUND, which
+// Go maps to fs.ErrNotExist (syscall_windows.go), so StoriesOnDisk must not
+// take that as "no stories" (store.go:618-619 does today).
+func TestStoriesOnDiskFailsWhenTheDirectoryCannotBeReadAC2(t *testing.T) {
 	s := newStore(t)
 	storiesRoot := filepath.Join(s.root, filepath.FromSlash(storiesDir))
 	if err := os.MkdirAll(filepath.Dir(storiesRoot), 0o755); err != nil {
@@ -1404,8 +1409,13 @@ func TestStoriesOnDiskFailsWhenTheDirectoryCannotBeRead(t *testing.T) {
 	if err := os.WriteFile(storiesRoot, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.StoriesOnDisk(); codeOf(t, err) != sdlcerr.StateUnreadable {
+	_, err := s.StoriesOnDisk()
+	got := codeOf(t, err)
+	if got != sdlcerr.StateUnreadable {
 		t.Errorf("code = %v, want %s", err, sdlcerr.StateUnreadable)
+	}
+	if got.String() != "SDLC-E0005" {
+		t.Errorf("code = %s, want SDLC-E0005", got)
 	}
 }
 

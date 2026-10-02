@@ -9,16 +9,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
-// project makes an empty Git repository, changes into it, and returns its path.
-// Every command resolves the project from the working directory, so this is how
-// they are all driven.
+// project makes an empty Git repository, runs the test's commands in it, and
+// returns its path. Every command resolves the project from the directory it
+// runs in, so this is how they are all driven.
 func project(t *testing.T) string {
 	t.Helper()
-	t.Setenv("GIT_WORK_TREE", "")
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
@@ -26,7 +26,7 @@ func project(t *testing.T) string {
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Chdir(root)
+	chdir(t, root)
 	return root
 }
 
@@ -58,8 +58,8 @@ func (p *lockProbe) Read(b []byte) (int, error) {
 // under the lock, every other command that writes loop state waited on that
 // writer and then failed.
 func TestADocumentIsReadBeforeTheLockIsTaken(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 	for _, args := range [][]string{
 		{"artifact", "write", "analysis"},
@@ -67,7 +67,7 @@ func TestADocumentIsReadBeforeTheLockIsTaken(t *testing.T) {
 	} {
 		probe := &lockProbe{t: t, doc: strings.NewReader("# Notes\n\nfine\n")}
 		var out, errb bytes.Buffer
-		Execute(args, probe, &out, &errb)
+		execute(t, args, probe, &out, &errb)
 		if !probe.probed {
 			t.Fatalf("sdlc %s never read its input: %s", strings.Join(args, " "), errb.String())
 		}
@@ -82,8 +82,8 @@ func TestADocumentIsReadBeforeTheLockIsTaken(t *testing.T) {
 // two made a directory and a record for it and said ok, and the gate they were
 // feeding reported the document or the review missing afterwards.
 func TestAMistypedStoryIsRefusedBeforeAnythingIsWritten(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	for _, args := range [][]string{
 		{"artifact", "write", "analysis", "--story", "NOPE"},
@@ -105,8 +105,8 @@ func TestAMistypedStoryIsRefusedBeforeAnythingIsWritten(t *testing.T) {
 // The session `sdlc start` runs in is the one the hook holds to the story, and
 // picking the story up in another session moves it there.
 func TestStartRecordsTheSessionItRunsIn(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	path := filepath.Join(root, ".sdlc", "state", "session")
 	recorded := func() string {
 		t.Helper()
@@ -120,12 +120,12 @@ func TestStartRecordsTheSessionItRunsIn(t *testing.T) {
 		return strings.TrimSpace(string(raw))
 	}
 
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "session-a")
+	setenv(t, "CLAUDE_CODE_SESSION_ID", "session-a")
 	mustRun(t, "start")
 	if got := recorded(); got != "session-a" {
 		t.Fatalf("after start, session = %q", got)
 	}
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "session-b")
+	setenv(t, "CLAUDE_CODE_SESSION_ID", "session-b")
 	mustRun(t, "start")
 	if got := recorded(); got != "session-b" {
 		t.Errorf("after resuming in another session, session = %q", got)
@@ -134,7 +134,7 @@ func TestStartRecordsTheSessionItRunsIn(t *testing.T) {
 	// does not set the variable -- the iteration stays with the session it had:
 	// wiping the record turned every rule off in that session without a word.
 	// start says it recorded none, which is what the runbook stops on.
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	setenv(t, "CLAUDE_CODE_SESSION_ID", "")
 	started := mustRun(t, "start", "--json")
 	if got := decode[startPayload](t, started); got.Session != "" {
 		t.Errorf("a start with no session reported session %q", got.Session)
@@ -145,7 +145,7 @@ func TestStartRecordsTheSessionItRunsIn(t *testing.T) {
 	if got := recorded(); got != "session-b" {
 		t.Errorf("a resume with no session left session %q recorded, want session-b", got)
 	}
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "session-c")
+	setenv(t, "CLAUDE_CODE_SESSION_ID", "session-c")
 	if got := decode[startPayload](t, mustRun(t, "start", "--json")); got.Session != "session-c" {
 		t.Errorf("start reported session %q, want session-c", got.Session)
 	}
@@ -164,7 +164,7 @@ func TestStartRecordsTheSessionItRunsIn(t *testing.T) {
 	// so, since the hook says nothing. A record left over from no iteration
 	// belongs to none, and goes.
 	writeFile(t, root, ".sdlc/state/session", "session-left\n")
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
+	setenv(t, "CLAUDE_CODE_SESSION_ID", "")
 	if got := decode[startPayload](t, mustRun(t, "start", "--json")); got.Session != "" {
 		t.Errorf("a start with no session reported session %q", got.Session)
 	}
@@ -192,7 +192,7 @@ func run(t *testing.T, args ...string) result {
 func runWith(t *testing.T, stdin string, args ...string) result {
 	t.Helper()
 	var out, errb bytes.Buffer
-	code := Execute(args, strings.NewReader(stdin), &out, &errb)
+	code := execute(t, args, strings.NewReader(stdin), &out, &errb)
 	return result{stdout: out.String(), stderr: errb.String(), code: code}
 }
 
@@ -239,6 +239,7 @@ func writeFile(t *testing.T, root, rel, body string) {
 // The three fields and the code are the contract with the reader, in both
 // forms of output.
 func TestAFailureCarriesWhatWhyFixAndACode(t *testing.T) {
+	t.Parallel()
 	project(t)
 
 	r := run(t, "status")
@@ -256,6 +257,7 @@ func TestAFailureCarriesWhatWhyFixAndACode(t *testing.T) {
 }
 
 func TestAFailureInJSONCarriesTheSameFields(t *testing.T) {
+	t.Parallel()
 	project(t)
 
 	r := run(t, "status", "--json")
@@ -276,6 +278,7 @@ func TestAFailureInJSONCarriesTheSameFields(t *testing.T) {
 // exit and SDLC-E0001 on stderr, whether it only reads the project (status,
 // cost, log, story list) or means to write to it (init, start, cost add).
 func TestOutsideARepositoryEveryCommandFailsTheSameWay(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"status"},
 		{"init"},
@@ -286,8 +289,7 @@ func TestOutsideARepositoryEveryCommandFailsTheSameWay(t *testing.T) {
 		{"start"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			t.Setenv("GIT_WORK_TREE", "")
-			t.Chdir(t.TempDir())
+			chdir(t, t.TempDir())
 
 			r := run(t, args...)
 			if r.code == 0 {
@@ -305,6 +307,7 @@ func TestOutsideARepositoryEveryCommandFailsTheSameWay(t *testing.T) {
 // file it could not read rather than fail as if there were nothing wrong, or
 // as it would for a file that genuinely does not exist.
 func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		args     []string
@@ -395,8 +398,7 @@ func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			root := gitProject(t)
-			initialised(t)
+			root := gitProjectInitialised(t)
 			tc.setup(t, root)
 
 			r := run(t, tc.args...)
@@ -419,6 +421,7 @@ func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
 // ------------------------------------------------------------------ init
 
 func TestInitThenStatusReadsAsAFirstRun(t *testing.T) {
+	t.Parallel()
 	project(t)
 
 	r := mustRun(t, "init")
@@ -438,8 +441,9 @@ func TestInitThenStatusReadsAsAFirstRun(t *testing.T) {
 }
 
 func TestInitJSONSaysWhatItDid(t *testing.T) {
+	t.Parallel()
 	project(t)
-	writeFile(t, ".", "go.mod", "module example.com/x\n")
+	writeFile(t, workdir(t), "go.mod", "module example.com/x\n")
 
 	got := decode[initPayload](t, mustRun(t, "init", "--json"))
 	if !got.OK || got.Stack != "Go" {
@@ -454,6 +458,7 @@ func TestInitJSONSaysWhatItDid(t *testing.T) {
 // the failure is the one a broken write always gives, not one that says the
 // project is already set up.
 func TestInitRefusesWhenSdlcDirectoryIsAFile(t *testing.T) {
+	t.Parallel()
 	root := project(t)
 	if err := os.WriteFile(filepath.Join(root, ".sdlc"), []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
@@ -472,6 +477,7 @@ func TestInitRefusesWhenSdlcDirectoryIsAFile(t *testing.T) {
 // picking one and leaving the others a surprise for whoever reads the
 // configuration next.
 func TestInitNamesEveryOtherStackItSaw(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		files map[string]string
@@ -491,7 +497,7 @@ func TestInitNamesEveryOtherStackItSaw(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			project(t)
 			for name, body := range tc.files {
-				writeFile(t, ".", name, body)
+				writeFile(t, workdir(t), name, body)
 			}
 			out := mustRun(t, "init").stdout
 			if !strings.Contains(out, tc.want) {
@@ -507,8 +513,8 @@ func TestInitNamesEveryOtherStackItSaw(t *testing.T) {
 // ------------------------------------------------------------------ the loop
 
 func TestAStoryGoesThroughStartGateAndStop(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 
 	start := decode[startPayload](t, mustRun(t, "start", "--json"))
 	if start.Story != "US-001" || start.Resume || start.NextGate != string(model.GateDoR) {
@@ -561,8 +567,8 @@ func TestAStoryGoesThroughStartGateAndStop(t *testing.T) {
 }
 
 func TestStartingTwiceOnTheSameStoryChangesNothing(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 
 	again := decode[startPayload](t, mustRun(t, "start", "--json"))
@@ -574,9 +580,9 @@ func TestStartingTwiceOnTheSameStoryChangesNothing(t *testing.T) {
 // A story with no acceptance criteria gives Gate 3 nothing to write tests from,
 // and every gate after it nothing to check the work against.
 func TestDefinitionOfReadyRefusesAStoryWithNothingToTest(t *testing.T) {
-	gitProject(t)
-	initialised(t)
-	writeFile(t, ".", "user_stories.json", `{"stories":[
+	t.Parallel()
+	gitProjectInitialised(t)
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"a","status":"ready","acceptance_criteria":[{"id":"AC-1","text":" "}]}]}`)
 	mustRun(t, "start")
 
@@ -594,9 +600,9 @@ func TestDefinitionOfReadyRefusesAStoryWithNothingToTest(t *testing.T) {
 }
 
 func TestStartingASecondStoryIsRefused(t *testing.T) {
-	gitProject(t)
-	initialised(t)
-	writeFile(t, ".", "user_stories.json", `{"stories":[
+	t.Parallel()
+	gitProjectInitialised(t)
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"One","status":"ready","priority":1},
 	  {"id":"B-2","title":"Two","status":"ready","priority":2}]}`)
 	mustRun(t, "start", "A-1")
@@ -614,6 +620,7 @@ func TestStartingASecondStoryIsRefused(t *testing.T) {
 // reason it would not have been picked: a dropped story, a blocked one, one
 // marked done, or one waiting on a dependency all started.
 func TestANamedStoryStartsOnlyWhenItCouldBePicked(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, story, want string }{
 		{"waiting on a dependency", `{"id":"B-2","title":"Two","status":"ready","depends_on":["A-1"]}`, "waits on A-1"},
 		{
@@ -625,9 +632,8 @@ func TestANamedStoryStartsOnlyWhenItCouldBePicked(t *testing.T) {
 		{"marked done", `{"id":"B-2","title":"Two","status":"done"}`, "is marked done"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			gitProject(t)
-			initialised(t)
-			writeFile(t, ".", "user_stories.json",
+			gitProjectInitialised(t)
+			writeFile(t, workdir(t), "user_stories.json",
 				`{"stories":[{"id":"A-1","title":"One","status":"ready","priority":1},`+tc.story+`]}`)
 
 			r := run(t, "start", "B-2")
@@ -645,9 +651,8 @@ func TestANamedStoryStartsOnlyWhenItCouldBePicked(t *testing.T) {
 		})
 	}
 
-	gitProject(t)
-	initialised(t)
-	writeFile(t, ".", "user_stories.json", `{"stories":[
+	gitProjectInitialised(t)
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"One","status":"done","priority":1},
 	  {"id":"B-2","title":"Two","status":"ready","depends_on":["A-1"]},
 	  {"id":"C-3","title":"Three","status":"todo","priority":0}]}`)
@@ -657,9 +662,10 @@ func TestANamedStoryStartsOnlyWhenItCouldBePicked(t *testing.T) {
 }
 
 func TestStoryListSaysWhenADependencyWillNeverBeDone(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
-	writeFile(t, ".", "user_stories.json", `{"stories":[
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"One","status":"dropped"},
 	  {"id":"B-2","title":"Two","status":"ready","depends_on":["A-1"]}]}`)
 
@@ -674,6 +680,7 @@ func TestStoryListSaysWhenADependencyWillNeverBeDone(t *testing.T) {
 }
 
 func TestStoppingWhenNothingIsRunningIsNotAnError(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
 
@@ -686,6 +693,7 @@ func TestStoppingWhenNothingIsRunningIsNotAnError(t *testing.T) {
 // An empty iteration file turns every rule off, and doctor's fix for it is to
 // stop. So stop has to end the iteration over it rather than refuse.
 func TestStopRemovesAnIterationFileThatNamesNoStory(t *testing.T) {
+	t.Parallel()
 	root := project(t)
 	mustRun(t, "init")
 	active := filepath.Join(root, ".sdlc", "state", "active")
@@ -710,9 +718,9 @@ func TestStopRemovesAnIterationFileThatNamesNoStory(t *testing.T) {
 }
 
 func TestStartExplainsWhenNothingIsRunnable(t *testing.T) {
-	gitProject(t)
-	initialised(t)
-	writeFile(t, ".", "user_stories.json", `{"stories":[
+	t.Parallel()
+	gitProjectInitialised(t)
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"Done","status":"done"},
 	  {"id":"B-2","title":"Blocked","status":"blocked"},
 	  {"id":"C-3","title":"Waiting","status":"ready","depends_on":["B-2"]}]}`)
@@ -731,9 +739,9 @@ func TestStartExplainsWhenNothingIsRunnable(t *testing.T) {
 // A backlog that is finished is not a backlog that is stuck, and the sentence
 // has to say which, because the two want opposite things from the reader.
 func TestStartSaysWhenTheBacklogIsSimplyFinished(t *testing.T) {
-	gitProject(t)
-	initialised(t)
-	writeFile(t, ".", "user_stories.json", `{"stories":[
+	t.Parallel()
+	gitProjectInitialised(t)
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"One","status":"done"},
 	  {"id":"B-2","title":"Two","status":"done"}]}`)
 
@@ -750,6 +758,7 @@ func TestStartSaysWhenTheBacklogIsSimplyFinished(t *testing.T) {
 // file wants a story written, and a dropped story was abandoned, so calling the
 // backlog finished would credit the loop with work nobody did.
 func TestStartSaysWhyABacklogWithNothingLeftHasNothingToStart(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name, backlog, want string
 	}{
@@ -760,9 +769,8 @@ func TestStartSaysWhyABacklogWithNothingLeftHasNothingToStart(t *testing.T) {
 			"every story in the backlog is either finished or dropped"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			gitProject(t)
-			initialised(t)
-			writeFile(t, ".", "user_stories.json", c.backlog)
+			gitProjectInitialised(t)
+			writeFile(t, workdir(t), "user_stories.json", c.backlog)
 
 			r := run(t, "start")
 			if r.code == 0 {
@@ -784,8 +792,8 @@ func TestStartSaysWhyABacklogWithNothingLeftHasNothingToStart(t *testing.T) {
 // ------------------------------------------------------------------ gates
 
 func TestGateRejectsANameThisVersionDoesNotKnow(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 
 	r := run(t, "gate", "vibes", "pass")
@@ -798,8 +806,8 @@ func TestGateRejectsANameThisVersionDoesNotKnow(t *testing.T) {
 }
 
 func TestGateRejectsAnOutcomeThatIsNotAnOutcome(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 
 	r := run(t, "gate", "analysis", "probably")
@@ -809,6 +817,7 @@ func TestGateRejectsAnOutcomeThatIsNotAnOutcome(t *testing.T) {
 }
 
 func TestGateWithoutAnIterationSaysWhatToDo(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
 
@@ -821,8 +830,8 @@ func TestGateWithoutAnIterationSaysWhatToDo(t *testing.T) {
 // A gate that fails is still recorded successfully: the command reports what
 // happened, it does not decide whether that is acceptable.
 func TestRecordingAFailedGateSucceeds(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 
 	got := decode[gatePayload](t, mustRun(t, "gate", "code_review", "fail",
@@ -833,9 +842,9 @@ func TestRecordingAFailedGateSucceeds(t *testing.T) {
 }
 
 func TestGateCanTargetAStoryThatIsNotTheActiveOne(t *testing.T) {
-	gitProject(t)
-	initialised(t)
-	writeFile(t, ".", "user_stories.json", `{"stories":[
+	t.Parallel()
+	gitProjectInitialised(t)
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"One","status":"ready","priority":1},
 	  {"id":"B-2","title":"Two","status":"ready","priority":2,
 	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN two is asked for, the system shall return 2"}]}]}`)
@@ -854,9 +863,10 @@ func TestGateCanTargetAStoryThatIsNotTheActiveOne(t *testing.T) {
 // ------------------------------------------------------------------ backlog
 
 func TestStoryListMarksWhatStartWouldPickAndWhyOthersWait(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
-	writeFile(t, ".", "user_stories.json", `{"stories":[
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"First","status":"ready","priority":1},
 	  {"id":"B-2","title":"Second","status":"ready","priority":2,"depends_on":["A-1"]}]}`)
 
@@ -878,9 +888,10 @@ func TestStoryListMarksWhatStartWouldPickAndWhyOthersWait(t *testing.T) {
 }
 
 func TestStoryListOnAnEmptyBacklogSaysWhatToDo(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
-	writeFile(t, ".", "user_stories.json", `{"stories":[]}`)
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[]}`)
 
 	r := mustRun(t, "story", "list")
 	if !strings.Contains(r.stdout, "empty") || !strings.Contains(r.stdout, "user_stories.json") {
@@ -889,9 +900,10 @@ func TestStoryListOnAnEmptyBacklogSaysWhatToDo(t *testing.T) {
 }
 
 func TestBacklogCountsReadInAFixedOrder(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
-	writeFile(t, ".", "user_stories.json", `{"stories":[
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[
 	  {"id":"A-1","title":"a","status":"done"},
 	  {"id":"B-2","title":"b","status":"ready"},
 	  {"id":"C-3","title":"c","status":"ready"}]}`)
@@ -912,14 +924,15 @@ func TestBacklogCountsReadInAFixedOrder(t *testing.T) {
 // The rule doctor exists to keep: a check that only reports a problem leaves
 // the reader to guess, which is how a tool teaches people to ignore it.
 func TestEveryProblemDoctorReportsCarriesAFix(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
 	// Break several things at once, so one run covers several checks.
-	if err := os.Remove(filepath.Join(".", "CLAUDE.md")); err != nil {
+	if err := os.Remove(filepath.Join(workdir(t), "CLAUDE.md")); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, ".", "user_stories.json", `{"stories":[]}`)
-	writeFile(t, ".", ".sdlc/config.json",
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[]}`)
+	writeFile(t, workdir(t), ".sdlc/config.json",
 		`{"version":1,"commands":{"test":"definitely-not-a-real-program --run"}}`)
 
 	got := decode[doctorPayload](t, run(t, "doctor", "--json"))
@@ -937,9 +950,10 @@ func TestEveryProblemDoctorReportsCarriesAFix(t *testing.T) {
 }
 
 func TestDoctorWantsTheContractHeadingNotALookalike(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
-	writeFile(t, ".", "CLAUDE.md", "# Mine\n\n### SDLC Contract\n\n- a subsection, not the section\n")
+	writeFile(t, workdir(t), "CLAUDE.md", "# Mine\n\n### SDLC Contract\n\n- a subsection, not the section\n")
 
 	got := decode[doctorPayload](t, run(t, "doctor", "--json"))
 	for _, c := range got.Checks {
@@ -957,9 +971,10 @@ func TestDoctorWantsTheContractHeadingNotALookalike(t *testing.T) {
 // after it are skipped because of the configuration -- not because of the loop
 // state that just passed.
 func TestDoctorBlamesASkipOnWhatActuallyFailed(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
-	writeFile(t, ".", ".sdlc/config.json", `{not json`)
+	writeFile(t, workdir(t), ".sdlc/config.json", `{not json`)
 
 	skipped := 0
 	for _, c := range decode[doctorPayload](t, run(t, "doctor", "--json")).Checks {
@@ -977,9 +992,10 @@ func TestDoctorBlamesASkipOnWhatActuallyFailed(t *testing.T) {
 }
 
 func TestDoctorNamesAConfiguredProgramThatIsNotInstalled(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
-	writeFile(t, ".", ".sdlc/config.json",
+	writeFile(t, workdir(t), ".sdlc/config.json",
 		`{"version":1,"commands":{"lint":"definitely-not-a-real-program run ./..."}}`)
 
 	got := decode[doctorPayload](t, run(t, "doctor", "--json"))
@@ -1001,8 +1017,8 @@ func TestDoctorNamesAConfiguredProgramThatIsNotInstalled(t *testing.T) {
 // markers in one. The refusal called that a bug in sdlc and sent the reader to
 // the issue tracker, when git had the file and doctor would name it.
 func TestAnUnreadableRecordSaysHowToRecover(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "<<<<<<< HEAD\n{}\n=======\n")
 
@@ -1038,11 +1054,13 @@ func TestDoctorLooksForTheBinaryWhereTheHookDoes(t *testing.T) {
 	}
 
 	// Nothing where the installers put the binary, which the machine running
-	// this may well have.
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("LOCALAPPDATA", t.TempDir())
+	// this may well have. PATH is the process's: doctor finds programs on it as
+	// exec.LookPath does, so this test is not parallel.
+	home, local := t.TempDir(), t.TempDir()
+	setenv(t, "HOME", home)
+	setenv(t, "LOCALAPPDATA", local)
 	t.Setenv("PATH", t.TempDir())
-	t.Setenv("SDLC_BIN", "")
+	setenv(t, "SDLC_BIN", "")
 	c := binaryCheckIn()
 	if c.State != stateProblem || !strings.Contains(c.Fix, "npx @bbsnly/sdlc install") || !strings.Contains(c.Fix, "desktop app") {
 		t.Errorf("a binary nowhere to be found gives no fix an installed user can follow: %+v", c)
@@ -1056,7 +1074,7 @@ func TestDoctorLooksForTheBinaryWhereTheHookDoes(t *testing.T) {
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SDLC_BIN", bin)
+	setenv(t, "SDLC_BIN", bin)
 	if c := binaryCheckIn(); c.State != stateOK || !strings.Contains(c.Detail, bin) {
 		t.Errorf("a binary SDLC_BIN points at, which the hook would run, was not found: %+v", c)
 	}
@@ -1064,7 +1082,7 @@ func TestDoctorLooksForTheBinaryWhereTheHookDoes(t *testing.T) {
 	// The hooks pass over an SDLC_BIN that names nothing runnable, so a build
 	// being tried out would quietly not be the one enforcing.
 	for _, broken := range []string{filepath.Join(t.TempDir(), "gone", name), t.TempDir()} {
-		t.Setenv("SDLC_BIN", broken)
+		setenv(t, "SDLC_BIN", broken)
 		if c := binaryCheckIn(); c.State != stateProblem || !strings.Contains(c.Detail, "SDLC_BIN") {
 			t.Errorf("SDLC_BIN=%s names nothing runnable and doctor said nothing: %+v", broken, c)
 		}
@@ -1074,16 +1092,16 @@ func TestDoctorLooksForTheBinaryWhereTheHookDoes(t *testing.T) {
 	// up: they test SDLC_BIN as a path from where the hook runs, so SDLC_BIN=sdlc
 	// with sdlc on PATH is passed over like any other name that is not a file.
 	t.Setenv("PATH", filepath.Dir(bin))
-	t.Setenv("SDLC_BIN", name)
+	setenv(t, "SDLC_BIN", name)
 	if c := binaryCheckIn(); c.State != stateProblem || !strings.Contains(c.Detail, "SDLC_BIN") {
 		t.Errorf("SDLC_BIN=%s is on PATH but is not a path the hooks run, and doctor said nothing: %+v", name, c)
 	}
 
 	// A desktop app keeps the PATH it started with, so the launchers also look
 	// where the installers put the binary, and doctor has to agree with them.
-	installed := filepath.Join(os.Getenv("HOME"), ".local", "bin", name)
+	installed := filepath.Join(home, ".local", "bin", name)
 	if runtime.GOOS == "windows" {
-		installed = filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "sdlc", "bin", name)
+		installed = filepath.Join(local, "Programs", "sdlc", "bin", name)
 	}
 	if err := os.MkdirAll(filepath.Dir(installed), 0o755); err != nil {
 		t.Fatal(err)
@@ -1092,11 +1110,11 @@ func TestDoctorLooksForTheBinaryWhereTheHookDoes(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", t.TempDir())
-	t.Setenv("SDLC_BIN", "")
+	setenv(t, "SDLC_BIN", "")
 	if c := binaryCheckIn(); c.State != stateOK || !strings.Contains(c.Detail, installed) {
 		t.Errorf("a binary only where the installers put it, which the hooks run, was not found: %+v", c)
 	}
-	t.Setenv("SDLC_BIN", filepath.Join(t.TempDir(), "gone", name))
+	setenv(t, "SDLC_BIN", filepath.Join(t.TempDir(), "gone", name))
 	if c := binaryCheckIn(); c.State != stateProblem || !strings.Contains(c.Detail, "run "+installed) {
 		t.Errorf("a broken SDLC_BIN did not name the installed binary the hooks run instead: %+v", c)
 	}
@@ -1104,8 +1122,8 @@ func TestDoctorLooksForTheBinaryWhereTheHookDoes(t *testing.T) {
 
 // A failure early on must not produce a cascade of unrelated failures.
 func TestDoctorSkipsWhatItCannotCheckYet(t *testing.T) {
-	t.Setenv("GIT_WORK_TREE", "")
-	t.Chdir(t.TempDir())
+	t.Parallel()
+	chdir(t, t.TempDir())
 
 	got := decode[doctorPayload](t, run(t, "doctor", "--json"))
 	problems, skipped := 0, 0
@@ -1130,8 +1148,8 @@ func TestDoctorSkipsWhatItCannotCheckYet(t *testing.T) {
 // record left no way out from inside the tool, and a doctor that did not read
 // the record could not say what was wrong.
 func TestAnUnreadableRecordHasAWayOut(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	record := filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")
 	if err := os.WriteFile(record, []byte("{not json"), 0o644); err != nil {
@@ -1153,8 +1171,8 @@ func TestAnUnreadableRecordHasAWayOut(t *testing.T) {
 // The hook refuses a commit when the record is missing and sends you to doctor,
 // and doctor, reading through Record, saw a fresh record and said all was well.
 func TestDoctorNamesAMissingRecord(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	if err := os.Remove(filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")); err != nil {
 		t.Fatal(err)
@@ -1171,6 +1189,7 @@ func TestDoctorNamesAMissingRecord(t *testing.T) {
 // The hook's warnings about unreadable loop state all say "run sdlc doctor".
 // Doctor did not read either file, so it answered that all was well.
 func TestDoctorNamesLoopStateTheHookCannotRead(t *testing.T) {
+	t.Parallel()
 	root := gitProject(t)
 	mustRun(t, "init")
 	state := filepath.Join(root, ".sdlc", "state")
@@ -1190,6 +1209,7 @@ func TestDoctorNamesLoopStateTheHookCannotRead(t *testing.T) {
 // A freeze the record holds and tests.lock does not has the hook treating every
 // test as frozen, and sending people here. Doctor said the freeze all read.
 func TestDoctorNamesAFreezeTheLockNoLongerHolds(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	// Before the freeze, there is none for tests.lock to hold.
 	if r := run(t, "doctor"); strings.Contains(r.stdout, "no longer holds") {
@@ -1215,8 +1235,8 @@ func TestDoctorNamesAFreezeTheLockNoLongerHolds(t *testing.T) {
 // longer reads was reported as fine, and the next start on it failed with an
 // error calling itself a bug.
 func TestDoctorNamesTheRecordOfAStoryNobodyIsWorkingOn(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	mustRun(t, "stop")
 	record := filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")
@@ -1237,6 +1257,7 @@ func TestDoctorNamesTheRecordOfAStoryNobodyIsWorkingOn(t *testing.T) {
 // included. The hook, with both files broken, warns about both and says doctor
 // names them; doctor named one.
 func TestDoctorNamesBrokenLoopStateBehindABrokenConfiguration(t *testing.T) {
+	t.Parallel()
 	root := gitProject(t)
 	mustRun(t, "init")
 	state := filepath.Join(root, ".sdlc", "state")
@@ -1262,6 +1283,7 @@ func TestDoctorNamesBrokenLoopStateBehindABrokenConfiguration(t *testing.T) {
 // and doctor called a misspelled setting fine. Nor did it say which setting the
 // loop could not use: only that one could not be.
 func TestDoctorNamesTheSettingsThatAreWrong(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
 	configuration := func() check {
@@ -1278,12 +1300,12 @@ func TestDoctorNamesTheSettingsThatAreWrong(t *testing.T) {
 		t.Fatalf("the configuration sdlc init wrote is a problem: %s (%s)", c.Detail, c.Fix)
 	}
 
-	writeFile(t, ".", ".sdlc/config.json", `{"version":1,"loop":{"max_stop_block":0}}`)
+	writeFile(t, workdir(t), ".sdlc/config.json", `{"version":1,"loop":{"max_stop_block":0}}`)
 	if c := configuration(); c.State != stateProblem || !strings.Contains(c.Detail, "loop.max_stop_block") {
 		t.Errorf("a misspelled setting was not named: %s %q", c.State, c.Detail)
 	}
 
-	writeFile(t, ".", ".sdlc/config.json", `{"version":1,"loop":{"max_stop_blocks":-1}}`)
+	writeFile(t, workdir(t), ".sdlc/config.json", `{"version":1,"loop":{"max_stop_blocks":-1}}`)
 	c := configuration()
 	if c.State != stateProblem || !strings.Contains(c.Detail, "loop.max_stop_blocks is -1") {
 		t.Errorf("the setting the loop cannot use was not named: %s %q", c.State, c.Detail)
@@ -1296,6 +1318,7 @@ func TestDoctorNamesTheSettingsThatAreWrong(t *testing.T) {
 // A backlog that is there and does not read was answered with "run sdlc init
 // to create it", which leaves a file that is already there alone.
 func TestDoctorDoesNotSendABrokenBacklogToInit(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
 	backlog := func() check {
@@ -1309,7 +1332,7 @@ func TestDoctorDoesNotSendABrokenBacklogToInit(t *testing.T) {
 		return check{}
 	}
 
-	writeFile(t, ".", "user_stories.json", `{"stories":[{"id":"A-1","title":"One","status":"Ready"}]}`)
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[{"id":"A-1","title":"One","status":"Ready"}]}`)
 	c := backlog()
 	if c.State != stateProblem || !strings.Contains(c.Detail, `"Ready"`) {
 		t.Errorf("the story the backlog cannot use was not named: %s %q", c.State, c.Detail)
@@ -1318,7 +1341,7 @@ func TestDoctorDoesNotSendABrokenBacklogToInit(t *testing.T) {
 		t.Errorf("the fix for a backlog that is there is to create it: %q", c.Fix)
 	}
 
-	if err := os.Remove("user_stories.json"); err != nil {
+	if err := os.Remove(filepath.Join(workdir(t), "user_stories.json")); err != nil {
 		t.Fatal(err)
 	}
 	if c := backlog(); !strings.Contains(c.Fix, "sdlc init") {
@@ -1327,9 +1350,10 @@ func TestDoctorDoesNotSendABrokenBacklogToInit(t *testing.T) {
 }
 
 func TestDoctorExitsNonZeroWhenSomethingIsWrong(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
-	writeFile(t, ".", "user_stories.json", `{"stories":[]}`)
+	writeFile(t, workdir(t), "user_stories.json", `{"stories":[]}`)
 
 	r := run(t, "doctor")
 	if r.code == 0 {
@@ -1345,30 +1369,60 @@ func TestDoctorExitsNonZeroWhenSomethingIsWrong(t *testing.T) {
 }
 
 // A clean project is the ordinary case, and doctor has to actually say so
-// rather than only ever being seen reporting a problem.
+// rather than only ever being seen reporting a problem. Neither sdlc nor
+// golangci-lint has to be anywhere this test can see, on PATH or where the
+// installers put sdlc: a developer's own machine is not the only one that
+// runs this suite.
 func TestDoctorSaysEverythingChecksOutOnACleanProject(t *testing.T) {
-	project(t)
-	// An unrecognised stack leaves commands.test and commands.lint blank,
-	// which is a problem of its own -- a Go module gives doctor a project
-	// with nothing left to complain about.
-	writeFile(t, ".", "go.mod", "module example.com/x\n")
-	mustRun(t, "init")
+	t.Parallel()
+	t.Run("AC-5 no sdlc or golangci-lint on the machine", func(t *testing.T) {
+		root := project(t)
+		// An unrecognised stack leaves commands.test and commands.lint blank,
+		// which is a problem of its own -- a Go module gives doctor a project
+		// with nothing left to complain about.
+		writeFile(t, root, "go.mod", "module example.com/x\n")
+		mustRun(t, "init")
 
-	r := mustRun(t, "doctor")
-	if !strings.Contains(r.stdout, "Everything checks out.") {
-		t.Errorf("stdout = %s", r.stdout)
-	}
-	got := decode[doctorPayload](t, mustRun(t, "doctor", "--json"))
-	if !got.OK || got.Problems != 0 {
-		t.Errorf("payload = %+v", got)
-	}
+		// golangci-lint need not be installed anywhere: a shell builtin
+		// resolves without a PATH lookup, so the configured lint command
+		// alone decides whether this test depends on it being there.
+		var cfg config.Config
+		wtReadJSON(t, filepath.Join(root, config.File), &cfg)
+		cfg.Commands["lint"] = "true"
+		wtWriteJSON(t, filepath.Join(root, config.File), cfg)
+
+		// sdlc need not be on PATH, or where the installers put it: SDLC_BIN
+		// names a binary of its own, which the hook's launcher and doctor's
+		// binaryCheck both take before PATH or an install location.
+		name := "sdlc"
+		if runtime.GOOS == "windows" {
+			name = "sdlc.exe"
+		}
+		bin := filepath.Join(t.TempDir(), name)
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		setenv(t, "SDLC_BIN", bin)
+		setenv(t, "HOME", t.TempDir())
+		setenv(t, "LOCALAPPDATA", t.TempDir())
+
+		r := mustRun(t, "doctor")
+		if !strings.Contains(r.stdout, "Everything checks out.") {
+			t.Errorf("stdout = %s", r.stdout)
+		}
+		got := decode[doctorPayload](t, mustRun(t, "doctor", "--json"))
+		if !got.OK || got.Problems != 0 {
+			t.Errorf("payload = %+v", got)
+		}
+	})
 }
 
 // A recognised stack is named on the configuration check, so a person reading
 // doctor knows why the commands look the way they do.
 func TestDoctorNamesTheStackItRecognised(t *testing.T) {
+	t.Parallel()
 	project(t)
-	writeFile(t, ".", "go.mod", "module example.com/x\n")
+	writeFile(t, workdir(t), "go.mod", "module example.com/x\n")
 	mustRun(t, "init")
 
 	for _, c := range decode[doctorPayload](t, run(t, "doctor", "--json")).Checks {
@@ -1386,6 +1440,7 @@ func TestDoctorNamesTheStackItRecognised(t *testing.T) {
 // so itself: nothing later reads it, so a session with this on disk would
 // otherwise pass as if nothing were running.
 func TestDoctorNamesAnIterationFileThatNamesNoStory(t *testing.T) {
+	t.Parallel()
 	root := gitProject(t)
 	mustRun(t, "init")
 	writeFile(t, root, ".sdlc/state/active", "")
@@ -1409,6 +1464,7 @@ func TestDoctorNamesAnIterationFileThatNamesNoStory(t *testing.T) {
 // other's "fix its permissions" wording -- both fixes use that word, so only
 // the detail (which names the path) tells the two problems apart.
 func TestDoctorNamesLoopStatePathsThatAreTheWrongKindOfEntry(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		corrupt    func(t *testing.T, root string)
@@ -1460,8 +1516,8 @@ func TestDoctorWithNoHomeFindsNothingWhereTheInstallersPutIt(t *testing.T) {
 	}
 	project(t)
 	mustRun(t, "init")
-	t.Setenv("HOME", "")
-	t.Setenv("SDLC_BIN", "")
+	setenv(t, "HOME", "")
+	setenv(t, "SDLC_BIN", "")
 	t.Setenv("PATH", t.TempDir())
 
 	for _, c := range decode[doctorPayload](t, run(t, "doctor", "--json")).Checks {
@@ -1476,6 +1532,7 @@ func TestDoctorWithNoHomeFindsNothingWhereTheInstallersPutIt(t *testing.T) {
 }
 
 func TestProgramsInFindsWhatWouldActuallyRun(t *testing.T) {
+	t.Parallel()
 	for command, want := range map[string][]string{
 		"go build ./...":                                 {"go"},
 		"go build ./... && go vet ./...":                 {"go"},

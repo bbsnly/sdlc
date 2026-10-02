@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -38,12 +37,12 @@ const smokeOutputLimit = 2000
 // the exception, refused after trunk as it always was. force skips the
 // decision, for a start that has already made it under the lock.
 func checkTrunkForNewWork(cmd *cobra.Command, asked string, force bool, said *startSaid) (bool, error) {
-	s, _, err := openStore()
+	s, _, err := openStore(cmd)
 	if err != nil {
 		return false, err
 	}
 	if !force {
-		plan, err := decideStart(s, asked, os.Getenv(store.SessionEnv))
+		plan, err := decideStart(s, asked, s.CommandSession())
 		said.passed = plan.passedOver
 		if err != nil || !plan.fresh {
 			return false, err

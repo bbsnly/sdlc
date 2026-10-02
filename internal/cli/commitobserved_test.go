@@ -70,6 +70,7 @@ func noRange(t *testing.T, root, id string) {
 // over it has to be exactly the commits the loop watched, and where it is not,
 // the honest answer is none.
 func TestAC1ARangeThatWouldSwallowAMergedSideBranchIsNotRecorded(t *testing.T) {
+	t.Parallel()
 	root, base, ours := landedStory(t)
 
 	// A side branch built with plumbing, so it never touches the working tree:
@@ -101,6 +102,7 @@ func TestAC1ARangeThatWouldSwallowAMergedSideBranchIsNotRecorded(t *testing.T) {
 // defect: its record named `fad697d`, a chore made after the work, because the
 // gate wrote down whatever HEAD had become by the time it ran.
 func TestAC1TheRangeEndsAtTheLastCommitTheLoopWatchedAndNotAtHead(t *testing.T) {
+	t.Parallel()
 	root, base, first := landedStory(t)
 	second := onTop(t, root, "more.md", "US-001: the rest of the work")
 	theirs := onTop(t, root, "chore.md", "chore(sdlc): a person's own commit, made afterwards")
@@ -119,6 +121,7 @@ func TestAC1TheRangeEndsAtTheLastCommitTheLoopWatchedAndNotAtHead(t *testing.T) 
 // pair could say here says more than the loop knows, and an honest gap beats a
 // plausible lie.
 func TestAC3CommitsWatchedWithSomebodyElsesBetweenThemAreRecordedAsNoRange(t *testing.T) {
+	t.Parallel()
 	root, base, _ := landedStory(t)
 	theirs := onTop(t, root, "chore.md", "chore(sdlc): a person's own commit")
 	onTop(t, root, "last.md", "US-001: the last of it")
@@ -146,6 +149,7 @@ func TestAC3CommitsWatchedWithSomebodyElsesBetweenThemAreRecordedAsNoRange(t *te
 // `sdlc log` for ever. The cost is stated rather than hidden: such a project
 // keeps today's over-claiming range.
 func TestAC5AStoryTheLoopNeverWatchedRecordsTheWholeWindowAsItAlwaysDid(t *testing.T) {
+	t.Parallel()
 	root, base, first := landedStory(t)
 	second := onTop(t, root, "more.md", "US-001: the rest of the work")
 
@@ -173,6 +177,7 @@ func TestAC5AStoryTheLoopNeverWatchedRecordsTheWholeWindowAsItAlwaysDid(t *testi
 // is AC-3 -- not a refusal at the last gate, on work already committed and, in
 // a paused tier, already approved.
 func TestAC3ABaseTheRecordNamesIsResolvedBeforeItReachesGit(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, base string
 		readable   bool

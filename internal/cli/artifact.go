@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
 )
@@ -151,7 +152,10 @@ func readDocument(cmd *cobra.Command, file string) ([]byte, error) {
 	src, source := cmd.InOrStdin(), "standard input"
 	if file != "" {
 		source = file
-		f, err := os.Open(file)
+		// Relative to where the command runs, which is not always the process's
+		// directory; the messages keep the name as it was given.
+		at, _ := pathrules.Abs(envOf(cmd).dir, file)
+		f, err := os.Open(at)
 		if err != nil {
 			return nil, sdlcerr.New(sdlcerr.ArtifactUnreadable,
 				"the document could not be read from "+file,

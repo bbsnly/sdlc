@@ -20,6 +20,7 @@ import (
 	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/scaffold"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
@@ -128,15 +129,15 @@ func runChecks(ctx context.Context) []check {
 	var out []check
 	add := func(c check) { out = append(out, c) }
 
-	wd, err := os.Getwd()
-	if err != nil {
+	env := envIn(ctx)
+	if env.dirErr != nil {
 		add(check{Name: "working directory", State: stateProblem,
 			Detail: "the current directory could not be read",
 			Fix:    "change to a directory that still exists"})
 		return out
 	}
 
-	root, err := config.FindRoot(wd)
+	root, err := config.FindRoot(env.dir)
 	if err != nil {
 		add(check{Name: "git repository", State: stateProblem,
 			Detail: "this is not inside a Git repository",
@@ -166,7 +167,7 @@ func runChecks(ctx context.Context) []check {
 		// The loop's state does not come from the configuration, and a broken
 		// configuration is when the hook warns about both and sends you here --
 		// so this is the one check that still runs.
-		add(stateCheck(ctx, store.New(&config.Project{Root: root, Config: config.Default()})))
+		add(stateCheck(ctx, store.New(&config.Project{Root: root, Config: config.Default()}).WithEnv(env.getenv)))
 		return append(out, skipRest("loop state", "configuration")...)
 	}
 	stack, _ := scaffold.Detect(root)
@@ -184,7 +185,7 @@ func runChecks(ctx context.Context) []check {
 		add(check{Name: "configuration", State: stateOK, Detail: detail})
 	}
 
-	s := store.New(&config.Project{Root: root, Config: cfg})
+	s := store.New(&config.Project{Root: root, Config: cfg}).WithEnv(env.getenv)
 	add(backlogCheck(s, root))
 	add(stateCheck(ctx, s))
 	if c, ok := storyWorktreesCheck(ctx, s); ok {
@@ -192,7 +193,7 @@ func runChecks(ctx context.Context) []check {
 	}
 	add(contractCheck(root))
 	out = append(out, commandChecks(cfg)...)
-	add(binaryCheck())
+	add(binaryCheck(env))
 	return out
 }
 
@@ -245,7 +246,8 @@ func stateCheck(ctx context.Context, s *store.Store) check {
 	var stories []string
 	if shared == nil {
 		if stories, err = s.StoriesOnDisk(); err != nil {
-			problem(err.Error(), "no story can be started until .sdlc/stories can be listed: fix its permissions")
+			problem(err.Error(), "no story can be started until .sdlc/stories can be listed: fix its permissions, "+
+				"or move aside whatever is there in place of the directory")
 		}
 	}
 	for _, id := range stories {
@@ -718,16 +720,20 @@ func afterCasePattern(fields []string) []string {
 // installers put the binary, so doctor does too: a binary SDLC_BIN points at is
 // one the hooks find. The plugin's own bin directory is the launcher's other
 // place to look, and only a hook knows where that is.
-func binaryCheck() check {
-	bin := os.Getenv("SDLC_BIN")
-	if bin != "" && runnable(bin) {
-		path, _ := filepath.Abs(bin)
-		return check{Name: "sdlc on PATH", State: stateOK, Detail: "SDLC_BIN: " + path}
+//
+// A relative SDLC_BIN is taken from the directory the command runs in, which
+// is not always the process's.
+func binaryCheck(env commandEnv) check {
+	bin := env.getenv("SDLC_BIN")
+	named, _ := pathrules.Abs(env.dir, bin)
+	named = filepath.Clean(named)
+	if bin != "" && runnable(named) {
+		return check{Name: "sdlc on PATH", State: stateOK, Detail: "SDLC_BIN: " + named}
 	}
 	path, err := exec.LookPath("sdlc")
 	offPath := false
 	if err != nil {
-		if at := installedWhereTheInstallersPutIt(); at != "" {
+		if at := installedWhereTheInstallersPutIt(env.getenv); at != "" {
 			path, err, offPath = at, nil, true
 		}
 	}
@@ -762,16 +768,16 @@ func binaryCheck() check {
 // scripts and npx use, which the launchers look at after PATH, or "" when there
 // is none. A desktop app keeps the PATH it started with, so without this the
 // hooks missed a binary every new terminal found.
-func installedWhereTheInstallersPutIt() string {
+func installedWhereTheInstallersPutIt(getenv func(string) string) string {
 	var at string
 	if runtime.GOOS == "windows" {
-		local := os.Getenv("LOCALAPPDATA")
+		local := getenv("LOCALAPPDATA")
 		if local == "" {
 			return ""
 		}
 		at = filepath.Join(local, "Programs", "sdlc", "bin", "sdlc.exe")
 	} else {
-		home := os.Getenv("HOME")
+		home := getenv("HOME")
 		if home == "" {
 			return ""
 		}

@@ -326,6 +326,7 @@ var (
 // running git: trunk is the story's tip itself, no merge commit was made, and
 // the main checkout, which has trunk checked out, shows the story's work.
 func TestAC1AFinishedStoryLandsOnTrunkByFastForwardWhenItsSessionStopsIt(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	cut := ldTrunk(t, main)
 	wt := ldFinished(t, main)
@@ -361,6 +362,7 @@ func TestAC1AFinishedStoryLandsOnTrunkByFastForwardWhenItsSessionStopsIt(t *test
 // AC-1: where no checkout has trunk checked out, the landing moves the branch
 // alone, and the main checkout on a person's branch is left as it was.
 func TestAC1WhereNoCheckoutHasTrunkCheckedOutTheLandingMovesOnlyTheBranch(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	swGit(t, main, "switch", "--quiet", "-c", "spike")
 	spike := swRev(t, main, "HEAD")
@@ -385,6 +387,7 @@ func TestAC1WhereNoCheckoutHasTrunkCheckedOutTheLandingMovesOnlyTheBranch(t *tes
 // holding its commits is. A story that depends on it becomes runnable then and
 // not before.
 func TestAC2AStoryWorkedInAWorktreeIsDoneOnlyOnceTrunkHasItsCommits(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil, wtStory{id: "US-001"}, wtStory{id: "US-002", dependsOn: []string{"US-001"}})
 	wt := ldFinished(t, main)
 	tip := ldBookkeeping(t, wt)
@@ -408,6 +411,7 @@ func TestAC2AStoryWorkedInAWorktreeIsDoneOnlyOnceTrunkHasItsCommits(t *testing.T
 // AC-2 and THREATS T9: a story whose commits a person already brought to
 // trunk has landed. The stop records it and finishes it rather than refuse.
 func TestAC2AndT9AStoryAPersonAlreadyBroughtToTrunkIsRecordedAsLandedAndDone(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	tip := ldBookkeeping(t, wt)
@@ -432,6 +436,7 @@ var ldRebaseCommand = regexp.MustCompile(`git (-C \S+ )?rebase (refs/heads/)?mai
 // AC-3: trunk moved since the branch was cut is a refusal of its own that says
 // the branch is to be rebased onto trunk and how, and moves no branch.
 func TestAC3LandingOnATrunkThatMovedIsRefusedAndSaysToRebaseAndHow(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -452,6 +457,7 @@ func TestAC3LandingOnATrunkThatMovedIsRefusedAndSaysToRebaseAndHow(t *testing.T)
 // AC-3: a trunk rewritten so that it no longer holds the commit the branch was
 // cut from has moved too.
 func TestAC3ATrunkRewrittenSinceTheCutIsRefusedTheSameWay(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	swGit(t, main, "switch", "--quiet", "-c", "spike")
 	wt := ldFinished(t, main)
@@ -475,6 +481,7 @@ func TestAC3ATrunkRewrittenSinceTheCutIsRefusedTheSameWay(t *testing.T) {
 // commands have run on the rebased tree -- the one that lands -- and the
 // reviews are not asked for again, since the change is the one reviewed.
 func TestAC4ARebasedStoryLandsOnceItsTestsAndQualityCommandsPassOnTheRebasedTree(t *testing.T) {
+	t.Parallel()
 	marks := wtTempDir(t)
 	mark := func(key string) string {
 		return "git rev-parse HEAD > " + suSh(filepath.ToSlash(filepath.Join(marks, key)))
@@ -509,6 +516,7 @@ func TestAC4ARebasedStoryLandsOnceItsTestsAndQualityCommandsPassOnTheRebasedTree
 // AC-4: a configured command that fails on the rebased tree, and only there,
 // keeps the story off trunk, and the refusal names the command.
 func TestAC4ACommandThatFailsOnTheRebasedTreeKeepsTheStoryOffTrunk(t *testing.T) {
+	t.Parallel()
 	for _, key := range ldQuality {
 		t.Run("AC-4 commands."+key, func(t *testing.T) {
 			commands := ldPassing()
@@ -560,6 +568,7 @@ func TestAC4ACommandThatFailsOnTheRebasedTreeKeepsTheStoryOffTrunk(t *testing.T)
 // freeze as it is. A test file the rebase brought in, new or changed, is
 // refused as the freeze refuses it anywhere, and nothing is frozen again.
 func TestAC4AndQ1ATestFileTheRebaseBroughtInBreaksTheFreezeAndNothingIsFrozenAgain(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, code string
 		trunk      func(t *testing.T, main string)
@@ -601,6 +610,7 @@ func TestAC4AndQ1ATestFileTheRebaseBroughtInBreaksTheFreezeAndNothingIsFrozenAga
 // work it was given for. Rebased, a story in a tier that pauses is approved
 // again before it lands; not rebased, the approval it has is enough.
 func TestAC4AndQ2AStoryInATierThatPausesIsApprovedAgainAfterARebase(t *testing.T) {
+	t.Parallel()
 	for _, rebase := range []bool{true, false} {
 		name := map[bool]string{true: "Q2 rebased", false: "Q2 not rebased"}[rebase]
 		t.Run(name, func(t *testing.T) {
@@ -634,6 +644,7 @@ func TestAC4AndQ2AStoryInATierThatPausesIsApprovedAgainAfterARebase(t *testing.T
 // the reviews stale, however small: more code, one space, a CODEMAP.md that is
 // not the bookkeeper's.
 func TestAC5AChangeThatIsNotTheOneTheReviewersSawIsRefusedAsStale(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, rel, body string
 	}{
@@ -664,6 +675,7 @@ func TestAC5AChangeThatIsNotTheOneTheReviewersSawIsRefusedAsStale(t *testing.T) 
 // AC-5 and THREATS T2: with no rebase at all, a commit after the reviews is
 // not landed either.
 func TestAC5AndT2ACommitAfterTheReviewsIsNotLandedWithoutARebaseEither(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -679,6 +691,7 @@ func TestAC5AndT2ACommitAfterTheReviewsIsNotLandedWithoutARebaseEither(t *testin
 
 // AC-5: the reviews recorded again, on the change as it now is, let it land.
 func TestAC5ReviewsRecordedAgainOnTheChangedChangeLetItLand(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -697,6 +710,7 @@ func TestAC5ReviewsRecordedAgainOnTheChangedChangeLetItLand(t *testing.T) {
 // change to a file the fast-forward writes, is a refusal that names the file
 // and leaves trunk and the change alone. Put back, the story lands.
 func TestAC6AnUncommittedChangeToAFileTheLandingWritesIsRefusedAndNamed(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	tip := ldBookkeeping(t, wt)
@@ -723,6 +737,7 @@ func TestAC6AnUncommittedChangeToAFileTheLandingWritesIsRefusedAndNamed(t *testi
 // AC-6 and THREATS T7: what is in the way is what the fast-forward writes, or
 // would write over; a change anywhere else is kept and does not stop it.
 func TestAC6WhatTheMainCheckoutHoldsIsInTheWayOnlyWhereTheLandingWrites(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, rel, body string
 		stage, refused  bool
@@ -764,6 +779,7 @@ func TestAC6WhatTheMainCheckoutHoldsIsInTheWayOnlyWhereTheLandingWrites(t *testi
 // THREATS T7: trunk checked out in a person's own worktree, not the main
 // checkout, is held to the same: its changes are not written over.
 func TestT7TrunkCheckedOutInAPersonsOwnWorktreeIsHeldToTheSame(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	swGit(t, main, "switch", "--quiet", "-c", "spike")
 	wt := ldFinished(t, main)
@@ -791,6 +807,7 @@ func TestT7TrunkCheckedOutInAPersonsOwnWorktreeIsHeldToTheSame(t *testing.T) {
 // AC-7: landed, the story leaves nothing behind: no worktree, no branch, no
 // claim.
 func TestAC7ALandedStorysWorktreeBranchAndClaimAreTakenAway(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	tip := ldBookkeeping(t, wt)
@@ -818,6 +835,7 @@ func TestAC7ALandedStorysWorktreeBranchAndClaimAreTakenAway(t *testing.T) {
 // reached trunk. Doctor then describes the worktree as the work nobody
 // committed it is, with no merge to make.
 func TestAC7AWorktreeHoldingWorkNobodyCommittedIsKeptAndNamedAndTheStoryIsStillDone(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	tip := ldBookkeeping(t, wt)
@@ -861,6 +879,7 @@ func TestAC7AWorktreeHoldingWorkNobodyCommittedIsKeptAndNamedAndTheStoryIsStillD
 // THREATS T8: a locked worktree is a person's say that it stays. It is kept,
 // never forced, and said; the story is still done.
 func TestT8ALockedWorktreeIsKeptAndSaidAndTheStoryIsStillDone(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	tip := ldBookkeeping(t, wt)
@@ -882,6 +901,7 @@ func TestT8ALockedWorktreeIsKeptAndSaidAndTheStoryIsStillDone(t *testing.T) {
 // THREATS T10 and T11: a file name is data. One that carries a line break and
 // a command is shown quoted, never as a line of its own.
 func TestT10AFileNameCarryingACommandIsShownQuotedWhenTheWorktreeIsKept(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows does not take a line break in a file name")
 	}
@@ -908,6 +928,7 @@ func TestT10AFileNameCarryingACommandIsShownQuotedWhenTheWorktreeIsKept(t *testi
 // AC-8: a story branch that merged trunk in carries a merge commit, and trunk
 // never gets one: it is refused, with the rebase to do instead.
 func TestAC8AStoryBranchThatMergedTrunkInIsRefusedAndTrunkGetsNoMergeCommit(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -928,6 +949,7 @@ func TestAC8AStoryBranchThatMergedTrunkInIsRefusedAndTrunkGetsNoMergeCommit(t *t
 
 // AC-8: landing never reaches a remote, in a project that has one.
 func TestAC8LandingNeverPushes(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, func(root string) { setGitOnDisk(t, root, "remote", true) })
 	origin := filepath.Join(wtTempDir(t), "origin.git")
 	swGit(t, main, "init", "--quiet", "--bare", origin)
@@ -951,6 +973,7 @@ func TestAC8LandingNeverPushes(t *testing.T) {
 // never the commits the rebase left behind, and `sdlc log` prints that range
 // in the main checkout and in another story's worktree alike.
 func TestAC10TheRecordNamesWhatReachedTrunkAndLogPrintsItInEveryCheckout(t *testing.T) {
+	t.Parallel()
 	for _, rebase := range []bool{false, true} {
 		name := map[bool]string{false: "AC-10 landed as it was", true: "AC-10 landed rebased"}[rebase]
 		t.Run(name, func(t *testing.T) {
@@ -998,6 +1021,7 @@ func TestAC10TheRecordNamesWhatReachedTrunkAndLogPrintsItInEveryCheckout(t *test
 // are the released tool's: the gate records the range on trunk, the retro
 // finishes the story, and stop says so and moves nothing.
 func TestAC11WithWorktreesOffTheCommitGateAndStopAreTheReleasedOnes(t *testing.T) {
+	t.Parallel()
 	for _, asJSON := range []bool{true, false} {
 		name := map[bool]string{true: "AC-11 the commit gate as JSON, stop as text", false: "AC-11 the commit gate as text, stop as JSON"}[asJSON]
 		t.Run(name, func(t *testing.T) {
@@ -1052,6 +1076,7 @@ func TestAC11WithWorktreesOffTheCommitGateAndStopAreTheReleasedOnes(t *testing.T
 // AC-11: a worktree a person made (US-029.1), with story worktrees off, works
 // its story on its own trunk as one checkout does, and stop moves no branch.
 func TestAC11AStoryInAWorktreeAPersonMadeIsDoneAtTheRetroAndStopMovesNoBranch(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"})
 	wt := wtWorktree(t, main, "wt")
 	wtStarted(t, wt, ldSession)
@@ -1074,6 +1099,7 @@ func TestAC11AStoryInAWorktreeAPersonMadeIsDoneAtTheRetroAndStopMovesNoBranch(t 
 // it ends. One worked in the main checkout is the released tool's even after
 // worktrees are turned on.
 func TestAC11AndQ4AStoryWorkedInTheMainCheckoutEndsAsReleasedWhenWorktreesAreTurnedOn(t *testing.T) {
+	t.Parallel()
 	root := wtRepository(t, wtStory{id: "US-001"})
 	wtStarted(t, root, ldSession)
 	swReach(t, root, ldSession, model.GateCommit)
@@ -1093,6 +1119,7 @@ func TestAC11AndQ4AStoryWorkedInTheMainCheckoutEndsAsReleasedWhenWorktreesAreTur
 // OQ-4: a story started in a worktree lands as one, though a person turned
 // worktrees off on trunk while it was worked.
 func TestQ4AStoryStartedInAWorktreeLandsAsOneAfterWorktreesAreTurnedOff(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -1111,6 +1138,7 @@ func TestQ4AStoryStartedInAWorktreeLandsAsOneAfterWorktreesAreTurnedOff(t *testi
 // THREATS T4: what the checks ran on is what lands. A command that commits
 // while it runs does not put its commit on trunk.
 func TestT4ACommandThatCommitsWhileItRunsDoesNotPutItsCommitOnTrunk(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, func(root string) {
 		commands := ldPassing()
 		commands["test"] = "git -c user.email=t@example.com -c user.name=Test commit --quiet --allow-empty -m sneaky"
@@ -1141,6 +1169,7 @@ func TestT4ACommandThatCommitsWhileItRunsDoesNotPutItsCommitOnTrunk(t *testing.T
 // configuration the story committed that makes a failing command pass does not
 // let the story land.
 func TestT5ACommandTheStoryBranchRewroteDoesNotDecideWhetherItLands(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, func(root string) {
 		commands := ldPassing()
 		commands["test"] = "exit 1"
@@ -1166,6 +1195,7 @@ func TestT5ACommandTheStoryBranchRewroteDoesNotDecideWhetherItLands(t *testing.T
 // THREATS T6: the repository's hooks are anyone's to write, and none of them
 // runs when the tool lands a story and cleans up after it.
 func TestT6NoHookOfTheRepositoryRunsWhenAStoryLands(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the hooks here are shell scripts marked executable, which Windows does not run as such")
 	}
@@ -1195,6 +1225,7 @@ func TestT6NoHookOfTheRepositoryRunsWhenAStoryLands(t *testing.T) {
 // commit where the branch holds another. The one the branch holds is what is
 // measured.
 func TestT6AReplacementObjectDoesNotLetAChangedCommitPassForTheReviewedOne(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	reviewed := ldBookkeeping(t, wt)

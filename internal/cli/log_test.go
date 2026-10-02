@@ -93,6 +93,7 @@ func forgetRange(record map[string]any) {
 }
 
 func TestTheLogListsACommittedStoryWithWhereItsCommitsAre(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	mustRun(t, "cost", "add", "--story", "US-001", "--usd", "1.50")
@@ -146,6 +147,7 @@ func TestTheLogListsACommittedStoryWithWhereItsCommitsAre(t *testing.T) {
 // A block, a freeze lifted by a person, gates reopened and a question handed
 // over are what somebody reading trunk after the story wants to look at again.
 func TestTheLogFlagsWhatIsWorthASecondLook(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop") // lifts the finished story's freeze, which is not flagged
 	editRecord(t, root, "US-001", func(r map[string]any) {
@@ -198,6 +200,7 @@ func TestTheLogFlagsWhatIsWorthASecondLook(t *testing.T) {
 // An older sdlc kept no range. The commits whose messages name the story stand
 // in for it, and the entry says so.
 func TestAStoryWhoseRecordNamesNoCommitIsFoundByItsCommitMessages(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	editRecord(t, root, "US-001", forgetRange)
@@ -223,6 +226,7 @@ func TestAStoryWhoseRecordNamesNoCommitIsFoundByItsCommitMessages(t *testing.T) 
 // A range nothing records is not worked out from anything else, and a story
 // that cannot be placed against what was acknowledged is listed anyway.
 func TestAStoryNoCommitNamesIsListedWithItsRangeUnknown(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	editRecord(t, root, "US-001", forgetRange)
@@ -245,8 +249,8 @@ func TestAStoryNoCommitNamesIsListedWithItsRangeUnknown(t *testing.T) {
 }
 
 func TestTheLogStartsAfterTheLastCommitAcknowledged(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	addStory(t, root, "US-002")
 	for range 2 {
 		mustRun(t, "start")
@@ -300,6 +304,7 @@ func TestTheLogStartsAfterTheLastCommitAcknowledged(t *testing.T) {
 }
 
 func TestTheLogRefusesAStartItCannotPlace(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 
 	if r := run(t, "log", "--since", "HEAD", "--all"); r.code == 0 || !strings.Contains(r.stderr, "SDLC-E0034") {
@@ -339,6 +344,7 @@ func gitOut(t *testing.T, root string, args ...string) string {
 
 // A record is text, and the entry carries the commits git reads it as.
 func TestTheLogNamesTheCommitsInFull(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	record := readRecord(t, root, "US-001")
@@ -360,6 +366,7 @@ func TestTheLogNamesTheCommitsInFull(t *testing.T) {
 // A commit the repository does not have, or one somebody wrote as an option,
 // cannot be placed, so the story is listed whatever was acknowledged.
 func TestAStoryWhoseCommitIsNotInTheRepositoryIsListed(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	writeFile(t, root, ".sdlc/state/acknowledged", headOf(t, root)+"\n")
@@ -379,6 +386,7 @@ func TestAStoryWhoseCommitIsNotInTheRepositoryIsListed(t *testing.T) {
 // A commit this branch does not hold is listed whatever the log starts after,
 // even when it starts after that very commit.
 func TestAStoryWhoseCommitIsNotOnThisBranchIsListed(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	elsewhere := gitOut(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test",
@@ -406,8 +414,8 @@ func TestAStoryWhoseCommitIsNotOnThisBranchIsListed(t *testing.T) {
 
 // Only a story whose commit gate stands passed is in the log.
 func TestAStoryNotCommittedIsNotInTheLog(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GateCommit)
 	if out := mustRun(t, "log").stdout; !strings.Contains(out, "No story has been committed yet.") {
@@ -425,8 +433,8 @@ func TestAStoryNotCommittedIsNotInTheLog(t *testing.T) {
 // .sdlc/stories cannot be listed when something else occupies the name, and
 // the log has nowhere left to read a committed story's record from.
 func TestLogRefusesWhenTheStoriesDirectoryCannotBeListed(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	writeFile(t, root, ".sdlc/stories", "not a directory")
 
 	if r := run(t, "log"); r.code == 0 {
@@ -437,6 +445,7 @@ func TestLogRefusesWhenTheStoriesDirectoryCannotBeListed(t *testing.T) {
 // A record among many that will not read stops the whole log, rather than
 // silently leaving that story out of it.
 func TestLogRefusesWhenAStorysRecordCannotBeRead(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
@@ -454,6 +463,7 @@ func TestLogRefusesWhenAStorysRecordCannotBeRead(t *testing.T) {
 // commits are already on trunk, and the entry says it is not in the backlog
 // rather than showing an empty title.
 func TestALogEntryForAStoryNoLongerInTheBacklogSaysSo(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	writeFile(t, root, "user_stories.json", `{"stories":[]}`)
@@ -472,6 +482,7 @@ func TestALogEntryForAStoryNoLongerInTheBacklogSaysSo(t *testing.T) {
 // commits, cannot be placed by its messages either: there is nothing in
 // history to search.
 func TestALogEntryWithNoRangeOnABranchWithNoCommitsIsUnknownRatherThanSearched(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	editRecord(t, root, "US-001", forgetRange)
@@ -486,8 +497,8 @@ func TestALogEntryWithNoRangeOnABranchWithNoCommitsIsUnknownRatherThanSearched(t
 // --since with nothing after it, and with something, each say so in their own
 // words: the log is not always following the last commit acknowledged.
 func TestLogSaysWhatSinceFlagFoundInItsOwnWords(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	before := headOf(t, root)
 	reach(t, root, "")
@@ -506,8 +517,8 @@ func TestLogSaysWhatSinceFlagFoundInItsOwnWords(t *testing.T) {
 
 // Two stories in one log read as two paragraphs, not one run-on block.
 func TestTwoLogEntriesArePrintedWithABlankLineBetweenThem(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	addStory(t, root, "US-002")
 	for range 2 {
 		mustRun(t, "start")
@@ -527,6 +538,7 @@ func TestTwoLogEntriesArePrintedWithABlankLineBetweenThem(t *testing.T) {
 // A record that names a commit but no base -- an older sdlc's, or one edited
 // by hand -- prints as a single commit, not a range with nothing before it.
 func TestALogEntryWithACommitButNoBaseHasNoRange(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	record := readRecord(t, root, "US-001")

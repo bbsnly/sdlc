@@ -39,6 +39,7 @@ func wtRefused(t *testing.T, code, dir, session, stdin string, args ...string) s
 // ---------------------------------------------------------------- AC-3
 
 func TestAC3ACommandForAStoryAnotherCheckoutHoldsIsRefusedWithSDLCE0050(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wt := wtWorktree(t, main, "wt")
 	wtStarted(t, main, wtSessionMain)
@@ -154,10 +155,11 @@ func wtCommandArgs(line, id string) []string {
 }
 
 func TestAC8AStoryWhoseCheckoutIsGoneIsRefusedWithSDLCE0051UntilAPersonReleasesIt(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	gone := wtWorktree(t, main, "gone")
 	wtStarted(t, gone, wtSessionWorktree, "US-001")
-	t.Chdir(main)
+	chdir(t, main)
 	if err := os.RemoveAll(gone); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +204,6 @@ func TestAC8AStoryWhoseCheckoutIsGoneIsRefusedWithSDLCE0051UntilAPersonReleasesI
 // project with the loop set up in it when withLoop is set.
 func wtBareWorktree(t *testing.T, withLoop bool) string {
 	t.Helper()
-	wtNoGitEnv(t)
 	src := wtTempDir(t)
 	wtGit(t, src, "init", "--quiet", "--initial-branch=main")
 	writeFile(t, src, "README.md", "a project\n")
@@ -219,6 +220,7 @@ func wtBareWorktree(t *testing.T, withLoop bool) string {
 }
 
 func TestAC9AWorktreeOfARepositoryWithNoMainCheckoutIsRefusedWithSDLCE0052(t *testing.T) {
+	t.Parallel()
 	wt := wtBareWorktree(t, true)
 
 	for _, args := range [][]string{
@@ -300,6 +302,7 @@ func TestAC9AWorktreeOfARepositoryWithNoMainCheckoutIsRefusedWithSDLCE0052(t *te
 // D4: an iteration that was running when this release was installed has no
 // claim. It carries on as before, and holds its story from then on.
 func TestAC10AnIterationRunningAtUpgradeCarriesOnAndHoldsItsStory(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wtSetStatus(t, main, "US-001", model.StatusInProgress)
 	writeFile(t, main, ".sdlc/state/active", "US-001\n")
@@ -318,6 +321,7 @@ func TestAC10AnIterationRunningAtUpgradeCarriesOnAndHoldsItsStory(t *testing.T) 
 // hand, is resumed as today in a single checkout and ignored where the
 // repository has a linked worktree.
 func TestAC10AnActiveAPersonSetAsideIsResumedOnlyInASingleCheckout(t *testing.T) {
+	t.Parallel()
 	for _, layout := range []struct {
 		name   string
 		linked bool
@@ -345,6 +349,7 @@ func TestAC10AnActiveAPersonSetAsideIsResumedOnlyInASingleCheckout(t *testing.T)
 // retro and `sdlc stop`, start refuses with "run sdlc stop"; stop ends the
 // iteration and lifts the finished story's freeze on its one record.
 func TestAC10AFinishedStoryInAWorktreeIsPutDownWithStop(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"})
 	wt := wtWorktree(t, main, "wt")
 	wtStarted(t, wt, wtSessionWorktree)
@@ -418,6 +423,7 @@ func TestT3GitsVariablesCannotPointAWorktreeAtAFakeMainCheckout(t *testing.T) {
 // gate: there is nowhere to record it, and the worktree's own files are not the
 // story's record.
 func TestT12AWorktreeWhoseMainCheckoutWasMadeUnfindableRecordsNoGate(t *testing.T) {
+	t.Parallel()
 	for _, damage := range []struct {
 		name string
 		// code is the refusal the story pins, or "" where any refusal will do.

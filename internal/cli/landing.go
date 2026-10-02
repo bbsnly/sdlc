@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -193,6 +192,15 @@ func quoteAll(names []string) string {
 	quoted := make([]string, len(names))
 	for i, n := range names {
 		quoted[i] = quote(n)
+	}
+	return strings.Join(quoted, ", ")
+}
+
+// quotePaths is quoteAll for paths on disk, each as sdlcerr.QuotePath names it.
+func quotePaths(paths []string) string {
+	quoted := make([]string, len(paths))
+	for i, p := range paths {
+		quoted[i] = sdlcerr.QuotePath(p)
 	}
 	return strings.Join(quoted, ", ")
 }
@@ -1141,9 +1149,9 @@ func landedLines(id, trunk string, st landState, holding []string, running bool)
 		case 0:
 			moved += "; no checkout has " + trunk + " checked out, so only the branch moved."
 		case 1:
-			moved += "; the files in " + quote(holding[0]) + ", which has " + trunk + " checked out, moved with it."
+			moved += "; the files in " + sdlcerr.QuotePath(holding[0]) + ", which has " + trunk + " checked out, moved with it."
 		default:
-			moved += "; the files in " + quoteAll(holding) + ", which have " + trunk + " checked out, moved with them."
+			moved += "; the files in " + quotePaths(holding) + ", which have " + trunk + " checked out, moved with them."
 		}
 		lines = append(lines, moved)
 	}
@@ -1161,13 +1169,7 @@ func landedLines(id, trunk string, st landState, holding []string, running bool)
 
 // cleanUp is L12: the worktree and its branch taken away, or kept and said.
 func (l *lander) cleanUp(ctx context.Context, st landState) string {
-	// Out of the worktree first: Windows does not remove a directory that is
-	// a process's current one. Elsewhere the process stays where it was.
-	if runtime.GOOS == "windows" {
-		if err := os.Chdir(l.m.main); err != nil {
-			slog.Debug("stop could not move into the main checkout", "err", err)
-		}
-	}
+	leaveWorktree(l.m.main, l.s.Root())
 	kept, err := gitx.RemoveLandedWorktree(ctx, l.m.main, l.s.Root(), store.StoryBranch(l.id), st.tip)
 	if err == nil && len(kept) == 0 {
 		return "Removed " + worktreeIn(l.id) + ", with the files git ignored in it, and " + store.StoryBranch(l.id) + "."

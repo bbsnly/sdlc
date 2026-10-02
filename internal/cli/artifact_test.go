@@ -15,8 +15,7 @@ import (
 // in which a gate has a document to store.
 func storyUnderway(t *testing.T) string {
 	t.Helper()
-	root := gitProject(t)
-	initialised(t)
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	return root
 }
@@ -31,6 +30,7 @@ func stored(t *testing.T, root, file string) string {
 }
 
 func TestADocumentArrivesOnStandardInputAndLandsWhereTheNextGateLooks(t *testing.T) {
+	t.Parallel()
 	root := storyUnderway(t)
 
 	const document = "# Analysis\n\nThe greeting is read from the environment."
@@ -50,6 +50,7 @@ func TestADocumentArrivesOnStandardInputAndLandsWhereTheNextGateLooks(t *testing
 }
 
 func TestADocumentCanComeFromAFileInstead(t *testing.T) {
+	t.Parallel()
 	root := storyUnderway(t)
 	writeFile(t, root, "notes/threats.md", "# Threats\n\nNone crossed.\n")
 
@@ -62,6 +63,7 @@ func TestADocumentCanComeFromAFileInstead(t *testing.T) {
 // The record is how a later gate knows the document exists without trusting a
 // summary in a conversation it cannot see.
 func TestStoringADocumentIsRecorded(t *testing.T) {
+	t.Parallel()
 	root := storyUnderway(t)
 	mustRunWith(t, "# Analysis\n", "artifact", "write", "analysis")
 
@@ -77,6 +79,7 @@ func TestStoringADocumentIsRecorded(t *testing.T) {
 }
 
 func TestWhatCannotBeStoredSaysWhyAndWhatCan(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		stdin string
@@ -121,6 +124,7 @@ func TestWhatCannotBeStoredSaysWhyAndWhatCan(t *testing.T) {
 }
 
 func TestStoringADocumentWithNoIterationSaysWhatToDo(t *testing.T) {
+	t.Parallel()
 	project(t)
 	mustRun(t, "init")
 
@@ -138,6 +142,7 @@ func TestStoringADocumentWithNoIterationSaysWhatToDo(t *testing.T) {
 // A gate can be re-run, and re-running it must leave one document rather than
 // two, because the next gate reads the file and not the history.
 func TestStoringADocumentTwiceReplacesIt(t *testing.T) {
+	t.Parallel()
 	root := storyUnderway(t)
 	mustRunWith(t, "first\n", "artifact", "write", "analysis")
 	mustRunWith(t, "second\n", "artifact", "write", "analysis")
@@ -150,6 +155,7 @@ func TestStoringADocumentTwiceReplacesIt(t *testing.T) {
 // The list is what an agent reads when it does not know the name, so it has to
 // name the file and the gate as well.
 func TestListNamesEveryDocumentAndWhereItBelongs(t *testing.T) {
+	t.Parallel()
 	project(t)
 	out := mustRun(t, "artifact", "list").stdout
 	for _, want := range []string{"analysis", "ANALYSIS.md", "threats", "THREATS.md", "researcher"} {
@@ -163,6 +169,7 @@ func TestListNamesEveryDocumentAndWhereItBelongs(t *testing.T) {
 // This is where that is true or it is not: the gates after Gate 2 read the
 // documents, not the summary that said they exist.
 func TestAGateCannotPassUntilItsDocumentsAreStored(t *testing.T) {
+	t.Parallel()
 	root := storyUnderway(t)
 	reach(t, root, model.GateAnalysis)
 
@@ -194,6 +201,7 @@ func TestAGateCannotPassUntilItsDocumentsAreStored(t *testing.T) {
 // able to say so. Holding a failure to the same rule would leave no way to
 // record the thing the rule exists to catch.
 func TestAGateCanStillFailWithNothingStored(t *testing.T) {
+	t.Parallel()
 	storyUnderway(t)
 	mustRun(t, "gate", "analysis", "fail", "--note", "7 open questions the spec does not settle")
 	mustRun(t, "gate", "analysis", "pending")
@@ -201,12 +209,14 @@ func TestAGateCanStillFailWithNothingStored(t *testing.T) {
 
 // Most gates produce no documents, and the rule must not invent one for them.
 func TestAGateWithNoDocumentsPassesOnItsOwn(t *testing.T) {
+	t.Parallel()
 	storyUnderway(t)
 	mustRun(t, "gate", "dor", "pass", "--note", "criteria are testable")
 }
 
 // Run with no subcommand, artifact explains itself rather than doing nothing.
 func TestArtifactWithNoSubcommandPrintsHelp(t *testing.T) {
+	t.Parallel()
 	project(t)
 	r := run(t, "artifact")
 	if r.code != 0 {
@@ -218,6 +228,7 @@ func TestArtifactWithNoSubcommandPrintsHelp(t *testing.T) {
 }
 
 func TestListAsJSONNamesEveryDocumentAndWhereItBelongs(t *testing.T) {
+	t.Parallel()
 	project(t)
 	list := decode[artifactListPayload](t, mustRun(t, "artifact", "list", "--json"))
 	var found bool
@@ -237,6 +248,7 @@ func TestListAsJSONNamesEveryDocumentAndWhereItBelongs(t *testing.T) {
 // A document already stored as a directory -- left by a hand edit or an older
 // build -- cannot be overwritten as a file, and write has to say so.
 func TestWritingADocumentRefusesWhenItsPathIsADirectory(t *testing.T) {
+	t.Parallel()
 	root := storyUnderway(t)
 	if err := os.MkdirAll(filepath.Join(root, ".sdlc", "stories", "US-001", "ANALYSIS.md"), 0o755); err != nil {
 		t.Fatal(err)
@@ -256,6 +268,7 @@ func TestWritingADocumentRefusesWhenItsPathIsADirectory(t *testing.T) {
 // the document is left on disk, and the refusal has to name the record rather
 // than read as the document itself having failed to store.
 func TestWritingADocumentRefusesWhenTheRecordCannotBeUpdatedAfterwards(t *testing.T) {
+	t.Parallel()
 	root := storyUnderway(t)
 	writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
 
@@ -282,9 +295,10 @@ func (failingReader) Read([]byte) (int, error) { return 0, errors.New("broken pi
 // input with nothing on it, and the error has to say reading failed rather
 // than that the document was empty.
 func TestWritingADocumentRefusesWhenStandardInputFailsPartWayThrough(t *testing.T) {
+	t.Parallel()
 	storyUnderway(t)
 	var out, errb bytes.Buffer
-	code := Execute([]string{"artifact", "write", "analysis"}, failingReader{}, &out, &errb)
+	code := execute(t, []string{"artifact", "write", "analysis"}, failingReader{}, &out, &errb)
 	if code == 0 {
 		t.Fatal("a document was stored after standard input failed part way through")
 	}

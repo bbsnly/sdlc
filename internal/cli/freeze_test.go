@@ -14,42 +14,37 @@ import (
 )
 
 // gitProject is a real repository, because the freeze asks git which files are
-// part of the working tree rather than walking it and guessing.
-//
-// Both git variables are set, and set consistently: the tool reads GIT_WORK_TREE
-// to find the project, git refuses a work tree without a git directory, and an
-// inherited pair from the developer's own shell would otherwise decide where
-// these tests think they are.
+// part of the working tree rather than walking it and guessing. The test's
+// commands run in it; nothing of git's own is set in the environment, so sdlc
+// and git both find it by its .git, as they do for a person.
 func gitProject(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
 	}
-	t.Setenv("GIT_DIR", filepath.Join(root, ".git"))
-	t.Setenv("GIT_WORK_TREE", root)
-
 	cmd := exec.CommandContext(t.Context(), "git", "init", "--quiet", "--initial-branch=main")
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
-	t.Chdir(root)
+	chdir(t, root)
 	return root
 }
 
-// initialised is `sdlc init` with what it wrote committed, which is where a
-// project is when its first story starts: `sdlc start` begins new work only from
-// a trunk with nothing uncommitted on it.
+// initialised is `sdlc init` in root with what it wrote committed, which is
+// where a project is when its first story starts: `sdlc start` begins new work
+// only from a trunk with nothing uncommitted on it. It runs with nothing the
+// test set, because it builds initialisedTemplate.
 //
 // Story worktrees are turned off: these tests are about one checkout, and hold
 // what `sdlc start` does there to the released tool (US-029.2 AC-9). What start
 // does with them on is storyworktree_test.go's.
-func initialised(t *testing.T) {
+func initialised(t *testing.T, root string) {
 	t.Helper()
-	mustRun(t, "init")
-	worktreesOff(t, ".")
-	commitEverything(t, ".")
+	runIn(t, root, "init")
+	worktreesOff(t, root)
+	commitEverything(t, root)
 }
 
 // worktreesOff sets git.worktrees to false in root's configuration, keeping
@@ -90,8 +85,7 @@ func setGitOnDisk(t *testing.T, root, key string, value any) {
 // written, which is the state Gate 3 starts from.
 func frozenStory(t *testing.T) string {
 	t.Helper()
-	root := gitProject(t)
-	initialised(t)
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GateTestsFrozen)
 	writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// AC-1\n")
@@ -119,6 +113,7 @@ func lockOnDisk(t *testing.T, root string) struct {
 }
 
 func TestFreezingRecordsWhatEveryTestContains(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 
 	got := decode[freezePayload](t, mustRun(t, "freeze", "--json"))
@@ -149,6 +144,7 @@ func TestFreezingRecordsWhatEveryTestContains(t *testing.T) {
 // Build output and vendored code are not acceptance tests. Freezing them would
 // be slow, noisy, and wrong the moment anything is rebuilt.
 func TestTheFreezeIgnoresWhatGitIgnores(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	writeFile(t, root, ".gitignore", "vendor/\n")
 	writeFile(t, root, "vendor/lib/thing_test.go", "package lib\n")
@@ -162,6 +158,7 @@ func TestTheFreezeIgnoresWhatGitIgnores(t *testing.T) {
 }
 
 func TestFreezingTwiceIsRefused(t *testing.T) {
+	t.Parallel()
 	frozenStory(t)
 	mustRun(t, "freeze")
 
@@ -177,8 +174,8 @@ func TestFreezingTwiceIsRefused(t *testing.T) {
 }
 
 func TestFreezingWithNoTestsSaysWhereToLook(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 
 	r := run(t, "freeze")
@@ -196,6 +193,7 @@ func TestFreezingWithNoTestsSaysWhereToLook(t *testing.T) {
 // would make to reach green. The reason is what tells the two apart, so it is
 // not optional.
 func TestLiftingTheFreezeNeedsAReasonAndRecordsIt(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 
@@ -227,6 +225,7 @@ func TestLiftingTheFreezeNeedsAReasonAndRecordsIt(t *testing.T) {
 // change the test, and the first gate to notice the missing freeze said to
 // freeze the wrong test again.
 func TestLiftingTheFreezeSendsTheLoopBackToTheTests(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 	mustRun(t, "gate", "tests_frozen", "pass", "--note", "frozen")
@@ -244,6 +243,7 @@ func TestLiftingTheFreezeSendsTheLoopBackToTheTests(t *testing.T) {
 }
 
 func TestLiftingAFreezeThatIsNotThereSaysSo(t *testing.T) {
+	t.Parallel()
 	frozenStory(t)
 	r := run(t, "unfreeze", "--reason", "no reason at all")
 	if r.code == 0 {
@@ -258,6 +258,7 @@ func TestLiftingAFreezeThatIsNotThereSaysSo(t *testing.T) {
 // way past it: every later check compares the tests against the freeze, and the
 // freeze would say whatever they say now.
 func TestAFreezeThatWentMissingIsNotTakenAgain(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 	mustRun(t, "gate", "tests_frozen", "pass", "--note", "frozen")
@@ -285,8 +286,8 @@ func TestAFreezeThatWentMissingIsNotTakenAgain(t *testing.T) {
 // the one it was replacing. Nothing removed it, and the commit gate refused the
 // tree as uncommitted until somebody found it and deleted it by hand.
 func TestWhatAKilledCommandLeftHalfWrittenIsClearedByTheNext(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	writeFile(t, root, "user_stories.json", `{"stories":[
 	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"low","priority":1,
 	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN a paid invoice is refunded, the money goes back"}]}]}`)
@@ -320,8 +321,8 @@ func TestWhatAKilledCommandLeftHalfWrittenIsClearedByTheNext(t *testing.T) {
 // gate after tests_frozen compared the tests against a freeze that was no
 // longer there to compare against.
 func TestAStoryIsNotCommittedOnceItsFreezeIsGone(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setConfigOnDisk(t, root, "human_gates", map[string]any{"pre_commit_pause_tiers": []string{}})
 	writeFile(t, root, "user_stories.json", `{"stories":[
 	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"high","priority":1,
@@ -345,6 +346,7 @@ func TestAStoryIsNotCommittedOnceItsFreezeIsGone(t *testing.T) {
 // A freeze that will not read is lifted on the record, the same as one that
 // does: freezing again is refused until it is.
 func TestAnUnreadableFreezeIsLiftedOnTheRecord(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 	writeFile(t, root, ".sdlc/state/tests.lock", "not json")
@@ -367,6 +369,7 @@ func TestAnUnreadableFreezeIsLiftedOnTheRecord(t *testing.T) {
 // ------------------------------------------------------------------ the gate
 
 func TestTheTestGateCannotPassWithoutAFreeze(t *testing.T) {
+	t.Parallel()
 	frozenStory(t)
 
 	r := run(t, "gate", "tests_frozen", "pass", "--note", "tests written")
@@ -386,6 +389,7 @@ func TestTheTestGateCannotPassWithoutAFreeze(t *testing.T) {
 // This is the whole argument. If a frozen test can change and the gate still
 // passes, the freeze is decoration.
 func TestTheTestGateNoticesAFrozenTestThatChanged(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 	writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// quietly different\n")
@@ -402,6 +406,7 @@ func TestTheTestGateNoticesAFrozenTestThatChanged(t *testing.T) {
 }
 
 func TestTheTestGateNoticesAFrozenTestThatVanished(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 	if err := os.Remove(filepath.Join(root, "internal", "invoice_test.go")); err != nil {
@@ -421,6 +426,7 @@ func TestTheTestGateNoticesAFrozenTestThatVanished(t *testing.T) {
 // verification as though it had been written before the code, and every gate
 // after the freeze let it through.
 func TestATestTheFreezeDoesNotHoldStopsTheGates(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 	writeFile(t, root, "internal/later_test.go", "package internal\n")
@@ -459,6 +465,7 @@ func TestATestTheFreezeDoesNotHoldStopsTheGates(t *testing.T) {
 // freeze, and nothing ever froze it. Freezing again adds it, so it is held
 // like the rest from then on.
 func TestAProjectThatAllowsNewTestsFreezesThemToo(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	setConfigOnDisk(t, root, "freeze", map[string]any{"allow_new_test_files": true})
 	mustRun(t, "freeze")
@@ -500,6 +507,7 @@ func TestAProjectThatAllowsNewTestsFreezesThemToo(t *testing.T) {
 // A freeze taken for another story is stale, not applicable. Accepting it would
 // let one story's freeze wave the next one through.
 func TestAFreezeFromAnotherStoryDoesNotCount(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 	mustRun(t, "gate", "tests_frozen", "pass", "--note", "frozen")
@@ -532,6 +540,7 @@ func TestAFreezeFromAnotherStoryDoesNotCount(t *testing.T) {
 // A finished story's freeze is lifted when its iteration ends, and only its
 // own. A freeze naming another story is not this story's to release.
 func TestStoppingAFinishedStoryLeavesAnotherStorysFreezeAlone(t *testing.T) {
+	t.Parallel()
 	root := finishedStory(t)
 	lock := filepath.Join(root, ".sdlc", "state", "tests.lock")
 	raw, err := os.ReadFile(lock)
@@ -551,6 +560,7 @@ func TestStoppingAFinishedStoryLeavesAnotherStorysFreezeAlone(t *testing.T) {
 // A skill reads status to find out where it is. If the freeze is not in there,
 // the only way to know whether Gate 3 happened is to guess.
 func TestStatusReportsTheFreeze(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 
 	before := decode[statusPayload](t, mustRun(t, "status", "--json"))
@@ -587,6 +597,7 @@ func TestStatusReportsTheFreeze(t *testing.T) {
 // lifted the first story's freeze, logged it on the second story's record, and
 // left the first story's tests editable when it was picked up again.
 func TestAnotherStorysFreezeIsNotThisStorysToLift(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 	addStory(t, root, "US-002")
@@ -628,6 +639,7 @@ func TestAnotherStorysFreezeIsNotThisStorysToLift(t *testing.T) {
 // dropped, gone entirely -- is not a leftover either: nobody can say it is
 // finished, so it still stands in the way.
 func TestAFreezeForAStoryRemovedFromTheBacklogIsNotALeftover(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 	mustRun(t, "gate", "tests_frozen", "pass", "--note", "frozen")
@@ -653,8 +665,8 @@ func TestAFreezeForAStoryRemovedFromTheBacklogIsNotALeftover(t *testing.T) {
 // paths.tests names nothing to freeze: freezing refuses rather than locking an
 // empty set and reporting success.
 func TestFreezingRefusesWhenTheProjectHasNotSaidWhatATestLooksLike(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setConfigOnDisk(t, root, "paths", map[string]any{"tests": map[string]any{"dirs": []string{}, "file_globs": []string{}}})
 	mustRun(t, "start")
 
@@ -670,8 +682,7 @@ func TestFreezingRefusesWhenTheProjectHasNotSaidWhatATestLooksLike(t *testing.T)
 // Git that cannot run is said with its own reason: freeze asks it which files
 // are in the working tree, and a project without git on PATH cannot answer.
 func TestFreezeRefusesWithGitsOwnReasonWhenGitCannotRun(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 	t.Setenv("PATH", t.TempDir())
 
@@ -686,8 +697,8 @@ func TestFreezeRefusesWithGitsOwnReasonWhenGitCannotRun(t *testing.T) {
 
 // unfreeze with no iteration running has no story to lift a freeze from.
 func TestUnfreezeWithNoIterationSaysWhatToDo(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 
 	r := run(t, "unfreeze", "--reason", "no reason at all")
 	if r.code == 0 || !strings.Contains(r.stderr, "no story being worked on") {
@@ -698,9 +709,9 @@ func TestUnfreezeWithNoIterationSaysWhatToDo(t *testing.T) {
 // A record that will not read is a record unfreeze cannot lift the freeze on,
 // whether or not there is a freeze on disk to go with it.
 func TestUnfreezeRefusesWhenTheRecordCannotBeRead(t *testing.T) {
+	t.Parallel()
 	t.Run("with no freeze taken", func(t *testing.T) {
-		root := gitProject(t)
-		initialised(t)
+		root := gitProjectInitialised(t)
 		mustRun(t, "start")
 		writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
 
@@ -731,6 +742,7 @@ func TestUnfreezeRefusesWhenTheRecordCannotBeRead(t *testing.T) {
 // what it always did -- the frozen files themselves -- and stops looking for
 // test files it no longer has a setting to judge.
 func TestClearingPathsTestsAfterAFreezeStopsCheckingForUnheldOnes(t *testing.T) {
+	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 	mustRun(t, "gate", "tests_frozen", "pass", "--note", "frozen")

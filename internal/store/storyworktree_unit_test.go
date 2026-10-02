@@ -58,12 +58,15 @@ func suStatus(t *testing.T, dir string) string {
 
 // suRefusedNotIgnored holds err to the refusal a .gitignore that does not hide
 // the story worktrees gets: SDLC-E0053, naming the file, saying why, and with
-// a fix that says what the file needs.
+// a fix that says what the file needs. AC-3: the file is named slash-separated
+// -- filepath.ToSlash of the path, not the platform's own separator doubled
+// by quoting it -- so the fragment checked here is joined with "/" rather
+// than filepath.Join, which would use "\" on Windows.
 func suRefusedNotIgnored(t *testing.T, err error, main, why string) {
 	t.Helper()
 	e := clError(t, err, sdlcerr.WorktreeNotMade)
-	if !strings.Contains(e.What, filepath.Join(".sdlc", "worktrees", ".gitignore")) {
-		t.Errorf("what = %q, want it to name %s", e.What, suIgnore(main))
+	if !strings.Contains(e.What, ".sdlc/worktrees/.gitignore") {
+		t.Errorf("what = %q, want it to name %s", e.What, filepath.ToSlash(suIgnore(main)))
 	}
 	if !strings.Contains(e.Why, why) {
 		t.Errorf("why = %q, want it to say %q", e.Why, why)
@@ -514,7 +517,9 @@ func TestAC4AGitignoreThatCannotBeReadOrWrittenIsRefused(t *testing.T) {
 }
 
 // The refusal names the file by a path a person can find, and is the one code
-// every worktree that could not be made has.
+// every worktree that could not be made has. AC-3: the path is slash-separated,
+// so what the refusal names is filepath.ToSlash(main), not main's own spelling
+// (which on Windows uses "\" and would otherwise be doubled by quoting it).
 func TestAC4ARefusedGitignoreIsSDLCE0053(t *testing.T) {
 	main := suMain(t)
 	clWrite(t, suIgnore(main), "!keep\n")
@@ -523,8 +528,8 @@ func TestAC4ARefusedGitignoreIsSDLCE0053(t *testing.T) {
 	if !errors.As(err, &e) || e.Code != sdlcerr.WorktreeNotMade {
 		t.Fatalf("err = %v, want SDLC-E0053", err)
 	}
-	if !strings.Contains(e.What, main) {
-		t.Errorf("what = %q, want it to name the file in %s", e.What, main)
+	if !strings.Contains(e.What, filepath.ToSlash(main)) {
+		t.Errorf("what = %q, want it to name the file in %s", e.What, filepath.ToSlash(main))
 	}
 	if !strings.Contains(e.Why, "git add -A") {
 		t.Errorf("why = %q, want it to say what an unhidden worktree does to git add -A", e.Why)

@@ -116,7 +116,7 @@ func newLogCmd() *cobra.Command {
 			if all && sinceGiven {
 				return usage(cmd, "--since and --all cannot be used together: --all already lists every story")
 			}
-			s, _, err := openStore()
+			s, _, err := openStore(cmd)
 			if err != nil {
 				return err
 			}

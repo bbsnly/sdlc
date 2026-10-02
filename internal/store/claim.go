@@ -60,7 +60,9 @@ type Contender struct {
 	// Session is what the checkout's .sdlc/state/session names, and empty
 	// where it names none.
 	Session string
-	Here    bool
+	// ThisSession is whether Session is the session the command runs in.
+	ThisSession bool
+	Here        bool
 }
 
 // Tied reports whether more than one checkout names the story and none holds it.
@@ -183,8 +185,10 @@ func (s *Store) Holders() (map[string]Holder, error) {
 		if _, seen := named[story.ID]; !seen {
 			order = append(order, story.ID)
 		}
+		session := sessionIn(dir)
 		named[story.ID] = append(named[story.ID], Contender{Checkout: dir, ActiveWritten: written,
-			Session: sessionIn(dir), Here: config.SamePath(dir, co.Root)})
+			Session: session, ThisSession: session != "" && session == s.CommandSession(),
+			Here: config.SamePath(dir, co.Root)})
 	}
 	for _, id := range order {
 		cs := named[id]
@@ -301,7 +305,7 @@ func (s *Store) Claim(id string) error {
 	if err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"the claim on "+quote(id)+" could not be written",
-			"it is kept in "+quote(dir)+", which may not be writable").WithCause(err)
+			"it is kept in "+sdlcerr.QuotePath(dir)+", which may not be writable").WithCause(err)
 	}
 	return nil
 }
@@ -318,7 +322,7 @@ func (s *Store) ReleaseClaim(id string) error {
 	if err := os.Remove(filepath.Join(dir, id+".json")); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"the claim on "+quote(id)+" could not be removed",
-			"it is kept in "+quote(dir)+", which may not be writable").WithCause(err)
+			"it is kept in "+sdlcerr.QuotePath(dir)+", which may not be writable").WithCause(err)
 	}
 	return nil
 }
@@ -505,12 +509,11 @@ func HeldElsewhereError(id string, h Holder, reason string) error {
 		// The fix asks a person to keep the checkout whose session they
 		// recognise, so the caller's own checkout and session are marked as
 		// such, each where it cannot be read as describing the other.
-		current := os.Getenv(SessionEnv)
 		named := make([]string, len(h.Contenders))
 		for i, c := range h.Contenders {
 			session := "names no session"
 			switch {
-			case c.Session != "" && c.Session == current:
+			case c.ThisSession:
 				session = "names the session " + quote(c.Session) + ", which is this session"
 			case c.Session != "":
 				session = "names the session " + quote(c.Session)
@@ -519,7 +522,7 @@ func HeldElsewhereError(id string, h Holder, reason string) error {
 			if c.Here {
 				here = "this checkout; "
 			}
-			named[i] = quote(c.Checkout) + " (" + here + "its .sdlc/state/active was written " +
+			named[i] = sdlcerr.QuotePath(c.Checkout) + " (" + here + "its .sdlc/state/active was written " +
 				c.ActiveWritten.UTC().Format(time.RFC3339) + ", and its .sdlc/state/session " + session + ")"
 		}
 		return sdlcerr.New(sdlcerr.StoryHeldElsewhere,
@@ -531,10 +534,10 @@ func HeldElsewhereError(id string, h Holder, reason string) error {
 	case !h.Live:
 		return sdlcerr.New(sdlcerr.HoldingCheckoutMissing,
 			"the checkout holding "+quote(id)+" no longer exists",
-			"the claim on it names "+quote(h.Checkout)+", which is not a checkout of this repository any more: "+
+			"the claim on it names "+sdlcerr.QuotePath(h.Checkout)+", which is not a checkout of this repository any more: "+
 				"it was removed, or this checkout was moved from there")
 	}
 	return sdlcerr.New(sdlcerr.StoryHeldElsewhere,
 		quote(id)+" is held by another checkout of this repository",
-		"the checkout at "+quote(h.Checkout)+" holds it, and "+reason)
+		"the checkout at "+sdlcerr.QuotePath(h.Checkout)+" holds it, and "+reason)
 }

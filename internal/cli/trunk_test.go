@@ -14,22 +14,17 @@ import (
 func inGit(t *testing.T, args ...string) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), "git", args...)
+	cmd.Dir = workdir(t)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
 }
 
-// bareRemote is a repository to push to. It is made outside the project that
-// gitProject points git at through the environment.
+// bareRemote is a repository to push to, made outside the project.
 func bareRemote(t *testing.T) string {
 	t.Helper()
 	remote := filepath.Join(t.TempDir(), "origin.git")
 	cmd := exec.CommandContext(t.Context(), "git", "init", "--quiet", "--bare", "--initial-branch=main", remote)
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "GIT_DIR=") && !strings.HasPrefix(kv, "GIT_WORK_TREE=") {
-			cmd.Env = append(cmd.Env, kv)
-		}
-	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init --bare: %v\n%s", err, out)
 	}
@@ -58,8 +53,8 @@ func startRefused(t *testing.T, code string) string {
 // SDLC-E0041 are the released tool's (US-029.2 AC-9). With story worktrees on,
 // storyworktree_test.go holds which of them still apply.
 func TestANewStoryStartsOnlyOnTrunk(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 
 	inGit(t, "switch", "--quiet", "--create", "spike")
 	if stderr := startRefused(t, "SDLC-E0038"); !strings.Contains(stderr, `"spike"`) {
@@ -75,8 +70,8 @@ func TestANewStoryStartsOnlyOnTrunk(t *testing.T) {
 }
 
 func TestWorkNobodyCommittedHoldsANewStoryBack(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	writeFile(t, root, "notes/idea.md", "half a thought\n")
 	writeFile(t, root, "CLAUDE.md", "edited, and not committed\n")
 
@@ -102,8 +97,8 @@ func TestWorkNobodyCommittedHoldsANewStoryBack(t *testing.T) {
 // fails because of that work is the story's to fix, not a reason to refuse
 // picking it up.
 func TestAStoryIsPickedUpAgainWithoutCheckingTrunk(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	mustRun(t, "stop")
 
@@ -113,8 +108,8 @@ func TestAStoryIsPickedUpAgainWithoutCheckingTrunk(t *testing.T) {
 }
 
 func TestABrokenTrunkHoldsANewStoryBack(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setConfigOnDisk(t, root, "commands",
 		map[string]string{"smoke": `echo "invoice.go:3:18: undefined: x"; exit 1`})
 
@@ -127,8 +122,8 @@ func TestABrokenTrunkHoldsANewStoryBack(t *testing.T) {
 }
 
 func TestATrunkBehindItsRemoteHoldsANewStoryBack(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	inGit(t, "remote", "add", "origin", bareRemote(t))
 	setConfigOnDisk(t, root, "git", map[string]any{"trunk_branch": "main", "remote": true, "worktrees": false})
 	commitEverything(t, root)
@@ -151,8 +146,8 @@ func TestATrunkBehindItsRemoteHoldsANewStoryBack(t *testing.T) {
 // Working offline is allowed. A remote that cannot be asked is said out loud,
 // rather than refusing every story until the network comes back.
 func TestARemoteThatCannotBeAskedDoesNotHoldAStoryBack(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	inGit(t, "remote", "add", "origin", filepath.Join(t.TempDir(), "nowhere.git"))
 	setConfigOnDisk(t, root, "git", map[string]any{"trunk_branch": "main", "remote": true, "worktrees": false})
 
@@ -167,8 +162,8 @@ func TestARemoteThatCannotBeAskedDoesNotHoldAStoryBack(t *testing.T) {
 // happens to be checked out, so this pins the name it falls back to rather
 // than only trying it from the branch the fallback and gitProject agree on.
 func TestABlankTrunkBranchFallsBackToTheDefault(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setConfigOnDisk(t, root, "git", map[string]any{"trunk_branch": "", "remote": false, "worktrees": false})
 
 	// A blank setting that fell back to "" rather than "main" would refuse
@@ -186,8 +181,8 @@ func TestABlankTrunkBranchFallsBackToTheDefault(t *testing.T) {
 // A tree with a great many stray files is a refusal to read, not a refusal to
 // notice: the message names a few and counts the rest.
 func TestManyStrayFilesAreSummarisedRatherThanListed(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	for i := range 7 {
 		writeFile(t, root, fmt.Sprintf("idea-%d.md", i), "half a thought\n")
 	}
@@ -221,8 +216,7 @@ func gitOnlyPath(t *testing.T) string {
 // said out loud rather than refusing every story: the check that could not run
 // is not the same as one that ran and failed.
 func TestASmokeCheckWithNoShellDoesNotHoldAStoryBack(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	root := gitProjectInitialised(t)
 	setConfigOnDisk(t, root, "commands", map[string]string{"smoke": "exit 1"})
 	t.Setenv("PATH", gitOnlyPath(t))
 

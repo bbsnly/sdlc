@@ -69,7 +69,7 @@ func FindCheckout(root string) (Checkout, error) {
 		return c, noMainCheckout("its .git file does not say where its git directory is")
 	}
 	if !isDir(gitdir) {
-		return c, noMainCheckout("its .git file leads to " + strconv.Quote(gitdir) + ", which is not a directory")
+		return c, noMainCheckout("its .git file leads to " + sdlcerr.QuotePath(gitdir) + ", which is not a directory")
 	}
 	c.GitDir = gitdir
 	common, found := readCommondir(gitdir)
@@ -100,18 +100,18 @@ func FindCheckout(root string) (Checkout, error) {
 
 	switch {
 	case c.Common == "":
-		return c, noMainCheckout("it is a linked worktree whose commondir leads to " + strconv.Quote(common) +
+		return c, noMainCheckout("it is a linked worktree whose commondir leads to " + sdlcerr.QuotePath(common) +
 			", which is not a directory")
 	case bare(common):
 		return c, noMainCheckout("it is a linked worktree of a bare repository: core.bare is true in " +
-			strconv.Quote(filepath.Join(common, "config")) + ", so no checkout's .git is the repository's git directory")
+			sdlcerr.QuotePath(filepath.Join(common, "config")) + ", so no checkout's .git is the repository's git directory")
 	}
 	main := filepath.Dir(common)
 	here, errHere := os.Stat(filepath.Join(main, ".git"))
 	shared, errShared := os.Stat(common)
 	if filepath.Base(common) != ".git" || !SamePath(filepath.Dir(gitdir), filepath.Join(common, "worktrees")) ||
 		errHere != nil || errShared != nil || !os.SameFile(here, shared) {
-		return c, noMainCheckout("it is a linked worktree whose git directory " + strconv.Quote(common) +
+		return c, noMainCheckout("it is a linked worktree whose git directory " + sdlcerr.QuotePath(common) +
 			" is not the .git directory of a main checkout, as in a repository made with --separate-git-dir " +
 			"or a submodule's worktree")
 	}

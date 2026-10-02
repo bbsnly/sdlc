@@ -42,6 +42,7 @@ func lqForgetChange(t *testing.T, main, id string) {
 // ---------------------------------------------------------------- small helpers
 
 func TestBacklogInDefaultsToTheConfiguredDefaultWhenNoPathIsSet(t *testing.T) {
+	t.Parallel()
 	got := backlogIn(config.Config{})
 	want := filepath.ToSlash(filepath.Clean(config.Default().Backlog.Path))
 	if got != want {
@@ -53,6 +54,7 @@ func TestBacklogInDefaultsToTheConfiguredDefaultWhenNoPathIsSet(t *testing.T) {
 }
 
 func TestWaitingToLandOffersTheReleasedReworkFixOnlyWithNoIterationRunning(t *testing.T) {
+	t.Parallel()
 	const reworkPhrase = `sdlc gate code_review fail --story US-1`
 	running := waitingToLand("US-1", "main", true)
 	if strings.Contains(running.Fix, reworkPhrase) {
@@ -68,6 +70,7 @@ func TestWaitingToLandOffersTheReleasedReworkFixOnlyWithNoIterationRunning(t *te
 }
 
 func TestChangeBaseReturnsTheAncestryErrorWhenTheCutCannotBeChecked(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir() // not a git repository at all
 	hash := strings.Repeat("a", 40)
 	if _, err := changeBase(t.Context(), dir, hash, hash, hash); err == nil {
@@ -76,6 +79,7 @@ func TestChangeBaseReturnsTheAncestryErrorWhenTheCutCannotBeChecked(t *testing.T
 }
 
 func TestChangeBaseReturnsTheMergeBaseErrorWhenItCannotBeRead(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir() // not a git repository at all
 	hash := strings.Repeat("a", 40)
 	if _, err := changeBase(t.Context(), dir, "", hash, hash); err == nil {
@@ -84,6 +88,7 @@ func TestChangeBaseReturnsTheMergeBaseErrorWhenItCannotBeRead(t *testing.T) {
 }
 
 func TestChangeBaseRefusesWhenHeadSharesNoHistoryWithTrunk(t *testing.T) {
+	t.Parallel()
 	dir := wtTempDir(t)
 	wtGit(t, dir, "init", "--quiet", "--initial-branch=main")
 	wtCommit(t, dir, "main root")
@@ -103,6 +108,7 @@ func TestChangeBaseRefusesWhenHeadSharesNoHistoryWithTrunk(t *testing.T) {
 }
 
 func TestReopenFixNamesTheBranchTrunkAndTheReleasedWayBackIn(t *testing.T) {
+	t.Parallel()
 	l := &lander{id: "US-100", m: mainSettings{trunk: "main"}}
 	got := l.reopenFix()
 	for _, want := range []string{
@@ -118,6 +124,7 @@ func TestReopenFixNamesTheBranchTrunkAndTheReleasedWayBackIn(t *testing.T) {
 }
 
 func TestQuoteSomeNamesTheFirstFiveAndCountsTheRest(t *testing.T) {
+	t.Parallel()
 	names := []string{"a", "b", "c", "d", "e", "f", "g"}
 	got := quoteSome(names)
 	want := quoteAll(names[:5]) + ", and 2 more"
@@ -127,6 +134,7 @@ func TestQuoteSomeNamesTheFirstFiveAndCountsTheRest(t *testing.T) {
 }
 
 func TestKeptLineUsesTheErrorsOwnTextWhenItIsNotAnSdlcError(t *testing.T) {
+	t.Parallel()
 	got := keptLine("US-1", nil, errors.New("git said something odd"))
 	if !strings.Contains(got, "git said something odd.") {
 		t.Errorf("keptLine with a plain error = %q, want the error's own text", got)
@@ -137,6 +145,7 @@ func TestKeptLineUsesTheErrorsOwnTextWhenItIsNotAnSdlcError(t *testing.T) {
 }
 
 func TestLandedLinesNamesEveryCheckoutWhenSeveralHaveTrunk(t *testing.T) {
+	t.Parallel()
 	st := landState{
 		tip:      strings.Repeat("a", 40),
 		trunkTip: strings.Repeat("b", 40),
@@ -150,6 +159,7 @@ func TestLandedLinesNamesEveryCheckoutWhenSeveralHaveTrunk(t *testing.T) {
 }
 
 func TestRefusedPassesAPlainErrorThroughUnchanged(t *testing.T) {
+	t.Parallel()
 	l := &lander{id: "US-1", m: mainSettings{trunk: "main"}}
 	plain := errors.New("boom")
 	if got := l.refused(plain); got != plain { //nolint:errorlint // exact identity is the point
@@ -158,6 +168,7 @@ func TestRefusedPassesAPlainErrorThroughUnchanged(t *testing.T) {
 }
 
 func TestPassesFailsWithAnExitCodeBelowZero(t *testing.T) {
+	t.Parallel()
 	ok, how := passes("build", -1, "", 0)
 	if ok {
 		t.Fatal("passes(exit -1) = true, want false")
@@ -168,6 +179,7 @@ func TestPassesFailsWithAnExitCodeBelowZero(t *testing.T) {
 }
 
 func TestSetApartShowsANonPrintingByteAsAQuestionMark(t *testing.T) {
+	t.Parallel()
 	got := setApart("bad\x00line")
 	if !strings.Contains(got, "bad?line") {
 		t.Errorf("setApart with a NUL byte = %q, want the byte shown as ?", got)
@@ -175,6 +187,7 @@ func TestSetApartShowsANonPrintingByteAsAQuestionMark(t *testing.T) {
 }
 
 func TestFreezeFixLeavesAPlainErrorAndAnUnrelatedCodeUnchanged(t *testing.T) {
+	t.Parallel()
 	l := &lander{id: "US-1", m: mainSettings{trunk: "main"}}
 	t.Run("not an sdlcerr.Error", func(t *testing.T) {
 		plain := errors.New("boom")
@@ -196,6 +209,7 @@ func TestFreezeFixLeavesAPlainErrorAndAnUnrelatedCodeUnchanged(t *testing.T) {
 // configuration, not the main checkout's disk copy, and refuses where that
 // commit cannot be parsed.
 func TestReadTrunkRefusesWhenTrunksOwnConfigurationCannotBeParsed(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -223,6 +237,7 @@ func TestReadTrunkRefusesWhenTrunksOwnConfigurationCannotBeParsed(t *testing.T) 
 // still trunk's merge base with the tip, and the landing goes ahead exactly
 // as for a story that did record them.
 func TestALegacyRecordMeasuresItsBaseAsTrunksMergeBaseWithTheTip(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	cut := ldTrunk(t, main)
 	wt := ldFinished(t, main)
@@ -242,6 +257,7 @@ func TestALegacyRecordMeasuresItsBaseAsTrunksMergeBaseWithTheTip(t *testing.T) {
 // trunk, the landing refuses with the same SDLC-E0054 a moved trunk gets,
 // naming the reason a person -- not the session -- has to decide on.
 func TestALegacyRecordWhoseBranchSharesNoHistoryWithTrunkIsRefused(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -276,6 +292,7 @@ func TestALegacyRecordWhoseBranchSharesNoHistoryWithTrunkIsRefused(t *testing.T)
 // L5: the loop's state reaching trunk gets an extra sentence in the fix,
 // naming that trunk tracks it and has to stop.
 func TestRangeChecksNamesStoppingTrackingWhereTheLoopsStateReachesTrunk(t *testing.T) {
+	t.Parallel()
 	statePath := filepath.Join(config.Dir, "state", "watch.txt")
 	main := ldRepository(t, func(root string) { writeFile(t, root, statePath, "watched\n") })
 	// The project's own .gitignore keeps .sdlc/state/ out; force-track this one
@@ -307,6 +324,7 @@ func TestRangeChecksNamesStoppingTrackingWhereTheLoopsStateReachesTrunk(t *testi
 // own branch and its tracked files -- is caught here, not left for the
 // fast-forward to find out about the hard way.
 func TestALandingCommandThatMovesTrunkIsCaughtWhenEverythingIsAskedAgain(t *testing.T) {
+	t.Parallel()
 	main := lxRepository(t, map[string]string{"build": "git update-ref refs/heads/main HEAD && exit 0"}, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -328,6 +346,7 @@ func TestALandingCommandThatMovesTrunkIsCaughtWhenEverythingIsAskedAgain(t *test
 // iteration and does not try to land anything, whatever the landing's own L0
 // checks would otherwise make of the worktree.
 func TestStopEndsTheIterationAsReleasedWhileAWorktreeStoryStillHasGatesLeft(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldStarted(t, main)
 
@@ -344,6 +363,7 @@ func TestStopEndsTheIterationAsReleasedWhileAWorktreeStoryStillHasGatesLeft(t *t
 // a broken one is refused there, with nothing landed, same as any later
 // refusal.
 func TestLandRefusesWhenTheMainCheckoutsOwnConfigurationCannotBeRead(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -368,6 +388,7 @@ func TestLandRefusesWhenTheMainCheckoutsOwnConfigurationCannotBeRead(t *testing.
 // commit gate itself -- not the implementation gate before it -- before any
 // change is recorded.
 func TestRecordChangeRefusesWhenTheMainCheckoutsOwnConfigurationCannotBeRead(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldStarted(t, main)
 	ldWork(t, wt)
@@ -389,6 +410,7 @@ func TestRecordChangeRefusesWhenTheMainCheckoutsOwnConfigurationCannotBeRead(t *
 // either, is refused for the dirt, and the fix offers to stash it rather than
 // commit straight over what the reviewers saw.
 func TestChangeChecksRefusesADifferentChangeWhoseWorktreeHasUncommittedChanges(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)

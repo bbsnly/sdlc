@@ -87,10 +87,10 @@ func newReleaseCmd() *cobra.Command {
 			}
 			w := cmd.OutOrStdout()
 			fmt.Fprintf(w, "Released %s: the checkout at %s no longer holds it. %s picks it up in any checkout.\n",
-				id, quote(h.Checkout), quote("sdlc start "+id))
+				id, sdlcerr.QuotePath(h.Checkout), quote("sdlc start "+id))
 			if h.Live {
 				fmt.Fprintf(w, "Anything the checkout at %s has not committed stays there, and is not moved.\n",
-					quote(h.Checkout))
+					sdlcerr.QuotePath(h.Checkout))
 			}
 			// Not where this checkout's own freeze is the story's: it is the checkout the
 			// story was released from, moved here, and the freeze is here with it.
@@ -116,12 +116,12 @@ func refuseIfRunning(id string, h store.Holder) error {
 	case h.Tied():
 		named := make([]string, len(h.Contenders))
 		for i, c := range h.Contenders {
-			named[i] = quote(c.Checkout)
+			named[i] = sdlcerr.QuotePath(c.Checkout)
 		}
 		what = "iterations are running on " + quote(id) + " in more than one checkout of this repository"
 		why = "the .sdlc/state/active of each of these names it: " + strings.Join(named, ", ")
 	case !h.Claimed || h.Live && store.ActiveIn(h.Checkout) == id:
-		what = "an iteration is running on " + quote(id) + " in the checkout at " + quote(h.Checkout)
+		what = "an iteration is running on " + quote(id) + " in the checkout at " + sdlcerr.QuotePath(h.Checkout)
 		why = "that checkout's .sdlc/state/active names it, so the story is being worked there now"
 	default:
 		return nil

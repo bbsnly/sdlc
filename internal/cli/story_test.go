@@ -7,6 +7,7 @@ import (
 
 // Run with no subcommand, story explains itself rather than doing nothing.
 func TestStoryWithNoSubcommandPrintsHelp(t *testing.T) {
+	t.Parallel()
 	project(t)
 	r := run(t, "story")
 	if r.code != 0 {

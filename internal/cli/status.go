@@ -85,7 +85,7 @@ func newStatusCmd() *cobra.Command {
 		Example: "  sdlc status\n  sdlc status --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, p, err := openStore()
+			s, p, err := openStore(cmd)
 			if err != nil {
 				return err
 			}

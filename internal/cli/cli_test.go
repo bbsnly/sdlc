@@ -15,6 +15,7 @@ import (
 )
 
 func TestVersionPrintsOneLine(t *testing.T) {
+	t.Parallel()
 	var out, errb bytes.Buffer
 	if code := Execute([]string{"version"}, strings.NewReader(""), &out, &errb); code != 0 {
 		t.Fatalf("exit %d: %s", code, errb.String())
@@ -25,6 +26,7 @@ func TestVersionPrintsOneLine(t *testing.T) {
 }
 
 func TestShortVersionHasNoDecoration(t *testing.T) {
+	t.Parallel()
 	var out, errb bytes.Buffer
 	Execute([]string{"version", "--short"}, strings.NewReader(""), &out, &errb)
 	if strings.ContainsAny(out.String(), "()") {
@@ -35,6 +37,7 @@ func TestShortVersionHasNoDecoration(t *testing.T) {
 // --json works on every command, and a script reading the version is the first
 // to rely on it: version printed prose whatever it was asked.
 func TestVersionAnswersInJSONWhenAsked(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		args []string
 		keys string
@@ -65,6 +68,7 @@ func TestVersionAnswersInJSONWhenAsked(t *testing.T) {
 // value they did not know hid it: `sdlc --reason x unfreeze` ran unfreeze while
 // the rules read `x`. Every flag that takes a value is one they know.
 func TestTheShellRulesKnowEveryFlagThatTakesAValue(t *testing.T) {
+	t.Parallel()
 	var walk func(*cobra.Command)
 	walk = func(cmd *cobra.Command) {
 		for _, flags := range []*pflag.FlagSet{cmd.LocalFlags(), cmd.PersistentFlags()} {
@@ -87,6 +91,7 @@ func TestTheShellRulesKnowEveryFlagThatTakesAValue(t *testing.T) {
 }
 
 func TestBareInvocationHelpsRatherThanErrors(t *testing.T) {
+	t.Parallel()
 	var out, errb bytes.Buffer
 	if code := Execute(nil, strings.NewReader(""), &out, &errb); code != 0 {
 		t.Errorf("a bare invocation should teach, not fail: exit %d", code)
@@ -97,6 +102,7 @@ func TestBareInvocationHelpsRatherThanErrors(t *testing.T) {
 }
 
 func TestUnknownCommandFailsWithAMessage(t *testing.T) {
+	t.Parallel()
 	var out, errb bytes.Buffer
 	if code := Execute([]string{"nope"}, strings.NewReader(""), &out, &errb); code == 0 {
 		t.Error("an unknown command should fail")
@@ -110,6 +116,7 @@ func TestUnknownCommandFailsWithAMessage(t *testing.T) {
 // did not parse came back as prose on standard error, or as JSON carrying only
 // cobra's message.
 func TestACommandLineThatDoesNotParseFailsLikeEverythingElse(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"gate", "dor", "pass", "--bogus"},
 		{"nosuch"},
@@ -149,6 +156,7 @@ func TestACommandLineThatDoesNotParseFailsLikeEverythingElse(t *testing.T) {
 // Every verb carries the shape the documentation depends on. This is the seed
 // of the --help shape test that later rows extend.
 func TestEveryCommandHasAShortAndAnExample(t *testing.T) {
+	t.Parallel()
 	var walk func(*cobra.Command, string)
 	walk = func(c *cobra.Command, path string) {
 		for _, sub := range c.Commands() {

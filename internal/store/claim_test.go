@@ -304,7 +304,7 @@ func TestD4TwoCheckoutsNamingOneUnclaimedStoryTieAndNeitherHoldsIt(t *testing.T)
 		}
 
 		e := clError(t, HeldElsewhereError("US-001", h, "a reason"), sdlcerr.StoryHeldElsewhere)
-		for _, want := range []string{strconv.Quote(main), strconv.Quote(wt), "sess-main", "2026-01-02"} {
+		for _, want := range []string{strconv.Quote(filepath.ToSlash(main)), strconv.Quote(filepath.ToSlash(wt)), "sess-main", "2026-01-02"} {
 			if !strings.Contains(e.Why, want) {
 				t.Errorf("the tie's why does not name %s: %s", want, e.Why)
 			}
@@ -346,7 +346,7 @@ func TestAC8AClaimWhoseCheckoutIsNotACheckoutOfThisRepositoryIsNotLive(t *testin
 				t.Fatalf("HeldElsewhere = %+v, %v, %v; want a claimed holder that is not live", h, elsewhere, err)
 			}
 			e := clError(t, HeldElsewhereError("US-001", h, "a reason"), sdlcerr.HoldingCheckoutMissing)
-			if !strings.Contains(e.What+e.Why, strconv.Quote(named)) {
+			if !strings.Contains(e.What+e.Why, strconv.Quote(filepath.ToSlash(named))) {
 				t.Errorf("the refusal does not name %s: %s / %s", named, e.What, e.Why)
 			}
 			if strings.Contains(e.Fix, named) || !strings.Contains(e.Fix, "sdlc release") {
@@ -369,7 +369,7 @@ func TestAC3AStoryALiveCheckoutHoldsElsewhereIsRefusedNamingItAndTheReason(t *te
 	}
 	e := clError(t, HeldElsewhereError("US-001", h, "what it records is measured on that checkout's tree"),
 		sdlcerr.StoryHeldElsewhere)
-	if !strings.Contains(e.What, "US-001") || !strings.Contains(e.Why, strconv.Quote(wt)) ||
+	if !strings.Contains(e.What, "US-001") || !strings.Contains(e.Why, strconv.Quote(filepath.ToSlash(wt))) ||
 		!strings.Contains(e.Why, "measured on that checkout's tree") {
 		t.Errorf("the refusal is %q / %q", e.What, e.Why)
 	}

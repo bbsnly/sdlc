@@ -113,7 +113,7 @@ func FastForward(ctx context.Context, root, trunk, from, to string) error {
 		if err := p.write(ctx, from, to); err != nil {
 			left := putBack(ctx, written, from, to)
 			return sdlcerr.New(sdlcerr.UncommittedOnTrunk,
-				"git would not move the checkout "+strconv.Quote(p.path)+", which has "+trunk+" checked out",
+				"git would not move the checkout "+sdlcerr.QuotePath(p.path)+", which has "+trunk+" checked out",
 				failure(err, "git refused")+left).WithCause(ErrWouldOverwrite)
 		}
 		written = append(written, p)
@@ -177,7 +177,7 @@ func zeroHash(h string) bool { return strings.Trim(h, "0") == "" }
 // it finds in the way is a refusal; a path that already holds to's content is
 // not in the way, and is marked for the write phase to take in.
 func checkCheckout(ctx context.Context, h holder, trunk, from string, changes []change) (*checkoutPlan, error) {
-	quoted := strconv.Quote(h.path)
+	quoted := sdlcerr.QuotePath(h.path)
 	if h.detached {
 		return nil, partWayRefusal(quoted, "a rebase or a bisect of "+trunk)
 	}
@@ -190,7 +190,7 @@ func checkCheckout(ctx context.Context, h holder, trunk, from string, changes []
 	if _, err := os.Lstat(lock); err == nil {
 		return nil, sdlcerr.New(sdlcerr.UncommittedOnTrunk,
 			"the checkout "+quoted+", which has "+trunk+" checked out, has its index locked",
-			"git keeps "+strconv.Quote(lock)+" while a git command runs there, and the landing does not "+
+			"git keeps "+sdlcerr.QuotePath(lock)+" while a git command runs there, and the landing does not "+
 				"write a checkout's index while one may be").
 			WithFix(`if no git command is running in that checkout, remove the lock file named above; then run "sdlc stop" in the story's worktree again; an assistant hands the story to a person with "sdlc escalate" and stops`)
 	}
@@ -356,7 +356,7 @@ func untracked(dir, p string) (string, error) {
 		return "", nil
 	case err != nil:
 		return "", sdlcerr.New(sdlcerr.RepositoryUnreadable,
-			strconv.Quote(p)+" in "+strconv.Quote(dir)+" could not be read", err.Error()).WithCause(err)
+			strconv.Quote(p)+" in "+sdlcerr.QuotePath(dir)+" could not be read", err.Error()).WithCause(err)
 	}
 	if !listedAs(filepath.Dir(full), filepath.Base(full)) {
 		return "another name", nil
@@ -435,7 +435,7 @@ func putBack(ctx context.Context, written []*checkoutPlan, from, to string) stri
 	for i := len(written) - 1; i >= 0; i-- {
 		p := written[i]
 		if _, err := sealed(ctx, p.path, "read-tree", "-m", "-u", to, from); err != nil {
-			left = append(left, strconv.Quote(p.path))
+			left = append(left, sdlcerr.QuotePath(p.path))
 			continue
 		}
 		var info bytes.Buffer
@@ -450,7 +450,7 @@ func putBack(ctx context.Context, written []*checkoutPlan, from, to string) stri
 				err = nil
 			}
 			if err != nil {
-				left = append(left, strconv.Quote(p.path))
+				left = append(left, sdlcerr.QuotePath(p.path))
 			}
 			if k.index != k.from {
 				info.WriteString(indexInfo(k.index, k.path))
@@ -458,7 +458,7 @@ func putBack(ctx context.Context, written []*checkoutPlan, from, to string) stri
 		}
 		if info.Len() > 0 {
 			if _, err := sealedCall(ctx, p.path, nil, info.Bytes(), nil, "update-index", "-z", "--index-info"); err != nil {
-				left = append(left, strconv.Quote(p.path))
+				left = append(left, sdlcerr.QuotePath(p.path))
 			}
 		}
 	}
@@ -492,18 +492,18 @@ func RemoveLandedWorktree(ctx context.Context, root, dir, branch, landed string)
 	at := slices.IndexFunc(listed, func(w listedWorktree) bool { return samePath(w.path, dir) })
 	switch {
 	case at < 0:
-		return nil, notRemoved(strconv.Quote(dir)+" is not a worktree git lists",
+		return nil, notRemoved(sdlcerr.QuotePath(dir)+" is not a worktree git lists",
 			"only a worktree of this repository is taken away")
 	case at == 0:
-		return nil, notRemoved(strconv.Quote(dir)+" is the main checkout", "the main checkout is never taken away")
+		return nil, notRemoved(sdlcerr.QuotePath(dir)+" is the main checkout", "the main checkout is never taken away")
 	case listed[at].locked:
-		return nil, notRemoved(strconv.Quote(dir)+" is locked",
+		return nil, notRemoved(sdlcerr.QuotePath(dir)+" is locked",
 			"somebody locked it with git worktree lock, and a locked worktree is left to them")
 	case listed[at].branch == "":
-		return nil, notRemoved(strconv.Quote(dir)+" is on no branch",
+		return nil, notRemoved(sdlcerr.QuotePath(dir)+" is on no branch",
 			"a commit on no branch is lost when its worktree is removed")
 	case listed[at].branch != "refs/heads/"+branch:
-		return nil, notRemoved(strconv.Quote(dir)+" does not have "+strconv.Quote(branch)+" checked out",
+		return nil, notRemoved(sdlcerr.QuotePath(dir)+" does not have "+strconv.Quote(branch)+" checked out",
 			"a worktree is taken away only with the branch it was made on")
 	}
 	tip, err := BranchTip(ctx, root, branch)
@@ -521,7 +521,7 @@ func RemoveLandedWorktree(ctx context.Context, root, dir, branch, landed string)
 		return kept, nil
 	}
 	if _, err := sealed(ctx, root, "worktree", "remove", "--", dir); err != nil {
-		return nil, notRemoved("the worktree at "+strconv.Quote(dir)+" could not be taken away",
+		return nil, notRemoved("the worktree at "+sdlcerr.QuotePath(dir)+" could not be taken away",
 			failure(err, "git could not remove it")+"; it and the branch "+strconv.Quote(branch)+
 				" are still there, and a file something has open in it keeps it there on Windows")
 	}

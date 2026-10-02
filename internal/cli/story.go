@@ -54,7 +54,7 @@ func newStoryListCmd() *cobra.Command {
 		Example: "  sdlc story list\n  sdlc story list --json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, _, err := openStore()
+			s, _, err := openStore(cmd)
 			if err != nil {
 				return err
 			}

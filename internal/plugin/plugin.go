@@ -144,7 +144,7 @@ func components(dir, pattern string) ([]Component, error) {
 		}
 		front, lists, body, err := splitFrontmatter(string(raw))
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
+			return nil, fmt.Errorf("%s: %w", filepath.ToSlash(path), err)
 		}
 		out = append(out, Component{
 			Name:        front["name"],
@@ -217,7 +217,7 @@ func readJSON(path string, v any) error {
 		return err
 	}
 	if err := json.Unmarshal(raw, v); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+		return fmt.Errorf("%s: %w", filepath.ToSlash(path), err)
 	}
 	return nil
 }

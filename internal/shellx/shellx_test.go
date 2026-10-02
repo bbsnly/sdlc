@@ -3,34 +3,50 @@ package shellx
 import (
 	"bytes"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// Command hands the string to a real POSIX shell, wherever the command that
-// asked for it runs from: the loop's configured commands are written for sh,
-// and Claude Code on Windows runs them under Git Bash, which has one.
-func TestCommandRunsThroughAPOSIXShell(t *testing.T) {
+// Command hands the string to a real POSIX shell, run from the directory it
+// was given: the loop's configured commands are written for sh, and Claude
+// Code on Windows runs them under Git Bash, which has one.
+//
+// US-050, AC-6: this compared the shell's `pwd` with the directory, and Git
+// Bash spells a drive-letter path in its own /c/... form, not the Windows
+// form, so it failed on Windows with the shell where it should be. What is
+// held here instead holds on every platform: a file the test put in the
+// directory is read by a relative name, and one the command makes by a
+// relative name appears in the directory. The command makes it only once the
+// read has worked, so a shell started anywhere else writes nothing there.
+func TestAC6CommandRunsThroughAPOSIXShellFromTheDirectoryItIsGiven(t *testing.T) {
 	dir := t.TempDir()
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = resolved
+	if err := os.WriteFile(filepath.Join(dir, "given"), []byte("the given directory\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	cmd, err := Command(t.Context(), dir, "pwd")
+	cmd, err := Command(t.Context(), dir, `cat ./given && printf '%s\n' "$((2 + 3))" > made-here`)
 	if errors.Is(err, ErrNoShell) {
 		t.Skip("neither sh nor bash is on PATH")
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out bytes.Buffer
-	cmd.Stdout = &out
+	var out, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v\n%s", err, stderr.String())
 	}
-	if got := strings.TrimSpace(out.String()); got != dir {
-		t.Errorf("pwd = %q, want the directory Command was given: %q", got, dir)
+	if got := strings.TrimSpace(out.String()); got != "the given directory" {
+		t.Errorf("the command read ./given as %q, want the file in the directory Command was given", got)
+	}
+	made, err := os.ReadFile(filepath.Join(dir, "made-here"))
+	if err != nil {
+		t.Fatalf("the file the command made by a relative name is not in the directory Command was given: %v", err)
+	}
+	if got := strings.TrimSpace(string(made)); got != "5" {
+		t.Errorf("$((2 + 3)) wrote %q, want 5 from a POSIX shell's arithmetic", got)
 	}
 }
 

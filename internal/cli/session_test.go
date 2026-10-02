@@ -14,9 +14,8 @@ import (
 // from a terminal when session is empty.
 func storyUnderWay(t *testing.T, session string) string {
 	t.Helper()
-	root := gitProject(t)
-	initialised(t)
-	t.Setenv(store.SessionEnv, session)
+	root := gitProjectInitialised(t)
+	setenv(t, store.SessionEnv, session)
 	mustRun(t, "start")
 	return root
 }
@@ -57,6 +56,7 @@ func sessionRefused(r result) bool {
 // held any other: a model in another session could run `sdlc artifact write`
 // into a story it did not start. Refused, a command changes nothing at all.
 func TestAStoryIsChangedOnlyFromTheSessionWorkingIt(t *testing.T) {
+	t.Parallel()
 	const owner, other = "session-owner", "session-other"
 	for _, c := range []struct {
 		name, stdin string
@@ -74,7 +74,7 @@ func TestAStoryIsChangedOnlyFromTheSessionWorkingIt(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			root := storyUnderWay(t, owner)
-			t.Setenv(store.SessionEnv, other)
+			setenv(t, store.SessionEnv, other)
 			before := projectFiles(t, root)
 			r := runWith(t, c.stdin, c.args...)
 			if r.code == 0 || !sessionRefused(r) {
@@ -115,7 +115,7 @@ func TestAStoryIsChangedOnlyFromTheSessionWorkingIt(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				t.Setenv(store.SessionEnv, allowed.session)
+				setenv(t, store.SessionEnv, allowed.session)
 				r := runWith(t, c.stdin, c.args...)
 				if sessionRefused(r) {
 					t.Errorf("from %s: refused\n%s", allowed.name, r.stderr)
@@ -133,8 +133,9 @@ func TestAStoryIsChangedOnlyFromTheSessionWorkingIt(t *testing.T) {
 // is not refused: it moves the story there, and from then on the session it
 // came from is the one refused.
 func TestAnotherSessionTakesAStoryOverWithStart(t *testing.T) {
+	t.Parallel()
 	root := storyUnderWay(t, "session-owner")
-	t.Setenv(store.SessionEnv, "session-other")
+	setenv(t, store.SessionEnv, "session-other")
 	if r := runWith(t, "# Analysis\n", "artifact", "write", "analysis"); !sessionRefused(r) {
 		t.Fatalf("another session wrote into the story before taking it over:\n%s", r.stderr)
 	}
@@ -144,7 +145,7 @@ func TestAnotherSessionTakesAStoryOverWithStart(t *testing.T) {
 		t.Fatalf("start in another session left session %q (%v)", raw, err)
 	}
 	mustRunWith(t, "# Analysis\n", "artifact", "write", "analysis")
-	t.Setenv(store.SessionEnv, "session-owner")
+	setenv(t, store.SessionEnv, "session-owner")
 	if r := runWith(t, "# Analysis\n", "artifact", "write", "analysis"); !sessionRefused(r) {
 		t.Errorf("the session the story was taken from still wrote into it:\n%s", r.stderr)
 	}
@@ -155,19 +156,20 @@ func TestAnotherSessionTakesAStoryOverWithStart(t *testing.T) {
 // session, or a story that cannot be read, which the command itself reports.
 // `sdlc ack` changes no story.
 func TestTheSessionCheckKeepsOnlyAStoryUnderWay(t *testing.T) {
+	t.Parallel()
 	const owner, other = "session-owner", "session-other"
 	t.Run("a session record left with no story under way", func(t *testing.T) {
 		root := storyUnderWay(t, owner)
 		mustRun(t, "stop")
 		writeFile(t, root, ".sdlc/state/session", owner+"\n")
-		t.Setenv(store.SessionEnv, other)
+		setenv(t, store.SessionEnv, other)
 		if r := run(t, "gate", "analysis", "fail", "--note", "x"); sessionRefused(r) {
 			t.Errorf("refused with no story under way:\n%s", r.stderr)
 		}
 	})
 	t.Run("sdlc ack while a story is under way", func(t *testing.T) {
 		storyUnderWay(t, owner)
-		t.Setenv(store.SessionEnv, other)
+		setenv(t, store.SessionEnv, other)
 		if r := run(t, "ack", "--through", "HEAD"); r.code != 0 {
 			t.Errorf("sdlc ack from another session: exit %d\n%s", r.code, r.stderr)
 		}
@@ -175,7 +177,7 @@ func TestTheSessionCheckKeepsOnlyAStoryUnderWay(t *testing.T) {
 	t.Run("a session record that names no session", func(t *testing.T) {
 		root := storyUnderWay(t, owner)
 		writeFile(t, root, ".sdlc/state/session", "not a session!\n")
-		t.Setenv(store.SessionEnv, other)
+		setenv(t, store.SessionEnv, other)
 		mustRunWith(t, "# Analysis\n", "artifact", "write", "analysis")
 	})
 	t.Run("an active story that cannot be read", func(t *testing.T) {
@@ -187,7 +189,7 @@ func TestTheSessionCheckKeepsOnlyAStoryUnderWay(t *testing.T) {
 		if err := os.Mkdir(active, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv(store.SessionEnv, other)
+		setenv(t, store.SessionEnv, other)
 		if r := runWith(t, "# Analysis\n", "artifact", "write", "analysis"); sessionRefused(r) {
 			t.Errorf("refused over a story that cannot be read:\n%s", r.stderr)
 		}

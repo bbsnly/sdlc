@@ -51,6 +51,7 @@ func rlHeld(t *testing.T) (main, wt string) {
 }
 
 func TestAC8ReleaseWithoutAReasonIsRefusedAndChangesNothing(t *testing.T) {
+	t.Parallel()
 	main, _ := rlHeld(t)
 	before := wtLoopState(t, main)
 	for _, args := range [][]string{
@@ -71,6 +72,7 @@ func TestAC8ReleaseWithoutAReasonIsRefusedAndChangesNothing(t *testing.T) {
 }
 
 func TestAC8ReleasingAStoryNobodyHoldsSaysSo(t *testing.T) {
+	t.Parallel()
 	main, _ := rlHeld(t)
 	r := wtMust(t, main, "", "", "release", "US-002", "--reason", "tidying up")
 	if !strings.Contains(r.stdout, "Nothing to release") || !strings.Contains(r.stdout, strconv.Quote("US-002")) {
@@ -94,6 +96,7 @@ func TestAC8ReleasingAStoryNobodyHoldsSaysSo(t *testing.T) {
 // The refusal names the checkout in its what and why, and its fix names none
 // (T9).
 func TestAC8ReleaseIsRefusedWhileAnIterationRunsOnTheStory(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		setUp func(t *testing.T, main, wt string)
@@ -124,7 +127,7 @@ func TestAC8ReleaseIsRefusedWhileAnIterationRunsOnTheStory(t *testing.T) {
 			}
 			for _, name := range tc.named {
 				dir := map[string]string{"wt": wt, "main": main}[name]
-				if !strings.Contains(r.stderr, strconv.Quote(dir)) {
+				if !strings.Contains(r.stderr, strconv.Quote(filepath.ToSlash(dir))) {
 					t.Errorf("the refusal does not name %s:\n%s", dir, r.stderr)
 				}
 			}
@@ -144,6 +147,7 @@ func TestAC8ReleaseIsRefusedWhileAnIterationRunsOnTheStory(t *testing.T) {
 // stayed behind and that the freeze does not move (C15), and start then picks
 // the story up elsewhere, saying so.
 func TestAC8ReleaseLetsAStoryALiveCheckoutPutDownBeStartedElsewhere(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wt := wtWorktree(t, main, "wt")
 	wtStarted(t, wt, wtSessionWorktree)
@@ -151,7 +155,7 @@ func TestAC8ReleaseLetsAStoryALiveCheckoutPutDownBeStartedElsewhere(t *testing.T
 	wtMust(t, wt, "", "", "stop")
 
 	out := wtMust(t, main, "", "", "release", "US-001", "--reason", "the person moves it").stdout
-	for _, want := range []string{"Released US-001", strconv.Quote(wt), "not committed", "sdlc unfreeze", "sdlc freeze"} {
+	for _, want := range []string{"Released US-001", strconv.Quote(filepath.ToSlash(wt)), "not committed", "sdlc unfreeze", "sdlc freeze"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("release does not say %q:\n%s", want, out)
 		}
@@ -179,11 +183,12 @@ func TestAC8ReleaseLetsAStoryALiveCheckoutPutDownBeStartedElsewhere(t *testing.T
 // AC-8: a gone checkout's claim is let go, with nothing said about work left
 // in a checkout that is not there.
 func TestAC8ReleasingTheClaimOfAGoneCheckoutNamesItAndNothingLeftThere(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	gone1, gone2 := wtWorktree(t, main, "gone1"), wtWorktree(t, main, "gone2")
 	wtStarted(t, gone1, wtSessionWorktree, "US-001")
 	wtStarted(t, gone2, wtSessionThird, "US-002")
-	t.Chdir(main)
+	chdir(t, main)
 	for _, dir := range []string{gone1, gone2} {
 		if err := os.RemoveAll(dir); err != nil {
 			t.Fatal(err)
@@ -195,7 +200,7 @@ func TestAC8ReleasingTheClaimOfAGoneCheckoutNamesItAndNothingLeftThere(t *testin
 		t.Errorf("release --json = %+v, want US-001 let go from %s", payload, gone1)
 	}
 	out := wtMust(t, main, "", "", "release", "US-002", "--reason", "deleted").stdout
-	if !strings.Contains(out, "Released US-002") || !strings.Contains(out, strconv.Quote(gone2)) || strings.Contains(out, "not committed") {
+	if !strings.Contains(out, "Released US-002") || !strings.Contains(out, strconv.Quote(filepath.ToSlash(gone2))) || strings.Contains(out, "not committed") {
 		t.Errorf("releasing a gone checkout's story said:\n%s", out)
 	}
 }
@@ -203,10 +208,11 @@ func TestAC8ReleasingTheClaimOfAGoneCheckoutNamesItAndNothingLeftThere(t *testin
 // Step 12: a gone holder and a tie read as what they are, wherever holders are
 // shown.
 func TestAC6AGoneHolderAndATieReadAsWhatTheyAre(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"}, wtStory{id: "US-003"})
 	gone, wt := wtWorktree(t, main, "gone"), wtWorktree(t, main, "wt")
 	wtStarted(t, gone, wtSessionWorktree, "US-001")
-	t.Chdir(main)
+	chdir(t, main)
 	if err := os.RemoveAll(gone); err != nil {
 		t.Fatal(err)
 	}
@@ -218,8 +224,8 @@ func TestAC6AGoneHolderAndATieReadAsWhatTheyAre(t *testing.T) {
 		r := wtRun(t, main, "", "", args...)
 		text := r.stdout + r.stderr
 		for _, want := range []string{
-			strconv.Quote(gone), "gone: see sdlc release",
-			"more than one checkout names it", strconv.Quote(main), strconv.Quote(wt),
+			strconv.Quote(filepath.ToSlash(gone)), "gone: see sdlc release",
+			"more than one checkout names it", strconv.Quote(filepath.ToSlash(main)), strconv.Quote(filepath.ToSlash(wt)),
 		} {
 			if !strings.Contains(text, want) {
 				t.Errorf("sdlc %s does not say %q:\n%s", strings.Join(args, " "), want, text)
@@ -232,6 +238,7 @@ func TestAC6AGoneHolderAndATieReadAsWhatTheyAre(t *testing.T) {
 // puts this checkout's copy down, says so, and writes nothing to the story's
 // record or its claim.
 func TestAC3StopPutsDownAStaleCopyOfAStoryHeldElsewhereAndWritesNothing(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wt := wtWorktree(t, main, "wt")
 	wtStarted(t, main, wtSessionMain)
@@ -254,6 +261,7 @@ func TestAC3StopPutsDownAStaleCopyOfAStoryHeldElsewhereAndWritesNothing(t *testi
 // person settles it with `sdlc stop` in all but one, which writes nothing to
 // the story's record; the one left then carries on.
 func TestD4ATieIsRefusedToEachContenderAndSettledByStop(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wt := wtWorktree(t, main, "wt")
 	wtSetStatus(t, main, "US-001", model.StatusInProgress)
@@ -264,7 +272,7 @@ func TestD4ATieIsRefusedToEachContenderAndSettledByStop(t *testing.T) {
 
 	for dir, session := range map[string]string{main: wtSessionMain, wt: wtSessionWorktree} {
 		out := wtRefused(t, wtHeldElsewhere, dir, session, "", "start")
-		for _, want := range []string{strconv.Quote(main), strconv.Quote(wt), wtSessionMain, wtSessionWorktree} {
+		for _, want := range []string{strconv.Quote(filepath.ToSlash(main)), strconv.Quote(filepath.ToSlash(wt)), wtSessionMain, wtSessionWorktree} {
 			if !strings.Contains(out, want) {
 				t.Errorf("the tie's refusal in %s does not name %s:\n%s", dir, want, out)
 			}

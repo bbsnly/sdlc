@@ -15,6 +15,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -55,20 +56,26 @@ func TestModeAtNamesTheKindOfEntryAtEachPath(t *testing.T) {
 	run(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--quiet", "-m", "everything")
 	commit := wtGitOut(t, root, "rev-parse", "HEAD")
 
+	// AC-6: NTFS has no executable bit, so a file made executable here is
+	// still read back "100644" on Windows (CI log,
+	// internal/gitx/rework_test.go:78); that one row skips there, with the
+	// reason, and every other row still runs.
+	noExecBit := runtime.GOOS == "windows"
+
 	for _, tc := range []struct {
-		name, path, want string
-		skip             bool
+		name, path, want, skipWhy string
+		skip                      bool
 	}{
-		{"a plain file", "plain.go", "100644", false},
-		{"an executable file", "exec.go", "100755", false},
-		{"a directory", "dir", "040000", false},
-		{"a link", "link.go", "120000", !linked},
-		{"a submodule entry", "sub", "160000", false},
-		{"a path the commit does not have", "missing.go", "", false},
+		{"a plain file", "plain.go", "100644", "", false},
+		{"AC-6 an executable file", "exec.go", "100755", "NTFS has no executable bit to read back", noExecBit},
+		{"a directory", "dir", "040000", "", false},
+		{"a link", "link.go", "120000", "this platform will not make a link here", !linked},
+		{"a submodule entry", "sub", "160000", "", false},
+		{"a path the commit does not have", "missing.go", "", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.skip {
-				t.Skip("this platform will not make a link here")
+				t.Skip(tc.skipWhy)
 			}
 			got, err := ModeAt(t.Context(), root, commit, tc.path)
 			if err != nil {

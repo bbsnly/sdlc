@@ -107,6 +107,7 @@ var lxAt = time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
 // commands run on it though nothing was rebased, and lands only when they
 // pass on the tree that lands.
 func TestAC4AChangedChangeHasTheCommandsRunWithoutARebase(t *testing.T) {
+	t.Parallel()
 	t.Run("AC-4 they pass", func(t *testing.T) {
 		mark, ran := lxMarker(t)
 		main := lxRepository(t, map[string]string{"test": mark}, nil)
@@ -143,6 +144,7 @@ func TestAC4AChangedChangeHasTheCommandsRunWithoutARebase(t *testing.T) {
 // commands run, and a failing one keeps the story from being recorded as
 // landed.
 func TestAC4WhereTrunkAlreadyHoldsAChangedTipTheCommandsStillRun(t *testing.T) {
+	t.Parallel()
 	main := lxRepository(t, map[string]string{"test": "exit 1"}, nil)
 	swGit(t, main, "switch", "--quiet", "-c", "spike")
 	wt := ldFinished(t, main)
@@ -166,6 +168,7 @@ func TestAC4WhereTrunkAlreadyHoldsAChangedTipTheCommandsStillRun(t *testing.T) {
 // commit gate and the retro left it -- no landing mark, change_base as the
 // commit gate wrote it -- and the backlog and the claim with it.
 func TestO3ARefusedFastForwardLeavesTheRecordAsItWas(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, rel, body string }{
 		{"O3 a change in the way", "billing.go", ldBilling + "// a person's edit\n"},
 		{"O3 an untracked file in the way", "refund.go", "package billing // a person's own\n"},
@@ -208,6 +211,7 @@ func TestO3ARefusedFastForwardLeavesTheRecordAsItWas(t *testing.T) {
 // whether the landing would move trunk or finds trunk already holding the
 // tip. No checkout has trunk checked out, so nothing else stands in the way.
 func TestB2ABacklogChangeOnTheStorysBranchIsRefusedAtTheLanding(t *testing.T) {
+	t.Parallel()
 	for _, already := range []bool{false, true} {
 		name := map[bool]string{false: "B2 trunk at the cut", true: "B2 trunk already holding the tip"}[already]
 		t.Run(name, func(t *testing.T) {
@@ -243,6 +247,7 @@ func TestB2ABacklogChangeOnTheStorysBranchIsRefusedAtTheLanding(t *testing.T) {
 // uncommitted change to the main checkout's configuration that would make a
 // failing command pass does not let the story land.
 func TestT5TheMainCheckoutsUncommittedConfigurationDoesNotDecideWhatPasses(t *testing.T) {
+	t.Parallel()
 	main := lxRepository(t, map[string]string{"test": "test ! -f CHANGES.md"}, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -263,6 +268,7 @@ func TestT5TheMainCheckoutsUncommittedConfigurationDoesNotDecideWhatPasses(t *te
 // number on stdout at least the threshold -- not the first number, not one on
 // stderr -- and a zero threshold needs no number.
 func TestAC4TheNumberJudgedIsTheLastOnePrintedOnStdout(t *testing.T) {
+	t.Parallel()
 	zero := map[string]any{"diff_size_cap": 0, "coverage_min": 0, "mutation_min": 70}
 	for _, tc := range []struct {
 		name, command string
@@ -303,6 +309,7 @@ func TestAC4TheNumberJudgedIsTheLastOnePrintedOnStdout(t *testing.T) {
 // record afterwards. The person's write is made by the command itself, at the
 // moment it runs: the record as `sdlc gate verification fail` leaves it.
 func TestD1AStoryAPersonReopensWhileTheCommandsRunIsNotLandedAndTheirWriteStays(t *testing.T) {
+	t.Parallel()
 	reopened := filepath.Join(wtTempDir(t), "reopened.json")
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
@@ -342,6 +349,7 @@ func TestD1AStoryAPersonReopensWhileTheCommandsRunIsNotLandedAndTheirWriteStays(
 // branch since, the next stop lands the rest and records the whole range,
 // from the mark's start.
 func TestAC10ALandingCutShortAndACommitSinceRecordTheWholeRange(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	swGit(t, main, "switch", "--quiet", "-c", "spike")
 	cut := ldTrunk(t, main)
@@ -371,6 +379,7 @@ func TestAC10ALandingCutShortAndACommitSinceRecordTheWholeRange(t *testing.T) {
 // its code, moves no branch, leaves the story not done, and ends saying
 // nothing landed.
 func TestLandingRefusesEachStateWithItsCode(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, code string
 		commands   map[string]string
@@ -483,6 +492,7 @@ func lxMerge(t *testing.T, main, wt string) {
 // A second stop while one is landing the story is refused with SDLC-E0006,
 // and lands nothing.
 func TestAStopWhileAnotherIsLandingTheStoryIsRefused(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -518,6 +528,7 @@ func TestAStopWhileAnotherIsLandingTheStoryIsRefused(t *testing.T) {
 // and handing the story to a person. The plain rebase the session may run is
 // not offered.
 func TestAC3WhereTrunkNoLongerHoldsTheReviewedBaseTheFixIsAPersons(t *testing.T) {
+	t.Parallel()
 	for _, rewritten := range []bool{true, false} {
 		name := map[bool]string{true: "AC-3 trunk rewritten", false: "AC-3 trunk gone back behind the base"}[rewritten]
 		t.Run(name, func(t *testing.T) {
@@ -553,6 +564,7 @@ func TestAC3WhereTrunkNoLongerHoldsTheReviewedBaseTheFixIsAPersons(t *testing.T)
 // iteration running is refused while the question is open, refused again
 // after a rejection, and lands once a person approves.
 func TestAFinishedStoryHandedToAPersonLandsOnlyOnceTheyApprove(t *testing.T) {
+	t.Parallel()
 	t.Run("pending, then approved", func(t *testing.T) {
 		main := ldRepository(t, nil)
 		wt := ldFinished(t, main)
@@ -595,6 +607,7 @@ func TestAFinishedStoryHandedToAPersonLandsOnlyOnceTheyApprove(t *testing.T) {
 // or that only the branch moved; a story already on trunk; what was removed;
 // and what was kept.
 func TestWhatALandingSaysItDid(t *testing.T) {
+	t.Parallel()
 	said := func(t *testing.T, wt string) string {
 		t.Helper()
 		r := wtMust(t, wt, ldSession, "", "stop")
@@ -640,6 +653,7 @@ func TestWhatALandingSaysItDid(t *testing.T) {
 // it is committed, the retro does not say it is done, and status there says
 // that stop lands it.
 func TestAFinishedStoryInItsWorktreeIsSaidToWaitToLand(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldStarted(t, main)
 	ldWork(t, wt)
@@ -667,6 +681,7 @@ func TestAFinishedStoryInItsWorktreeIsSaidToWaitToLand(t *testing.T) {
 // is it measured from trunk's merge base with HEAD. A single checkout records
 // none of it (AC-11).
 func TestTheChangeIsRecordedAtTheCommitGateFromTheRightBase(t *testing.T) {
+	t.Parallel()
 	t.Run("D4 as cut", func(t *testing.T) {
 		main := ldRepository(t, nil)
 		cut := ldTrunk(t, main)

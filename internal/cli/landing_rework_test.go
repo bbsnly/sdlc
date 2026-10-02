@@ -128,6 +128,7 @@ func lrExecutableCodemap(t *testing.T, wt string) string {
 // An odd root CODEMAP.md is refused with SDLC-E0055 before any command
 // runs, the refusal names it, and trunk stays exactly where it was.
 func TestB1AnOddRootCodemapIsRefusedOnTheUnmovedPath(t *testing.T) {
+	t.Parallel()
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
 			main := ldRepository(t, nil)
@@ -156,6 +157,7 @@ func TestB1AnOddRootCodemapIsRefusedOnTheUnmovedPath(t *testing.T) {
 // refused before any command runs, and trunk stays at the tip the rebase
 // itself put it on.
 func TestB1AnOddRootCodemapIsRefusedOnTheRebasedPath(t *testing.T) {
+	t.Parallel()
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
 			main := ldRepository(t, nil)
@@ -185,6 +187,7 @@ func TestB1AnOddRootCodemapIsRefusedOnTheRebasedPath(t *testing.T) {
 // root CODEMAP.md included. It is still refused, and nothing is recorded
 // as landed.
 func TestB1AnOddRootCodemapIsRefusedOnTheAlreadyLandedPath(t *testing.T) {
+	t.Parallel()
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
 			main := ldRepository(t, nil)
@@ -210,6 +213,7 @@ func TestB1AnOddRootCodemapIsRefusedOnTheAlreadyLandedPath(t *testing.T) {
 // B1's control: a plain file at exactly CODEMAP.md still lands, whether it
 // is an ordinary file or an executable one.
 func TestB1APlainOrExecutableRootCodemapStillLands(t *testing.T) {
+	t.Parallel()
 	t.Run("plain", func(t *testing.T) {
 		main := ldRepository(t, nil)
 		wt := ldFinished(t, main)
@@ -238,6 +242,7 @@ func lrAnswerFirst(t *testing.T, text, id, gate string) {
 // SDLC-E0036: a finished story with a question open waits for a person, and
 // the fix names where they answer it and the worktree it is answered in.
 func TestE0036sFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -255,6 +260,7 @@ func TestE0036sFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 // answer-first route, not the "review it again" one requireFreshReviews
 // gives a change trunk still holds the base of.
 func TestE0029sReopenFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	swCommitFile(t, main, "README.md", "# Billing, before the story\n", "trunk before the story")
 	swGit(t, main, "switch", "--quiet", "-c", "spike")
@@ -283,6 +289,7 @@ func TestE0029sReopenFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 // review-stale and freeze fixes do (landing.go :460, reopenRoute with
 // GateImplementation).
 func TestE0055sMissingBranchFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
@@ -305,6 +312,7 @@ func TestE0055sMissingBranchFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing
 // then "sdlc unfreeze --reason ..." once the iteration it reopens is
 // running.
 func TestE0025AndE0043sFreezeFixesNameTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, code string
 		trunk      func(t *testing.T, main string)
@@ -345,6 +353,7 @@ func TestE0025AndE0043sFreezeFixesNameTheAnswerFirstRouteAndTheWorktree(t *testi
 // it offers no --reject: the work is not reopened, only approved or left
 // waiting.
 func TestE0037sFixNamesApproveInTheWorktree(t *testing.T) {
+	t.Parallel()
 	main := ldRepository(t, func(root string) { ldTier(t, root, "US-001", "high") })
 	wt := ldStarted(t, main)
 	ldWork(t, wt)
@@ -383,6 +392,7 @@ func lrPadFile(t *testing.T, n int) string {
 // text than that is still read, and the story lands; by at least that much,
 // it is not, so the check fails closed and the story does not.
 func TestLandingReadsACoverageFigureWithinTheLast64KBOfStdout(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		padAfter int

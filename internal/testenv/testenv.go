@@ -19,10 +19,18 @@ import (
 	"testing"
 )
 
+// quietGit is the global configuration the tests' git reads. Git 2.55
+// maintains a repository in the background after a commit, and its
+// objects/maintenance.lock came and went under captureTree while it copied a
+// template repository: internal/cli failed one run in 40. A test repository
+// never needs collecting, so neither maintenance nor gc runs.
+const quietGit = "[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n"
+
 // Run runs m and returns its exit code, for TestMain. While it runs, git reads
-// no configuration but a repository's own and stops looking for a repository
-// at the temp directory, and no SDLC_ or CLAUDE_ variable is set, nor any GIT_
-// variable but the three that say so.
+// no configuration but a repository's own and the two settings that turn its
+// automatic maintenance off, and stops looking for a repository at the temp
+// directory; no SDLC_ or CLAUDE_ variable is set, nor any GIT_ variable but
+// the three that say so.
 func Run(m *testing.M) int {
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
@@ -38,7 +46,7 @@ func Run(m *testing.M) int {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	global := filepath.Join(dir, "gitconfig")
-	if err := os.WriteFile(global, nil, 0o600); err != nil {
+	if err := os.WriteFile(global, []byte(quietGit), 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, "testenv:", err)
 		return 1
 	}

@@ -36,11 +36,11 @@ func setConfigOnDisk(t *testing.T, root, key string, value any) {
 // the project said. It makes that one reviewer advisory -- still expected to
 // report, no longer able to stop the gate -- and nobody else.
 func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
+	t.Parallel()
 	for _, advisory := range []bool{false, true} {
 		name := map[bool]string{false: "blocking by default", true: "advisory when configured"}[advisory]
 		t.Run(name, func(t *testing.T) {
-			root := gitProject(t)
-			initialised(t)
+			root := gitProjectInitialised(t)
 			if advisory {
 				setConfigOnDisk(t, root, "reviews", map[string]any{"gate7_advisory": true})
 			}
@@ -76,8 +76,7 @@ func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
 // planned is a story that has reached the design review with a plan in place.
 func planned(t *testing.T) string {
 	t.Helper()
-	root := gitProject(t)
-	initialised(t)
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GateDesignReview)
 	return root
@@ -87,8 +86,8 @@ func planned(t *testing.T) string {
 // read the story at Gate 1, and the gate waits for it the way it waits for every
 // reviewer it expects.
 func TestTheHumanAdvocateReadsTheStoryAtGate1WhenTheProjectAsks(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 
 	if listed := decode[reviewListPayload](t, mustRun(t, "review", "list", "--gate", "dor", "--json")); len(listed.Reviews) != 0 {
@@ -157,6 +156,7 @@ func contains(haystack []string, needle string) bool {
 }
 
 func TestAReviewIsStoredWhereTheNextRoundCanReadIt(t *testing.T) {
+	t.Parallel()
 	root := planned(t)
 
 	got := decode[reviewPayload](t, mustRunWith(t, "# Design review\n\nAC-3 has no step.\n",
@@ -189,6 +189,7 @@ func TestAReviewIsStoredWhereTheNextRoundCanReadIt(t *testing.T) {
 }
 
 func TestAGateWaitsForEveryReviewerItExpects(t *testing.T) {
+	t.Parallel()
 	planned(t)
 
 	r := run(t, "gate", "design_review", "pass", "--note", "nobody objected")
@@ -217,6 +218,7 @@ func TestAGateWaitsForEveryReviewerItExpects(t *testing.T) {
 // This is the difference between a review and a rubber stamp. An approval of a
 // plan that has since changed is not an approval.
 func TestChangingWhatWasReviewedMakesTheApprovalStale(t *testing.T) {
+	t.Parallel()
 	planned(t)
 	approveAll(t, model.GateDesignReview)
 	mustRun(t, "gate", "design_review", "pass", "--note", "all clear")
@@ -242,6 +244,7 @@ func TestChangingWhatWasReviewedMakesTheApprovalStale(t *testing.T) {
 }
 
 func TestABlockingReviewerStopsTheGateAndSaysWhy(t *testing.T) {
+	t.Parallel()
 	planned(t)
 	approveAll(t, model.GateDesignReview, "architect")
 	mustRunWith(t, "# Design review\n", "review", "add", "design_review", "architect", "block",
@@ -273,6 +276,7 @@ func TestABlockingReviewerStopsTheGateAndSaysWhy(t *testing.T) {
 // Whether security can block is Gate 2's decision, and it has to be a real one:
 // a flag nobody reads is a label. Until Gate 2 has said, the safe answer is yes.
 func TestSecuritySensitivityDecidesWhetherSecurityBlocks(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name   string
 		flag   []string
@@ -283,8 +287,7 @@ func TestSecuritySensitivityDecidesWhetherSecurityBlocks(t *testing.T) {
 		{"never said", nil, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			root := gitProject(t)
-			initialised(t)
+			root := gitProjectInitialised(t)
 			mustRun(t, "start")
 
 			mustRunWith(t, "# Analysis\n", "artifact", "write", "analysis")
@@ -312,6 +315,7 @@ func TestSecuritySensitivityDecidesWhetherSecurityBlocks(t *testing.T) {
 }
 
 func TestAReviewFromSomebodyThisGateDoesNotExpectSaysWhoItDoes(t *testing.T) {
+	t.Parallel()
 	planned(t)
 
 	r := runWith(t, "# review\n", "review", "add", "design_review", "code-reviewer", "approve")
@@ -334,6 +338,7 @@ func TestAReviewFromSomebodyThisGateDoesNotExpectSaysWhoItDoes(t *testing.T) {
 // The list is what a skill reads to find out who is outstanding, so it has to
 // say which reviews can stop the gate and which are only on the record.
 func TestReviewListSaysWhoBlocksAndWhoHasReported(t *testing.T) {
+	t.Parallel()
 	planned(t)
 	mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "approve")
 
@@ -368,6 +373,7 @@ func TestReviewListSaysWhoBlocksAndWhoHasReported(t *testing.T) {
 // the contract states. Its block was recorded and then ignored, so a budget
 // was a line in CLAUDE.md and nothing more.
 func TestPerfStopsTheGateWhenItBlocksWithoutHavingToApprove(t *testing.T) {
+	t.Parallel()
 	planned(t)
 	approveAll(t, model.GateDesignReview, "perf")
 	mustRunWith(t, "# perf\n", "review", "add", "design_review", "perf", "block",
@@ -391,6 +397,7 @@ func TestPerfStopsTheGateWhenItBlocksWithoutHavingToApprove(t *testing.T) {
 // review with no subcommand teaches rather than errors, like every other
 // command with subcommands of its own.
 func TestReviewWithNoSubcommandPrintsHelp(t *testing.T) {
+	t.Parallel()
 	project(t)
 	out := mustRun(t, "review").stdout
 	if !strings.Contains(out, "Available Commands") {
@@ -401,6 +408,7 @@ func TestReviewWithNoSubcommandPrintsHelp(t *testing.T) {
 // review add and review list both refuse a gate this version does not know,
 // the same way gate itself does.
 func TestReviewRefusesAGateThisVersionDoesNotKnow(t *testing.T) {
+	t.Parallel()
 	planned(t)
 
 	if r := run(t, "review", "add", "vibes", "architect", "approve"); r.code == 0 ||
@@ -416,6 +424,7 @@ func TestReviewRefusesAGateThisVersionDoesNotKnow(t *testing.T) {
 // A reviewer's block that gives no note still says who blocked, just nothing
 // after it: describeNote has nothing to add when there is nothing to add.
 func TestABlockWithNoNoteStillNamesWhoBlocked(t *testing.T) {
+	t.Parallel()
 	planned(t)
 	approveAll(t, model.GateDesignReview, "architect")
 	mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "block")
@@ -433,6 +442,7 @@ func TestABlockWithNoNoteStillNamesWhoBlocked(t *testing.T) {
 // list is where that shows up: nothing else about the round says its subject
 // moved on.
 func TestReviewListMarksARoundStaleWhenItsSubjectHasChanged(t *testing.T) {
+	t.Parallel()
 	root := planned(t)
 	mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "approve")
 	writeFile(t, root, ".sdlc/stories/US-001/PLAN.md", "# Plan\n\nchanged after the review\n")
@@ -458,6 +468,7 @@ func TestReviewListMarksARoundStaleWhenItsSubjectHasChanged(t *testing.T) {
 // that is review add stamping a fresh round, or the gate re-checking one
 // already recorded.
 func TestASubjectThatCannotBeReadIsSaidByWhicheverCommandAsksForIt(t *testing.T) {
+	t.Parallel()
 	t.Run("review add", func(t *testing.T) {
 		root := planned(t)
 		if err := os.Remove(filepath.Join(root, ".sdlc", "stories", "US-001", "PLAN.md")); err != nil {
@@ -497,6 +508,7 @@ func TestASubjectThatCannotBeReadIsSaidByWhicheverCommandAsksForIt(t *testing.T)
 // gate document written by some other means -- or left behind by an older
 // sdlc -- can occupy as a plain file instead.
 func TestAReviewCannotBeStoredWhenItsDirectoryIsAFile(t *testing.T) {
+	t.Parallel()
 	root := planned(t)
 	writeFile(t, root, ".sdlc/stories/US-001/reviews", "not a directory")
 

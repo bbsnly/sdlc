@@ -5,8 +5,9 @@ package cli
 // from the tip of trunk, and the loop works inside it. git.worktrees turns it
 // off, and a configuration that does not name it has it on.
 //
-// The repositories are real and made as a person makes them, with git's own
-// variables taken out of the environment (wtNoGitEnv): sdlc finds each checkout
+// The repositories are real and made as a person makes them, with none of
+// git's own variables in the environment (testenv.Run takes them out, and only
+// the T3 tests, which are not parallel, put one back): sdlc finds each checkout
 // by its .git, as it does for a person. Everything here reads what a caller
 // can see -- start's output, git's answers, the files on disk -- and decodes
 // start's JSON into a struct of its own, so that nothing names an identifier
@@ -229,8 +230,8 @@ func swSmoke(t *testing.T, main, command string) {
 // session given, as the loop's own helper does in one checkout.
 func swReach(t *testing.T, dir, session string, upTo model.Gate) {
 	t.Helper()
-	t.Chdir(dir)
-	t.Setenv(store.SessionEnv, session)
+	chdir(t, dir)
+	setenv(t, store.SessionEnv, session)
 	reach(t, dir, upTo)
 }
 
@@ -238,8 +239,8 @@ func swReach(t *testing.T, dir, session string, upTo model.Gate) {
 // not including, upTo, where reach would begin again at the first.
 func swPass(t *testing.T, dir, session string, from, upTo model.Gate) {
 	t.Helper()
-	t.Chdir(dir)
-	t.Setenv(store.SessionEnv, session)
+	chdir(t, dir)
+	setenv(t, store.SessionEnv, session)
 	on := false
 	for _, gate := range model.Gates {
 		if gate == upTo {
@@ -299,6 +300,7 @@ func swCheckStarted(t *testing.T, main, id, session string, got swStart) string 
 // ---------------------------------------------------------------- AC-1
 
 func TestAC1StartMakesAWorktreeOnAStoryBranchCutFromTheTipOfTrunk(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	trunk := swRev(t, main, "refs/heads/main")
 
@@ -381,6 +383,7 @@ func swStatus(t *testing.T, main string) []string {
 }
 
 func TestAC2StartLeavesTheMainCheckoutAsItWasApartFromTheLoopsOwnBookkeeping(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		prepare func(t *testing.T, main string)
@@ -447,6 +450,7 @@ func TestAC2StartLeavesTheMainCheckoutAsItWasApartFromTheLoopsOwnBookkeeping(t *
 // A worktree is cut from trunk, so the main checkout's branch and its
 // uncommitted work are the person's, not the story's, and hold nothing back.
 func TestAC3AStoryBeginsInAWorktreeWhateverTheMainCheckoutIsOnOrHasNotCommitted(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		prepare func(t *testing.T, main string)
@@ -514,6 +518,7 @@ func TestAC3AStoryBeginsInAWorktreeWhateverTheMainCheckoutIsOnOrHasNotCommitted(
 // commands.smoke is about trunk, which the new worktree is: it runs there, and
 // never in the main checkout, whose files are nobody's story.
 func TestAC3TheSmokeCheckRunsInTheNewWorktree(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"})
 	// Fails wherever the person's own file is, which is only the main checkout.
 	swSmoke(t, main, "test ! -f only-in-the-main-checkout && touch smoke-ran-here")
@@ -546,6 +551,7 @@ func swRemote(t *testing.T) (main, first string) {
 // counted -- the branch the story is cut from -- not whatever the main
 // checkout has checked out, which AC-3 no longer holds to trunk.
 func TestAC3ATrunkBehindItsRemoteStillHoldsANewStoryBack(t *testing.T) {
+	t.Parallel()
 	t.Run("AC-3 the main checkout on trunk", func(t *testing.T) {
 		main, first := swRemote(t)
 		swCommitFile(t, main, "CHANGES.md", "someone else's work\n", "theirs")
@@ -615,6 +621,7 @@ func swCheckNothingLeft(t *testing.T, main, id, refs string) {
 }
 
 func TestAC4ASmokeCheckThatFailsInTheNewWorktreeLeavesNothingBehind(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	swSmoke(t, main, `echo "invoice.go:3:18: undefined: x"; exit 1`)
 	refs, backlog := swRefs(t, main), wtRead(t, filepath.Join(main, "user_stories.json"))
@@ -648,6 +655,7 @@ func TestAC4ASmokeCheckThatFailsInTheNewWorktreeLeavesNothingBehind(t *testing.T
 }
 
 func TestAC4AWorktreeThatCannotBeMadeIsRefusedWithSDLCE0053AndLeavesNothingBehind(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		id   string
@@ -741,6 +749,7 @@ func swShape(t *testing.T, main string) string {
 }
 
 func TestAC5StartingAStoryThatHasAWorktreeAgainPrintsTheSamePathAndBranchAndMakesNothing(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	first := swStarted(t, main, swSessionA)
 	wt := swCheckStarted(t, main, "US-001", swSessionA, first)
@@ -783,6 +792,7 @@ func TestAC5StartingAStoryThatHasAWorktreeAgainPrintsTheSamePathAndBranchAndMake
 // record as a takeover in one checkout puts it there (the analysis gate's
 // fifth question; THREATS T10).
 func TestAC5ANewSessionTakesAStoryOverFromTheMainCheckoutInItsWorktree(t *testing.T) {
+	t.Parallel()
 	// What a takeover leaves on the record in one checkout, with worktrees off.
 	single := wtRepository(t, wtStory{id: "US-001"})
 	wtStarted(t, single, swSessionA)
@@ -814,6 +824,7 @@ func TestAC5ANewSessionTakesAStoryOverFromTheMainCheckoutInItsWorktree(t *testin
 // story is in a worktree is refused another from the main checkout, and
 // nothing is made for it.
 func TestAC5ASessionWorkingAStoryInItsWorktreeIsRefusedAnotherFromTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
 	refs := swRefs(t, main)
@@ -826,6 +837,7 @@ func TestAC5ASessionWorkingAStoryInItsWorktreeIsRefusedAnotherFromTheMainCheckou
 // running at upgrade is -- resumes there, and nothing is made for it (the
 // analysis gate's fourth question).
 func TestAC5AStoryTheMainCheckoutAlreadyHoldsResumesThereAndNoWorktreeIsMade(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	if got := wtStarted(t, main, swSessionA); got.Story != "US-001" {
 		t.Fatalf("start with worktrees off gave %q", got.Story)
@@ -855,6 +867,7 @@ func TestAC5AStoryTheMainCheckoutAlreadyHoldsResumesThereAndNoWorktreeIsMade(t *
 // commits: every gate before the commit passes in the worktree, and what the
 // gates measure is the worktree, against the commit the branch was cut from.
 func TestAC7TrunkMovingRefusesNoGateBeforeTheCommitAndTheStoryIsMeasuredInItsWorktree(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"})
 	cut := swRev(t, main, "refs/heads/main")
 	wt := swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
@@ -912,6 +925,7 @@ func TestAC7TrunkMovingRefusesNoGateBeforeTheCommitAndTheStoryIsMeasuredInItsWor
 // ---------------------------------------------------------------- AC-8
 
 func TestAC8ASecondSessionBeginsASecondStoryInASecondWorktreeAndTheFirstGoesOnAsAlone(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wt1 := swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
 	swReach(t, wt1, swSessionA, model.GateTestsFrozen)
@@ -949,6 +963,7 @@ func TestAC8ASecondSessionBeginsASecondStoryInASecondWorktreeAndTheFirstGoesOnAs
 // ---------------------------------------------------------------- AC-9
 
 func TestAC9TheSwitchDecidesWhetherStartMakesAWorktreeAndAbsentMeansOn(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name      string
 		configure func(t *testing.T) func(root string)
@@ -1002,6 +1017,7 @@ func TestAC9TheSwitchDecidesWhetherStartMakesAWorktreeAndAbsentMeansOn(t *testin
 // that checkout is held to trunk as the released tool held it. SDLC-E0040 is
 // trunk_test.go's, whose fixtures turn worktrees off.
 func TestAC9WithWorktreesOffANewStoryIsHeldToTrunkAsTheReleasedToolHeldIt(t *testing.T) {
+	t.Parallel()
 	t.Run("AC-9 SDLC-E0038", func(t *testing.T) {
 		main := wtRepository(t, wtStory{id: "US-001"})
 		swGit(t, main, "switch", "--quiet", "--create", "spike")
@@ -1074,6 +1090,7 @@ func TestT3GitsVariablesDoNotSteerTheWorktreeStartMakesOrWhatTheGatesMeasure(t *
 // and naming it, or starting in its worktree, picks it up there (the analysis
 // gate's third question).
 func TestAC5AndAC8APlainStartPassesOverAStoppedStoryItsWorktreeHoldsAndNamingItResumesItThere(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		// resume picks the stopped story up again, from main or its worktree.
@@ -1117,7 +1134,7 @@ func swMoved(t *testing.T) (moved string) {
 	swReach(t, was, swSessionA, model.GatePlan)
 	wtMust(t, was, "", "", "stop")
 	moved = filepath.Join(wtTempDir(t), "moved")
-	t.Chdir(filepath.Dir(moved))
+	chdir(t, filepath.Dir(moved))
 	if err := os.Rename(was, moved); err != nil {
 		t.Fatal(err)
 	}
@@ -1129,6 +1146,7 @@ func swMoved(t *testing.T) (moved string) {
 // freeze stayed behind and has to be lifted and made again, and that the work
 // the checkout had not committed was somewhere else.
 func TestD7AMovedCheckoutIsNotToldItsFreezeAndItsWorkStayedBehind(t *testing.T) {
+	t.Parallel()
 	moved := swMoved(t)
 	lock := filepath.Join(moved, ".sdlc", "state", "tests.lock")
 	frozen := wtRead(t, lock)
@@ -1157,12 +1175,13 @@ func TestD7AMovedCheckoutIsNotToldItsFreezeAndItsWorkStayedBehind(t *testing.T) 
 // Where the checkout that held the story really is gone, what release says
 // about the freeze is still true, and is still said.
 func TestD7AStoryReleasedFromACheckoutThatIsGoneIsStillToldItsFreezeStayedThere(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	gone := wtWorktree(t, main, "gone")
 	wtStarted(t, gone, swSessionA)
 	swReach(t, gone, swSessionA, model.GatePlan)
 	wtMust(t, gone, "", "", "stop")
-	t.Chdir(main)
+	chdir(t, main)
 	if err := os.RemoveAll(gone); err != nil {
 		t.Fatal(err)
 	}
@@ -1177,11 +1196,12 @@ func TestD7AStoryReleasedFromACheckoutThatIsGoneIsStillToldItsFreezeStayedThere(
 // movedHere carries a single checkout's story on where the checkout now is,
 // when the move came while the story ran.
 func TestD7ACheckoutMovedWhileItsStoryRunsCarriesOnWhereItIsNow(t *testing.T) {
+	t.Parallel()
 	was := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wtStarted(t, was, swSessionA)
 	swReach(t, was, swSessionA, model.GateAnalysis)
 	moved := filepath.Join(wtTempDir(t), "moved")
-	t.Chdir(filepath.Dir(moved))
+	chdir(t, filepath.Dir(moved))
 	if err := os.Rename(was, moved); err != nil {
 		t.Fatal(err)
 	}
@@ -1208,6 +1228,7 @@ func swNoteOn(text, id string) string {
 // A plain start cannot tell a checkout that was deleted from one that was
 // moved, so its note says both, says who acts, and says how.
 func TestD7APlainStartPassingOverAGoneHolderSaysTheCheckoutMayHaveMovedAndWhatToDo(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		status model.Status
@@ -1222,7 +1243,7 @@ func TestD7APlainStartPassingOverAGoneHolderSaysTheCheckoutMayHaveMovedAndWhatTo
 			gone := wtWorktree(t, main, "gone")
 			wtStarted(t, gone, wtSessionWorktree)
 			wtMust(t, gone, "", "", "stop")
-			t.Chdir(main)
+			chdir(t, main)
 			if err := os.RemoveAll(gone); err != nil {
 				t.Fatal(err)
 			}
@@ -1259,6 +1280,7 @@ func TestD7APlainStartPassingOverAGoneHolderSaysTheCheckoutMayHaveMovedAndWhatTo
 // nothing over and has nothing to say about a story a gone checkout holds. A
 // start that picks does say it.
 func TestD7AStartThatResumesTheSessionsOwnStoryPassesNothingOverAndSaysNothingAboutIt(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"}, wtStory{id: "US-003"})
 	swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
 	// US-003 was started in a checkout that is gone.
@@ -1288,6 +1310,7 @@ func TestD7AStartThatResumesTheSessionsOwnStoryPassesNothingOverAndSaysNothingAb
 // and nowhere else the loop keeps, and a story worked in a worktree writes its
 // record from there.
 func TestD7ARecordWrittenFromAWorktreeNamesNoCheckoutPath(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		// start begins US-001 in a worktree, and returns the main checkout and it.

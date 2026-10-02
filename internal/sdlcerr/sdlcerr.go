@@ -14,6 +14,8 @@ package sdlcerr
 
 import (
 	"errors"
+	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -88,6 +90,13 @@ func (e *Error) Render() string {
 	b.WriteString("  " + e.Code.id + "  " + e.Code.URL() + "\n")
 	return b.String()
 }
+
+// QuotePath is a path on disk as a message names it: slash-separated, so that
+// each separator of a Windows path is written once rather than doubled, and
+// still quoted, so that a path holding a quote or a newline -- a claim's
+// checkout comes from a file in the git directory -- cannot end the quotation
+// and forge text that reads as sdlc's.
+func QuotePath(p string) string { return strconv.Quote(filepath.ToSlash(p)) }
 
 // Render returns the rich form when err is or wraps an [Error], and a plain
 // line otherwise. Command surfaces call this rather than type-switching.

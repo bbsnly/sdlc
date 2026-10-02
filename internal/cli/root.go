@@ -6,11 +6,14 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -123,6 +126,50 @@ func askedForJSON(args []string) bool {
 
 // Execute builds and runs the tree, returning a process exit code.
 func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return executeAt(processEnv(), args, stdin, stdout, stderr)
+}
+
+// ExecuteIn is Execute for a command run as if from dir, an absolute path,
+// reading the variables it takes from its environment through getenv. It never
+// moves the process or changes its environment, so many can run at once.
+func ExecuteIn(dir string, getenv func(string) string, args []string,
+	stdin io.Reader, stdout, stderr io.Writer) int {
+	env := commandEnv{dir: dir, getenv: getenv}
+	// A relative dir would be read against the process's directory, which is
+	// what this exists not to do, so it is refused as one that cannot be read.
+	if !filepath.IsAbs(dir) {
+		env.dir, env.dirErr = "", &fs.PathError{Op: "getwd", Path: dir, Err: fs.ErrInvalid}
+	}
+	return executeAt(env, args, stdin, stdout, stderr)
+}
+
+// commandEnv is where a command runs and how it reads its environment: the
+// process's own for Execute, and what the caller gave for ExecuteIn.
+type commandEnv struct {
+	dir    string
+	dirErr error
+	getenv func(string) string
+}
+
+type commandEnvKey struct{}
+
+func processEnv() commandEnv {
+	wd, err := os.Getwd()
+	return commandEnv{dir: wd, dirErr: err, getenv: os.Getenv}
+}
+
+// envIn is the commandEnv executeAt put on the command's context, which a
+// context derived from it keeps (trunk.go's WithTimeout, storyworktree.go's
+// WithoutCancel). Without one this panics rather than fall back to the process:
+// a command that ran in the process's directory without a word would write
+// into whatever repository that is.
+func envIn(ctx context.Context) commandEnv {
+	return ctx.Value(commandEnvKey{}).(commandEnv)
+}
+
+func envOf(cmd *cobra.Command) commandEnv { return envIn(cmd.Context()) }
+
+func executeAt(env commandEnv, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// Errors go through controls too: a story id or a document name quoted in
 	// one comes from the same places as a title.
 	out, errs := &controls{w: stdout}, &controls{w: stderr}
@@ -134,7 +181,7 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	root := New(stdin, stdout, stderr)
 	root.SetArgs(args)
 
-	err := root.Execute()
+	err := root.ExecuteContext(context.WithValue(context.Background(), commandEnvKey{}, env))
 	if err == nil {
 		return 0
 	}
@@ -210,18 +257,18 @@ func wantJSON(cmd *cobra.Command) bool {
 }
 
 // openStore resolves the project the command is being run in.
-func openStore() (*store.Store, *config.Project, error) {
-	wd, err := os.Getwd()
-	if err != nil {
+func openStore(cmd *cobra.Command) (*store.Store, *config.Project, error) {
+	env := envOf(cmd)
+	if env.dirErr != nil {
 		return nil, nil, sdlcerr.New(sdlcerr.NotAGitRepo,
 			"the current directory could not be read",
-			"sdlc works relative to where it is run").WithCause(err)
+			"sdlc works relative to where it is run").WithCause(env.dirErr)
 	}
-	p, err := config.Open(wd)
+	p, err := config.Open(env.dir)
 	if err != nil {
 		return nil, nil, err
 	}
-	return store.New(p), p, nil
+	return store.New(p).WithEnv(env.getenv), p, nil
 }
 
 // openStoreForWriting is openStore for a command that changes loop state: it
@@ -238,7 +285,7 @@ func openStore() (*store.Store, *config.Project, error) {
 // means anywhere.
 func openStoreForWriting(cmd *cobra.Command) (*store.Store, *config.Project, func(), error) {
 	nothing := func() {}
-	s, p, err := openStore()
+	s, p, err := openStore(cmd)
 	if err != nil {
 		return nil, nil, nothing, err
 	}
@@ -280,7 +327,7 @@ func openStoreForWriting(cmd *cobra.Command) (*store.Store, *config.Project, fun
 // a terminal, which is a person, as it does to `sdlc start`. A story with no
 // session recorded has nothing here to keep.
 func refuseAnotherSession(s *store.Store) error {
-	here := os.Getenv(store.SessionEnv)
+	here := s.CommandSession()
 	if !store.CheckSession(here) {
 		return nil
 	}

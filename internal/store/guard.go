@@ -141,7 +141,7 @@ func (s *Store) LockLanding(id string) (*Guard, error) {
 	return take(path, "stop "+id, 0, func() error {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"another sdlc stop is landing "+id,
-			heldBy(path)+" holds the lock at "+quote(path)+", and a story is landed by one stop at a time").
+			heldBy(path)+" holds the lock at "+sdlcerr.QuotePath(path)+", and a story is landed by one stop at a time").
 			WithFix("wait for that stop to finish, then run \"sdlc stop\" again if the story has not landed; " +
 				"if that stop was killed, its lock breaks open once it is " + guardStale.String() +
 				" old and nothing holds it")

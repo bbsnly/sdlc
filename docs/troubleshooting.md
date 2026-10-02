@@ -56,6 +56,8 @@ message names it.
 or merged by hand — gate records are committed with the work, and a merge conflict in one is
 enough. `sdlc doctor` lists every file it cannot read. Restore a committed one from git, fix
 the permissions on one that cannot be opened, and run `sdlc stop` if it is the iteration file.
+If `.sdlc/stories` itself is not a directory, the message says so: move whatever is there aside
+and restore the directory, from git where your project commits it.
 
 If `sdlc` itself left a file it cannot read, that is a bug: please open an issue at
 <https://github.com/bbsnly/sdlc/issues> with the code above.

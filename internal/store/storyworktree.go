@@ -79,14 +79,15 @@ func (s *Store) IsStoryWorktree(dir, id string) bool {
 
 // At opens another checkout of the same repository, with the configuration
 // that checkout reads and this store's clock, so that everything one command
-// writes carries one time.
+// writes carries one time, and its environment, so that it binds the session
+// the command runs in.
 func (s *Store) At(root string) (*Store, error) {
 	cfg, err := config.Load(root)
 	if err != nil {
 		return nil, err
 	}
 	out := New(&config.Project{Root: root, Config: cfg})
-	out.now = s.now
+	out.now, out.getenv = s.now, s.getenv
 	return out, nil
 }
 
@@ -122,7 +123,10 @@ func EnsureWorktreesIgnored(main string) error {
 			return notIgnored(main, "it could not be written: "+werr.Error())
 		}
 		return nil
-	case errors.Is(err, fs.ErrExist):
+	case errors.Is(err, fs.ErrExist), fsx.Exists(path):
+		// Something there is what O_EXCL refuses on POSIX; Windows refuses a
+		// directory as access denied, which Go reads as EISDIR, not ErrExist.
+		// Asking the disk sends both to the same "not a file".
 		return CheckWorktreesIgnored(main)
 	}
 	return notIgnored(main, "it could not be written: "+err.Error())
@@ -144,8 +148,8 @@ func (s *Store) EnsureStateIgnored(wt string) error {
 		p := filepath.Join(wt, filepath.FromSlash(dir))
 		if info, err := os.Lstat(p); err == nil && !info.IsDir() {
 			return sdlcerr.New(sdlcerr.StateUnwritable,
-				"the loop's state in "+quote(wt)+" could not be kept out of git's view",
-				quote(p)+" is a link or a file where a directory belongs, and nothing is written through one")
+				"the loop's state in "+sdlcerr.QuotePath(wt)+" could not be kept out of git's view",
+				sdlcerr.QuotePath(p)+" is a link or a file where a directory belongs, and nothing is written through one")
 		}
 	}
 	path := filepath.Join(wt, filepath.FromSlash(stateIgnore))
@@ -154,8 +158,8 @@ func (s *Store) EnsureStateIgnored(wt string) error {
 	}
 	if err := fsx.WriteFileAtomic(path, []byte("*\n"), 0o644); err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
-			"the loop's state in "+quote(wt)+" could not be kept out of git's view",
-			quote(path)+" could not be written").WithCause(err)
+			"the loop's state in "+sdlcerr.QuotePath(wt)+" could not be kept out of git's view",
+			sdlcerr.QuotePath(path)+" could not be written").WithCause(err)
 	}
 	return nil
 }
@@ -217,7 +221,7 @@ func hidesAll(raw []byte) bool {
 func notIgnored(main, why string) error {
 	return sdlcerr.New(sdlcerr.WorktreeNotMade,
 		"the story's worktree could not be kept out of the main checkout's git status: "+
-			quote(filepath.Join(main, filepath.FromSlash(worktreesIgnore)))+" does not hide it",
+			sdlcerr.QuotePath(filepath.Join(main, filepath.FromSlash(worktreesIgnore)))+" does not hide it",
 		why+", and without it git status and git add -A in the main checkout take in every story worktree").
 		WithFix(`in the main checkout, put a line "*" in ` + worktreesIgnore + ` and nothing that starts with "!", ` +
 			`or remove the file, then start again; an assistant stops and tells the person`)

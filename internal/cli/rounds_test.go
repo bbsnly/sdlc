@@ -12,8 +12,8 @@ type activePayload struct {
 // loop.max_rework_rounds was written into every configuration and read by
 // nothing, and the runbook counted to three on its own.
 func TestAGateThatKeepsFailingIsHandedToAPerson(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setConfigOnDisk(t, root, "loop", map[string]any{"max_rework_rounds": 2, "max_review_rounds": 2, "max_stop_blocks": 3})
 	addStory(t, root, "US-002")
 	mustRun(t, "start")
@@ -51,6 +51,7 @@ func TestAGateThatKeepsFailingIsHandedToAPerson(t *testing.T) {
 }
 
 func TestAReviewerThatKeepsBlockingIsHandedToAPerson(t *testing.T) {
+	t.Parallel()
 	planned(t)
 
 	// An advisory reviewer's block cannot stop the gate, so it is not a round
@@ -80,6 +81,7 @@ func TestAReviewerThatKeepsBlockingIsHandedToAPerson(t *testing.T) {
 // reader learns the story stopped: it has to say why, quote the note that
 // went unanswered, and name the commands that are a person's to run.
 func TestAHandOverFromAReviewSaysWhatAPersonDoesNext(t *testing.T) {
+	t.Parallel()
 	planned(t)
 
 	first := mustRunWith(t, "# architect\n",
@@ -103,8 +105,8 @@ func TestAHandOverFromAReviewSaysWhatAPersonDoesNext(t *testing.T) {
 }
 
 func TestALimitOfZeroNeverHandsAStoryOver(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setConfigOnDisk(t, root, "loop", map[string]any{"max_rework_rounds": 0, "max_review_rounds": 0, "max_stop_blocks": 3})
 	mustRun(t, "start")
 

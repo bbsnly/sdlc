@@ -421,7 +421,7 @@ func changedNaming(before, after map[string]string, path string) []string {
 		if old, ok := before[name]; ok && old == body {
 			continue
 		}
-		if names(body, path) {
+		if recorded(body, path) {
 			out = append(out, name)
 		}
 	}
@@ -429,10 +429,21 @@ func changedNaming(before, after map[string]string, path string) []string {
 	return out
 }
 
-// names is whether text names the path, as it is or as sdlc quotes it.
+// names is whether text names the path, as it is or as sdlc quotes it in a
+// message: slash-separated, then quoted (AC-3 of US-050). The quoted native
+// path is not accepted, because on Windows it doubles every separator; a file
+// the loop wrote spells a path the JSON way, which recorded reads.
 func names(text, path string) bool {
-	quoted := strconv.Quote(path)
+	quoted := strconv.Quote(filepath.ToSlash(path))
 	return strings.Contains(text, path) || strings.Contains(text, quoted[1:len(quoted)-1])
+}
+
+// recorded is whether a JSON file the loop wrote names the path: as it is, or
+// escaped the way JSON and strconv.Quote both escape it, which on Windows
+// doubles every backslash.
+func recorded(body, path string) bool {
+	quoted := strconv.Quote(path)
+	return strings.Contains(body, path) || strings.Contains(body, quoted[1:len(quoted)-1])
 }
 
 // namesHolder is whether a JSON document ties the story to the checkout at
@@ -1687,7 +1698,7 @@ func TestAC10ASingleCheckoutPrintsAndLeavesWhatTheReleasedToolDoes(t *testing.T)
 		if _, ok := want[name]; ok {
 			continue
 		}
-		if !names(body, root) {
+		if !recorded(body, root) {
 			t.Errorf(".sdlc/%s is new, and is not the record of a claim on this checkout:\n%s", name, body)
 		}
 	}

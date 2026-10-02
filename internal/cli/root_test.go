@@ -12,6 +12,7 @@ import (
 // stdout -- so an empty "sdlc: " line on stderr would be noise nobody asked
 // for.
 func TestQuietExitCarriesNoMessageOfItsOwn(t *testing.T) {
+	t.Parallel()
 	if got := (quietExit{code: 1}).Error(); got != "" {
 		t.Errorf("Error() = %q, want empty", got)
 	}
@@ -22,8 +23,7 @@ func TestQuietExitCarriesNoMessageOfItsOwn(t *testing.T) {
 // clones of the same repository share nothing here, so this is the user's
 // machine being unwritable, not the project's.
 func TestAWriteIsRefusedWhenTheLockDirectoryCannotBeCreated(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	gitProjectInitialised(t)
 
 	home := t.TempDir()
 	switch runtime.GOOS {

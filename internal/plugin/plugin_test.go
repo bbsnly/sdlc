@@ -425,18 +425,31 @@ func TestLoadersFailWhenTheirFileDoesNotExist(t *testing.T) {
 // JSON that fails to parse is a different failure from a file that is not
 // there, and readJSON has to name the file either way -- otherwise the person
 // fixing a broken plugin.json has to guess which of several files it meant.
+//
+// AC-3: the name is slash-separated, on every platform. dir is resolved the
+// same way LoadManifest would resolve it if it ever needed to (it does not;
+// readJSON just joins and reads) -- EvalSymlinks here is only to make the
+// test's own expected path match a CI runner's temp directory exactly,
+// 8.3 short name included, rather than compare two different spellings of
+// the same place.
 func TestLoadManifestFailsOnMalformedJSONAndNamesTheFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".claude-plugin", "plugin.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadManifest(dir); err == nil || !strings.Contains(err.Error(), filepath.ToSlash(path)) {
-		t.Errorf("err = %v, want it to name %s", err, path)
-	}
+	t.Run("AC-3", func(t *testing.T) {
+		dir := t.TempDir()
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = resolved
+		}
+		path := filepath.Join(dir, ".claude-plugin", "plugin.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadManifest(dir)
+		if err == nil || !strings.Contains(err.Error(), filepath.ToSlash(path)) {
+			t.Errorf("err = %v, want it to name %s", err, filepath.ToSlash(path))
+		}
+	})
 }
 
 // Glob matches a directory just as readily as a file; components must fail
@@ -453,23 +466,34 @@ func TestAgentsFailsWhenAMatchedEntryIsADirectory(t *testing.T) {
 
 // A component that fails to parse must say which file and why, not just that
 // something in the plugin's agents or skills is wrong.
+//
+// AC-3: the name is slash-separated, on every platform. dir is resolved the
+// same way the store's path-naming tests resolve a temp directory, so that
+// the test's expected path and the one Agents actually read are the same
+// string -- a CI runner's temp directory can be an 8.3 short name, and
+// os.ReadDir would not expand it back for us before we compared.
 func TestAgentsWrapsAFrontmatterErrorWithThePathAndReason(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "agents"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	bad := filepath.Join(dir, "agents", "broken.md")
-	if err := os.WriteFile(bad, []byte("no frontmatter block here\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	t.Run("AC-3", func(t *testing.T) {
+		dir := t.TempDir()
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = resolved
+		}
+		if err := os.MkdirAll(filepath.Join(dir, "agents"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		bad := filepath.Join(dir, "agents", "broken.md")
+		if err := os.WriteFile(bad, []byte("no frontmatter block here\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 
-	_, err := Agents(dir)
-	if err == nil {
-		t.Fatal("want an error for a component with no frontmatter")
-	}
-	if !strings.Contains(err.Error(), filepath.ToSlash(bad)) || !strings.Contains(err.Error(), "no frontmatter") {
-		t.Errorf("err = %v, want it to name the file and say why", err)
-	}
+		_, err := Agents(dir)
+		if err == nil {
+			t.Fatal("want an error for a component with no frontmatter")
+		}
+		if !strings.Contains(err.Error(), filepath.ToSlash(bad)) || !strings.Contains(err.Error(), "no frontmatter") {
+			t.Errorf("err = %v, want it to name the file (%s) and say why", err, filepath.ToSlash(bad))
+		}
+	})
 }
 
 func TestSplitFrontmatterFailsWhenTheBlockIsNeverClosed(t *testing.T) {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -76,7 +75,7 @@ func newStartCmd() *cobra.Command {
 // where it is off.
 func runStart(cmd *cobra.Command, asked string, said *startSaid) error {
 	// A store that will not open is said by the start below that opens it.
-	if s, _, err := openStore(); err == nil {
+	if s, _, err := openStore(cmd); err == nil {
 		if s.Config().Git.WorktreesOn() {
 			return startInWorktree(cmd, asked, said)
 		}
@@ -110,7 +109,7 @@ func startLocked(cmd *cobra.Command, asked string, checked bool, said *startSaid
 	}
 	defer unlock()
 
-	plan, err := decideStart(s, asked, os.Getenv(store.SessionEnv))
+	plan, err := decideStart(s, asked, s.CommandSession())
 	said.passed = plan.passedOver
 	switch {
 	case err != nil:
@@ -390,7 +389,7 @@ func reportStart(cmd *cobra.Command, s *store.Store, id string, resume bool, ses
 		fmt.Fprint(w, "\nNext: a person types /sdlc:next in Claude Code to work the story.\n")
 		return nil
 	}
-	fmt.Fprintf(w, "Worktree: %s\nBranch: %s\n\n", quote(tree.path), tree.branch)
+	fmt.Fprintf(w, "Worktree: %s\nBranch: %s\n\n", sdlcerr.QuotePath(tree.path), tree.branch)
 	printGates(w, record)
 	if elsewhere {
 		// A session opened here holds no story, so /sdlc:next here starts

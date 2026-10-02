@@ -39,18 +39,6 @@ const (
 	wtSessionThird    = "wt-session-third"
 )
 
-// wtNoGitEnv keeps git's own variables out of the test, so that git and sdlc
-// find each checkout by its .git, as they do for a person.
-func wtNoGitEnv(t *testing.T) {
-	t.Helper()
-	for _, name := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"} {
-		t.Setenv(name, "")
-		if err := os.Unsetenv(name); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
 func wtTempDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -79,11 +67,12 @@ func wtCommit(t *testing.T, dir, message string) {
 }
 
 // wtRun runs a command in dir, from session, or from a terminal when session
-// is empty.
+// is empty. The test's commands go on running there, in that session, until it
+// says otherwise.
 func wtRun(t *testing.T, dir, session, stdin string, args ...string) result {
 	t.Helper()
-	t.Chdir(dir)
-	t.Setenv(store.SessionEnv, session)
+	chdir(t, dir)
+	setenv(t, store.SessionEnv, session)
 	return runWith(t, stdin, args...)
 }
 
@@ -124,10 +113,8 @@ func wtRepository(t *testing.T, stories ...wtStory) string {
 // the new project before it is committed.
 func wtRepositoryWith(t *testing.T, configure func(root string), stories ...wtStory) string {
 	t.Helper()
-	wtNoGitEnv(t)
 	root := wtTempDir(t)
-	wtGit(t, root, "init", "--quiet", "--initial-branch=main")
-	wtMust(t, root, "", "", "init")
+	seedGitInit(t, root)
 	if len(stories) > 0 {
 		wtSetStories(t, root, stories...)
 	}
@@ -314,9 +301,11 @@ func wtPerCheckout(t *testing.T, root string) map[string]string {
 	return out
 }
 
-// wtNames is whether text names the path, as it is or as sdlc quotes it.
+// wtNames is whether text names the path, as it is or as sdlc quotes it in a
+// message: slash-separated, then quoted (AC-3 of US-050). The quoted native
+// path is not accepted, because on Windows it doubles every separator.
 func wtNames(text, path string) bool {
-	quoted := strconv.Quote(path)
+	quoted := strconv.Quote(filepath.ToSlash(path))
 	return strings.Contains(text, path) || strings.Contains(text, quoted[1:len(quoted)-1])
 }
 
@@ -389,6 +378,7 @@ func wtDocument(t *testing.T, r result) any {
 // ---------------------------------------------------------------- AC-1
 
 func TestAC1AWorktreeReadsAndWritesTheMainCheckoutsBacklogAndRecords(t *testing.T) {
+	t.Parallel()
 	for _, layout := range []struct {
 		name    string
 		ignored bool
@@ -486,7 +476,7 @@ func TestAC1AWorktreeReadsAndWritesTheMainCheckoutsBacklogAndRecords(t *testing.
 }
 
 func TestAC1InitInAWorktreeWritesTheStarterBacklogInTheMainCheckout(t *testing.T) {
-	wtNoGitEnv(t)
+	t.Parallel()
 	main := wtTempDir(t)
 	wtGit(t, main, "init", "--quiet", "--initial-branch=main")
 	writeFile(t, main, "README.md", "a project without the loop\n")
@@ -505,6 +495,7 @@ func TestAC1InitInAWorktreeWritesTheStarterBacklogInTheMainCheckout(t *testing.T
 // ---------------------------------------------------------------- AC-2
 
 func TestAC2StartInAWorktreeSkipsAStoryTheMainCheckoutHolds(t *testing.T) {
+	t.Parallel()
 	t.Run("AC-2 a story under way is neither resumed nor picked", func(t *testing.T) {
 		main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 		wt := wtWorktree(t, main, "wt")
@@ -567,6 +558,7 @@ func TestAC2StartInAWorktreeSkipsAStoryTheMainCheckoutHolds(t *testing.T) {
 // Here each checkout starts in turn, and each start is what the lock serialises:
 // every one is given a story of its own, and the one backlog keeps every change.
 func TestAC4EachCheckoutThatStartsIsGivenItsOwnStoryAndTheBacklogKeepsEveryChange(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"}, wtStory{id: "US-003"})
 	second, third := wtWorktree(t, main, "wt-b"), wtWorktree(t, main, "wt-c")
 	copies := map[string]string{
@@ -598,6 +590,7 @@ func TestAC4EachCheckoutThatStartsIsGivenItsOwnStoryAndTheBacklogKeepsEveryChang
 // ---------------------------------------------------------------- AC-5
 
 func TestAC5FreezeUnfreezeAndStopInOneCheckoutLeaveTheOthersFreezeSessionAndStopCount(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wt := wtWorktree(t, main, "wt")
 	for _, c := range []struct{ dir, session, id string }{
@@ -651,6 +644,7 @@ func TestAC5FreezeUnfreezeAndStopInOneCheckoutLeaveTheOthersFreezeSessionAndStop
 // ---------------------------------------------------------------- AC-6
 
 func TestAC6StatusStoryListAndDoctorInEitherCheckoutNameTheCheckoutHoldingEachStory(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"}, wtStory{id: "US-003"})
 	wt := wtWorktree(t, main, "wt")
 	wtStarted(t, main, wtSessionMain, "US-001")
@@ -718,6 +712,7 @@ func TestAC6StatusStoryListAndDoctorInEitherCheckoutNameTheCheckoutHoldingEachSt
 }
 
 func TestAC6LogInTheMainCheckoutListsAStoryCommittedInAWorktreeAndWhoHoldsIt(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"})
 	wt := wtWorktree(t, main, "wt")
 	wtStarted(t, wt, wtSessionWorktree)

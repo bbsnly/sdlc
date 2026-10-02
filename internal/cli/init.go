@@ -40,13 +40,13 @@ func newInitCmd() *cobra.Command {
 		Example: "  sdlc init\n  sdlc init --force   # restore the default settings, keeping your stories",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			wd, err := os.Getwd()
-			if err != nil {
+			env := envOf(cmd)
+			if env.dirErr != nil {
 				return sdlcerr.New(sdlcerr.NotAGitRepo,
 					"the current directory could not be read",
-					"sdlc sets up the repository you run it in").WithCause(err)
+					"sdlc sets up the repository you run it in").WithCause(env.dirErr)
 			}
-			root, err := config.FindRoot(wd)
+			root, err := config.FindRoot(env.dir)
 			if err != nil {
 				return err
 			}

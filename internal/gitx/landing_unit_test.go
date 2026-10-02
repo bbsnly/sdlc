@@ -439,10 +439,9 @@ func TestChangedUnderIsWhatChangedAtOrUnderAPathCaseFolded(t *testing.T) {
 		"user_stories.json": "{\"stories\":[]}\n",
 		"src/a.go":          "package a\n",
 	})
-	tip := luCommitOf(t, root, base, map[string]string{
+	tipFiles := map[string]string{
 		".sdlc/config.json":      "{\"changed\":true}\n",
 		".SDLC/notes.json":       "{}\n",
-		".Sdlc/state/run\nnext":  "x\n",
 		".sdlc-other/x":          "x\n",
 		"docs/.sdlc/y":           "y\n",
 		"user_stories.json":      "{\"stories\":[{}]}\n",
@@ -450,27 +449,38 @@ func TestChangedUnderIsWhatChangedAtOrUnderAPathCaseFolded(t *testing.T) {
 		"user_stories.json.orig": "{}\n",
 		"src/a.go":               "package a\n",
 		"src/\"quoted\" name.go": "package a\n",
-	})
+	}
+	// AC-6: a name with a newline is a case-folding fixture only POSIX can
+	// hold -- git update-index --cacheinfo refuses it on Windows with
+	// "error: Invalid path" (CI log, landing_unit_test.go:442), which would
+	// kill the fixture before any of the checks below ran. Left out there,
+	// with the reason; every other case-folding check still runs.
+	sdlcWant := []string{".sdlc/config.json", ".sdlc/old.json", ".SDLC/notes.json"}
+	if runtime.GOOS != "windows" {
+		tipFiles[".Sdlc/state/run\nnext"] = "x\n"
+		sdlcWant = append(sdlcWant, ".Sdlc/state/run\nnext")
+	}
+	tip := luCommitOf(t, root, base, tipFiles)
 	ctx := t.Context()
 	for _, tc := range []struct {
-		dir       string
+		name, dir string
 		want, not []string
 	}{
-		{".sdlc",
-			[]string{".sdlc/config.json", ".sdlc/old.json", ".SDLC/notes.json", ".Sdlc/state/run\nnext"},
+		{"AC-6 .sdlc", ".sdlc",
+			sdlcWant,
 			[]string{".sdlc-other/x", "docs/.sdlc/y", "user_stories.json"}},
-		{".SDLC",
+		{".SDLC", ".SDLC",
 			[]string{".sdlc/config.json", ".SDLC/notes.json"},
 			nil},
-		{"user_stories.json",
+		{"user_stories.json", "user_stories.json",
 			[]string{"user_stories.json", "User_Stories.JSON"},
 			[]string{"user_stories.json.orig", ".sdlc/config.json"}},
-		{"src",
+		{"src", "src",
 			[]string{"src/\"quoted\" name.go"},
 			[]string{"src/a.go"}},
-		{"nowhere", nil, []string{".sdlc/config.json"}},
+		{"nowhere", "nowhere", nil, []string{".sdlc/config.json"}},
 	} {
-		t.Run(tc.dir, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			got, err := ChangedUnder(ctx, root, base, tip, tc.dir)
 			if err != nil {
 				t.Fatalf("ChangedUnder: %v", err)

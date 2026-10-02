@@ -48,3 +48,9 @@ func finalPath(p string) (string, bool) {
 		return strings.TrimPrefix(out, `\\?\`), true
 	}
 }
+
+// normalise is p, which has no symlink on it, spelled as resolve would spell
+// it: with the case and the long names the disk has. With no symlink to
+// follow, filepath.EvalSymlinks follows none, and finalPath is bounded by
+// Windows itself.
+func normalise(p string) string { return resolve(p) }

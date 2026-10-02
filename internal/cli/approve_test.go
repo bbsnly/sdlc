@@ -12,8 +12,8 @@ import (
 // A question the loop stops to ask is worth nothing if the loop can carry on
 // past it, so a story handed to a person stays with them until they answer.
 func TestAnEscalatedStoryWaitsForAPersonToAnswer(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 
 	if r := run(t, "escalate", "spec_unclear", "--message", "which one?"); !strings.Contains(r.stderr, "no story being worked on") {
 		t.Errorf("an escalation with no iteration running was not refused:\n%s", r.stderr)
@@ -79,8 +79,8 @@ func TestAnEscalatedStoryWaitsForAPersonToAnswer(t *testing.T) {
 // human_gates.pre_commit_pause_tiers was written into every configuration and
 // read by nothing, so a high-risk story went to trunk with nobody asked.
 func TestAStoryInAPausedTierIsCommittedOnlyOnceAPersonApprovesIt(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	writeFile(t, root, "user_stories.json", `{"stories":[
 	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"High","priority":1,
 	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN a paid invoice is refunded, the money goes back"}]}]}`)
@@ -113,8 +113,8 @@ func TestAStoryInAPausedTierIsCommittedOnlyOnceAPersonApprovesIt(t *testing.T) {
 
 // And a story in a tier that is not paused is committed as it always was.
 func TestAStoryInATierThatIsNotPausedIsNotHeld(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setConfigOnDisk(t, root, "human_gates", map[string]any{"pre_commit_pause_tiers": []string{}})
 	writeFile(t, root, "user_stories.json", `{"stories":[
 	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"high","priority":1,
@@ -131,8 +131,8 @@ func TestAStoryInATierThatIsNotPausedIsNotHeld(t *testing.T) {
 // Sending the work back tells whoever picks it up what to change, so the reason
 // is not optional, and it goes on the record where the next session reads it.
 func TestARejectionNeedsAReasonAndRecordsIt(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	mustRun(t, "start")
 	mustRun(t, "escalate", "pre_commit_approval", "--message", "ready to commit?")
 
@@ -159,8 +159,8 @@ func TestARejectionNeedsAReasonAndRecordsIt(t *testing.T) {
 // A story named that the backlog has never heard of is refused before
 // anything is written, the same as gate --story and review add --story.
 func TestApproveRefusesAStoryThatIsNotInTheBacklog(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 
 	if r := run(t, "approve", "NOPE-9"); r.code == 0 {
 		t.Fatal("an answer was recorded for a story the backlog has never heard of")
@@ -170,8 +170,7 @@ func TestApproveRefusesAStoryThatIsNotInTheBacklog(t *testing.T) {
 // The tree an approval is stamped with is asked of git, and git that cannot
 // run is said with its own reason rather than one that reads as a rejection.
 func TestApproveRefusesWithGitsOwnReasonWhenGitCannotRun(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 	mustRun(t, "escalate", "spec_unclear", "--message", "which one?")
 	t.Setenv("PATH", t.TempDir())

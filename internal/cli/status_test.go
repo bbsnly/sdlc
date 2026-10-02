@@ -8,8 +8,8 @@ import (
 // A status the backlog invented -- by a hand edit, or an older build -- is
 // still counted, rather than vanishing from a total a person might rely on.
 func TestABacklogStatusOutsideTheNineIsStillCounted(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	writeFile(t, root, "user_stories.json", `{"stories":[
 	  {"id":"US-001","title":"Something odd","status":"blocked","priority":1,
 	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN nothing, THEN nothing"}]}]}`)
@@ -26,8 +26,8 @@ func TestABacklogStatusOutsideTheNineIsStillCounted(t *testing.T) {
 // A project that tracks no budget and has spent nothing has no cost line to
 // show: it never has to look at a "$0.00" it never asked to see.
 func TestStatusSaysNothingAboutCostWithNoBudgetAndNoSpend(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setBudgetOnDisk(t, root, 0)
 	mustRun(t, "start")
 
@@ -43,8 +43,8 @@ func TestStatusSaysNothingAboutCostWithNoBudgetAndNoSpend(t *testing.T) {
 // Spending something is worth saying even where no budget was ever set: "what
 // did this cost" has an answer either way.
 func TestStatusShowsTheSpendEvenWithNoBudgetSet(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setBudgetOnDisk(t, root, 0)
 	mustRun(t, "start")
 	mustRun(t, "cost", "add", "--usd", "3")

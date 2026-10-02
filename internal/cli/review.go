@@ -206,7 +206,7 @@ func newReviewListCmd() *cobra.Command {
 				}
 			}
 
-			s, _, err := openStore()
+			s, _, err := openStore(cmd)
 			if err != nil {
 				return err
 			}

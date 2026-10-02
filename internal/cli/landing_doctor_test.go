@@ -11,6 +11,7 @@ import (
 )
 
 func TestDoctorWarnsBeforeAStoryStartsWhereTrunkTracksTheLoopsState(t *testing.T) {
+	t.Parallel()
 	tracking := ldRepository(t, func(root string) {
 		writeFile(t, root, ".gitignore", "")
 		writeFile(t, root, ".sdlc/state/tracked.json", "{}\n")

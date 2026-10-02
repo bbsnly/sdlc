@@ -676,7 +676,7 @@ func TestAC1StartMakesAWorktreeOnAStoryBranchCutFromTrunkAndSaysWhere(t *testing
 				t.Errorf("start wrote .sdlc/state/%s in the main checkout", name)
 			}
 		}
-		if claim := readFile(t, filepath.Join(main.dir, ".git", "sdlc", "claims", "US-001.json")); !names(claim, w.dir) {
+		if claim := readFile(t, filepath.Join(main.dir, ".git", "sdlc", "claims", "US-001.json")); !recorded(claim, w.dir) {
 			t.Errorf("the claim on US-001 does not name its worktree %s:\n%s", w.dir, claim)
 		}
 		if got := statuses(t, main.backlog())["US-001"]; got != "in_progress" {
@@ -747,7 +747,7 @@ func TestAC1StartMakesAWorktreeOnAStoryBranchCutFromTrunkAndSaysWhere(t *testing
 		}
 		for _, name := range slices.Sorted(maps.Keys(kept)) {
 			for _, p := range []string{main.dir, strings.TrimPrefix(main.dir, "/private")} {
-				if names(kept[name], p) {
+				if recorded(kept[name], p) {
 					t.Errorf("%s names the path %s", name, p)
 				}
 			}
@@ -1922,7 +1922,7 @@ func TestACheckoutMovedWhileItsStoryRunsKeepsTheStory(t *testing.T) {
 	moved.runWith(t, "# Plan\n", "artifact", "write", "plan")
 	moved.run(t, "gate", "plan", "pass", "--note", "one step")
 	claim := readFile(t, filepath.Join(moved.dir, ".git", "sdlc", "claims", "US-001.json"))
-	if !names(claim, moved.dir) || names(claim, main.dir) {
+	if !recorded(claim, moved.dir) || recorded(claim, main.dir) {
 		t.Errorf("the claim on US-001 does not name where the checkout is now, %s:\n%s", moved.dir, claim)
 	}
 }

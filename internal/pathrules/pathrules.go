@@ -8,6 +8,7 @@
 package pathrules
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -39,12 +40,19 @@ type Resolver struct {
 	disk *diskAnswers
 }
 
-// diskAnswers is whether each path asked about is there, and where each
-// existing path leads with its links followed.
+// diskAnswers is what Lstat said of each path asked about, and where each
+// existing path leads with its links followed: whole, for resolve, and from a
+// place known to hold no link, with the links counted, for Place's walk.
 type diskAnswers struct {
-	there    map[string]bool
+	there    map[string]entry
 	resolved map[string]string
+	followed map[[2]string]followed
 }
+
+// entry is what Lstat said of a path: whether it is there, and whether it is a
+// link or a directory itself. symlink is a symlink alone, the only link
+// EvalSymlinks follows.
+type entry struct{ there, link, symlink, dir bool }
 
 // NewResolver resolves the project's own path, once.
 func NewResolver(project string) Resolver {
@@ -55,23 +63,30 @@ func NewResolver(project string) Resolver {
 // it is used. It is for one decision, over which the disk is taken not to
 // change: a Resolver kept while files come and go would answer from before.
 func (res Resolver) Memoised() Resolver {
-	res.disk = &diskAnswers{there: map[string]bool{}, resolved: map[string]string{}}
+	res.disk = &diskAnswers{there: map[string]entry{}, resolved: map[string]string{}, followed: map[[2]string]followed{}}
 	return res
 }
 
 // there reports whether p is on disk, its last element not followed.
-func (res Resolver) there(p string) bool {
-	if res.disk == nil {
-		_, err := os.Lstat(p)
-		return err == nil
+func (res Resolver) there(p string) bool { return res.lstat(p).there }
+
+// lstat is what Lstat says of p, asked once where res is memoised. A link is a
+// symlink, or on Windows a junction, which Go reports as irregular.
+func (res Resolver) lstat(p string) entry {
+	if res.disk != nil {
+		if e, asked := res.disk.there[p]; asked {
+			return e
+		}
 	}
-	ok, asked := res.disk.there[p]
-	if !asked {
-		_, err := os.Lstat(p)
-		ok = err == nil
-		res.disk.there[p] = ok
+	var e entry
+	if info, err := os.Lstat(p); err == nil {
+		e = entry{there: true, link: info.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0,
+			symlink: info.Mode()&fs.ModeSymlink != 0, dir: info.IsDir()}
 	}
-	return ok
+	if res.disk != nil {
+		res.disk.there[p] = e
+	}
+	return e
 }
 
 // resolve is resolve(p), asked once where res is memoised.
@@ -128,9 +143,15 @@ func (res Resolver) Rel(p string) (rel string, outside bool) {
 // Nothing is cleaned before the links are read. Rel cleans first, and so reads
 // `link/../x` as x beside the link, where the filesystem goes to x beside what
 // the link leads to: through a link into another checkout, a record there was
-// written under a name that was nowhere near it. So the longest part of p that
-// exists is left to the filesystem, `..` and all, and only what is not there
-// yet, where there is no link left to follow, is taken apart by name.
+// written under a name that was nowhere near it. So the walk down the longest
+// part of p that exists reads a `..` after a link as the parent of where the
+// link leads, and only what is not there yet, where there is no link left to
+// follow, is taken apart by name.
+//
+// The walk reads `.` and `..` itself and hands neither to the OS. Win32 removes
+// `lnk\..` by name before NTFS sees the path, so on Windows both of the hook's
+// readings came back name-first, while Git Bash, which runs the command,
+// follows the link first (R2-5, from US-029.2).
 func (res Resolver) Place(p string) (string, bool) {
 	var abs string
 	switch {
@@ -149,18 +170,61 @@ func (res Resolver) Place(p string) (string, bool) {
 	parts := strings.FieldsFunc(abs[len(volume):], func(r rune) bool { return r == '/' || r == filepath.Separator })
 	sep := string(filepath.Separator)
 
-	// Down from the root, as resolveExisting goes, and for the same reason.
-	existing, i := volume+sep, 0
+	// Down from the root, as resolveExisting goes, and for the same reason. at
+	// is settled while no link has been crossed since known, the last place on
+	// the way known to be there and to hold no link, which at starts with.
+	// Only an unsettled at is followed, at a `..`, so a `..` after plain
+	// directories costs nothing. left is how many more links the word may
+	// follow.
+	at, known, settled, isDir, i, crossed, left := volume+sep, volume+sep, true, true, 0, 0, maxLinks
+	dotted, stopped := false, false
+walk:
 	for ; i < len(parts); i++ {
-		next := existing + parts[i]
-		if !res.there(next) {
-			break
+		switch parts[i] {
+		case ".":
+			dotted = true
+		case "..":
+			dotted = true
+			if filepath.Dir(at) == at {
+				continue // `..` at the top of a volume stays there, as every platform reads it
+			}
+			if !settled {
+				to, ok := res.follow(known, at, crossed, &left)
+				if !ok {
+					stopped = true // past the budget, or a link to nothing: the rest by name
+					break walk
+				}
+				at, known, settled, crossed, isDir = to, to, true, 0, res.lstat(to).dir
+			}
+			if !isDir {
+				break walk // the OS cannot go up from here either: the rest by name, as before
+			}
+			at, isDir = filepath.Dir(at), true
+			known = at
+		default:
+			next := joinName(at, parts[i])
+			e := res.lstat(next)
+			if !e.there {
+				break walk
+			}
+			if e.link {
+				crossed++
+			}
+			at, settled, isDir = next, settled && !e.link, e.dir
+			if settled {
+				known = at
+			}
 		}
-		existing = next + sep
 	}
-	resolved := volume + sep
-	if i > 0 {
-		resolved = res.resolve(strings.TrimSuffix(existing, sep))
+	resolved := at
+	switch {
+	case filepath.Dir(at) == at, stopped:
+	case dotted:
+		if to, ok := res.follow(known, at, crossed, &left); ok {
+			resolved = to
+		}
+	default:
+		resolved = res.resolve(at)
 	}
 	base := filepath.VolumeName(resolved)
 	kept := strings.FieldsFunc(resolved[len(base):], func(r rune) bool { return r == '/' || r == filepath.Separator })
@@ -177,6 +241,133 @@ func (res Resolver) Place(p string) (string, bool) {
 	}
 	return base + sep + strings.Join(kept, sep), true
 }
+
+// joinName is dir/name, with a separator between them unless dir ends in one
+// or is a volume alone, as EvalSymlinks joins them.
+func joinName(dir, name string) string {
+	if len(dir) > len(filepath.VolumeName(dir)) && !os.IsPathSeparator(dir[len(dir)-1]) {
+		dir += string(filepath.Separator)
+	}
+	return dir + name
+}
+
+// followed is where a path leads with its links followed, how many links that
+// took, and whether they could all be followed.
+type followed struct {
+	to    string
+	links int
+	ok    bool
+}
+
+// follow is resolve for Place's walk: where at leads with its links followed,
+// each counted against *left, which it lowers. known is the start of at that
+// is there and holds no link, and crossed the links in the rest of it. Where
+// at needs more links than *left allows, or leads nowhere, it says false and
+// leaves *left alone.
+func (res Resolver) follow(known, at string, crossed int, left *int) (string, bool) {
+	f, asked := followed{}, false
+	if res.disk != nil {
+		f, asked = res.disk.followed[[2]string{known, at}]
+	}
+	if !asked {
+		f = res.followFrom(known, at, crossed, *left)
+		if res.disk != nil && f.links <= *left {
+			res.disk.followed[[2]string{known, at}] = f
+		}
+	}
+	if !f.ok || f.links > *left {
+		return at, false
+	}
+	*left -= f.links
+	return f.to, true
+}
+
+// followFrom is follow, asked of the disk. Windows follows every link on the
+// way, symlink or junction, in one call that it bounds itself, and the walk
+// counts the links it crossed; elsewhere, and where that call fails, the links
+// are followed here and every one is counted, the ones their targets lead
+// through too. limit+1 links is a path that needs more than limit.
+func (res Resolver) followFrom(known, at string, crossed, limit int) followed {
+	out, ok := finalPath(at)
+	f := followed{to: out, links: crossed, ok: true}
+	if !ok {
+		f = res.walkLinks(known, at, limit)
+	}
+	return f
+}
+
+// walkLinks is filepath.EvalSymlinks's own walk of at, started after known,
+// counting the symlinks it follows: within limit it gives EvalSymlinks's
+// answer, or not ok where EvalSymlinks fails, and past it, limit+1 without
+// following one more. EvalSymlinks follows 255, and an absolute target sends
+// it back to the root, so one call on a word built for it cost half a second,
+// and one at every `..` of the word held the hook past its timeout.
+func (res Resolver) walkLinks(known, at string, limit int) followed {
+	separator := func(r rune) bool { return r == '/' || r == filepath.Separator }
+	dest, rest, links := known, at[len(known):], 0
+	for rest != "" {
+		rest = strings.TrimLeftFunc(rest, separator)
+		name, after := rest, ""
+		if j := strings.IndexFunc(rest, separator); j >= 0 {
+			name, after = rest[:j], rest[j:]
+		}
+		rest = after
+		switch name {
+		case "", ".", "..":
+			if name == ".." {
+				dest = filepath.Dir(dest) // dest holds no link, so its parent by name is its parent on disk
+			}
+			continue
+		}
+		dest = joinName(dest, name)
+		e := res.lstat(dest)
+		switch {
+		case !e.there, !e.symlink && !e.dir && rest != "":
+			return followed{links: links}
+		case !e.symlink:
+			continue
+		case links == limit:
+			return followed{links: limit + 1}
+		}
+		links++
+		target, err := os.Readlink(dest)
+		if err != nil {
+			return followed{links: links}
+		}
+		// A relative target replaces the link's own name; an absolute one
+		// starts again at the root it names.
+		v := rootLen(target)
+		dest, rest = filepath.Dir(dest), target[v:]+rest
+		if v > 0 {
+			dest = target[:v]
+		}
+	}
+	return followed{to: normalise(filepath.Clean(dest)), links: links, ok: true}
+}
+
+// rootLen is how much of p is the volume and the separator after it that an
+// absolute path starts with, as EvalSymlinks reads a link's target: 0 for a
+// relative one.
+func rootLen(p string) int {
+	v := len(filepath.VolumeName(p))
+	if v < len(p) && os.IsPathSeparator(p[v]) {
+		v++
+	}
+	return v
+}
+
+// maxLinks is how many links Place may follow for one word, every one
+// counted: the ones the word crosses and the ones their targets lead through.
+// Counting only the ones it crossed, a word with a link at each `..` leading
+// through 255 more took 44.5 s, past the hook's timeout. It has to stay above
+// every platform's own limit on the links one lookup follows -- Linux 40,
+// macOS 32, Windows 63 reparse points -- so that the bound never cuts short a
+// word that one call can write through. That holds on Linux and macOS, where
+// each link counted is one the OS follows in the same lookup. On Windows Go
+// marks every reparse point that is not a symlink irregular, and the walk
+// counts those too, though Windows passes through them without following
+// anything, so a word through them can reach the bound first: US-053.
+const maxLinks = 64
 
 // Within is p relative to root, slash-separated, when p is root or inside it,
 // comparing as the filesystem compares names. Both are absolute and resolved.

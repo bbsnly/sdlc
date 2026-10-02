@@ -13,8 +13,7 @@ import (
 // thing that happens.
 func landedStory(t *testing.T) (root, base, commit string) {
 	t.Helper()
-	root = gitProject(t)
-	initialised(t)
+	root = gitProjectInitialised(t)
 	mustRun(t, "start")
 	reach(t, root, model.GateCommit)
 	base = headOf(t, root)
@@ -37,6 +36,7 @@ func revList(t *testing.T, root, base, end string) []string {
 // every story is, and what the gate writes down for it -- the commit code
 // review passed on, up to the commit that carries the work -- does not change.
 func TestAC5TheOrdinaryOneCommitStoryRecordsTheRangeItAlwaysDid(t *testing.T) {
+	t.Parallel()
 	root, base, commit := landedStory(t)
 
 	passed := decode[gatePayload](t, mustRun(t, "gate", "commit", "pass", "--note", "on trunk", "--json"))
@@ -74,6 +74,7 @@ func TestAC5TheOrdinaryOneCommitStoryRecordsTheRangeItAlwaysDid(t *testing.T) {
 // as a set, and any of them may name any commit inside the range, not only its
 // end.
 func TestAC4TheGateRefusesANoteNamingACommitItsRangeDoesNotHold(t *testing.T) {
+	t.Parallel()
 	root, base, commit := landedStory(t)
 
 	for _, tc := range []struct {

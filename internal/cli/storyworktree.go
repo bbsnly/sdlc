@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"unicode"
 
@@ -52,11 +51,11 @@ func startInWorktree(cmd *cobra.Command, asked string, said *startSaid) error {
 // startRound decides what start is to do and does it, and reports whether it
 // has to go round again because what it decided changed under it.
 func startRound(cmd *cobra.Command, asked string, said *startSaid) (again bool, err error) {
-	s, _, err := openStore()
+	s, _, err := openStore(cmd)
 	if err != nil {
 		return false, err
 	}
-	plan, err := decideStart(s, asked, os.Getenv(store.SessionEnv))
+	plan, err := decideStart(s, asked, s.CommandSession())
 	said.passed = plan.passedOver
 	if err != nil {
 		return false, err
@@ -182,7 +181,7 @@ func recordInWorktree(cmd *cobra.Command, asked string, plan startPlan, wt strin
 	}
 	defer unlock()
 
-	now, err := decideStart(s, asked, os.Getenv(store.SessionEnv))
+	now, err := decideStart(s, asked, s.CommandSession())
 	said.passed = now.passedOver
 	if err != nil {
 		// Not a change, as decidedElsewise says.
@@ -254,7 +253,7 @@ func decidedElsewise(cmd *cobra.Command, asked string, plan startPlan) (bool, er
 		return false, err
 	}
 	defer unlock()
-	now, err := decideStart(s, asked, os.Getenv(store.SessionEnv))
+	now, err := decideStart(s, asked, s.CommandSession())
 	if err != nil {
 		return false, err
 	}
@@ -477,7 +476,7 @@ func noConfigOnTrunk(err error, trunk string) error {
 // does not commit, which a checkout that has been worked in has and a new one
 // does not.
 func smokeFailedInWorktree(wt, id string, failed error, output string, left error) error {
-	why := "it exited with " + failed.Error() + " in " + quote(wt) + ", the story's new worktree, cut from " +
+	why := "it exited with " + failed.Error() + " in " + sdlcerr.QuotePath(wt) + ", the story's new worktree, cut from " +
 		"trunk. A new worktree has only what trunk commits: no installed dependencies, such as node_modules or " +
 		"a virtual environment, and no generated files"
 	if left == nil {

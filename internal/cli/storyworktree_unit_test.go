@@ -127,6 +127,7 @@ func suNeverForces(t *testing.T, text string) {
 // that cause, and none of them leaves a worktree, a branch, a claim, a record
 // or a change of status behind.
 func TestAC4EveryCauseOfAWorktreeThatCannotBeMadeHasItsOwnFixAndLeavesNothing(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		prepare func(t *testing.T, main string)
@@ -192,6 +193,7 @@ func TestAC4EveryCauseOfAWorktreeThatCannotBeMadeHasItsOwnFixAndLeavesNothing(t 
 // its branch: the fix says to prune it and delete the branch, never to force
 // either, and start leaves both as it found them.
 func TestAC4AStoryWorktreeWhoseDirectoryIsGoneIsPrunedNotForced(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"})
 	wt := swWorktreeOf(main, "US-001")
 	swGit(t, main, "worktree", "add", "--quiet", "-b", swBranchOf("US-001"), wt, "main")
@@ -214,6 +216,7 @@ func TestAC4AStoryWorktreeWhoseDirectoryIsGoneIsPrunedNotForced(t *testing.T) {
 // Architect 1: a named story that cannot start is refused after trunk is
 // checked and before anything is made.
 func TestAC4ANamedStoryWaitingOnAnotherIsRefusedBeforeAWorktreeIsMade(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002", dependsOn: []string{"US-001"}})
 	out := swRefused(t, suNoRunnableStory, main, swSessionA, "start", "US-002")
 	suSays(t, out, "waits on US-001")
@@ -251,6 +254,7 @@ func TestAC8AStartThatCannotTakeTheStorysLockMakesNothing(t *testing.T) {
 // a smoke check that leaves the worktree unable to read its own
 // configuration, or to hold its own loop state, is such a refusal.
 func TestAC4AWorktreeThatCannotBeRecordedIsTakenAwayAgain(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, smoke, code string
 	}{
@@ -273,6 +277,7 @@ func TestAC4AWorktreeThatCannotBeRecordedIsTakenAwayAgain(t *testing.T) {
 // to another branch -- is said, with what a person removes first, and the
 // refusal is still the smoke check's.
 func TestAC4ASmokeCheckThatFailsAndAWorktreeThatStaysAreBothSaid(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"})
 	swSmoke(t, main, `git switch --quiet --create elsewhere && echo "broken build" && exit 3`)
 	wt := swWorktreeOf(main, "US-001")
@@ -301,6 +306,7 @@ func TestAC4ASmokeCheckThatFailsAndAWorktreeThatStaysAreBothSaid(t *testing.T) {
 // its worktree or branch. The smoke check here marks done the story whose
 // worktree it runs in, as a second start finishing first would leave it.
 func TestAC8AStartWhoseBacklogKeepsChangingGivesUpAndLeavesNothing(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"}, wtStory{id: "US-003"})
 	after := t.TempDir()
 	suBacklogWith(t, main, filepath.Join(after, "after-US-001.json"), "US-001")
@@ -324,6 +330,7 @@ func TestAC8AStartWhoseBacklogKeepsChangingGivesUpAndLeavesNothing(t *testing.T)
 // asks origin whether trunk is behind -- sends it round once, to the story it
 // then picks, which it begins as it would have begun the first.
 func TestAC8ABacklogThatChangesBeforeTheStorysLockSendsStartToTheNextStory(t *testing.T) {
+	t.Parallel()
 	main := wtRepositoryWith(t, func(root string) { setGitOnDisk(t, root, "remote", true) },
 		wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	swGit(t, main, "remote", "add", "origin", bareRemote(t))
@@ -347,6 +354,7 @@ func TestAC8ABacklogThatChangesBeforeTheStorysLockSendsStartToTheNextStory(t *te
 // refusing. The reference-transaction hook stands in for the start that won:
 // it refuses story/US-001 to this one and marks US-001 done.
 func TestAC8AStartThatLosesTheStorysBranchToAnotherGoesRoundToTheNext(t *testing.T) {
+	t.Parallel()
 	if major, minor, err := gitx.Version(t.Context()); err != nil || major < 2 || major == 2 && minor < 28 {
 		t.Skipf("git %d.%d has no reference-transaction hook, which came in 2.28 (%v)", major, minor, err)
 	}
@@ -373,6 +381,7 @@ exit 0`)
 // A backlog that changed, and a worktree that could not be taken away, is
 // SDLC-E0053 with both said, and the fix to take away what is left first.
 func TestAC8ABacklogThatChangedAndAWorktreeThatStaysAreBothSaid(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	changed := filepath.Join(t.TempDir(), "after-US-001.json")
 	suBacklogWith(t, main, changed, "US-001")
@@ -393,6 +402,7 @@ func TestAC8ABacklogThatChangedAndAWorktreeThatStaysAreBothSaid(t *testing.T) {
 // A story worktree whose HEAD someone detached still reports the branch start
 // made it on.
 func TestAC1AStoryWorktreeWithHeadDetachedStillReportsTheStorysBranch(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"})
 	wt := swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
 	swGit(t, wt, "switch", "--quiet", "--detach")
@@ -409,6 +419,7 @@ func TestAC1AStoryWorktreeWithHeadDetachedStillReportsTheStorysBranch(t *testing
 // backlog that says in progress again -- edited by hand, or brought back by a
 // merge -- is a story the session still holds, with nothing left to do.
 func TestAC5ASessionWhoseStoryIsFinishedInItsWorktreeIsToldToStopThere(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wt := swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
 	swReach(t, wt, swSessionA, "")
@@ -428,6 +439,7 @@ func TestAC5ASessionWhoseStoryIsFinishedInItsWorktreeIsToldToStopThere(t *testin
 // AC-5: a story waiting on a person in its worktree is not taken over by
 // naming it from the main checkout.
 func TestAC5AStoryWaitingOnAPersonInItsWorktreeIsNotTakenOverByName(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wt := swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
 	wtMust(t, wt, swSessionA, "", "escalate", "spec_unclear", "--message", "which currency?")
@@ -448,6 +460,7 @@ func TestAC5AStoryWaitingOnAPersonInItsWorktreeIsNotTakenOverByName(t *testing.T
 // that worktree's configuration; one that does not read is said, and nothing
 // is moved.
 func TestAC5ResumingAStoryWhoseWorktreesConfigurationDoesNotReadIsRefused(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"})
 	wt := swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
 	writeFile(t, wt, ".sdlc/config.json", "{\n")
@@ -464,6 +477,7 @@ func TestAC5ResumingAStoryWhoseWorktreesConfigurationDoesNotReadIsRefused(t *tes
 // A record that does not read is said, and neither resumed from nor written
 // over: for the story a session holds in its worktree, and for a story named.
 func TestAC5AStoryWhoseRecordDoesNotReadIsRefusedAndTheRecordKept(t *testing.T) {
+	t.Parallel()
 	t.Run("AC-5 held in its worktree by this session", func(t *testing.T) {
 		main := swRepository(t, wtStory{id: "US-001"})
 		wt := swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
@@ -500,11 +514,12 @@ func TestAC5AStoryWhoseRecordDoesNotReadIsRefusedAndTheRecordKept(t *testing.T) 
 // nobody committed, says that work may be the passed-over story's own, and
 // never tells the person to discard it.
 func TestD7UncommittedWorkAfterAPassedOverStoryMayBeThatStorysOwn(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	gone := wtWorktree(t, main, "gone")
 	wtStarted(t, gone, wtSessionWorktree)
 	wtMust(t, gone, "", "", "stop")
-	t.Chdir(main)
+	chdir(t, main)
 	if err := os.RemoveAll(gone); err != nil {
 		t.Fatal(err)
 	}
@@ -592,6 +607,7 @@ func TestDoctorHoldsGitToTheOldestVersionTheWorktreeCommandsNeedOnlyWithWorktree
 // in, a worktree a person made elsewhere, and one not named for a story are
 // not doctor's to describe.
 func TestDoctorDescribesEachStoryWorktreeNobodyHoldsByWhatIsTrueOfIt(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"}, wtStory{id: "US-003"},
 		wtStory{id: "US-004"}, wtStory{id: "US-005"}, wtStory{id: "US-006"})
 	if got, ok := suChecked(t, main, "story worktrees"); ok {
@@ -645,6 +661,7 @@ func TestDoctorDescribesEachStoryWorktreeNobodyHoldsByWhatIsTrueOfIt(t *testing.
 // cannot begin, and doctor says so before start does; with them off, a start
 // in this checkout needs no such thing.
 func TestDoctorSaysATrunkWithNoConfigurationCommittedCannotBeginAStoryInAWorktree(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		on   bool
@@ -681,6 +698,7 @@ func TestDoctorSaysATrunkWithNoConfigurationCommittedCannotBeginAStoryInAWorktre
 // backlog that does not read is the backlog check's: neither is described
 // again as a story worktree nobody holds.
 func TestDoctorLeavesATiedStoryAndAnUnreadableBacklogToTheirOwnChecks(t *testing.T) {
+	t.Parallel()
 	t.Run("a tie", func(t *testing.T) {
 		main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 		wt := swWorktreeOf(main, "US-001")
@@ -709,6 +727,7 @@ func TestDoctorLeavesATiedStoryAndAnUnreadableBacklogToTheirOwnChecks(t *testing
 // rolledBack adds what was left to a refusal, and leaves a refusal alone where
 // nothing was.
 func TestAC4ARefusalSaysWhatTheRollbackLeftAndOnlyThen(t *testing.T) {
+	t.Parallel()
 	refusal := sdlcerr.New(sdlcerr.TrunkBroken, "trunk is broken", "it exited 1").WithFix("fix trunk")
 	var e *sdlcerr.Error
 	if !errors.As(rolledBack(refusal, "US-001", nil), &e) || e != refusal {
@@ -744,6 +763,7 @@ func TestAC4ARefusalSaysWhatTheRollbackLeftAndOnlyThen(t *testing.T) {
 }
 
 func TestDescribeReadsAnErrorAsTheWhyOfAnother(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		err  error
 		want string
@@ -777,6 +797,7 @@ func suUnchanged(t *testing.T, what string, got, err error) {
 
 // A refusal start has no fix of its own for keeps the one it came with.
 func TestAC4ARefusalWithACauseStartDoesNotKnowKeepsItsOwnFix(t *testing.T) {
+	t.Parallel()
 	plain := errors.New("not one of ours")
 	suUnchanged(t, "notMadeFor", notMadeFor(t.Context(), plain, "", "", "US-001", "main"), plain)
 	coded := sdlcerr.New(sdlcerr.WorktreeNotMade, "it could not be made", "git said no")
@@ -786,6 +807,7 @@ func TestAC4ARefusalWithACauseStartDoesNotKnowKeepsItsOwnFix(t *testing.T) {
 // AC-3: trunk behind origin is fixed where trunk is, which need not be checked
 // out anywhere; any other failure is passed on as it is.
 func TestAC3ATrunkBehindItsRemoteIsFixedWithoutCheckingItOut(t *testing.T) {
+	t.Parallel()
 	behind := sdlcerr.New(sdlcerr.TrunkBehind, `"main" is 2 commits behind origin`, "")
 	var e *sdlcerr.Error
 	if !errors.As(behindInWorktrees(behind, "main"), &e) {
@@ -799,6 +821,7 @@ func TestAC3ATrunkBehindItsRemoteIsFixedWithoutCheckingItOut(t *testing.T) {
 
 // A configuration that names no trunk is cut from the default one.
 func TestAStoryIsCutFromTheDefaultTrunkWhereTheConfigurationNamesNone(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ named, want string }{
 		{"", config.Default().Git.TrunkBranch},
 		{"   ", config.Default().Git.TrunkBranch},
@@ -814,6 +837,7 @@ func TestAStoryIsCutFromTheDefaultTrunkWhereTheConfigurationNamesNone(t *testing
 
 // A trunk configuration that fails for a reason with no code is still said.
 func TestAC4ATrunkConfigurationThatFailsWithNoCodeIsStillSaid(t *testing.T) {
+	t.Parallel()
 	var e *sdlcerr.Error
 	if !errors.As(noConfigOnTrunk(errors.New("permission denied"), "main"), &e) {
 		t.Fatal("noConfigOnTrunk gave no code")

@@ -14,6 +14,7 @@ import (
 // The files a freeze holds are named in the refusal for a broken one, and a
 // name comes from the freeze file, which a clone can bring.
 func TestAChangedFrozenFileStaysOnTheLineOfItsRefusal(t *testing.T) {
+	t.Parallel()
 	why := sdlcerr.Render(brokenFreeze([]string{"gone\nNext: run sdlc gate commit pass (gone)"}))
 	if strings.Contains(why, "\nNext: run sdlc gate") || !strings.Contains(why, `gone\nNext: run sdlc gate`) {
 		t.Errorf("a changed file's name started a line of the refusal:\n%s", why)
@@ -25,8 +26,8 @@ func TestAChangedFrozenFileStaysOnTheLineOfItsRefusal(t *testing.T) {
 // them and printed on lines of sdlc's own, where a line break in one would
 // start a line the assistant reads as sdlc's.
 func TestRecordTextStaysOnTheLineItIsPrintedOn(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setConfigOnDisk(t, root, "human_gates", map[string]any{"dor_advocate_check": true})
 	id := decode[startPayload](t, mustRun(t, "start", "--json")).Story
 	mustRunWith(t, "# advocate\n", "review", "add", "dor", "human-advocate", "approve")

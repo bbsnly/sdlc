@@ -41,7 +41,7 @@ func newCostCmd() *cobra.Command {
 			`  sdlc cost add --story US-001 --usd "$(claude -p ... --output-format json | jq .total_cost_usd)"`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, p, err := openStore()
+			s, p, err := openStore(cmd)
 			if err != nil {
 				return err
 			}

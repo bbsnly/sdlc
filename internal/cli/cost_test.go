@@ -12,8 +12,8 @@ import (
 // `budget.per_story_usd` was written into every project's configuration,
 // documented as what a story is expected to cost, and read by nothing.
 func TestCostIsRecordedAgainstTheStory(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 
 	if got := mustRun(t, "cost").stdout; !strings.Contains(got, "$0.00") {
@@ -40,8 +40,8 @@ func TestCostIsRecordedAgainstTheStory(t *testing.T) {
 // The alert fires once, where it is crossed. An alert that repeated on every
 // entry after it would be noise, and noise is how a warning stops being read.
 func TestAnAlertFiresOnceWhenItIsCrossed(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 
 	// The default budget is $60, alerting at a half, four fifths and all of it.
@@ -75,8 +75,8 @@ func TestAnAlertFiresOnceWhenItIsCrossed(t *testing.T) {
 // A runner that asks for --json still has a person watching its terminal, and
 // the warning is for them.
 func TestAnAlertReachesStandardErrorWithJSONToo(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 
 	r := mustRun(t, "cost", "add", "--usd", "35", "--json")
@@ -91,8 +91,8 @@ func TestAnAlertReachesStandardErrorWithJSONToo(t *testing.T) {
 // A project that alerts only at a half would otherwise run past its budget
 // without a word.
 func TestUsingUpTheBudgetIsSaidWhateverTheAlertsAre(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setConfigOnDisk(t, root, "budget", map[string]any{"per_story_usd": 10, "alert_fractions": []float64{0.5}})
 	mustRun(t, "start")
 
@@ -112,8 +112,8 @@ func TestUsingUpTheBudgetIsSaidWhateverTheAlertsAre(t *testing.T) {
 // over, and a session that finished its story has ended the iteration by then.
 // Recording only against the story being worked on refused every one of them.
 func TestARunnerRecordsCostAfterTheIterationHasEnded(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 	id := decode[statusPayload](t, mustRun(t, "status", "--json")).Active
 	mustRun(t, "stop")
@@ -139,8 +139,8 @@ func TestARunnerRecordsCostAfterTheIterationHasEnded(t *testing.T) {
 // would otherwise be recorded as a free story -- the one wrong answer nobody
 // would question.
 func TestAnAmountThatIsNotAnAmountIsRefused(t *testing.T) {
-	gitProject(t)
-	initialised(t)
+	t.Parallel()
+	gitProjectInitialised(t)
 	mustRun(t, "start")
 
 	for _, bad := range []string{"", "null", "n/a", "-1", "NaN"} {
@@ -159,8 +159,8 @@ func TestAnAmountThatIsNotAnAmountIsRefused(t *testing.T) {
 // A project that sets no budget still gets the total, because "what did this
 // cost" is a question with an answer either way.
 func TestWithNoBudgetTheSpendIsStillKept(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	setBudgetOnDisk(t, root, 0)
 	mustRun(t, "start")
 
@@ -178,8 +178,8 @@ func TestWithNoBudgetTheSpendIsStillKept(t *testing.T) {
 // naming a story, and cost has to say so rather than treat it as nothing
 // running.
 func TestCostRefusesWhenTheActiveFileCannotBeRead(t *testing.T) {
-	root := gitProject(t)
-	initialised(t)
+	t.Parallel()
+	root := gitProjectInitialised(t)
 	if err := os.MkdirAll(filepath.Join(root, ".sdlc", "state", "active"), 0o755); err != nil {
 		t.Fatal(err)
 	}

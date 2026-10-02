@@ -63,10 +63,11 @@ var safeID = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9_-
 // repository's, and in a linked worktree they are the main checkout's, which
 // is where every checkout reads and writes them.
 type Store struct {
-	root  string
-	cfg   config.Config
-	now   func() time.Time
-	place *placement
+	root   string
+	cfg    config.Config
+	now    func() time.Time
+	getenv func(string) string
+	place  *placement
 }
 
 // placement is where the checkout the store was opened in sits in its
@@ -80,7 +81,7 @@ type placement struct {
 
 // New opens the store for a project.
 func New(p *config.Project) *Store {
-	return &Store{root: p.Root, cfg: p.Config, now: time.Now, place: &placement{}}
+	return &Store{root: p.Root, cfg: p.Config, now: time.Now, getenv: os.Getenv, place: &placement{}}
 }
 
 // NewIn opens the store for a project whose checkout the caller has already
@@ -146,6 +147,14 @@ func (s *Store) WithClock(now func() time.Time) *Store {
 	out := *s
 	out.now = now
 	return &out
+}
+
+// WithEnv has the store read the command's environment through getenv, for a
+// command that is not the process's own: tests run many at once in one
+// process, each with its own session.
+func (s *Store) WithEnv(getenv func(string) string) *Store {
+	s.getenv = getenv
+	return s
 }
 
 // Root is the repository root the store writes under.
@@ -427,6 +436,13 @@ func CheckSession(id string) bool {
 	return safeSession.MatchString(id)
 }
 
+// CommandSession is the Claude Code session the command runs in: SessionEnv,
+// read through the getenv WithEnv gave, and otherwise from the process
+// environment, which is what every store made outside cli reads, the hook's
+// included. A caller with a getenv of its own, as hook.Run has, passes it with
+// WithEnv, or the process's value is read instead.
+func (s *Store) CommandSession() string { return s.getenv(SessionEnv) }
+
 // BindSession records the Claude Code session this command runs in as the one
 // working the story, and returns it: empty when the command runs in none, from
 // a terminal or wherever Claude Code does not set SessionEnv.
@@ -438,7 +454,7 @@ func CheckSession(id string) bool {
 // the story has moved, and wiping the record turned every rule off in the
 // session working it, without a word.
 func (s *Store) BindSession(underWay bool) (string, error) {
-	id := os.Getenv(SessionEnv)
+	id := s.CommandSession()
 	if !CheckSession(id) {
 		id = ""
 	}
@@ -613,7 +629,21 @@ func (s *Store) StoriesOnDisk() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	entries, err := os.ReadDir(filepath.Join(shared, filepath.FromSlash(storiesDir)))
+	dir := filepath.Join(shared, filepath.FromSlash(storiesDir))
+	entries, err := os.ReadDir(dir)
+	// What is there is asked rather than read from the error: on Windows a file
+	// here is ERROR_PATH_NOT_FOUND, which errors.Is takes for not there at all,
+	// and some filesystems list a file as empty (go.dev/issue/61159), where
+	// POSIX says ENOTDIR. Stat follows a link, so a dangling one is no stories.
+	if err != nil || len(entries) == 0 {
+		if info, statErr := os.Stat(dir); statErr == nil && !info.IsDir() {
+			return nil, sdlcerr.New(sdlcerr.StateUnreadable,
+				storiesDir+" is not a directory, so no story in it could be listed",
+				"something other than a directory is where it belongs").
+				WithFix("move whatever is at " + storiesDir + " aside and restore the directory, " +
+					"from git where your project commits it")
+		}
+	}
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return nil, nil

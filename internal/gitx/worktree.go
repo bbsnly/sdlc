@@ -50,7 +50,7 @@ func AddWorktree(ctx context.Context, root, dir, branch, trunk string) error {
 		}
 	}
 	if !filepath.IsAbs(dir) {
-		return notMade(strconv.Quote(dir)+" is not an absolute path",
+		return notMade(sdlcerr.QuotePath(dir)+" is not an absolute path",
 			"the worktree is made where it is named, and a relative path names somewhere different from each directory", nil)
 	}
 	if err := refuseLinks(root, dir); err != nil {
@@ -73,7 +73,7 @@ func AddWorktree(ctx context.Context, root, dir, branch, trunk string) error {
 	}
 	for _, w := range listed {
 		if samePath(w.path, dir) {
-			return notMade("a worktree at "+strconv.Quote(dir)+" already exists",
+			return notMade("a worktree at "+sdlcerr.QuotePath(dir)+" already exists",
 				"git lists it as a checkout of this repository, and a checkout that is already there may hold "+
 					"somebody's work, so start never reuses or removes it", ErrInTheWay)
 		}
@@ -87,12 +87,12 @@ func AddWorktree(ctx context.Context, root, dir, branch, trunk string) error {
 	if entries, err := os.ReadDir(dir); err == nil {
 		existed = true
 		if len(entries) > 0 {
-			return notMade(strconv.Quote(dir)+" already exists and has something in it",
+			return notMade(sdlcerr.QuotePath(dir)+" already exists and has something in it",
 				"start makes the worktree in a directory of its own, and never writes over or removes "+
 					"what it did not make", ErrInTheWay)
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return notMade(strconv.Quote(dir)+" could not be read", err.Error(), ErrInTheWay)
+		return notMade(sdlcerr.QuotePath(dir)+" could not be read", err.Error(), ErrInTheWay)
 	}
 
 	// Created only where it is not there: a racing start that got here first
@@ -110,7 +110,7 @@ func AddWorktree(ctx context.Context, root, dir, branch, trunk string) error {
 		if len(left) > 0 {
 			why += "; and what start made could not all be taken away again: " + strings.Join(left, "; ")
 		}
-		return notMade("the worktree at "+strconv.Quote(dir)+" could not be made", why, nil)
+		return notMade("the worktree at "+sdlcerr.QuotePath(dir)+" could not be made", why, nil)
 	}
 	return nil
 }
@@ -123,7 +123,7 @@ func undoAdd(ctx context.Context, root, dir, branch, hash string, existed bool) 
 		for _, w := range listed {
 			if samePath(w.path, dir) {
 				if _, err := git(ctx, root, nil, "worktree", "remove", "--force", "--", dir); err != nil {
-					left = append(left, "the worktree "+strconv.Quote(dir)+" is still registered with git")
+					left = append(left, "the worktree "+sdlcerr.QuotePath(dir)+" is still registered with git")
 				}
 			}
 		}
@@ -131,7 +131,7 @@ func undoAdd(ctx context.Context, root, dir, branch, hash string, existed bool) 
 	switch _, err := os.Lstat(dir); {
 	case err == nil && !existed:
 		if err := os.RemoveAll(dir); err != nil {
-			left = append(left, strconv.Quote(dir)+" is still there")
+			left = append(left, sdlcerr.QuotePath(dir)+" is still there")
 		}
 	case errors.Is(err, fs.ErrNotExist) && existed:
 		// It was an empty directory before, and it is one again.
@@ -167,18 +167,18 @@ func RemoveWorktree(ctx context.Context, root, dir, branch string) error {
 	}
 	switch {
 	case found == nil:
-		return notRemoved(strconv.Quote(dir)+" is not a worktree git lists",
+		return notRemoved(sdlcerr.QuotePath(dir)+" is not a worktree git lists",
 			"only a worktree of this repository is taken away")
 	case found == &listed[0]:
-		return notRemoved(strconv.Quote(dir)+" is the main checkout",
+		return notRemoved(sdlcerr.QuotePath(dir)+" is the main checkout",
 			"the main checkout is never taken away")
 	case found.branch != "refs/heads/"+branch:
-		return notRemoved(strconv.Quote(dir)+" does not have "+strconv.Quote(branch)+" checked out",
+		return notRemoved(sdlcerr.QuotePath(dir)+" does not have "+strconv.Quote(branch)+" checked out",
 			"a worktree is taken away only with the branch it was made on")
 	}
 	// One --force, not two: the worktrees start makes are never locked.
 	if _, err := git(ctx, root, nil, "worktree", "remove", "--force", "--", dir); err != nil {
-		return notRemoved("the worktree at "+strconv.Quote(dir)+" could not be taken away",
+		return notRemoved("the worktree at "+sdlcerr.QuotePath(dir)+" could not be taken away",
 			failure(err, "git could not remove it")+"; it and the branch "+strconv.Quote(branch)+
 				" are still there, and a file something has open in it keeps it there on Windows")
 	}
@@ -362,13 +362,13 @@ func refuseLinks(root, dir string) error {
 		case errors.Is(err, fs.ErrNotExist):
 			return nil
 		case err != nil:
-			return notMade(strconv.Quote(steps[i])+" could not be read", err.Error(), ErrNotADirectory)
+			return notMade(sdlcerr.QuotePath(steps[i])+" could not be read", err.Error(), ErrNotADirectory)
 		case info.Mode()&fs.ModeSymlink != 0:
-			return notMade(strconv.Quote(steps[i])+" is a link",
+			return notMade(sdlcerr.QuotePath(steps[i])+" is a link",
 				"the worktree is made in a directory of the main checkout itself, and never through a link to "+
 					"somewhere else", ErrNotADirectory)
 		case !info.IsDir():
-			return notMade(strconv.Quote(steps[i])+" is a file, where a directory belongs",
+			return notMade(sdlcerr.QuotePath(steps[i])+" is a file, where a directory belongs",
 				"the worktree is made in a directory of the main checkout, and start never writes over "+
 					"what it did not make", ErrNotADirectory)
 		}

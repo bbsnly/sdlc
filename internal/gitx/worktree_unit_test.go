@@ -375,7 +375,7 @@ func TestAC4TheRollbackNamesADirectoryThatCouldNotBeRemoved(t *testing.T) {
 
 	err := AddWorktree(t.Context(), root, dir, "story/US-1", "main")
 	wuSays(t, wuRefusal(t, err, "AddWorktree whose worktree cannot be removed"),
-		"could not all be taken away", strconv.Quote(dir)+" is still there")
+		"could not all be taken away", strconv.Quote(filepath.ToSlash(dir))+" is still there")
 	if wuHasBranch(t, root, "story/US-1") {
 		t.Error("the branch start cut was left behind")
 	}

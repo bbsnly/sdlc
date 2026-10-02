@@ -31,6 +31,7 @@ func lpNever(t *testing.T, text string, never ...string) {
 // the main checkout, which gives it a worktree of its own, rather than by
 // stopping this one.
 func TestSDLCE0012InAStoryWorktreeSendsAPersonToTheMainCheckoutForTheOtherStory(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wt := swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
 
@@ -42,6 +43,7 @@ func TestSDLCE0012InAStoryWorktreeSendsAPersonToTheMainCheckoutForTheOtherStory(
 // SDLC-E0032 in a story worktree: the gate records the story committed on its
 // branch, not on trunk.
 func TestSDLCE0032InAStoryWorktreeSaysTheStoryIsCommittedOnItsBranch(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"})
 	wt := swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
 	swReach(t, wt, swSessionA, model.GateCommit)
@@ -55,6 +57,7 @@ func TestSDLCE0032InAStoryWorktreeSaysTheStoryIsCommittedOnItsBranch(t *testing.
 // branch: a command to look at it and one to keep it on a branch, what is lost
 // otherwise, and no removal.
 func TestDoctorOffersNoRemovalOfAStoryWorktreeWhoseHeadHoldsACommitOnNoBranch(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wt := swWorktreeOf(main, "US-002")
 	swGit(t, main, "worktree", "add", "--quiet", "--detach", wt, "main")
@@ -72,6 +75,7 @@ func TestDoctorOffersNoRemovalOfAStoryWorktreeWhoseHeadHoldsACommitOnNoBranch(t 
 // Doctor, for a story worktree on a branch a session named: the name is data,
 // kept out of every command a person pastes, and nothing is removed.
 func TestDoctorKeepsABranchNameOutOfTheCommandsItGives(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 	wt := swWorktreeOf(main, "US-002")
 	swGit(t, main, "worktree", "add", "--quiet", "-b", "odd;touch-x", wt, "main")
@@ -88,6 +92,7 @@ func TestDoctorKeepsABranchNameOutOfTheCommandsItGives(t *testing.T) {
 // SDLC-E0053 at start, for a leftover worktree in the story's place whose HEAD
 // holds a commit on no branch: look, keep, what is lost, and no removal.
 func TestSDLCE0053OffersNoRemovalOfALeftoverWorktreeHoldingACommitOnNoBranch(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"})
 	wt := swWorktreeOf(main, "US-001")
 	swGit(t, main, "worktree", "add", "--quiet", "--detach", wt, "main")
