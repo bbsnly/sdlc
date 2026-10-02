@@ -117,6 +117,103 @@ func TestAnOverrideStandsInOnlyForAFileTheTreeHas(t *testing.T) {
 	}
 }
 
+// The tree hash is the review stamp: every review recorded in a project
+// carries one, and a release that hashed the same tree to another value would
+// make all of them stale at once. Nothing else pins the bytes, only the
+// behaviour, so these constants are what TreeHash gave for this tree when they
+// were written, and each is also what git mktree makes of the entries the
+// fixture should leave in. A change that moves one stales every review already
+// recorded and needs a story that says so; a faster TreeHash must arrive at the
+// same values.
+const (
+	pinnedTree          = "50565eb4ed50d7136c2cb308a4a94cce6c928d6b"
+	pinnedTreeOverride  = "78989c57b17d95eb6cae34f85b0e2d73e9ef927a"
+	pinnedTreeAtHas     = "66b528706d10d791f325c0530ab3e56993b0daea"
+	pinnedTreeAtHasNone = "33045d9d25cb95d0b578119968d049eab22b6d10"
+)
+
+// pinnedFixture is a working tree with each kind of entry TreeHash decides on:
+// tracked, untracked and ignored files, a nested directory, an empty one, and
+// the loop's own directory. It returns the root and the commit holding the
+// tracked files, whose main.go is not the one on disk.
+//
+// Every file is LF only and has no executable bit, and the repository's own
+// configuration settles the two settings that differ by platform: Git for
+// Windows' system configuration turns core.autocrlf on, and git init writes
+// core.fileMode false on Windows and true elsewhere. The repository's own
+// setting outranks the global and system files, and testenv clears the
+// variables that could outrank it, so the tree git stores is the same
+// everywhere.
+func pinnedFixture(t *testing.T) (root, commit string) {
+	t.Helper()
+	root = repo(t)
+	run(t, root, "config", "core.autocrlf", "false")
+	run(t, root, "config", "core.fileMode", "false")
+	write(t, root, ".gitignore", "*.log\ndist/\n")
+	write(t, root, "README.md", "# fixture\n")
+	write(t, root, "main.go", "package main\n")
+	write(t, root, "internal/deep/deep.go", "package deep\n")
+	run(t, root, "add", ".")
+	run(t, root, "-c", "user.email=a@b", "-c", "user.name=t", "commit", "--quiet", "-m", "first")
+	commit, err := Head(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	write(t, root, "main.go", "package main\n\nfunc main() {}\n")
+	write(t, root, "notes.txt", "untracked, not ignored\n")
+	write(t, root, "internal/deep/deep_test.go", "package deep\n")
+	write(t, root, "debug.log", "ignored\n")
+	write(t, root, "dist/binary", "ignored with its directory\n")
+	write(t, root, ".sdlc/state/active", "A-1\n")
+	write(t, root, ".sdlc/stories/A-1/REVIEW.md", "approve\n")
+	if err := os.MkdirAll(filepath.Join(root, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return root, commit
+}
+
+func TestTreeHashNeverChangesForTheSameTree(t *testing.T) {
+	root, commit := pinnedFixture(t)
+	for _, tc := range []struct {
+		name      string
+		overrides []Override
+		want      string
+	}{
+		{"with no overrides", nil, pinnedTree},
+		{"with the content of a file overridden",
+			[]Override{{Path: "main.go", Content: []byte("package main\n\nfunc main() { println() }\n")}},
+			pinnedTreeOverride},
+		// An override for a file the tree does not hold is passed over, so
+		// these leave the hash where the content override alone put it.
+		{"with overrides beside it for files the tree does not hold",
+			[]Override{
+				{Path: "main.go", Content: []byte("package main\n\nfunc main() { println() }\n")},
+				{Path: "debug.log", Content: []byte("x")},
+				{Path: ".sdlc/state/active", Content: []byte("x")},
+				{Path: "absent.go", Content: []byte("x")},
+			},
+			pinnedTreeOverride},
+		{"with a file taken from a commit that has it",
+			[]Override{{Path: "main.go", At: commit}}, pinnedTreeAtHas},
+		{"with a file taken from a commit that does not have it",
+			[]Override{{Path: "notes.txt", At: commit}}, pinnedTreeAtHasNone},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := TreeHash(t.Context(), root, tc.overrides...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				// The listing is what to compare with another platform's when
+				// only one of them moves.
+				out, _ := exec.CommandContext(t.Context(), "git", "-C", root, "ls-tree", "-r", got).CombinedOutput()
+				t.Errorf("TreeHash = %s, want %s for the same tree; it holds:\n%s", got, tc.want, out)
+			}
+		})
+	}
+}
+
 func TestOutsideARepositoryTheFailureExplainsItself(t *testing.T) {
 	_, err := Files(t.Context(), t.TempDir())
 	if err == nil {

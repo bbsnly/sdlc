@@ -150,9 +150,51 @@ func TestAnyGateCanBeRecordedAsFailedWithNothingDone(t *testing.T) {
 // the loop is in when a session ends.
 func finishedStory(t *testing.T) string {
 	t.Helper()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, "")
+	return startedAt(t, "")
+}
+
+// startedAt is gitProjectInitialised(t), then `sdlc start`, then reach(t, root,
+// upTo), as a copy of a template the real commands made (US-055 AC-3): the
+// project's one story taken through every gate before upTo, or through all of
+// them where upTo is "". The test's commands run in it from a terminal, as
+// they do after gitProjectInitialised.
+func startedAt(t *testing.T, upTo model.Gate) string {
+	t.Helper()
+	root, _ := startedAtFrom(t, upTo)
+	return root
+}
+
+// startedAtFrom is startedAt and HEAD as it was after `sdlc start` and before
+// the first gate, read then by the template's builder.
+func startedAtFrom(t *testing.T, upTo model.Gate) (root, head string) {
+	t.Helper()
+	root, notes := walkedCopyNoted(t, "started, reached "+string(upTo), func(t *testing.T, root string) map[string]string {
+		gitProjectInitialisedAt(t, root)
+		mustRun(t, "start")
+		head := headOf(t, root)
+		reach(t, root, upTo)
+		return map[string]string{"head": head}
+	})
+	chdir(t, root)
+	return root, notes["head"]
+}
+
+// twoStoriesDone is gitProjectInitialised(t) with US-002 added to the backlog,
+// then each story started, taken through every gate and stopped, one after
+// the other, as a copy of a template the real commands made (US-055 AC-3).
+// The test's commands run in it from a terminal.
+func twoStoriesDone(t *testing.T) string {
+	t.Helper()
+	root := walkedCopy(t, "two stories done", func(t *testing.T, root string) {
+		gitProjectInitialisedAt(t, root)
+		addStory(t, root, "US-002")
+		for range 2 {
+			mustRun(t, "start")
+			reach(t, root, "")
+			mustRun(t, "stop")
+		}
+	})
+	chdir(t, root)
 	return root
 }
 
@@ -213,9 +255,7 @@ func TestPassingTheLastGateTakesTheStoryOutOfTheBacklog(t *testing.T) {
 // is the one that has to know the loop is over.
 func TestTheLastGateSaysTheStoryIsDone(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateRetro)
+	root := startedAt(t, model.GateRetro)
 	satisfy(t, root, model.GateRetro)
 
 	// The gate that finishes the story, not a repeat of it: the session that
@@ -264,9 +304,7 @@ func onlyStory(t *testing.T, payload storyListPayload) storyRow {
 // sentence a session ends on is the only place a person sees which happened.
 func TestStopSaysWhetherTheStoryIsFinished(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GatePlan)
+	root := startedAt(t, model.GatePlan)
 
 	midway := decode[stopPayload](t, mustRun(t, "stop", "--json"))
 	if midway.Done {
@@ -550,9 +588,7 @@ func TestASecondStoryCanFreezeItsOwnTests(t *testing.T) {
 // what stopped the next story.
 func TestFinishingAStoryLiftsItsFreeze(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, "")
+	root := startedAt(t, "")
 	mustRun(t, "stop")
 
 	if _, err := os.Stat(filepath.Join(root, ".sdlc", "state", "tests.lock")); !os.IsNotExist(err) {
@@ -580,9 +616,7 @@ func TestFinishingAStoryLiftsItsFreeze(t *testing.T) {
 func TestStoppingAFinishedStoryRefusesWhenTheFreezeCannotBeLifted(t *testing.T) {
 	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, "")
+	root := startedAt(t, "")
 
 	state := filepath.Join(root, ".sdlc", "state")
 	if err := os.Chmod(state, 0o500); err != nil {
@@ -684,9 +718,7 @@ func TestEscalatingAStoryThatLeftTheBacklogWritesNothing(t *testing.T) {
 // after Gate 3.
 func TestStoppingAnUnfinishedStoryKeepsItsFreeze(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GatePlan)
+	root := startedAt(t, model.GatePlan)
 
 	if lockOnDisk(t, root).Story == "" {
 		t.Fatal("the tests were not frozen")
@@ -709,9 +741,7 @@ func TestStoppingAnUnfinishedStoryKeepsItsFreeze(t *testing.T) {
 // not being true.
 func TestCodeChangedAfterTheReviewCannotBeCommitted(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateCommit)
+	root := startedAt(t, model.GateCommit)
 
 	writeFile(t, root, "internal/backdoor.go", "package internal\n\nfunc Backdoor() string { return \"nobody reviewed this\" }\n")
 	commitEverything(t, root)
@@ -747,9 +777,7 @@ func backlogBytes(t *testing.T, root string) string {
 
 func TestResumingAStoryDoesNotStaleItsReviews(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateCommit)
+	root := startedAt(t, model.GateCommit)
 
 	// The session ends and another one picks the story up.
 	mustRun(t, "stop")
@@ -767,9 +795,7 @@ func TestResumingAStoryDoesNotStaleItsReviews(t *testing.T) {
 
 func TestCommittingWhatWasReviewedStillPasses(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateCommit)
+	root := startedAt(t, model.GateCommit)
 
 	// Reviewed is not committed: the gate records that the work reached trunk.
 	if r := run(t, "gate", "commit", "pass", "--note", "not yet"); r.code == 0 || !strings.Contains(r.stderr, "SDLC-E0032") {
@@ -890,9 +916,7 @@ func TestTheGatesRecordTheCommitsTheStoryLandedIn(t *testing.T) {
 // had committed by then, so the record leaves it out rather than guess.
 func TestAStartTheFirstCodeReviewDidNotRecordIsNotTakenLater(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateCommit)
+	root := startedAt(t, model.GateCommit)
 
 	// What an older sdlc leaves: the code review's pass in the history, and no
 	// commit_base.
@@ -941,9 +965,7 @@ func TestAStartTheFirstCodeReviewDidNotRecordIsNotTakenLater(t *testing.T) {
 // against a HEAD that held it, the change was empty.
 func TestWorkCommittedBeforeTheReviewHoldsTheGatesBack(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateImplementation)
+	root := startedAt(t, model.GateImplementation)
 
 	writeFile(t, root, "internal/invoice.go", "package internal\n")
 	commitEverything(t, root)
@@ -984,9 +1006,7 @@ func TestWorkCommittedInANewRepositorysFirstStoryHoldsTheGatesBack(t *testing.T)
 // again once a person has answered, from where trunk is then.
 func TestAStoryHeldForAMovedHEADGoesOnOnceAPersonAnswers(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateImplementation)
+	root := startedAt(t, model.GateImplementation)
 	writeFile(t, root, "internal/invoice.go", "package internal\n")
 	commitEverything(t, root)
 
@@ -1001,9 +1021,7 @@ func TestAStoryHeldForAMovedHEADGoesOnOnceAPersonAnswers(t *testing.T) {
 // committed was measured from where the story started, and could never pass.
 func TestAGateReopenedAfterTheStorysCommitCanPassAgain(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateRetro)
+	root := startedAt(t, model.GateRetro)
 
 	mustRun(t, "gate", "code_review", "fail", "--note", "AC-2 is untested")
 	satisfy(t, root, model.GateCodeReview)

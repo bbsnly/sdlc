@@ -193,35 +193,177 @@ func TestManyStrayFilesAreSummarisedRatherThanListed(t *testing.T) {
 	}
 }
 
-// gitOnlyPath is a PATH with git on it and nothing else -- in particular
-// neither sh nor bash, which commands.smoke needs to run at all.
+// gitOnlyPath is a PATH with a git on it that runs, and neither sh nor bash,
+// which commands.smoke needs to run at all.
 func gitOnlyPath(t *testing.T) string {
 	t.Helper()
 	found, err := exec.LookPath("git")
 	if err != nil {
 		t.Skip("no git on PATH to isolate")
 	}
-	dir := t.TempDir()
-	name := "git"
+	return gitOnlyPathFor(t, found)
+}
+
+// gitOnlyPathFor is gitOnlyPath for the git at found.
+//
+// US-055 AC-2: git linked into a directory of its own runs on Linux and macOS,
+// whose git's own directory holds sh beside it. Git for Windows' cmd\git.exe
+// is a launcher that finds the real git relative to where it is, so through a
+// link it ran nothing: "git symbolic-ref did not finish", SDLC-E0021, in CI
+// run 36964608101. Where the link does not run, a directory of the install
+// that holds git and no shell is used as it is -- found's own, which for Git
+// for Windows is cmd\, or the real git's -- and whichever it is, git has to
+// run there, or the test fails saying what was tried.
+func gitOnlyPathFor(t *testing.T, found string) string {
+	t.Helper()
+	var tried []string
+	linked := t.TempDir()
+	if err := os.Symlink(found, filepath.Join(linked, gitExecutable())); err != nil {
+		tried = append(tried, fmt.Sprintf("a link in %s: %v", linked, err))
+	} else if err := gitRunsIn(t, linked); err != nil {
+		tried = append(tried, fmt.Sprintf("a link in %s: %v", linked, err))
+	} else {
+		return linked
+	}
+
+	install := filepath.Dir(filepath.Dir(found))
+	for _, dir := range []string{
+		filepath.Dir(found),
+		filepath.Join(install, "cmd"),
+		filepath.Join(install, "mingw64", "bin"),
+		filepath.Join(install, "clangarm64", "bin"),
+	} {
+		if _, err := os.Stat(filepath.Join(dir, gitExecutable())); err != nil {
+			continue
+		}
+		if shell := shellIn(t, dir); shell != "" {
+			tried = append(tried, fmt.Sprintf("%s: holds %s", dir, shell))
+			continue
+		}
+		if err := gitRunsIn(t, dir); err != nil {
+			tried = append(tried, fmt.Sprintf("%s: %v", dir, err))
+			continue
+		}
+		return dir
+	}
+	t.Fatalf("no PATH holding a git that runs and no shell could be made from %s:\n%s", found, strings.Join(tried, "\n"))
+	return ""
+}
+
+func gitExecutable() string {
 	if runtime.GOOS == "windows" {
-		name = "git.exe"
+		return "git.exe"
 	}
-	if err := os.Symlink(found, filepath.Join(dir, name)); err != nil {
-		t.Skipf("could not symlink git into an isolated PATH: %v", err)
+	return "git"
+}
+
+// shellIn is the name of a file in dir that would be found on PATH as sh or
+// bash, or "" where there is none. On Windows any extension will do, and case
+// does not count.
+func shellIn(t *testing.T, dir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return dir
+	for _, e := range entries {
+		name := e.Name()
+		if runtime.GOOS == "windows" {
+			name = strings.ToLower(strings.TrimSuffix(name, filepath.Ext(name)))
+		}
+		if name == "sh" || name == "bash" {
+			return e.Name()
+		}
+	}
+	return ""
+}
+
+// gitRunsIn is nil where the git in dir runs with dir as the whole PATH.
+func gitRunsIn(t *testing.T, dir string) error {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), filepath.Join(dir, gitExecutable()), "--version")
+	cmd.Env = []string{"PATH=" + dir}
+	for _, kv := range os.Environ() {
+		if name, _, _ := strings.Cut(kv, "="); !strings.EqualFold(name, "PATH") {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git --version: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	if !strings.HasPrefix(string(out), "git version") {
+		return fmt.Errorf("git --version printed %q", out)
+	}
+	return nil
 }
 
 // A project without a POSIX shell on PATH -- Windows outside Git Bash -- is
 // said out loud rather than refusing every story: the check that could not run
 // is not the same as one that ran and failed.
 func TestASmokeCheckWithNoShellDoesNotHoldAStoryBack(t *testing.T) {
-	root := gitProjectInitialised(t)
-	setConfigOnDisk(t, root, "commands", map[string]string{"smoke": "exit 1"})
-	t.Setenv("PATH", gitOnlyPath(t))
+	t.Run("AC-2 start says commands.smoke could not run for want of sh or bash", func(t *testing.T) {
+		root := gitProjectInitialised(t)
+		setConfigOnDisk(t, root, "commands", map[string]string{"smoke": "exit 1"})
+		t.Setenv("PATH", gitOnlyPath(t))
+		for _, shell := range []string{"sh", "bash"} {
+			if path, err := exec.LookPath(shell); err == nil {
+				t.Fatalf("the isolated PATH still finds %s at %s", shell, path)
+			}
+		}
 
-	r := mustRun(t, "start")
-	if !strings.Contains(r.stderr, "sh nor bash") {
-		t.Errorf("start did not say commands.smoke could not run:\n%s", r.stderr)
+		r := mustRun(t, "start")
+		if !strings.Contains(r.stderr, "sh nor bash") {
+			t.Errorf("start did not say commands.smoke could not run:\n%s", r.stderr)
+		}
+	})
+}
+
+// US-055 AC-2, on a platform that can run it: a git that, like Git for
+// Windows' cmd\git.exe, runs the real git from beside itself is not run
+// through a link, and an install directory that holds a shell beside git is
+// not used. The layout is made of shell scripts, so it needs a POSIX system;
+// on Windows the real layout is what the test above runs against.
+func TestAC2AnIsolatedPathHoldsAGitThatRunsWhereGitIsALauncher(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in launcher is a shell script; on Windows TestASmokeCheckWithNoShellDoesNotHoldAStoryBack runs against Git for Windows itself")
+	}
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git on PATH to stand in for the real one")
+	}
+	install := t.TempDir()
+	for _, dir := range []string{"cmd", "bin", "mingw64/bin"} {
+		if err := os.MkdirAll(filepath.Join(install, filepath.FromSlash(dir)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(git, filepath.Join(install, "mingw64", "bin", "git")); err != nil {
+		t.Skipf("could not link the real git into the stand-in install: %v", err)
+	}
+	// What git-wrapper does: run the real git from where the launcher itself
+	// is, so that a link to it in another directory finds nothing.
+	// Only the shell's own expansion: the PATH it runs with may hold nothing.
+	launcher := "#!/bin/sh\nexec \"${0%/*}/../mingw64/bin/git\" \"$@\"\n"
+	for _, dir := range []string{"cmd", "bin"} {
+		writeFile(t, install, dir+"/git", launcher)
+		if err := os.Chmod(filepath.Join(install, dir, "git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, shell := range []string{"sh", "bash"} {
+		writeFile(t, install, "bin/"+shell, "#!/bin/sh\n")
+	}
+
+	for _, tc := range []struct{ name, found, want string }{
+		{"AC-2 found in cmd", filepath.Join(install, "cmd", "git"), filepath.Join(install, "cmd")},
+		{"AC-2 found in bin, beside a shell", filepath.Join(install, "bin", "git"), filepath.Join(install, "cmd")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := gitOnlyPathFor(t, tc.found); got != tc.want {
+				t.Errorf("gitOnlyPathFor(%s) = %s, want %s: a link to the launcher runs nothing, and bin holds a shell",
+					tc.found, got, tc.want)
+			}
+		})
 	}
 }

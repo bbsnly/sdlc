@@ -431,6 +431,16 @@ func TestHasMergesSaysWhetherTheRangeHoldsAMergeCommit(t *testing.T) {
 // compared case-folded; a file named exactly as the directory counts, and a
 // name that only begins the same does not. Names are read whole, whatever
 // they hold.
+//
+// US-055 AC-1: Git for Windows refuses a path holding a control byte or any of
+// : < > " | ? * while core.protectNTFS is on, its default there, and
+// update-index --cacheinfo stops at the first such path with "error: Invalid
+// path" (CI run 36964608101, a quote; US-050 AC-6, a newline). Those names
+// are committed only where git takes them, and the rows that read them skip on
+// Windows with the reason. The rows that fold case hold none of them, so a
+// ChangedUnder that stopped folding case still fails here on every platform,
+// and "src/naïve name.go" -- a name git quotes whenever it writes names
+// without -z -- keeps "read whole" live on Windows.
 func TestChangedUnderIsWhatChangedAtOrUnderAPathCaseFolded(t *testing.T) {
 	root, _ := lgRepo(t)
 	base := luCommitOf(t, root, "", map[string]string{
@@ -448,17 +458,18 @@ func TestChangedUnderIsWhatChangedAtOrUnderAPathCaseFolded(t *testing.T) {
 		"User_Stories.JSON":      "{}\n",
 		"user_stories.json.orig": "{}\n",
 		"src/a.go":               "package a\n",
-		"src/\"quoted\" name.go": "package a\n",
+		"src/naïve name.go":      "package a\n",
 	}
-	// AC-6: a name with a newline is a case-folding fixture only POSIX can
-	// hold -- git update-index --cacheinfo refuses it on Windows with
-	// "error: Invalid path" (CI log, landing_unit_test.go:442), which would
-	// kill the fixture before any of the checks below ran. Left out there,
-	// with the reason; every other case-folding check still runs.
-	sdlcWant := []string{".sdlc/config.json", ".sdlc/old.json", ".SDLC/notes.json"}
+	// Only where git takes them: each is read by a row below that skips on
+	// Windows, saying why.
+	windowsRefuses := map[string]string{
+		".Sdlc/state/run\nnext":  "Git for Windows refuses a path holding a newline (update-index: Invalid path)",
+		"src/\"quoted\" name.go": "Git for Windows refuses a path holding a double quote (update-index: Invalid path)",
+	}
 	if runtime.GOOS != "windows" {
-		tipFiles[".Sdlc/state/run\nnext"] = "x\n"
-		sdlcWant = append(sdlcWant, ".Sdlc/state/run\nnext")
+		for path := range windowsRefuses {
+			tipFiles[path] = "package a\n"
+		}
 	}
 	tip := luCommitOf(t, root, base, tipFiles)
 	ctx := t.Context()
@@ -466,21 +477,32 @@ func TestChangedUnderIsWhatChangedAtOrUnderAPathCaseFolded(t *testing.T) {
 		name, dir string
 		want, not []string
 	}{
-		{"AC-6 .sdlc", ".sdlc",
-			sdlcWant,
+		{"AC-1 .sdlc", ".sdlc",
+			[]string{".sdlc/config.json", ".sdlc/old.json", ".SDLC/notes.json"},
 			[]string{".sdlc-other/x", "docs/.sdlc/y", "user_stories.json"}},
-		{".SDLC", ".SDLC",
+		{"AC-1 AC-6 .sdlc, a name holding a newline", ".sdlc",
+			[]string{".Sdlc/state/run\nnext"},
+			[]string{".sdlc-other/x", "docs/.sdlc/y"}},
+		{"AC-1 .SDLC", ".SDLC",
 			[]string{".sdlc/config.json", ".SDLC/notes.json"},
 			nil},
-		{"user_stories.json", "user_stories.json",
+		{"AC-1 user_stories.json", "user_stories.json",
 			[]string{"user_stories.json", "User_Stories.JSON"},
 			[]string{"user_stories.json.orig", ".sdlc/config.json"}},
-		{"src", "src",
+		{"AC-1 src, a name git quotes", "src",
+			[]string{"src/naïve name.go"},
+			[]string{"src/a.go"}},
+		{"AC-1 src, a name holding a quote", "src",
 			[]string{"src/\"quoted\" name.go"},
 			[]string{"src/a.go"}},
-		{"nowhere", "nowhere", nil, []string{".sdlc/config.json"}},
+		{"AC-1 nowhere", "nowhere", nil, []string{".sdlc/config.json"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			for _, w := range tc.want {
+				if reason, ok := windowsRefuses[w]; ok && runtime.GOOS == "windows" {
+					t.Skip(reason)
+				}
+			}
 			got, err := ChangedUnder(ctx, root, base, tip, tc.dir)
 			if err != nil {
 				t.Fatalf("ChangedUnder: %v", err)

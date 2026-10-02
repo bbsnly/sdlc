@@ -250,13 +250,7 @@ func TestAStoryNoCommitNamesIsListedWithItsRangeUnknown(t *testing.T) {
 
 func TestTheLogStartsAfterTheLastCommitAcknowledged(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	addStory(t, root, "US-002")
-	for range 2 {
-		mustRun(t, "start")
-		reach(t, root, "")
-		mustRun(t, "stop")
-	}
+	root := twoStoriesDone(t)
 	first, second := readRecord(t, root, "US-001").Commit, readRecord(t, root, "US-002").Commit
 	stories := func(p logPayload) []string {
 		var ids []string
@@ -415,9 +409,7 @@ func TestAStoryWhoseCommitIsNotOnThisBranchIsListed(t *testing.T) {
 // Only a story whose commit gate stands passed is in the log.
 func TestAStoryNotCommittedIsNotInTheLog(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateCommit)
+	root := startedAt(t, model.GateCommit)
 	if out := mustRun(t, "log").stdout; !strings.Contains(out, "No story has been committed yet.") {
 		t.Errorf("a story short of its commit gate is in the log:\n%s", out)
 	}
@@ -498,10 +490,7 @@ func TestALogEntryWithNoRangeOnABranchWithNoCommitsIsUnknownRatherThanSearched(t
 // words: the log is not always following the last commit acknowledged.
 func TestLogSaysWhatSinceFlagFoundInItsOwnWords(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	before := headOf(t, root)
-	reach(t, root, "")
+	root, before := startedAtFrom(t, "")
 
 	withEntries := mustRun(t, "log", "--since", before).stdout
 	if !strings.Contains(withEntries, "Committed since "+before[:12]+":") {
@@ -518,13 +507,7 @@ func TestLogSaysWhatSinceFlagFoundInItsOwnWords(t *testing.T) {
 // Two stories in one log read as two paragraphs, not one run-on block.
 func TestTwoLogEntriesArePrintedWithABlankLineBetweenThem(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	addStory(t, root, "US-002")
-	for range 2 {
-		mustRun(t, "start")
-		reach(t, root, "")
-		mustRun(t, "stop")
-	}
+	twoStoriesDone(t)
 
 	out := mustRun(t, "log").stdout
 	if !strings.Contains(out, "US-001") || !strings.Contains(out, "US-002") {

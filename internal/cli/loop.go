@@ -760,17 +760,25 @@ func newGateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// What this gate asks git about the tree and HEAD, up to saving the
+			// record, which writes nothing either of them measures.
+			rd := readingOf(s)
 			// A passed code review is where the story's own commit is allowed,
 			// so HEAD moved since then is that commit, and a gate reopened on it
 			// measures from there. Held to where the story started, a code review
 			// reopened on work already committed could never pass again.
-			if record.Pass(model.GateCodeReview) {
-				if head, err := gitx.Head(cmd.Context(), s.Root()); err == nil {
+			//
+			// The commit gate passing reads HEAD once, after its checks, below:
+			// read here, the HEAD it records would come before the clean check,
+			// and a commit made in between would hold work the record leaves out.
+			committing := gate == model.GateCommit && status == model.GatePass
+			if record.Pass(model.GateCodeReview) && !committing {
+				if head, err := rd.headOf(cmd.Context()); err == nil {
 					record.Base = head
 				}
 			}
 			if status == model.GatePass {
-				if err := requireEvidence(cmd.Context(), s, id, gate, record); err != nil {
+				if err := requireEvidence(cmd.Context(), rd, id, gate, record); err != nil {
 					return err
 				}
 			}
@@ -798,12 +806,12 @@ func newGateCmd() *cobra.Command {
 				switch {
 				case gate == model.GateCodeReview &&
 					record.Count(model.EventGate, model.GateEvent(model.GateCodeReview, model.GatePass)) == 0:
-					if record.CommitBase, err = headCommit(cmd.Context(), s.Root()); err != nil {
+					if record.CommitBase, err = headCommit(cmd.Context(), rd); err != nil {
 						return err
 					}
 				case gate == model.GateCommit:
 					var head string
-					if head, err = headCommit(cmd.Context(), s.Root()); err != nil {
+					if head, err = headCommit(cmd.Context(), rd); err != nil {
 						return err
 					}
 					// Keyed on HEAD, not on what the record ends up naming: no
@@ -813,6 +821,10 @@ func newGateCmd() *cobra.Command {
 							"HEAD names no commit, so the commit gate cannot record where the story landed",
 							"the gate records the commit that holds the story's work, and git reports none")
 					}
+					// requireEvidence has just held this gate to a passed code
+					// review, so this is the HEAD a gate reopened on the story
+					// measures from, as every other gate takes it above.
+					record.Base = head
 					landed := placeCommits(cmd.Context(), s, id, record, head)
 					if err := requireNoteInRange(cmd.Context(), s.Root(), landed, note); err != nil {
 						return err
@@ -938,20 +950,19 @@ func quote(s string) string { return strconv.Quote(s) }
 // first is exactly the instruction this project exists to stop relying on: the
 // hole that started this line of work was a skill saying "do not do this
 // yourself" and the model doing it anyway.
-func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.Gate,
-	record *model.Record,
-) error {
+func requireEvidence(ctx context.Context, rd *reading, id string, gate model.Gate, record *model.Record) error {
+	s := rd.s
 	if err := requireOrder(gate, record); err != nil {
 		return err
 	}
 	if err := requireDocuments(s, id, gate); err != nil {
 		return err
 	}
-	if err := requireReviews(ctx, s, id, gate, record); err != nil {
+	if err := requireReviews(ctx, rd, id, gate, record); err != nil {
 		return err
 	}
 	if slices.Contains(model.GateCommit.Before(), gate) {
-		if err := requireUnmoved(ctx, s, record); err != nil {
+		if err := requireUnmoved(ctx, rd, record); err != nil {
 			return err
 		}
 	}
@@ -969,10 +980,10 @@ func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.
 		if err := requireIntactFreeze(ctx, s, id); err != nil {
 			return err
 		}
-		if err := requireFreshReviews(ctx, s, id, record); err != nil {
+		if err := requireFreshReviews(ctx, rd, id, record); err != nil {
 			return err
 		}
-		if err := requireApproval(ctx, s, id, record); err != nil {
+		if err := requireApproval(ctx, rd, id, record); err != nil {
 			return err
 		}
 		return requireCommitted(ctx, s)
@@ -984,8 +995,8 @@ func requireEvidence(ctx context.Context, s *store.Store, id string, gate model.
 // headCommit is the commit HEAD is on, for a record to name. A repository with
 // no commits yet has none, and git's all-zero name for that is not a commit, so
 // it comes back as "".
-func headCommit(ctx context.Context, root string) (string, error) {
-	head, err := gitx.Head(ctx, root)
+func headCommit(ctx context.Context, rd *reading) (string, error) {
+	head, err := rd.headOf(ctx)
 	if err != nil || head == gitx.NoCommits {
 		return "", err
 	}
@@ -998,11 +1009,11 @@ func headCommit(ctx context.Context, root string) (string, error) {
 // fetched. Work committed that way was on trunk with no gate passed, and every
 // gate after it measured the change against a HEAD that already held it, so the
 // reviewers were shown a diff without it.
-func requireUnmoved(ctx context.Context, s *store.Store, record *model.Record) error {
+func requireUnmoved(ctx context.Context, rd *reading, record *model.Record) error {
 	if record.Base == "" {
 		return nil
 	}
-	head, err := gitx.Head(ctx, s.Root())
+	head, err := rd.headOf(ctx)
 	if err != nil {
 		return err
 	}
@@ -1045,12 +1056,12 @@ func requireOrder(gate model.Gate, record *model.Record) error {
 // It comes before requireCommitted because the loop asks before committing: a
 // story that was never handed over is told that first, not that the tree is
 // dirty.
-func requireApproval(ctx context.Context, s *store.Store, id string, record *model.Record) error {
-	tier, pauses, err := s.CommitPause(id)
+func requireApproval(ctx context.Context, rd *reading, id string, record *model.Record) error {
+	tier, pauses, err := rd.s.CommitPause(id)
 	if err != nil || !pauses {
 		return err
 	}
-	tree, err := s.ReviewSubject(ctx)
+	tree, err := rd.subject(ctx)
 	if err != nil {
 		return err
 	}
@@ -1121,12 +1132,10 @@ func requireHeldTests(ctx context.Context, s *store.Store, lock *model.Lock) err
 // the working tree into a temporary index, so it does not change when the work
 // is committed. A story that goes straight from review to commit passes here
 // untouched; one that was edited in between does not.
-func requireFreshReviews(ctx context.Context, s *store.Store, id string,
-	record *model.Record,
-) error {
+func requireFreshReviews(ctx context.Context, rd *reading, id string, record *model.Record) error {
 	var stale, why []string
 	for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
-		err := requireReviews(ctx, s, id, gate, record)
+		err := requireReviews(ctx, rd, id, gate, record)
 		if err == nil {
 			continue
 		}

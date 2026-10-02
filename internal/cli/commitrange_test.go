@@ -13,9 +13,7 @@ import (
 // thing that happens.
 func landedStory(t *testing.T) (root, base, commit string) {
 	t.Helper()
-	root = gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateCommit)
+	root = startedAt(t, model.GateCommit)
 	base = headOf(t, root)
 	commitEverything(t, root)
 	return root, base, headOf(t, root)

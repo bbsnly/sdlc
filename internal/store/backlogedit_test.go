@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bbsnly/sdlc/internal/gitx"
@@ -44,6 +45,83 @@ func TestReviewSubjectIsStableAcrossAStatusMoveButNotOverTheStoryItself(t *testi
 	}
 	if changed == after {
 		t.Error("ReviewSubject did not change when the story itself changed")
+	}
+}
+
+// pinnedSubject is what ReviewSubject gave for the tree below when it was
+// written. It is the stamp on every review recorded in a project, so a release
+// that moved it for the same tree and backlog would stale all of them at once;
+// it is also the plain tree hash of that tree with the backlog's status and
+// updated fields taken out. A faster ReviewSubject must arrive at the same
+// value.
+const pinnedSubject = "2fdf8b115ee0e77d4f1b964dd024e169510fc661"
+
+// The fixture is LF only, has no executable bit, and settles in the
+// repository's own configuration the two settings that differ by platform
+// (core.autocrlf, which Git for Windows' system configuration turns on, and
+// core.fileMode, which git init writes differently on Windows), so the tree is
+// the same everywhere.
+func TestReviewSubjectNeverChangesForTheSameTreeAndBacklog(t *testing.T) {
+	s := newStore(t)
+	initGit(t, s.root)
+	runGit(t, s.root, "config", "core.autocrlf", "false")
+	runGit(t, s.root, "config", "core.fileMode", "false")
+	writeBacklog(t, s, `{
+  "stories": [
+    {
+      "id": "A-1",
+      "title": "One",
+      "status": "ready",
+      "acceptance_criteria": [{"id": "AC-1", "text": "WHEN it runs, it works."}]
+    },
+    {
+      "id": "A-2",
+      "title": "Two",
+      "status": "done",
+      "updated": "2026-01-02T03:04:05Z"
+    }
+  ]
+}
+`)
+	for rel, body := range map[string]string{
+		"README.md":          "# fixture\n",
+		"src/main.go":        "package main\n",
+		".sdlc/state/active": "A-1\n",
+	} {
+		path := filepath.Join(s.root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commitAll(t, s.root, "fixture")
+
+	before, err := s.ReviewSubject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before != pinnedSubject {
+		t.Errorf("ReviewSubject = %s, want %s for the same tree and backlog", before, pinnedSubject)
+	}
+
+	if err := s.SetStoryStatus("A-1", model.StatusInProgress); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := os.ReadFile(s.BacklogPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(moved), `"in_progress"`) || !strings.Contains(string(moved), model.Timestamp(fixedTime)) {
+		t.Fatalf("the status move did not reach the backlog:\n%s", moved)
+	}
+	after, err := s.ReviewSubject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != pinnedSubject {
+		t.Errorf("after a status move, ReviewSubject = %s, want %s: only status and updated moved", after, pinnedSubject)
 	}
 }
 

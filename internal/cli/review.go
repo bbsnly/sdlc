@@ -134,7 +134,7 @@ func newReviewAddCmd() *cobra.Command {
 					string(gate)+" does not expect a review from "+quote(reviewer.Role)+" in this project",
 					"it does only when human_gates.dor_advocate_check is on in .sdlc/config.json")
 			}
-			subject, err := gateSubject(cmd.Context(), s, id, gate)
+			subject, err := gateSubject(cmd.Context(), readingOf(s), id, gate)
 			if err != nil {
 				return err
 			}
@@ -223,11 +223,14 @@ func newReviewListCmd() *cobra.Command {
 
 			infos := make([]reviewInfo, 0, len(model.Reviewers))
 			policy := reviewPolicy(s, record)
+			// One tree for every reviewer listed: they were all stamped
+			// against the same one.
+			rd := readingOf(s)
 			for _, r := range model.Reviewers {
 				if (only != "" && r.Gate != only) || !r.Expected(policy) {
 					continue
 				}
-				subject, err := gateSubject(cmd.Context(), s, id, r.Gate)
+				subject, err := gateSubject(cmd.Context(), rd, id, r.Gate)
 				if err != nil {
 					return err
 				}
@@ -289,7 +292,8 @@ func describeReviewState(i reviewInfo) string {
 // document, so their content is the subject. The gates that review work review
 // the whole tree, because a change anywhere can invalidate what they concluded.
 // A gate with no reviewers has no subject, and that is not an error.
-func gateSubject(ctx context.Context, s *store.Store, id string, gate model.Gate) (string, error) {
+func gateSubject(ctx context.Context, rd *reading, id string, gate model.Gate) (string, error) {
+	s := rd.s
 	switch gate {
 	case model.GateDoR:
 		return s.StorySubject(id)
@@ -303,7 +307,7 @@ func gateSubject(ctx context.Context, s *store.Store, id string, gate model.Gate
 		}
 		return s.HashArtifact(id, plan)
 	case model.GateVerifierReview, model.GateCodeReview:
-		return s.ReviewSubject(ctx)
+		return rd.subject(ctx)
 	default:
 		return "", nil
 	}
@@ -320,10 +324,8 @@ func reviewPolicy(s *store.Store, record *model.Record) model.ReviewPolicy {
 }
 
 // requireReviews holds a reviewed gate to what being reviewed means.
-func requireReviews(ctx context.Context, s *store.Store, id string, gate model.Gate,
-	record *model.Record,
-) error {
-	policy := reviewPolicy(s, record)
+func requireReviews(ctx context.Context, rd *reading, id string, gate model.Gate, record *model.Record) error {
+	policy := reviewPolicy(rd.s, record)
 	var reviewers []model.Reviewer
 	for _, r := range model.ReviewersFor(gate) {
 		if r.Expected(policy) {
@@ -333,7 +335,7 @@ func requireReviews(ctx context.Context, s *store.Store, id string, gate model.G
 	if len(reviewers) == 0 {
 		return nil
 	}
-	subject, err := gateSubject(ctx, s, id, gate)
+	subject, err := gateSubject(ctx, rd, id, gate)
 	if err != nil {
 		return err
 	}

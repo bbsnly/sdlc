@@ -85,11 +85,14 @@ func setGitOnDisk(t *testing.T, root, key string, value any) {
 // written, which is the state Gate 3 starts from.
 func frozenStory(t *testing.T) string {
 	t.Helper()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateTestsFrozen)
-	writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// AC-1\n")
-	mustRunWith(t, "# Test plan\n\nAC-1 -> TestRejectsZero\n", "artifact", "write", "test_plan")
+	root := walkedCopy(t, "frozen story", func(t *testing.T, root string) {
+		gitProjectInitialisedAt(t, root)
+		mustRun(t, "start")
+		reach(t, root, model.GateTestsFrozen)
+		writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// AC-1\n")
+		mustRunWith(t, "# Test plan\n\nAC-1 -> TestRejectsZero\n", "artifact", "write", "test_plan")
+	})
+	chdir(t, root)
 	return root
 }
 

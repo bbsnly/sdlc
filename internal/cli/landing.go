@@ -763,7 +763,7 @@ func (l *lander) changeChecks(ctx context.Context, st *landState) error {
 					`story to a person with ` +
 					`"sdlc escalate" and stop`)
 		}
-		if err := requireFreshReviews(ctx, l.s, l.id, st.record); err != nil {
+		if err := requireFreshReviews(ctx, readingOf(l.s), l.id, st.record); err != nil {
 			var known *sdlcerr.Error
 			if !errors.As(err, &known) || known.Code != sdlcerr.ReviewsMissing {
 				return err

@@ -114,6 +114,14 @@ func wtRepository(t *testing.T, stories ...wtStory) string {
 func wtRepositoryWith(t *testing.T, configure func(root string), stories ...wtStory) string {
 	t.Helper()
 	root := wtTempDir(t)
+	wtRepositoryAt(t, root, configure, stories...)
+	return root
+}
+
+// wtRepositoryAt is wtRepositoryWith in root, an empty directory, for a
+// walked template's builder.
+func wtRepositoryAt(t *testing.T, root string, configure func(root string), stories ...wtStory) {
+	t.Helper()
 	seedGitInit(t, root)
 	if len(stories) > 0 {
 		wtSetStories(t, root, stories...)
@@ -122,7 +130,6 @@ func wtRepositoryWith(t *testing.T, configure func(root string), stories ...wtSt
 		configure(root)
 	}
 	wtCommit(t, root, "the project")
-	return root
 }
 
 func wtSetStories(t *testing.T, root string, stories ...wtStory) {

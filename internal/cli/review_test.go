@@ -76,9 +76,7 @@ func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
 // planned is a story that has reached the design review with a plan in place.
 func planned(t *testing.T) string {
 	t.Helper()
-	root := gitProjectInitialised(t)
-	mustRun(t, "start")
-	reach(t, root, model.GateDesignReview)
+	root := startedAt(t, model.GateDesignReview)
 	return root
 }
 

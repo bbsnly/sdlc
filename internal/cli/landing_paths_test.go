@@ -210,8 +210,7 @@ func TestFreezeFixLeavesAPlainErrorAndAnUnrelatedCodeUnchanged(t *testing.T) {
 // commit cannot be parsed.
 func TestReadTrunkRefusesWhenTrunksOwnConfigurationCannotBeParsed(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, nil)
-	wt := ldFinished(t, main)
+	main, wt := ldWalked(t, ldWalk{finished: true})
 	ldBookkeeping(t, wt)
 	orig := wtRead(t, filepath.Join(main, config.File))
 	swCommitFile(t, main, config.File, "{not json", "break trunk's configuration")
@@ -238,9 +237,7 @@ func TestReadTrunkRefusesWhenTrunksOwnConfigurationCannotBeParsed(t *testing.T) 
 // as for a story that did record them.
 func TestALegacyRecordMeasuresItsBaseAsTrunksMergeBaseWithTheTip(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, nil)
-	cut := ldTrunk(t, main)
-	wt := ldFinished(t, main)
+	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true})
 	tip := ldBookkeeping(t, wt)
 	lqForgetChange(t, main, "US-001")
 	// With no change recorded, the landing cannot tell the tree apart from one
@@ -258,8 +255,7 @@ func TestALegacyRecordMeasuresItsBaseAsTrunksMergeBaseWithTheTip(t *testing.T) {
 // naming the reason a person -- not the session -- has to decide on.
 func TestALegacyRecordWhoseBranchSharesNoHistoryWithTrunkIsRefused(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, nil)
-	wt := ldFinished(t, main)
+	main, wt := ldWalked(t, ldWalk{finished: true})
 	ldBookkeeping(t, wt)
 	lqForgetChange(t, main, "US-001")
 
@@ -347,8 +343,7 @@ func TestALandingCommandThatMovesTrunkIsCaughtWhenEverythingIsAskedAgain(t *test
 // checks would otherwise make of the worktree.
 func TestStopEndsTheIterationAsReleasedWhileAWorktreeStoryStillHasGatesLeft(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, nil)
-	wt := ldStarted(t, main)
+	main, wt := ldWalked(t, ldWalk{})
 
 	out := wtMust(t, wt, ldSession, "", "stop").stdout
 	if strings.Contains(out, "by fast-forward") || strings.Contains(out, "recorded it as landed") {
@@ -364,8 +359,7 @@ func TestStopEndsTheIterationAsReleasedWhileAWorktreeStoryStillHasGatesLeft(t *t
 // refusal.
 func TestLandRefusesWhenTheMainCheckoutsOwnConfigurationCannotBeRead(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, nil)
-	wt := ldFinished(t, main)
+	main, wt := ldWalked(t, ldWalk{finished: true})
 	ldBookkeeping(t, wt)
 	writeFile(t, main, config.File, "{not json")
 
@@ -389,8 +383,7 @@ func TestLandRefusesWhenTheMainCheckoutsOwnConfigurationCannotBeRead(t *testing.
 // change is recorded.
 func TestRecordChangeRefusesWhenTheMainCheckoutsOwnConfigurationCannotBeRead(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, nil)
-	wt := ldStarted(t, main)
+	main, wt := ldWalked(t, ldWalk{})
 	ldWork(t, wt)
 	swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
 	satisfy(t, wt, model.GateCommit)
@@ -411,8 +404,7 @@ func TestRecordChangeRefusesWhenTheMainCheckoutsOwnConfigurationCannotBeRead(t *
 // commit straight over what the reviewers saw.
 func TestChangeChecksRefusesADifferentChangeWhoseWorktreeHasUncommittedChanges(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, nil)
-	wt := ldFinished(t, main)
+	main, wt := ldWalked(t, ldWalk{finished: true})
 	ldBookkeeping(t, wt)
 	lqForgetChange(t, main, "US-001")
 	writeFile(t, wt, "billing.go", ldBilling+"\n// left uncommitted\n")

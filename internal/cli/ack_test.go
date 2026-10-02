@@ -49,13 +49,7 @@ func TestAcknowledgingWritesTheCommitInFull(t *testing.T) {
 
 func TestAcknowledgingAnEarlierCommitListsTheStoriesAfterItAgain(t *testing.T) {
 	t.Parallel()
-	root := gitProjectInitialised(t)
-	addStory(t, root, "US-002")
-	for range 2 {
-		mustRun(t, "start")
-		reach(t, root, "")
-		mustRun(t, "stop")
-	}
+	root := twoStoriesDone(t)
 	first, second := readRecord(t, root, "US-001").Commit, readRecord(t, root, "US-002").Commit
 
 	mustRun(t, "ack", "--through", second)

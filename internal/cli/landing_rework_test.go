@@ -131,8 +131,7 @@ func TestB1AnOddRootCodemapIsRefusedOnTheUnmovedPath(t *testing.T) {
 	t.Parallel()
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
-			main := ldRepository(t, nil)
-			wt := ldFinished(t, main)
+			main, wt := ldWalked(t, ldWalk{finished: true})
 			ldBookkeeping(t, wt)
 			kind.stage(t, wt)
 			before := ldTrunk(t, main)
@@ -160,8 +159,7 @@ func TestB1AnOddRootCodemapIsRefusedOnTheRebasedPath(t *testing.T) {
 	t.Parallel()
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
-			main := ldRepository(t, nil)
-			wt := ldFinished(t, main)
+			main, wt := ldWalked(t, ldWalk{finished: true})
 			ldBookkeeping(t, wt)
 			kind.stage(t, wt)
 			ldMoveTrunk(t, main)
@@ -190,9 +188,7 @@ func TestB1AnOddRootCodemapIsRefusedOnTheAlreadyLandedPath(t *testing.T) {
 	t.Parallel()
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
-			main := ldRepository(t, nil)
-			swGit(t, main, "switch", "--quiet", "-c", "spike")
-			wt := ldFinished(t, main)
+			main, wt := ldWalked(t, ldWalk{finished: true, spike: true})
 			ldBookkeeping(t, wt)
 			tip := kind.stage(t, wt)
 			swGit(t, main, "update-ref", "refs/heads/main", tip)
@@ -215,14 +211,12 @@ func TestB1AnOddRootCodemapIsRefusedOnTheAlreadyLandedPath(t *testing.T) {
 func TestB1APlainOrExecutableRootCodemapStillLands(t *testing.T) {
 	t.Parallel()
 	t.Run("plain", func(t *testing.T) {
-		main := ldRepository(t, nil)
-		wt := ldFinished(t, main)
+		main, wt := ldWalked(t, ldWalk{finished: true})
 		tip := ldBookkeeping(t, wt)
 		ldLanded(t, main, wt, tip)
 	})
 	t.Run("executable", func(t *testing.T) {
-		main := ldRepository(t, nil)
-		wt := ldFinished(t, main)
+		main, wt := ldWalked(t, ldWalk{finished: true})
 		tip := lrExecutableCodemap(t, wt)
 		ldLanded(t, main, wt, tip)
 	})
@@ -243,8 +237,7 @@ func lrAnswerFirst(t *testing.T, text, id, gate string) {
 // the fix names where they answer it and the worktree it is answered in.
 func TestE0036sFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, nil)
-	wt := ldFinished(t, main)
+	_, wt := ldWalked(t, ldWalk{finished: true})
 	ldBookkeeping(t, wt)
 	wtMust(t, wt, ldSession, "", "escalate", "landing", "--message", "land it now?")
 
@@ -261,11 +254,7 @@ func TestE0036sFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 // gives a change trunk still holds the base of.
 func TestE0029sReopenFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, nil)
-	swCommitFile(t, main, "README.md", "# Billing, before the story\n", "trunk before the story")
-	swGit(t, main, "switch", "--quiet", "-c", "spike")
-	cut := ldTrunk(t, main)
-	wt := ldFinished(t, main)
+	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true, trunkMoved: true, spike: true})
 	ldBookkeeping(t, wt)
 	lxChangeAfterTheReviews(t, wt)
 	back := swRev(t, main, cut+"~1")
@@ -290,8 +279,7 @@ func TestE0029sReopenFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 // GateImplementation).
 func TestE0055sMissingBranchFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, nil)
-	wt := ldFinished(t, main)
+	main, wt := ldWalked(t, ldWalk{finished: true})
 	ldBookkeeping(t, wt)
 	swGit(t, wt, "switch", "--quiet", "--detach")
 	swGit(t, wt, "branch", "--quiet", "-D", "story/US-001")
@@ -326,10 +314,7 @@ func TestE0025AndE0043sFreezeFixesNameTheAnswerFirstRouteAndTheWorktree(t *testi
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			main := ldRepository(t, func(root string) {
-				writeFile(t, root, "internal/tax_test.go", "package internal\n")
-			})
-			wt := ldFinished(t, main)
+			main, wt := ldWalked(t, ldWalk{finished: true, taxTest: true})
 			ldBookkeeping(t, wt)
 			tc.trunk(t, main)
 			ldRebase(t, wt)
@@ -354,8 +339,7 @@ func TestE0025AndE0043sFreezeFixesNameTheAnswerFirstRouteAndTheWorktree(t *testi
 // waiting.
 func TestE0037sFixNamesApproveInTheWorktree(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, func(root string) { ldTier(t, root, "US-001", "high") })
-	wt := ldStarted(t, main)
+	main, wt := ldWalked(t, ldWalk{tier: "high"})
 	ldWork(t, wt)
 	swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
 	ldApproved(t, wt)
