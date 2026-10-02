@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 Error codes are part of the interface: once published, a code's meaning does
 not change and it is never reused.
 
-## [0.3.0](https://github.com/bbsnly/sdlc/releases/tag/v0.3.0) - 2026-10-01
+## [0.3.0](https://github.com/bbsnly/sdlc/releases/tag/v0.3.0) - 2026-10-02
 
 ### Added
 
@@ -57,6 +57,10 @@ not change and it is never reused.
 - The example story `sdlc init` writes now carries every field the schema allows — a criterion's
   EARS pattern, a decision, and `created`/`updated` timestamps — rather than leaving someone
   learning the backlog format to find them in the schema or the guides.
+- On Windows, a message that names a file or directory now writes the path with forward slashes
+  and each separator once, as every other platform already did; quoting the path used to double
+  every backslash. A path's own quotes and newlines are still escaped. Anything that matches the
+  old Windows text of a message needs updating.
 
 ### Removed
 
@@ -100,6 +104,17 @@ not change and it is never reused.
   the tool's name rather than stopping at the first one, so a field separator or a variable
   assignment can no longer carry the program argument past it unseen. Naming a frozen test plainly
   as the file one of these tools is told to read is still allowed.
+- On Windows, a path that went through a link and then `..` could reach the loop's own files or
+  the frozen tests without the hook seeing it, because the hook followed the link first, the way
+  Git Bash does, while Windows takes the `..` first. The hook now reads such a path both ways and
+  refuses the write when either reading lands somewhere protected. It follows at most 64 links in
+  one path, more than any of the operating systems it runs on follows in one lookup, and reads the
+  rest of the path by name.
+- `sdlc log` and `sdlc doctor` refuse a file where the `.sdlc/stories` directory should be with
+  `SDLC-E0005` on every platform, saying the entry is not a directory and what to move aside; on
+  Windows they read it as no stories at all. `sdlc start` refuses a directory at
+  `.sdlc/worktrees/.gitignore` with `SDLC-E0053`, saying it is not a file, where on Windows the
+  refusal said only that the file could not be written.
 
 ## [0.2.0](https://github.com/bbsnly/sdlc/releases/tag/v0.2.0) - 2026-09-18
 
