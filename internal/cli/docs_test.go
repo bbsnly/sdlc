@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -475,5 +476,144 @@ func TestEveryPageIsLinkedFromSomewhere(t *testing.T) {
 		if !linked[p] && !strings.Contains(string(readme), "docs/"+p+")") {
 			t.Errorf("nothing links to docs/%s", p)
 		}
+	}
+}
+
+// ------------------------------------------------------------------ US-036
+
+// warningsSection is the "Warnings the hook prints" block of troubleshooting.md,
+// up to its first subheading, with its line wrapping collapsed so a sentence
+// that spans lines can be matched as one string. AC-1 and AC-2 both correct
+// sentences inside it.
+func warningsSection(t *testing.T) string {
+	t.Helper()
+	_, rest, ok := strings.Cut(page(t, "troubleshooting.md"), "## Warnings the hook prints")
+	if !ok {
+		t.Fatal(`docs/troubleshooting.md no longer has a "Warnings the hook prints" section`)
+	}
+	block, _, _ := strings.Cut(rest, "\n### ")
+	return strings.Join(strings.Fields(block), " ")
+}
+
+// sentenceContaining is the first "."-bounded sentence of flat (whitespace
+// already collapsed to single spaces) that holds needle, so a check can be
+// about the sentence making a claim rather than the page that holds it.
+func sentenceContaining(flat, needle string) (string, bool) {
+	for _, s := range strings.Split(flat, ". ") {
+		if strings.Contains(s, needle) {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+// TestAC1AndAC4TroubleshootingNamesExactlyTheGatesThatRecheckTheFreeze drives
+// a real story through every gate, breaking the frozen test immediately
+// before each one is recorded and restoring it before the loop moves on, so
+// the set of gate record keys that actually refuse a changed frozen test with
+// SDLC-E0025 is measured from the running loop (requireEvidence's switch in
+// loop.go) rather than copied from the acceptance criterion or from
+// docs/enforcement.md. AC-4's evidence for this replacement is that measured
+// set, not an assertion of it.
+//
+// It fails today because docs/troubleshooting.md still says the refusal
+// lands "at the next `sdlc gate`", which is false for a story whose next gate
+// to record is design_review, verifier_review, code_review or retro -- none
+// of which recheck the freeze at all.
+func TestAC1AndAC4TroubleshootingNamesExactlyTheGatesThatRecheckTheFreeze(t *testing.T) {
+	t.Parallel()
+	root := gitProjectInitialised(t)
+	mustRun(t, "start")
+
+	const testFile = "internal/invoice_test.go"
+	lock := filepath.Join(root, ".sdlc", "state", "tests.lock")
+	var measured []string
+	for _, gate := range model.Gates {
+		satisfy(t, root, gate)
+
+		// Nothing is frozen yet for dor and analysis: there is nothing to
+		// break, so there is nothing to measure at this gate.
+		if _, err := os.Stat(lock); err == nil {
+			good, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(testFile)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, root, testFile, "package internal\n\n// corrupted to measure "+string(gate)+"\n")
+			r := run(t, "gate", string(gate), "pass", "--note", "measuring AC-1")
+			if r.code != 0 && strings.Contains(r.stderr, "SDLC-E0025") {
+				measured = append(measured, string(gate))
+			}
+			writeFile(t, root, testFile, string(good))
+		}
+		mustRun(t, "gate", string(gate), "pass", "--note", "reached by the test")
+	}
+
+	want := []string{
+		string(model.GateTestsFrozen), string(model.GatePlan),
+		string(model.GateImplementation), string(model.GateVerification), string(model.GateCommit),
+	}
+	if !slices.Equal(measured, want) {
+		t.Fatalf("gates that refuse a changed frozen test with SDLC-E0025 = %v, want %v", measured, want)
+	}
+
+	flat := warningsSection(t)
+	if strings.Contains(flat, "next `sdlc gate`") || strings.Contains(flat, "next sdlc gate") {
+		t.Error(`docs/troubleshooting.md still says a changed frozen test is refused "at the next ` +
+			`sdlc gate", which is false whenever the next gate to record is one of the six just measured ` +
+			`not to recheck the freeze`)
+	}
+
+	// Naming the keys is one of the two fixes the AC allows (the other drops
+	// "next" instead), and if this page takes that route it has to agree with
+	// docs/enforcement.md, which already names the same five correctly: all
+	// five measured keys named, not some of them.
+	var named []string
+	for _, key := range want {
+		if strings.Contains(flat, "`"+key+"`") {
+			named = append(named, key)
+		}
+	}
+	if len(named) > 0 && !slices.Equal(named, want) {
+		t.Errorf("docs/troubleshooting.md names only %v of the gates that recheck the freeze, "+
+			"want all of %v or none of them (dropping \"next\" instead)", named, want)
+	}
+}
+
+// TestAC3AndAC4TheFrozenTestGuideBindsNarrowerToTheInterpreters checks that
+// "Those are narrower" in docs/guides/when-a-frozen-test-is-wrong.md can no
+// longer be read as referring to cat, grep or head -- the plural noun phrase
+// it is textually closest to.
+//
+// AC-4's evidence: internal/shellpolicy's frozen-test-through-the-tool rule
+// (in internal/policy/policy.go's registry, and exercised for real by
+// shellRules above) is what makes sed, awk, gawk, perl and another
+// interpreter narrower than cat, grep, head or the file tools -- a frozen
+// test given to one of them as a plain argument is refused in more cases,
+// anywhere it could be the program's own text and not just a file to read,
+// which cat, grep and head, unable to write at all, never are. The fix is
+// restoring that antecedent, not a code change, so the test checks the
+// sentence makes it, the way its twin at docs/enforcement.md's
+// frozen-test-through-the-tool section already does with "because each
+// writes through a program of its own that this cannot read".
+func TestAC3AndAC4TheFrozenTestGuideBindsNarrowerToTheInterpreters(t *testing.T) {
+	t.Parallel()
+	flat := strings.Join(strings.Fields(page(t, "guides/when-a-frozen-test-is-wrong.md")), " ")
+
+	narrowerSentence, ok := sentenceContaining(flat, "narrower")
+	if !ok {
+		t.Fatal(`docs/guides/when-a-frozen-test-is-wrong.md no longer says anything is "narrower"`)
+	}
+
+	disambiguated := false
+	for _, token := range []string{"sed", "awk", "gawk", "perl", "interpreter", "program of its own", "writes through"} {
+		if strings.Contains(narrowerSentence, token) {
+			disambiguated = true
+			break
+		}
+	}
+	if !disambiguated {
+		t.Errorf("the sentence that says something is narrower names neither the interpreters "+
+			"nor why they are narrower, so the nearest plural it can bind to is still cat, grep or "+
+			"head: %q", narrowerSentence)
 	}
 }

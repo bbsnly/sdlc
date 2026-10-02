@@ -49,7 +49,8 @@ The shell is covered too. Once the tests are frozen, the hook refuses:
 
 Running the tests is never refused, and neither is reading one with `cat`,
 `grep`, `head` or the file tools where `sed`, `awk`, `gawk`, `perl` or another
-interpreter is not in the command too. Those are narrower: see
+interpreter is not in the command too. Those are narrower, because each
+writes through a program of its own that this cannot read: see
 [`frozen-test-through-the-tool`](../enforcement.md#frozen-test-through-the-tool).
 
 The command checks too, for whatever reached the tree some other way. A pass at

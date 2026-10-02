@@ -1074,9 +1074,11 @@ is fail open quietly in that session — with one exception it cannot warn you
 about, because by then it is no longer running: a hook that outlasts the
 timeout Claude Code gives it is killed, and a killed hook says nothing. With
 `SDLC_DEBUG_FILE` set it leaves a `hook considering` line with no
-`hook decision` after it, and `SDLC_TRACE=1` says how long each call took; a
-frozen test that was changed is still refused at the next `sdlc gate`, with
-`SDLC-E0025`. Every other session hears nothing from the plugin at all.
+`hook decision` after it, and `SDLC_TRACE=1` says how long each call that
+finishes took — the way to see one closing in on the timeout before it is
+killed; a frozen test that was changed is still refused at `tests_frozen`,
+`plan`, `implementation`, `verification` and `commit`, with `SDLC-E0025`.
+Every other session hears nothing from the plugin at all.
 
 Each one means a rule you are relying on is not running as it should.
 
