@@ -252,3 +252,33 @@ not in the job and outlives a stop. `shellx.StopAll()` cancels every
 registered group; `cmd/sdlc/main.go`'s signal handler calls it before
 `store.ReleaseHeld`, so a second stop cannot take the landing lock while the
 first one's commands still run.
+
+## internal/pathrules/pathrules.go
+
+Package `pathrules`. `Resolver.Place(p)` is where `p` lands on disk,
+absolute, with every link on the way followed the way the filesystem follows
+it: `.` and `..` are read by the walk itself, never handed to the OS, so a
+`..` straight after a link takes the parent of where the link leads, not the
+parent of the link's own name. `follow`/`followFrom`/`walkLinks`
+(`final_windows.go`'s `finalPath` first, Go's `filepath.EvalSymlinks`-style
+walk otherwise) bound the links one word may follow at `maxLinks` (64,
+`pathrules.go`), counting every link crossed including ones inside a
+resolve; past the bound the rest of the word is read by name, so `Place`
+still answers rather than refuse. A `Resolver.Memoised()` resolver caches
+`Lstat`, resolve and follow answers per path so a repeated prefix in one
+command costs one syscall. `final_windows.go` and `final_other.go` each
+define `normalise(p string) string`, which spells a `p` already known to
+hold no symlink the way `resolve` would spell it (case and long names on
+Windows; unchanged elsewhere).
+
+## internal/cli/leave_windows.go and internal/cli/leave_other.go
+
+Package `cli`. Each defines `leaveWorktree(main, worktree string)` under its
+own build tag. On Windows, a directory cannot be removed while it is a
+process's current one, so `leaveWorktree` reads the process's working
+directory (`os.Getwd`) and, only when it is `worktree` or under it
+(`config.PathKey`), moves the process into `main` with `os.Chdir`, logging at
+debug level if that fails. Elsewhere it does nothing, because a directory
+that is a process's current one can still be removed. Called from the
+landing path around worktree removal, after `ExecuteIn` let a command share
+the process across invocations. Imports `config`.
