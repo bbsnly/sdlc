@@ -302,25 +302,26 @@ the process across invocations. Imports `config`.
 ## internal/cli/docs_test.go
 
 Package `cli`. Doc-text tests: every drift between a shipped page and the code
-it describes that this suite has caught so far. `page(t, name)` (`:28-35`)
-reads `docs/<name>` relative to the module root. Each test's "what should be
+it describes that this suite has caught so far. `page(t, name)` reads
+`docs/<name>` relative to the module root. Each test's "what should be
 true" side is derived from running code rather than from a second copy of the
 same fact kept in the test: `model.Gates`, `model.Artifacts`, `policy.Rules`
-and the rules `shellpolicy.Inspect` actually produces (`shellRules`, `:202-
-223`), `config.Default()` reflected into JSON field names, `scaffold.
-StackNames()`. `project` and `mustRun` (`internal/cli/commands_test.go:20,
-199`) drive the command tree in-process through `New(...)`, never forking the
-compiled binary, so this package cannot observe a process being signalled or
-killed.
+and the rules `shellpolicy.Inspect` actually produces (`shellRules`),
+`config.Default()` reflected into JSON field names, `scaffold.StackNames()`.
+`project` and `mustRun` (`internal/cli/commands_test.go`) drive the command
+tree in-process through `New(...)`, never forking the compiled binary, so
+this package cannot observe a process being signalled or killed.
 
 ## test/e2e package
 
-Package `e2e`. `build(t)` (`:30-44`) compiles the real `cmd/sdlc` binary once
-per test binary with `go build`; every other helper (`runTool`, `tool`,
+Package `e2e`. `build(t)` compiles the real `cmd/sdlc` binary with `go build`
+into the calling test's own temporary directory, so each test that calls it
+builds again (its comment says once per package; it is not); every other
+helper (`runTool`, `tool`,
 `runToolWithInput`, `launcher`) drives that binary with `exec.CommandContext`,
 so this is the only package here that forks the real binary and can send it
 an OS signal, or that exercises `plugin/bin/sdlc-hook`, the launcher script
-Claude Code actually calls. `analysed` (`:613-619`), `walk` (`:622-649`) and
-`review` (`:651-656`) take a fresh story through Gate 1/2, up to but not
-including the commit gate, and record a review verdict from each named role,
-for a test that needs a story already at a particular gate.
+Claude Code actually calls. `analysed`, `walk` and `review` take a fresh
+story through Gate 1/2, up to but not including the commit gate, and record
+a review verdict from each named role, for a test that needs a story already
+at a particular gate.
