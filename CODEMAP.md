@@ -271,6 +271,22 @@ define `normalise(p string) string`, which spells a `p` already known to
 hold no symlink the way `resolve` would spell it (case and long names on
 Windows; unchanged elsewhere).
 
+## internal/cli/reading.go
+
+Package `cli`. Defines `type reading`, one command's lazily-filled, memoised
+answer to "what tree is this review stamped against, and what is HEAD": a
+`*store.Store`, the subject and HEAD each with a "known" flag. `readingOf(s)`
+makes one; `(*reading).subject(ctx)` and `.headOf(ctx)` call
+`store.ReviewSubject`/`gitx.Head` at most once each, and never keep a failure,
+so a caller that asks again after an error makes git run again. It is a local
+built inside one `RunE`, never package state, never given a `context.Context`
+to hold, and never read again once the command has written the tree or moved
+HEAD. `readingOf` is called at exactly four sites: `gate` (loop.go), `review
+add`, `review list` and the landing's `changeChecks`; the landing's
+deliberate re-reads (`requireApprovalAgain`, `unmoved`) and the other direct
+callers of `ReviewSubject`/`gitx.Head` (`approve`, `log`, `ack`, `doctor`,
+`start`) keep their own calls (US-055). Imports `gitx`, `store`.
+
 ## internal/cli/leave_windows.go and internal/cli/leave_other.go
 
 Package `cli`. Each defines `leaveWorktree(main, worktree string)` under its
