@@ -21,6 +21,83 @@ Every gate follows the same shape, and the shape is the point:
 Nothing is taken on trust, including the assistant running the loop. A summary
 saying a document exists is not the document.
 
+## From start to end
+
+What happens to one story, gate by gate. Solid arrows are the way through;
+dotted ones are the ways back. Rounded boxes are what only a person does: the
+hook refuses `approve`, `unfreeze` and `ack` from an agent.
+
+```mermaid
+flowchart TD
+    start(["/sdlc:next runs sdlc start<br/>it takes the next runnable story<br/>and makes its worktree from trunk"])
+
+    subgraph define["Define what to build"]
+        g1["<b>Gate 1 · dor</b><br/>the conversation checks every criterion is testable<br/>+ human advocate, if the project asks for it"]
+        g2["<b>Gate 2 · analysis</b><br/>researcher ×1<br/>ANALYSIS.md, THREATS.md, security-sensitive or not"]
+        g3["<b>Gate 3 · tests_frozen</b><br/>SDET ×1<br/>failing tests, TEST-PLAN.md, then the freeze"]
+    end
+
+    subgraph design["Design"]
+        g4a["<b>Gate 4 · plan</b><br/>implementer ×1<br/>PLAN.md"]
+        g4b["<b>Gate 4 · design_review</b><br/>5 reviewers in parallel: architect, security,<br/>red team, perf, human advocate"]
+    end
+
+    subgraph build["Build and check"]
+        g5["<b>Gate 5 · implementation</b><br/>implementer ×1<br/>the code, until the frozen tests pass"]
+        g6["<b>Gate 6 · verification, verifier_review</b><br/>verifier ×1<br/>VERIFICATION.md and a blocking verdict"]
+        g7["<b>Gate 7 · code_review</b><br/>4 reviewers in parallel: code reviewer,<br/>security, perf, human advocate"]
+    end
+
+    subgraph finish["Finish"]
+        g8["<b>Gate 8 · commit</b><br/>the conversation commits the story"]
+        g9["<b>Gate 9 · retro</b><br/>bookkeeper ×1<br/>RETRO.md, CODEMAP.md"]
+    end
+
+    done(["sdlc stop: the story is done<br/>from its own worktree, it lands on trunk"])
+
+    start --> g1 --> g2 --> g3 --> g4a --> g4b --> g5 --> g6 --> g7 --> g8 --> g9 --> done
+
+    g4b -.->|a blocking reviewer blocks| g4a
+    g6 -.->|the verifier blocks| g5
+    g7 -.->|a blocking reviewer blocks| g5
+
+    esc{{"Escalate: the story waits for a person"}}
+    g1 -.->|a criterion cannot be tested| esc
+    g2 -.->|open questions| esc
+    g3 -.->|a frozen test is wrong| esc
+    g7 -.->|rework that does not converge| esc
+    g8 -.->|a high-risk story| esc
+
+    approve(["sdlc approve ID, then sdlc start ID<br/>the story resumes at the gate it stopped at"])
+    unfreeze(["sdlc unfreeze --reason<br/>the story goes back to Gate 3"])
+    esc --> approve
+    approve -.->|when a frozen test was wrong| unfreeze
+    unfreeze -.-> g3
+
+    ack(["sdlc log, then sdlc ack<br/>read what landed on trunk"])
+    done --> ack
+```
+
+| Gate | Record keys | Who does the work | Who reviews it | Produces | Where a person comes in |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `dor` | the conversation | `sdlc:human-advocate`, advisory, only with `human_gates.dor_advocate_check` | nothing | a criterion that cannot be tested |
+| 2 | `analysis` | `sdlc:researcher` | none | `ANALYSIS.md`, `THREATS.md`, and whether the story is security-sensitive | open questions |
+| 3 | `tests_frozen` | `sdlc:sdet` | none | the failing tests, `TEST-PLAN.md`, the freeze | `sdlc unfreeze`, when a frozen test is wrong |
+| 4 | `plan`, `design_review` | `sdlc:implementer` | `sdlc:architect` blocks; `sdlc:security` blocks when the story is security-sensitive; `sdlc:perf` blocks only on a stated budget; `sdlc:red-team` and `sdlc:human-advocate` are advisory | `PLAN.md`, five reviews | a reviewer that keeps blocking |
+| 5 | `implementation` | `sdlc:implementer` | none | the code | a broken freeze |
+| 6 | `verification`, `verifier_review` | `sdlc:verifier` | the verifier's own verdict blocks | `VERIFICATION.md` | a verifier that keeps blocking |
+| 7 | `code_review` | nobody: the diff from Gate 5 is reviewed | `sdlc:code-reviewer` blocks unless `reviews.gate7_advisory`; `sdlc:security`, `sdlc:perf` and `sdlc:human-advocate` as at Gate 4 | four reviews | a reviewer that keeps blocking |
+| 8 | `commit` | the conversation | none | the commit | `sdlc approve`, for a story in a paused risk tier (`high` by default) |
+| 9 | `retro` | `sdlc:bookkeeper` | none | `RETRO.md`, and `CODEMAP.md` for anything new | `sdlc log` and `sdlc ack`, once the story is on trunk |
+
+Eleven agents take part. A story that needs no rework runs fifteen of them:
+one each at Gates 2, 3, 5, 6 and 9, six at Gate 4 and four at Gate 7, plus the
+human advocate at Gate 1 when the project asks for it. Every one starts from a
+fresh context, and none reads another's work at the same gate. A gate that keeps
+failing, or a reviewer that keeps blocking, hands the story to a person after
+[`loop.max_rework_rounds`](configuration.md#loop) failures or
+`loop.max_review_rounds` blocks.
+
 ## Where everything lives
 
 ```text
