@@ -195,7 +195,10 @@ under the root `CODEMAP.md` other than a plain or executable file there, so
 the fingerprint's exclusion of that path (`leftOut`) cannot carry anything
 else to trunk unreviewed. Builds the landing-specific `WithFix` text for
 `SDLC-E0054`, `SDLC-E0055` and `SDLC-E0056`, and for reused codes reopened at
-landing. Imports `config`, `gitx`, `model`, `sdlcerr`, `shellx`, `store`.
+landing. Imports `config`, `gitx`, `model`, `sdlcerr`, `shellx`, `store`. The
+`landingCommands` list (`coverage`, `mutation` among them) is
+the only caller of `commands.coverage`/`commands.mutation` from
+`.sdlc/config.json`; `./task check` in `Taskfile.yml` does not run either.
 
 ## internal/gitx/landing.go and internal/gitx/fastforward.go
 
@@ -325,3 +328,53 @@ Claude Code actually calls. `analysed`, `walk` and `review` take a fresh
 story through Gate 1/2, up to but not including the commit gate, and record
 a review verdict from each named role, for a test that needs a story already
 at a particular gate.
+
+## Taskfile.yml's `check` legs: what each reads, and whether `.gitignore` applies
+
+`check` runs sixteen tasks in sequence. What a leg reads decides whether it can
+fail on a file a clean clone would not have, so each is listed by how it finds
+its files.
+
+- `markdownlint` runs the markdownlint-cli2 installed by its own `npm ci` under
+  `.github/tools/markdownlint`. `.markdownlint-cli2.jsonc` sets `"gitignore":
+  true`, so the tool drops what `.gitignore` names, including this
+  repository's own gate documents, even though its glob walks into
+  dot-directories.
+- `secrets` runs two gitleaks scans. `gitleaks git` reads history. `gitleaks
+  dir` has no flag that reads `.gitignore`, so it is pointed at a snapshot: git
+  builds a tree from its own file set (tracked plus untracked and not ignored)
+  using a throwaway index and a throwaway object directory, with the real
+  object store only an alternate, and `git archive` extracts that tree into a
+  temporary directory. The leg fails closed, with an instruction, if the real
+  store's loose-object count changed while the snapshot was built or if the
+  extracted file count is below what the snapshot's index names, so an empty
+  copy never reads as a clean scan.
+- `shellcheck` builds its file list from `git ls-files --cached --others
+  --exclude-standard`: `--exclude-standard` drops anything `.gitignore` names,
+  while `--others` still lints a script that is written but not yet `git add`ed,
+  by design (the task's own comment).
+- `internal/tools/linkcheck`'s link mode walks the whole tree (`markdownFiles`)
+  but skips every dot-directory other than `.github`, so it never walks into
+  the loop's own records; its hygiene mode (`checkHygiene`, also run as
+  `no-internal-docs`) reads only `git ls-files` output, so every file it can
+  object to is already tracked by construction.
+- `release-check` (`internal/release.Check`) reads a fixed short list of named
+  files plus a glob of `docs/*.md`; none of those paths are gitignored.
+- `fmt-check` walks the filesystem directly with `find` (not `git`), pruning
+  only the worktrees directory; no `.go` file is gitignored today, so it is not
+  currently exposed to the same failure.
+
+A shared helper in Taskfile.yml's `vars` (`ANNOTATE_AWK`) is run over the
+failing output of `fmt-check`, `vet`, `lint`, `test`, `npm-test`, `actionlint`,
+`shellcheck`, `markdownlint`, `linkcheck` and `secrets`. After each line that
+names a file it adds a line saying whether git tracks it, has it untracked (CI
+would report it once it is added), or ignores it (a clean clone does not have
+it and CI would not report it). It skips markdownlint's `Finding:` line, which
+echoes an ignored glob and not a file. `test` instead says it per failing
+package, because `go test` names a test file only by its bare name.
+`no-internal-docs` says every file it names is tracked, as it reads nothing
+else.
+
+`commands.coverage` and `commands.mutation` in `.sdlc/config.json` are read
+only by `internal/cli/landing.go`'s `landingCommands` (landing.go:222), during
+a story's own landing (Gate 9); no leg of `./task check` runs either.

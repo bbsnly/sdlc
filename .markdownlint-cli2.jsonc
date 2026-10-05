@@ -27,6 +27,11 @@
   },
   "globs": ["**/*.md"],
 
+  // Lint only what git would carry to a clean clone. The loop's own records
+  // are gitignored, and linting them failed this leg on a tree where a fresh
+  // clone passes.
+  "gitignore": true,
+
   // internal/scaffold/templates holds fragments that are written into a user's
   // own files. They are program data, not documentation of this repository, and
   // a fragment that starts at a `##` heading is not a document with a missing

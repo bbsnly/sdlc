@@ -35,6 +35,22 @@ Two things Go cannot fetch for you, because they are not Go programs:
 reports success for work it did not do, so every leg either runs or fails with
 an install line.
 
+A leg that fails on a file it read also says whether git tracks that file,
+so you can tell whether the same failure would happen on a fresh clone.
+
+`./task secrets` also uses `mktemp` and `tar`, which ship with every
+supported platform (coreutils on macOS and Linux; Git for Windows' bundled
+tools, or Windows' own `tar.exe` since 1803, on Windows), and git 2.31 or
+newer. `./task tools` checks for all three and says how to get them if one is
+missing.
+
+`./task tools` also runs `npm ci` for markdownlint and `gitleaks --version`,
+so the tests that drive those legs find their tools already fetched. The first
+run is slower for it and needs the network. `./task markdownlint` skips
+gitignored files, as a fresh clone would not have them, and `./task secrets`
+scans a snapshot of what git tracks or would accept with `git add`, not the
+working tree itself.
+
 ## A note on the Claude Code version
 
 `.claude-code-version` is the version this is developed against. Nothing in CI

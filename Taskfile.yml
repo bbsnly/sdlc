@@ -36,6 +36,43 @@ vars:
   ACTIONLINT: go run github.com/rhysd/actionlint/cmd/actionlint@v{{.ACTIONLINT_VERSION}}
   GITLEAKS: go run github.com/zricethezav/gitleaks/v8@v{{.GITLEAKS_VERSION}}
 
+  # Run over a failing leg's own output: after every line that names a file,
+  # says whether git tracks it. A leg that failed on a gitignored or untracked
+  # file looked, from its output alone, exactly like one that failed on a file
+  # a clean clone would also have, so the failure could not be told apart
+  # from one the contributor could never reproduce.
+  #
+  # Lists arrive through ENVIRON, not `-v`: the macOS awk rejects `-v name=value`
+  # outright when the value holds a newline. A plain substring match is
+  # deliberate; a file name is not worth a parser per tool.
+  ANNOTATE_AWK: |
+    BEGIN {
+      nt = split(ENVIRON["sdlc_tracked"], tf, "\n")
+      nu = split(ENVIRON["sdlc_untracked"], uf, "\n")
+      ni = split(ENVIRON["sdlc_ignored"], gf, "\n")
+    }
+    {
+      print $0
+      # markdownlint-cli2 echoes the globs it ignored on a "Finding:" line; that
+      # names a pattern, not a file it objected to.
+      if (index($0, "Finding:") == 1) next
+      for (i = 1; i <= nt; i++) {
+        f = tf[i]
+        if (f != "" && index($0, f) > 0)
+          print "sdlc: " f " is tracked by git."
+      }
+      for (i = 1; i <= nu; i++) {
+        f = uf[i]
+        if (f != "" && index($0, f) > 0)
+          print "sdlc: " f " is untracked; once you `git add` it, CI will report this too."
+      }
+      for (i = 1; i <= ni; i++) {
+        f = gf[i]
+        if (f != "" && index($0, f) > 0)
+          print "sdlc: " f " is gitignored, so a clean clone does not have it and CI will not report this."
+      }
+    }
+
 tasks:
   default:
     desc: Run the full local bar
@@ -117,7 +154,40 @@ tasks:
           fi
           fail=1
         fi
+        # The secrets leg builds a throwaway snapshot of the working tree, which
+        # needs these, and `git rev-parse --path-format=absolute` (git 2.31).
+        # Without a check each one ends the leg in a raw shell error.
+        if ! command -v mktemp >/dev/null 2>&1; then
+          echo "sdlc: mktemp is not installed. The secrets leg uses it to build a throwaway snapshot of the working tree." >&2
+          echo "      macOS/Linux: part of coreutils, already on PATH." >&2
+          echo "      Windows: part of Git for Windows' bundled usr/bin, already on PATH wherever git is." >&2
+          fail=1
+        fi
+        if ! command -v tar >/dev/null 2>&1; then
+          echo "sdlc: tar is not installed. The secrets leg uses it to extract that snapshot." >&2
+          echo "      Windows 10 1803 and later ship bsdtar as tar.exe; older Windows needs Git for Windows." >&2
+          fail=1
+        fi
+        if ! command -v git >/dev/null 2>&1; then
+          echo "sdlc: git is not installed. Install git 2.31 or newer: https://git-scm.com/downloads" >&2
+          fail=1
+        else
+          have_git=$(git --version | awk '{print $3}')
+          if ! awk -v v="$have_git" 'BEGIN { split(v, a, "."); exit !(a[1] > 2 || (a[1] == 2 && a[2] >= 31)) }'; then
+            echo "sdlc: git ${have_git} is installed, the secrets leg needs 2.31 or newer (git rev-parse --path-format)." >&2
+            echo "      Update git: https://git-scm.com/downloads" >&2
+            fail=1
+          fi
+        fi
         [ "$fail" -eq 0 ] || exit 1
+      - |
+        # Warms the two caches test/checklegs needs. `check` runs `test` before
+        # `markdownlint` and `secrets` ever fill them, so those two tests skipped
+        # -- not failed -- on every CI run. Each call is what the later leg does
+        # anyway, only earlier: `npm ci` is idempotent, and `--version` is the
+        # cheapest gitleaks command that still resolves and builds the module.
+        npm ci --prefix .github/tools/markdownlint --ignore-scripts --no-audit --no-fund
+        {{.GITLEAKS}} --version >/dev/null
 
   build:
     desc: Build the sdlc binary into dist/
@@ -163,8 +233,11 @@ tasks:
         unformatted=$(find . -path ./.sdlc/worktrees -prune -o -type f -name '*.go' -print0 |
           xargs -0 "$gofmt" -l 2>/dev/null)
         if [ -n "$unformatted" ]; then
+          tracked=$(git ls-files --cached '*.go')
+          untracked=$(git ls-files --others --exclude-standard '*.go')
+          ignored=$(git ls-files --others --ignored --exclude-standard '*.go')
           echo "sdlc: these files are not gofmt-clean:" >&2
-          echo "$unformatted" >&2
+          printf '%s\n' "$unformatted" | sdlc_tracked="$tracked" sdlc_untracked="$untracked" sdlc_ignored="$ignored" awk '{{.ANNOTATE_AWK}}' >&2
           echo "      Fix: ./task fmt" >&2
           exit 1
         fi
@@ -185,18 +258,67 @@ tasks:
 
   vet:
     desc: go vet
+    silent: true
     cmds:
-      - go vet ./...
+      - |
+        out=$(go vet ./... 2>&1) || {
+          tracked=$(git ls-files --cached '*.go')
+          untracked=$(git ls-files --others --exclude-standard '*.go')
+          ignored=$(git ls-files --others --ignored --exclude-standard '*.go')
+          printf '%s\n' "$out" | sdlc_tracked="$tracked" sdlc_untracked="$untracked" sdlc_ignored="$ignored" awk '{{.ANNOTATE_AWK}}' >&2
+          exit 1
+        }
+        if [ -n "$out" ]; then printf '%s\n' "$out"; fi
 
   lint:
     desc: golangci-lint
+    silent: true
     cmds:
-      - "{{.GOLANGCI}} run"
+      - |
+        out=$({{.GOLANGCI}} run 2>&1) || {
+          tracked=$(git ls-files --cached '*.go')
+          untracked=$(git ls-files --others --exclude-standard '*.go')
+          ignored=$(git ls-files --others --ignored --exclude-standard '*.go')
+          printf '%s\n' "$out" | sdlc_tracked="$tracked" sdlc_untracked="$untracked" sdlc_ignored="$ignored" awk '{{.ANNOTATE_AWK}}' >&2
+          exit 1
+        }
+        if [ -n "$out" ]; then printf '%s\n' "$out"; fi
 
   test:
     desc: Go tests with race detection
+    silent: true
     cmds:
-      - go test -race ./...
+      - |
+        out=$(go test -race ./... 2>&1) || {
+          # go test's failure lines carry only a test file's bare name, which
+          # cannot be matched against a full path, and two packages can hold a
+          # file of the same name. So say, per failing package, whether every
+          # .go file in it is one a clean clone would also have.
+          echo "$out" >&2
+          modpath=$(awk '/^module /{print $2; exit}' go.mod)
+          failed=$(printf '%s\n' "$out" | awk '$1=="FAIL" && NF>=2 {print $2}')
+          for pkg in $failed; do
+            rel=${pkg#$modpath}
+            rel=${rel#/}
+            pattern="$rel/*.go"
+            if [ -z "$rel" ]; then pattern="*.go"; fi
+            pkg_untracked=$(git ls-files --others --exclude-standard "$pattern")
+            pkg_ignored=$(git ls-files --others --ignored --exclude-standard "$pattern")
+            if [ -z "$pkg_untracked" ] && [ -z "$pkg_ignored" ]; then
+              echo "sdlc: every .go file go test ran in $pkg is tracked by git." >&2
+            else
+              echo "sdlc: $pkg has .go file(s) git does not track the same way on a clean clone:" >&2
+              if [ -n "$pkg_untracked" ]; then
+                printf '%s\n' "$pkg_untracked" | sed 's/^/      untracked, git add would accept it: /' >&2
+              fi
+              if [ -n "$pkg_ignored" ]; then
+                printf '%s\n' "$pkg_ignored" | sed 's/^/      is gitignored, so a clean clone does not have it and CI will not report this:/' >&2
+              fi
+            fi
+          done
+          exit 1
+        }
+        printf '%s\n' "$out"
 
   npm-test:
     desc: Test the npm installer package
@@ -213,14 +335,20 @@ tasks:
         # TAP named, not left to the default: Node 23 made the default reporter
         # spec, which prints no "# tests" line, and the check below failed a
         # green run.
+        annotate() {
+          tracked=$(git ls-files --cached 'npm/test/*.test.js')
+          untracked=$(git ls-files --others --exclude-standard 'npm/test/*.test.js')
+          ignored=$(git ls-files --others --ignored --exclude-standard 'npm/test/*.test.js')
+          printf '%s\n' "$out" | sdlc_tracked="$tracked" sdlc_untracked="$untracked" sdlc_ignored="$ignored" awk '{{.ANNOTATE_AWK}}' >&2
+        }
         out=$(node --test --test-reporter=tap 'npm/test/*.test.js' 2>&1) || {
-          echo "$out" >&2
+          annotate
           exit 1
         }
         # A glob that matches nothing is zero tests and exit 0, which passed a
         # renamed test file as a green leg.
         if ! echo "$out" | grep -q '^# tests [1-9]'; then
-          echo "$out" >&2
+          annotate
           echo "sdlc: node ran no tests from npm/test/*.test.js" >&2
           exit 1
         fi
@@ -228,8 +356,17 @@ tasks:
 
   actionlint:
     desc: Lint GitHub Actions workflows
+    silent: true
     cmds:
-      - "{{.ACTIONLINT}}"
+      - |
+        out=$({{.ACTIONLINT}} 2>&1) || {
+          tracked=$(git ls-files --cached '.github/workflows/*.yml' '.github/workflows/*.yaml')
+          untracked=$(git ls-files --others --exclude-standard '.github/workflows/*.yml' '.github/workflows/*.yaml')
+          ignored=$(git ls-files --others --ignored --exclude-standard '.github/workflows/*.yml' '.github/workflows/*.yaml')
+          printf '%s\n' "$out" | sdlc_tracked="$tracked" sdlc_untracked="$untracked" sdlc_ignored="$ignored" awk '{{.ANNOTATE_AWK}}' >&2
+          exit 1
+        }
+        if [ -n "$out" ]; then printf '%s\n' "$out"; fi
 
   shellcheck:
     desc: Lint shell scripts
@@ -245,7 +382,14 @@ tasks:
           '*.sh' 'task' 'plugin/bin/sdlc-hook' 2>/dev/null)
         if [ -n "$files" ]; then
           # shellcheck disable=SC2086
-          shellcheck $files
+          out=$(shellcheck $files 2>&1) || {
+            tracked=$(git ls-files --cached '*.sh' 'task' 'plugin/bin/sdlc-hook' 2>/dev/null)
+            untracked=$(git ls-files --others --exclude-standard '*.sh' 'task' 'plugin/bin/sdlc-hook' 2>/dev/null)
+            ignored=$(git ls-files --others --ignored --exclude-standard '*.sh' 'task' 'plugin/bin/sdlc-hook' 2>/dev/null)
+            printf '%s\n' "$out" | sdlc_tracked="$tracked" sdlc_untracked="$untracked" sdlc_ignored="$ignored" awk '{{.ANNOTATE_AWK}}'
+            exit 1
+          }
+          if [ -n "$out" ]; then printf '%s\n' "$out"; fi
         fi
 
   shellcheck-checksums:
@@ -354,6 +498,7 @@ tasks:
 
   markdownlint:
     desc: Lint Markdown
+    silent: true
     cmds:
       # From a lockfile rather than `npx markdownlint-cli2@<version>`, which
       # pins that one package and resolves everything under it afresh on every
@@ -364,12 +509,29 @@ tasks:
       # version with a denial-of-service advisory; drop the override once it
       # pins 1.7.1 or later.
       - npm ci --prefix .github/tools/markdownlint --ignore-scripts --no-audit --no-fund
-      - node .github/tools/markdownlint/node_modules/markdownlint-cli2/markdownlint-cli2-bin.mjs
+      - |
+        out=$(node .github/tools/markdownlint/node_modules/markdownlint-cli2/markdownlint-cli2-bin.mjs 2>&1) || {
+          tracked=$(git ls-files --cached '*.md')
+          untracked=$(git ls-files --others --exclude-standard '*.md')
+          ignored=$(git ls-files --others --ignored --exclude-standard '*.md')
+          printf '%s\n' "$out" | sdlc_tracked="$tracked" sdlc_untracked="$untracked" sdlc_ignored="$ignored" awk '{{.ANNOTATE_AWK}}'
+          exit 1
+        }
+        printf '%s\n' "$out"
 
   linkcheck:
     desc: Check relative links in README.md and docs/, and that README links into no docs/ page
+    silent: true
     cmds:
-      - go run ./internal/tools/linkcheck
+      - |
+        out=$(go run ./internal/tools/linkcheck 2>&1) || {
+          tracked=$(git ls-files --cached '*.md')
+          untracked=$(git ls-files --others --exclude-standard '*.md')
+          ignored=$(git ls-files --others --ignored --exclude-standard '*.md')
+          printf '%s\n' "$out" | sdlc_tracked="$tracked" sdlc_untracked="$untracked" sdlc_ignored="$ignored" awk '{{.ANNOTATE_AWK}}' >&2
+          exit 1
+        }
+        if [ -n "$out" ]; then printf '%s\n' "$out"; fi
 
   init-time:
     desc: Assert package init stays inside the hook latency budget
@@ -461,6 +623,7 @@ tasks:
 
   secrets:
     desc: Scan for credentials, committed and about to be
+    silent: true
     cmds:
       # Two scans, because they answer different questions. `git` reads the
       # history: a credential committed once is compromised even if the next
@@ -468,10 +631,72 @@ tasks:
       # can still be prevented -- and it is what `./task check` is run for.
       # With only the first, a token sitting in an uncommitted file passed.
       - "{{.GITLEAKS}} git --no-banner --redact -v"
-      - "{{.GITLEAKS}} dir --no-banner --redact -v ."
+      - |
+        set -eu -o pipefail
+        # `gitleaks dir` has no .gitignore-aware flag, so a plain `dir .` also
+        # scanned this clone's own loop records, which a clean checkout never
+        # has. A throwaway snapshot stands in for everything git tracks or
+        # would accept with `git add`; git's own tree walk picks the files, so
+        # no file name is ever handed to a shell command as an argument.
+        #
+        # GIT_INDEX_FILE alone redirects only the index: `git add` and
+        # `git write-tree` still wrote a blob for every untracked file into the
+        # repository's real object store, readable with `git cat-file` after the
+        # file was deleted -- the very files this leg exists to protect. So new
+        # objects go under $workdir, and the real store is an alternate, so an
+        # unmodified tracked file's blob is found rather than duplicated. Its
+        # path comes from --git-common-dir: in a linked worktree the per-worktree
+        # git dir has no objects/ at all.
+        workdir=$(mktemp -d)
+        trap 'rm -rf "$workdir"' EXIT
+        mkdir "$workdir/objects" "$workdir/tree"
+        real_objects="$(git rev-parse --path-format=absolute --git-common-dir)/objects"
+        before=$(git count-objects -v | awk '/^count:/{print $2}')
+
+        GIT_INDEX_FILE="$workdir/index" GIT_OBJECT_DIRECTORY="$workdir/objects" \
+          GIT_ALTERNATE_OBJECT_DIRECTORIES="$real_objects" git -c core.safecrlf=false add -A .
+        tree=$(GIT_INDEX_FILE="$workdir/index" GIT_OBJECT_DIRECTORY="$workdir/objects" \
+          GIT_ALTERNATE_OBJECT_DIRECTORIES="$real_objects" git write-tree)
+        GIT_OBJECT_DIRECTORY="$workdir/objects" GIT_ALTERNATE_OBJECT_DIRECTORIES="$real_objects" \
+          git archive "$tree" | tar -x -C "$workdir/tree"
+
+        after=$(git count-objects -v | awk '/^count:/{print $2}')
+        if [ "$before" != "$after" ]; then
+          echo "sdlc: the secrets leg's snapshot changed the loose-object count of the repository's real object store, so it was not scanned." >&2
+          echo "      Check that no other git process (git gc, a fetch, an editor's git integration) is running in this repository, then run ./task secrets again. If it recurs, run git gc, or report it." >&2
+          exit 1
+        fi
+        # Counted against the snapshot's own index, which is what `git add -A`
+        # kept: a tracked file deleted but not yet staged is in `git ls-files
+        # --cached` and not in the snapshot, so counting the real index aborted
+        # on an ordinary mid-edit tree. A pipe that died half way, or a tar that
+        # stopped early, still leaves fewer files than the index names -- an
+        # empty copy must never read as a clean scan.
+        got=$(find "$workdir/tree" \( -type f -o -type l \) | wc -l | tr -d ' ')
+        want=$(GIT_INDEX_FILE="$workdir/index" git ls-files | wc -l | tr -d ' ')
+        if [ "$got" -ne "$want" ]; then
+          echo "sdlc: the secrets leg's snapshot holds $got file(s) where $want were expected, so it was not scanned." >&2
+          echo "      The copy of the working tree is incomplete. Check free space in the system temp directory and that tar works, then run ./task secrets again." >&2
+          exit 1
+        fi
+
+        out=$(cd "$workdir/tree" && {{.GITLEAKS}} dir --no-banner --redact -v . 2>&1) || {
+          tracked=$(git ls-files --cached)
+          untracked=$(git ls-files --others --exclude-standard)
+          ignored=$(git ls-files --others --ignored --exclude-standard)
+          printf '%s\n' "$out" | sdlc_tracked="$tracked" sdlc_untracked="$untracked" sdlc_ignored="$ignored" awk '{{.ANNOTATE_AWK}}'
+          exit 1
+        }
+        printf '%s\n' "$out"
 
   no-internal-docs:
     desc: Assert no internal document and no third party's machine path is tracked
     silent: true
     cmds:
-      - go run ./internal/tools/linkcheck -mode=hygiene
+      - |
+        out=$(go run ./internal/tools/linkcheck -mode=hygiene 2>&1) || {
+          printf '%s\n' "$out" >&2
+          echo "sdlc: hygiene mode reads only git ls-files, so every file named above is tracked by git." >&2
+          exit 1
+        }
+        if [ -n "$out" ]; then printf '%s\n' "$out"; fi
