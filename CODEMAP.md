@@ -384,3 +384,51 @@ not report the test source itself.
 `commands.coverage` and `commands.mutation` in `.sdlc/config.json` are read
 only by `internal/cli/landing.go`'s `landingCommands` (landing.go:222), during
 a story's own landing (Gate 9); no leg of `./task check` runs either.
+
+## internal/parallel
+
+Package `parallel`. What `sdlc parallel` needs that is not about a project's
+files, with no import of `cli`. `launch.go` holds `Allowlist()` (the built-in
+tools an unattended session gets: `sdlc` subcommands, `git status` and `git
+add`, build and test commands, scoped `Edit` and `Write`, unscoped `Read`; no
+interpreter, runner, network tool, push, `claude` or decision command),
+`Narrow` (the allowlist cut down by `parallel.allow`; an entry that is not
+built in is SDLC-E0066, and nil means all, empty means none), `Quote`, and
+`Command`, which builds the one `claude -p` line through `shellx.Command`.
+`schedule.go` defines `Schedule`, which runs at most `limit` sessions and calls
+its progress function from one goroutine only. `status.go` defines `Classify`,
+which reads a finished session as `waiting`, `stopped` or `failed` from the
+story's record first and the exit status second. Imports `model`, `sdlcerr`,
+`shellx`.
+
+## internal/cli/parallel.go
+
+Package `cli`. The `sdlc parallel <ID>...` command. `runParallel` checks that
+the process is a person's (SDLC-E0061) before it reads anything, then the flags
+and the ids, then `parallelPreflight` for each story in order, first refusal
+winning and nothing started until all pass; it reuses `decideStart`'s helpers
+and `recode` copies their wording under the SDLC-E0057 to E0066 codes. A story
+already in its own worktree may be re-run. Sessions run from the main checkout.
+Records are read only after `parallel.Schedule` returns, and `printParallel`
+prints the status view with the commands a person must run gathered at the
+end. Imports `parallel`, `store`, `model`, `sdlcerr`, `shellx`.
+
+## internal/shellpolicy `checkParallel`
+
+Package `shellpolicy`. The rule `parallel-is-a-human-decision`, in
+`shellpolicy.go`, refuses `sdlc parallel` from a model session. It is asked
+from both `checkPrograms` (`Inspect`) and `humanDecisionsOn`, beside
+`checkRelease`. `--max` was added to `ValueFlags`, so its value is not read as
+a subcommand.
+
+## config `parallel` section
+
+Package `config`. `Config.Parallel.Allow` is a `*[]string`, so a missing key
+(the whole built-in list) and an empty list (none) differ. It can only narrow
+the allowlist; `parallel.Narrow` refuses anything wider.
+
+## cmd/sdlc/main.go signal handler
+
+`exitOnInterrupt` handles `os.Interrupt`, `SIGTERM` and `SIGHUP`. `SIGHUP` is
+there so that closing the terminal an `sdlc parallel` runs in calls
+`shellx.StopAll()`, which ends the sessions, each in a process group of its own.
