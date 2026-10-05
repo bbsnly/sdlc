@@ -11,6 +11,10 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// The fake claude of US-058 is this binary again: see parallel_fake_test.go.
+	if os.Getenv(plChildEnv) != "" {
+		os.Exit(plChildMain())
+	}
 	flag.Parse()
 	raiseParallel()
 	os.Exit(testenv.Run(m))

@@ -210,6 +210,7 @@ func shellRules(t *testing.T) []string {
 		"sdlc unfreeze --reason x",
 		"sdlc approve US-1",
 		"sdlc ack --through HEAD",
+		"sdlc parallel US-1 US-2",
 		"echo x > CLAUDE.md",
 		"sdlc review add code_review code-reviewer approve",
 		"echo " + strings.Repeat("$(", 100),

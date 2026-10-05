@@ -271,6 +271,16 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 		{BranchBehindTrunk, "SDLC-E0054"},
 		{LandingCheckFailed, "SDLC-E0055"},
 		{UncommittedOnTrunk, "SDLC-E0056"},
+		{ParallelUnknownStory, "SDLC-E0057"},
+		{ParallelNotRunnable, "SDLC-E0058"},
+		{ParallelHeldElsewhere, "SDLC-E0059"},
+		{ParallelListedTwice, "SDLC-E0060"},
+		{ParallelFromASession, "SDLC-E0061"},
+		{ParallelNeedsWorktrees, "SDLC-E0062"},
+		{ParallelBadMax, "SDLC-E0063"},
+		{ParallelAwaitingPerson, "SDLC-E0064"},
+		{ParallelFinished, "SDLC-E0065"},
+		{ParallelAllowlistWidened, "SDLC-E0066"},
 	}
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
@@ -299,6 +309,41 @@ func TestAC3AC4AndAC6TheLandingCodesAreDocumentedAndSayWhatToDo(t *testing.T) {
 		{BranchBehindTrunk, "SDLC-E0054", "rebase"},
 		{LandingCheckFailed, "SDLC-E0055", "commands"},
 		{UncommittedOnTrunk, "SDLC-E0056", "commit"},
+	} {
+		if body, ok := documented[c.id]; !ok || isRetired(body) {
+			t.Errorf("%s has no live `### %s` section in %s", c.id, c.id, troubleshootingPath)
+		}
+		if fix := fixFor(c.code); !strings.Contains(fix, c.fix) {
+			t.Errorf("%s's fix does not say %q: %s", c.id, c.fix, fix)
+		}
+	}
+}
+
+// US-058 AC-9: `sdlc parallel` adds a code for each way it refuses, and each is
+// a heading a person is sent to from the refusal, with a fix that says what to
+// do next. AC-3's four are the first four; the rest are the person-only rule
+// (AC-4), the worktrees switch, an invalid --max (AC-2), the two re-run
+// refusals the person's answer left standing (a pending escalation and a
+// finished story), and a configured allowlist that widens the built-in one
+// (AC-5).
+func TestAC9TheParallelCodesAreDocumentedAndSayWhatToDo(t *testing.T) {
+	documented := documentedCodes(t)
+	for _, c := range []struct {
+		code Code
+		id   string
+		// fix is a word the fix has to carry for a person to act on it.
+		fix string
+	}{
+		{ParallelUnknownStory, "SDLC-E0057", "backlog"},
+		{ParallelNotRunnable, "SDLC-E0058", "ready"},
+		{ParallelHeldElsewhere, "SDLC-E0059", "release"},
+		{ParallelListedTwice, "SDLC-E0060", "once"},
+		{ParallelFromASession, "SDLC-E0061", "terminal"},
+		{ParallelNeedsWorktrees, "SDLC-E0062", "git.worktrees"},
+		{ParallelBadMax, "SDLC-E0063", "--max"},
+		{ParallelAwaitingPerson, "SDLC-E0064", "approve"},
+		{ParallelFinished, "SDLC-E0065", "reopen"},
+		{ParallelAllowlistWidened, "SDLC-E0066", "parallel.allow"},
 	} {
 		if body, ok := documented[c.id]; !ok || isRetired(body) {
 			t.Errorf("%s has no live `### %s` section in %s", c.id, c.id, troubleshootingPath)

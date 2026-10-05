@@ -560,6 +560,9 @@ func checkPrograms(text string, s State) (Finding, bool) {
 		if f, ok := checkRelease(words); ok {
 			return f, true
 		}
+		if f, ok := checkParallel(words); ok {
+			return f, true
+		}
 		if f, ok := checkStop(words, s); ok {
 			return f, true
 		}
@@ -730,6 +733,9 @@ func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) 
 			return f, true
 		}
 		if f, ok := checkRelease(r.words); ok {
+			return f, true
+		}
+		if f, ok := checkParallel(r.words); ok {
 			return f, true
 		}
 		f, onAStory := checkUnfreeze(r.words)
@@ -920,6 +926,23 @@ func checkRelease(words []string) (Finding, bool) {
 	}, true
 }
 
+// checkParallel keeps starting model sessions with a person. `sdlc parallel`
+// runs `claude` once per story, and with --unattended it hands each session a
+// list of pre-approved tools: an agent that ran it would be starting work, and
+// choosing what that work may do, that nobody asked for.
+func checkParallel(words []string) (Finding, bool) {
+	if !runsSubcommand(words, "parallel") {
+		return Finding{}, false
+	}
+	return Finding{
+		Rule: "parallel-is-a-human-decision",
+		Reason: "sdlc parallel starts model sessions, optionally with tools pre-approved, and an " +
+			"agent that ran it would be starting work nobody asked for",
+		Route: "say which stories you meant and stop; a person runs " +
+			"`sdlc parallel <ID>...` in their own terminal, outside Claude Code",
+	}, true
+}
+
 // checkAck keeps acknowledging the log with the person who read it.
 //
 // `sdlc log` starts after the commit acknowledged, so moving it forward takes
@@ -1002,7 +1025,7 @@ func runsSubcommand(words []string, sub string) bool {
 var ValueFlags = map[string]bool{
 	"--file": true, "--gate": true, "--message": true, "--note": true,
 	"--reason": true, "--reject": true, "--since": true, "--story": true, "--through": true,
-	"--usd": true,
+	"--usd": true, "--max": true,
 }
 
 // checkCommit puts the commit gate in front of the commit, for a commit in this

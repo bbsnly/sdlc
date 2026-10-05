@@ -832,6 +832,20 @@ it every rule holding it.
 *Instead:* say which checkout holds the story and stop. A person runs
 `sdlc release <ID> --reason "..."` in their own terminal if it is to move.
 
+### `parallel-is-a-human-decision`
+
+Refuses `sdlc parallel` run from a tool call, however `sdlc` is reached, in any
+session, in any project with `.sdlc/config.json` the call reaches, whether or
+not a story is being worked on.
+
+`sdlc parallel` starts a Claude Code session for each story named, and with
+`--unattended` it hands each of them a list of tools to use without asking. An
+agent that could run it would be starting model sessions, and choosing what they
+may do, that nobody asked for. See [unattended sessions](#unattended-sessions).
+
+*Instead:* say which stories you meant, and stop. A person runs
+`sdlc parallel <ID>...` in their own terminal, outside Claude Code.
+
 ### `stop-is-a-human-decision`
 
 Refuses `sdlc stop` run from a tool call while the story still has a gate to
@@ -1135,6 +1149,76 @@ command names), whether or not a story is being worked on, because `sdlc ack`
 or an approval could be buried in it.
 
 *Instead:* write it as separate commands.
+
+## Unattended sessions
+
+[`sdlc parallel`](commands.md#sdlc-parallel-id) starts one headless Claude Code
+session for each story named. Those sessions are **not interactive**: no
+permission prompt reaches anyone, so a tool that default permissions deny ends
+that story's turn. Without `--unattended` nothing is pre-approved, and the
+sessions go as far as default permissions allow. The launcher never passes a
+blanket skip of permissions in either mode.
+
+With `--unattended` each session is given exactly this list to use without
+asking, and nothing else:
+
+```text
+Read
+Edit(.sdlc/worktrees/**)
+Write(.sdlc/worktrees/**)
+Bash(cd:*)
+Bash(sdlc start:*)
+Bash(sdlc status:*)
+Bash(sdlc gate:*)
+Bash(sdlc artifact:*)
+Bash(sdlc review:*)
+Bash(sdlc escalate:*)
+Bash(sdlc freeze:*)
+Bash(sdlc story:*)
+Bash(sdlc cost:*)
+Bash(git status:*)
+Bash(git add:*)
+Bash(go build:*)
+Bash(go test:*)
+Bash(go vet:*)
+Bash(cargo build:*)
+Bash(cargo test:*)
+Bash(npm test:*)
+Bash(pytest:*)
+```
+
+The list is written for the loop's own commands, by name, and not `sdlc` as a
+whole. It has no network tool, no `git push`, no `claude`, no `sdlc approve`,
+`unfreeze`, `ack`, `release`, `parallel` or `stop`, no `git commit`, no
+interpreter or runner (`go run`, `sh`, `python3`, `env`, `xargs`, `npm run`),
+and no `git diff`, `log` or `show`, whose `--output` writes a file where it is
+told. What it does have is worth reading as it is:
+
+- **The toolchain entries run code the session wrote, with your privileges.**
+  `go test`, `go build`, `cargo test`, `npm test` and `pytest` are arbitrary
+  code from the repository. That is the work, and also the reason to read what
+  a story's branch holds before you run anything from it yourself.
+- **`Edit` and `Write` are scoped to `.sdlc/worktrees/**`**, the worktrees of
+  the stories under the main checkout, where each session works. The main
+  checkout's own files and the rest of the machine are outside them.
+- **Text in the repository is input to a session that holds pre-approved
+  tools.** A file, an issue or a test that says something to the model is
+  prompt injection to a session nobody is watching.
+
+`parallel.allow` in the project's configuration can only narrow the list: a
+list names the built-in entries to keep, an empty one keeps none, and an entry
+that is not built in refuses the run
+([SDLC-E0066](troubleshooting.md#sdlc-e0066)). The file is writable by a session
+on the project, which is why it is never allowed to widen anything.
+
+The hook still decides in these sessions, and a deny beats an allow. But a
+session is bound to its story only once it has run `sdlc start`, and every rule
+that needs a story holds from then on. A project whose build is none of the
+entries above runs headless and is stopped at the first tool it was not given.
+
+What nothing here can stop is a script file a pre-approved command runs, and a
+spelling the hook cannot read. Nothing records who started a run or with which
+list: the evidence is the session transcripts and the hook's debug log.
 
 ## Stopping mid-story
 

@@ -702,6 +702,90 @@ checkout that was moved took its freeze with it, and start and approve then say
 nothing about where the work is. In `--json` the output is `ok`, `story` and
 `checkout`, the checkout that held it, absent when none did.
 
+## `sdlc parallel ID...`
+
+Work several stories at once: one headless Claude Code session and one worktree for each story named.
+
+```console
+$ sdlc parallel US-001 US-002 US-003
+sdlc: the sessions are headless and cannot ask, so each stops at its first tool that default permissions deny
+sdlc: running 2, waiting 1
+sdlc: the session for US-002 has ended
+sdlc: running 2, waiting 0
+sdlc: the session for US-001 has ended
+sdlc: the session for US-003 has ended
+US-001  waiting on you, every gate passed  Add the export command
+US-002  ended early, at analysis  Rate-limit the importer
+US-003  waiting on you, at plan  Drop the legacy parser
+
+Ended early with nothing waiting on you. The usual cause is a tool that default
+permissions deny, which a session with nobody to ask cannot get past. Run it again to
+resume where it stopped, or look at where each story is:
+  sdlc parallel US-002
+  sdlc status
+
+Waiting on you:
+  cd /path/to/project/.sdlc/worktrees/US-001 && sdlc stop
+  cd /path/to/project/.sdlc/worktrees/US-003 && sdlc approve US-003
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--max` | the most sessions to run at once. A whole number, 1 or more; the default is 2. The rest start, in the order named, as a slot frees |
+| `--unattended` | give each session the built-in list of tools to use without asking, which [the enforcement page](enforcement.md#unattended-sessions) states in full. It is never a skip of permissions, and `parallel.allow` can only narrow the list |
+
+Run it from the main checkout, in your own terminal. Each session runs
+`/sdlc:next` for its story, so the story is started in a worktree of its own at
+`.sdlc/worktrees/<ID>` and worked there. Run it again after an answer or an
+interrupt and a story under way resumes where it was left.
+
+The sessions are **not interactive**: no permission prompt reaches anyone. A
+session is stopped by the first tool that default permissions deny, and the
+story is shown as `ended early`. Each session costs what a full loop costs, and
+several run at once. If `claude` is not on your `PATH` the shell says so beneath
+the story, and the story shows as failed.
+
+Every story is checked before any session starts, with the answers `sdlc start`
+would give, and a refusal starts none: not in the backlog
+([SDLC-E0057](troubleshooting.md#sdlc-e0057)), not runnable
+([SDLC-E0058](troubleshooting.md#sdlc-e0058)), held by another checkout
+([SDLC-E0059](troubleshooting.md#sdlc-e0059)), named twice
+([SDLC-E0060](troubleshooting.md#sdlc-e0060)), waiting on a person
+([SDLC-E0064](troubleshooting.md#sdlc-e0064)) or finished
+([SDLC-E0065](troubleshooting.md#sdlc-e0065)). `--max` that is not a whole number
+of 1 or more is [SDLC-E0063](troubleshooting.md#sdlc-e0063), a project with
+`git.worktrees` off is [SDLC-E0062](troubleshooting.md#sdlc-e0062), and a
+`parallel.allow` that names a tool the built-in list does not have, with
+`--unattended`, is [SDLC-E0066](troubleshooting.md#sdlc-e0066).
+
+It is a person's command: the hook refuses it from a tool call in any session,
+and the command itself refuses to run when the session variable is set
+([SDLC-E0061](troubleshooting.md#sdlc-e0061)), because starting model sessions
+with tools pre-approved is work nobody asked for.
+
+When the sessions have ended the output says what became of each story, read from
+its record and not from what the session said, in the order named:
+
+- `waiting on you`: an escalation nobody has answered, or every gate has passed and
+  the story waits to land. The commands are gathered at the end, each with the
+  `cd` to run it from.
+- `ended early`: the session ended normally and nothing is waiting on you. The
+  story is where the session left it. The usual cause is a tool that default
+  permissions deny.
+- `failed`: the session exited with a failing status, which is shown.
+
+The last of each stopped or failed session's output is printed beneath its story,
+with control characters spelled out. Nothing is written to disk. `sdlc parallel`
+writes no record, claim or status of its own and never records a story done; the
+exit status is 1 when any story failed, and 0 otherwise. In `--json`, standard
+output is one document, `{"ok": ..., "stories": [...]}`, each story with `story`,
+`gate`, `state` (`waiting`, `stopped` or `failed`), `command` and `exit`, and
+the counts are still printed to standard error.
+
+Interrupting with Ctrl+C ends every session and everything it started. If a
+flag's spelling is not accepted by the installed `claude`, the sessions fail and
+say so beneath their stories.
+
 ## `sdlc cost`
 
 What the story has cost so far, against what it was expected to.

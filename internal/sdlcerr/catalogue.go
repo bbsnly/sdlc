@@ -183,6 +183,36 @@ var (
 
 	UncommittedOnTrunk = register("SDLC-E0056",
 		`in the checkout named above, stash the changes it names, or commit them (a commit moves trunk, so the story is rebased before it lands), then run "sdlc stop" in the story's worktree again; they are a person's changes, so an assistant hands the story to a person with "sdlc escalate" and stops`)
+
+	ParallelUnknownStory = register("SDLC-E0057",
+		"name only stories the backlog has: `sdlc story list` shows them; fix the spelling of the id, or add the story to the backlog first")
+
+	ParallelNotRunnable = register("SDLC-E0058",
+		"the story has to be ready, or every story it waits on has to be finished: take it off the command line, or finish what it waits on first; `sdlc story list` shows each story's status")
+
+	ParallelHeldElsewhere = register("SDLC-E0059",
+		`the story is being worked in another checkout: finish it there, or a person runs "release" in that checkout, or "sdlc release <ID> --reason ..." here; an assistant stops and tells the person`)
+
+	ParallelListedTwice = register("SDLC-E0060",
+		"name each story once: take the repeated id off the command line")
+
+	ParallelFromASession = register("SDLC-E0061",
+		`a person runs "sdlc parallel" in their own terminal, outside Claude Code; an assistant stops and tells the person`)
+
+	ParallelNeedsWorktrees = register("SDLC-E0062",
+		`sdlc parallel gives each story its own worktree: turn "git.worktrees" on in the project's configuration, or work the stories one at a time with /sdlc:next`)
+
+	ParallelBadMax = register("SDLC-E0063",
+		"give --max a whole number, 1 or more: the most stories to run at the same time (the default is 2)")
+
+	ParallelAwaitingPerson = register("SDLC-E0064",
+		`the story is waiting for a person's answer, and a run again would act as that answer: run "sdlc approve <ID>" (or its --reject) in .sdlc/worktrees/<ID>, then name the story again; an assistant stops and tells the person`)
+
+	ParallelFinished = register("SDLC-E0065",
+		`the story's gates are done and it is waiting to land: run "sdlc stop" in .sdlc/worktrees/<ID> to land it; to rework it, a person has to reopen it by recording a gate as failed, then name it again`)
+
+	ParallelAllowlistWidened = register("SDLC-E0066",
+		`"parallel.allow" can only narrow the built-in list of tools a session is given: take out the entries that are not built in, or take the setting out of the project's configuration`)
 )
 
 // entry is one row of the catalogue.

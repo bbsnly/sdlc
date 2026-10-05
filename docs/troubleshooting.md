@@ -1065,6 +1065,82 @@ When trunk moves, every checkout that has it checked out moves with it, the way
 Then run `sdlc stop` in the story's worktree again. These are a person's changes: if you are an
 assistant, hand the story to a person with `sdlc escalate` and stop.
 
+### SDLC-E0057
+
+`sdlc parallel` was given a story id that the backlog does not have. Nothing was started.
+
+Run `sdlc story list` to see the ids the backlog has, correct the spelling, or add the story to
+the backlog first. Every story is checked before any session starts, so one bad id stops the whole
+run.
+
+### SDLC-E0058
+
+`sdlc parallel` was given a story that is not runnable: it is dropped, blocked, done, or it waits
+on a story that is not finished yet. Nothing was started.
+
+The message names the status, and for a dependency the story it waits on. A story has to be
+`ready`, or every story it waits on has to be finished. A story that is already in progress or
+that waits for a person is not refused for this: a run again resumes the first, and the second has
+its own code, [SDLC-E0064](#sdlc-e0064). Take the story off the command line, or finish what it
+waits on first.
+
+### SDLC-E0059
+
+`sdlc parallel` was given a story that another checkout is working. Nothing was started.
+
+Finish it there, or run `sdlc release <ID> --reason ...` (or `release` from that checkout) to give
+the claim up, then name the story again. If you are an assistant, stop and tell the person.
+
+### SDLC-E0060
+
+`sdlc parallel` was given the same story id twice. Two sessions on one story would fight over its
+worktree. Name each story once. This is checked before the backlog is read, so a story the backlog
+does not have, named twice, is reported as named twice first.
+
+### SDLC-E0061
+
+`sdlc parallel` was run from inside a Claude Code session. Starting model sessions is a person's
+decision, so a person runs it in their own terminal, outside Claude Code.
+
+The hook is the first barrier: it refuses the command in any session. This check is the second, for
+a spelling the hook cannot read. If you are an assistant, stop and tell the person.
+
+### SDLC-E0062
+
+`sdlc parallel` needs `git.worktrees`, because each story gets its own worktree under
+`.sdlc/worktrees`. Turn the setting on in the project's configuration, or work the stories one at a
+time with `/sdlc:next`. See [configuration](configuration.md).
+
+### SDLC-E0063
+
+`--max` is the most stories `sdlc parallel` runs at the same time. It has to be a whole number, 1
+or more; the default is 2. The message names the value it was given.
+
+### SDLC-E0064
+
+`sdlc parallel` was given a story that is waiting for a person's answer to an escalation. Running
+it again would act as that answer, so it is refused. Nothing was started.
+
+Run `sdlc approve <ID>` (or its `--reject`) in `.sdlc/worktrees/<ID>`, then name the story again.
+If you are an assistant, stop and tell the person.
+
+### SDLC-E0065
+
+`sdlc parallel` was given a story whose gates are all done. Running it again would start a session
+with nothing to do and would hide that it is waiting to land. Nothing was started.
+
+Run `sdlc stop` in `.sdlc/worktrees/<ID>` to land it. To reopen it for rework, a person records a
+gate as failed with `sdlc gate <gate> fail --story <ID> --note "..."`, then names it again.
+
+### SDLC-E0066
+
+`parallel.allow` in the project's configuration names a tool that is not in the built-in list, and
+`--unattended` was given. The setting can only narrow the list, never widen it. Nothing was
+started.
+
+Take out the entries that are not built in, or take the setting out. The built-in list is in
+[enforcement](enforcement.md#unattended-sessions).
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session working a story as a

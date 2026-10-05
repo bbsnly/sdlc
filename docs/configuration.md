@@ -330,6 +330,18 @@ Spend is recorded with [`sdlc cost add`](commands.md), and shown by `sdlc cost` 
 entry that uses up the budget says so whichever fractions are set. Nothing blocks: a story
 stopped halfway costs more than the overspend.
 
+## `parallel`
+
+| Key | What it means |
+| --- | --- |
+| `allow` | narrows the tools [`sdlc parallel --unattended`](commands.md#sdlc-parallel-id) gives each session. Absent: the whole built-in list. A list: only the built-in entries it names. `[]`: none |
+
+The setting can only narrow. The built-in list is stated on the
+[enforcement page](enforcement.md#unattended-sessions), and an entry that is not
+on it refuses the run ([SDLC-E0066](troubleshooting.md#sdlc-e0066)): this file
+is writable by a session on the project, so it never widens what a session may
+do. Without `--unattended` the setting is not read.
+
 ## The other half of the contract
 
 `.sdlc/config.json` is what the hooks look for: in a project without it they do

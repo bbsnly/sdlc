@@ -52,6 +52,15 @@ type Config struct {
 	Freeze     Freeze            `json:"freeze"`
 	HumanGates HumanGates        `json:"human_gates"`
 	Budget     Budget            `json:"budget"`
+	Parallel   Parallel          `json:"parallel"`
+}
+
+// Parallel is what `sdlc parallel --unattended` may be narrowed by.
+type Parallel struct {
+	// Allow narrows the tools an unattended session is given. A pointer, for
+	// the reason Git.Worktrees is one: a key left out means the whole built-in
+	// list, and an empty list means none, which are not the same.
+	Allow *[]string `json:"allow,omitempty"`
 }
 
 // Backlog names the file the stories live in. It is deliberately a plain JSON

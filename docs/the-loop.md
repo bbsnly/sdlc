@@ -165,6 +165,13 @@ worktree and typing `/sdlc:next` there: `/sdlc:next` in a new session in the
 checkout start ran in begins the next story instead. A second session that starts from the main
 checkout begins the next story in a second worktree while the first is worked.
 
+A person who wants several stories worked at once runs
+[`sdlc parallel`](commands.md#sdlc-parallel-id) from the main checkout: it starts
+one headless Claude Code session for each story named, and each session starts its
+story in a worktree of its own. Run again, it resumes what is under way. The
+sessions cannot ask anything, so what a story needs from a person ends its turn,
+and `sdlc parallel` gathers those at the end with the command to run for each.
+
 With `git.worktrees` false, a new story begins on trunk, in the checkout that
 has trunk checked out, and `sdlc start` first checks that trunk is fit to start
 from ([`SDLC-E0038`](troubleshooting.md#sdlc-e0038) to
