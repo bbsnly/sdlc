@@ -375,6 +375,12 @@ package, because `go test` names a test file only by its bare name.
 `no-internal-docs` says every file it names is tracked, as it reads nothing
 else.
 
+`test/checklegs` holds the tests for `markdownlint`, `secrets` and `shellcheck`.
+Each runs the leg's task through the `task` CLI in a disposable fixture git
+repository, with the pinned tool resolved from the local module or npm cache;
+the secrets test builds its AWS-shaped key at run time so that gitleaks does
+not report the test source itself.
+
 `commands.coverage` and `commands.mutation` in `.sdlc/config.json` are read
 only by `internal/cli/landing.go`'s `landingCommands` (landing.go:222), during
 a story's own landing (Gate 9); no leg of `./task check` runs either.
