@@ -673,6 +673,30 @@ or any gate document — by redirection; through `rm`, `mv`, `cp`, `tee`, `dd`,
 `sed -i`, `find -delete`, `git rm`, `git checkout` and their like; or from
 inside a program handed to an interpreter.
 
+The globs `find` is given with `-name`, `-iname`, `-path`, `-ipath`,
+`-wholename` and `-iwholename` are read as `find` reads them: a `]` first in a
+bracket expression is one of its members, as in `[]x]`; `[!x]` and `[^x]`
+exclude; ranges and POSIX names such as `[[:digit:]]` work; and a backslash
+escapes the next character. A character in a bracket expression matches in
+either case. A range between two lower-case letters, two upper-case letters or
+two digits holds what lies between them by code point or by letter, in either
+case, and any character beyond ASCII; a range between any other two
+characters, such as `[{-g]`, holds any one character, because locales put those
+in different orders. `[!...]` and `[^...]` leave out only what all of these
+readings hold.
+
+A glob the hook cannot read is refused when the `find` goes on to delete, run a
+writer, or write its list to a file, from a directory that is, or is above, the
+one holding the loop's files: `.`, `..` or a directory above them, or one the
+hook cannot place, such as `"$ROOT"`, a glob, a path outside the project, or a
+directory reached by a `cd` it could not follow. A glob the hook cannot read is
+one the shell changes before find sees it: it fills in a variable, such as
+`"$G"`, or removes a backslash; one that a quote or white space splits; or one
+that find reads in a way the hook does not, such as a bracket expression the
+hook does not know, or a glob longer than 512 bytes. The refusal names the glob
+and the directory. A `find` that only reads what it finds, such as with
+`-exec cat`, is not refused, whatever its glob.
+
 A scratch file inside a story's directory is not loop state. Reading the loop's
 files with `cat`, `grep`, `head` or the file tools is never refused; `sed`,
 `awk`, `perl` and interpreters are refused on them whatever they are asked to
@@ -692,6 +716,9 @@ in PowerShell, `(Get-Location)`; `..` and the directories above; and a glob or
 a brace list that could match it, such as `rm -rf ../*` from a story's
 worktree. A glob is refused for what it could
 match, which is a guess, so the refusal names the checkout it could reach.
+A `-name` or `-path` glob the hook cannot read counts as matching here, so a
+`find` that deletes with a mistyped bracket expression can be refused for the
+checkout it could reach.
 `rsync --delete` into a checkout, or a directory holding one, is refused
 because it removes there whatever the source lacks. `rm -rf ./build/*`,
 `rm -rf node_modules`, `find . -name '*.pyc' -delete` and, from a story's
@@ -714,7 +741,9 @@ lifted by the person running the session. For `.sdlc/config.json` there is no
 command: the person running the session changes it by hand, outside a running
 iteration. Remove only what the story made, by naming it inside the checkout,
 such as `rm -rf build`; a checkout is removed by a person, in their own
-terminal.
+terminal. For a `find` with a glob the hook cannot read, spell the names out,
+or use a glob the hook can read, in single quotes, with no variable and no
+backslash the shell would act on.
 
 ### `protected-path-through-the-tool`
 
@@ -747,6 +776,15 @@ command given its program somewhere other than its first argument — with `-f`,
 which of its files is data, so every file it names is treated as one the
 program could write.
 
+The globs `find` is given are read as under
+[`loop-state-through-the-tool`](#loop-state-through-the-tool). A glob the hook
+cannot read is refused when the `find` goes on to delete, run a writer, or write
+its list to a file, from a directory that holds a frozen acceptance test or
+could: one with a frozen test below it, `.`, `..` or a directory above them, or
+one the hook cannot place. The refusal names the glob, the directory, and one
+frozen test the directory holds or could hold. A `find` that only reads what it
+finds is not refused, whatever its glob.
+
 A patch applied with `git apply` or `patch` names its files inside the patch,
 where this cannot see them. `sdlc gate` still refuses a frozen test that
 changed, with `SDLC-E0025`.
@@ -770,7 +808,9 @@ well. Before the freeze this rule does nothing at all.
 
 *Instead:* leave it alone. If it genuinely has to change, say which test and
 why; the person running the session lifts the freeze with
-`sdlc unfreeze --reason "..."`.
+`sdlc unfreeze --reason "..."`. For a `find` with a glob the hook cannot read,
+spell the names out, or use a glob the hook can read, in single quotes, with no
+variable and no backslash the shell would act on.
 
 ### `unfreeze-is-a-human-decision`
 

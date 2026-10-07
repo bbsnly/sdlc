@@ -97,8 +97,9 @@ func matchShape(pattern []string, shape string) []string {
 			}
 			// A segment with nothing written in it names everything, and
 			// CLAUDE.md is protected wherever it is: read as naming it, `rm -rf
-			// build/*` was refused. The shape has to be asked for by name.
-			if i == 0 && !hasLiteral(p) || !segmentMatches(p, name) {
+			// build/*` was refused. The shape has to be asked for by name,
+			// which namedFirst decides for the first segment.
+			if i == 0 && !namedFirst(p, name) || i > 0 && !segmentMatches(p, name) {
 				matched = false
 				break
 			}
@@ -112,9 +113,26 @@ func matchShape(pattern []string, shape string) []string {
 }
 
 // segmentMatches reports whether one segment of a glob matches a name, folded
-// as the filesystem folds it. The shell's `*` and `?` do not match a leading
-// dot, so `rm -rf ?git` leaves .git where it is.
+// as the filesystem folds it. The shell reads a class as find does, so it is
+// the same reader as find's -name. The shell's `*` and `?` do not match a
+// leading dot, so `rm -rf ?git` leaves .git where it is.
 func segmentMatches(pattern, name string) bool {
+	g := findPattern(pattern)
+	if g == nil {
+		// A segment the reader cannot read is judged as before the reader.
+		// Counted as matching everything, such a segment would name
+		// CLAUDE.md, and a find from a directory holding only a frozen test
+		// would be refused for a file it did not name.
+		return pathMatches(pattern, name)
+	}
+	if strings.HasPrefix(pathrules.Fold(name), ".") && !strings.HasPrefix(pathrules.Fold(pattern), ".") {
+		return false
+	}
+	return g.MatchString(name)
+}
+
+// pathMatches is segmentMatches as it was before the reader, by path.Match.
+func pathMatches(pattern, name string) bool {
 	pattern, name = pathrules.Fold(pattern), pathrules.Fold(name)
 	if strings.HasPrefix(name, ".") && !strings.HasPrefix(pattern, ".") {
 		return false
@@ -124,8 +142,31 @@ func segmentMatches(pattern, name string) bool {
 	return ok && err == nil
 }
 
+// ownRune reports whether the reader finds a character of the glob's own in
+// it, outside `*`, `?` and every class.
+func ownRune(pattern string) bool {
+	g := findPattern(pattern)
+	return g != nil && g.literal
+}
+
+// namedFirst reports whether the first segment of a glob names name. One in
+// which the reader finds a character of its own is read as find reads it, so
+// `[]C]LAUDE.md` names CLAUDE.md; any other is judged by hasLiteral and
+// path.Match, as before the reader.
+func namedFirst(pattern, name string) bool {
+	if ownRune(pattern) {
+		return segmentMatches(pattern, name)
+	}
+	return hasLiteral(pattern) && pathMatches(pattern, name)
+}
+
 // hasLiteral reports whether a glob segment has a character of its own, outside
 // `*`, `?` and a `[...]` class.
+//
+// It ends a class at its first `]`, as it did before find's reader, which is
+// not how find reads one. It is kept as it was because `literals` and
+// `namedFirst` ask it beside the reader rather than in its place, so that a
+// glob it counted as having a character of its own still counts as one.
 func hasLiteral(pattern string) bool {
 	for i := 0; i < len(pattern); i++ {
 		switch pattern[i] {

@@ -14,6 +14,7 @@
 package shellpolicy
 
 import (
+	"cmp"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -1183,6 +1184,19 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 			return recordFinding(hit), true
 		}
 	}
+	// A glob given to find that cannot be read could pick any of the loop's own
+	// files, from a directory that can come to them.
+	if len(run.words) > 0 && base(run.words[0]) == "find" && changesFiles(run.words) {
+		if glob, cause, ok := unreadGlob(segment, run.words); ok {
+			roots, _ := findRoots(run.words[1:])
+			for _, r := range roots {
+				if _, ok := couldHold(r, dir, lost, nil, s, m); ok {
+					return unreadFinding("loop-state-through-the-tool", glob, r, cause, "the loop's own files",
+						placedRoot(r, dir, lost, s, m)), true
+				}
+			}
+		}
+	}
 	return Finding{}, false
 }
 
@@ -1379,6 +1393,21 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 				Route: "make the existing tests pass; if they are wrong, say so rather than " +
 					"changing them",
 			}, true
+		}
+	}
+	// A glob given to find that cannot be read could pick any frozen test below
+	// where find starts, and from a directory that can come to the project's
+	// own files, any of them.
+	if len(s.Frozen) > 0 && len(run.words) > 0 && base(run.words[0]) == "find" && changesFiles(run.words) {
+		if glob, cause, ok := unreadGlob(segment, run.words); ok {
+			roots, _ := findRoots(run.words[1:])
+			for _, r := range roots {
+				if test, ok := couldHold(r, dir, lost, s.Frozen, s, m); ok {
+					what := "a frozen acceptance test (" + cmp.Or(test, s.Frozen[0]) + ")"
+					return unreadFinding("frozen-test-through-the-tool", glob, r, cause, what,
+						placedRoot(r, dir, lost, s, m)), true
+				}
+			}
 		}
 	}
 	return Finding{}, false

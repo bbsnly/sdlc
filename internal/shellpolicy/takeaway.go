@@ -558,8 +558,14 @@ func (t *checkoutTree) reaches(word string, glob bool, m *memo) (*checkoutNode, 
 // where the tree is known, a checkout or a directory holding one below it
 // whose name passes them. -empty passes nothing that holds a checkout, and a
 // -type without d nothing that is a directory.
+//
+// A glob that cannot be read passes: it says nothing of what it picks. Read as
+// picking nothing, a glob longer than maxGlob in `find .sdlc/worktrees -name
+// GLOB -exec rm -rf {} +` would take the checkouts below, which the finds
+// before it do not look at.
 func (t takeAway) find(args []string) (Finding, bool) {
 	roots, names, patterns := findArguments(args)
+	nameGlobs, pathGlobs := readGlobs(names), readGlobs(patterns)
 	passes := func(name, full string) bool {
 		if hasWord(args, "-empty") {
 			return false
@@ -572,13 +578,13 @@ func (t takeAway) find(args []string) (Finding, bool) {
 		if len(names)+len(patterns) == 0 {
 			return true
 		}
-		for _, n := range names {
-			if nameMatches(n, name) {
+		for _, g := range nameGlobs {
+			if g == nil || g.MatchString(name) {
 				return true
 			}
 		}
-		for _, p := range patterns {
-			if re := findPattern(p); re != nil && re.MatchString(pathrules.Fold(full)) {
+		for _, g := range pathGlobs {
+			if g == nil || g.MatchString(full) {
 				return true
 			}
 		}
