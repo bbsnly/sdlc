@@ -33,8 +33,9 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
 
 - Dependency direction: `cmd/sdlc` → `cli`, `hook` → `store`, `scaffold`, `policy`,
   `shellpolicy`, `testset` → `config`, `model` → `pathrules`, `sdlcerr`, and the leaves (`fsx`,
-  `gitx`, `shellx`, `logging`, `version`). Never upward, and `cli` and `hook` never import each
-  other. Nothing enforces this but review.
+  `gitx`, `shellx`, `logging`, `version`). `parallel` sits beside `store`: only `cli` imports it,
+  and it imports `shellpolicy`, `model`, `sdlcerr` and `shellx`. Never upward, and `cli` and
+  `hook` never import each other. Nothing enforces this but review.
 - `cmd/sdlc/main.go` stays a dispatcher. Behaviour goes in a package under `internal/`.
 - Stdout is a protocol surface: the hook's stdout is JSON that Claude Code parses. Diagnostics go
   through `internal/logging` to stderr or a file, never stdout.
