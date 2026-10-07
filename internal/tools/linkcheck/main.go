@@ -129,7 +129,10 @@ func checkLinks(root string) ([]finding, error) {
 				}
 				target = target[:i]
 			}
+			// Only an empty link reaches here: a bare "#" was skipped above.
 			if target == "" {
+				findings = append(findings, finding{rel, lt.line,
+					"link has no target; put a path inside the parentheses, or remove the link"})
 				continue
 			}
 			resolved := filepath.Join(root, filepath.FromSlash(path.Join(path.Dir(rel), target)))
@@ -248,7 +251,14 @@ func linkTargets(body string) []linkTarget {
 			continue
 		}
 		for _, m := range markdownLink.FindAllStringSubmatch(line, -1) {
-			out = append(out, linkTarget{strings.Fields(m[1])[0], i + 1})
+			// A link whose parentheses hold only whitespace (a space, a tab, a
+			// no-break space) has no field; indexing it crashed the whole run
+			// instead of reporting the link.
+			target := ""
+			if fields := strings.Fields(m[1]); len(fields) > 0 {
+				target = fields[0]
+			}
+			out = append(out, linkTarget{target, i + 1})
 		}
 		for _, m := range referenceDef.FindAllStringSubmatch(line, -1) {
 			out = append(out, linkTarget{m[1], i + 1})
