@@ -432,3 +432,45 @@ the allowlist; `parallel.Narrow` refuses anything wider.
 `exitOnInterrupt` handles `os.Interrupt`, `SIGTERM` and `SIGHUP`. `SIGHUP` is
 there so that closing the terminal an `sdlc parallel` runs in calls
 `shellx.StopAll()`, which ends the sessions, each in a process group of its own.
+
+## internal/shellpolicy/find.go
+
+Package `shellpolicy`. What `find` picks by a glob, for three rules.
+`findArguments` splits find's arguments into its roots (`findRoots`, `.` when
+none) and the globs given to the six options `globOptions` lists, `-name` and
+`-iname` by name, `-path`, `-ipath`, `-wholename` and `-iwholename` by the
+whole path, each unquoted. `findPattern` reads a glob the way find reads its
+classes (a leading `]`, negation, ranges, POSIX named classes, escapes) into
+two readings, as written and folded, and is nil when it cannot: nil means
+cannot be read, not no match. A range between two ASCII lower-case letters,
+upper-case letters or digits (`plainRange`) holds what is between its ends by
+code point or by letter, in either case, and any character beyond ASCII; any
+other range, like an equivalence class, holds any one character. A negated part
+leaves out only what every reading holds. `matchParts` matches without
+backtracking, folding the name for the folded reading. `nameMatches` and
+`segmentMatches` (glob.go) share the reader. `foundBy` reads each glob once and
+skips a nil read; `takeAway.find` in `takeaway.go` counts one as a match.
+`literals` keeps a glob the bracket scan in `hasLiteral` keeps or in which the
+reader finds a character of its own (`ownRune`). The callers are
+`checkLoopState` (roots filtered by `reaches`, shapes `protectedShapes` plus the
+five `stateFiles`), `checkFrozenTests` (every root, `literals` of both lists,
+shapes `frozenShapes`) and `takeAway.find`. `unreadGlob` finds the first glob
+word the hook cannot read, by its place in the segment, and why
+(`unreadCause`); both find blocks refuse it with `unreadFinding` when the
+command changes files from a root that `couldHold` says could hold loop state
+or a frozen test, and `placedRoot` says whether the refusal can name where the root
+is. `printedTo` lists the targets of `-fprint`, `-fprint0`, `-fprintf` and
+`-fls` for `writtenTo`, `changesAFile` and `changesFiles`. Imports `pathrules`.
+
+## internal/shellpolicy/glob.go
+
+Package `shellpolicy`. The shell's own globs and brace lists, read without
+listing a directory. `withGlobs` adds every protected shape that a word with
+`*?[{` in it can name (`globbed`, `matchShape`). `segmentMatches` uses the same
+reader as find's `-name`, matches a leading dot only to a pattern that has one,
+and gives `pathMatches` (`path.Match`) for a segment the reader cannot read. In
+`matchShape`, a first segment names a shape through the reader only when the
+reader finds a character of its own in it (`ownRune`, `namedFirst`); any other
+keeps the bracket scan in `hasLiteral` and `pathMatches`, as before the reader.
+`globHolding` in `directory.go` and the checkout tree in `takeaway.go` use
+`segmentMatches` as well. `braces` expands at most `maxBraces` (64) words.
