@@ -67,6 +67,8 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
 - Determinism: no wall-clock sleeps, no network, fixed seeds, and nothing outside `t.TempDir()`.
 - A test that cannot run on one platform skips with the reason; it is not left out by a build tag
   unless the code under test is.
+- A story that changes a command, a gate or a hook decision adds or extends a sandbox test in
+  `test/e2e`; `CONTRIBUTING.md` says how to build a sandbox by hand.
 
 ### Code conventions
 
