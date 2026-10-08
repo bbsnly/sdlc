@@ -51,6 +51,89 @@ gitignored files, as a fresh clone would not have them, and `./task secrets`
 scans a snapshot of what git tracks or would accept with `git add`, not the
 working tree itself.
 
+## Testing in a sandbox
+
+A sandbox, here, is a throwaway directory to try a change to sdlc in: a new git
+repository with sdlc initialised and one ready story, and the `sdlc` built from
+your checkout. It is not the sandbox the manual means when it says that sdlc is
+[a discipline tool, not a sandbox](docs/enforcement.md#what-this-is-and-what-it-is-not).
+That sentence is about confinement, and this confines nothing. It is somewhere
+to run the loop that is not a project you care about.
+
+```console
+$ ./task sandbox
+```
+
+On Windows, `task.cmd sandbox`. It prints where everything is, and nothing
+else:
+
+```text
+sandbox     <sandbox>
+repository  <sandbox>/repo
+sdlc        <sandbox>/bin/sdlc
+```
+
+`<sandbox>` is a new directory named `sdlc-sandbox-` and a number, directly
+under your temp directory, which only your user can read. A sandbox goes
+outside the checkout: if your temp directory is the checkout or inside it,
+`./task sandbox` refuses and makes nothing, and the way on is to point `TMPDIR`
+(`TMP` on Windows) at a directory outside the checkout and run it again. In the
+sandbox:
+
+- `repo` is the repository: `git init`, then `sdlc init`, then one commit, so
+  it holds the one example story `sdlc init` writes and nothing uncommitted.
+  It has no stack and no commands configured, as any repository `sdlc init`
+  finds empty.
+- `bin/sdlc` (`sdlc.exe` on Windows) is built from the checkout you ran the
+  task in, uncommitted changes included. It is not installed and is not on your
+  `PATH`.
+- `home` and `tmp` are a home and a temp directory for commands run in the
+  sandbox. The sandbox's own build and its git used them. A command you run
+  there uses yours unless you point it at these.
+
+To remove one, give its directory back, after `--`:
+
+```console
+$ ./task sandbox-remove -- <sandbox>
+```
+
+That removes a directory `./task sandbox` made, still where it made it, and
+refuses anything else. The task runs from the checkout, so it cannot see where
+your shell is and will remove a sandbox you are standing in: `cd` out of the
+sandbox before you remove it. If it stops part-way it says what it could not
+delete, and the same command finishes the job once that is put right. The one
+case it cannot finish is the last step: when everything inside is gone and only
+the empty directory could not be deleted, it says so and names the directory,
+which is then yours to delete, because nothing in it marks it as a sandbox any
+more and the command refuses it. A sandbox you forget stays
+until your system clears its temp directory. To find leftovers, look for
+`sdlc-sandbox-*` in the directory `TMPDIR` names on macOS and Linux (`/tmp` on
+Linux when it is unset; on macOS `echo $TMPDIR` prints a directory under
+`/var/folders`), and in `%TEMP%` on Windows.
+
+The build inside `./task sandbox` uses no network: it runs with `GOPROXY=off`,
+so every module has to be in your module cache already, which it is after
+`./task check` has run once. If the build fails, no sandbox is left behind.
+
+The tests in `test/e2e` whose names begin `sandbox_` are the unattended route.
+They run what `./task sandbox` runs, then work a whole story in the sandbox from its
+start to trunk, with every tool call put to the hook first and what each
+command prints compared with what is expected. The steps the loop keeps for a
+person are taken by the test process itself, in the sandbox it made a moment
+before; no task, flag or variable takes them, here or in a project. A Claude
+Code session that is working a story in this repository should run those tests
+and should not drive the loop by hand in a sandbox.
+
+What the tests show about a sandbox keeping to itself is narrower than it
+sounds. They close every route known to lead out of the directory and fail if
+one opens: the lock and the scratch directories sdlc makes go under the
+sandbox's `home` and `tmp`, the repository has no remote, and it is configured
+with `protocol.allow=never`. They do not show that nothing is written anywhere
+else, because nothing portable can watch for that. That git setting is the
+repository's own and stops a fetch made by accident, not one somebody means to
+make. Go's build cache and module cache are the stated exception: the build
+writes to them, outside the sandbox.
+
 ## A note on the Claude Code version
 
 `.claude-code-version` is the version this is developed against. Nothing in CI

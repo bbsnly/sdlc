@@ -329,6 +329,19 @@ story through Gate 1/2, up to but not including the commit gate, and record
 a review verdict from each named role, for a test that needs a story already
 at a particular gate.
 
+The three `sandbox_*_test.go` files work differently. `sandboxProgram` builds
+`internal/tools/sandbox` and `newSandbox` runs its `create` with a home and a
+temp directory of the test's own (`programEnv`), so the sdlc under test is the
+one that program built, not `build(t)`'s. `sandbox.env` points the home, the
+cache and the temp directory of every command at the sandbox's `home` and
+`tmp`. `sandbox.does` puts a command to the hook and then runs it as the
+session under test; `sandbox.person` runs one with no session and never puts
+it to the hook, and refuses a directory outside the sandbox the same process
+made. The steps the loop keeps for a person exist nowhere else: `person` is
+test code, and no task or program performs them. Before these files no test
+here ran `sdlc ack`, or held the hook's refusal of `approve`, `unfreeze` or
+`ack` end to end.
+
 ## Taskfile.yml's `check` legs: what each reads, and whether `.gitignore` applies
 
 `check` runs sixteen tasks in sequence. What a leg reads decides whether it can
@@ -474,3 +487,66 @@ reader finds a character of its own in it (`ownRune`, `namedFirst`); any other
 keeps the bracket scan in `hasLiteral` and `pathMatches`, as before the reader.
 `globHolding` in `directory.go` and the checkout tree in `takeaway.go` use
 `segmentMatches` as well. `braces` expands at most `maxBraces` (64) words.
+
+## internal/tools/sandbox
+
+Package `main`, run by `go run` from `Taskfile.yml` like `linkcheck` and
+`release`; goreleaser does not build it and nothing `cmd/sdlc` links imports
+it (a test in `test/e2e` fails if the binary's dependencies name it). Two
+words, `create` and `remove <dir>`, with `-C <checkout>` before the word;
+anything else is exit 2. `create` refuses a temp directory that is the
+checkout or inside it, before it makes anything, then makes `sdlc-sandbox-*`
+directly under `os.TempDir()` with `os.MkdirTemp`'s mode, and in it `.sdlc-sandbox` (the
+marker), `home`, `tmp`, `bin/sdlc` (`go build` in the checkout) and `repo`
+(`git init` on `config.Default().Git.TrunkBranch`, `protocol.allow=never`, the
+built `sdlc init`, one commit). Its children get an environment built from
+nothing: home, cache and temp inside the sandbox, `GOFLAGS` empty,
+`GOWORK=off`, `GOPROXY=off`, and from the caller only the names in `passed`.
+It prints three lines, which `CONTRIBUTING.md` quotes and a test compares. A
+create that fails deletes the directory `MkdirTemp` returned. `remove` decides
+every refusal before it deletes: the path resolves, its parent is the resolved
+temp directory and its name has the prefix, neither the working directory nor
+the `-C` checkout is inside it (the working-directory check holds for the
+program run directly; through `./task sandbox-remove` the working directory is
+always the checkout, so it never fires there), and what `os.OpenRoot` opened is the same file
+as the path and holds the marker as a regular file by `Lstat` (the marker is
+never read). Deletion is by name through that root, the marker after every
+other entry, then `os.Remove` of the empty directory. A failure while the
+marker is still there says to run the same remove again, which finishes it; a
+failure of that last `os.Remove` has a message of its own, because the marker
+is gone and a second remove would refuse: it names the empty directory for the
+person to delete. The place and the marker guard against a
+slip; the temp directory is the caller's variable and anyone can write the
+marker. Imports `config`. No `SDLC-E` code: `internal/tools/` is outside the
+packages the linter holds to `sdlcerr`.
+
+## Taskfile.yml `sandbox` and `sandbox-remove`
+
+Neither is a leg of `check`. `sandbox` sets `GOCACHE`, `GOMODCACHE` and
+`GOPATH` from `go env` in the task's `env:`, because the program gives its
+children a home inside the sandbox and any `go` command, `go env` included,
+writes telemetry under the home it is given; the program cannot ask from
+inside. Both tasks pass the words after `--` as
+`{{range .CLI_ARGS_LIST}}{{shellQuote .}} {{end}}` and empty `GOFLAGS` for
+their own `go run`. The `task` wrapper is itself a `go run`, so a caller's
+`GOFLAGS` still reaches that one. Through `go run` and Task the program's exit
+codes 1 and 2 both reach the caller as 1. `task` and `task.cmd` start Task with
+`--dir <checkout>`, so the program's working directory is the checkout and the
+task cannot tell whether the caller's shell is inside the sandbox.
+
+## cmd/sdlc test binary
+
+`cmd/sdlc/testenv_test.go`'s `TestMain` re-executes the test binary two ways
+under `SDLC_TEST_HELPER_MAIN`: `1` runs `main()`, and `panic:<NAME>` (or
+`panic:*`) runs `run` with an environment reader that panics when that
+variable is read. The second is how a hook's reply after a panic is checked in
+a real process; the released binary has no way to cause one.
+
+## Where commands lock, and which command reads the session
+
+Every command that writes takes its lock under
+`os.UserCacheDir()/sdlc/locks/` (`internal/store/guard.go`), outside the
+project, and under `os.TempDir()` where there is no cache directory;
+`internal/testenv` does not redirect either. In `internal/cli` only
+`parallel.go` reads the session variable to refuse. `approve`, `unfreeze` and
+`ack` are refused to a session by the hook alone.

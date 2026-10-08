@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/bbsnly/sdlc/internal/testenv"
@@ -23,5 +24,25 @@ func TestMain(m *testing.M) {
 		main()
 		os.Exit(0)
 	}
+	if name, ok := strings.CutPrefix(os.Getenv(mainHelperEnv), panicHelperPrefix); ok {
+		os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, panicsReading(name)))
+	}
 	os.Exit(testenv.Run(m))
+}
+
+// panicHelperPrefix, before the name of a variable, re-execs this binary as an
+// sdlc process whose environment panics when that variable is read, and with
+// "*" when any is. It is run, with the released recover and crash, given a
+// real process, real streams and a real exit code, and a panic nothing in the
+// released binary has a way to cause: a seam there would be an off switch for
+// every rule, since a hook that panics lets the call through (US-067 AC-4).
+const panicHelperPrefix = "panic:"
+
+func panicsReading(name string) func(string) string {
+	return func(key string) string {
+		if name == "*" || key == name {
+			panic("forced by the test: the environment could not be read (" + key + ")")
+		}
+		return os.Getenv(key)
+	}
 }
