@@ -49,16 +49,32 @@ func findRoots(args []string) ([]string, int) {
 		strings.HasPrefix(args[i], "-O")) {
 		i++
 	}
-	// Then the directories, up to the first option. A `(` or `!` taken for one
-	// is no directory that reaches anything.
+	// Then the directories, up to the first option or operator. An operator is
+	// no directory, and with no directory of its own a find starts where the
+	// command runs, which is `.`: it is judged from there with an operator
+	// first as it is with a test first.
 	var roots []string
-	for ; i < len(args) && !strings.HasPrefix(args[i], "-"); i++ {
+	for ; i < len(args) && !strings.HasPrefix(args[i], "-") && !findOperator(args[i]); i++ {
 		roots = append(roots, args[i])
 	}
 	if len(roots) == 0 {
 		roots = []string{"."}
 	}
 	return roots, i
+}
+
+// findOperator reports whether a word, as parse hands it over with its quotes
+// gone and its backslashes kept, is one of find's expression operators rather
+// than a directory or a primary: a negation, a boolean, the comma, or an
+// opening parenthesis in a spelling that still reaches here. The closing
+// parenthesis and the quoted and escaped `;`, `|` and `&` are turned to spaces
+// by escapedSeparators before a word is made, so only the opening forms arrive.
+func findOperator(word string) bool {
+	switch word {
+	case "!", `\!`, "-not", "-a", "-and", "-o", "-or", ",", "(", `\(`:
+		return true
+	}
+	return false
 }
 
 // globOptions reports whether a find option is given a glob, and whether the
@@ -554,21 +570,7 @@ func (c unreadCause) String() string {
 // found by searching the segment for its text, which an earlier word can hold
 // too.
 func unreadGlob(segment string, words []string) (string, unreadCause, bool) {
-	fields := strings.Fields(strings.NewReplacer(">>", " > ", ">", " > ", "<", " < ").Replace(segment))
-	var kept, raw []string
-	leading := true
-	for i := 0; i < len(fields); i++ {
-		f := unquote(fields[i])
-		switch {
-		case f == ">" || f == "<":
-			i++
-		case isAssignment(f) && (leading || exporting(kept)):
-		default:
-			leading = false
-			kept = append(kept, f)
-			raw = append(raw, fields[i])
-		}
-	}
+	_, raw := spelledFields(segment)
 	raw = raw[max(len(raw)-len(words), 0):]
 	args := words[1:]
 	_, at := findRoots(args)
@@ -581,6 +583,19 @@ func unreadGlob(segment string, words []string) (string, unreadCause, bool) {
 		}
 	}
 	return "", 0, false
+}
+
+// spelledFields splits a segment into its words as parse splits it, dropping a
+// redirect with its target and a leading assignment, and returns each word
+// unquoted beside the word as the command spells it, the two lists in step.
+// The find expression reader and unreadGlob both read the as-spelled word to
+// see what the shell would do to it, which the parsed word has lost.
+func spelledFields(segment string) (unquoted, raw []string) {
+	for _, f := range wordFields(segment) {
+		unquoted = append(unquoted, unquote(f.text))
+		raw = append(raw, f.text)
+	}
+	return unquoted, raw
 }
 
 // unreadWord reports whether the hook cannot read a glob word as the command
@@ -658,21 +673,122 @@ func unreadFinding(rule, glob, root string, cause unreadCause, what string, know
 	route := "give find a glob the hook can read, spelled so the shell leaves it for find: `*`, `?`, " +
 		"or a bracket expression such as `[a-z]`, `[!.]` or `[[:digit:]]`, in single quotes, with no " +
 		"variable, no command substitution and no backslash the shell would act on; or name the " +
-		"files to change without a glob"
-	if rule == "frozen-test-through-the-tool" {
-		route += ". If a frozen test genuinely has to change, say which and why: the person running " +
-			"the session lifts the freeze with `sdlc unfreeze --reason ...`"
-	} else {
-		route += ". The loop's own files are changed through the sdlc command: `sdlc artifact write` " +
-			"for a gate's documents, `sdlc review add` for a review, `sdlc gate` for an outcome; " +
-			"configuration is changed by hand, by the person running the session"
-	}
+		"files to change without a glob" + ruleWayOut(rule)
 	return Finding{
 		Rule: rule,
 		Reason: "find is given a glob the hook cannot read, " + shown(glob) + ", because " + cause.String() +
 			". The command goes on to change what it finds under " + shown(root) + holds,
 		Route: route,
 	}
+}
+
+// ruleWayOut is the sanctioned route the two find rules end a refusal with: the
+// unfreeze for the freeze, the sdlc command for the loop's own files.
+func ruleWayOut(rule string) string {
+	if rule == "frozen-test-through-the-tool" {
+		return ". If a frozen test genuinely has to change, say which and why: the person running " +
+			"the session lifts the freeze with `sdlc unfreeze --reason ...`"
+	}
+	return ". The loop's own files are changed through the sdlc command: `sdlc artifact write` " +
+		"for a gate's documents, `sdlc review add` for a review, `sdlc gate` for an outcome; " +
+		"configuration is changed by hand, by the person running the session"
+}
+
+// unfollowedFinding refuses a find whose expression the hook cannot read as
+// find parses it, under root, which holds or could hold what the find would
+// change. The reason quotes the word the reader stopped at, and the route is
+// chosen by the cause: told to write a word out in quotes, a person whose find
+// holds an option the hook does not know, or stands inside a script, has
+// nothing to act on.
+func unfollowedFinding(rule string, e findExpression, root, what string, known bool) Finding {
+	holds := ", which holds " + what
+	if !known {
+		holds = ", and the hook cannot tell where " + shown(root) + " is, so it could hold " + what
+	}
+	why := e.why
+	if e.word != "" {
+		why += ", at " + shown(e.word)
+	}
+	var route string
+	switch {
+	case e.unknown != "":
+		why = shown(e.unknown) + " is not an option of find that the hook knows, so it cannot tell " +
+			"which of the words after it are the option's own"
+		if e.cause == causeFilled {
+			why += ", and the shell fills in " + shown(e.word) + " after it"
+		}
+		route = "if " + shown(e.unknown) + " is a slip, correct it; if your find has such an option, " +
+			"pick the files with options the hook knows, or list them with a find that only prints " +
+			"and name the ones to change"
+	case e.cause == causeFilled:
+		route = "write the word out as plain text in single quotes, so the shell leaves it for find -- " +
+			"not a variable, a command substitution or a backslash the shell would act on; or put the " +
+			"option before the directories; or run one find for each filter, so the hook need not read a " +
+			"group"
+	case e.cause == causeScript:
+		route = "run the find as a command of its own, not inside `sh -c` or `eval`; or write the " +
+			"script as one word in single quotes, with no script inside it; or, where a quote is never " +
+			"closed, close it, or take the comment that holds it off the command"
+	case e.cause == causeStray:
+		route = "put every directory before the first test, and take a comment or an unclosed quote " +
+			"off the command"
+	case e.cause == causeDiffer:
+		route = "run the find as a command of its own, with each word written out plainly"
+	default:
+		route = "run one find for each filter, so the hook need not read a group"
+	}
+	return Finding{
+		Rule: rule,
+		Reason: "find's expression cannot be read as find parses it: " + why +
+			". The command goes on to change what it finds under " + shown(root) + holds,
+		Route: route + ruleWayOut(rule),
+	}
+}
+
+// spentFinding refuses a find the reader gave up on after the command had used
+// up what the reader reads to the end for such finds. It is under the rule
+// that find is refused under from the project's own directory, wherever it
+// starts and whatever it does: the hook has read neither.
+func spentFinding(e findExpression) Finding {
+	const rule = "loop-state-through-the-tool"
+	why := e.why
+	if e.word != "" {
+		why += ", at " + shown(e.word)
+	}
+	return Finding{
+		Rule: rule,
+		Reason: "find's expression cannot be read as find parses it: " + why + "; and the command holds " +
+			"more finds the hook cannot follow than it reads to the end, so this one is refused wherever " +
+			"it starts and whatever it does",
+		Route: "split the line into separate commands, and run each find as a command of its own" +
+			ruleWayOut(rule),
+	}
+}
+
+// laterAction is a refusal of a find whose own segment changes no file, made
+// because the reader gave up on it and a word after it on the line is an
+// action that changes files. Whether that action is the find's own, past a
+// separator in one of its quoted words, or another command's, the hook cannot
+// tell. Told only why the find could not be followed, a person whose find only
+// reads saw a refusal of a find that changes nothing.
+func laterAction(f Finding) Finding {
+	f.Reason += "; no word before the first separator after this find changes a file, but a later word " +
+		"on the line is an action of find that does, and the hook cannot tell where this find ends, " +
+		"so the action is judged as its own"
+	f.Route = "run this find as a command of its own; failing that, " + f.Route
+	return f
+}
+
+// leftIn is a refusal with it said, where picked is set, that the file is one
+// a find's operators leave in. Only a refusal the flat reading does not make
+// is told so: one it does make keeps the words it has always had.
+func leftIn(f Finding, picked bool) Finding {
+	if picked {
+		f.Reason += "; the find never names it, and the operators between its tests leave it among " +
+			"the files the find picks"
+		f.Route += "; or run one find for each filter, so that each says by name what it picks"
+	}
+	return f
 }
 
 // printedTo are the files find writes what it finds to: `-fprint FILE`,

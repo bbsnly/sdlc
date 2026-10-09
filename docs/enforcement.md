@@ -697,6 +697,96 @@ hook does not know, or a glob longer than 512 bytes. The refusal names the glob
 and the directory. A `find` that only reads what it finds, such as with
 `-exec cat`, is not refused, whatever its glob.
 
+Between its tests `find` has operators, and the hook reads them: `!` and
+`-not` negate, `-o` and `-or` give alternatives, `-a` and `-and` join, and
+parentheses group — each in the quoted and escaped spellings a shell leaves
+for find, such as `\!`, `'('` and `-not`. A negated test is read as leaving
+every file in, never as the files its name does not pick, so a `find` that
+negates a name and then deletes is read as deleting every file the name does
+not pick, the loop's own among them. Each alternative of an `-o` is read on its
+own, and one that picks a protected file refuses the whole command. The refusal
+then says that the operators leave the file in, and the way on is one `find`
+for each filter: `find . -name '*.orig' -delete`, and then another for the next
+name. This reading is asked of a `find` that deletes or runs a writer; a `find`
+that only writes its list to a file, with `-fprint` and its like, is judged by
+its glob alone, not by what its operators pick.
+
+The `find` is read as find is handed it. A redirect is no word of it, with a
+descriptor number or without, wherever on the line it stands. A separator
+inside a quoted word, such as the `;` of `-name 'a;b'`, is a character of the
+word and does not end the `find`. A `find` given to a shell as a script, with
+`sh -c` or `bash -c`, or to `eval`, is the same `find`, read through the one
+pair of quotes the script is written in. Each command of a string given to
+`eval` is read as the command it is.
+
+Where the expression is one the hook cannot follow, the `find` is refused from
+the same directories as an unreadable glob, when it deletes, runs a writer, or
+writes its list to a file. The refusal names the word and the directory, and
+its way on depends on the cause:
+
+- A word the shell fills in or unescapes where an operator could be, such as
+  `"$OP"` between two tests. Write the word out in single quotes, or run one
+  `find` for each filter. A value the shell fills in, such as the reference of
+  `-newer "$REF"`, is a value and not a place an operator could be, and is not
+  refused.
+- An option the hook does not know: it cannot tell how many of the words after
+  it are the option's own. If it is a slip, correct it; if your `find` has such
+  an option, pick the files with options the hook knows, or list them with a
+  `find` that only prints and name the ones to change.
+- A `find` inside something the hook cannot take apart: a script inside a
+  script; a script given to `eval` in more than one word, which `eval` parses a
+  second time; a script whose quote closes before the end of its command; a
+  script in double quotes that holds a backslash before a quote or before
+  another backslash; an escaped separator written against another word; a
+  process substitution among the `find`'s words; or a quote that is never
+  closed, or is still open where the `find` starts, which is what an
+  apostrophe in a comment on the line leaves. Run the
+  `find` as a command of its own, or write the script as one word in single
+  quotes; where a quote is never closed, close it, or take the comment that
+  holds it off the command.
+- A word that is neither a test nor an operator where only one of those can
+  stand. That is a directory after the first test, a comment after the `find`,
+  or a separator handed to `find` as a word of its own. Put every directory
+  before the first test, and take the comment off the command.
+- The two ways the hook reads the command do not agree, or it cannot tell
+  where the `find` starts. Run the `find` as a command of its own, with each
+  word written out plainly.
+- The shape of the expression itself: a comma, parentheses that do not
+  balance, an operator with nothing to govern, or more than 512 words. Run one
+  `find` for each filter.
+
+Some ordinary commands are over-refused in this way and have a plain way on,
+named with the refusal: a `-depth` given a number (use `-maxdepth` or
+`-mindepth`), a leading `-s` or `-x` before the directories (write the
+directories out), a leading `-E` (list the files with a `find` that only
+prints, and name the ones to change), an option after a variable in an `-exec`
+command (put the
+option first), and a `find` that deletes with a comment after it on the same
+line (put the comment on a line of its own, without an apostrophe).
+
+Where the hook cannot take the `find` apart, or its two readings do not agree,
+it does not know where the `find` ends either. Such a `find` is judged with
+every word from its start to the end of the command, as if they were all its
+own. That refuses more than the `find` alone would be refused for, and in each
+case the way on is to run the `find` as a command of its own, on a line with
+nothing after it:
+
+- Such a `find` that only reads is refused, from a directory that holds or
+  could hold a protected file, where a later word on the line is an action of
+  `find` that changes files: `-delete`, an `-exec` of anything but a reader, or
+  `-fprint` and its like. The refusal says that the later word is the cause,
+  and that the hook cannot tell where the `find` ends.
+- Such a `find` that changes files is judged as if every later word on the
+  line were a file it writes. It is refused, wherever it starts, where a later
+  command on the line so much as names a protected file, one of the loop's own
+  files or a frozen test, and the refusal is then about that file.
+- Where the two readings do not agree, the same holds for a word anywhere on
+  the line, before the `find` as well as after it.
+- A command may hold only so many such finds. Past that bound each one is
+  refused, wherever it starts and whatever it does, a `find` that only reads
+  included. Split the line into separate commands and run each `find` as a
+  command of its own.
+
 A scratch file inside a story's directory is not loop state. Reading the loop's
 files with `cat`, `grep`, `head` or the file tools is never refused; `sed`,
 `awk`, `perl` and interpreters are refused on them whatever they are asked to
@@ -718,7 +808,9 @@ worktree. A glob is refused for what it could
 match, which is a guess, so the refusal names the checkout it could reach.
 A `-name` or `-path` glob the hook cannot read counts as matching here, so a
 `find` that deletes with a mistyped bracket expression can be refused for the
-checkout it could reach.
+checkout it could reach. The operators are read here too, so a `find` that
+starts at a checkout, or above one, and whose negation or alternation leaves
+the checkout in, is refused for it.
 `rsync --delete` into a checkout, or a directory holding one, is refused
 because it removes there whatever the source lacks. `rm -rf ./build/*`,
 `rm -rf node_modules`, `find . -name '*.pyc' -delete` and, from a story's
@@ -743,7 +835,12 @@ iteration. Remove only what the story made, by naming it inside the checkout,
 such as `rm -rf build`; a checkout is removed by a person, in their own
 terminal. For a `find` with a glob the hook cannot read, spell the names out,
 or use a glob the hook can read, in single quotes, with no variable and no
-backslash the shell would act on.
+backslash the shell would act on. For a `find` whose operators leave a
+protected file in, run one `find` for each filter. For one whose expression
+the hook cannot follow, the refusal names the cause and the way on for it:
+write the word out in single quotes, correct or replace the option, run the
+`find` as a command of its own and not inside a script, put the directories
+first and take the comment off, or run one `find` for each filter.
 
 ### `protected-path-through-the-tool`
 
@@ -783,7 +880,10 @@ its list to a file, from a directory that holds a frozen acceptance test or
 could: one with a frozen test below it, `.`, `..` or a directory above them, or
 one the hook cannot place. The refusal names the glob, the directory, and one
 frozen test the directory holds or could hold. A `find` that only reads what it
-finds is not refused, whatever its glob.
+finds is not refused, whatever its glob. Its operators are read as under
+[`loop-state-through-the-tool`](#loop-state-through-the-tool), and an
+expression the hook cannot follow is refused the same way, naming the word and
+the directory.
 
 A patch applied with `git apply` or `patch` names its files inside the patch,
 where this cannot see them. `sdlc gate` still refuses a frozen test that
@@ -810,7 +910,10 @@ well. Before the freeze this rule does nothing at all.
 why; the person running the session lifts the freeze with
 `sdlc unfreeze --reason "..."`. For a `find` with a glob the hook cannot read,
 spell the names out, or use a glob the hook can read, in single quotes, with no
-variable and no backslash the shell would act on.
+variable and no backslash the shell would act on; for one whose operators leave
+a frozen test in, run one `find` for each filter; for one whose expression the
+hook cannot follow, take the way on the refusal gives for its cause, as listed
+under [`loop-state-through-the-tool`](#loop-state-through-the-tool).
 
 ### `unfreeze-is-a-human-decision`
 

@@ -464,16 +464,81 @@ backtracking, folding the name for the folded reading. `nameMatches` and
 `segmentMatches` (glob.go) share the reader. `foundBy` reads each glob once and
 skips a nil read; `takeAway.find` in `takeaway.go` counts one as a match.
 `literals` keeps a glob the bracket scan in `hasLiteral` keeps or in which the
-reader finds a character of its own (`ownRune`). The callers are
-`checkLoopState` (roots filtered by `reaches`, shapes `protectedShapes` plus the
-five `stateFiles`), `checkFrozenTests` (every root, `literals` of both lists,
-shapes `frozenShapes`) and `takeAway.find`. `unreadGlob` finds the first glob
-word the hook cannot read, by its place in the segment, and why
-(`unreadCause`); both find blocks refuse it with `unreadFinding` when the
-command changes files from a root that `couldHold` says could hold loop state
-or a frozen test, and `placedRoot` says whether the refusal can name where the root
-is. `printedTo` lists the targets of `-fprint`, `-fprint0`, `-fprintf` and
-`-fls` for `writtenTo`, `changesAFile` and `changesFiles`. Imports `pathrules`.
+reader finds a character of its own (`ownRune`). The four callers of the flat
+reading are `checkLoopState` (roots filtered by `reaches`, shapes
+`protectedShapes` plus the five `stateFiles`), `checkFrozenTests` (every root,
+`literals` of both lists, shapes `frozenShapes`), `takeAway.find`, and the
+no-name `find` case of `takenAway`. `unreadGlob` finds the first glob word the
+hook cannot read, by its place in the segment (`spelledFields`, shared with the
+expression reader), and why (`unreadCause`); both find blocks refuse it with
+`unreadFinding` when the command changes files from a root that `couldHold` says
+could hold loop state or a frozen test, and `placedRoot` says whether the
+refusal can name where the root is. `findOperator` is the words `findRoots`
+stops at, so an operator is never read as a directory. `unfollowedFinding`
+refuses an expression the reader could not follow, under the same roots as
+`unreadFinding`, with a reason and a route chosen by the `findCause`; `leftIn`
+adds to a refusal that a find's operators leave the file in, and only to one
+the flat reading does not make; `ruleWayOut` is the sanctioned route the find
+refusals end with. `printedTo` lists the targets of `-fprint`, `-fprint0`,
+`-fprintf` and `-fls` for `writtenTo`, `changesAFile` and `changesFiles`.
+"find changes files" is two predicates: the narrow `-delete`/`runsAWriter`,
+which gates what the expression picks, and the wide `changesFiles` (it adds
+`printedTo`), which gates the unread-glob and cannot-follow refusals. Imports
+`pathrules`.
+
+## internal/shellpolicy/findexpression.go
+
+Package `shellpolicy`. The expression find parses, read beside the flat reading
+of find.go so a negated or alternated name test is judged by what it leaves in.
+`inspectReading` (shellpolicy.go) makes one `findScan` for a reading, the first
+time a segment runs find, and asks it to `read` each find once; the three path
+rules and `takeAway` are handed the `findExpression`.
+
+- `newFindScan` cuts `findSpelling`'s text into `findPiece`s where
+  `splitSegments` cuts `pathText`'s (`separatorAt` is its table, in its order),
+  following quotes across the whole text once with `quoting`: two `quoteLevel`s,
+  the shell the command is given to and a shell handed one of its quoted words
+  as a script. `lineUp` proves the pieces against the plain segments, one for
+  one and word for word (`sameWords`); where they do not line up, no find in the
+  reading is followed.
+- `read` finds the find's program word, how deep in quotes it stands (outside
+  them, or one quote deep in a script; an `eval` only with its script as one
+  quoted word), and its `end`: the first piece end outside every quote, so a
+  separator inside a quoted word does not end it. Where the find runs past its
+  own segment, `foundFind` carries its whole words and `inspectReading` asks the
+  rules a second time with them, from the same directory. Where `read` gives
+  up, its one `fail` exit hands over the segment and every word after it to the
+  end of the command instead (`toEnd`), charged to the scan's budget; past the
+  budget it makes no words (`spent`) and `inspectReading` refuses the find with
+  `spentFinding` (find.go), asking no rule. `laterAction` (find.go) says so
+  where a find that only reads is refused for an action later on the line.
+- `tokens` makes the reader's words from that stretch and accounts for every
+  parsed word of the find with exactly one token (`fieldWords`, built on
+  `spacedFields` as `parse` is); a marker byte (`markClose`, `markSemi`) is
+  accepted only alone or in quotes of its own at the find's level. `asSplit` is
+  the same text with markers as spaces, at the same offsets, for `parse`.
+- `readFind`, `readExpression`, `readPrimary` and `readExec` read the roots and
+  the expression into a postfix list with an operator stack and no recursion.
+  `followed` is set by the last statement of `readExpression` and nowhere else.
+  `findTakes` is the table of how many values each option is given and whether
+  the option is known at all; an expression holding an unknown one is not
+  followed. `shellFill` reports whether the shell fills in or could split a
+  word. `maxFindWords` (512) bounds the expression.
+- `picks` evaluates the postfix for one file: a negation always answers "could
+  pick" (never the complement of the wide glob reader), narrowing comes only
+  from a positive glob beside it under AND, and an action in a branch counts.
+  `pickedShapes` is the shapes `checkLoopState` and `checkFrozenTests` judge
+  after the flat reading's own; `takeAway.find` ORs `picks` into its `passes`,
+  with `-empty` and a non-`d` `-type` answering false.
+
+`findSpelling` and `pathText` (shellpolicy.go) change together, and so do
+`separatorAt` and `splitSegments`: a change to one not made to the other shows
+as every find in a command being refused. `spacedFields` (shellpolicy.go) is
+the field splitter `parse` and the reader share: a descriptor number written
+against a redirect is no word. `underEval` (shellpolicy.go) takes the `eval`
+builtin off an invocation for the path rules alone, which read and judge the
+command under it; `program` and the rules that turn on which program runs are
+handed the builtin as before.
 
 ## internal/shellpolicy/glob.go
 

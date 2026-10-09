@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/pathrules"
@@ -394,7 +395,12 @@ func inspectReading(r pair, s State, m *memo) (Finding, bool) {
 	old := unknownDir
 	var outer []place
 	ticked := false
-	for _, marked := range markedSegments(pathText(text, s.PowerShell)) {
+	// The find expression reader needs the command as it is spelled, with the
+	// separators the shell hid from find left as markers. It is made once, the
+	// first time a segment runs find; a command with no find pays nothing for it.
+	plain := markedSegments(pathText(text, s.PowerShell))
+	var scan *findScan
+	for idx, marked := range plain {
 		if s.hold.charge(1) {
 			return s.hold.finding, true
 		}
@@ -412,7 +418,15 @@ func inspectReading(r pair, s State, m *memo) (Finding, bool) {
 		if len(words) == 0 {
 			continue
 		}
-		run := program(words)
+		run, evals := underEval(program(words))
+		// A find's expression is read once, here, for every rule that asks.
+		var found foundFind
+		if len(run.words) > 0 && base(run.words[0]) == "find" {
+			if scan == nil {
+				scan = newFindScan(findSpelling(text, s.PowerShell), plain)
+			}
+			found = scan.read(idx, segment, run.words, evals)
+		}
 		// A relative `cd` from somewhere unknown leads somewhere unknown. So
 		// does a glob, which names whichever directory it matches; it is kept
 		// as written, so that the paths under it are matched as globs too:
@@ -429,30 +443,58 @@ func inspectReading(r pair, s State, m *memo) (Finding, bool) {
 			at, _ = changedDir(dir, []string{"cd", run.chdir})
 			atLost = movedTo(at)
 		}
-		away := takeAway{s: s, m: m, dir: at, lost: atLost, pwd: dir, pwdLost: lost, old: old}
-		// A glob that can come back through `..` is refused for that first,
-		// under the same rule: refused for the `.sdlc` it could match as well,
-		// `rm -rf build/.*` was sent to `sdlc artifact write` when it had asked
-		// to clear a directory.
-		if backThroughDotDot(run.words) {
-			if f, ok := checkTakesACheckout(command, segment, run, away); ok {
+		away := takeAway{s: s, m: m, dir: at, lost: atLost, pwd: dir, pwdLost: lost, old: old, exp: &found.exp}
+		judge := func(segment string, run invocation) (Finding, bool) {
+			// A glob that can come back through `..` is refused for that first,
+			// under the same rule: refused for the `.sdlc` it could match as well,
+			// `rm -rf build/.*` was sent to `sdlc artifact write` when it had asked
+			// to clear a directory.
+			if backThroughDotDot(run.words) {
+				if f, ok := checkTakesACheckout(command, segment, run, away); ok {
+					return f, true
+				}
+			}
+			if f, ok := checkLoopState(command, segment, &found.exp, run, redirects, at, atLost, s, m); ok {
+				return f, true
+			}
+			if f, ok := checkFrozenTests(command, segment, &found.exp, run, redirects, at, atLost || unsure, s, m); ok {
+				return f, true
+			}
+			// After the rules a command was refused under before there was one, so
+			// that it keeps the rule it was refused under.
+			return checkTakesACheckout(command, segment, run, away)
+		}
+		if f, ok := judge(segment, run); ok {
+			return f, true
+		}
+		if found.spent {
+			// More finds the reader gave up on than it reads to the end. A command
+			// can be written to come here, so nothing it says is asked: not where
+			// the find starts, and not what it goes on to do.
+			return spentFinding(found.exp), true
+		}
+		if found.more {
+			// The find's own words run on past a separator inside one of its
+			// quoted words, where the segment above ends; or the reader gave up
+			// on the find, and its words are taken to run to the end of the
+			// command. The rules are asked once more with all of them, from the
+			// same directory; where the rest of the command is read from is left
+			// as it is.
+			whole := run
+			whole.words = found.words
+			if f, ok := judge(found.segment, whole); ok {
+				if found.toEnd && !changesFiles(run.words) {
+					f = laterAction(f)
+				}
 				return f, true
 			}
 		}
-		if f, ok := checkLoopState(command, segment, run, redirects, at, atLost, s, m); ok {
-			return f, true
-		}
-		if f, ok := checkFrozenTests(command, segment, run, redirects, at, atLost || unsure, s, m); ok {
-			return f, true
-		}
-		// After the rules a command was refused under before there was one, so
-		// that it keeps the rule it was refused under.
-		if f, ok := checkTakesACheckout(command, segment, run, away); ok {
-			return f, true
-		}
 		// A script handed to a shell runs in a process of its own, and its cd is
-		// movesInAScript's.
-		if next, ok := changedDir(dir, run.words); ok && !run.shell {
+		// movesInAScript's. With the eval builtin taken off, a string that opened
+		// a subshell around a move was read as moving the shell, and a command
+		// that is refused where it stands was read from a directory the shell was
+		// never in, and allowed.
+		if next, ok := changedDir(dir, run.words); ok && !run.shell && evals == 0 {
 			old = dir
 			if lost {
 				old = unknownDir
@@ -1086,8 +1128,11 @@ func checkCommit(words []string, dir string, placed bool, s State, away bool) (F
 }
 
 // checkLoopState stops the shell being the way around every other rule.
-func checkLoopState(line, segment string, run invocation, redirects []string, dir string, lost bool, s State, m *memo) (Finding, bool) {
+func checkLoopState(line, segment string, exp *findExpression, run invocation, redirects []string, dir string, lost bool, s State, m *memo) (Finding, bool) {
 	candidates := append([]string{}, redirects...)
+	// What a find's expression picks once its operators are read, kept apart
+	// from what the flat reading finds so that the refusal can say so.
+	var picked []string
 	if changesFiles(run.words) {
 		for _, w := range writtenTo(run.words) {
 			// A whole directory given to an interpreter is a setting of the
@@ -1124,6 +1169,13 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 			shapes := append(protectedShapes(s.Backlog), stateFiles...)
 			candidates = append(candidates, foundBy(from, names, patterns, shapes)...)
 		}
+		// Beside the flat reading, the shapes the expression picks once its
+		// operators are read: a negated or alternated test leaves in files its
+		// name does not say. Asked only of an expression the reader followed
+		// that holds an operator, and only from a root that reaches the project.
+		if exp.followed && exp.operated && len(from) > 0 {
+			picked = exp.pickedShapes(from, append(protectedShapes(s.Backlog), stateFiles...))
+		}
 	}
 	// What a command takes away is gone as much as what it writes: `git clean
 	// -fdx .sdlc` writes nothing, and empties the loop's record.
@@ -1152,46 +1204,61 @@ func checkLoopState(line, segment string, run invocation, redirects []string, di
 			}
 		}
 	}
-	spelled := withGlobs(m.spell(s, dir, candidates), func() []string { return protectedShapes(s.Backlog) })
-	for _, c := range spelled {
+	shapes := func() []string { return protectedShapes(s.Backlog) }
+	spelled := withGlobs(m.spell(s, dir, candidates), shapes)
+	// The flat reading's candidates first, so that a command it refuses is
+	// refused in the same words as ever; then what the operators leave in.
+	flat := len(spelled)
+	spelled = append(spelled, withGlobs(m.spell(s, dir, picked), shapes)...)
+	for i, c := range spelled {
 		if !m.first("loop state", c) {
 			continue
 		}
 		if f, ok := sharedState(c, s, m); ok {
-			return f, true
+			return leftIn(f, i >= flat), true
 		}
 		if m.outside(s, c) {
 			continue
 		}
 		if hit, ok := protectedPath(c, s.Backlog); ok {
-			return Finding{
+			return leftIn(Finding{
 				Rule: "protected-path-through-the-tool",
 				Reason: hit + " is protected while a story is being worked on, and a shell " +
 					"command is the one way around the rule that protects it",
 				Route: "change it by hand outside a running iteration; if what it says is " +
 					"wrong, stop and say what rather than editing it",
-			}, true
+			}, i >= flat), true
 		}
 		if hit, ok := loopState(c); ok && hit == ".sdlc/config.json" {
-			return Finding{
+			return leftIn(Finding{
 				Rule: "loop-state-through-the-tool",
 				Reason: hit + " is the loop's configuration, and a shell command is the one " +
 					"way around every rule that protects it",
 				Route: "configuration is changed by hand, by the person running the session, " +
 					"outside a running iteration; say which setting is wrong and stop",
-			}, true
+			}, i >= flat), true
 		} else if ok {
-			return recordFinding(hit), true
+			return leftIn(recordFinding(hit), i >= flat), true
 		}
 	}
 	// A glob given to find that cannot be read could pick any of the loop's own
-	// files, from a directory that can come to them.
+	// files, from a directory that can come to them; and so could an expression
+	// the reader cannot follow at all.
 	if len(run.words) > 0 && base(run.words[0]) == "find" && changesFiles(run.words) {
 		if glob, cause, ok := unreadGlob(segment, run.words); ok {
 			roots, _ := findRoots(run.words[1:])
 			for _, r := range roots {
 				if _, ok := couldHold(r, dir, lost, nil, s, m); ok {
 					return unreadFinding("loop-state-through-the-tool", glob, r, cause, "the loop's own files",
+						placedRoot(r, dir, lost, s, m)), true
+				}
+			}
+		}
+		if !exp.followed {
+			roots, _ := findRoots(run.words[1:])
+			for _, r := range roots {
+				if _, ok := couldHold(r, dir, lost, nil, s, m); ok {
+					return unfollowedFinding("loop-state-through-the-tool", *exp, r, "the loop's own files",
 						placedRoot(r, dir, lost, s, m)), true
 				}
 			}
@@ -1247,7 +1314,7 @@ func sharedState(word string, s State, m *memo) (Finding, bool) {
 // shell command went straight past them: `Write` to `x_test.go` was refused as
 // a frozen acceptance test, and `echo cheat > x_test.go` was allowed. One
 // redirect was the whole way round the hinge the loop turns on.
-func checkFrozenTests(line, segment string, run invocation, redirects []string, dir string, lost bool, s State, m *memo) (Finding, bool) {
+func checkFrozenTests(line, segment string, exp *findExpression, run invocation, redirects []string, dir string, lost bool, s State, m *memo) (Finding, bool) {
 	if len(s.Frozen) == 0 && s.IsTest == nil && s.NewTest == nil && s.ImplementerTest == nil {
 		return Finding{}, false
 	}
@@ -1322,6 +1389,9 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 	if byName {
 		rule = "freeze by name"
 	}
+	// The frozen tests a find's expression picks once its operators are read,
+	// kept apart from what the flat reading finds.
+	var picked []string
 	if len(run.words) > 0 && base(run.words[0]) == "find" && (hasWord(run.words[1:], "-delete") || runsAWriter(run.words[1:])) && len(s.Frozen) > 0 {
 		// A name find is given with a glob in it, wherever it starts, as the
 		// freeze reads find's names. Not one that is all wildcards: from
@@ -1329,6 +1399,19 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 		// was a frozen test.
 		roots, names, patterns := findArguments(run.words[1:])
 		candidates = append(candidates, foundBy(roots, literals(names), literals(patterns), frozenShapes(s.Frozen))...)
+		// The frozen tests the expression picks once its operators are read,
+		// from each root that could hold one below it.
+		if exp.followed && exp.operated {
+			var could []string
+			for _, r := range roots {
+				if _, ok := couldHold(r, dir, lost, s.Frozen, s, m); ok {
+					could = append(could, r)
+				}
+			}
+			if len(could) > 0 {
+				picked = exp.pickedShapes(could, frozenShapes(s.Frozen))
+			}
+		}
 	}
 	// A directory taken away takes the frozen tests in it along: `rm -rf
 	// internal/calc` removed internal/calc/add_test.go without naming it.
@@ -1354,6 +1437,10 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 	}
 	shapes := func() []string { return frozenShapes(s.Frozen) }
 	added := withGlobs(m.spell(s, dir, candidates), shapes)
+	// What the flat reading finds first, in the words it has always been
+	// refused in; then what a find's operators leave in.
+	flat := len(added)
+	added = append(added, withGlobs(m.spell(s, dir, picked), shapes)...)
 	spelled := slices.Concat(added, withGlobs(m.spell(s, dir, removed), shapes))
 	for i, c := range spelled {
 		// A file taken away is no test added: removing the test files the freeze
@@ -1383,7 +1470,7 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 			}, true
 		}
 		if ok {
-			return frozenFinding(frozen), true
+			return leftIn(frozenFinding(frozen), i >= flat && !taken), true
 		}
 		if w != "" && s.ImplementerTest != nil && s.ImplementerTest(w) {
 			return Finding{
@@ -1405,6 +1492,16 @@ func checkFrozenTests(line, segment string, run invocation, redirects []string, 
 				if test, ok := couldHold(r, dir, lost, s.Frozen, s, m); ok {
 					what := "a frozen acceptance test (" + cmp.Or(test, s.Frozen[0]) + ")"
 					return unreadFinding("frozen-test-through-the-tool", glob, r, cause, what,
+						placedRoot(r, dir, lost, s, m)), true
+				}
+			}
+		}
+		if !exp.followed {
+			roots, _ := findRoots(run.words[1:])
+			for _, r := range roots {
+				if test, ok := couldHold(r, dir, lost, s.Frozen, s, m); ok {
+					what := "a frozen acceptance test (" + cmp.Or(test, s.Frozen[0]) + ")"
+					return unfollowedFinding("frozen-test-through-the-tool", *exp, r, what,
 						placedRoot(r, dir, lost, s, m)), true
 				}
 			}
@@ -1867,6 +1964,30 @@ func program(words []string) invocation {
 		}
 	}
 	return run
+}
+
+// underEval is an invocation with the shell's `eval` taken off the front of
+// it, and how many were: eval runs its words in the shell that calls it, so
+// to the path rules the command after it is the command. What the outer
+// invocation set stays set, and what wraps the command under the builtin is
+// taken off in turn.
+//
+// Only the path rules ask this. The rules that turn on which program runs read
+// the builtin themselves, with its string and the variables set in front of
+// it, and are handed what program makes of the words as they always were.
+func underEval(run invocation) (invocation, int) {
+	evals := 0
+	// Each turn leaves fewer words than the one before.
+	for len(run.words) > 1 && base(run.words[0]) == "eval" {
+		under := program(run.words[1:])
+		under.shell = under.shell || run.shell
+		under.piped = under.piped || run.piped
+		under.assigns = slices.Concat(run.assigns, under.assigns)
+		under.chdir = cmp.Or(under.chdir, run.chdir)
+		run = under
+		evals++
+	}
+	return run, evals
 }
 
 // skipValued drops the flags a wrapper takes before the command it runs, with
@@ -2621,6 +2742,15 @@ func shortMagic(text string) string {
 // called `/.sdlc/state/active`. At the start of a word it leaves `$SUB`, which is somewhere, not the root of the disk; inside a word,
 // nothing. PowerShell's backticks are gone by now, so there only `$(` is one.
 func glued(text string) string {
+	return gluedIn(text, false)
+}
+
+// gluedIn is glued, and, when inWords is set, leaves `$SUB` for a substitution
+// standing inside a word as well as at the start of one. The find expression
+// reader sets it, so that a substitution partway through a word still reads as
+// a word the shell fills in rather than vanishing; the path rules leave it as
+// nothing, which is what they have always done.
+func gluedIn(text string, inWords bool) string {
 	var b strings.Builder
 	var inner []string
 	for i := 0; i < len(text); {
@@ -2637,8 +2767,10 @@ func glued(text string) string {
 			} else {
 				b.WriteString("$SUB")
 			}
+		} else if inWords {
+			b.WriteString("$SUB")
 		}
-		inner = append(inner, glued(body))
+		inner = append(inner, gluedIn(body, inWords))
 		i = end
 	}
 	for _, in := range inner {
@@ -2701,6 +2833,45 @@ var escapedSeparators = strings.NewReplacer(
 	`')'`, " ", `';'`, " ", `'|'`, " ", `'&'`, " ",
 	`")"`, " ", `";"`, " ", `"|"`, " ", `"&"`, " ",
 )
+
+// findSeparators is escapedSeparators' sibling: it leaves each hidden separator
+// as a marker instead of a space, so the find expression reader sees where a
+// group or an -exec command ends. A closing parenthesis becomes markClose, an
+// -exec terminator markSemi, and `|` and `&` their own markers. An escaped one
+// is a word of its own; a quoted one keeps its quotes, because this replacer
+// does not know whether they are quotes to the shell that reads them, and the
+// reader's quote tracker has to see them to say.
+// findSpelling, not pathText, uses it; see findSpelling.
+var findSeparators = strings.NewReplacer(
+	"\\\r\n", "", "\\\n", "",
+	`\)`, " \x1c ", `\;`, " \x1d ", `\|`, " \x1e ", `\&`, " \x1f ",
+	`')'`, "'\x1c'", `';'`, "'\x1d'", `'|'`, "'\x1e'", `'&'`, "'\x1f'",
+	`")"`, "\"\x1c\"", `";"`, "\"\x1d\"", `"|"`, "\"\x1e\"", `"&"`, "\"\x1f\"",
+)
+
+// findSpelling is pathText's sibling for the find expression reader: the same
+// pipeline, so that its text is cut into the commands pathText's is, but with
+// each separator the shell hid from find left as a marker (findSeparators) and
+// a substitution inside a word left as `$SUB` (gluedIn). A raw marker byte in
+// the command is replaced by U+FFFD first, so a marker can only come from the
+// replacer and never from the command. PowerShell has no escaped separators,
+// so there this is pathText.
+//
+// pathText and findSpelling change together: a change to one not made to the
+// other shows as the two texts not lining up command for command, which the
+// reader answers with "cannot follow" for every find in the command.
+func findSpelling(text string, powerShell bool) string {
+	if powerShell {
+		return pathText(text, powerShell)
+	}
+	text = strings.Map(func(r rune) rune {
+		if r >= markClose && r <= markAmp {
+			return '�'
+		}
+		return r
+	}, text)
+	return gluedIn(shortMagic(findSeparators.Replace(text)), true)
+}
 
 // markedSegments is segments with where each subshell opens and closes left on
 // the front of the segment after it: `(` for a subshell or a `$(`, `)` for its
@@ -2765,14 +2936,14 @@ func splitSegments(command string, marked bool) []string {
 // parse splits one segment into its words, the targets of its redirections, and
 // the names of any environment assignments in front of the command.
 func parse(segment string) (words, redirects, assigns []string) {
-	fields := strings.Fields(strings.NewReplacer(">>", " > ", ">", " > ", "<", " < ").Replace(segment))
+	fields := spacedFields(segment)
 	leading := true
 	for i := 0; i < len(fields); i++ {
-		f := unquote(fields[i])
+		f := unquote(fields[i].text)
 		switch {
 		case f == ">":
 			if i+1 < len(fields) {
-				redirects = append(redirects, unquote(fields[i+1]))
+				redirects = append(redirects, unquote(fields[i+1].text))
 				i++
 			}
 		case f == "<":
@@ -2786,6 +2957,54 @@ func parse(segment string) (words, redirects, assigns []string) {
 		}
 	}
 	return words, redirects, assigns
+}
+
+// A field is one word of a segment as spacedFields splits it, and where in the
+// segment it starts.
+type field struct {
+	text string
+	at   int
+}
+
+// spacedFields splits a segment at white space, with each redirect operator
+// (`>>`, `>`, `<`) a field of its own, as `>` or `<`. A descriptor number
+// written against the operator is part of the redirect and no word of the
+// command: a run of digits that starts a word and is followed at once by the
+// operator is dropped, wherever on the line the redirect stands.
+//
+// Quotes are not followed, here as in the rest of parse: a `>` inside a quoted
+// word is read as a redirect all the same.
+func spacedFields(segment string) []field {
+	var out []field
+	start, afterSpace, skip := -1, true, false
+	flush := func(end int) {
+		if start >= 0 {
+			out = append(out, field{segment[start:end], start})
+			start = -1
+		}
+	}
+	for i, r := range segment {
+		switch {
+		case skip:
+			// The second `>` of `>>`, which is one operator.
+			skip = false
+		case r == '>' || r == '<':
+			if start >= 0 && afterSpace && strings.Trim(segment[start:i], "0123456789") == "" {
+				start = -1
+			}
+			flush(i)
+			out = append(out, field{string(r), i})
+			skip = r == '>' && strings.HasPrefix(segment[i+1:], ">")
+			afterSpace = false
+		case unicode.IsSpace(r):
+			flush(i)
+			afterSpace = true
+		case start < 0:
+			start = i
+		}
+	}
+	flush(len(segment))
+	return out
 }
 
 func isAssignment(f string) bool {

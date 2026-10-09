@@ -318,6 +318,9 @@ type takeAway struct {
 	pwdLost bool
 	// old is where the shell was before its last `cd`, or unknownDir.
 	old string
+	// exp is the expression of the find the segment runs, as the expression
+	// reader read it; one that was not followed where the segment runs none.
+	exp *findExpression
 	// from is all of the above, as the memo keys what has been looked at
 	// from there; checkTakesACheckout sets it.
 	from string
@@ -566,7 +569,11 @@ func (t *checkoutTree) reaches(word string, glob bool, m *memo) (*checkoutNode, 
 func (t takeAway) find(args []string) (Finding, bool) {
 	roots, names, patterns := findArguments(args)
 	nameGlobs, pathGlobs := readGlobs(names), readGlobs(patterns)
-	passes := func(name, full string) bool {
+	exp := t.exp
+	if exp == nil {
+		exp = &findExpression{}
+	}
+	flat := func(name, whole string) bool {
 		if hasWord(args, "-empty") {
 			return false
 		}
@@ -584,11 +591,38 @@ func (t takeAway) find(args []string) (Finding, bool) {
 			}
 		}
 		for _, g := range pathGlobs {
-			if g == nil || g.MatchString(full) {
+			if g == nil || g.MatchString(whole) {
 				return true
 			}
 		}
 		return false
+	}
+	// Today's flat answer, or what the expression leaves in once its operators
+	// are read: a negated or alternated test keeps a checkout its name does not
+	// say. -empty and a -type that is not d answer false as tests here, so they
+	// narrow only the branch they govern.
+	passes := func(name, whole string) bool {
+		if flat(name, whole) {
+			return true
+		}
+		if !exp.followed || !exp.operated {
+			return false
+		}
+		return exp.picks(func(it findItem) bool {
+			switch {
+			case it.isGlob:
+				if it.glob == nil {
+					return true
+				}
+				if it.whole {
+					return it.glob.MatchString(whole)
+				}
+				return it.glob.MatchString(name)
+			case it.empty, it.notDir:
+				return false
+			}
+			return it.pick
+		})
 	}
 	least, most := findDepth(args, "-mindepth", 0), findDepth(args, "-maxdepth", -1)
 	for _, root := range roots {
