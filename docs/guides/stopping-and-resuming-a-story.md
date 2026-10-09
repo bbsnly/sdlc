@@ -205,6 +205,8 @@ and there is nothing to do but run `/sdlc:next`. The exception is a session that
 kept ending its turn mid-story: after `loop.max_stop_blocks` stops in a row with
 nothing recorded, the `Stop` hook hands the story to a person. `sdlc status`
 then lists it as waiting, and it needs `sdlc approve` before it can start again.
+A stop made while a subagent is still running is
+[not counted](../enforcement.md#stopping-mid-story) for up to 30 minutes.
 
 ## When the story is finished
 

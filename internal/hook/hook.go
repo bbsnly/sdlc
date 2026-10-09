@@ -143,7 +143,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	if args[0] == "Stop" || args[0] == "PostToolUse" {
 		var reply turnReply
 		if args[0] == "Stop" {
-			reply = decideStop(raw, getenv, warn)
+			reply = decideStop(raw, getenv, warn, time.Now)
 		} else {
 			reply = formatWritten(raw, getenv, warn)
 		}

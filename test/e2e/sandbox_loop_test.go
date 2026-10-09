@@ -9,13 +9,18 @@
 package e2e
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bbsnly/sdlc/internal/model"
 )
@@ -762,5 +767,373 @@ func TestAC4TheHookIsGivenTheJSONClaudeCodeSendsAndItsStdoutIsTheProtocol(t *tes
 				t.Errorf("for %s the launcher printed %q and the binary %q", raw, viaLauncher, direct)
 			}
 		}
+	})
+}
+
+// ---------------------------------------------------------------- US-085
+
+// US-085, a background subagent that is still running is not the session
+// stopping: Claude Code lists what is in flight in `background_tasks` on the
+// Stop event, and the hook is given that here as it is given everything else,
+// through the launcher, with the built binary answering.
+//
+// What this binds besides the replies: `waiting_since` in
+// .sdlc/state/stop-blocks.json, the time of the first stop let through, as
+// RFC 3339 text; and one debug line holding stopCannotTell for a stop whose
+// list is absent or will not read. The debug log is read from SDLC_DEBUG_FILE,
+// because a quiet Stop is held to an empty stderr.
+
+// stopCannotTell is what the debug log says, once, for a stop the hook has no
+// task list it can read for.
+const stopCannotTell = "cannot tell whether a subagent is running"
+
+// Text of an entry the hook has no reason to keep anywhere.
+const (
+	taskDescription = "DESCRIPTION-THAT-MUST-NOT-BE-KEPT"
+	taskCommand     = "COMMAND-THAT-MUST-NOT-BE-KEPT"
+)
+
+// runningSubagent and runningShell are entries of the task list as the hooks
+// reference describes them.
+func runningSubagent(id string) string {
+	return `{"id":"` + id + `","type":"subagent","status":"running","description":"` + taskDescription + `","agent_type":"sdlc:researcher"}`
+}
+
+const runningShell = `{"id":"sh-1","type":"shell","status":"running","description":"` + taskDescription + `","command":"` + taskCommand + `"}`
+
+// noList leaves `background_tasks` out of the Stop event altogether.
+const noList = ""
+
+// stopListing is stopCall with the task list given, written into the payload as
+// it stands so that a value of the wrong type can be sent.
+func stopListing(t *testing.T, session, dir, list string) string {
+	t.Helper()
+	call := stopCall(session, dir, false)
+	if list != noList {
+		if !json.Valid([]byte(list)) {
+			t.Fatalf("the test's own task list is not JSON: %s", list)
+		}
+		call["background_tasks"] = json.RawMessage(list)
+	}
+	raw, err := json.Marshal(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+// stopped is the hook's whole answer to one Stop, and what it wrote to the
+// debug log for it.
+type stopped struct {
+	stdout, stderr, log string
+	code                int
+}
+
+// stops hands the hook one Stop of the session under test with the task list
+// given, as hookRaw does, with a debug file of this stop's own.
+func (sb sandbox) stops(t *testing.T, list string) stopped {
+	t.Helper()
+	name, args := sb.sdlc, []string{"hook", "Stop"}
+	if runtime.GOOS != "windows" {
+		name, args = filepath.Join(moduleRoot(t), "plugin", "bin", "sdlc-hook"), []string{"Stop"}
+	}
+	debug := filepath.Join(t.TempDir(), "hook-debug.log")
+	cmd := exec.CommandContext(t.Context(), name, args...)
+	cmd.Dir = sb.repo
+	cmd.Env = append(sb.env(t, ""), "CLAUDE_PROJECT_DIR="+sb.repo, "SDLC_DEBUG_FILE="+debug)
+	cmd.Stdin = strings.NewReader(stopListing(t, sandboxSession, sb.tree(), list))
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	s := stopped{}
+	var exit *exec.ExitError
+	switch err := cmd.Run(); {
+	case err == nil:
+	case errors.As(err, &exit):
+		s.code = exit.ExitCode()
+	default:
+		t.Fatalf("the hook could not be run: %v", err)
+	}
+	s.stdout, s.stderr = out.String(), errOut.String()
+	// No file is a hook that logged nothing, which is an answer too.
+	if raw, err := os.ReadFile(debug); err == nil {
+		s.log = string(raw)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// saysItCannotTell is how many lines of a stop's debug log say so.
+func (s stopped) saysItCannotTell() int {
+	n := 0
+	for _, line := range strings.Split(s.log, "\n") {
+		if strings.Contains(line, stopCannotTell) {
+			n++
+		}
+	}
+	return n
+}
+
+// keepsNoText holds a stop to having put nothing of an entry's own text in the
+// debug log or in what it printed.
+func (s stopped) keepsNoText(t *testing.T, what string) {
+	t.Helper()
+	for _, text := range []string{taskDescription, taskCommand} {
+		if strings.Contains(s.log, text) || strings.Contains(s.stdout, text) || strings.Contains(s.stderr, text) {
+			t.Errorf("%s: the hook kept %s from the task list:\nstdout %q\nstderr %q\nlog %s", what, text, s.stdout, s.stderr, s.log)
+		}
+	}
+}
+
+// letThrough holds a stop to the ordinary allow and nothing else: this is all
+// "the session waits" is, since Claude Code wakes it when the subagent reports.
+func (s stopped) letThrough(t *testing.T, what string) {
+	t.Helper()
+	if s.stdout != carryOn || s.stderr != "" || s.code != 0 {
+		t.Fatalf("%s: exit %d\nstdout %q\nstderr %q\nwant exactly %q, nothing on stderr and exit 0", what, s.code, s.stdout, s.stderr, carryOn)
+	}
+	if n := s.saysItCannotTell(); n != 0 {
+		t.Errorf("%s: the debug log says %d times that the hook %s, and it could:\n%s", what, n, stopCannotTell, s.log)
+	}
+	s.keepsNoText(t, what)
+}
+
+// counted holds a stop to being sent back as the nth in a row, with the reply
+// the protocol has and no other field.
+func (s stopped) counted(t *testing.T, n int, what string) {
+	t.Helper()
+	if s.stderr != "" || s.code != 0 {
+		t.Fatalf("%s: exit %d and stderr %q", what, s.code, s.stderr)
+	}
+	if s.stdout == carryOn {
+		t.Fatalf("%s: the stop was let through, and it has to be counted and sent back", what)
+	}
+	var r turn
+	oneLine(t, s.stdout, &r)
+	count := stopCount.FindStringSubmatch(r.Reason)
+	if !r.Continue || r.Decision != "block" || !strings.HasPrefix(r.Reason, "US-001 is still being worked on. Work ") ||
+		!strings.Contains(r.Reason, "after 3 stops in a row with nothing recorded") || count == nil || count[1] != fmt.Sprint(n) {
+		t.Fatalf("%s: the stop was not sent back as stop %d of 3: %q", what, n, s.stdout)
+	}
+	s.keepsNoText(t, what)
+}
+
+// givenToAPerson holds a stop to the hand-over as it has always been printed,
+// and the story to waiting for a person with a loop_stalled question.
+func (s stopped) givenToAPerson(t *testing.T, sb sandbox, what string) {
+	t.Helper()
+	want := "{\"continue\":true,\"systemMessage\":\"sdlc: US-001 stopped 4 times in a row with nothing recorded, so it has been handed " +
+		"to a person and the iteration has ended. `sdlc status` shows the question; answer it with `sdlc approve US-001`.\"}\n"
+	if s.stdout != want || s.stderr != "" || s.code != 0 {
+		t.Fatalf("%s: exit %d\nstdout %q\nstderr %q\nwant exactly %q, nothing on stderr and exit 0", what, s.code, s.stdout, s.stderr, want)
+	}
+	if got := storiesOf(t, sb.repo); got["US-001"] != "awaiting_human" {
+		t.Errorf("%s: the story is %q, want awaiting_human", what, got["US-001"])
+	}
+	var record model.Record
+	readJSON(t, filepath.Join(sb.repo, ".sdlc", "stories", "US-001", model.RecordFile), &record)
+	if e, ok := record.PendingEscalation(); !ok || e.Type != "loop_stalled" ||
+		!strings.HasPrefix(e.Message, "the session stopped 4 times in a row without recording anything on the story.") {
+		t.Errorf("%s: the record holds %+v, want a loop_stalled question about four stops", what, e)
+	}
+	s.keepsNoText(t, what)
+}
+
+// stopCountFile is where the sandbox keeps the count of stops sent back: in the
+// main checkout, or in the story's worktree, whichever the loop wrote.
+func (sb sandbox) stopCountFile(t *testing.T) string {
+	t.Helper()
+	for _, dir := range []string{sb.repo, sb.tree()} {
+		if path := filepath.Join(dir, ".sdlc", "state", "stop-blocks.json"); exists(path) {
+			return path
+		}
+	}
+	t.Fatal("the hook kept no stop-blocks.json, so nothing says how many stops were counted or when the wait began")
+	return ""
+}
+
+// stopCountKept is the count file, read strictly: the format gains one value.
+type stopCountKept struct {
+	Story        string  `json:"story"`
+	Blocks       int     `json:"blocks"`
+	Progress     string  `json:"progress"`
+	WaitingSince *string `json:"waiting_since"`
+}
+
+func (sb sandbox) stopCountKept(t *testing.T) stopCountKept {
+	t.Helper()
+	raw, err := os.ReadFile(sb.stopCountFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var c stopCountKept
+	if err := dec.Decode(&c); err != nil {
+		t.Fatalf("stop-blocks.json is not in the format it is documented to have: %v\n%s", err, raw)
+	}
+	return c
+}
+
+// waitBegan is when the count file says the first stop was let through.
+func (sb sandbox) waitBegan(t *testing.T) time.Time {
+	t.Helper()
+	c := sb.stopCountKept(t)
+	if c.WaitingSince == nil {
+		t.Fatalf("stop-blocks.json does not say when the wait began: %+v", c)
+	}
+	at, err := time.Parse(time.RFC3339, *c.WaitingSince)
+	if err != nil {
+		t.Fatalf("waiting_since in stop-blocks.json is not RFC 3339: %v", err)
+	}
+	return at
+}
+
+// waitBeganAt puts the start of the wait where the test says, which is how
+// thirty minutes pass here: nothing sleeps.
+func (sb sandbox) waitBeganAt(t *testing.T, at time.Time) {
+	t.Helper()
+	path := sb.stopCountFile(t)
+	var kept map[string]json.RawMessage
+	readJSON(t, path, &kept)
+	stamp, err := json.Marshal(at.UTC().Format(time.RFC3339))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept["waiting_since"] = stamp
+	raw, err := json.Marshal(kept)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, string(raw)+"\n")
+}
+
+// US-006 was handed to a person after three stops while its researcher was
+// still at work in the background, which cost a person an approval and the
+// story a delay. This is that story with the built binary: the stops made while
+// a subagent is listed are let through and not counted (AC-1); once none is
+// listed they are counted and the story handed over as before (AC-2); a list
+// the hook cannot read counts the stop and says so once in the debug log
+// (AC-3); every reply is the protocol's one line (AC-4); and the wait ends
+// thirty minutes after it began, to start again only when something is
+// recorded (AC-5, derived from the story's non-goal by decision D2).
+func TestUS085AStopWhileABackgroundSubagentRunsIsNotCountedUntilTheWaitRunsOut(t *testing.T) {
+	sb := newSandbox(t)
+	main, tree := sb.repo, sb.tree()
+	sb.works(t, main, "", "", "start")
+	next := func(t *testing.T, after string) {
+		t.Helper()
+		if t.Failed() {
+			t.Fatalf("%s did not hold, and every step after it starts from where it leaves the count", after)
+		}
+	}
+	started := time.Now()
+
+	t.Run("AC-1 AC-4 a stop with a subagent listed is let through, and none of them is counted", func(t *testing.T) {
+		// One more than the limit, each with another subagent beside a shell
+		// command: before this story the fourth handed the story over.
+		for i := 1; i <= 4; i++ {
+			s := sb.stops(t, "["+runningShell+","+runningSubagent(fmt.Sprintf("agent-%d", i))+"]")
+			s.letThrough(t, fmt.Sprintf("stop %d with a subagent listed", i))
+		}
+		if c := sb.stopCountKept(t); c.Story != "US-001" || c.Blocks != 0 {
+			t.Errorf("the count after four stops let through is %+v, want none for US-001", c)
+		}
+		if got := storiesOf(t, main); got["US-001"] != "in_progress" {
+			t.Errorf("the story is %q, want in_progress", got["US-001"])
+		}
+		// The one thing written down is when the first of them arrived.
+		if at := sb.waitBegan(t); at.Before(started.Add(-2*time.Second)) || at.After(time.Now().Add(2*time.Second)) {
+			t.Errorf("the wait is recorded as beginning at %s, and the first stop arrived between %s and now", at, started)
+		}
+	})
+	next(t, "AC-1")
+
+	t.Run("AC-5 thirty-one minutes after the wait began a listed subagent no longer holds the count", func(t *testing.T) {
+		sb.waitBeganAt(t, time.Now().Add(-29*time.Minute))
+		sb.stops(t, "["+runningSubagent("agent-5")+"]").letThrough(t, "twenty-nine minutes into the wait")
+
+		sb.waitBeganAt(t, time.Now().Add(-31*time.Minute))
+		s := sb.stops(t, "["+runningSubagent("agent-5")+"]")
+		s.counted(t, 1, "thirty-one minutes into the wait")
+		if n := s.saysItCannotTell(); n != 0 {
+			t.Errorf("the hook could tell, and its debug log says %d times that it could not:\n%s", n, s.log)
+		}
+		// A subagent the hook has not seen before starts nothing again.
+		sb.stops(t, "["+runningSubagent("agent-6")+"]").counted(t, 2, "a new subagent after the wait ran out")
+	})
+	next(t, "AC-5")
+
+	t.Run("AC-5 recording progress starts the wait again, and the count with it", func(t *testing.T) {
+		sb.works(t, tree, "", "", "gate", "dor", "pass", "--note", "the criteria are testable")
+		recorded := time.Now()
+		sb.stops(t, "["+runningSubagent("agent-7")+"]").letThrough(t, "the first stop after the gate was recorded")
+		if c := sb.stopCountKept(t); c.Blocks != 0 {
+			t.Errorf("the count after progress was recorded is %+v, want none", c)
+		}
+		if at := sb.waitBegan(t); at.Before(recorded.Add(-2 * time.Second)) {
+			t.Errorf("the wait is still recorded as beginning at %s, before the gate was recorded at %s", at, recorded)
+		}
+	})
+	next(t, "AC-5")
+
+	t.Run("AC-3 AC-4 a stop the hook cannot tell about is counted, with one line in the debug log", func(t *testing.T) {
+		// A list of the wrong type is the one that matters most: read as part
+		// of the payload it would make the whole payload unreadable, and an
+		// unreadable payload is let through uncounted.
+		for i, list := range []string{noList, `null`, `"a string"`} {
+			s := sb.stops(t, list)
+			what := fmt.Sprintf("a stop with the task list %q", list)
+			s.counted(t, i+1, what)
+			if n := s.saysItCannotTell(); n != 1 {
+				t.Errorf("%s: %d lines of the debug log say the hook %s, want exactly one:\n%s", what, n, stopCannotTell, s.log)
+			}
+		}
+	})
+	next(t, "AC-3")
+
+	t.Run("AC-1 a story at the limit is not handed over while a subagent is listed", func(t *testing.T) {
+		sb.stops(t, "["+runningSubagent("agent-8")+"]").letThrough(t, "a stop at the limit with a subagent listed")
+		if c := sb.stopCountKept(t); c.Blocks != 3 {
+			t.Errorf("the count at the limit is %+v after a stop let through, want 3", c)
+		}
+		if got := storiesOf(t, main); got["US-001"] != "in_progress" {
+			t.Errorf("the story is %q, want in_progress", got["US-001"])
+		}
+	})
+	next(t, "AC-1")
+
+	t.Run("AC-3 AC-4 a list with an entry that is not one is counted too, and at the limit that hands the story over", func(t *testing.T) {
+		s := sb.stops(t, "["+runningSubagent("agent-8")+`,"`+taskDescription+`"]`)
+		s.givenToAPerson(t, sb, "a subagent beside an entry that is not one")
+		if n := s.saysItCannotTell(); n != 1 {
+			t.Errorf("%d lines of the debug log say the hook %s, want exactly one:\n%s", n, stopCannotTell, s.log)
+		}
+	})
+	next(t, "AC-3")
+
+	// A person answers, and the session picks the story up again.
+	if r := sb.person(t, tree, "approve", "US-001"); r.code != 0 {
+		t.Fatalf("approve, by the harness, exited %d:\n%s%s", r.code, r.stdout, r.stderr)
+	}
+	sb.works(t, tree, "", "", "start")
+
+	t.Run("AC-2 AC-4 once the subagent has finished the stops are counted and the story is handed over as before", func(t *testing.T) {
+		sb.stops(t, "["+runningSubagent("agent-9")+"]").letThrough(t, "the subagent running")
+
+		// Finished: the list is there, and no subagent is in it. Another kind
+		// of task, or the label in another case, is not one.
+		for i, list := range []string{`[]`, "[" + runningShell + "]", `[{"id":"agent-9","type":"Subagent","status":"running"}]`} {
+			s := sb.stops(t, list)
+			what := "a stop with the task list " + list
+			s.counted(t, i+1, what)
+			if n := s.saysItCannotTell(); n != 0 {
+				t.Errorf("%s: the hook could tell, and its debug log says %d times that it could not:\n%s", what, n, s.log)
+			}
+		}
+		if got := storiesOf(t, main); got["US-001"] != "in_progress" {
+			t.Errorf("the story is %q after three stops, want in_progress", got["US-001"])
+		}
+		sb.stops(t, `[]`).givenToAPerson(t, sb, "the fourth stop with no subagent listed")
 	})
 }

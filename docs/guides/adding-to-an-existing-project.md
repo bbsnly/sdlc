@@ -170,7 +170,7 @@ any attempt by the assistant to write `CLAUDE.md`
     active                      sdlc start writes it; sdlc stop and a hand-over remove it
     session                     sdlc start writes it in Claude Code; removed with active
     tests.lock                  sdlc freeze writes it
-    stop-blocks.json            the Stop hook's count of stops it sent back
+    stop-blocks.json            the Stop hook's count of stops it sent back, and when it began waiting for a subagent
     cover.out                   only if the Go coverage command has run
   stories/<ID>/
     gate-record.json            sdlc start creates it; every gate, event and review
@@ -203,7 +203,9 @@ checkout, where every checkout reads and writes them.
 - **`state/tests.lock`** is the freeze: every test file's sha256. `sdlc
   unfreeze` removes it, and so does `sdlc stop` on a finished story.
 - **`state/stop-blocks.json`** counts the stops the `Stop` hook sent back with
-  nothing recorded, up to `loop.max_stop_blocks`.
+  nothing recorded, up to `loop.max_stop_blocks`. Once a stop has been let
+  through because a subagent was still running, `waiting_since` in it is when
+  that [wait began](../enforcement.md#stopping-mid-story), in UTC.
 - **`stories/<ID>/`** is the story's history: the gate record, the documents
   each gate stored and every review round.
 

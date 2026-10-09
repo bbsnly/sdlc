@@ -19,10 +19,18 @@ const stopFile = stateDir + "/stop-blocks.json"
 // StopCount is how many times in a row the session has tried to stop mid-story
 // with nothing new on the story's record. Progress is the record by content when
 // the count was taken, so recording anything on the story starts it again.
+//
+// WaitingSince is when the first stop at this progress was let through because
+// a subagent was still running: RFC 3339 text in UTC, and left out of the file
+// until there is one. The store keeps the text as it was given and reads
+// nothing into it. A value that is no time at all has to reach the hook as it
+// is: read here as "no wait begun", it would start a new wait where the hook
+// counts the stop.
 type StopCount struct {
-	Story    string `json:"story"`
-	Blocks   int    `json:"blocks"`
-	Progress string `json:"progress"`
+	Story        string `json:"story"`
+	Blocks       int    `json:"blocks"`
+	Progress     string `json:"progress"`
+	WaitingSince string `json:"waiting_since,omitempty"`
 }
 
 // StopCount reads the count. One that is missing or will not read counts

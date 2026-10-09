@@ -1275,6 +1275,28 @@ been sent back with nothing recorded — three, by default — the next one hand
 the story to a person with a `loop_stalled` escalation and ends the iteration.
 `sdlc status` lists it as waiting, and `sdlc approve` lets it start again.
 
+A session that stops while a subagent it started is still running is waiting,
+not giving up: it has nothing to record until the subagent reports, and Claude
+Code wakes it then. Claude Code lists what a session has left running in
+`background_tasks` on the `Stop` event, and while an entry there has the type
+`subagent` the stop is let through and not counted. Other background work — a
+shell command, a monitor, a workflow, a teammate — does not hold the count. The
+hook does not watch the subagent; it looks only when the session stops. When
+the list is missing or cannot be read, the stop is counted as before and the
+[debug log](#seeing-what-happened) says the hook could not tell. A Claude Code
+version that sends no list is counted that way too. A stop that was counted
+with no line about a subagent had a list the hook read, with no subagent in it.
+
+The wait has an end. It lasts 30 minutes from the first stop let through, and
+`waiting_since` in `.sdlc/state/stop-blocks.json` is when that was, in UTC. The
+30 minutes is fixed, not a setting. The wait belongs to what is recorded on the
+story, not to the session or to the subagent, so only recording something on
+the story starts a new one: another stop does not, and neither does a second or
+later subagent started with nothing recorded since the first. After the 30
+minutes a stop is counted even with a subagent listed, so a subagent that never
+ends is still handed to a person. The stops let through during the wait are not
+in the number the hand-over reports.
+
 In an interactive session this is felt: a reply that ends mid-story is sent back.
 `"max_stop_blocks": 0` turns the guard off, and so does `SDLC_ENFORCE=0`.
 
