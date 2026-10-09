@@ -550,3 +550,26 @@ project, and under `os.TempDir()` where there is no cache directory;
 `internal/testenv` does not redirect either. In `internal/cli` only
 `parallel.go` reads the session variable to refuse. `approve`, `unfreeze` and
 `ack` are refused to a session by the hook alone.
+
+## The Stop guard and its count file
+
+`internal/hook/stop.go` holds the whole Stop guard: `decideStop`,
+`subagentListed`, `waitFrom`, `stopReason` and `handOver`, and the reply type
+`turnReply`. The panic answer for a hook is in `cmd/sdlc/main.go`'s `crash`,
+not here. `decideStop` takes the clock as an argument; `hook.Run` passes
+`time.Now`.
+
+The Stop event's `background_tasks` is read only in `subagentListed`, by a
+second unmarshal of the raw event. The `payload` type in `hook.go` does not
+hold it, on purpose: a typed field would let a malformed list fail the one
+unmarshal that every other check shares. An entry is a `map[string]json.RawMessage`
+and only its `type` is looked up.
+
+`internal/store/stop.go` holds the count file `.sdlc/state/stop-blocks.json`
+(`story`, `blocks`, `progress`, and the optional `waiting_since`), with
+`RecordProgress` and `Escalate`. `waiting_since` is kept as the text it was
+written as; the hook decides what an unreadable one means.
+
+Four test files send Stop events to the built binary:
+`test/e2e/sandbox_loop_test.go`, `test/e2e/worktree_test.go`,
+`test/e2e/storyworktree_test.go` and `cmd/sdlc/sandboxpanic_test.go`.
