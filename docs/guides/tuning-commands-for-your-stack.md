@@ -1,14 +1,82 @@
 # Tuning commands for your stack
 
-`sdlc init` guesses your commands and test paths from a single marker file.
-This guide explains what `commands`, `thresholds`, `paths.tests` and
-`paths.src` do inside the loop, and how test paths are matched. It ends with
-configurations for a Go, a Node/TypeScript and a Python project.
+- [Introduction](#introduction)
+- [Make the commands match your project](#make-the-commands-match-your-project)
+  - [Check them with `sdlc doctor`](#check-them-with-sdlc-doctor)
+- [`commands`](#commands)
+  - [Rules that follow from who runs them](#rules-that-follow-from-who-runs-them)
+  - [What `doctor` checks](#what-doctor-checks)
+- [`thresholds`](#thresholds)
+- [`paths.tests`](#pathstests)
+  - [`dirs`](#dirs)
+  - [`file_globs`](#file_globs)
+  - [Only files git knows](#only-files-git-knows)
+  - [Omitted is not empty](#omitted-is-not-empty)
+- [`paths.src`](#pathssrc)
+- [A Go project](#a-go-project)
+- [A Node/TypeScript project](#a-nodetypescript-project)
+- [A Python project](#a-python-project)
+- [Where to go next](#where-to-go-next)
 
-Edit `.sdlc/config.json` by hand, and run `sdlc doctor` afterwards. While a
-story is running, the hook refuses any attempt by the assistant to write this
-file. A key you leave out keeps its default, and for `paths.tests` that
-matters: see [Omitted is not empty](#omitted-is-not-empty).
+## Introduction
+
+`sdlc init` guesses your commands and test paths from a single marker file.
+For many projects the guess is close, but it cannot know that you run your
+tests through `make`, or that your fixtures live in a directory of their own.
+
+This guide shows the one change most projects make: editing the `commands` in
+`.sdlc/config.json` so they match what you really run, and checking them with
+`sdlc doctor`. After that it explains what `commands`, `thresholds`,
+`paths.tests` and `paths.src` do inside the loop, and how test paths are
+matched. It ends with configurations for a Go, a Node/TypeScript and a Python
+project.
+
+## Make the commands match your project
+
+Open `.sdlc/config.json` and look at the `commands` object. Each value is a
+shell command that the agents (and in two cases `sdlc` itself) run from the
+root of the checkout the story is worked in. A key you leave out is not run.
+(`paths.tests` is different: see [Omitted is not empty](#omitted-is-not-empty).)
+
+Let's take a look at an example. Suppose your project builds, tests and lints
+through a `Makefile`, and `init` guessed something else. You would change the
+three commands to the ones you type yourself:
+
+```json
+"commands": {
+  "build": "make build",
+  "test": "make test",
+  "lint": "make lint"
+}
+```
+
+Now the agents build, test and lint the way you do. Save the file and run
+`sdlc doctor`, which is described next.
+
+Commit the change to trunk before you start the next story. A story's worktree
+reads trunk's committed `.sdlc/config.json`, not the copy in your checkout, so
+an edit that is not committed does not reach it.
+
+> [!NOTE]
+> You edit this file by hand. While a story is running, the hook refuses any
+> attempt by the assistant to write it.
+
+### Check them with `sdlc doctor`
+
+Run `sdlc doctor` after every edit to the configuration:
+
+```console
+$ sdlc doctor
+```
+
+It looks for the programs your commands name, so a typo such as `mak test`, or a
+tool that is not installed, shows up before a story trips over it. [What
+`doctor` checks](#what-doctor-checks) says how it reads a command.
+
+Don't worry about getting every key right the first time. The commands you
+change are the ones the agents run, so you will see quickly if one is wrong.
+The sections below explain what each key is for, and then the paths that tell
+`sdlc` which files are tests.
 
 ## `commands`
 
@@ -27,7 +95,9 @@ Most are run by the agents; two are run by `sdlc` itself.
 Any key you add stays available for the agents to read, but nothing runs it by
 name. An empty string is not run.
 
-A few rules follow from who runs them:
+### Rules that follow from who runs them
+
+A few rules follow from the table above:
 
 - **`test` runs the whole suite.** The verifier runs all of it, because a
   change that fixes its own tests and breaks three others has not passed.
@@ -47,6 +117,8 @@ A few rules follow from who runs them:
   standard output**, as the comment at the top of the file says.
   `thresholds` is compared against that number.
 
+### What `doctor` checks
+
 `doctor` checks that the first word of each part of a command is on your
 `PATH`. It splits the command at `&&`, `||`, `|`, `;` and command
 substitutions, looks past a `case` pattern to the program it runs, and skips
@@ -54,13 +126,15 @@ shell builtins such as `test`. It does not run anything.
 
 ## `thresholds`
 
+The verifier compares the output of `commands.coverage` and `commands.mutation`
+against two numbers, and a missed one is a reason for it to block:
+
 | Key | Default | Used by |
 | --- | --- | --- |
 | `coverage_min` | `80` | the verifier, against the output of `commands.coverage` |
 | `mutation_min` | `70` | the verifier, against the output of `commands.mutation` |
 
-`coverage_min` and `mutation_min` are for the verifier to compare, and a missed
-one is a reason for it to block. A threshold of `0` is not enforced. No stack
+A threshold of `0` is not enforced. No stack
 fills in `mutation`, so `mutation_min` has nothing to be compared with until you
 add the command.
 
@@ -72,10 +146,13 @@ directory and `CODEMAP.md`. Include anything that decides whether a test
 passes: snapshots, golden files, fixtures, `conftest.py`. If you leave one out,
 it becomes a way round the freeze.
 
+It has two lists, `dirs` and `file_globs`. A file is a test if either one
+matches it.
+
 ### `dirs`
 
-Leading and trailing slashes are trimmed first. What is left decides how the
-entry matches:
+Most projects need only a directory name here, such as `tests/`. Leading and
+trailing slashes are trimmed first. What is left decides how the entry matches:
 
 | Entry | Matches |
 | --- | --- |
@@ -88,9 +165,9 @@ A trailing slash does not root an entry. Only a slash in the middle does.
 
 ### `file_globs`
 
-Each pattern is tried against the whole path and against the file's name.
-`*` does not cross a `/`, and a `**` segment stands for any number of
-directories, including none:
+Use this for test files that sit beside the code they test. Each pattern is
+tried against the whole path and against the file's name. `*` does not cross a
+`/`, and a `**` segment stands for any number of directories, including none:
 
 | Pattern | Matches |
 | --- | --- |
@@ -118,7 +195,9 @@ became a test because you widened `paths.tests` mid-story. With
 
 ### Omitted is not empty
 
-If `file_globs` is missing, it falls back to `*_test.go`, `*.test.ts`,
+If you leave `paths.tests` out of the configuration, or leave out one of its
+lists, `sdlc` fills in a default rather than treating the list as empty. If
+`file_globs` is missing, it falls back to `*_test.go`, `*.test.ts`,
 `*.spec.ts`, `test_*.py`, `*_test.py`, `*Test.java` and `*_spec.rb`. If `dirs`
 is missing, it falls back to `tests/` and `test/`. Write `[]` to mean none.
 With both empty, `sdlc freeze` refuses with

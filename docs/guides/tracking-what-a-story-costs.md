@@ -1,37 +1,43 @@
 # Tracking what a story costs
 
-A loop that runs on its own spends money on its own. `sdlc` keeps what a story
-cost in the story's gate record, beside everything else it did, and warns you
-as the total passes the points you chose. This page shows how to record the
+- [Introduction](#introduction)
+- [Record an amount](#record-an-amount)
+  - [Refused amounts](#refused-amounts)
+- [Find the number](#find-the-number)
+- [Read the running total](#read-the-running-total)
+- [Set the budget](#set-the-budget)
+- [What an alert does](#what-an-alert-does)
+  - [Where alerts go](#where-alerts-go)
+- [What an alert does not do](#what-an-alert-does-not-do)
+- [From a script](#from-a-script)
+- [Where to go next](#where-to-go-next)
+
+## Introduction
+
+A loop that runs on its own spends money on its own. It is easy to find out,
+a week later, that one story cost far more than you expected.
+
+`sdlc` does not measure anything itself. It records the amounts you give it,
+keeps them in the story's gate record beside everything else it did, and warns
+you as the total passes the points you chose. This page shows how to record the
 number, where to read it back, and what a warning does.
 
-`sdlc` does not measure anything itself. It records the amounts you give it.
-
-## Find the number
-
-Claude Code knows what a session cost, so that is where the amount comes from:
-
-- a headless run ends with `total_cost_usd` in the output of
-  `claude -p ... --output-format json`;
-- an interactive session shows it with `/cost`.
-
-When the session knows its cost, the `/sdlc:next` skill records it at Gate 9,
-before it stops the iteration. You only need to record it yourself for spend
-the session could not see, or when you run the loop from a script.
-
 ## Record an amount
+
+To add what a story has spent, run `sdlc cost add`:
 
 ```console
 $ sdlc cost add --usd 1.42 --note "gate 2, researcher"
 US-001  $1.42 spent of $60.00 (2.4%)
 ```
 
-`--usd` is required; `--note` is optional and stays on the record beside the
+`--usd` is required. `--note` is optional and stays on the record beside the
 amount. Each call adds one entry, and the line printed is the running total
 against the budget.
 
 The amount goes on the story being worked on, or on the one `--story` names.
-With no iteration running and no story named, there is nothing to put it on:
+With no iteration running and no story named, there is nothing to put it on,
+and the message says what to do:
 
 ```console
 $ sdlc cost add --usd 1
@@ -45,50 +51,32 @@ $ sdlc cost add --story US-001 --usd 1
 US-001  $2.42 spent of $60.00 (4%)
 ```
 
-The story has to be in the backlog; an id that is not is refused rather than
-starting a record nothing reads.
+The story has to be in the backlog. An id that is not is refused rather than
+starting a record nothing reads. In a project with worktrees, the amount is
+added from the checkout that holds the story; from another checkout it is
+refused with [SDLC-E0050](../troubleshooting.md#sdlc-e0050).
+
+### Refused amounts
 
 An amount that is empty, negative or not a number is refused with
 [SDLC-E0034](../troubleshooting.md#sdlc-e0034). An empty value usually means a
 shell substitution produced nothing, and recording that as `$0.00` would make
-the story look free. A leading `$` is accepted. To correct a mistake, add
-another entry with a note that says so; the record keeps both.
+the story look free.
 
-## From a script
+A leading `$` is accepted. To correct a mistake, add another entry with a note
+that says so; the record keeps both.
 
-A headless session reports its cost only once it is over. By then the iteration
-it ran may have ended: Gate 9 stops it, and so does handing the story to a
-person. So note the story before the run, and name it afterwards:
+## Find the number
 
-```console
-$ story=$(sdlc status --json | jq -r '.active // .next.story')
-$ cost=$(claude -p "/sdlc:next" --output-format json | jq .total_cost_usd)
-$ sdlc cost add --story "$story" --usd "$cost"
-```
+Claude Code knows what a session cost, so that is where the amount comes from:
 
-`active` is the story being worked on, and `next` the one `sdlc start` would
-pick up when nothing is. When neither is there, because the backlog has nothing
-to start or the next story is waiting for a person, the first line yields
-`null` and the last line is refused instead of putting the cost on the wrong
-story.
+- a headless run ends with `total_cost_usd` in the output of
+  `claude -p ... --output-format json`;
+- an interactive session shows it with `/cost`.
 
-## Set the budget
-
-The budget lives in `.sdlc/config.json`:
-
-```json
-"budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] }
-```
-
-Those are the defaults, and a key you leave out keeps its default.
-`per_story_usd` is what one story is expected to cost. `alert_fractions` are the
-points, as fractions of that budget, where `sdlc` says so. Set
-`per_story_usd` to `0` to turn the budget off. The total is still kept:
-
-```console
-$ sdlc cost add --usd 1
-US-001  $3.42 spent; no budget is set for this project
-```
+When the session knows its cost, the `/sdlc:next` skill records it at Gate 9,
+before it stops the iteration. You only need to record it yourself for spend
+the session could not see, or when you run the loop from a script.
 
 ## Read the running total
 
@@ -126,11 +114,32 @@ budget is set. Each entry itself is kept under `spend` in
 `.sdlc/stories/<ID>/gate-record.json`, with its time (`at`), amount (`usd`) and
 `note`.
 
+## Set the budget
+
+The budget lives in `.sdlc/config.json`:
+
+```json
+"budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] }
+```
+
+Those are the defaults, and a key you leave out keeps its default.
+`per_story_usd` is what one story is expected to cost. `alert_fractions` are the
+points, as fractions of that budget, where `sdlc` says so.
+
+If you would rather not have a budget, set `per_story_usd` to `0` to turn it
+off. The total is still kept:
+
+```console
+$ sdlc cost add --usd 1
+US-001  $3.42 spent; no budget is set for this project
+```
+
 ## What an alert does
 
 An alert fires on the entry that carries the total past a fraction, and only on
 that entry. It goes to standard error, so in a terminal it appears above the
-total:
+total. With the defaults, and starting from the $1.42 recorded earlier, you would
+see this as a story spends its way through the budget:
 
 ```console
 $ sdlc cost add --usd 29 --note "gates 3-4"
@@ -145,19 +154,23 @@ sdlc: this story has spent its whole $60.00 budget, and nothing is blocked -- st
 US-001  $65.42 spent of $60.00 (109%)
 ```
 
-Three things are worth knowing:
+Each alert is also written to the gate record as an event of type `budget`, so
+the retro can see when the story went over.
 
-- **The total goes to standard output and the alert to standard error**, so a
-  script that reads the number still gets a clean line. That holds with
-  `--json` too: the alert still goes to standard error, so a runner reading
-  standard output cannot miss it, and it is also in the `alerts` array.
-- **Each alert is also written to the gate record** as an event of type
-  `budget`, so the retro can see when the story went over.
-- **The entry that uses up the budget always says so**, whatever
-  `alert_fractions` holds, and names `sdlc stop`. It says it once, on the entry
-  that reaches `per_story_usd`. With `[0.5]` alone you hear at half the budget
-  and again when it is used up. A fraction of `0` never fires; one above `1`,
-  such as `1.5`, fires once the story is that far over.
+### Where alerts go
+
+The total goes to standard output and the alert to standard error, so a script
+that reads the number still gets a clean line. That holds with `--json` too: the
+alert still goes to standard error, so a runner reading standard output cannot
+miss it, and it is also in the `alerts` array.
+
+The entry that uses up the budget always says so, whatever `alert_fractions`
+holds, and names `sdlc stop`. It says it once, on the entry that reaches
+`per_story_usd`. With `[0.5]` alone you hear at half the budget and again when
+it is used up.
+
+Two fractions behave unusually. A fraction of `0` never fires. One above `1`,
+such as `1.5`, fires once the story is that far over.
 
 ## What an alert does not do
 
@@ -168,10 +181,29 @@ your call, and `sdlc stop` makes it.
 
 The budget is per story. There is no total across stories.
 
+## From a script
+
+A headless session reports its cost only once it is over. By then the iteration
+it ran may have ended: Gate 9 stops it, and so does handing the story to a
+person. So note the story before the run, and name it afterwards:
+
+```console
+$ story=$(sdlc status --json | jq -r '.active // .next.story')
+$ cost=$(claude -p "/sdlc:next" --output-format json | jq .total_cost_usd)
+$ sdlc cost add --story "$story" --usd "$cost"
+```
+
+`active` is the story being worked on, and `next` the one `sdlc start` would
+pick up when nothing is. When neither is there, because the backlog has nothing
+to start or the next story is waiting for a person, the first line yields
+`null` and the last line is refused instead of putting the cost on the wrong
+story.
+
 ## Where to go next
 
 - [`sdlc cost`](../commands.md#sdlc-cost): the command and its flags
 - [`budget`](../configuration.md#budget): the settings
 - [Stopping and resuming a story](stopping-and-resuming-a-story.md): putting a
   story down when it has cost enough
-- [Gate 9](../the-loop.md#gate-9--retro): where the skill records the cost
+- [Gate 9](../the-loop.md#gate-9--retro): the retro, during which the `/sdlc:next` skill
+  records the cost

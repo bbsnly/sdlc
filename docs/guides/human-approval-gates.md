@@ -1,13 +1,34 @@
 # Human approval gates
 
-The loop stops rather than guessing. When the specification does not settle
-something, or a story is risky enough that a person should see it before trunk
-does, the loop hands the story to a person and ends the iteration. This page
-shows where that happens, how to answer, and how the story carries on.
+- [Introduction](#introduction)
+- [How a hand-over works](#how-a-hand-over-works)
+- [Answer](#answer)
+- [Resume](#resume)
+  - [Reviews after an answer](#reviews-after-an-answer)
+- [The pause before the commit](#the-pause-before-the-commit)
+  - [Turning the pause on or off](#turning-the-pause-on-or-off)
+  - [Checking the story at Gate 1](#checking-the-story-at-gate-1)
+- [Record your decision](#record-your-decision)
+- [Where the loop hands a story over](#where-the-loop-hands-a-story-over)
+- [Looking before a commit that is not paused](#looking-before-a-commit-that-is-not-paused)
+- [Where to go next](#where-to-go-next)
+
+## Introduction
+
+Sooner or later the loop reaches a question it should not answer for itself.
+Perhaps the specification does not settle something, or the story is risky
+enough that a person should see it before trunk does. When that happens, the
+loop stops rather than guessing: it hands the story to a person and ends the
+iteration.
+
+This page shows what you see when the loop stops for you, what to type to
+answer, and how the story carries on afterwards. It then shows how to turn the
+optional stops on or off, and lists every place the loop can hand a story over.
 
 ## How a hand-over works
 
-A hand-over is one command, run by the session or by `sdlc` itself:
+A hand-over is one command, run by the session or by `sdlc` itself. You will
+usually meet it as the last thing a session prints:
 
 ```console
 $ sdlc escalate spec_unclear --message "AC-2 contradicts AC-3: which one holds?"
@@ -21,8 +42,10 @@ The iteration has ended. A person reads the work and answers in their own termin
 
 The question goes on the story's gate record, bound to the work as it stands.
 The story's status becomes `awaiting_human`, and the iteration ends, so the
-session stops instead of carrying on past the question. `sdlc status` says what
-is waiting and who has to act:
+session stops instead of carrying on past the question.
+
+If you come back later and want to know what is waiting, `sdlc status` says
+what it is and who has to act:
 
 ```console
 $ sdlc status
@@ -38,76 +61,24 @@ Until somebody answers, `sdlc start` refuses the story with
 [SDLC-E0036](../troubleshooting.md#sdlc-e0036). It refuses to start anything
 else in that checkout as well, because it picks up a story already under way
 before a new one. The waiting work is still in the tree, and a second story
-started on top of it would end up in the same commit. With
-[`git.worktrees`](../configuration.md#git) on, the default, the story waits in
-its own worktree, `.sdlc/worktrees/<ID>`, and `sdlc start` in the main checkout
-passes it over and begins the next story in a worktree of its own.
+started on top of it would end up in the same commit.
 
-The assistant cannot answer for you. The hook refuses `sdlc approve` from a tool
-call, however `sdlc` is reached, because an agent that could answer would be
-approving its own work. See
-[`approval-is-a-human-decision`](../enforcement.md#approval-is-a-human-decision).
+With [`git.worktrees`](../configuration.md#git) on, the default, the story waits
+in its own worktree, `.sdlc/worktrees/<ID>`, and `sdlc start` in the main
+checkout passes it over and begins the next story in a worktree of its own.
 
-## Where the loop hands a story over
-
-| Where | What happened | What is recorded |
-| --- | --- | --- |
-| Gate 1 | a criterion describes an implementation, not a behaviour | `dor fail`, then `spec_unclear` |
-| Gate 2 | the researcher has open questions | `analysis fail`, then `spec_unclear` |
-| Gate 2 | a document the gate needs was not stored | `analysis_incomplete` |
-| Gate 3 | a criterion cannot be observed from outside | `tests_frozen fail`, then `untestable` |
-| Gate 5 | an acceptance test changed after the freeze | `freeze_broken` |
-| any gate | a frozen test contradicts a criterion | `frozen_test_wrong` |
-| any gate | a rule in the `## SDLC Contract` blocks a gate | a hand-over that names the rule |
-| Gate 8 | the story's risk tier waits for a person | `pre_commit_approval` |
-| any gate | the same gate failed `loop.max_rework_rounds` times | `gate_failing`, by `sdlc gate` |
-| a review | the same reviewer blocked `loop.max_review_rounds` times | `review_not_converging`, by `sdlc review add` |
-| any time | the `Stop` hook sent back `loop.max_stop_blocks` stops in a row with nothing recorded, and the session stopped again | `loop_stalled`, by the `Stop` hook |
-
-The rows down to Gate 8 are written into the `/sdlc:next` runbook. The last
-three are done by `sdlc` itself, so no session can talk its way past them:
-another attempt would meet the same wall, and a person deciding to carry on is
-what starts the count again. The limits are in
-[`loop`](../configuration.md#loop).
-
-## The pause before the commit
-
-`sdlc init` writes this block into `.sdlc/config.json`:
-
-```json
-"human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false }
-```
-
-`pre_commit_pause_tiers` names the risk tiers that wait for a person before they
-are committed. A story's tier is its `risk_tier` in the backlog, and a story
-without one is `low`. Tiers are compared without regard to case, so a story
-marked `High` is held by `["high"]`. `[]` turns the pause off.
-
-A story in a paused tier reaches Gate 8 and stops. The runbook hands it over
-with `sdlc escalate pre_commit_approval`, and until a person has approved the
-work, both `git commit` (refused by the
-[`commit-gate`](../enforcement.md#commit-gate) rule) and
-`sdlc gate commit pass` ([SDLC-E0037](../troubleshooting.md#sdlc-e0037)) refuse.
-
-An approval is bound to the work it was given for. Change anything after it and
-it needs approving again. Work you sent back stays sent back until it changes,
-and once it has changed it has to be handed over again. That is what makes the
-approval worth something: it answers for the commit, not for a version of the
-story that no longer exists.
-
-To look at a story that would not otherwise be held, give it `risk_tier: high`
-when you write it, or add its tier to `pre_commit_pause_tiers`.
-
-`dor_advocate_check` is a different kind of check. With it on, the
-`sdlc:human-advocate` agent reads the story at Gate 1 as the person it is for
-would, and `sdlc gate dor pass` waits until that review is in.
-`sdlc review list --gate dor` lists it. The review is advisory, so a block from
-it does not stop the gate, and it goes stale if the story changes after it.
+> [!NOTE]
+> The assistant cannot answer for you. The hook refuses `sdlc approve` from a
+> tool call, however `sdlc` is reached, because an agent that could answer would
+> be approving its own work. A reviewer's `approve` verdict, given with
+> `sdlc review add`, is a different command and is not refused. See
+> [`approval-is-a-human-decision`](../enforcement.md#approval-is-a-human-decision).
 
 ## Answer
 
-Read what the story is waiting on. `sdlc status` shows the question, and the
-work is in the tree for you to look at. Then answer in your own terminal, in the
+When you are ready to reply to a hand-over, read what the story is waiting on.
+`sdlc status` shows the question, and the work is in the tree for you to look
+at. Then answer in your own terminal, in the
 checkout that holds the story: with `git.worktrees` on, its worktree,
 `.sdlc/worktrees/US-001`. In any other checkout `sdlc approve` is refused with
 [SDLC-E0050](../troubleshooting.md#sdlc-e0050), which names the one to use.
@@ -132,11 +103,82 @@ the story being worked on, and a hand-over has already ended that iteration. An
 answer for a story that is not waiting is refused with
 [SDLC-E0035](../troubleshooting.md#sdlc-e0035).
 
+## Resume
+
+To carry on, run `/sdlc:next`. With no story active, it runs `sdlc start`, which
+picks up the story already under way and goes to the first gate that has not
+passed. (With `--json` it reports `"resume": true` and names that gate as
+`next_gate`.) You can also run `sdlc start US-001` yourself first, as
+`sdlc approve` suggests.
+
+### Reviews after an answer
+
+In addition, you may wish to know whether an answer makes any review stale. The
+hand-over and the answer do not. `sdlc` writes only
+the story's `status` and `updated` fields in the backlog, and those are left out
+of what a review is stamped with. Anything else you change is not. The human
+advocate's Gate 1 review is stamped with the story's entry, and the verifier's
+and the code reviewer's with the whole working tree, backlog included. Edit a
+criterion or add a decision after those reviews, and they are stale:
+
+```console
+$ sdlc review list --gate code_review
+  code_review     code-reviewer   blocking  approve (round 3, stale -- what was reviewed has changed since)
+  code_review     security        advisory  approve (round 2, stale -- what was reviewed has changed since)
+  code_review     perf            on budget approve (round 2, stale -- what was reviewed has changed since)
+  code_review     human-advocate  advisory  approve (round 2, stale -- what was reviewed has changed since)
+```
+
+Those reviewers look again before the gate, or the commit, will pass.
+
+## The pause before the commit
+
+Most stops come from the loop running into a question. One is different: you
+can ask the loop to stop before it commits a risky story, so that a person sees
+the work before it lands on trunk. That stop is optional, and it is controlled
+by one setting.
+
+### Turning the pause on or off
+
+`sdlc init` writes this block into `.sdlc/config.json`:
+
+```json
+"human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false }
+```
+
+`pre_commit_pause_tiers` names the risk tiers that wait for a person before they
+are committed. A story's tier is its `risk_tier` in the backlog, and a story
+without one is `low`. Tiers are compared without regard to case, so a story
+marked `High` is held by `["high"]`. `[]` turns the pause off.
+
+To look at a story that would not otherwise be held, give it `risk_tier: high`
+when you write it, or add its tier to `pre_commit_pause_tiers`.
+
+A story in a paused tier reaches Gate 8 and stops. The runbook hands it over
+with `sdlc escalate pre_commit_approval`, and until a person has approved the
+work, both `git commit` (refused by the
+[`commit-gate`](../enforcement.md#commit-gate) rule) and
+`sdlc gate commit pass` ([SDLC-E0037](../troubleshooting.md#sdlc-e0037)) refuse.
+
+An approval is bound to the work it was given for. Change anything after it and
+it needs approving again. Work you sent back stays sent back until it changes,
+and once it has changed it has to be handed over again. That is what makes the
+approval worth something: it answers for the commit, not for a version of the
+story that no longer exists.
+
+### Checking the story at Gate 1
+
+`dor_advocate_check` is a different kind of check. With it on, the
+`sdlc:human-advocate` agent reads the story at Gate 1 as the person it is for
+would, and `sdlc gate dor pass` waits until that review is in.
+`sdlc review list --gate dor` lists it. The review is advisory, so a block from
+it does not stop the gate, and it goes stale if the story changes after it.
+
 ## Record your decision
 
 Put the decision where the next agent will read it, not only in the chat. Every
 gate is done by an agent starting from a fresh context, and that agent never
-sees the conversation.
+sees the conversation. Where the decision goes depends on what the loop asked.
 
 **A question about the story.** Edit the story in the backlog: tighten the
 criterion, add a non-goal, split it. The story schema has a `decisions` list
@@ -156,7 +198,10 @@ that has gone from the backlog cannot be committed: `sdlc status` reports it as
 and `sdlc unfreeze --reason "..."`, all three in the story's worktree with
 `git.worktrees` on: the escalation ended the iteration, and the freeze is lifted
 on the story being worked on in the checkout the command runs in. The reason is
-your decision on the record. See
+your decision on the record. Like `sdlc approve`, `sdlc unfreeze` is refused to
+the assistant: only a person runs it, in their own terminal
+([`unfreeze-is-a-human-decision`](../enforcement.md#unfreeze-is-a-human-decision)).
+See
 [When a frozen test is wrong](when-a-frozen-test-is-wrong.md).
 
 **A contract rule or a setting.** While a story is being worked on, the hook
@@ -174,29 +219,31 @@ When you record an outcome yourself, say what was decided:
 $ sdlc gate analysis fail --note "AC-2 split into US-004; zero totals invalid"
 ```
 
-## Resume
+## Where the loop hands a story over
 
-Run `/sdlc:next`. With no story active, it runs `sdlc start`, which picks up the
-story already under way, reports `"resume": true`, and goes to `next_gate`: the
-first gate that has not passed. You can also run `sdlc start US-001` yourself
-first, as `sdlc approve` suggests.
+If you would like to know every place the loop can stop for you, this table
+lists them. Each row says where it happens, what happened, and what is recorded
+on the story.
 
-The hand-over and the answer do not make any review stale. `sdlc` writes only
-the story's `status` and `updated` fields in the backlog, and those are left out
-of what a review is stamped with. Anything else you change is not. The human
-advocate's Gate 1 review is stamped with the story's entry, and the verifier's
-and the code reviewer's with the whole working tree, backlog included. Edit a
-criterion or add a decision after those reviews, and they are stale:
+| Where | What happened | What is recorded |
+| --- | --- | --- |
+| Gate 1 | a criterion describes an implementation, not a behaviour | `dor fail`, then `spec_unclear` |
+| Gate 2 | the researcher has open questions | `analysis fail`, then `spec_unclear` |
+| Gate 2 | a document the gate needs was not stored | `analysis_incomplete` |
+| Gate 3 | a criterion cannot be observed from outside | `tests_frozen fail`, then `untestable` |
+| Gate 5 | an acceptance test changed after the freeze | `freeze_broken` |
+| any gate | a frozen test contradicts a criterion | `frozen_test_wrong` |
+| any gate | a rule in the `## SDLC Contract` blocks a gate | a hand-over that names the rule |
+| Gate 8 | the story's risk tier waits for a person | `pre_commit_approval` |
+| any gate | the same gate failed `loop.max_rework_rounds` times | `gate_failing`, by `sdlc gate` |
+| a review | the same reviewer blocked `loop.max_review_rounds` times | `review_not_converging`, by `sdlc review add` |
+| any time | the `Stop` hook sent back `loop.max_stop_blocks` stops in a row with nothing recorded, and the session stopped again | `loop_stalled`, by the `Stop` hook |
 
-```console
-$ sdlc review list --gate code_review
-  code_review     code-reviewer   blocking  approve (round 3, stale -- what was reviewed has changed since)
-  code_review     security        advisory  approve (round 2, stale -- what was reviewed has changed since)
-  code_review     perf            on budget approve (round 2, stale -- what was reviewed has changed since)
-  code_review     human-advocate  advisory  approve (round 2, stale -- what was reviewed has changed since)
-```
-
-Those reviewers look again before the gate, or the commit, will pass.
+The rows down to Gate 8 are written into the `/sdlc:next` runbook. The last
+three are done by `sdlc` itself, so no session can talk its way past them:
+another attempt would meet the same wall, and a person deciding to carry on is
+what starts the count again. The limits are in
+[`loop`](../configuration.md#loop).
 
 ## Looking before a commit that is not paused
 
