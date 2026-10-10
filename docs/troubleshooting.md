@@ -80,8 +80,8 @@ Fix the JSON, or delete the file and run `sdlc init` again to get a fresh one.
 ### SDLC-E0005
 
 A file the loop depends on could not be read: the iteration or the freeze under `.sdlc/state/`, a
-story's `gate-record.json` under `.sdlc/stories/`, or a test file the freeze has to hash. The
-message names it.
+story's `PLAN.md` or `gate-record.json` under `.sdlc/stories/`, or a test file the freeze has to
+hash. The message names it.
 
 `sdlc` writes its own files whole or not at all, so one that will not parse was usually edited
 or merged by hand. Gate records are committed with the work, and a merge conflict in one is
@@ -268,11 +268,13 @@ stay recordable.
 
 ### SDLC-E0021
 
-The repository's files could not be listed.
+A git command the loop ran did not finish.
 
-`sdlc freeze` asks git which files are part of the working tree, so that build output and
-vendored code cannot be mistaken for acceptance tests. Check that git is installed and on your
-`PATH`, and that this directory is a repository git can read. `sdlc doctor` checks both.
+The message names the subcommand, and the reason either quotes the first line git printed or
+says that git gave no message. `sdlc freeze` is one example: it asks git which files are part of
+the working tree, so that build output and vendored code cannot be mistaken for acceptance
+tests. Check that git is installed and on your `PATH`, and that this directory is a repository
+git can read. `sdlc doctor` checks both.
 
 ### SDLC-E0022
 

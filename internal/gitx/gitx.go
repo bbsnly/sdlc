@@ -484,7 +484,7 @@ func gitInput(ctx context.Context, root string, extra []string, stdin []byte, ar
 	if err != nil {
 		return nil, sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			"git "+args[0]+" did not finish",
-			describeGitFailure(stderr.String())).WithCause(err)
+			describeGitFailure(args[0], stderr.String())).WithCause(err)
 	}
 	return out, nil
 }
@@ -515,12 +515,16 @@ func Environ(extra ...string) []string {
 	return append(out, extra...)
 }
 
-func describeGitFailure(stderr string) string {
+// describeGitFailure says why a git command failed, for the subcommand it was
+// given. It once named ls-files whatever had run, which sent a person to the
+// freeze when a gate or an approval had failed.
+func describeGitFailure(sub, stderr string) string {
 	if line := firstLine(stderr); line != "" {
 		return "git said: " + line
 	}
-	return "git ls-files did not finish; it may not be installed, or this may " +
-		"not be a repository git can read"
+	return "git " + sub + " gave no error message; git may not be installed or on " +
+		"PATH, this may not be a repository git can read, or git may have " +
+		"stopped without saying why"
 }
 
 func firstLine(s string) string {

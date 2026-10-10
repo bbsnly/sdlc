@@ -559,7 +559,8 @@ func (s *Store) ClearLock() error {
 
 // HashFile is the content of one file, as the freeze records it.
 func (s *Store) HashFile(rel string) (string, error) {
-	return hashFile(filepath.Join(s.root, filepath.FromSlash(rel)), rel)
+	return hashFile(filepath.Join(s.root, filepath.FromSlash(rel)), rel,
+		"the freeze records what a test file contains, and this one could not be opened")
 }
 
 // HashArtifact is the content of one of a story's documents, where every
@@ -569,17 +570,19 @@ func (s *Store) HashArtifact(story string, a model.Artifact) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return hashFile(filepath.Join(dir, a.File), ArtifactPath(story, a))
+	return hashFile(filepath.Join(dir, a.File), ArtifactPath(story, a),
+		"the "+a.Name+" could not be opened; check that the file is there and that you may read it")
 }
 
-// hashFile is the content of the file at path, which messages call rel.
-func hashFile(path, rel string) (string, error) {
+// hashFile is the content of the file at path, which messages call rel. The
+// caller says why an open failure matters: the files hashed here are not used
+// for the same thing, and one shared reason blamed the freeze for a plan.
+func hashFile(path, rel, openWhy string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", sdlcerr.New(sdlcerr.StateUnreadable,
 			rel+" could not be read",
-			"the freeze records what a test file contains, and this one could not "+
-				"be opened").WithCause(err)
+			openWhy).WithCause(err)
 	}
 	defer f.Close()
 

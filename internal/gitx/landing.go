@@ -121,7 +121,7 @@ func sealedCall(ctx context.Context, dir string, settings []string, stdin []byte
 	if err := cmd.Run(); err != nil {
 		return nil, sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			"git "+args[0]+" did not finish",
-			describeGitFailure(string(stderr.kept))).WithCause(err)
+			describeGitFailure(args[0], string(stderr.kept))).WithCause(err)
 	}
 	return out.Bytes(), nil
 }

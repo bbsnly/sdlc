@@ -73,7 +73,9 @@ func (s *Store) RecordProgress(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return hashFile(filepath.Join(dir, recordFile), storiesDir+"/"+id+"/"+recordFile)
+	return hashFile(filepath.Join(dir, recordFile), storiesDir+"/"+id+"/"+recordFile,
+		"the story's gate record could not be opened; check that gate-record.json "+
+			"is there and that you may read it")
 }
 
 // Escalate hands the story to a person: the question goes on its record, bound
