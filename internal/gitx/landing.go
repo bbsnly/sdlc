@@ -274,10 +274,28 @@ func HasMerges(ctx context.Context, root, base, tip string) (bool, error) {
 // .SDLC/notes.json is .sdlc/notes.json. The names are read whole, whatever
 // they hold.
 func ChangedUnder(ctx context.Context, root, base, tip, dir string) ([]string, error) {
-	if err := fullHashes(base, tip); err != nil {
+	if err := notAnOption("a path", dir); err != nil {
 		return nil, err
 	}
-	if err := notAnOption("a path", dir); err != nil {
+	all, err := ChangedBetween(ctx, root, base, tip)
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.Split(strings.Trim(dir, "/"), "/")
+	var changed []string
+	for _, name := range all {
+		if atOrUnder(name, parts) {
+			changed = append(changed, name)
+		}
+	}
+	return changed, nil
+}
+
+// ChangedBetween is every path that differs between base and tip, with both
+// names of a file that moved. One call answers for any number of paths: asked
+// once for each path a rule lists, the cost grew with the configuration.
+func ChangedBetween(ctx context.Context, root, base, tip string) ([]string, error) {
+	if err := fullHashes(base, tip); err != nil {
 		return nil, err
 	}
 	out, err := sealed(ctx, root, "diff-tree", "-r", "-z", "--no-renames", "--name-only",
@@ -285,10 +303,9 @@ func ChangedUnder(ctx context.Context, root, base, tip, dir string) ([]string, e
 	if err != nil {
 		return nil, err
 	}
-	parts := strings.Split(strings.Trim(dir, "/"), "/")
 	var changed []string
 	for _, name := range strings.Split(string(out), "\x00") {
-		if name != "" && atOrUnder(name, parts) {
+		if name != "" {
 			changed = append(changed, name)
 		}
 	}

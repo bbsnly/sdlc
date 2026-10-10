@@ -214,6 +214,10 @@ func shellRules(t *testing.T) []string {
 		"echo x > CLAUDE.md",
 		"sdlc review add code_review code-reviewer approve",
 		"echo " + strings.Repeat("$(", 100),
+		// US-026: the person's command, and the one only the project manager
+		// runs, here from the main conversation.
+		"sdlc staffing assign security --model opus --reason x",
+		"sdlc staffing set",
 	} {
 		f, ok := shellpolicy.Inspect(command, shellpolicy.State{})
 		if !ok {
@@ -221,7 +225,12 @@ func shellRules(t *testing.T) []string {
 		}
 		out = append(out, f.Rule)
 	}
-	return out
+	// US-026: what the project manager is refused is a rule only it meets.
+	f, ok := shellpolicy.Inspect("sdlc gate analysis pass", shellpolicy.State{Agent: "project-manager"})
+	if !ok {
+		t.Fatal("the project manager was allowed to record a gate; this test no longer covers what it thinks")
+	}
+	return append(out, f.Rule)
 }
 
 func TestEveryAgentIsDocumented(t *testing.T) {

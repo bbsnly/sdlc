@@ -46,6 +46,12 @@ type reviewInfo struct {
 	Verdict        string `json:"verdict,omitempty"`
 	Round          int    `json:"round,omitempty"`
 	Stale          bool   `json:"stale,omitempty"`
+	// LeftOut is a reviewer the story's staffing says it does not need, which
+	// the gate does not wait for; Reason is the staffing's reason. BroughtBackBy
+	// is the changed path that has the code review wait for it all the same.
+	LeftOut       bool   `json:"left_out,omitempty"`
+	Reason        string `json:"reason,omitempty"`
+	BroughtBackBy string `json:"brought_back_by,omitempty"`
 }
 
 func newReviewCmd() *cobra.Command {
@@ -243,6 +249,12 @@ func newReviewListCmd() *cobra.Command {
 					info.Verdict, info.Round = string(latest.Verdict), latest.Round
 					info.Stale = latest.Subject != subject
 				}
+				if info.LeftOut, info.BroughtBackBy, err = waited(cmd.Context(), rd, record, r.Gate, r.Role); err != nil {
+					return err
+				}
+				if info.LeftOut || info.BroughtBackBy != "" {
+					info.Reason = staffingRow(record, r.Role).Reason
+				}
 				infos = append(infos, info)
 			}
 
@@ -276,7 +288,15 @@ func describeReviewPower(i reviewInfo) string {
 func describeReviewState(i reviewInfo) string {
 	// A verdict is read back from the record, which a clone can bring.
 	verdict := oneLine(i.Verdict)
+	if by := i.BroughtBackBy; by != "" {
+		i.BroughtBackBy = ""
+		return describeReviewState(i) + " (brought back by " + quote(by) + ")"
+	}
 	switch {
+	case i.LeftOut:
+		// The reason is a model's, and is printed quoted so that it cannot end
+		// the line and start one that reads as the tool's.
+		return "left out -- " + quote(i.Reason)
 	case i.Verdict == "":
 		return "not reviewed"
 	case i.Stale:
@@ -327,9 +347,17 @@ func reviewPolicy(s *store.Store, record *model.Record) model.ReviewPolicy {
 func requireReviews(ctx context.Context, rd *reading, id string, gate model.Gate, record *model.Record) error {
 	policy := reviewPolicy(rd.s, record)
 	var reviewers []model.Reviewer
+	back := map[string]string{}
 	for _, r := range model.ReviewersFor(gate) {
-		if r.Expected(policy) {
+		out, by, err := waited(ctx, rd, record, gate, r.Role)
+		if err != nil {
+			return err
+		}
+		if r.Expected(policy) && !out {
 			reviewers = append(reviewers, r)
+			if by != "" {
+				back[r.Role] = " (the staffing leaves it out, and it is brought back by " + quote(by) + ")"
+			}
 		}
 	}
 	if len(reviewers) == 0 {
@@ -346,9 +374,9 @@ func requireReviews(ctx context.Context, rd *reading, id string, gate model.Gate
 		latest, ok := record.LatestReview(gate, r.Role)
 		switch {
 		case !ok:
-			outstanding = append(outstanding, r.Role+" has not reviewed")
+			outstanding = append(outstanding, r.Role+" has not reviewed"+back[r.Role])
 		case latest.Subject != subject:
-			outstanding = append(outstanding, r.Role+" reviewed something that has changed since")
+			outstanding = append(outstanding, r.Role+" reviewed something that has changed since"+back[r.Role])
 		case r.Stops(policy, latest.Verdict):
 			blocked = append(blocked, r.Role+" blocked"+describeNote(latest.Note))
 		case blocking && latest.Verdict != model.VerdictApprove:

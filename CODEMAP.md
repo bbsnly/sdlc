@@ -638,3 +638,80 @@ written as; the hook decides what an unreadable one means.
 Four test files send Stop events to the built binary:
 `test/e2e/sandbox_loop_test.go`, `test/e2e/worktree_test.go`,
 `test/e2e/storyworktree_test.go` and `cmd/sdlc/sandboxpanic_test.go`.
+
+## Who a reviewed gate waits for, and the lists an agent or a command is on
+
+Three places each decide which reviews count, from `model.Reviewers`:
+`requireReviews` in `internal/cli/review.go` (every `sdlc gate ... pass`, and
+again for Gates 6 and 7 at the commit gate through `requireFreshReviews` in
+`loop.go`), the loop inside `sdlc review list` in the same file, and
+`reviewsFresh` in `internal/hook/hook.go` before a `git commit`. The hook's
+takes every review on the record at `verifier_review` and `code_review`,
+whether or not the reviewer is expected, and refuses on any stamped with
+another tree. `cli` and `hook` do not import each other, so a rule all three
+share lives in `internal/model`.
+
+`sdlc gate analysis pass --security-sensitive` is the only writer of
+`Record.Security`. It is set whenever the flag is given, on any recording of
+that gate, and no hook rule asks which agent runs `sdlc gate`.
+
+An agent or an `sdlc` command is named in each of these, and no test ties them
+all together:
+
+- `model.Reviewers` and the `Role` of each entry in `model.Artifacts`
+  (`internal/model/model.go`);
+- `policy.IsLoopRole` (`internal/policy/policy.go`): an agent not listed there
+  is treated as the main conversation by `orchestrator-delegates`;
+- `shellpolicy.ValueFlags`: every `sdlc` flag that takes a value, held to the
+  command tree by `internal/cli/cli_test.go`;
+- the checks `checkPrograms` and `humanDecisionsOn` ask in
+  `internal/shellpolicy/shellpolicy.go`, each keyed on the first subcommand
+  word; `shellRules` in `internal/cli/docs_test.go` is the sample of commands
+  that makes a rule need a heading in `docs/enforcement.md`;
+- `parallel.Allowlist` (`internal/parallel/launch.go`), which names the `sdlc`
+  subcommands an unattended session may run;
+- `personsDecisions` in `test/e2e/sandbox_loop_test.go`;
+- the agent count in `TestEveryAgentWorksOnlyAStoryAPersonStarted`
+  (`internal/plugin/plugin_test.go`), and in prose in `README.md`,
+  `docs/agents.md`, `docs/the-loop.md` and `docs/installation.md`.
+
+`plugin/skills/next/SKILL.md` is capped at 17,500 bytes by
+`TestTheRunbookFitsWhatCompactionKeeps`, and was 17,492 at c7bb9d8.
+
+Inside a story's directory the shell rules protect `gate-record.json`,
+`reviews/` and the files `model.Artifacts` names, and nothing else
+(`loopState` in `shellpolicy.go`); the file rules let every loop agent and the
+main conversation write there.
+
+## The staffing
+
+Off unless `staffing.enabled`. `config.Staffing` (`internal/config/config.go`)
+holds the lists, `lowest` and `bring_back`, and checks what it can without
+knowing the agents; `staffingRoster` in `internal/cli/staffing.go` checks the
+names against `model.Agents`, from `openStore` and from `sdlc doctor`.
+
+The record keeps it as `Record.Staffing` (`internal/model/model.go`): one
+`Staffed` row for each agent, what a person `Assigned`, every `Amendment`, and
+`BroughtBack`, written when `code_review` or `commit` passes. `model.Agents` is
+the roster, `model.Doers` the agent that does each gate's work,
+`NeverLeftOut` the floor, and `Record.LeftOut` and `Record.StoodDown` what the
+gates and the hook ask.
+
+`internal/cli/staffing.go` has `sdlc staffing show`, `set`, `amend` and
+`assign`, and `waited`, the one rule for whether a gate waits for a reviewer:
+`requireReviews`, `sdlc review list` and `sdlc staffing show` all ask it with
+one `reading`, whose `changedPaths` (`internal/cli/reading.go`) is every path
+the story changed, `gitx.ChangedBetween` included. `staffTheGate` holds
+`gate analysis pass` to a recorded staffing and writes `BroughtBack`. The hook
+reads `StoodDown` in `reviewsFresh` and makes no git call for it.
+
+`internal/shellpolicy/staffing.go` has the three rules that say who may run
+what: `checkAssign` (nobody in a session), `checkRecorder` (`set` and `amend`
+are the project manager's), `checkManager` (the project manager runs nothing
+else of `sdlc`), and `checkUnread` for a run of `sdlc` whose subcommand cannot
+be read. `sdlcUses` finds each use of `sdlc` among a command's words.
+`staffing assign` also refuses wherever `CLAUDE_CODE_SESSION_ID` is set.
+
+`plugin/agents/project-manager.md` is the twelfth agent. It is not a reviewer
+and not a loop role to the file rules. `parallel.Allowlist` names `set`,
+`amend` and `show` one by one, never `sdlc staffing` as a whole.

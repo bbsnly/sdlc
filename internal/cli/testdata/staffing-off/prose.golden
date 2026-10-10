@@ -1,0 +1,1511 @@
+$ sdlc init
+exit 0
+stdout:
+Set up sdlc in <root>
+
+  created  .sdlc/config.json
+  created  .sdlc/templates/story.schema.json
+  created  user_stories.json
+  created  CLAUDE.md
+
+No stack was recognised, so the commands in .sdlc/config.json are empty.
+sdlc looks for Go, Rust, Node and Python.
+
+Next:
+  1. sdlc doctor              check the guesses
+  2. edit user_stories.json   replace the example with a story of your own
+  3. /sdlc:next               type it in Claude Code to work the first story
+stderr:
+
+== .sdlc/config.json
+{
+  "_doc": [
+    "This is the machine-readable half of your project's contract with the loop.",
+    "The other half is the '## SDLC Contract' section of your CLAUDE.md: rules a",
+    "script cannot check, written for the assistant to read.",
+    "Nothing here starts the loop: a person does, by typing /sdlc:next in Claude Code.",
+    "",
+    "Commands run from the repository root. Leave one empty to skip that step.",
+    "The coverage and mutation commands must print their percentage as the last",
+    "number on stdout.",
+    "",
+    "Run 'sdlc doctor' after changing anything here.",
+    "Reference: https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md"
+  ],
+
+  "version": 1,
+
+  "backlog": { "path": "user_stories.json" },
+
+  "git": { "trunk_branch": "main", "remote": false },
+
+  "_commands_doc": "No stack was recognised, so these are empty. Fill in the ones your project has, then run 'sdlc doctor'.",
+  "commands": {
+    "smoke":     "",
+    "build":     "",
+    "test":      "",
+    "lint":      "",
+    "fmt":       "",
+    "fmt_check": "",
+    "fmt_file":  "",
+    "coverage":  "",
+    "mutation":  ""
+  },
+
+  "thresholds": {
+    "coverage_min": 80,
+    "mutation_min": 70
+  },
+
+  "paths": {
+    "tests": {
+      "dirs": ["tests/","test/","testdata/","fixtures/"],
+      "file_globs": ["*_test.go","*.test.ts","*.spec.ts","test_*.py","*_test.py","*Test.java","*_spec.rb"]
+    },
+    "src": ["src/"]
+  },
+
+  "spec": { "paths": ["docs/", "spec/", "README.md"] },
+
+  "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
+
+  "reviews": { "gate7_advisory": false },
+
+  "freeze": { "allow_new_test_files": false },
+
+  "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
+
+  "budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] }
+}
+
+$ sdlc status
+exit 0
+stdout:
+No iteration running.
+
+  backlog  1 ready
+  next up  US-001  Example: reject invoices with a non-positive total
+
+A person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.
+stderr:
+
+$ sdlc story list
+exit 0
+stdout:
+> US-001  ready   1  Example: reject invoices with a non-positive total
+
+> is what `sdlc start` would pick.
+stderr:
+
+$ sdlc artifact list
+exit 0
+stdout:
+  analysis   ANALYSIS.md    gate analysis   written by the researcher agent
+  threats    THREATS.md     gate analysis   written by the researcher agent
+  test_plan  TEST-PLAN.md   gate tests_frozen written by the sdet agent
+  plan       PLAN.md        gate plan       written by the implementer agent
+  verification VERIFICATION.md gate verification written by the verifier agent
+  retro      RETRO.md       gate retro      written by the bookkeeper agent
+stderr:
+
+$ sdlc review list
+exit 1
+stdout:
+stderr:
+sdlc: there is no story being worked on
+
+  why  reviews belong to the story being worked on, and no iteration is running
+  fix  a person runs "sdlc start", or types /sdlc:next in Claude Code, to begin an iteration on the next story
+
+  SDLC-E0011  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0011
+
+$ sdlc review list --gate design_review
+exit 1
+stdout:
+stderr:
+sdlc: there is no story being worked on
+
+  why  reviews belong to the story being worked on, and no iteration is running
+  fix  a person runs "sdlc start", or types /sdlc:next in Claude Code, to begin an iteration on the next story
+
+  SDLC-E0011  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0011
+
+$ sdlc review list --gate code_review --story US-001
+exit 0
+stdout:
+  code_review     code-reviewer   blocking  not reviewed
+  code_review     security        blocking  not reviewed
+  code_review     perf            on budget not reviewed
+  code_review     human-advocate  advisory  not reviewed
+stderr:
+
+$ sdlc log
+exit 0
+stdout:
+No story has been committed yet.
+stderr:
+
+$ sdlc log --since HEAD
+exit 0
+stdout:
+No story has been committed since <sha>.
+stderr:
+
+$ sdlc cost
+exit 1
+stdout:
+stderr:
+sdlc: there is no story being worked on
+
+  why  cost is kept per story, and no iteration is running
+  fix  name the story with --story -- a runner that records the cost once a session is over has to, because the iteration has ended by then
+
+  SDLC-E0011  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0011
+
+$ sdlc cost --story US-001
+exit 0
+stdout:
+US-001  $0.00 spent of $60.00 (0%)
+stderr:
+
+$ sdlc doctor
+exit 1
+stdout:
+sdlc doctor
+
+  ok       git repository       <root>
+  ok       git command          found on PATH
+  ok       configuration        .sdlc/config.json
+  ok       backlog              user_stories.json  (1 story, one runnable)
+  ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read
+  ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
+  problem  commands             no commands are configured, so every gate that runs one is skipped
+                                fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       sdlc on PATH         SDLC_BIN: <bin>
+
+1 problem. The fix is above it.
+stderr:
+
+$ sdlc start
+exit 0
+stdout:
+Started US-001  Example: reject invoices with a non-positive total
+
+  no gates recorded yet
+
+Next: a person types /sdlc:next in Claude Code to work the story.
+stderr:
+
+$ sdlc status
+exit 0
+stdout:
+US-001  in progress  Example: reject invoices with a non-positive total
+
+  no gates recorded yet
+
+  tests  not frozen
+  cost   $0.00 of $60.00 (0%)
+
+  next   dor
+
+  No Claude Code session is working it, so nothing is enforced until a person picks it up by typing /sdlc:next in Claude Code.
+
+  backlog  1 in progress
+
+A person types /sdlc:next in Claude Code to carry on, or runs `sdlc stop` to put it down.
+stderr:
+
+$ sdlc story list
+exit 0
+stdout:
+> US-001  in_progress   1  Example: reject invoices with a non-positive total
+
+> is what `sdlc start` would pick.
+stderr:
+
+$ sdlc artifact list
+exit 0
+stdout:
+  analysis   ANALYSIS.md    gate analysis   written by the researcher agent
+  threats    THREATS.md     gate analysis   written by the researcher agent
+  test_plan  TEST-PLAN.md   gate tests_frozen written by the sdet agent
+  plan       PLAN.md        gate plan       written by the implementer agent
+  verification VERIFICATION.md gate verification written by the verifier agent
+  retro      RETRO.md       gate retro      written by the bookkeeper agent
+stderr:
+
+$ sdlc review list
+exit 0
+stdout:
+  design_review   architect       blocking  not reviewed
+  design_review   red-team        advisory  not reviewed
+  design_review   security        blocking  not reviewed
+  design_review   perf            on budget not reviewed
+  design_review   human-advocate  advisory  not reviewed
+  verifier_review verifier        blocking  not reviewed
+  code_review     code-reviewer   blocking  not reviewed
+  code_review     security        blocking  not reviewed
+  code_review     perf            on budget not reviewed
+  code_review     human-advocate  advisory  not reviewed
+stderr:
+
+$ sdlc review list --gate design_review
+exit 0
+stdout:
+  design_review   architect       blocking  not reviewed
+  design_review   red-team        advisory  not reviewed
+  design_review   security        blocking  not reviewed
+  design_review   perf            on budget not reviewed
+  design_review   human-advocate  advisory  not reviewed
+stderr:
+
+$ sdlc review list --gate code_review --story US-001
+exit 0
+stdout:
+  code_review     code-reviewer   blocking  not reviewed
+  code_review     security        blocking  not reviewed
+  code_review     perf            on budget not reviewed
+  code_review     human-advocate  advisory  not reviewed
+stderr:
+
+$ sdlc log
+exit 0
+stdout:
+No story has been committed yet.
+stderr:
+
+$ sdlc log --since HEAD
+exit 0
+stdout:
+No story has been committed since <sha>.
+stderr:
+
+$ sdlc cost
+exit 0
+stdout:
+US-001  $0.00 spent of $60.00 (0%)
+stderr:
+
+$ sdlc cost --story US-001
+exit 0
+stdout:
+US-001  $0.00 spent of $60.00 (0%)
+stderr:
+
+$ sdlc doctor
+exit 1
+stdout:
+sdlc doctor
+
+  ok       git repository       <root>
+  ok       git command          found on PATH
+  ok       configuration        .sdlc/config.json
+  ok       backlog              user_stories.json  (1 story, one runnable)
+  ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read; no Claude Code session is working US-001, so nothing is enforced until a person picks it up by typing /sdlc:next in Claude Code
+  ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
+  problem  commands             no commands are configured, so every gate that runs one is skipped
+                                fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       sdlc on PATH         SDLC_BIN: <bin>
+
+1 problem. The fix is above it.
+stderr:
+
+$ sdlc gate dor pass --note the criteria are testable
+exit 0
+stdout:
+US-001  dor  pass
+  the criteria are testable
+stderr:
+
+$ sdlc gate analysis pass
+exit 1
+stdout:
+stderr:
+sdlc: analysis cannot pass until its documents are stored
+
+  why  the gates after this one read analysis (.sdlc/stories/US-001/ANALYSIS.md) and threats (.sdlc/stories/US-001/THREATS.md), and nothing is there
+  fix  store the gate's documents with "sdlc artifact write", then record the gate
+
+  SDLC-E0020  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0020
+
+$ sdlc artifact write analysis
+exit 0
+stdout:
+US-001  analysis  .sdlc/stories/US-001/ANALYSIS.md (11 bytes)
+stderr:
+
+$ sdlc artifact write threats
+exit 0
+stdout:
+US-001  threats  .sdlc/stories/US-001/THREATS.md (10 bytes)
+stderr:
+
+$ sdlc gate analysis pass --security-sensitive=false
+exit 0
+stdout:
+US-001  analysis  pass
+stderr:
+
+$ sdlc artifact write test_plan
+exit 0
+stdout:
+US-001  test_plan  .sdlc/stories/US-001/TEST-PLAN.md (12 bytes)
+stderr:
+
+$ sdlc freeze
+exit 0
+stdout:
+US-001  1 test file frozen
+  internal/invoice_test.go
+stderr:
+
+$ sdlc gate tests_frozen pass --note 1 criterion, 1 failing test
+exit 0
+stdout:
+US-001  tests_frozen  pass
+  1 criterion, 1 failing test
+stderr:
+
+$ sdlc artifact write plan
+exit 0
+stdout:
+US-001  plan  .sdlc/stories/US-001/PLAN.md (7 bytes)
+stderr:
+
+$ sdlc gate plan pass --note one step
+exit 0
+stdout:
+US-001  plan  pass
+  one step
+stderr:
+
+$ sdlc gate design_review pass --note nobody objected
+exit 1
+stdout:
+stderr:
+sdlc: design_review cannot pass until its reviews are in
+
+  why  architect has not reviewed; red-team has not reviewed; security has not reviewed; perf has not reviewed; human-advocate has not reviewed
+  fix  delegate to the reviewers this gate expects -- "sdlc review list" shows who is outstanding
+
+  SDLC-E0029  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029
+
+$ sdlc review add design_review architect block --note AC-1 has no step
+exit 0
+stdout:
+US-001  design_review  architect  block (round 1)
+  .sdlc/stories/US-001/reviews/design_review-architect-1.md
+stderr:
+
+$ sdlc gate design_review pass
+exit 1
+stdout:
+stderr:
+sdlc: design_review is blocked by a reviewer
+
+  why  architect blocked: AC-1 has no step
+  fix  fix what the reviewer found, then have the same reviewer look again
+
+  SDLC-E0030  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0030
+
+$ sdlc review add design_review code-reviewer approve
+exit 1
+stdout:
+stderr:
+sdlc: design_review does not expect a review from "code-reviewer"
+
+  why  it expects architect, red-team, security, perf, human-advocate
+  fix  run "sdlc review list" to see which reviews this gate expects
+
+  SDLC-E0027  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0027
+
+$ sdlc review add design_review architect approve
+exit 0
+stdout:
+US-001  design_review  architect  approve (round 2)
+  .sdlc/stories/US-001/reviews/design_review-architect-2.md
+stderr:
+
+$ sdlc review add design_review red-team note --note nothing to add
+exit 0
+stdout:
+US-001  design_review  red-team  note (round 1)
+  .sdlc/stories/US-001/reviews/design_review-red-team-1.md
+stderr:
+
+$ sdlc review add design_review security approve
+exit 0
+stdout:
+US-001  design_review  security  approve (round 1)
+  .sdlc/stories/US-001/reviews/design_review-security-1.md
+stderr:
+
+$ sdlc review add design_review perf approve
+exit 0
+stdout:
+US-001  design_review  perf  approve (round 1)
+  .sdlc/stories/US-001/reviews/design_review-perf-1.md
+stderr:
+
+$ sdlc review list
+exit 0
+stdout:
+  design_review   architect       blocking  approve (round 2)
+  design_review   red-team        advisory  note (round 1)
+  design_review   security        advisory  approve (round 1)
+  design_review   perf            on budget approve (round 1)
+  design_review   human-advocate  advisory  not reviewed
+  verifier_review verifier        blocking  not reviewed
+  code_review     code-reviewer   blocking  not reviewed
+  code_review     security        advisory  not reviewed
+  code_review     perf            on budget not reviewed
+  code_review     human-advocate  advisory  not reviewed
+stderr:
+
+$ sdlc gate design_review pass
+exit 1
+stdout:
+stderr:
+sdlc: design_review cannot pass until its reviews are in
+
+  why  human-advocate has not reviewed
+  fix  delegate to the reviewers this gate expects -- "sdlc review list" shows who is outstanding
+
+  SDLC-E0029  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029
+
+$ sdlc review add design_review human-advocate approve
+exit 0
+stdout:
+US-001  design_review  human-advocate  approve (round 1)
+  .sdlc/stories/US-001/reviews/design_review-human-advocate-1.md
+stderr:
+
+$ sdlc gate design_review pass --note approved
+exit 0
+stdout:
+US-001  design_review  pass
+  approved
+stderr:
+
+$ sdlc gate implementation pass --note frozen tests green
+exit 0
+stdout:
+US-001  implementation  pass
+  frozen tests green
+stderr:
+
+$ sdlc artifact write verification
+exit 0
+stdout:
+US-001  verification  .sdlc/stories/US-001/VERIFICATION.md (15 bytes)
+stderr:
+
+$ sdlc gate verification pass --note all commands green
+exit 0
+stdout:
+US-001  verification  pass
+  all commands green
+stderr:
+
+$ sdlc gate verifier_review pass
+exit 1
+stdout:
+stderr:
+sdlc: verifier_review cannot pass until its reviews are in
+
+  why  verifier has not reviewed
+  fix  delegate to the reviewers this gate expects -- "sdlc review list" shows who is outstanding
+
+  SDLC-E0029  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029
+
+$ sdlc review add verifier_review verifier approve
+exit 0
+stdout:
+US-001  verifier_review  verifier  approve (round 1)
+  .sdlc/stories/US-001/reviews/verifier_review-verifier-1.md
+stderr:
+
+$ sdlc gate verifier_review pass --note approved
+exit 0
+stdout:
+US-001  verifier_review  pass
+  approved
+stderr:
+
+$ sdlc review add code_review code-reviewer approve
+exit 0
+stdout:
+US-001  code_review  code-reviewer  approve (round 1)
+  .sdlc/stories/US-001/reviews/code_review-code-reviewer-1.md
+stderr:
+
+$ sdlc gate code_review pass
+exit 1
+stdout:
+stderr:
+sdlc: code_review cannot pass until its reviews are in
+
+  why  security has not reviewed; perf has not reviewed; human-advocate has not reviewed
+  fix  delegate to the reviewers this gate expects -- "sdlc review list" shows who is outstanding
+
+  SDLC-E0029  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029
+
+$ sdlc review add code_review security note
+exit 0
+stdout:
+US-001  code_review  security  note (round 1)
+  .sdlc/stories/US-001/reviews/code_review-security-1.md
+stderr:
+
+$ sdlc review add code_review perf approve
+exit 0
+stdout:
+US-001  code_review  perf  approve (round 1)
+  .sdlc/stories/US-001/reviews/code_review-perf-1.md
+stderr:
+
+$ sdlc gate code_review pass
+exit 1
+stdout:
+stderr:
+sdlc: code_review cannot pass until its reviews are in
+
+  why  human-advocate has not reviewed
+  fix  delegate to the reviewers this gate expects -- "sdlc review list" shows who is outstanding
+
+  SDLC-E0029  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029
+
+$ sdlc review add code_review human-advocate approve
+exit 0
+stdout:
+US-001  code_review  human-advocate  approve (round 1)
+  .sdlc/stories/US-001/reviews/code_review-human-advocate-1.md
+stderr:
+
+$ sdlc status
+exit 0
+stdout:
+US-001  in progress  Example: reject invoices with a non-positive total
+
+  dor              pass  the criteria are testable
+  analysis         pass
+  tests_frozen     pass  1 criterion, 1 failing test
+  plan             pass  one step
+  design_review    pass  approved
+  implementation   pass  frozen tests green
+  verification     pass  all commands green
+  verifier_review  pass  approved
+
+  tests  1 test file frozen at <time>
+  cost   $0.00 of $60.00 (0%)
+
+  next   code_review
+
+  No Claude Code session is working it, so nothing is enforced until a person picks it up by typing /sdlc:next in Claude Code.
+
+  backlog  1 in progress
+
+A person types /sdlc:next in Claude Code to carry on, or runs `sdlc stop` to put it down.
+stderr:
+
+$ sdlc story list
+exit 0
+stdout:
+> US-001  in_progress   1  Example: reject invoices with a non-positive total
+
+> is what `sdlc start` would pick.
+stderr:
+
+$ sdlc artifact list
+exit 0
+stdout:
+  analysis   ANALYSIS.md    gate analysis   written by the researcher agent
+  threats    THREATS.md     gate analysis   written by the researcher agent
+  test_plan  TEST-PLAN.md   gate tests_frozen written by the sdet agent
+  plan       PLAN.md        gate plan       written by the implementer agent
+  verification VERIFICATION.md gate verification written by the verifier agent
+  retro      RETRO.md       gate retro      written by the bookkeeper agent
+stderr:
+
+$ sdlc review list
+exit 0
+stdout:
+  design_review   architect       blocking  approve (round 2)
+  design_review   red-team        advisory  note (round 1)
+  design_review   security        advisory  approve (round 1)
+  design_review   perf            on budget approve (round 1)
+  design_review   human-advocate  advisory  approve (round 1)
+  verifier_review verifier        blocking  approve (round 1)
+  code_review     code-reviewer   blocking  approve (round 1)
+  code_review     security        advisory  note (round 1)
+  code_review     perf            on budget approve (round 1)
+  code_review     human-advocate  advisory  approve (round 1)
+stderr:
+
+$ sdlc review list --gate design_review
+exit 0
+stdout:
+  design_review   architect       blocking  approve (round 2)
+  design_review   red-team        advisory  note (round 1)
+  design_review   security        advisory  approve (round 1)
+  design_review   perf            on budget approve (round 1)
+  design_review   human-advocate  advisory  approve (round 1)
+stderr:
+
+$ sdlc review list --gate code_review --story US-001
+exit 0
+stdout:
+  code_review     code-reviewer   blocking  approve (round 1)
+  code_review     security        advisory  note (round 1)
+  code_review     perf            on budget approve (round 1)
+  code_review     human-advocate  advisory  approve (round 1)
+stderr:
+
+$ sdlc log
+exit 0
+stdout:
+No story has been committed yet.
+stderr:
+
+$ sdlc log --since HEAD
+exit 0
+stdout:
+No story has been committed since <sha>.
+stderr:
+
+$ sdlc cost
+exit 0
+stdout:
+US-001  $0.00 spent of $60.00 (0%)
+stderr:
+
+$ sdlc cost --story US-001
+exit 0
+stdout:
+US-001  $0.00 spent of $60.00 (0%)
+stderr:
+
+$ sdlc doctor
+exit 1
+stdout:
+sdlc doctor
+
+  ok       git repository       <root>
+  ok       git command          found on PATH
+  ok       configuration        .sdlc/config.json
+  ok       backlog              user_stories.json  (1 story, one runnable)
+  ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read; no Claude Code session is working US-001, so nothing is enforced until a person picks it up by typing /sdlc:next in Claude Code
+  ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
+  problem  commands             no commands are configured, so every gate that runs one is skipped
+                                fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       sdlc on PATH         SDLC_BIN: <bin>
+
+1 problem. The fix is above it.
+stderr:
+
+$ sdlc gate code_review pass --note approved
+exit 0
+stdout:
+US-001  code_review  pass
+  approved
+stderr:
+
+$ sdlc cost add --usd 1.25
+exit 0
+stdout:
+US-001  $1.25 spent of $60.00 (2.1%)
+stderr:
+
+$ sdlc escalate spec_unclear --message is a zero total refused too?
+exit 0
+stdout:
+US-001  waiting for a person: spec_unclear
+  is a zero total refused too?
+
+The iteration has ended. A person reads the work and answers in their own terminal:
+  sdlc approve US-001
+  sdlc approve US-001 --reject "why"
+stderr:
+
+$ sdlc status
+exit 0
+stdout:
+No iteration running.
+
+  backlog  1 awaiting human
+  waiting  US-001  spec_unclear: is a zero total refused too?
+
+A person answers first, in their own terminal: `sdlc approve US-001`, or `sdlc approve US-001 --reject "why"`.
+stderr:
+
+$ sdlc story list
+exit 0
+stdout:
+> US-001  awaiting_human   1  Example: reject invoices with a non-positive total
+
+> is what `sdlc start` would pick.
+stderr:
+
+$ sdlc artifact list
+exit 0
+stdout:
+  analysis   ANALYSIS.md    gate analysis   written by the researcher agent
+  threats    THREATS.md     gate analysis   written by the researcher agent
+  test_plan  TEST-PLAN.md   gate tests_frozen written by the sdet agent
+  plan       PLAN.md        gate plan       written by the implementer agent
+  verification VERIFICATION.md gate verification written by the verifier agent
+  retro      RETRO.md       gate retro      written by the bookkeeper agent
+stderr:
+
+$ sdlc review list
+exit 1
+stdout:
+stderr:
+sdlc: there is no story being worked on
+
+  why  reviews belong to the story being worked on, and no iteration is running
+  fix  a person runs "sdlc start", or types /sdlc:next in Claude Code, to begin an iteration on the next story
+
+  SDLC-E0011  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0011
+
+$ sdlc review list --gate design_review
+exit 1
+stdout:
+stderr:
+sdlc: there is no story being worked on
+
+  why  reviews belong to the story being worked on, and no iteration is running
+  fix  a person runs "sdlc start", or types /sdlc:next in Claude Code, to begin an iteration on the next story
+
+  SDLC-E0011  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0011
+
+$ sdlc review list --gate code_review --story US-001
+exit 0
+stdout:
+  code_review     code-reviewer   blocking  approve (round 1)
+  code_review     security        advisory  note (round 1)
+  code_review     perf            on budget approve (round 1)
+  code_review     human-advocate  advisory  approve (round 1)
+stderr:
+
+$ sdlc log
+exit 0
+stdout:
+No story has been committed yet.
+stderr:
+
+$ sdlc log --since HEAD
+exit 0
+stdout:
+No story has been committed since <sha>.
+stderr:
+
+$ sdlc cost
+exit 1
+stdout:
+stderr:
+sdlc: there is no story being worked on
+
+  why  cost is kept per story, and no iteration is running
+  fix  name the story with --story -- a runner that records the cost once a session is over has to, because the iteration has ended by then
+
+  SDLC-E0011  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0011
+
+$ sdlc cost --story US-001
+exit 0
+stdout:
+US-001  $1.25 spent of $60.00 (2.1%)
+stderr:
+
+$ sdlc doctor
+exit 1
+stdout:
+sdlc doctor
+
+  ok       git repository       <root>
+  ok       git command          found on PATH
+  ok       configuration        .sdlc/config.json
+  ok       backlog              user_stories.json  (1 story, one runnable)
+  ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read
+  ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
+  problem  commands             no commands are configured, so every gate that runs one is skipped
+                                fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       sdlc on PATH         SDLC_BIN: <bin>
+
+1 problem. The fix is above it.
+stderr:
+
+$ sdlc approve US-001
+exit 0
+stdout:
+US-001  approved (spec_unclear)
+
+A person runs `sdlc start US-001`, or types /sdlc:next in Claude Code, to carry on.
+stderr:
+
+$ sdlc start
+exit 0
+stdout:
+Resumed US-001  Example: reject invoices with a non-positive total
+
+  dor              pass  the criteria are testable
+  analysis         pass
+  tests_frozen     pass  1 criterion, 1 failing test
+  plan             pass  one step
+  design_review    pass  approved
+  implementation   pass  frozen tests green
+  verification     pass  all commands green
+  verifier_review  pass  approved
+  code_review      pass  approved
+
+Next: a person types /sdlc:next in Claude Code to work the story.
+stderr:
+
+$ sdlc gate commit pass --note not yet
+exit 1
+stdout:
+stderr:
+sdlc: the commit gate cannot pass while there is uncommitted work
+
+  why  the gate records that this story reached trunk, and a working tree with changes in it has not
+  fix  commit the work, or stash what does not belong to this story by path with "git stash push -- <path>", then record the gate
+
+  SDLC-E0032  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0032
+
+$ sdlc gate commit pass --note committed
+exit 0
+stdout:
+US-001  commit  pass
+  committed
+  landed in <sha>..<sha>
+stderr:
+
+$ sdlc artifact write retro
+exit 0
+stdout:
+US-001  retro  .sdlc/stories/US-001/RETRO.md (8 bytes)
+stderr:
+
+$ sdlc gate retro pass --note no deviations
+exit 0
+stdout:
+US-001  retro  pass
+  no deviations
+
+US-001 is done: every gate has passed.
+stderr:
+
+$ sdlc status
+exit 0
+stdout:
+US-001  finished     Example: reject invoices with a non-positive total
+
+  dor              pass  the criteria are testable
+  analysis         pass
+  tests_frozen     pass  1 criterion, 1 failing test
+  plan             pass  one step
+  design_review    pass  approved
+  implementation   pass  frozen tests green
+  verification     pass  all commands green
+  verifier_review  pass  approved
+  code_review      pass  approved
+  commit           pass  committed
+  retro            pass  no deviations
+
+  tests  1 test file frozen at <time>
+  cost   $1.25 of $60.00 (2.1%)
+
+  backlog  1 done
+
+Every gate has passed. Run `sdlc stop` to end the iteration.
+stderr:
+
+$ sdlc story list
+exit 0
+stdout:
+  US-001  done   1  Example: reject invoices with a non-positive total
+
+Nothing to start: the one story in the backlog is finished.
+stderr:
+
+$ sdlc artifact list
+exit 0
+stdout:
+  analysis   ANALYSIS.md    gate analysis   written by the researcher agent
+  threats    THREATS.md     gate analysis   written by the researcher agent
+  test_plan  TEST-PLAN.md   gate tests_frozen written by the sdet agent
+  plan       PLAN.md        gate plan       written by the implementer agent
+  verification VERIFICATION.md gate verification written by the verifier agent
+  retro      RETRO.md       gate retro      written by the bookkeeper agent
+stderr:
+
+$ sdlc review list
+exit 0
+stdout:
+  design_review   architect       blocking  approve (round 2)
+  design_review   red-team        advisory  note (round 1)
+  design_review   security        advisory  approve (round 1)
+  design_review   perf            on budget approve (round 1)
+  design_review   human-advocate  advisory  approve (round 1)
+  verifier_review verifier        blocking  approve (round 1)
+  code_review     code-reviewer   blocking  approve (round 1)
+  code_review     security        advisory  note (round 1)
+  code_review     perf            on budget approve (round 1)
+  code_review     human-advocate  advisory  approve (round 1)
+stderr:
+
+$ sdlc review list --gate design_review
+exit 0
+stdout:
+  design_review   architect       blocking  approve (round 2)
+  design_review   red-team        advisory  note (round 1)
+  design_review   security        advisory  approve (round 1)
+  design_review   perf            on budget approve (round 1)
+  design_review   human-advocate  advisory  approve (round 1)
+stderr:
+
+$ sdlc review list --gate code_review --story US-001
+exit 0
+stdout:
+  code_review     code-reviewer   blocking  approve (round 1)
+  code_review     security        advisory  note (round 1)
+  code_review     perf            on budget approve (round 1)
+  code_review     human-advocate  advisory  approve (round 1)
+stderr:
+
+$ sdlc log
+exit 0
+stdout:
+<sha>..<sha>  US-001  Example: reject invoices with a non-positive total
+  rounds     design_review 2 · verifier_review 1 · code_review 1
+  blocks     1: design_review architect (round 1)
+  escalated  spec_unclear: is a zero total refused too? (answered)
+  spent      $1.25
+stderr:
+
+$ sdlc log --since HEAD
+exit 0
+stdout:
+No story has been committed since <sha>.
+stderr:
+
+$ sdlc cost
+exit 0
+stdout:
+US-001  $1.25 spent of $60.00 (2.1%)
+stderr:
+
+$ sdlc cost --story US-001
+exit 0
+stdout:
+US-001  $1.25 spent of $60.00 (2.1%)
+stderr:
+
+$ sdlc doctor
+exit 1
+stdout:
+sdlc doctor
+
+  ok       git repository       <root>
+  ok       git command          found on PATH
+  ok       configuration        .sdlc/config.json
+  ok       backlog              user_stories.json  (1 story, none runnable)
+  ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read; no Claude Code session is working US-001, so nothing is enforced until a person picks it up by typing /sdlc:next in Claude Code
+  ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
+  problem  commands             no commands are configured, so every gate that runs one is skipped
+                                fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       sdlc on PATH         SDLC_BIN: <bin>
+
+1 problem. The fix is above it.
+stderr:
+
+== .sdlc/stories/US-001/gate-record.json
+{
+  "story": "US-001",
+  "created": "<time>",
+  "base": "<sha>",
+  "commit_base": "<sha>",
+  "commit": "<sha>",
+  "gates": {
+    "analysis": {
+      "status": "pass",
+      "at": "<time>"
+    },
+    "code_review": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "approved"
+    },
+    "commit": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "committed"
+    },
+    "design_review": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "approved"
+    },
+    "dor": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "the criteria are testable"
+    },
+    "implementation": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "frozen tests green"
+    },
+    "plan": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "one step"
+    },
+    "retro": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "no deviations"
+    },
+    "tests_frozen": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "1 criterion, 1 failing test"
+    },
+    "verification": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "all commands green"
+    },
+    "verifier_review": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "approved"
+    }
+  },
+  "events": [
+    {
+      "at": "<time>",
+      "type": "loop_start",
+      "message": "iteration started"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "dor pass"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "analysis stored at .sdlc/stories/US-001/ANALYSIS.md"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "threats stored at .sdlc/stories/US-001/THREATS.md"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "analysis pass"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "test_plan stored at .sdlc/stories/US-001/TEST-PLAN.md"
+    },
+    {
+      "at": "<time>",
+      "type": "freeze",
+      "message": "1 test file frozen"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "tests_frozen pass"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "plan stored at .sdlc/stories/US-001/PLAN.md"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "plan pass"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "design_review architect block"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "design_review architect approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "design_review red-team note"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "design_review security approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "design_review perf approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "design_review human-advocate approve"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "design_review pass"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "implementation pass"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "verification stored at .sdlc/stories/US-001/VERIFICATION.md"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "verification pass"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "verifier_review verifier approve"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "verifier_review pass"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "code_review code-reviewer approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "code_review security note"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "code_review perf approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "code_review human-advocate approve"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "code_review pass"
+    },
+    {
+      "at": "<time>",
+      "type": "escalate",
+      "message": "spec_unclear: is a zero total refused too?"
+    },
+    {
+      "at": "<time>",
+      "type": "approval",
+      "message": "approved (spec_unclear)"
+    },
+    {
+      "at": "<time>",
+      "type": "loop_start",
+      "message": "iteration started"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "commit pass"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "retro stored at .sdlc/stories/US-001/RETRO.md"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "retro pass"
+    }
+  ],
+  "escalations": [
+    {
+      "at": "<time>",
+      "type": "spec_unclear",
+      "message": "is a zero total refused too?",
+      "tree_hash": "<sha>",
+      "resolved": true,
+      "story": "US-001"
+    }
+  ],
+  "approvals": [
+    {
+      "at": "<time>",
+      "decision": "approved",
+      "type": "spec_unclear",
+      "tree_hash": "<sha>"
+    }
+  ],
+  "reviews": [
+    {
+      "at": "<time>",
+      "gate": "design_review",
+      "role": "architect",
+      "verdict": "block",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/design_review-architect-1.md",
+      "note": "AC-1 has no step"
+    },
+    {
+      "at": "<time>",
+      "gate": "design_review",
+      "role": "architect",
+      "verdict": "approve",
+      "round": 2,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/design_review-architect-2.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "design_review",
+      "role": "red-team",
+      "verdict": "note",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/design_review-red-team-1.md",
+      "note": "nothing to add"
+    },
+    {
+      "at": "<time>",
+      "gate": "design_review",
+      "role": "security",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/design_review-security-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "design_review",
+      "role": "perf",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/design_review-perf-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "design_review",
+      "role": "human-advocate",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/design_review-human-advocate-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "verifier_review",
+      "role": "verifier",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/verifier_review-verifier-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "code_review",
+      "role": "code-reviewer",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/code_review-code-reviewer-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "code_review",
+      "role": "security",
+      "verdict": "note",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/code_review-security-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "code_review",
+      "role": "perf",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/code_review-perf-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "code_review",
+      "role": "human-advocate",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/code_review-human-advocate-1.md"
+    }
+  ],
+  "security_sensitive": false,
+  "spend": [
+    {
+      "at": "<time>",
+      "usd": 1.25
+    }
+  ]
+}
+
+$ sdlc stop
+exit 0
+stdout:
+Ended the iteration on US-001. Every gate passed, so the story is done and `sdlc start` moves on to the next one.
+stderr:
+
+$ sdlc status
+exit 0
+stdout:
+No iteration running.
+
+  backlog  1 done
+
+Nothing to start: the one story in the backlog is finished.
+Add a story to user_stories.json (schema: .sdlc/templates/story.schema.json).
+stderr:
+
+$ sdlc story list
+exit 0
+stdout:
+  US-001  done   1  Example: reject invoices with a non-positive total
+
+Nothing to start: the one story in the backlog is finished.
+stderr:
+
+$ sdlc artifact list
+exit 0
+stdout:
+  analysis   ANALYSIS.md    gate analysis   written by the researcher agent
+  threats    THREATS.md     gate analysis   written by the researcher agent
+  test_plan  TEST-PLAN.md   gate tests_frozen written by the sdet agent
+  plan       PLAN.md        gate plan       written by the implementer agent
+  verification VERIFICATION.md gate verification written by the verifier agent
+  retro      RETRO.md       gate retro      written by the bookkeeper agent
+stderr:
+
+$ sdlc review list
+exit 1
+stdout:
+stderr:
+sdlc: there is no story being worked on
+
+  why  reviews belong to the story being worked on, and no iteration is running
+  fix  a person runs "sdlc start", or types /sdlc:next in Claude Code, to begin an iteration on the next story
+
+  SDLC-E0011  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0011
+
+$ sdlc review list --gate design_review
+exit 1
+stdout:
+stderr:
+sdlc: there is no story being worked on
+
+  why  reviews belong to the story being worked on, and no iteration is running
+  fix  a person runs "sdlc start", or types /sdlc:next in Claude Code, to begin an iteration on the next story
+
+  SDLC-E0011  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0011
+
+$ sdlc review list --gate code_review --story US-001
+exit 0
+stdout:
+  code_review     code-reviewer   blocking  approve (round 1)
+  code_review     security        advisory  note (round 1)
+  code_review     perf            on budget approve (round 1)
+  code_review     human-advocate  advisory  approve (round 1)
+stderr:
+
+$ sdlc log
+exit 0
+stdout:
+<sha>..<sha>  US-001  Example: reject invoices with a non-positive total
+  rounds     design_review 2 · verifier_review 1 · code_review 1
+  blocks     1: design_review architect (round 1)
+  escalated  spec_unclear: is a zero total refused too? (answered)
+  spent      $1.25
+stderr:
+
+$ sdlc log --since HEAD
+exit 0
+stdout:
+No story has been committed since <sha>.
+stderr:
+
+$ sdlc cost
+exit 1
+stdout:
+stderr:
+sdlc: there is no story being worked on
+
+  why  cost is kept per story, and no iteration is running
+  fix  name the story with --story -- a runner that records the cost once a session is over has to, because the iteration has ended by then
+
+  SDLC-E0011  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0011
+
+$ sdlc cost --story US-001
+exit 0
+stdout:
+US-001  $1.25 spent of $60.00 (2.1%)
+stderr:
+
+$ sdlc doctor
+exit 1
+stdout:
+sdlc doctor
+
+  ok       git repository       <root>
+  ok       git command          found on PATH
+  ok       configuration        .sdlc/config.json
+  ok       backlog              user_stories.json  (1 story, none runnable)
+  ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read
+  ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
+  problem  commands             no commands are configured, so every gate that runs one is skipped
+                                fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       sdlc on PATH         SDLC_BIN: <bin>
+
+1 problem. The fix is above it.
+stderr:
+
+$ sdlc ack --through HEAD
+exit 0
+stdout:
+Acknowledged through <sha>. `sdlc log` starts after it.
+stderr:
+
+$ sdlc log
+exit 0
+stdout:
+No story has been committed since <sha>, the last commit acknowledged. `sdlc log --all` lists every one.
+stderr:
+

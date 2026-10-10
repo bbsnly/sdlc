@@ -1141,6 +1141,79 @@ started.
 Take out the entries that are not built in, or take the setting out. The built-in list is in
 [enforcement](enforcement.md#unattended-sessions).
 
+### SDLC-E0067
+
+A `sdlc staffing` command was run in a project where the staffing is off. There is no staffing to
+show, record or change: every agent takes part in every story, and each runs as its definition
+says. Nothing was changed.
+
+To use it, a person sets `staffing.enabled` to `true` in the project's configuration, with the
+models and efforts a staffing may ask for. [Configuration](configuration.md#staffing) has a worked
+example.
+
+### SDLC-E0068
+
+The staffing is on and none is recorded for the story. `sdlc gate analysis pass` refuses until
+there is one, `sdlc staffing amend` has nothing to change, and `sdlc staffing show` has nothing to
+show. Until one is recorded every gate waits for every reviewer.
+
+Delegate to `sdlc:project-manager`, which records the staffing with `sdlc staffing set`. The
+runbook does this when a story is found ready.
+
+### SDLC-E0069
+
+`sdlc staffing set` was given something that is not a whole staffing, or the story already has
+one. A staffing names each of the plugin's twelve agents once, says whether the story needs it
+with a reason, and for each agent it needs gives a model, an effort and a reason for them. The
+reason in the message says which of these was missing. Nothing was recorded.
+
+Give the whole staffing again. One that is already recorded is changed an agent at a time with
+`sdlc staffing amend <agent> --reason "..."`.
+
+### SDLC-E0070
+
+A staffing or an amendment left out an agent that is never left out: an agent that does a gate's
+work, the verifier, the code reviewer, or security on a story recorded as security-sensitive.
+Security also stays in until the analysis has recorded the story as not security-sensitive.
+Nothing was recorded.
+
+Keep the agent. To spend less on it, ask for a lower model or effort instead.
+
+### SDLC-E0071
+
+A model or an effort was asked for that `staffing.models` or `staffing.efforts` does not list, or
+that is below what `staffing.lowest` has for the agent. The names are compared exactly. The reason
+lists what is allowed for the agent, from the lowest up. Nothing was recorded.
+
+Ask for one of those. A person changes the lists in the `staffing` section of the project's
+configuration.
+
+### SDLC-E0072
+
+A staffing or an amendment would change what a person assigned to an agent with
+`sdlc staffing assign`. What a person chose stays as it is. Nothing was recorded.
+
+Leave that agent's model, effort or place in the story out of the change. Only a person changes
+it, by running `sdlc staffing assign` again in their own terminal.
+
+### SDLC-E0073
+
+A staffing or an amendment would leave out a reviewer whose latest review is a block at a gate
+that has not passed. The gate would then pass over the block. Nothing was recorded.
+
+Take the reviewer's findings through rework and have it review again; amend once its latest
+review is no longer a block. Where the block itself is wrong, hand the story to a person with
+`sdlc escalate <type> --message "..."`. The person answers the reviewer, or records the gate as
+failed.
+
+### SDLC-E0074
+
+`sdlc staffing assign` was run where a Claude Code session id is set. Assigning a model or an
+effort to an agent is a person's decision. Nothing was recorded.
+
+A person runs it in their own terminal, outside Claude Code. An assistant stops here and says what
+it would have asked for.
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session working a story as a
@@ -1220,6 +1293,14 @@ Until it can, a test is whatever the default patterns call one — `tests/`,
 paths, write scopes and the freeze all still hold, measured that way; a test
 kept somewhere only your own patterns name is not recognised as one.
 `sdlc doctor` names it under "configuration".
+
+A commit is then not checked against what was reviewed either: the hook warns
+that the working tree could not be measured and lets it through, and
+`sdlc gate commit pass` checks it afterwards, the staffing included. A
+`staffing` section that parses and names an agent or a reviewer `sdlc` does not
+have is different: the hook reads the rest of the file as it stands, and every
+command refuses to run until the name is corrected
+([SDLC-E0045](#sdlc-e0045)).
 
 ### `.sdlc/state/tests.lock could not be read, so every test file is being treated as frozen`
 

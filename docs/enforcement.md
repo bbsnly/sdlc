@@ -1016,6 +1016,70 @@ in their own terminal is not asked.
 *Instead:* delegate to the reviewer, which reads the work and records its own
 verdict.
 
+### `assignment-is-a-human-decision`
+
+Refuses `sdlc staffing assign` run from a tool call, in any session, in any
+project with `.sdlc/config.json` the call reaches, whether or not a story is
+being worked on and whether the staffing is on or off.
+
+What `sdlc staffing assign` records says a person chose a model or an effort for
+an agent, and the project manager cannot change it afterwards. A session that
+could run it could pin every agent where it liked, in a person's name.
+
+The word after `sdlc staffing` is read against the three the hook knows: `show`,
+`set` and `amend`. Any other word is refused, and so is one the shell makes when
+the command runs, since it could be `assign`. `sdlc staffing` with no word after
+it is refused unless it asks for help.
+
+*Instead:* say what you would have asked for, and stop. A person runs
+`sdlc staffing assign` in their own terminal, outside Claude Code.
+`sdlc staffing --help` lists the commands.
+
+The same rule refuses a run of `sdlc` whose subcommand cannot be read, because
+it could be this command or another only a person runs. That is a run where the
+word after `sdlc` comes from a variable, a substitution or a pattern, and a run
+that is handed its words on standard input by `xargs` or GNU `parallel`. It
+applies to every `sdlc` command, not only the staffing's, and the refusal says
+which of the two it met.
+
+*Instead:* write the subcommand out as a literal word, `sdlc status` and not a
+variable that holds `status`; and pass the words on the command line.
+
+Where `sdlc` is not the program a command runs but a later word of it, as in a
+copy of a built binary or a `cd` into a directory of that name, none of this
+applies: only a written-out `staffing` followed by a verb other than the three
+is refused there.
+
+### `staffing-is-recorded-by-the-project-manager`
+
+Refuses `sdlc staffing set` and `sdlc staffing amend` in the session working a
+story, from anyone but the `sdlc:project-manager` agent: the main conversation,
+a subagent outside the loop, and every agent the staffing is about.
+
+The staffing says who takes part in a story and what each is asked for. The
+session that runs the loop is the one a smaller staffing saves work for, and the
+agents are the ones it leaves out, so none of them writes it. Where no story is
+being worked on the hook does not ask; the commands themselves refuse, because
+they write only the story being worked on.
+
+*Instead:* delegate to `sdlc:project-manager` with the story and what happened.
+
+### `project-manager-only-staffs`
+
+Refuses the `sdlc:project-manager` agent every run of `sdlc` but the ones it is
+for: `sdlc staffing show`, `sdlc staffing set`, `sdlc staffing amend`, the
+commands that only read (`sdlc status`, `sdlc review list`, `sdlc story list`,
+`sdlc artifact list`, `sdlc log`, `sdlc cost`, `sdlc doctor`, `sdlc version`),
+and any command asked for its help. It is a list of what it may run, so a
+command this version does not have, and a subcommand that cannot be read, are
+refused too.
+
+The project manager decides who takes part. An agent that could also record a
+gate or a review, or hand the story to a person, would be deciding the story.
+
+*Instead:* record or amend the staffing, and say anything else in your result.
+Handing a story to a person is for the main conversation running the runbook.
+
 ### `commit-gate`
 
 Refuses `git commit` until every gate before the commit gate has passed. The
@@ -1315,6 +1379,9 @@ Bash(sdlc status:*)
 Bash(sdlc gate:*)
 Bash(sdlc artifact:*)
 Bash(sdlc review:*)
+Bash(sdlc staffing set:*)
+Bash(sdlc staffing amend:*)
+Bash(sdlc staffing show:*)
 Bash(sdlc escalate:*)
 Bash(sdlc freeze:*)
 Bash(sdlc story:*)
@@ -1335,7 +1402,9 @@ whole. It has no network tool, no `git push`, no `claude`, no `sdlc approve`,
 `unfreeze`, `ack`, `release`, `parallel` or `stop`, no `git commit`, no
 interpreter or runner (`go run`, `sh`, `python3`, `env`, `xargs`, `npm run`),
 and no `git diff`, `log` or `show`, whose `--output` writes a file where it is
-told. What it does have is worth reading as it is:
+told. The staffing's commands are named one by one for the same reason:
+`sdlc staffing` as a whole would pre-approve `sdlc staffing assign`, which is a
+person's. What it does have is worth reading as it is:
 
 - **The toolchain entries run code the session wrote, with your privileges.**
   `go test`, `go build`, `cargo test`, `npm test` and `pytest` are arbitrary

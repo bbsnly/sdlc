@@ -64,6 +64,10 @@ decide what to do:
 | `next` | the story `sdlc start` would pick up. Only present when nothing is active, and absent while a story waits for a person |
 | `waiting` | every story handed to a person with `sdlc escalate` and not yet answered, with the question it asks |
 
+Where the project has the [staffing](#sdlc-staffing) on, a `staffing` line says
+whether one is recorded for the active story and names who it leaves out, and
+`staffing` in `--json` is `none` or `recorded`.
+
 In a repository with linked worktrees, status also lists every story a checkout
 holds, on a `held` line naming the checkout, and `held` in `--json` has one
 entry per story, with its `checkout`, `here` for the one you ran it in, `gone`
@@ -156,6 +160,15 @@ In `--json`, `range_source` is `record`, `message` or `unknown`, and
 `--since`, `all` for `--all`, or `none` when nothing is acknowledged. `since` is
 the full commit it started after, and `spent_usd` is always there, `0` for a
 story with no spend recorded.
+
+An entry for a story with a [staffing](#sdlc-staffing) has a `staffing` line
+for each agent — what it was asked for, or that it was left out, and why — and
+one for each change made to it. After them comes the record's own line for each
+time the staffing was recorded, amended or assigned, with when: those lines stay
+when a staffing is lost or recorded a second time, and a second recording says
+how many changes came before it. In `--json` that is `staffing`, with `agents`
+and `amendments` as [`sdlc staffing show`](#sdlc-staffing-show) gives them, and
+`staffing_events`.
 
 An entry for a story that is not finished, in a repository with linked
 worktrees, names the checkout that holds it on a `held` line, and as `held_by`
@@ -543,6 +556,12 @@ has to report; perf is `on budget`: it never has to approve, and its block
 stops the gate, because it blocks only on a performance budget the contract
 states.
 
+Where the story has a [staffing](#sdlc-staffing), a reviewer it leaves out
+reads `left out` with the staffing's reason, and the gate does not wait for it:
+`left_out` and `reason` in `--json`. A reviewer the staffing leaves out that a
+changed path brings back to the code review is listed as any other, with the
+path: `brought_back_by` in `--json`.
+
 ## `sdlc review add GATE ROLE VERDICT`
 
 Record one reviewer's conclusion.
@@ -574,6 +593,156 @@ person as `review_not_converging`, and says so — `handed_over` in `--json`.
 
 Rounds are kept rather than overwritten, so "what did the architect say last
 time" stays answerable.
+
+## `sdlc staffing`
+
+The staffing is, for one story, which of the plugin's agents the story needs and
+the model and effort each is asked for. It is off unless the project sets
+[`staffing.enabled`](configuration.md#staffing); while it is off, each of the
+four commands below is refused with
+[SDLC-E0067](troubleshooting.md#sdlc-e0067) and every agent takes part in every
+story. [Agents](agents.md#the-staffing) says how it is chosen.
+
+`sdlc staffing` on its own prints what the four commands are.
+
+What is recorded and shown is what was asked for. The environment can override
+both a model and an effort, and `sdlc` does not observe what a delegation is
+given, so no output says more than that.
+
+## `sdlc staffing show`
+
+Show the story's staffing, and who to delegate to at a gate.
+
+```console
+$ sdlc staffing show
+$ sdlc staffing show --gate code_review --json
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--gate` | who to delegate to at this gate, instead of the one the story is at |
+| `--story` | for this story instead of the one being worked on |
+
+Prints the models and efforts the project allows, lowest first, the paths that
+bring a reviewer back to the code review, then one line for each agent: what it
+is asked for, or that it is left out, with the reason, and whether a person
+chose it. Every change made since follows, with when and why. A reason is
+printed quoted, because a model or a person wrote it.
+
+In `--json`, `agents` has a row for each agent: `needed`, `reason`,
+`asked_model`, `asked_effort` and `asked_reason`. `set_by` is `person` on a row
+[`sdlc staffing assign`](#sdlc-staffing-assign-agent) recorded, and absent
+otherwise; it says which command wrote the row, and nothing about who typed it.
+`brought_back_by` is the changed path that has the code review wait for a
+reviewer the staffing leaves out. `at_gate` is who to delegate to at the gate:
+the agent that does the gate's work and each reviewer the gate waits for, with
+what each is asked for. `amendments` is every change, each with `at`, `agent`,
+`change`, `reason` and `by`.
+
+With the staffing on and none recorded it fails with
+[SDLC-E0068](troubleshooting.md#sdlc-e0068).
+
+## `sdlc staffing set`
+
+Record the story's staffing. The `sdlc:project-manager` agent runs it, once,
+when the story has been found ready.
+
+```console
+$ sdlc staffing set < staffing.json
+$ sdlc staffing set --file /tmp/staffing.json
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--file` | read the staffing from this path instead of standard input |
+| `--story` | the story being worked on, which is the only one a staffing is recorded for |
+
+The staffing is a JSON document with one row for each agent the plugin ships:
+
+```json
+{"agents": [
+  {"agent": "perf", "needed": false, "reason": "nothing here is on a hot path"},
+  {"agent": "verifier", "needed": true, "reason": "every story is verified",
+   "asked_model": "opus", "asked_effort": "high",
+   "asked_reason": "the criteria turn on an ordering that is easy to misread"}
+]}
+```
+
+An agent the story needs comes with the model and effort asked for and the
+reason for them. Nothing else in the document is read. A document that leaves an
+agent out, names one twice or gives no reason is refused with
+[SDLC-E0069](troubleshooting.md#sdlc-e0069), and so is a second `set`: a
+recorded staffing is changed with `sdlc staffing amend`.
+
+Some agents are never left out — the ones that do a gate's work, the verifier,
+the code reviewer, and security on a story that is security-sensitive or not yet
+said not to be ([SDLC-E0070](troubleshooting.md#sdlc-e0070)). A model or effort
+outside the project's lists, or below the agent's lowest, is refused with
+[SDLC-E0071](troubleshooting.md#sdlc-e0071), which names what is allowed. What a
+person assigned stands: a staffing that disagrees with it is refused with
+[SDLC-E0072](troubleshooting.md#sdlc-e0072).
+
+While the staffing is on, `sdlc gate analysis pass` waits for one to be
+recorded.
+
+## `sdlc staffing amend AGENT`
+
+Change one agent of the staffing, with the reason. The `sdlc:project-manager`
+agent runs it: when the analysis is recorded, and whenever an agent's work fell
+short or the work turned out other than expected.
+
+```console
+$ sdlc staffing amend perf --left-out --reason "nothing here is on a hot path"
+$ sdlc staffing amend researcher --model opus --reason "its first pass missed the callers"
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--needed` | the story needs the agent after all; give `--model` and `--effort` with it |
+| `--left-out` | the story does not need the agent |
+| `--model` | the model to ask for, one of `staffing.models` |
+| `--effort` | the effort to ask for, one of `staffing.efforts` |
+| `--reason` | why, from what happened or what the work is. Required |
+| `--story` | the story being worked on, which is the only one a staffing is amended for |
+
+What changed, when and why is kept, and `sdlc staffing show` and `sdlc log`
+print it.
+
+A gate that has passed stays passed when a reviewer is brought in: the reviewer
+is waited for from then on, at the next gate it reviews, and at the commit gate
+when it was brought in after the code review passed.
+
+It is held to everything `sdlc staffing set` is. A reviewer whose latest review
+is a block at a gate that has not passed is not left out
+([SDLC-E0073](troubleshooting.md#sdlc-e0073)): the block is answered by rework,
+or by a person.
+
+## `sdlc staffing assign AGENT`
+
+Pin the model or the effort an agent is asked for on a story. This is how a
+person says so: they run it in their own terminal, outside Claude Code.
+
+```console
+$ sdlc staffing assign security --model opus --effort high --reason "this one touches the installer"
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--model` | the model to ask for, one of `staffing.models` |
+| `--effort` | the effort to ask for, one of `staffing.efforts` |
+| `--reason` | why. Required |
+| `--story` | a story that has been started, instead of the one being worked on |
+
+The agent is then needed at every gate it has a part in, and no staffing or
+amendment changes what was assigned. Running it again changes it. Before a
+staffing is recorded, or for an agent the staffing leaves out, it takes both
+`--model` and `--effort`. It is held to the project's limits like any staffing,
+and it cannot take an agent off a story.
+
+It is refused wherever a Claude Code session id is set
+([SDLC-E0074](troubleshooting.md#sdlc-e0074)), and the hook refuses it to every
+session ([enforcement](enforcement.md#assignment-is-a-human-decision)). What
+`set_by: person` records is that this command wrote the row.
 
 ## `sdlc freeze`
 

@@ -213,6 +213,30 @@ var (
 
 	ParallelAllowlistWidened = register("SDLC-E0066",
 		`"parallel.allow" can only narrow the built-in list of tools a session is given: take out the entries that are not built in, or take the setting out of the project's configuration`)
+
+	StaffingOff = register("SDLC-E0067",
+		`to use the staffing, a person sets "staffing.enabled" to true in the project's configuration, with the models and efforts it may ask for (docs/configuration.md has an example); until then every agent takes part and each runs as its definition says`)
+
+	StaffingNone = register("SDLC-E0068",
+		`no staffing is recorded for the story: delegate to sdlc:project-manager, which records one with "sdlc staffing set"; until it has, every agent is needed`)
+
+	StaffingInvalid = register("SDLC-E0069",
+		`a staffing names each of the plugin's agents once, with a reason, and for each agent it needs a model, an effort and a reason for them; one that is recorded is changed with "sdlc staffing amend <agent> --reason ..."`)
+
+	StaffingNeverLeftOut = register("SDLC-E0070",
+		`keep the agent: the agents that do a gate's work, the verifier, the code reviewer, and security on a story recorded as security-sensitive always take part; ask for a lower model or effort instead of leaving it out`)
+
+	StaffingOutsideLimits = register("SDLC-E0071",
+		`ask for a model from "staffing.models" and an effort from "staffing.efforts", neither below what "staffing.lowest" has for the agent; a person changes those lists in the project's configuration`)
+
+	StaffingAssigned = register("SDLC-E0072",
+		`a person chose this for the agent, so it stays as it is: leave it out of the change; only a person changes it, with "sdlc staffing assign" in their own terminal`)
+
+	StaffingReviewBlocks = register("SDLC-E0073",
+		`the reviewer's latest review is a block, and leaving it out would pass the gate over it: take its findings through rework and have it review again, then amend once its latest review is no longer a block; where the block itself is wrong, hand the story to a person with "sdlc escalate <type> --message ...", who answers the reviewer or records the gate as failed`)
+
+	StaffingAssignInSession = register("SDLC-E0074",
+		`"sdlc staffing assign" is a person's: a person runs it in their own terminal, outside Claude Code; an assistant stops here and says what it would have asked for`)
 )
 
 // entry is one row of the catalogue.

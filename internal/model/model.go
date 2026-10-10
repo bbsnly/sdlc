@@ -742,6 +742,107 @@ type Record struct {
 	Flags       map[string]any      `json:"flags,omitempty"`
 	Metrics     map[string]any      `json:"metrics,omitempty"`
 	Spend       []Spend             `json:"spend,omitempty"`
+	// Staffing is which agents the story needs and what each is asked for, in
+	// a project that turns the staffing on. Nil is none recorded, and then every
+	// agent is needed.
+	Staffing *Staffing `json:"staffing,omitempty"`
+}
+
+// Staffing is the project manager's answer, for one story, to which agents it
+// needs and what model and effort each is asked for. It records what was asked
+// for: nothing observes what a delegation is given.
+type Staffing struct {
+	// At is when `sdlc staffing set` recorded it. Empty, there are only a
+	// person's assignments, made before any staffing was, and none is recorded.
+	At     string    `json:"at,omitempty"`
+	Agents []Staffed `json:"agents,omitempty"`
+	// Assigned is what a person pinned with `sdlc staffing assign`.
+	Assigned   []Assigned  `json:"assigned,omitempty"`
+	Amendments []Amendment `json:"amendments,omitempty"`
+	// BroughtBack is each reviewer the staffing leaves out that a changed path
+	// brought back, and that path, when code_review or commit last passed. The
+	// hook reads it, because the hook makes no git call.
+	BroughtBack map[string]string `json:"brought_back,omitempty"`
+}
+
+// Staffed is one agent's row of a staffing.
+type Staffed struct {
+	Agent       string `json:"agent"`
+	Needed      bool   `json:"needed"`
+	Reason      string `json:"reason,omitempty"`
+	AskedModel  string `json:"asked_model,omitempty"`
+	AskedEffort string `json:"asked_effort,omitempty"`
+	AskedReason string `json:"asked_reason,omitempty"`
+}
+
+// Assigned is what a person chose for one agent. An attribute left empty is
+// not pinned, and stays the project manager's.
+type Assigned struct {
+	Agent  string `json:"agent"`
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+}
+
+// Amendment is one change to a staffing after it was recorded.
+type Amendment struct {
+	At     string `json:"at"`
+	Agent  string `json:"agent"`
+	Change string `json:"change"`
+	Reason string `json:"reason"`
+	By     string `json:"by"`
+}
+
+// The events a staffing leaves in the record's history. An sdlc from before
+// the staffing keeps events it does not know and drops the staffing itself, so
+// these are what shows that one was there.
+const (
+	EventStaffingSet    = "staffing_set"
+	EventStaffingAmend  = "staffing_amend"
+	EventStaffingAssign = "staffing_assign"
+)
+
+// Agents is every agent the plugin ships, by the name a staffing gives it.
+var Agents = []string{
+	"project-manager", "researcher", "sdet", "implementer", "verifier", "bookkeeper",
+	"architect", "security", "red-team", "perf", "human-advocate", "code-reviewer",
+}
+
+// Doers pairs each gate that has work with the agent that does it. The gates
+// that are not here are recorded by the session or are a review.
+var Doers = []struct {
+	Gate  Gate
+	Agent string
+}{
+	{GateAnalysis, "researcher"},
+	{GateTestsFrozen, "sdet"},
+	{GatePlan, "implementer"},
+	{GateImplementation, "implementer"},
+	{GateVerification, "verifier"},
+	{GateRetro, "bookkeeper"},
+}
+
+// NeverLeftOut reports whether a staffing may not leave the agent out: every
+// agent that is not a reviewer, the verifier, the code reviewer, and security
+// on a story that is security-sensitive.
+func NeverLeftOut(agent string, sensitive bool) bool {
+	return !IsReviewRole(agent) || agent == "verifier" || agent == "code-reviewer" || agent == "security" && sensitive
+}
+
+// LeftOut reports whether the staffing leaves the agent out of the story. It
+// applies the floor each time it is asked, for every agent: applied once, when
+// the staffing was stored, a record edited by hand or stored before the
+// analysis said the story was sensitive kept security out.
+func (r *Record) LeftOut(agent string) bool {
+	if r.Staffing == nil || NeverLeftOut(agent, r.SecuritySensitive()) {
+		return false
+	}
+	return slices.ContainsFunc(r.Staffing.Agents, func(a Staffed) bool { return a.Agent == agent && !a.Needed })
+}
+
+// StoodDown reports whether a reviewer is left out and was not brought back
+// when code review last passed, so its stale review holds nothing.
+func (r *Record) StoodDown(role string) bool {
+	return r.LeftOut(role) && r.Staffing.BroughtBack[role] == ""
 }
 
 // Mark is a landing between its two writes: trunk moved from From to To, and

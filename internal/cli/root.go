@@ -58,6 +58,7 @@ func New(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newGateCmd(),
 		newArtifactCmd(),
 		newReviewCmd(),
+		newStaffingCmd(),
 		newFreezeCmd(),
 		newUnfreezeCmd(),
 		newEscalateCmd(),
@@ -267,6 +268,9 @@ func openStore(cmd *cobra.Command) (*store.Store, *config.Project, error) {
 	}
 	p, err := config.Open(env.dir)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := staffingRoster(p.Config.Staffing); err != nil {
 		return nil, nil, err
 	}
 	return store.New(p).WithEnv(env.getenv), p, nil

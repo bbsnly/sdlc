@@ -90,13 +90,23 @@ flowchart TD
 | 8 | `commit` | the conversation | none | the commit | `sdlc approve`, for a story in a paused risk tier (`high` by default) |
 | 9 | `retro` | `sdlc:bookkeeper` | none | `RETRO.md`, and `CODEMAP.md` for anything new | `sdlc log` and `sdlc ack`, once the story is on trunk |
 
-Eleven agents take part. A story that needs no rework runs fifteen of them:
-one each at Gates 2, 3, 5, 6 and 9, six at Gate 4 and four at Gate 7, plus the
-human advocate at Gate 1 when the project asks for it. Every one starts from a
-fresh context, and none reads another's work at the same gate. A gate that keeps
-failing, or a reviewer that keeps blocking, hands the story to a person after
-[`loop.max_rework_rounds`](configuration.md#loop) failures or
+Twelve agents take part. With the staffing off, a story that needs no rework
+runs fifteen of them: one each at Gates 2, 3, 5, 6 and 9, six at Gate 4 and four
+at Gate 7, plus the human advocate at Gate 1 when the project asks for it. With
+it on, `sdlc:project-manager` runs twice more, after Gates 1 and 2, and each
+reviewer it leaves out is one run fewer at Gate 4, Gate 7 or both. Every one
+starts from a fresh context, and none reads another's work at the same gate. A
+gate that keeps failing, or a reviewer that keeps blocking, hands the story to a
+person after [`loop.max_rework_rounds`](configuration.md#loop) failures or
 `loop.max_review_rounds` blocks.
+
+**The staffing** is, for one story, which agents the story needs and the model
+and effort each is asked for, with a reason for each. It is recorded in the
+story's gate record by `sdlc:project-manager` where the project has
+[`staffing.enabled`](configuration.md#staffing), and a gate then waits only for
+the reviewers the story needs. It is not the plan: the plan is Gate 4's
+document, and says how the change is made, not who makes it.
+[Agents](agents.md#the-staffing) says how it is chosen and where to read it.
 
 ## Where everything lives
 

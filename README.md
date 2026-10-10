@@ -58,7 +58,7 @@ to install the binary for you.
 The repository is its own marketplace, so there is nothing else to add. What
 you get is three skills only you start in Claude Code — `/sdlc:next` to work the
 loop, `/sdlc:trunk-review` to look back at what landed and `/sdlc:consolidate`
-to turn the retros into changes to your contract and configuration — eleven
+to turn the retros into changes to your contract and configuration — twelve
 agents, and the `PreToolUse`, `PostToolUse` and `Stop` hooks.
 
 The plugin does nothing until a person types `/sdlc:next`. In Claude Code the
@@ -206,6 +206,7 @@ the argument for a change is not a reviewer.
 
 | Agent | Gate | Can it block? |
 | --- | --- | --- |
+| `sdlc:project-manager` | after 1 and 2 · the staffing, if the project asks | — |
 | `sdlc:researcher` | 2 · analysis and threats | — |
 | `sdlc:sdet` | 3 · acceptance tests | — |
 | `sdlc:implementer` | 4 · the plan, 5 · the code | — |
@@ -220,7 +221,9 @@ the argument for a change is not a reviewer.
 
 Advisory does not mean optional. A gate will not pass until every reviewer it
 expects has reported, because a reviewer you can skip by not running it is not a
-reviewer.
+reviewer. The one exception is recorded and shown: where a project turns the
+staffing on, a reviewer a story's staffing leaves out is listed by
+`sdlc review list` with the reason.
 
 ## Prerequisites
 

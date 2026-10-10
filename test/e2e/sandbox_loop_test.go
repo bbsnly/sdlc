@@ -416,6 +416,9 @@ var personsDecisions = []struct{ command, rule string }{
 	{`sdlc release US-001 --reason "moved"`, "release-is-a-human-decision"},
 	{"sdlc stop", "stop-is-a-human-decision"},
 	{"sdlc parallel US-001", "parallel-is-a-human-decision"},
+	// US-026 AC-8: what a person assigns to a story, in a project that has the
+	// staffing on or off.
+	{`sdlc staffing assign security --model opus --effort high --reason "mine"`, "assignment-is-a-human-decision"},
 }
 
 // A whole story with every step that needs a person in it, and nobody there:

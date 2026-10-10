@@ -268,7 +268,17 @@ func TestAnAgentOutsideTheLoopIsHeldToTheMainConversationsRules(t *testing.T) {
 
 // Every agent the plugin ships is one the loop knows. One that was not would be
 // refused every write as though it were the main conversation.
+//
+// That is what the project manager is meant to be (US-026 AC-12): it writes no
+// file, only the staffing through `sdlc staffing set` and `amend`, and being
+// refused every Write and Edit as the main conversation is, is the rule it is
+// held to. It is the one agent left out here, by name; any other agent that is
+// not a loop role still fails.
 func TestEveryAgentThePluginShipsIsALoopRole(t *testing.T) {
+	const writesNoFile = "project-manager"
+	if IsLoopRole("sdlc:" + writesNoFile) {
+		t.Errorf("%s is a loop role, so the file rules let it write: it is left out below because it must not be", writesNoFile)
+	}
 	files, err := filepath.Glob(filepath.Join("..", "..", "plugin", "agents", "*.md"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no agents found: %v", err)
@@ -287,6 +297,9 @@ func TestEveryAgentThePluginShipsIsALoopRole(t *testing.T) {
 		}
 		if name == "" {
 			t.Errorf("%s has no name", f)
+			continue
+		}
+		if name == writesNoFile {
 			continue
 		}
 		if !IsLoopRole("sdlc:" + name) {

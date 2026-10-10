@@ -14,7 +14,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -53,6 +55,30 @@ type Config struct {
 	HumanGates HumanGates        `json:"human_gates"`
 	Budget     Budget            `json:"budget"`
 	Parallel   Parallel          `json:"parallel"`
+	Staffing   Staffing          `json:"staffing"`
+}
+
+// Staffing turns the staffing on and bounds what one may ask for. Absent or
+// off, every agent takes part in every story and nothing here is read.
+type Staffing struct {
+	Enabled bool `json:"enabled"`
+	// Models and Efforts are the names a staffing may ask for, lowest first.
+	// The order is the ranking: nothing ranks a model or an effort by its name.
+	Models  []string `json:"models"`
+	Efforts []string `json:"efforts"`
+	// Lowest is, for an agent, the lowest of each it may be asked for. An agent
+	// with no entry may be asked for from the first name in each list.
+	Lowest map[string]Lowest `json:"lowest"`
+	// BringBack lists, for a reviewer of the code, the paths a change to which
+	// brings it back to the code review after a staffing left it out.
+	BringBack map[string][]string `json:"bring_back"`
+}
+
+// Lowest is the lowest model and effort one agent may be asked for. An empty
+// one is not a limit.
+type Lowest struct {
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
 }
 
 // Parallel is what `sdlc parallel --unattended` may be narrowed by.
@@ -361,12 +387,59 @@ func (c Config) validate() error {
 			problems = append(problems, fmt.Sprintf("%s is %v, and 0 is how it is turned off", n.name, n.value))
 		}
 	}
+	if c.Staffing.Enabled {
+		problems = append(problems, c.Staffing.problems()...)
+	}
 	if len(problems) == 0 {
 		return nil
 	}
 	return sdlcerr.New(sdlcerr.ConfigInvalid,
 		File+" has settings sdlc cannot use",
 		strings.Join(problems, "; "))
+}
+
+// problems is what is wrong with a staffing section that is on. One that is
+// on and cannot be used must not load: read as a staffing with no bounds, a
+// mistyped list allowed anything, and a path that matches nothing was a
+// protection a person believed in that was not there.
+func (s Staffing) problems() []string {
+	var problems []string
+	for _, l := range []struct {
+		name  string
+		names []string
+	}{{"staffing.models", s.Models}, {"staffing.efforts", s.Efforts}} {
+		if len(l.names) == 0 {
+			problems = append(problems, l.name+" is empty, and the staffing is on: list what a staffing may ask for, lowest first")
+		}
+		seen := map[string]bool{}
+		for _, n := range l.names {
+			if strings.TrimSpace(n) == "" || seen[n] {
+				problems = append(problems, fmt.Sprintf("%s has %q, which is blank or listed twice", l.name, n))
+			}
+			seen[n] = true
+		}
+	}
+	for _, agent := range slices.Sorted(maps.Keys(s.Lowest)) {
+		low := s.Lowest[agent]
+		if low.Model != "" && !slices.Contains(s.Models, low.Model) {
+			problems = append(problems, fmt.Sprintf("staffing.lowest has the model %q for %s, which staffing.models does not list", low.Model, agent))
+		}
+		if low.Effort != "" && !slices.Contains(s.Efforts, low.Effort) {
+			problems = append(problems, fmt.Sprintf("staffing.lowest has the effort %q for %s, which staffing.efforts does not list", low.Effort, agent))
+		}
+	}
+	for _, reviewer := range slices.Sorted(maps.Keys(s.BringBack)) {
+		for _, p := range s.BringBack[reviewer] {
+			// A path is matched segment by segment against what git reports, so
+			// one git never reports matches nothing, and an empty one everything.
+			if at := strings.TrimSuffix(p, "/"); at == "" || at == "." || path.Clean(at) != at || !filepath.IsLocal(filepath.FromSlash(at)) ||
+				strings.ContainsAny(p, `\*?[`) {
+				problems = append(problems, fmt.Sprintf("staffing.bring_back has %q for %s: give a file or a directory "+
+					"relative to the repository root, with / between its parts and no pattern", p, reviewer))
+			}
+		}
+	}
+	return problems
 }
 
 // UnknownKeys names every setting in root/.sdlc/config.json that the

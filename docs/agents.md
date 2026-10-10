@@ -1,6 +1,6 @@
 # Agents
 
-Eleven agents do the work. Each starts from a fresh context, can only write what
+Twelve agents do the work. Each starts from a fresh context, can only write what
 its gate produces, and never sees the others' reasoning.
 
 That last part is the whole design. A reviewer that inherited the argument for a
@@ -19,6 +19,7 @@ instructions, not a barrier: nothing enforces them.
 
 | Agent | Gate | Can it block? | Writes |
 | --- | --- | --- | --- |
+| `sdlc:project-manager` | after 1 and 2, with [the staffing](#the-staffing) on | — | the staffing, through `sdlc staffing set` and `amend` |
 | `sdlc:researcher` | 2 | — | `ANALYSIS.md`, `THREATS.md`, `CODEMAP.md` |
 | `sdlc:sdet` | 3 | — | test files, `TEST-PLAN.md` |
 | `sdlc:implementer` | 4, 5 | — | `PLAN.md`, then production code |
@@ -33,7 +34,39 @@ instructions, not a barrier: nothing enforces them.
 
 Advisory does not mean optional. A gate will not pass until every reviewer it
 expects has reported, because a reviewer you can skip by not running it is not a
-reviewer at all.
+reviewer at all. The one exception is recorded and shown: a reviewer the story's
+staffing leaves out, which `sdlc review list` lists with the reason.
+
+## The staffing
+
+By default every agent takes part in every story. A project that sets
+[`staffing.enabled`](configuration.md#staffing) has `sdlc:project-manager` say,
+story by story, which agents the story needs and what model and effort each is
+asked for, each with a reason. It records that once the story is found ready,
+confirms or amends it when the analysis is recorded, and amends it whenever an
+agent's work fell short.
+
+- **What it is chosen from.** What the work is and what each agent has to do
+  with it. Not the story's risk tier, and not its priority: those say how much a
+  mistake costs and when the story is done, not who is needed to do it.
+- **Inside the project's limits.** A model or an effort is one of
+  `staffing.models` or `staffing.efforts`, and not below the agent's
+  `staffing.lowest`.
+- **Who is never left out.** The agents that do a gate's work, the verifier, the
+  code reviewer, and security on a story that is security-sensitive or not yet
+  said not to be. A reviewer left out is brought back to the code review when
+  the change touches a path listed for it under `staffing.bring_back`.
+- **Where you read it.** `sdlc staffing show` prints the staffing and every
+  change to it, `sdlc review list` shows who a gate does not wait for and why,
+  and `sdlc log` keeps both for a story that is finished. `sdlc status` names
+  who is left out, which is worth a look before you approve a commit.
+- **How you set one.** `sdlc staffing assign`, in your own terminal, pins the
+  model or the effort for an agent on a story. The project manager staffs around
+  it and cannot change it.
+
+[Commands](commands.md#sdlc-staffing) has each command, and
+[enforcement](enforcement.md#assignment-is-a-human-decision) says who may run
+which.
 
 ## The three that are easy to underrate
 
@@ -63,6 +96,12 @@ set to is what the gates get.
 That is deliberate. Which model you pay for is your decision, not a plugin's,
 and a tier pinned in a file here would quietly override the choice you just
 made and go stale the first time the tiers are renamed.
+
+With [the staffing](#the-staffing) on, that is still true of the definitions,
+and the runbook passes each delegation the model and effort the staffing asks
+for, from the lists your configuration gives. That is what was asked for, not
+what was observed: the environment can override both, and `sdlc` records only
+the asking.
 
 What is worth knowing when you choose: the blocking gates — the architect at
 Gate 4, the verifier at Gate 6, the code reviewer at Gate 7 — are the ones that

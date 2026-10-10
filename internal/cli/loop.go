@@ -782,7 +782,11 @@ func newGateCmd() *cobra.Command {
 					return err
 				}
 			}
+			if err := staffTheGate(cmd.Context(), rd, id, gate, status, record); err != nil {
+				return err
+			}
 			if gate == model.GateAnalysis && cmd.Flags().Changed(securityFlag) {
+				noteSensitivity(s, record, securitySensitive)
 				record.SetSecuritySensitive(securitySensitive)
 			}
 			record.SetGate(gate, status, note, s.Now())

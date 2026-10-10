@@ -281,6 +281,18 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 		{ParallelAwaitingPerson, "SDLC-E0064"},
 		{ParallelFinished, "SDLC-E0065"},
 		{ParallelAllowlistWidened, "SDLC-E0066"},
+		// US-026: the staffing's eight. They are found by number, since the
+		// number is what is released and the name in the source is not;
+		// TestAC4AC5AC8TheStaffingCodesAreDocumentedAndSayWhatToDo says what
+		// each is for.
+		{registered("SDLC-E0067"), "SDLC-E0067"},
+		{registered("SDLC-E0068"), "SDLC-E0068"},
+		{registered("SDLC-E0069"), "SDLC-E0069"},
+		{registered("SDLC-E0070"), "SDLC-E0070"},
+		{registered("SDLC-E0071"), "SDLC-E0071"},
+		{registered("SDLC-E0072"), "SDLC-E0072"},
+		{registered("SDLC-E0073"), "SDLC-E0073"},
+		{registered("SDLC-E0074"), "SDLC-E0074"},
 	}
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {

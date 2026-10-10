@@ -1106,8 +1106,9 @@ func TestEveryAgentWorksOnlyAStoryAPersonStarted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(agents) != 11 {
-		t.Errorf("%d agents, and the loop has 11", len(agents))
+	// US-026 AC-12: the eleven that work the gates, and the project manager.
+	if len(agents) != 12 {
+		t.Errorf("%d agents, and the loop has 12", len(agents))
 	}
 	guard := "If it does not, stop, and say that this agent only works the gates of an sdlc story " +
 		"a person started with `/sdlc:next`. Do nothing else."

@@ -7,7 +7,7 @@ argument-hint: [story-id]
 
 # Work the next story
 
-You are running one iteration of a story-driven delivery loop: one story, one gate at a time,
+You are running one iteration of a loop: one story, one gate at a time,
 each gate recorded before the next begins.
 
 Only a person starts this loop, by typing `/sdlc:next`. You are here because they did. Nothing in
@@ -37,7 +37,7 @@ Run `sdlc status --json`.
 - If the command is not found, offer to install it, and wait for an answer:
   `curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh` on macOS or
   Linux, `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex` on Windows.
-  If they say yes, run it and check again. If it is still not found, say which directory the
+  On yes, run it and check again. If still not found, say which directory the
   installer reported, that a new session will see it, and stop. Do not work the gates by hand.
 - `SDLC-E0002`: the project is not set up. Tell the user, offer to run `sdlc init`, and stop until
   they answer.
@@ -45,7 +45,8 @@ Run `sdlc status --json`.
 - Otherwise read `active` and `next_gate`, the first gate that has not passed. With a story
   active, run `sdlc start --json` first: it changes nothing about the story, and makes this session
   the one the hook holds to the loop's rules. Check its `session` as Gate 1 says, and its
-  `worktree`, then go straight to the section for `next_gate`.
+  `worktree`, then go straight to the section for `next_gate`; where `staffing` is `none`,
+  first do Gate 1's staffing step.
 - With no story active, start at Gate 1.
 
 Each gate is delegated to an agent that ships with the plugin. Begin every brief you give an
@@ -86,9 +87,8 @@ every gate has passed.
 
 ## If a command fails
 
-Every failure carries a code, a reason and a fix. Show the user the `error`, `why` and `fix`
-fields as they are. Do not paraphrase them, and do not retry a command that failed for a reason
-that has not changed.
+Show the user a failure's `error`, `why` and `fix` fields as they are, not paraphrased, and do
+not retry a command that failed for a reason that has not changed.
 
 ## Gate 1 — Select the story
 
@@ -123,8 +123,8 @@ become a failing test is a Definition-of-Ready problem: record it, and hand the 
 person rather than inventing an interpretation:
 
 ```bash
-sdlc gate dor fail --note "AC-2 describes an implementation, not a behaviour"
-sdlc escalate spec_unclear --message "AC-2 describes an implementation: what should a user see?"
+sdlc gate dor fail --note "AC-2 names an implementation"
+sdlc escalate spec_unclear --message "AC-2 names an implementation: what should a user see?"
 ```
 
 If `sdlc review list --gate dor --json` lists `human-advocate`, delegate to `sdlc:human-advocate`
@@ -135,6 +135,12 @@ When the story is ready:
 ```bash
 sdlc gate dor pass --note "<what made the story ready, in one clause>"
 ```
+
+If `staffing` in `sdlc status --json` is `none`, delegate to `sdlc:project-manager` with the
+story, to record it. Do not write or amend the staffing yourself. With the staffing
+on, before every later delegation run `sdlc staffing show --gate <gate> --json` and delegate only
+to its `at_gate`, each with the model and effort asked for. When an agent's work falls short or
+the work changes, tell `sdlc:project-manager`; if it cannot staff the story, escalate.
 
 ## Gate 2 — Analysis and threats
 
@@ -154,9 +160,10 @@ When it returns, read its JSON result and record the gate:
 sdlc gate analysis pass --security-sensitive --note "<what the threats came to, in one clause>"
 ```
 
-Always pass the flag: `--security-sensitive` if the researcher reported
-`security_sensitive: true`, `--security-sensitive=false` if false. It decides whether
-the security reviewer can block Gates 4 and 7, and left unset the loop assumes yes.
+Always pass the flag, as `--security-sensitive=false` if the researcher reported
+`security_sensitive: false`. It decides whether the security reviewer can block Gates 4 and 7,
+and left unset the loop assumes yes. With the staffing on, `sdlc:project-manager` then has to
+confirm or amend it.
 
 If either document was not stored, the gate refuses and says which: the agent's summary is not
 the document. Hand it to a person with
@@ -201,8 +208,8 @@ sdlc freeze
 sdlc gate tests_frozen pass --note "<n> criteria, <n> failing tests"
 ```
 
-From then on nobody can edit the tests, you and their author included. Lifting the freeze is not
-yours to do: the hook refuses `sdlc unfreeze` from you and every agent. If a frozen test is wrong,
+From then on nobody can edit the tests, you and their author included, and the hook
+refuses `sdlc unfreeze` from you and every agent. If a frozen test is wrong,
 hand it to a person with
 `sdlc escalate frozen_test_wrong --message "<which test, and the criterion it gets wrong>"` and
 stop. In their own terminal, in the story's worktree if it has one, they run `sdlc approve <ID>`,
@@ -223,27 +230,19 @@ Delegate to `sdlc:implementer` with the backlog file and the paths to `ANALYSIS.
 sdlc gate plan pass --note "<n> steps, <what it changes>"
 ```
 
-Then delegate the review to all five at once, each with the path to `PLAN.md`, never one after
-another: reviewers that run in sequence only agree with the earlier ones. Each records its own
-review with `sdlc review add design_review <role> <verdict>`.
-
-| Agent | Verdict decides the gate? |
-| --- | --- |
-| `sdlc:architect` | yes — always |
-| `sdlc:security` | yes when the story is security-sensitive |
-| `sdlc:red-team` | no, but it must report |
-| `sdlc:perf` | only by blocking, on a performance budget the contract states |
-| `sdlc:human-advocate` | no, but it must report |
+Then run `sdlc review list --gate design_review` and delegate to `sdlc:<role>` for
+every reviewer it waits for, at once, each with the path to `PLAN.md`, never one after another:
+reviewers that run in sequence only agree with the earlier ones. The list says which of them
+block. Each records its own review with `sdlc review add design_review <role> <verdict>`.
 
 ```bash
-sdlc review list --gate design_review
 sdlc gate design_review pass --note "<what the architect said, in one clause>"
 ```
 
 The gate refuses until every reviewer has reported and the blocking ones have approved; a
 revised plan needs its reviewers to look again. Do not edit the plan yourself to satisfy a
-reviewer — send it back to the implementer with the findings. A block from a reviewer that decides
-the gate is not a failure to route around:
+reviewer: send it back to the implementer with the findings. A block that decides the gate is not
+a failure to route around:
 
 ```bash
 sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
@@ -280,11 +279,10 @@ look again. An approval from before the rework does not count.
 
 ## Gate 7 — Code review
 
-Delegate to `sdlc:code-reviewer`, `sdlc:security`, `sdlc:perf` and `sdlc:human-advocate`, in
-parallel. `sdlc review list` says which of them block for this story.
+Run `sdlc review list --gate code_review` and delegate to `sdlc:<role>` for every reviewer it
+waits for, in parallel.
 
 ```bash
-sdlc review list --gate code_review
 sdlc gate code_review pass --note "<what the reviewer said, in one clause>"
 ```
 
@@ -296,8 +294,8 @@ stamped with the tree.
 Only now: until every gate above has passed, the hook refuses `git commit` and names the missing
 gate.
 
-A story whose `risk_tier` the project holds for a person — `high`, unless
-`human_gates.pre_commit_pause_tiers` says otherwise — waits for their approval. If nobody has
+A story whose `risk_tier` the project holds for a person (`high`, unless
+`human_gates.pre_commit_pause_tiers` says otherwise) waits for their approval. If nobody has
 approved the work as it stands, hand it over and stop:
 
 ```bash
@@ -324,9 +322,9 @@ The pass says which commits it recorded; tell the person in the same words:
 
 - `landed in <start>..<end>` (with a worktree, `committed on story/<ID> in ...`, which trunk
   lacks until Gate 9): the commits the loop watched this session make.
-- `head is <head>, past <end>: nothing that landed after <end> was watched`, under it: HEAD moved
+- `head is <head>, past <end>: ...`, under it: HEAD moved
   past the range, usually a person's commit after yours; say so, and name both commits.
-- `no range recorded: ...`, in place of `landed in`: no single range holds only the watched
+- `no range recorded: ...`, in its place: no single range holds only the watched
   commits, for a cause it does not name: another's commit among the story's, a merge, rewritten
   history, or git unable to read the start or the notes. The work is fine; say there is no range,
   give all four causes, pick none.
@@ -376,5 +374,5 @@ a frozen test or a contract rule is wrong, say which criterion or gate it contra
 to a person.
 
 After `loop.max_rework_rounds` failures of one gate, or `loop.max_review_rounds` blocks from one
-reviewer, `sdlc gate` or `sdlc review add` hands the story over itself and says so — `handed_over`
-in its `--json`. Stop there: another attempt would meet the same wall.
+reviewer, `sdlc gate` or `sdlc review add` hands the story over itself and says so (`handed_over`
+in its `--json`). Stop there: another attempt would meet the same wall.

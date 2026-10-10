@@ -661,6 +661,13 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 	}
 	var stale []string
 	for _, r := range reviews {
+		// A reviewer the staffing left out, that no changed path brought back
+		// when code review passed, is one the gate did not wait for: its old
+		// review of a tree since changed holds nothing. The record says who was
+		// brought back, because the hook makes no git call to work it out.
+		if cfg.Staffing.Enabled && record.StoodDown(r.role) {
+			continue
+		}
 		if r.subject != tree {
 			stale = append(stale, r.role+" ("+string(r.gate)+")")
 		}

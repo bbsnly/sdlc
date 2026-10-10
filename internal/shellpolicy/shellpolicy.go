@@ -591,6 +591,12 @@ func checkPrograms(text string, s State) (Finding, bool) {
 		if len(words) == 0 {
 			continue
 		}
+		if f, ok := checkAssign(words, r.piped); ok {
+			return f, true
+		}
+		if f, ok := checkRecorder(words, s); ok {
+			return f, true
+		}
 		if f, ok := checkUnfreeze(words); ok {
 			return f, true
 		}
@@ -610,6 +616,16 @@ func checkPrograms(text string, s State) (Finding, bool) {
 			return f, true
 		}
 		if f, ok := checkReviewer(words, s); ok {
+			return f, true
+		}
+		// After the rules above, so that what a person keeps and a review that is
+		// not the project manager's are refused under their own names; and the
+		// subcommand that cannot be read last, so that one from the project
+		// manager is refused as everything else it may not run is.
+		if f, ok := checkManager(words, s); ok {
+			return f, true
+		}
+		if f, ok := checkUnread(words, r.piped); ok {
 			return f, true
 		}
 		if f, ok := checkNestedSession(words); ok {
@@ -772,6 +788,12 @@ func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) 
 			here, ok = places[g]
 		}
 		places[r.group] = here
+		// An assignment is refused whatever the project holds, as an
+		// acknowledgement is: a person can assign to a story at any point after
+		// it is started, so whether one waits is never asked.
+		if f, ok := checkAssign(r.words, r.piped); ok {
+			return f, true
+		}
 		if f, ok := checkAck(r.words); ok {
 			return f, true
 		}
@@ -796,6 +818,11 @@ func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) 
 			at = moved(next)
 		}
 		if onAStory && (at.lost || storyWaits(at.dir)) {
+			return f, true
+		}
+		// After the decision above, so that an approval or an unfreeze handed
+		// to sdlc on standard input keeps the name of its own rule.
+		if f, ok := checkUnread(r.words, r.piped); ok {
 			return f, true
 		}
 		if next, ok := changedDir(here.dir, r.words); ok {
@@ -1060,15 +1087,22 @@ func reviewRole(words []string) (string, bool) {
 // with this subcommand.
 func runsSubcommand(words []string, sub string) bool {
 	args, ok := sdlcArgs(words)
-	return ok && subcommand(args) == sub
+	return ok && (subcommand(args) == sub || subcommand(slices.DeleteFunc(slices.Clone(args), staffingValueFlag)) == sub)
 }
+
+// staffingValueFlag is a flag that takes a value only since the staffing
+// commands. With the flag taken out the words are read as they were before
+// there was one, so the word after it is read as the subcommand as well as the
+// flag's value: read only as the value, a command only a person runs that was
+// refused there stopped being refused.
+func staffingValueFlag(word string) bool { return word == "--model" || word == "--effort" }
 
 // ValueFlags are the flags of sdlc that take the next word as their value. The
 // command's own tests hold this to the flags it has.
 var ValueFlags = map[string]bool{
 	"--file": true, "--gate": true, "--message": true, "--note": true,
 	"--reason": true, "--reject": true, "--since": true, "--story": true, "--through": true,
-	"--usd": true, "--max": true,
+	"--usd": true, "--max": true, "--model": true, "--effort": true,
 }
 
 // checkCommit puts the commit gate in front of the commit, for a commit in this

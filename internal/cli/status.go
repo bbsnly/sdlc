@@ -38,6 +38,9 @@ type statusPayload struct {
 	Next     *nextUp        `json:"next,omitempty"`
 	Freeze   *freezeState   `json:"freeze,omitempty"`
 	Cost     *costState     `json:"cost,omitempty"`
+	// Staffing is "none" or "recorded" for the active story where the project
+	// has the staffing on, so a session knows whether to ask for one.
+	Staffing string `json:"staffing,omitempty"`
 	// Waiting is every story handed to a person and not yet answered. The
 	// iteration ended when it was handed over, so nothing else here says so.
 	Waiting []waitingStory `json:"waiting,omitempty"`
@@ -129,6 +132,12 @@ func newStatusCmd() *cobra.Command {
 					return err
 				}
 				payload.Cost = describeCost(p.Config.Budget, record)
+				if p.Config.Staffing.Enabled {
+					payload.Staffing = "none"
+					if staffed(record) {
+						payload.Staffing = "recorded"
+					}
+				}
 				if id, held := s.WorkingSession(); held {
 					payload.Session = id
 				}
@@ -167,6 +176,9 @@ func newStatusCmd() *cobra.Command {
 				printGates(w, record)
 				printFreeze(w, payload.Freeze)
 				printCost(w, payload.Cost)
+				if payload.Staffing != "" {
+					fmt.Fprintf(w, "\n  staffing  %s\n", describeStaffing(record))
+				}
 				if payload.NextGate != "" {
 					fmt.Fprintf(w, "\n  next   %s\n", payload.NextGate)
 				}

@@ -150,6 +150,10 @@ func runChecks(ctx context.Context) []check {
 	// Which git is old enough depends on whether start makes each story a
 	// worktree, which only a configuration that reads can say.
 	add(gitCheck(ctx, err == nil && cfg.Git.WorktreesOn()))
+	if err == nil {
+		// What every other command refuses when it opens the project.
+		err = staffingRoster(cfg.Staffing)
+	}
 	if err != nil {
 		// The error's own words: its cause alone said nothing of which setting
 		// was wrong, and "sdlc init" does not fix a file that is already there.

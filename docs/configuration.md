@@ -342,6 +342,72 @@ on it refuses the run ([SDLC-E0066](troubleshooting.md#sdlc-e0066)): this file
 is writable by a session on the project, so it never widens what a session may
 do. Without `--unattended` the setting is not read.
 
+## `staffing`
+
+Lets a project manager agent say, story by story, which agents the story needs and what model and
+effort each is asked for. It is off unless the project turns it on: with the section absent, or
+`enabled` false, every agent takes part in every story, each runs as its definition says, and
+nothing else in the section is read.
+
+| Key | What it means |
+| --- | --- |
+| `enabled` | turns the staffing on. Default `false` |
+| `models` | the model names a staffing may ask for, **lowest first** |
+| `efforts` | the effort names a staffing may ask for, **lowest first** |
+| `lowest` | for an agent, the lowest `model` and `effort` it may be asked for |
+| `bring_back` | for a reviewer of the code, the paths a change to which brings it back |
+
+```json
+"staffing": {
+  "enabled": true,
+  "models": ["haiku", "sonnet", "opus"],
+  "efforts": ["low", "medium", "high"],
+  "lowest": {
+    "verifier": { "model": "opus", "effort": "high" },
+    "security": { "model": "sonnet" }
+  },
+  "bring_back": {
+    "security": ["internal/hook/", "install.sh"],
+    "perf": ["internal/hot/"]
+  }
+}
+```
+
+**The first name in each list is the lowest.** sdlc ranks nothing by its name: a `lowest` entry,
+and "from the lowest up" in a refusal, are positions in the project's own lists. A list written
+highest first allows everything, and nothing can tell it from one that means it, so
+[`sdlc staffing show`](commands.md#sdlc-staffing-show) prints both lists in order. The names are
+whatever the project's Claude Code takes for a delegation. sdlc checks what is asked for against
+these lists and against nothing else, so a name mistyped here is asked for as it is typed.
+
+A key of `lowest` is one of the twelve agents: `researcher`, `sdet`, `implementer`, `verifier`,
+`bookkeeper`, `architect`, `security`, `red-team`, `perf`, `human-advocate`, `code-reviewer`,
+`project-manager`. An entry may give a model, an effort or both. An agent with no entry may be
+asked for from the first name in each list.
+
+A key of `bring_back` is a reviewer of the code the staffing may leave out: `security`, `perf` or
+`human-advocate`. Each path is a file or a directory relative to the repository root, with `/`
+between its parts and no pattern; it matches by path segment, without regard to case.
+`sdlc staffing show` prints the paths as they were read, which is where a path typed wrongly
+shows: it loads, and matches nothing.
+
+Turning it on is a real loosening. A gate then waits for fewer reviewers than it does today, and
+this file is writable by a session on the project between stories. What a staffing cannot do is
+not a setting: the agents that do a gate's work, the verifier and the code reviewer are never left
+out, and neither is security on a story the analysis recorded as security-sensitive.
+
+Two things it can do are worth knowing before it is on. The architect can be left out, and nothing
+brings it back at the design review, where there is no change to read. And perf can be left out,
+with `bring_back` all that returns it, so a project with a performance budget lists its hot paths
+there.
+
+The model and effort are what is asked for. The environment can override both, and sdlc does not
+observe what a delegation is given.
+
+With the staffing on, a section sdlc cannot use does not load
+([SDLC-E0045](troubleshooting.md#sdlc-e0045)): an empty list, a name listed twice, a `lowest` its
+list does not have, a key that is not an agent, or a path that is not a plain relative one.
+
 ## The other half of the contract
 
 `.sdlc/config.json` is what the hooks look for: in a project without it they do

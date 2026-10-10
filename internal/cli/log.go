@@ -70,10 +70,21 @@ type logEntry struct {
 	Unfrozen       []logEvent      `json:"unfrozen,omitempty"`
 	Escalations    []logEscalation `json:"escalations,omitempty"`
 	SpentUSD       float64         `json:"spent_usd"`
+	// Staffing is who the story was said to need and what each was asked for,
+	// with every change to it. StaffingEvents is the record's own line for each
+	// change, which is all that is left where an sdlc from before the staffing
+	// wrote the record since.
+	Staffing       *logStaffing `json:"staffing,omitempty"`
+	StaffingEvents []logEvent   `json:"staffing_events,omitempty"`
 	// HeldBy is the checkout holding a story not yet finished, where the
 	// repository has more than one.
 	HeldBy string `json:"held_by,omitempty"`
 	heldIn string
+}
+
+type logStaffing struct {
+	Agents     []staffedInfo     `json:"agents"`
+	Amendments []model.Amendment `json:"amendments"`
 }
 
 type logBlock struct {
@@ -248,6 +259,19 @@ func describeCommitted(r *model.Record, b *model.Backlog) logEntry {
 		// somebody changing the tests.
 		case ev.Type == "unfreeze" && ev.Message != finishedUnfreeze:
 			e.Unfrozen = append(e.Unfrozen, logEvent{At: ev.At, Message: ev.Message})
+		case ev.Type == model.EventStaffingSet || ev.Type == model.EventStaffingAmend || ev.Type == model.EventStaffingAssign:
+			e.StaffingEvents = append(e.StaffingEvents, logEvent{At: ev.At, Message: ev.Type + ": " + ev.Message})
+		}
+	}
+	if staffed(r) {
+		e.Staffing = &logStaffing{Agents: staffingInfos(r), Amendments: append([]model.Amendment{}, r.Staffing.Amendments...)}
+		// Who a changed path brought back when the code review last passed, as
+		// the record keeps it: the log is read after the change is gone from
+		// the tree, and without this a reviewer that reviewed read as left out.
+		for i, a := range e.Staffing.Agents {
+			if r.LeftOut(a.Agent) {
+				e.Staffing.Agents[i].BroughtBackBy = r.Staffing.BroughtBack[a.Agent]
+			}
 		}
 	}
 	for _, esc := range r.Escalations {
@@ -397,6 +421,20 @@ func printLog(w io.Writer, p logPayload) {
 				answer = "answered"
 			}
 			fmt.Fprintf(w, "  escalated  %s: %s (%s)\n", oneLine(esc.Type), oneLine(esc.Message), answer)
+		}
+		if e.Staffing != nil {
+			for _, a := range e.Staffing.Agents {
+				fmt.Fprintf(w, "  staffing   %s: %s\n", a.Agent, describeStaffed(a))
+			}
+			for _, a := range e.Staffing.Amendments {
+				fmt.Fprintf(w, "  staffing   amended %s\n", describeAmendment(a))
+			}
+		}
+		// The record's own line for each change, beside the staffing and not
+		// only in its place: a staffing recorded a second time has the events
+		// of the first and none of its rows.
+		for _, ev := range e.StaffingEvents {
+			fmt.Fprintf(w, "  staffing   %s  %s\n", oneLine(ev.At), oneLine(ev.Message))
 		}
 		if e.SpentUSD > 0 {
 			fmt.Fprintf(w, "  spent      %s\n", money(e.SpentUSD))

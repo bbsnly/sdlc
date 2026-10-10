@@ -397,6 +397,10 @@ type ran struct {
 	// marked, which only the git rules read: the other rules read the script
 	// once, as they always have.
 	extra bool
+	// piped is set when the command, or the one that handed it to a shell, is
+	// given more words on standard input, through xargs or GNU parallel: the
+	// words here are then not all it runs with.
+	piped bool
 }
 
 // programsAt is the commands a line runs, with what only wraps them taken off,
@@ -405,10 +409,10 @@ type ran struct {
 // read in turn for the commands it runs.
 func programsAt(line string, powerShell bool) ([]ran, *subshells) {
 	t := newSubshells()
-	return programsWithin(line, powerShell, t, 0, 0, false), t
+	return programsWithin(line, powerShell, t, 0, 0, false, false), t
 }
 
-func programsWithin(line string, powerShell bool, t *subshells, group, depth int, substituted bool) []ran {
+func programsWithin(line string, powerShell bool, t *subshells, group, depth int, substituted, piped bool) []ran {
 	var out []ran
 	l := lexIn(line, powerShell, t, group)
 	for i, words := range l.commands {
@@ -419,7 +423,7 @@ func programsWithin(line string, powerShell bool, t *subshells, group, depth int
 			words, marks = words[1:], marks[1:]
 		}
 		run := program(words)
-		in, cut := l.groups[i], substituted || l.substituted[i]
+		in, cut, fed := l.groups[i], substituted || l.substituted[i], piped || run.piped
 		var defaults []string
 		if !powerShell {
 			defaults = defaulted(l.marks[i])
@@ -451,7 +455,7 @@ func programsWithin(line string, powerShell bool, t *subshells, group, depth int
 		default:
 			sets := slices.Concat(defaults, exported(marked.words, l.inputs[i], powerShell))
 			out = append(out, ran{words: run.words, group: in, redirects: l.writes[i], substituted: cut,
-				marked: marked.words, env: env, sets: sets, chdir: marked.chdir,
+				marked: marked.words, env: env, sets: sets, chdir: marked.chdir, piped: fed,
 				expression: powerShell && !l.calls[i]})
 			if base(run.words[0]) == "find" {
 				// Each -exec runs a command:
@@ -462,7 +466,7 @@ func programsWithin(line string, powerShell bool, t *subshells, group, depth int
 					}
 					if exec := program(run.words[j+1:]); len(exec.words) > 0 {
 						out = append(out, ran{words: exec.words, group: in, substituted: cut,
-							marked: exec.words, env: env})
+							marked: exec.words, env: env, piped: fed})
 					}
 				}
 			}
@@ -471,7 +475,7 @@ func programsWithin(line string, powerShell bool, t *subshells, group, depth int
 		if depth >= 4 {
 			continue
 		}
-		out = append(out, programsWithin(strings.Join(script, " "), powerShell, t, in, depth+1, cut)...)
+		out = append(out, programsWithin(strings.Join(script, " "), powerShell, t, in, depth+1, cut, fed)...)
 		// The script once more as the shell will run it, with each substitution
 		// standing where it was: to the reading above, `sh -c "git $(echo
 		// worktree) prune"` is `git  prune`, and git's subcommand is not empty.
@@ -481,7 +485,7 @@ func programsWithin(line string, powerShell bool, t *subshells, group, depth int
 				again := t.start(in)
 				t.script[again] = run.shell
 				t.startsWith(again, env)
-				for _, r := range programsWithin(strings.Join(markedScript, " "), powerShell, t, again, depth+1, cut) {
+				for _, r := range programsWithin(strings.Join(markedScript, " "), powerShell, t, again, depth+1, cut, fed) {
 					r.extra = true
 					out = append(out, r)
 				}
@@ -760,11 +764,7 @@ func sdlcArgs(words []string) ([]string, bool) {
 	// Behind a wrapper program does not know -- `ssh host`, `watch -n 1`,
 	// `Start-Process` -- sdlc is still a word of its own. A word after a flag
 	// is the flag's value, as in `docker compose -p sdlc stop`.
-	switch base(words[0]) {
-	case "echo", "printf", "print", "write-host", "write-output", "ls", "dir", "cat", "type",
-		"grep", "rg", "head", "tail", "less", "more", "man", "which", "whereis", "file", "stat", "wc":
-		// A command that prints or reads its words only mentions sdlc:
-		// `echo next: sdlc stop` is not a stop.
+	if mentionsOnly(base(words[0])) {
 		return nil, false
 	}
 	for i := 1; i < len(words); i++ {
@@ -773,6 +773,17 @@ func sdlcArgs(words []string) ([]string, bool) {
 		}
 	}
 	return nil, false
+}
+
+// mentionsOnly reports whether a program prints or reads its words, so that
+// sdlc among them is only mentioned: `echo next: sdlc stop` is not a stop.
+func mentionsOnly(program string) bool {
+	switch program {
+	case "echo", "printf", "print", "write-host", "write-output", "ls", "dir", "cat", "type",
+		"grep", "rg", "head", "tail", "less", "more", "man", "which", "whereis", "file", "stat", "wc":
+		return true
+	}
+	return false
 }
 
 // findRuns reports whether a find flag runs the command after it.

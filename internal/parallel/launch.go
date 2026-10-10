@@ -48,6 +48,10 @@ func Allowlist() []string {
 		"Bash(sdlc gate:*)",
 		"Bash(sdlc artifact:*)",
 		"Bash(sdlc review:*)",
+		// One by one: `sdlc staffing:*` would pre-approve assign, a person's.
+		"Bash(sdlc staffing set:*)",
+		"Bash(sdlc staffing amend:*)",
+		"Bash(sdlc staffing show:*)",
 		"Bash(sdlc escalate:*)",
 		"Bash(sdlc freeze:*)",
 		"Bash(sdlc story:*)",

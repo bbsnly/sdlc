@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"slices"
 
 	"github.com/bbsnly/sdlc/internal/gitx"
+	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
@@ -26,6 +28,12 @@ type reading struct {
 	s              *store.Store
 	tree, head     string
 	treeOK, headOK bool
+	// changed is every path the story has changed, asked only where a staffing
+	// has a reviewer a changed path could bring back. unreadRange is set where
+	// the story's commits could not be among them.
+	changed     []string
+	changedOK   bool
+	unreadRange bool
 }
 
 func readingOf(s *store.Store) *reading { return &reading{s: s} }
@@ -41,6 +49,47 @@ func (r *reading) subject(ctx context.Context) (string, error) {
 	}
 	r.tree, r.treeOK = tree, true
 	return tree, nil
+}
+
+// changedPaths is every path the story has changed in the store's checkout,
+// asked once: what git status lists, with both names of a file that moved and
+// every file of a directory git does not track yet, and what the story has
+// committed since code review first passed. Before that pass nothing of the
+// story is committed, because every earlier gate is held to a HEAD that has
+// not moved. Three git calls, whatever a staffing lists.
+//
+// Where code review has passed and the record does not say where HEAD was
+// then, the story's commits cannot be read, and unreadRange says so: a
+// reviewer a path could bring back is then brought back.
+func (r *reading) changedPaths(ctx context.Context, record *model.Record) ([]string, error) {
+	if r.changedOK {
+		return r.changed, nil
+	}
+	root := r.s.Root()
+	listed, err := gitx.Changes(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	files, err := gitx.Uncommitted(ctx, root, true)
+	if err != nil {
+		return nil, err
+	}
+	head, err := r.headOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var committed []string
+	switch {
+	case head == gitx.NoCommits || !record.Pass(model.GateCodeReview) && record.CommitBase == "":
+	case record.CommitBase == "":
+		r.unreadRange = true
+	case head != record.CommitBase:
+		if committed, err = gitx.ChangedBetween(ctx, root, record.CommitBase, head); err != nil {
+			return nil, err
+		}
+	}
+	r.changed, r.changedOK = slices.Concat(listed, files, committed), true
+	return r.changed, nil
 }
 
 // headOf is HEAD in the store's checkout, asked once.
