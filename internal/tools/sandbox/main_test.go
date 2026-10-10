@@ -631,8 +631,12 @@ func TestAC1ATempDirectoryThatCannotBeUsedStopsCreateAndRemove(t *testing.T) {
 	if err := os.Symlink(missing, dangling); err == nil {
 		unusable["a link to nothing"] = dangling
 	}
+	// A directory nothing can be made in is arranged only where the mode bits
+	// can arrange it: Windows keeps no write bit for a directory, and root is
+	// not held by one anywhere.
+	readOnly := ""
 	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
-		readOnly := filepath.Join(fixtures, "read-only")
+		readOnly = filepath.Join(fixtures, "read-only")
 		if err := os.Mkdir(readOnly, 0o555); err != nil {
 			t.Fatal(err)
 		}
@@ -663,8 +667,12 @@ func TestAC1ATempDirectoryThatCannotBeUsedStopsCreateAndRemove(t *testing.T) {
 			t.Errorf("with no temp directory to use, %s was written to: %v", dir, got)
 		}
 	}
-	if got := entriesOf(t, filepath.Join(fixtures, "read-only")); runtime.GOOS != "windows" && os.Geteuid() != 0 && len(got) != 0 {
-		t.Errorf("the read-only directory holds %v", got)
+	// Only where it was made: entriesOf ends the test on a directory that is
+	// not there, which is what failed this on Windows.
+	if readOnly != "" {
+		if got := entriesOf(t, readOnly); len(got) != 0 {
+			t.Errorf("the read-only directory holds %v", got)
+		}
 	}
 }
 

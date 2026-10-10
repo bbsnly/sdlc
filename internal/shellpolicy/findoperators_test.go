@@ -39,6 +39,17 @@ func findDoing(r rootTried, expression, action string) string {
 	return r.before + "find " + r.root + " " + strings.ReplaceAll(expression, "ACTION", action)
 }
 
+// inParallel has a test that takes seconds under the race detector run beside
+// the others marked so. One after another they took the package to go test's
+// ten minutes on a loaded macOS runner, where it was killed. Each of them only
+// calls Inspect, with a State of its own, so none can disturb another; and they
+// start once every other test has ended, so the one test here with a clock in
+// it is not slowed.
+func inParallel(t *testing.T) {
+	t.Helper()
+	t.Parallel()
+}
+
 // pickedFrom are the rules a find may be refused under for what its expression
 // picks from r. An expression that picks every file picks CLAUDE.md and .git
 // along with the loop's files, and which is named first is the classifier's to
@@ -91,6 +102,7 @@ func allowedBelowNothingProtected(t *testing.T, expression string, actions []str
 }
 
 func TestAC1ANegatedTestIsJudgedByTheFilesItLeavesIn(t *testing.T) {
+	inParallel(t)
 	refusedUnder(t, "find . ! -name '*.orig' -delete", ready, wantState, wantProtected)
 	refusedUnder(t, "find internal -not -name '*.orig' -delete", freezing(xTest), wantFrozen)
 	for _, not := range negations {
@@ -123,6 +135,7 @@ var negatedBesideOtherTests = []string{
 }
 
 func TestAC1ANegationGovernsTheOneTestAfterItAndNoOther(t *testing.T) {
+	inParallel(t)
 	for _, expression := range negatedBesideOtherTests {
 		t.Run(expression, func(t *testing.T) {
 			refusedFromEveryRoot(t, expression, deletingActions, pickedFrom)
@@ -195,6 +208,7 @@ var alternativesThatPick = []string{
 }
 
 func TestAC2EachAlternativeIsReadAndOneThatPicksAProtectedFileRefuses(t *testing.T) {
+	inParallel(t)
 	refusedUnder(t, "find . -name '*.orig' -o -type f -delete", ready, wantState, wantProtected)
 	refusedUnder(t, "find internal -name '*.orig' -or -type f -delete", freezing(xTest), wantFrozen)
 	for _, expression := range alternativesThatPick {
@@ -248,6 +262,7 @@ var groupsThatPick = []string{
 }
 
 func TestAC3AGroupThatPicksAProtectedFileIsRefusedWhetherOrNotItIsFollowed(t *testing.T) {
+	inParallel(t)
 	for _, expression := range groupsThatPick {
 		t.Run(expression, func(t *testing.T) {
 			refusedFromEveryRoot(t, expression, deletingActions, pickedFrom)
@@ -324,6 +339,7 @@ var expressionsThatPickNothingProtected = []string{
 }
 
 func TestAC4AFindWhoseOperatorsPickNothingProtectedIsAllowed(t *testing.T) {
+	inParallel(t)
 	allowedGlob(t, "find . ! -name '*.orig' -print", ready)
 	allowedGlob(t, "find . ! -name '*.orig' -print", freezing(xTest))
 	all := slices.Concat(deletingActions, printingActions, readingActions)
@@ -338,6 +354,7 @@ func TestAC4AFindWhoseOperatorsPickNothingProtectedIsAllowed(t *testing.T) {
 // pick; and one that changes what it finds is allowed where nothing protected
 // is below it.
 func TestAC4AFindThatOnlyReadsOrStartsBelowNothingProtectedIsAllowedWhateverItsOperatorsPick(t *testing.T) {
+	inParallel(t)
 	var all []string
 	for _, not := range negations {
 		all = append(all, not+" -name '*.orig'")
@@ -358,6 +375,7 @@ func TestAC4AFindThatOnlyReadsOrStartsBelowNothingProtectedIsAllowedWhateverItsO
 // allowed with a printer, from the same roots. The file it prints to is still
 // a file it writes.
 func TestAC4AFindThatOnlyWritesItsListToAFileIsAllowedWhateverAReadableExpressionPicks(t *testing.T) {
+	inParallel(t)
 	for _, expression := range []string{
 		"! -name '*.orig'",
 		`\! -name '*.orig'`,
@@ -433,6 +451,7 @@ func filledExpressions() []string {
 func asTheRootHoldsIt(r rootTried) []string { return r.rules }
 
 func TestAC3AWordTheShellFillsInWhereAnOperatorCouldBeIsRefusedWhenFindGoesOnToChangeFiles(t *testing.T) {
+	inParallel(t)
 	refusedUnder(t, `find . -name '*.orig' "$OP" -name '*.bak' -delete`, ready, wantState)
 	refusedUnder(t, `find internal -name '*.orig' "$OP" -name '*.bak' -fprint /tmp/list`, freezing(xTest), wantFrozen)
 	changers := slices.Concat(deletingActions, printingActions)
@@ -454,6 +473,7 @@ func TestAC3AWordTheShellFillsInWhereAnOperatorCouldBeIsRefusedWhenFindGoesOnToC
 }
 
 func TestAC3AWordTheShellFillsInIsAllowedWhereFindOnlyReadsOrNothingProtectedIsBelow(t *testing.T) {
+	inParallel(t)
 	for _, expression := range slices.Concat(filledExpressions(), unescapedEitherWay) {
 		t.Run(expression, func(t *testing.T) {
 			if !strings.Contains(expression, "-exec") {
@@ -663,6 +683,7 @@ func TestAC1AndAC2AFindAtOrAboveAnotherCheckoutIsJudgedByWhatItsOperatorsLeaveIn
 // An expression find itself would not accept is still answered: the hook
 // answers a panic by letting the call through.
 func TestAC5AnExpressionFindWouldNotAcceptIsAnsweredWithoutAPanic(t *testing.T) {
+	inParallel(t)
 	ends := slices.Concat(deletingActions, printingActions, readingActions, []string{""})
 	for _, expression := range []string{
 		"!", "-not", "-o", "-or", "-a", "-and", ",", `\(`, `\)`, `\( \)`, "'('", "')'",
@@ -697,6 +718,7 @@ func TestAC5AnExpressionFindWouldNotAcceptIsAnsweredWithoutAPanic(t *testing.T) 
 // no clock in it. Each of these is refused whether the reader follows it to
 // the end or gives up at a bound.
 func TestAC5ALongOrDeepExpressionIsAnsweredInStepWithItsLength(t *testing.T) {
+	inParallel(t)
 	const many = 2000
 	var alternatives strings.Builder
 	for i := range many {
@@ -754,6 +776,7 @@ func redirected(actions []string, redirect string) []string {
 }
 
 func TestAC4AFindWithADescriptorRedirectIsAllowedWhereItPicksNothingProtected(t *testing.T) {
+	inParallel(t)
 	allowedGlob(t, "find . -name '*.orig' -delete 2>/dev/null", ready)
 	allowedGlob(t, "find . -type f -name '*.pyc' -delete 2>/dev/null || true", freezing(xTest))
 	changers := slices.Concat(deletingActions, printingActions)
@@ -794,6 +817,7 @@ func TestAC4AFindWithADescriptorRedirectIsAllowedWhereItPicksNothingProtected(t 
 // The redirect hides nothing either: a find that picks a protected file is
 // refused with one as it is without, wherever the redirect stands.
 func TestAC1AndAC2ADescriptorRedirectDoesNotHideWhatAFindsOperatorsPick(t *testing.T) {
+	inParallel(t)
 	changers := slices.Concat(deletingActions, printingActions)
 	for _, redirect := range slices.Concat(descriptorRedirects, plainRedirects) {
 		t.Run("after "+redirect, func(t *testing.T) {
@@ -878,6 +902,7 @@ func findAsScripts(r rootTried, expression, action string, try func(command stri
 }
 
 func TestAC1AndAC2AFindRunAsAScriptIsJudgedByWhatItsOperatorsPick(t *testing.T) {
+	inParallel(t)
 	refusedUnder(t, `sh -c "find . ! -name '*.orig' -delete"`, ready, wantState, wantProtected)
 	refusedUnder(t, `bash -c 'find internal -name "*.orig" -o -type f -delete'`, freezing(xTest), wantFrozen)
 	refusedUnder(t, `eval "find . -not -name '*.orig' -delete"`, ready, wantState, wantProtected)
@@ -903,6 +928,7 @@ func TestAC1AndAC2AFindRunAsAScriptIsJudgedByWhatItsOperatorsPick(t *testing.T) 
 }
 
 func TestAC3AWordTheShellFillsInInsideAScriptIsRefusedWhenItsFindGoesOnToChangeFiles(t *testing.T) {
+	inParallel(t)
 	changers := slices.Concat(deletingActions, printingActions)
 	for _, expression := range []string{
 		"-name Q*.origQ W -name Q*.bakQ",
@@ -982,6 +1008,7 @@ func separatorWords() []string {
 }
 
 func TestAC1AndAC2ASeparatorInsideAQuotedWordDoesNotEndTheFind(t *testing.T) {
+	inParallel(t)
 	refusedUnder(t, "find . ! -name 'x;y' -delete", ready, wantState, wantProtected)
 	refusedUnder(t, "find internal -name 'a;b' -o -type f -delete", freezing(xTest), wantFrozen)
 	for _, expression := range []string{
@@ -1017,6 +1044,7 @@ func TestAC1AndAC2ASeparatorInsideAQuotedWordDoesNotEndTheFind(t *testing.T) {
 }
 
 func TestAC4AFindWithASeparatorInsideAQuotedWordIsAllowedWhereItPicksNothingProtected(t *testing.T) {
+	inParallel(t)
 	all := slices.Concat(deletingActions, printingActions, readingActions)
 	for _, w := range separatorWords() {
 		t.Run(w, func(t *testing.T) {

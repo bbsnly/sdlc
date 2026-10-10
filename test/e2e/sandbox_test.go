@@ -498,8 +498,10 @@ func (sb sandbox) person(t *testing.T, dir string, args ...string) result {
 
 // normalise replaces what differs between two runs: where the sandbox, its
 // repository, its sdlc and the story's worktree are, the time, and the names
-// of commits and trees. Each path is replaced as it is and as %q prints it, so
-// that a Windows path a message quotes is found too.
+// of commits and trees. Each path is replaced as it is, as %q prints it, and
+// slash-separated, which is how sdlc spells a path inside a message (AC-3 of
+// US-050): on Windows `sdlc start` names the worktree C:/..., which the native
+// spelling alone never matched.
 func (sb sandbox) normalise(text string) string {
 	for _, p := range []struct{ path, name string }{
 		{sb.tree(), "<worktree>"},
@@ -510,6 +512,7 @@ func (sb sandbox) normalise(text string) string {
 		quoted := strconv.Quote(p.path)
 		text = strings.ReplaceAll(text, quoted[1:len(quoted)-1], p.name)
 		text = strings.ReplaceAll(text, p.path, p.name)
+		text = strings.ReplaceAll(text, filepath.ToSlash(p.path), p.name)
 	}
 	text = timePattern.ReplaceAllString(text, "<time>")
 	return shaPattern.ReplaceAllString(text, "<sha>")

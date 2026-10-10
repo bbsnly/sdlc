@@ -39,6 +39,7 @@ func TestFirstWordNamesTheWordThatIsNotAnOptionAndFallsBackToEmpty(t *testing.T)
 // (1<<20) within a single Inspect call, so the immediate "already held, and
 // past the bound" answer is what is exercised, not just the ordinary one.
 func TestPastTheWorkBoundTheHeldFindingAnswersWithoutReadingFurther(t *testing.T) {
+	inParallel(t)
 	s := rbState(t, true, true, "main", rbTrunkIs("main"))
 	// rebase_test.go's TestAC9ALongCommandAroundABranchMoveIsStillRefusedForIt
 	// stays well under maxHeldWork (1<<20); this filler is sized to cross it
