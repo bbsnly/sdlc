@@ -1,19 +1,21 @@
 # sdlc
 
 A story-driven delivery loop for [Claude Code](https://claude.com/claude-code).
-One story per session, nine gates, enforced by hooks rather than by good
-intentions: the acceptance tests are frozen before any implementation code is
-written, the agent that implements cannot edit them, and nothing reaches trunk
-until an independent verifier and a code reviewer have each signed off in a
-fresh context.
+`sdlc` takes one story per session through nine gates, and hooks hold your
+agent to each of them. The acceptance tests are frozen before any
+implementation code is written, the agent that implements cannot edit them, and
+nothing reaches trunk until an independent verifier and a code reviewer have
+each signed off in a fresh context.
 
 It is for people who let an agent write real code and want the discipline they
-would ask of a colleague — a plan reviewed before implementation, tests written
+would ask of a colleague: a plan reviewed before implementation, tests written
 against the specification rather than against the diff, and a trunk that is
 always green.
 
 [![ci](https://github.com/bbsnly/sdlc/actions/workflows/ci.yml/badge.svg)](https://github.com/bbsnly/sdlc/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![npm downloads](https://img.shields.io/npm/dm/@bbsnly/sdlc?label=npm%20downloads)](https://www.npmjs.com/package/@bbsnly/sdlc)
+[![release downloads](https://img.shields.io/github/downloads/bbsnly/sdlc/total?label=release%20downloads)](https://github.com/bbsnly/sdlc/releases)
 
 ## Status
 
@@ -25,74 +27,85 @@ published with, and `go install` or a source build works from any commit.
 
 ## Install
 
-Three parts: the binary that does the enforcing, the plugin that runs the loop,
-and one command in your project.
+There are three parts: the binary that does the enforcing, the plugin that runs
+the loop, and one command in your project. Before you begin, you will need:
 
-**1. The binary.** Any one of these:
+- **Claude Code** 2.1.265 or newer
+- **git** 2.17 or newer, and on Windows
+  [Git for Windows](https://git-scm.com/download/win) (WSL is not required)
+- **Node** 18 or newer, for the `npx` command below
+- **Go** 1.26 or newer, only to build from source or use `go install`
+
+### Give your agent this prompt
+
+Paste it into Claude Code, in the project you want to work on. It installs
+`sdlc` and takes you through the setup.
+
+```text
+Set up sdlc: run `npx @bbsnly/sdlc install`, then read
+https://github.com/bbsnly/sdlc/blob/main/docs/getting-started.md and follow it
+all the way through.
+```
+
+### Install it yourself
+
+If you would rather type the commands yourself, it takes about two minutes.
+First, install the binary. One command does it on macOS, Linux and Windows:
+
+```console
+$ npx @bbsnly/sdlc install
+```
+
+It downloads the native binary built for your machine and checks it before
+installing it. If it prints lines to add a directory to your `PATH`, add them.
+
+Then, in Claude Code, add the plugin. The repository is its own marketplace, so
+there is nothing else to add:
+
+```text
+/plugin marketplace add bbsnly/sdlc
+/plugin install sdlc@sdlc
+```
+
+Finally, from the root of your project:
+
+```console
+$ sdlc init
+```
+
+`init` reads the repository, writes a configuration with commands that match it,
+and adds the contract section to your `CLAUDE.md`. It never overwrites your own
+files.
+
+> [!WARNING]
+> Commit what `init` wrote before your first story. Each new story starts in a
+> worktree cut from trunk's commits, so only what is committed is there.
+
+Once that is committed, `sdlc doctor` checks the result and says what to do
+about anything it does not like.
+
+### Other ways to install
+
+No Node? Any one of these gives you the same binary:
 
 | Route | Command |
 | --- | --- |
 | macOS, Linux | `curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh \| sh` |
 | Windows PowerShell | `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 \| iex` |
-| Node, any platform | `npx @bbsnly/sdlc install` |
 | Go 1.26 or newer | `go install github.com/bbsnly/sdlc/cmd/sdlc@latest` |
-| By hand | the prebuilt archive for your platform from [Releases](https://github.com/bbsnly/sdlc/releases), checked against `checksums.txt` — [step by step](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md#by-hand-from-a-release) |
+| By hand | the prebuilt archive for your platform from [Releases](https://github.com/bbsnly/sdlc/releases), checked against `checksums.txt`, [step by step](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md#by-hand-from-a-release) |
 | From source | `git clone https://github.com/bbsnly/sdlc && cd sdlc && ./task build` |
 
-The first three download the same native binary and check it against the
-release's checksums before it goes anywhere near your `PATH`; `go install` and
-the source build compile it on your machine. How to verify a download yourself is in
-[Installation](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md).
+The `npx` command and the two scripts download the same native binary and check
+it against the release's checksums before it goes anywhere near your `PATH`;
+`go install` and the source build compile it on your machine. You can also skip
+the binary step: install the plugin, type `/sdlc:next`, and it offers to
+install the binary for you.
 
-Or skip this step entirely: install the plugin, type `/sdlc:next`, and it offers
-to install the binary for you.
-
-**2. The plugin.**
-
-| Route | Command |
-| --- | --- |
-| Claude Code | `/plugin marketplace add bbsnly/sdlc`, then `/plugin install sdlc@sdlc` |
-| From a clone | `claude --plugin-dir /path/to/sdlc/plugin` |
-| The skills alone, any agent | `npx skills add bbsnly/sdlc` |
-
-The repository is its own marketplace, so there is nothing else to add. What
-you get is three skills only you start in Claude Code — `/sdlc:next` to work the
-loop, `/sdlc:trunk-review` to look back at what landed and `/sdlc:consolidate`
-to turn the retros into changes to your contract and configuration — twelve
-agents, and the `PreToolUse`, `PostToolUse` and `Stop` hooks.
-
-The plugin does nothing until a person types `/sdlc:next`. In Claude Code the
-model cannot start any of the three skills: each carries
-`disable-model-invocation`. The agents are steered rather than blocked: each is
-told to work only a gate of a story you started and to stop on anything else,
-such as a plain code review, but nothing enforces that. Without the binary
-nothing is enforced, and sessions outside a project that uses sdlc hear nothing
-from it.
-[The plugin without the binary](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md#the-plugin-without-the-binary)
-has the details.
-
-The third row is the [Agent Skill](https://agentskills.io) route, and it is the
-skills only — no binary, no agents, no hook, so nothing is recorded and nothing
-is refused. `next` checks for both and stops if either is missing. Another
-agent may not honour `disable-model-invocation`, so there the model can start a
-skill on its own.
-Use it to read the loop, to run it against a different agent, or to pin the
-runbook in a repository that installs the rest some other way.
-
-**3. Your project**, from its root:
-
-```console
-$ sdlc init
-$ sdlc doctor
-```
-
-`init` reads the repository, writes a configuration with commands that match it,
-and adds the contract section to your `CLAUDE.md`. It never overwrites your own
-files, and it writes no `.gitignore`: what a project commits is the project's
-decision. `doctor` checks the result and names the command that fixes anything
-it does not like. Commit what `init` wrote before the first story: each new
-story starts in a worktree cut from trunk's commits, so only what is committed
-is there.
+[Installation](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md)
+covers every route in full, how to verify a download yourself, the other ways
+to load the plugin, and
+[what the plugin does without the binary](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md#the-plugin-without-the-binary).
 
 ## Using it
 
@@ -105,39 +118,21 @@ In Claude Code, you type one command:
 It works the current story through its gates, one at a time, until the story is
 committed and its retro is written, or until a gate needs a person. Run it again
 after that, or after a session that ended part-way, and it picks up at the first
-gate that has not passed. Nothing else is needed, and nothing else is the
-intended way in.
+gate that has not passed. That is the only command you need.
 
 Each new story is worked in a worktree of its own, `.sdlc/worktrees/<ID>`, on a
 branch `story/<ID>` cut from trunk, and committed there, so your checkout is
 left as it was and a second session can work a second story at the same time.
-Gate 9 brings a finished story to trunk: `sdlc stop` in its worktree checks it,
+When the retro is written, `sdlc stop` in the story's worktree checks the story,
 moves trunk to it by fast-forward and takes the worktree away.
-[The loop](https://github.com/bbsnly/sdlc/blob/main/docs/the-loop.md#more-than-one-checkout)
+[The loop](https://github.com/bbsnly/sdlc/blob/main/docs/the-loop.md#done-when-it-lands)
 says what it checks, and `git.worktrees` in the configuration turns it off.
 
 Underneath, everything the skill does is the `sdlc` command, and you can run any
-of it yourself — to see where a story is, to take over a gate, or to script the
-loop from somewhere that is not Claude Code:
-
-| Command | What it is for |
-| --- | --- |
-| `sdlc status` | where the story is, which gate is next, what it has spent |
-| `sdlc story list` | the backlog, and which story is next up |
-| `sdlc log` | the stories committed to trunk, where their commits are, and what each went through |
-| `sdlc ack --through` | mark the log read up to a commit, so `sdlc log` starts after it |
-| `sdlc start` / `sdlc stop` | begin an iteration, or end one |
-| `sdlc gate GATE pass\|fail` | record a gate, refused unless its evidence is there |
-| `sdlc artifact write NAME` | store a gate's document; `artifact list` says which are in |
-| `sdlc review add GATE ROLE VERDICT` | record a review, stamped with what it reviewed |
-| `sdlc freeze` / `sdlc unfreeze` | lock the acceptance tests by content, or release them |
-| `sdlc cost add --usd` | record what a story has spent against its budget |
-| `sdlc doctor` | check the install, the configuration and the hook, with fixes |
-| `sdlc version` | the version, and the commit it was built from |
-
-Every one of them takes `--json`, so a skill reads exactly what a person reads.
-[Commands](https://github.com/bbsnly/sdlc/blob/main/docs/commands.md) has every
-flag.
+of it yourself: `sdlc status` shows where a story is, and `sdlc story list`
+shows the backlog. Every command takes `--json`, so a skill reads exactly what a
+person reads. [Commands](https://github.com/bbsnly/sdlc/blob/main/docs/commands.md)
+has all of them.
 
 ## What the loop actually does
 
@@ -146,29 +141,28 @@ say no are the point:
 
 | Gate | What happens | Can it block? |
 | --- | --- | --- |
-| 1 · Select | A story is chosen from the backlog and its acceptance criteria agreed | — |
-| 2 · Analyse | The story is read against the codebase; threats and security sensitivity decided | — |
-| 3 · Test | Acceptance tests are written from the criteria, and **frozen** — hash-locked | — |
-| 4 · Plan | The plan is reviewed by an architect, a red team and a security reviewer | **Yes** |
-| 5 · Implement | Code is written until the frozen tests pass. Tests cannot be touched | — |
+| 1 · Select | A story is chosen from the backlog and its acceptance criteria agreed | none |
+| 2 · Analyse | The story is read against the codebase; threats and security sensitivity decided | none |
+| 3 · Test | Acceptance tests are written from the criteria, and **frozen** (hash-locked) | none |
+| 4 · Plan | The plan is reviewed by five agents, among them an architect, a red team and a security reviewer | **Yes** |
+| 5 · Implement | Code is written until the frozen tests pass. Tests cannot be touched | none |
 | 6 · Verify | An independent agent re-derives the tests from the spec, hunting test-gaming | **Yes** |
 | 7 · Review | The diff is reviewed in a context that never saw the reasoning behind it | **Yes** |
 | 8 · Commit | The commit gate checks the tests are still the frozen ones | **Yes** |
-| 9 · Retro | Lessons are recorded where the next story will read them | — |
+| 9 · Retro | Lessons are recorded where the next story will read them | none |
 
 The freeze is what makes the rest mean anything. An agent that can edit its own
-acceptance tests will eventually edit them, and every gate after that is
-theatre.
+acceptance tests will eventually edit them, and every gate after that stops
+meaning anything.
 
-Four things are checked rather than asked for, and they are the difference
-between a loop and a checklist:
+Four things are checked by the command itself:
 
 - **A gate cannot pass without what it produces.** No analysis document, no
   analysis gate. The summary that says the document exists is not the document.
 - **A gate cannot be recorded out of order.** Each one is done by somebody who
   could only do it because the one before it happened.
-- **An approval goes stale.** A review is stamped with what was in front of it —
-  the plan's content at the design gate, the whole tree at the code gate — so
+- **An approval goes stale.** A review is stamped with what was in front of it
+  (the plan's content at the design gate, the whole tree at the code gate), so
   revising the plan or touching the code sends it back to the reviewers who
   approved the old one.
 - **The commit waits.** `git commit` is refused until every gate before it has
@@ -176,63 +170,34 @@ between a loop and a checklist:
 
 ## How enforcement works
 
-Enforcement uses Claude Code's own surfaces and the `sdlc` command, and nothing
-else: a hook on tool calls, the plugin's agents, and the checks the command
-makes before it records a gate. No git hooks are installed, and
-`sdlc` never writes to `.git/hooks`.
+The plugin gives you three skills that only you start (`/sdlc:next`,
+`/sdlc:trunk-review` and `/sdlc:consolidate`), twelve agents, and hooks on
+Claude Code's tool calls. Each gate is run by an agent that starts from a fresh
+context and sees none of the others' reasoning, because a reviewer that
+inherited the argument for a change is not a reviewer. The hook and the `sdlc`
+command refuse what would bypass a gate, and every refusal says what to run
+instead. No git hooks are installed, and your tests, your build and your tooling
+are untouched.
 
-One rule is worth knowing before you first see it fire. A gate's documents — the
-analysis, the plan, the reviews — are stored with `sdlc artifact write` and
-`sdlc review add`, not written as files by the agent that produced them. They are
-loop state, the same as the gate record, and treating them that way is what stops
-the conversation quietly doing a gate's work and then recording a pass on it.
+Two limits are worth knowing from the start:
 
-Shell commands are covered too, narrowly: a command that would write the loop's
-own record, turn enforcement off, or commit before the gates are done is refused
-and told what to run instead. Everything else — your tests, your build, your
-tooling — is untouched.
+- **This is a discipline tool, not a sandbox.** It constrains an agent that is
+  trying to do the right thing, and it does not defend against one that is
+  trying to escape.
+- **The agents are steered, not blocked.** Each is told to work only a gate of
+  a story you started and to stop on anything else, but nothing enforces that.
+  The plugin does nothing until a person types `/sdlc:next`, and without the
+  binary nothing is enforced at all.
 
-That is a deliberate limit worth stating plainly. This is a discipline tool, not
-a sandbox: it constrains an agent that is trying to do the right thing, and it
-does not defend against one that is trying to escape.
-
-## Who does the work
-
-Each gate is run by an agent that starts from a fresh context and can only write
-what its gate produces through the file-writing tools; the shell is held to
-narrower rules that guard loop state, the freeze and the commit. None of them
-sees the others' reasoning, which is the whole point: a reviewer that inherited
-the argument for a change is not a reviewer.
-
-| Agent | Gate | Can it block? |
-| --- | --- | --- |
-| `sdlc:project-manager` | after 1 and 2 · the staffing, if the project asks | — |
-| `sdlc:researcher` | 2 · analysis and threats | — |
-| `sdlc:sdet` | 3 · acceptance tests | — |
-| `sdlc:implementer` | 4 · the plan, 5 · the code | — |
-| `sdlc:architect` | 4 · design review | **Yes** |
-| `sdlc:security` | 4 and 7 | **Yes**, when the story is security-sensitive |
-| `sdlc:red-team` | 4 · attacks the plan | — |
-| `sdlc:perf` | 4 and 7 | Only against a stated budget |
-| `sdlc:human-advocate` | 4 and 7, and 1 if the project asks | — |
-| `sdlc:verifier` | 6 · independent verification | **Yes** |
-| `sdlc:code-reviewer` | 7 · the diff | **Yes**, unless the project turns on `reviews.gate7_advisory` |
-| `sdlc:bookkeeper` | 9 · retro | — |
-
-Advisory does not mean optional. A gate will not pass until every reviewer it
-expects has reported, because a reviewer you can skip by not running it is not a
-reviewer. The one exception is recorded and shown: where a project turns the
-staffing on, a reviewer a story's staffing leaves out is listed by
-`sdlc review list` with the reason.
-
-## Prerequisites
-
-- **Claude Code** 2.1.265 or newer
-- **git** 2.17 or newer, and on Windows
-  [Git for Windows](https://git-scm.com/download/win) (WSL is not required)
-- **Go** 1.26 or newer, only to build from source or use `go install`
+[Enforcement](https://github.com/bbsnly/sdlc/blob/main/docs/enforcement.md)
+lists every rule and what to do instead, and
+[Agents](https://github.com/bbsnly/sdlc/blob/main/docs/agents.md) says who does
+the work at each gate and which of them can block.
 
 ## Documentation
+
+If you are new, start with Getting started. The other pages are there when you
+need them.
 
 | Page | What is in it |
 | --- | --- |
@@ -258,4 +223,4 @@ Every other tool is pinned and fetched on demand.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
