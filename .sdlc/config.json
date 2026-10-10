@@ -29,7 +29,7 @@
   "commands": {
     "smoke":     "test -z \"$(go list ./...)\" || go vet ./...",
     "build":     "go build ./...",
-    "test":      "go test -race ./... -count=1",
+    "test":      "go test -race -timeout 20m ./... -count=1",
     "npm_test":  "./task npm-test",
     "lint":      "./task lint",
     "fmt":       "./task fmt",
@@ -62,5 +62,44 @@
 
   "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
 
-  "budget": { "per_story_usd": 0, "alert_fractions": [0.5, 0.8, 1.0] }
+  "budget": { "per_story_usd": 0, "alert_fractions": [0.5, 0.8, 1.0] },
+
+  "_staffing_doc": [
+    "Both lists are lowest first: a 'lowest' entry is a position in them.",
+    "lowest: whoever decides a gate or writes what the rest is measured against",
+    "is not asked for less than this, whatever the story.",
+    "bring_back: the paths the contract names as high risk bring security back,",
+    "what runs on every tool call brings perf back, and what a person reads",
+    "brings the human advocate back, even where the staffing left them out."
+  ],
+  "staffing": {
+    "enabled": true,
+    "models": ["haiku", "sonnet", "opus"],
+    "efforts": ["low", "medium", "high", "xhigh"],
+    "lowest": {
+      "project-manager": { "model": "sonnet", "effort": "medium" },
+      "researcher":      { "model": "sonnet", "effort": "medium" },
+      "sdet":            { "model": "sonnet", "effort": "medium" },
+      "implementer":     { "model": "sonnet", "effort": "medium" },
+      "architect":       { "model": "sonnet", "effort": "medium" },
+      "security":        { "model": "sonnet", "effort": "high" },
+      "code-reviewer":   { "model": "sonnet", "effort": "high" },
+      "verifier":        { "model": "opus",   "effort": "high" }
+    },
+    "bring_back": {
+      "security": [
+        "internal/hook/", "internal/shellpolicy/", "internal/policy/", "internal/pathrules/",
+        "internal/testset/", "internal/store/", "internal/parallel/",
+        "internal/cli/approve.go", "internal/cli/ack.go", "internal/cli/freeze.go",
+        "internal/cli/release.go", "internal/cli/staffing.go",
+        "install.sh", "install.ps1", "npm/", "plugin/hooks/",
+        ".github/workflows/", ".goreleaser.yml"
+      ],
+      "perf": ["internal/hook/", "internal/shellpolicy/", "internal/pathrules/", "cmd/sdlc/"],
+      "human-advocate": [
+        "docs/", "README.md", "internal/sdlcerr/", "plugin/skills/", "plugin/agents/",
+        "internal/scaffold/templates/"
+      ]
+    }
+  }
 }
