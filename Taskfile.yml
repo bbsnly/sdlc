@@ -278,7 +278,13 @@ tasks:
     silent: true
     cmds:
       - |
-        out=$({{.GOLANGCI}} run 2>&1) || {
+        # The pinned linter reads the standard library as the installed Go
+        # compiled it, and can only read the releases it knows. With Go 1.27.2
+        # installed and go.mod pinning 1.27.1, every file failed typecheck here
+        # ("export data version 5 is greater than maximum supported version 4")
+        # while CI, which runs the pinned toolchain, passed.
+        toolchain=$(awk '/^toolchain /{print $2; exit}' go.mod)
+        out=$(GOTOOLCHAIN="${toolchain:-local}" {{.GOLANGCI}} run 2>&1) || {
           tracked=$(git ls-files --cached '*.go')
           untracked=$(git ls-files --others --exclude-standard '*.go')
           ignored=$(git ls-files --others --ignored --exclude-standard '*.go')
