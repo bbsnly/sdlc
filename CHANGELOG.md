@@ -59,6 +59,9 @@ not change and it is never reused.
   file could be reached through it. The glob is now read the way `find` matches names, and one that
   cannot be read is refused where `find` starts from a directory that holds or could hold a
   protected file.
+- On macOS, stopping a command the tool runs in a group — a landing's test and quality commands,
+  the trunk check — could leave one of its children running, where that child was being started as
+  the stop arrived. The stop now goes on until nothing is left in the group, for at most a second.
 - Three sentences in the documentation said the wrong thing about which gates refuse a changed
   frozen test, what `SDLC_TRACE=1` times, and what the frozen-test guide's narrower rules cover.
 

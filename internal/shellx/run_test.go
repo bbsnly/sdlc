@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -104,5 +105,57 @@ func TestRunForgetsTheCommandOnceItHasWaitedForIt(t *testing.T) {
 	stops.Unlock()
 	if still {
 		t.Error("Run left the command recorded after waiting for it; StopAll would still try it again")
+	}
+}
+
+// One kill of the group is not enough on macOS: a process whose fork is under
+// way when the signal goes out is not signalled, and its child outlives the
+// stop. An interrupted `sdlc parallel` left a session's tool running that way.
+// The shell here does nothing but start children, so the stop finds it in a
+// fork nearly every time; each round, nothing it started holds the pipe once
+// Run has returned. The children are counted, so that a stop that killed
+// nothing would not fill the machine with them.
+func TestAStopKillsAChildThatWasBeingStartedAsTheGroupWasKilled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the children here are started by a POSIX shell, whose background jobs Windows runs differently")
+	}
+	const forking = "echo up; i=0; while [ $i -lt 300 ]; do sleep 300 & i=$((i+1)); done; wait"
+	for range 10 {
+		ctx, cancel := context.WithCancel(t.Context())
+		cmd, err := Command(ctx, t.TempDir(), forking)
+		if errors.Is(err, ErrNoShell) {
+			cancel()
+			t.Skip("neither sh nor bash is on PATH")
+		}
+		if err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		InGroup(cmd)
+		// A pipe of the test's own, which Run does not wait on: only the
+		// processes hold its other end.
+		r, w, err := os.Pipe()
+		if err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		cmd.Stdout = w
+		finished := make(chan error, 1)
+		go func() { finished <- Run(cmd) }()
+		out := bufio.NewReader(r)
+		if _, err := out.ReadString('\n'); err != nil {
+			cancel()
+			t.Fatalf("the shell did not say it had started: %v", err)
+		}
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(grPatience):
+			t.Fatal("Run had not returned once its context was cancelled")
+		}
+		// The test's own end, closed once Run no longer reads it.
+		_ = w.Close()
+		grGone(t, out, "Run returned for a command stopped while it started children")
+		_ = r.Close()
 	}
 }
