@@ -36,6 +36,14 @@ vars:
   ACTIONLINT: go run github.com/rhysd/actionlint/cmd/actionlint@v{{.ACTIONLINT_VERSION}}
   GITLEAKS: go run github.com/zricethezav/gitleaks/v8@v{{.GITLEAKS_VERSION}}
 
+  # A scratch directory, wherever the platform keeps them. On Windows task runs
+  # its own mktemp in place of the one on PATH, and that one knows only TMPDIR
+  # and /tmp: Windows sets neither, so the secrets leg ended in "mktemp:
+  # GetFileAttributesEx /tmp: The system cannot find the file specified". So
+  # TMPDIR is given for the one command, from what Windows does set; every
+  # mktemp reads it, and where it is already set nothing changes.
+  MKTEMP_DIR: TMPDIR="${TMPDIR:-${TEMP:-${TMP:-${RUNNER_TEMP:-/tmp}}}}" mktemp -d
+
   # Run over a failing leg's own output: after every line that names a file,
   # says whether git tracks it. A leg that failed on a gitignored or untracked
   # file looked, from its output alone, exactly like one that failed on a file
@@ -155,17 +163,12 @@ tasks:
           fail=1
         fi
         # The secrets leg builds a throwaway snapshot of the working tree, which
-        # needs these, and `git rev-parse --path-format=absolute` (git 2.31).
-        # Without a check each one ends the leg in a raw shell error.
-        if ! command -v mktemp >/dev/null 2>&1; then
+        # needs mktemp and `git rev-parse --path-format=absolute` (git 2.31).
+        # Without a check each one ends the leg in a raw shell error. Windows
+        # is not asked for mktemp: task runs its own there.
+        if [ "{{OS}}" != "windows" ] && ! command -v mktemp >/dev/null 2>&1; then
           echo "sdlc: mktemp is not installed. The secrets leg uses it to build a throwaway snapshot of the working tree." >&2
           echo "      macOS/Linux: part of coreutils, already on PATH." >&2
-          echo "      Windows: part of Git for Windows' bundled usr/bin, already on PATH wherever git is." >&2
-          fail=1
-        fi
-        if ! command -v tar >/dev/null 2>&1; then
-          echo "sdlc: tar is not installed. The secrets leg uses it to extract that snapshot." >&2
-          echo "      Windows 10 1803 and later ship bsdtar as tar.exe; older Windows needs Git for Windows." >&2
           fail=1
         fi
         if ! command -v git >/dev/null 2>&1; then
@@ -289,7 +292,15 @@ tasks:
     silent: true
     cmds:
       - |
-        out=$(go test -race ./... 2>&1) || {
+        # go test gives a package ten minutes unless told otherwise, and under
+        # the race detector internal/shellpolicy took six on a fast machine: on
+        # a loaded macOS runner it reached the ten and was killed mid-test. Its
+        # slowest tests now run in parallel, but the slowest package on the
+        # slowest runner still takes eight minutes, so the limit is twenty:
+        # room to spare, and short enough that a real hang is reported by go
+        # test, with the test's name, before the CI job's thirty minutes end it
+        # with none.
+        out=$(go test -race -timeout 20m ./... 2>&1) || {
           # go test's failure lines carry only a test file's bare name, which
           # cannot be matched against a full path, and two packages can hold a
           # file of the same name. So say, per failing package, whether every
@@ -403,7 +414,7 @@ tasks:
         set -eu
         version="{{.SHELLCHECK_VERSION}}"
         out=.github/shellcheck.sha256
-        tmp=$(mktemp -d)
+        tmp=$({{.MKTEMP_DIR}})
         trap 'rm -rf "$tmp"' EXIT
         {
           echo "# sha256 of every shellcheck release asset CI installs, cross-checked against"
@@ -447,7 +458,7 @@ tasks:
         set -eu
         version="{{.SYFT_VERSION}}"
         out=.github/syft.sha256
-        tmp=$(mktemp -d)
+        tmp=$({{.MKTEMP_DIR}})
         trap 'rm -rf "$tmp"' EXIT
         {
           echo "# sha256 of every syft release asset the release job installs, cross-checked"
@@ -505,9 +516,11 @@ tasks:
       # run. To bump it, change the version in
       # .github/tools/markdownlint/package.json and run
       # `npm install --package-lock-only --ignore-scripts` there.
-      # package.json overrides smol-toml, which markdownlint-cli2 0.23.2 pins at a
-      # version with a denial-of-service advisory; drop the override once it
-      # pins 1.7.1 or later.
+      # package.json overrides two packages below markdownlint-cli2 0.23.3, each
+      # held at a version with an advisory against it: smol-toml, which it pins
+      # at 1.8.0 (drop the override once it pins 1.9.0 or later), and katex,
+      # which markdownlint 0.41.1 reaches through its math extension (drop it
+      # once that resolves to 0.18.2 or later).
       - npm ci --prefix .github/tools/markdownlint --ignore-scripts --no-audit --no-fund
       - |
         out=$(node .github/tools/markdownlint/node_modules/markdownlint-cli2/markdownlint-cli2-bin.mjs 2>&1) || {
@@ -677,7 +690,11 @@ tasks:
         # unmodified tracked file's blob is found rather than duplicated. Its
         # path comes from --git-common-dir: in a linked worktree the per-worktree
         # git dir has no objects/ at all.
-        workdir=$(mktemp -d)
+        #
+        # The path is spelt with slashes throughout: on Windows mktemp answers
+        # with backslashes, and git is then handed one path spelt both ways.
+        workdir=$({{.MKTEMP_DIR}})
+        workdir=${workdir//\\//}
         trap 'rm -rf "$workdir"' EXIT
         mkdir "$workdir/objects" "$workdir/tree"
         real_objects="$(git rev-parse --path-format=absolute --git-common-dir)/objects"
@@ -685,10 +702,11 @@ tasks:
 
         GIT_INDEX_FILE="$workdir/index" GIT_OBJECT_DIRECTORY="$workdir/objects" \
           GIT_ALTERNATE_OBJECT_DIRECTORIES="$real_objects" git -c core.safecrlf=false add -A .
-        tree=$(GIT_INDEX_FILE="$workdir/index" GIT_OBJECT_DIRECTORY="$workdir/objects" \
-          GIT_ALTERNATE_OBJECT_DIRECTORIES="$real_objects" git write-tree)
-        GIT_OBJECT_DIRECTORY="$workdir/objects" GIT_ALTERNATE_OBJECT_DIRECTORIES="$real_objects" \
-          git archive "$tree" | tar -x -C "$workdir/tree"
+        # git writes the files out itself. This was `git archive | tar -x -C`,
+        # and on Windows task runs its own tar, which has no -C and reads no
+        # pipe, so the leg could not finish there once mktemp worked.
+        GIT_INDEX_FILE="$workdir/index" GIT_OBJECT_DIRECTORY="$workdir/objects" \
+          GIT_ALTERNATE_OBJECT_DIRECTORIES="$real_objects" git checkout-index --all --prefix="$workdir/tree/"
 
         after=$(git count-objects -v | awk '/^count:/{print $2}')
         if [ "$before" != "$after" ]; then
@@ -696,17 +714,18 @@ tasks:
           echo "      Check that no other git process (git gc, a fetch, an editor's git integration) is running in this repository, then run ./task secrets again. If it recurs, run git gc, or report it." >&2
           exit 1
         fi
-        # Counted against the snapshot's own index, which is what `git add -A`
+        # Held against the snapshot's own index, which is what `git add -A`
         # kept: a tracked file deleted but not yet staged is in `git ls-files
         # --cached` and not in the snapshot, so counting the real index aborted
-        # on an ordinary mid-edit tree. A pipe that died half way, or a tar that
-        # stopped early, still leaves fewer files than the index names -- an
-        # empty copy must never read as a clean scan.
-        got=$(find "$workdir/tree" \( -type f -o -type l \) | wc -l | tr -d ' ')
-        want=$(GIT_INDEX_FILE="$workdir/index" git ls-files | wc -l | tr -d ' ')
-        if [ "$got" -ne "$want" ]; then
-          echo "sdlc: the secrets leg's snapshot holds $got file(s) where $want were expected, so it was not scanned." >&2
-          echo "      The copy of the working tree is incomplete. Check free space in the system temp directory and that tar works, then run ./task secrets again." >&2
+        # on an ordinary mid-edit tree. A copy that stopped early leaves files
+        # the index names and the snapshot lacks -- an empty copy must never
+        # read as a clean scan. git names them, not find: task's own find on
+        # Windows takes neither parentheses nor -o.
+        missing=$(GIT_INDEX_FILE="$workdir/index" git --work-tree="$workdir/tree" ls-files --deleted | wc -l | tr -d ' ')
+        if [ "$missing" -ne 0 ]; then
+          want=$(GIT_INDEX_FILE="$workdir/index" git ls-files | wc -l | tr -d ' ')
+          echo "sdlc: the secrets leg's snapshot lacks $missing of the $want file(s) expected, so it was not scanned." >&2
+          echo "      The copy of the working tree is incomplete. Check free space in the system temp directory, then run ./task secrets again." >&2
           exit 1
         fi
 
