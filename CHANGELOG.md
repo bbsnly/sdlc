@@ -7,6 +7,61 @@ All notable changes to this project are documented here. The format follows
 Error codes are part of the interface: once published, a code's meaning does
 not change and it is never reused.
 
+## [0.4.0](https://github.com/bbsnly/sdlc/releases/tag/v0.4.0) - 2026-10-10
+
+### Added
+
+- A story no longer has to get every reviewer. With `staffing.enabled` on, a new agent,
+  `sdlc:project-manager`, records a staffing after the story is ready and before the analysis:
+  which agents the story needs and what model and effort each is asked for, each with a reason
+  drawn from what the change is. The analysis gate does not pass until one is recorded, and the
+  reviewed gates then wait only for the reviewers the staffing needs. `sdlc staffing show` prints
+  it, `set` records it and `amend` changes it with a reason; `sdlc staffing assign` is a person's
+  command, and what a person assigns is not the project manager's to change. Whoever does a gate's
+  work, the verifier, the code reviewer, and security once the story is recorded as
+  security-sensitive can never be left out. Models and efforts are held to the lists in the
+  configuration, with a lowest per agent, and a change under a path listed in `staffing.bring_back`
+  brings a left-out reviewer back at code review. The tool records what was asked for, never what
+  ran. `status`, `review list` and `log` show the staffing and every change to it. New codes
+  `SDLC-E0067` to `SDLC-E0074`. The staffing is off unless a project turns it on, and with it off
+  command output and the story's record are unchanged.
+- `sdlc parallel <ID>...` works several stories at once: it starts one headless Claude Code
+  session per story, each running `/sdlc:next <ID>`, and prints one status view with everything
+  that waits on a person gathered at the end. `--max` caps how many run at once (default 2). The
+  sessions run on the headless default permissions; `--unattended` grants a built-in allowlist that
+  `parallel.allow` in the configuration can narrow and never widen. It is a person's command: the
+  hook refuses it from a model-driven session, and the binary refuses a process that carries a
+  session id. A story that is unknown, not runnable, named twice, held elsewhere, waiting on a
+  person or finished is refused before anything starts. Closing the terminal ends the sessions as
+  an interrupt does. New codes `SDLC-E0057` to `SDLC-E0066`.
+- `/sdlc:next <ID>` works the story it names; the bare form still takes the next runnable one.
+
+### Changed
+
+- The hook refuses more in every project, whether or not the staffing is on. An `sdlc` command
+  whose subcommand is not written out as a literal word, or is fed to it on standard input, is
+  refused as unread, and the refusal says to write the subcommand out. Only the project manager
+  records a staffing, the project manager runs no other `sdlc` command that writes, and
+  `sdlc staffing assign` is refused to every session.
+- A `find` that changes files is now judged by what its whole expression picks: the hook reads
+  negation, alternation and grouping between the tests, in a string given to a shell or to `eval`
+  as well. Where it cannot follow the expression, the `find` is refused if it starts where loop
+  state or a frozen test is or could be, and the refusal says what to do instead. Some `find`
+  commands that were allowed are now refused; `docs/enforcement.md` says what is read.
+- A session that ends its turn to wait for a background subagent is no longer sent back and
+  counted towards a stalled story. The stop is let through uncounted while Claude Code reports a
+  background subagent, for at most 30 minutes at the same recorded progress; after that, or where
+  no such report is sent, a stop counts as before. The stop state on disk gains `waiting_since`.
+
+### Fixed
+
+- A `find` glob that opens a bracket class with `]` was misread, so a frozen test or a loop-state
+  file could be reached through it. The glob is now read the way `find` matches names, and one that
+  cannot be read is refused where `find` starts from a directory that holds or could hold a
+  protected file.
+- Three sentences in the documentation said the wrong thing about which gates refuse a changed
+  frozen test, what `SDLC_TRACE=1` times, and what the frozen-test guide's narrower rules cover.
+
 ## [0.3.0](https://github.com/bbsnly/sdlc/releases/tag/v0.3.0) - 2026-10-02
 
 ### Added
