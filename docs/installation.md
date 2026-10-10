@@ -1,15 +1,149 @@
 # Installation
 
+- [Introduction](#introduction)
+- [What it needs](#what-it-needs)
+- [Give your agent this prompt](#give-your-agent-this-prompt)
+- [Quick install](#quick-install)
+- [Check it worked](#check-it-worked)
+- [1. The binary](#1-the-binary)
+  - [With npm](#with-npm)
+  - [macOS and Linux](#macos-and-linux)
+  - [Windows](#windows)
+  - [By hand, from a release](#by-hand-from-a-release)
+  - [With Go](#with-go)
+  - [From source](#from-source)
+- [2. The plugin](#2-the-plugin)
+  - [The plugin without the binary](#the-plugin-without-the-binary)
+  - [The skill on its own, with `npx skills add`](#the-skill-on-its-own-with-npx-skills-add)
+- [Verifying a download yourself](#verifying-a-download-yourself)
+- [Updating](#updating)
+- [Uninstalling](#uninstalling)
+- [Where to go next](#where-to-go-next)
+
+## Introduction
+
 Two things get installed: the `sdlc` binary, which owns the loop's state and
 enforces its rules, and the Claude Code plugin, which is what your session
 talks to. The loop needs both, and in the session working a story the plugin
 tells you if the binary is missing rather than quietly enforcing nothing.
 
+The quickest way in is to hand the job to your agent with the prompt below. If
+you would rather type the commands yourself, the quick install is two steps. If
+you would rather install another way, such as with a shell script, Go or a
+prebuilt archive, the later sections cover each route, along with updating and
+uninstalling.
+
 The plugin does nothing until a person types `/sdlc:next`. In Claude Code only
 a person can start its skills. Its agents are told to work only a gate of a
 story you started and to stop on anything else, but nothing enforces that.
 
+## What it needs
+
+| | |
+| --- | --- |
+| Claude Code | 2.1.265 or newer |
+| Node | 18 or newer, only for the `npx` route |
+| git | 2.17 or newer, in the project you run the loop on. On Windows this is [Git for Windows](https://git-scm.com/download/win); WSL is not required |
+| an OS | macOS, Linux, or Windows 10 or newer |
+
+Nothing else. The binary is static and has no runtime dependencies; Go and
+Node are needed only if you install through them.
+
+## Give your agent this prompt
+
+Paste it into Claude Code, in the project you want to work on. It installs
+`sdlc` and takes you through the setup.
+
+```text
+Set up sdlc: run `npx @bbsnly/sdlc install`, then read
+https://github.com/bbsnly/sdlc/blob/main/docs/getting-started.md and follow it
+all the way through.
+```
+
+The agent cannot type the `/plugin` commands or `/sdlc:next`, because only a
+person can in Claude Code. It will hand those back to you, along with what goes
+in the contract and your story's acceptance criteria, which are your decisions.
+
+## Quick install
+
+If you prefer to run the commands yourself, there are two steps. First, install
+the binary. If you have Node 18 or newer, one line does it on macOS, Linux and
+Windows alike:
+
+```console
+$ npx @bbsnly/sdlc install
+```
+
+This downloads the native binary built for your machine, checks it against the
+checksums the package carries, and installs it. You do not need to pick a
+platform, and nothing of Node stays behind: what you run afterwards is the
+binary itself.
+
+> [!NOTE]
+> The npm installer does not change your `PATH`. If the install directory is
+> not on it, the installer prints the lines to add. Add them, then open a new
+> terminal. No Node? The one-line scripts for
+> [macOS and Linux](#macos-and-linux) and [Windows](#windows) do the same job.
+
+Then, in Claude Code, add the plugin:
+
+```text
+/plugin marketplace add bbsnly/sdlc
+/plugin install sdlc@sdlc
+```
+
+The repository is its own marketplace, so there is nothing else to add. Now
+let's make sure everything is in place.
+
+## Check it worked
+
+In a new terminal:
+
+```console
+$ sdlc version
+```
+
+If it prints a version, your terminal can find the binary. After you run
+`sdlc init` in a project and commit what it wrote (see
+[Getting started](getting-started.md#commit-the-setup)), `sdlc doctor` checks
+the rest: git, the configuration, the backlog, the contract section, the
+commands your configuration names, and (the one that catches a half install)
+whether the hook can find the binary at all. Every problem it reports comes with what to do
+about it. Before `init`, it can only tell you that the project has not been set
+up.
+
+[Getting started](getting-started.md) takes you from here to your first story.
+
 ## 1. The binary
+
+The [quick install](#quick-install) uses npm, and is the route most people
+take. If you do not have Node, or you need to choose where the binary goes, pin
+a version, or install another way, the sections below cover each route. Every
+one of them gives you the same `sdlc` binary.
+
+### With npm
+
+This is the [quick install](#quick-install) again, with the details:
+
+```console
+$ npx @bbsnly/sdlc install
+```
+
+It installs the release the package was published with, into `~/.local/bin`
+(`%LOCALAPPDATA%\Programs\sdlc\bin` on Windows), and checks it against the
+checksums the package carries, which nobody can change after publishing.
+`--version` or `SDLC_VERSION` installs another release, and `--dir` or
+`SDLC_INSTALL_DIR` another directory. What ends up on your `PATH` is the native
+binary, not a Node wrapper around it: sdlc runs as a hook on every matching
+tool call, and a Node process start costs more than everything else in the loop
+put together.
+
+There is no postinstall script, so `npm install --ignore-scripts` changes
+nothing here: the download happens when you ask for it.
+
+Unlike the Windows install script, it does not change `PATH`: when the
+directory is not on it, it prints the lines to add it. The plugin's hook finds
+the binary in the default directory either way.
 
 ### macOS and Linux
 
@@ -19,15 +153,16 @@ $ curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
 
 It downloads the release built for your machine, checks it against the
 release's `checksums.txt`, and installs a single static binary into
-`~/.local/bin`. It touches nothing else and asks for no privileges.
+`~/.local/bin`. It touches nothing else and asks for no privileges. To choose
+the version or the directory, pass them as options:
 
 ```console
-$ curl -fsSL .../install.sh | sh -s -- --version 0.1.0 --dir ~/.local/bin
+$ curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh -s -- --version 0.1.0 --dir ~/.local/bin
 ```
 
 `--dir` can point anywhere you can write. Somewhere like `/usr/local/bin` needs
 privileges the script does not ask for, so run it under `sudo` yourself if that
-is where you want it — the script will otherwise tell you it could not write
+is where you want it. The script will otherwise tell you it could not write
 there.
 
 `SDLC_VERSION` and `SDLC_INSTALL_DIR` do the same thing, which is easier to
@@ -43,27 +178,6 @@ Installs into `%LOCALAPPDATA%\Programs\sdlc\bin` and adds that directory to
 your user `PATH`. Open a new terminal afterwards for the `PATH` change to
 apply. Set `$env:SDLC_NO_PATH = '1'` first if you would rather manage `PATH`
 yourself, which is what you want inside a container image.
-
-### With npm
-
-```console
-$ npx @bbsnly/sdlc install
-```
-
-Same download and destination. It installs the release the package was
-published with, and checks it against the checksums the package carries, which
-nobody can change after publishing. `--version` or `SDLC_VERSION` installs
-another release. What ends up on your
-`PATH` is the native binary, not a Node wrapper around it: sdlc runs as a hook
-on every matching tool call, and a Node process start costs more than
-everything else in the loop put together.
-
-There is no postinstall script, so `npm install --ignore-scripts` changes
-nothing here — the download happens when you ask for it.
-
-Unlike the Windows install script, it does not change `PATH`: when the
-directory is not on it, it prints the lines to add it. The plugin's hook finds
-the binary in the default directory either way.
 
 ### By hand, from a release
 
@@ -114,8 +228,8 @@ Expand-Archive $asset -DestinationPath sdlc
 ```
 
 The check prints `True` for a good download. Move `sdlc\sdlc.exe` into a
-directory on your `PATH` — `%LOCALAPPDATA%\Programs\sdlc\bin` is where the
-install script puts it — and open a new terminal.
+directory on your `PATH` (`%LOCALAPPDATA%\Programs\sdlc\bin` is where the
+install script puts it) and open a new terminal.
 
 To go further than a checksum and confirm which workflow built the archive, see
 [Verifying a download yourself](#verifying-a-download-yourself).
@@ -143,7 +257,9 @@ before you trust it.
 
 ## 2. The plugin
 
-In Claude Code:
+If you added the plugin in the [quick install](#quick-install), it is already in
+place. This section explains what it brings and how it finds the binary. In
+Claude Code:
 
 ```text
 /plugin marketplace add bbsnly/sdlc
@@ -151,15 +267,15 @@ In Claude Code:
 ```
 
 The repository is its own marketplace, so there is nothing else to add. That
-gives you three skills only you start in Claude Code — `/sdlc:next` to work the
+gives you three skills only you start in Claude Code (`/sdlc:next` to work the
 loop, `/sdlc:trunk-review` to look back at what landed and `/sdlc:consolidate`
-to turn the retros into changes to your contract and configuration — twelve
-agents, and the `PreToolUse`, `PostToolUse` and `Stop` hooks that do the
+to turn the retros into changes to your contract and configuration),
+twelve agents, and the `PreToolUse`, `PostToolUse` and `Stop` hooks that do the
 enforcing.
 
-Worth knowing: the marketplace serves the repository's default branch, not a
-tag. `/plugin update sdlc@sdlc` therefore gives you the plugin as it is on
-`main`, which can be ahead of the binary release you have installed — the
+The marketplace serves the repository's default branch, not a tag.
+`/plugin update sdlc@sdlc` therefore gives you the plugin as it is on the
+default branch, which can be ahead of the binary release you have installed. The
 version in the plugin's manifest names the release it was cut for, not the
 commit you received. The two halves are kept compatible on purpose, and the
 binary is the one that enforces.
@@ -205,7 +321,7 @@ gives you `/next`, `/trunk-review` or `/consolidate` in a session.
 
 Know what that route brings and what it does not. It brings the runbook: the
 order of the gates, what each one produces, what to do when one fails. It does
-**not** bring the binary, the twelve agents, or the hook — so nothing is
+**not** bring the binary, the twelve agents, or the hook, so nothing is
 recorded, nothing is frozen, and nothing is refused. `next` checks for the tool
 and for the agents before it does anything and stops if either is missing,
 because a loop with no enforcement behind it is a checklist, and a checklist you
@@ -218,25 +334,12 @@ Use it to read the loop, to run it against a different agent, or to pin the
 runbook in a repository that installs the rest some other way. To actually use
 the loop in Claude Code, install the plugin above.
 
-## Check it worked
-
-From inside a project:
-
-```console
-$ sdlc doctor
-```
-
-`doctor` checks git, the configuration, the backlog, the contract section, the
-commands your configuration names, and — the one that catches a half install —
-whether the hook can find the binary at all. Every problem it reports comes
-with the command that fixes it.
-
 ## Verifying a download yourself
 
 Every release publishes `checksums.txt`, and every archive is attested, along
 with `checksums.txt` itself and the two install scripts: GitHub records which
 workflow, in which repository, at which commit, produced them. Attesting the
-checksum file is what makes it worth checking against — a list anyone could
+checksum file is what makes it worth checking against: a list anyone could
 replace would prove nothing about the archives it lists.
 
 The `Source code (zip)` and `Source code (tar.gz)` entries GitHub adds to every
@@ -266,11 +369,12 @@ not depend on fetching a checksum from the same place as the download.
 
 ## Updating
 
-Run the same installer again. Every route writes the new binary under a name
+Run the same installer again. With npm, ask for the newest package
+explicitly: `npx @bbsnly/sdlc@latest install`. Every route writes the new binary under a name
 `PATH` cannot resolve and then renames it, so the only visible change is
 atomic: a half-written binary on your `PATH` would be worse than an old one.
 
-On Windows, close anything running `sdlc.exe` first — a running executable
+On Windows, close anything running `sdlc.exe` first: a running executable
 cannot be replaced, and the installer will say so rather than leave a damaged
 one behind.
 
@@ -288,17 +392,6 @@ On Windows, delete `%LOCALAPPDATA%\Programs\sdlc\bin` and remove it from your
 `/plugin uninstall sdlc@sdlc`.
 
 A project's own `.sdlc/` directory is yours; nothing removes it for you.
-
-## What it needs
-
-| | |
-| --- | --- |
-| Claude Code | 2.1.265 or newer |
-| git | 2.17 or newer, in the project you run the loop on |
-| an OS | macOS, Linux, or Windows 10 or newer |
-
-Nothing else. The binary is static and has no runtime dependencies; Go and
-Node are needed only if you install through them.
 
 ## Where to go next
 
