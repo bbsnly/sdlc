@@ -17,14 +17,6 @@ always green.
 [![npm downloads](https://img.shields.io/npm/dm/@bbsnly/sdlc?label=npm%20downloads)](https://www.npmjs.com/package/@bbsnly/sdlc)
 [![release downloads](https://img.shields.io/github/downloads/bbsnly/sdlc/total?label=release%20downloads)](https://github.com/bbsnly/sdlc/releases)
 
-## Status
-
-All nine gates are built and enforced, and a story can go from the backlog to a
-commit without leaving the loop. Releases are published on the
-[releases page](https://github.com/bbsnly/sdlc/releases); the install scripts
-below take the latest one from there, the npm package takes the release it was
-published with, and `go install` or a source build works from any commit.
-
 ## Install
 
 There are three parts: the binary that does the enforcing, the plugin that runs

@@ -151,8 +151,8 @@ the binary in the default directory either way.
 $ curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
 ```
 
-It downloads the release built for your machine, checks it against the
-release's `checksums.txt`, and installs a single static binary into
+It downloads the latest release built for your machine, checks it against
+the release's `checksums.txt`, and installs a single static binary into
 `~/.local/bin`. It touches nothing else and asks for no privileges. To choose
 the version or the directory, pass them as options:
 
