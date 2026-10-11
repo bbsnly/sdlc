@@ -1,9 +1,9 @@
 // Every platform a release ships, checked from whichever one this is.
 //
 // The installers were only ever run on the three architectures CI has runners
-// for, so half of what a release publishes -- linux/arm64, darwin/amd64,
-// windows/arm64 -- was built, checksummed, attested and shipped without anyone
-// ever installing it. What can go wrong there is not arch-specific code, of
+// for, so some of what a release publishes -- linux/arm64 and windows/arm64 --
+// was built, checksummed, attested and shipped without anyone ever installing
+// it. What can go wrong there is not arch-specific code, of
 // which there is none; it is the installer naming the wrong archive for a
 // machine it has never seen, which is a pure function of `uname` and testable
 // anywhere.
@@ -23,8 +23,8 @@ import (
 	"testing"
 )
 
-// shipped is what .goreleaser.yml publishes: darwin, linux and windows on
-// amd64 and arm64. Windows is absent here because install.sh refuses it by
+// shipped is what .goreleaser.yml publishes: linux and windows on amd64 and
+// arm64, and darwin on arm64. Windows is absent here because install.sh refuses it by
 // design -- that route is install.ps1, which has a runner for each of its
 // architectures.
 var shipped = []struct {
@@ -37,7 +37,6 @@ var shipped = []struct {
 }{
 	{"linux", "amd64", "Linux", []string{"x86_64", "amd64"}},
 	{"linux", "arm64", "Linux", []string{"aarch64", "arm64"}},
-	{"darwin", "amd64", "Darwin", []string{"x86_64"}},
 	{"darwin", "arm64", "Darwin", []string{"arm64"}},
 }
 
@@ -74,9 +73,9 @@ func TestTheShellInstallerInstallsEveryPlatformWeShip(t *testing.T) {
 	}
 }
 
-// Under Rosetta, `uname -m` says x86_64 on an Apple Silicon Mac, and the Intel
-// build the installer chose ran translated on every hook call. Only the arm64
-// archive is published here, so choosing the other one fails outright.
+// Under Rosetta, `uname -m` says x86_64 on an Apple Silicon Mac, which reads as
+// a machine there is no build for. Only the arm64 archive is published here,
+// so naming any other fails outright.
 func TestTheShellInstallerInstallsTheNativeBuildUnderRosetta(t *testing.T) {
 	skipUnlessPOSIX(t)
 	binary, mirror := crossRelease(t, "darwin", "arm64")
@@ -103,12 +102,17 @@ func TestTheShellInstallerSaysSoOnAPlatformWeDoNotShip(t *testing.T) {
 	for _, unrecognised := range []struct{ what, s, m string }{
 		{"operating system", "FreeBSD", "x86_64"},
 		{"architecture", "Linux", "riscv64"},
+		{"pair of the two", "Darwin", "x86_64"},
 	} {
 		t.Run(unrecognised.what, func(t *testing.T) {
 			t.Parallel()
 			_, mirror := crossRelease(t, runtime.GOOS, runtime.GOARCH)
 			dir := t.TempDir()
 			shim := unameShim(t, unrecognised.s, unrecognised.m)
+			if unrecognised.s == "Darwin" {
+				// Not translated: the machine is what uname says it is.
+				sysctlShim(t, shim, "0")
+			}
 
 			out, err := runWithEnv(t, serve(t, mirror), dir,
 				[]string{

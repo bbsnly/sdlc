@@ -87,12 +87,16 @@ case "$(uname -m)" in
 esac
 
 # Under Rosetta a shell is translated, and `uname -m` answers for it rather than
-# for the machine: an Apple Silicon Mac got the Intel build, which works and
-# runs translated on every hook call. Where there is no such sysctl, the
-# answer is empty and nothing changes.
-if [ "$os" = darwin ] && [ "$arch" = amd64 ] &&
-  [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
-  arch=arm64
+# for the machine, so an Apple Silicon Mac reads as one there is no build for.
+# Where there is no such sysctl, the answer is empty.
+if [ "$os" = darwin ] && [ "$arch" = amd64 ]; then
+  if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
+    arch=arm64
+  else
+    die "no prebuilt binary for $(uname -s) on $(uname -m)." \
+      "Build from source instead:" \
+      "  go install github.com/$repo/cmd/sdlc@latest"
+  fi
 fi
 
 # SDLC_DOWNLOAD_BASE points this at somewhere other than GitHub. It exists so

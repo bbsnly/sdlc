@@ -42,7 +42,7 @@ class Failure extends Error {
 function assetFor(platform, arch, version) {
   const goos = { darwin: 'darwin', linux: 'linux', win32: 'windows' }[platform]
   const goarch = { x64: 'amd64', arm64: 'arm64' }[arch]
-  if (!goos || !goarch) {
+  if (!goos || !goarch || (goos === 'darwin' && goarch === 'amd64')) {
     throw new Failure(`there is no prebuilt sdlc for ${platform}/${arch}.`, [
       'Build from source instead:',
       `  go install github.com/${REPO}/cmd/sdlc@latest`,

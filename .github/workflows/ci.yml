@@ -231,7 +231,7 @@ jobs:
         run: node --test npm/test/
 
   # Every target a release publishes, compiled. `task check` builds only for
-  # the runner it is on, so three of the six platforms goreleaser ships were
+  # the runner it is on, so two of the five platforms goreleaser ships were
   # built for the first time during the release itself -- the one run where a
   # compile error costs the most. This is seconds of work and takes that risk
   # off release day entirely.
@@ -261,8 +261,14 @@ jobs:
             echo "::error::could not read goos/goarch out of .goreleaser.yml" >&2
             exit 1
           fi
+          # The pairs the release leaves out, as "os/arch", from the same file.
+          ignored=$(awk '/^ *ignore:/ {on=1; next}
+            on && /^ *- goos:/ {os=$3; next}
+            on && /^ *goarch:/ {print os "/" $2; next}
+            on {on=0}' .goreleaser.yml | tr '\n' ' ')
           for os in ${goos}; do
             for arch in ${goarch}; do
+              case " ${ignored} " in *" ${os}/${arch} "*) continue ;; esac
               echo "==> ${os}/${arch}"
               GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 go build -o /dev/null ./cmd/sdlc
             done
@@ -289,12 +295,12 @@ jobs:
           fi
           go run "github.com/goreleaser/goreleaser/v2@v${pin}" check
 
-  # The architectures no `check` runner covers. A release publishes six
-  # platforms; until this job existed, three of them -- linux/arm64,
-  # darwin/amd64, windows/arm64 -- had never run the binary they ship, let
-  # alone installed it. This runs the tests and every installer route that
-  # applies, which is what the primary runners do, without the linters and
-  # vendored-kit legs that are not architecture-dependent.
+  # The architectures no `check` runner covers. A release publishes five
+  # platforms; until this job existed, two of them -- linux/arm64 and
+  # windows/arm64 -- had never run the binary they ship, let alone installed
+  # it. This runs the tests and every installer route that applies, which is
+  # what the primary runners do, without the linters and vendored-kit legs
+  # that are not architecture-dependent.
   install:
     name: install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -302,7 +308,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04-arm, windows-11-arm, macos-15-intel]
+        os: [ubuntu-24.04-arm, windows-11-arm]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

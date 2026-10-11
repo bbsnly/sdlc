@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel, windows-latest, windows-11-arm]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest, windows-11-arm]
     steps:
       # Only for go.mod, which names the Go that `go install` is tried with.
       # Nothing below installs from this checkout.
@@ -168,7 +168,6 @@ jobs:
           case "${RUNNER_OS}-${RUNNER_ARCH}" in
             Linux-X64)   platform=linux_amd64 ;;
             Linux-ARM64) platform=linux_arm64 ;;
-            macOS-X64)   platform=darwin_amd64 ;;
             macOS-ARM64) platform=darwin_arm64 ;;
             *) echo "::error::no archive is published for ${RUNNER_OS}-${RUNNER_ARCH}"; exit 1 ;;
           esac

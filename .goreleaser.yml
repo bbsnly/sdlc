@@ -44,6 +44,9 @@ builds:
       - -X github.com/bbsnly/sdlc/internal/version.date={{ .CommitDate }}
     goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
+    ignore:
+      - goos: darwin
+        goarch: amd64
     mod_timestamp: '{{ .CommitTimestamp }}'
 
 archives:

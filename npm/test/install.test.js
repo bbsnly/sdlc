@@ -30,6 +30,7 @@ test('a platform with no build says so, and says what to do instead', () => {
     assert.ok(err.advice.some((line) => line.includes('go install')))
     return true
   })
+  assert.throws(() => assetFor('darwin', 'x64', '1.2.3'), /no prebuilt sdlc for darwin\/x64/)
   assert.throws(() => assetFor('linux', 'mips', '1.2.3'), Failure)
 })
 

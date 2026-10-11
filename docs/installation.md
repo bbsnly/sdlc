@@ -188,7 +188,6 @@ machine:
 | Machine | Archive |
 | --- | --- |
 | macOS, Apple silicon | `sdlc_<version>_darwin_arm64.tar.gz` |
-| macOS, Intel | `sdlc_<version>_darwin_amd64.tar.gz` |
 | Linux, x86-64 | `sdlc_<version>_linux_amd64.tar.gz` |
 | Linux, ARM64 | `sdlc_<version>_linux_arm64.tar.gz` |
 | Windows, x64 | `sdlc_<version>_windows_amd64.zip` |
