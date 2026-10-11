@@ -201,6 +201,40 @@ the only caller of `commands.coverage`/`commands.mutation` from
 `.sdlc/config.json` (`sdlc doctor` reads each command's text and runs none);
 `./task check` in `Taskfile.yml` does not run either.
 
+## internal/cli/trunktests.go
+
+Package `cli`. Decides which of a story's test files are trunk's own, so that
+trunk's tests a story has picked up by landing on a moved trunk do not count
+against its freeze. `sittingOn` is the merge base of trunk's tip and the story's
+head, with trunk named by the main checkout's configuration; it is `""` where
+that cannot be told. `heldTests` returns the frozen files still broken, the test
+files the freeze does not hold, trunk's files the story changed or took away, and
+the `model.TrunkTests` it accepted. A path is accepted only where trunk changed it
+between the cut and `sittingOn`, the story's commits did not, trunk's mode for it
+is `100644` or `100755`, and the SHA-256 of the file on disk equals that of trunk's
+blob (`judge.asTrunkHasIt`); `git status` is not asked. A frozen file is accepted
+only where the lock's hash for it is the cut's blob. Outside a story's own
+worktree, and wherever there is no cut or `sittingOn` is the cut or the tip, the
+result is the same two lists as before. `acceptedLine` builds the line a gate
+prints; `recordAccepted` sets the record's field. Imports `gitx`, `model`,
+`store`, `testset`.
+
+## Tests of the landing on trunk
+
+Added by US-088, in the packages above. `internal/gitx/replay_test.go` runs the
+sealed replay, its abandon, `Unmerged` and `LinesFingerprint` against real
+repositories, including the git behaviour the landing rests on (conflicts listed,
+an abandoned rebase restored, a missing committer). `internal/store/landings_test.go`
+covers `LockLandings`: one holder, the wait, the refusal naming the holder, and
+release on a signal. `internal/cli/landing_ontrunk_test.go` drives the stop and
+its commands through AC-1 to AC-13 in sandbox repositories.
+`internal/cli/landing_ontrunk_review_test.go` holds the cases the first design
+review found no test held. `internal/cli/landing_ontrunk_wait_test.go` covers a
+stop waiting for another landing, and a replay that is not the reviewed change.
+`test/e2e/landing_ontrunk_test.go` runs the built binary through the plugin
+launcher: three stories landing one after another, two stops at once, the hook
+still refusing a write to a test file, and the pages a person reads.
+
 ## internal/cli/doctor.go: configured commands
 
 Package `cli`. `commandChecks(root, cfg)` reads every non-empty command in
@@ -238,6 +272,24 @@ compare-and-swap, and `putBack` reverses every checkout already written if a
 later one refuses. `RemoveLandedWorktree` removes a landed worktree and
 deletes its branch only where that branch is exactly at the landed commit.
 Neither file runs a hook, a merge commit or a push.
+
+## internal/gitx/replay.go
+
+Package `gitx`. The one rebase the tool runs itself: `Replay(ctx, checkout, onto,
+upstream)`, called by `ontoTrunk` in `internal/cli/landing.go` when `sdlc stop`
+puts a finished story's commits onto a trunk that moved. It runs `rebase --merge
+--no-fork-point --onto` through `sealedCall` with `replaySettings` as `-c`
+settings: the rebase's and rerere's own options off, `merge.default=text`,
+`commit.gpgSign=false`, both editors `true`, `attr.tree` empty, and
+`core.attributesFile` pointed at a file the call's private directory does not
+create. Every `merge.<name>.driver` the repository configures is overridden to
+`exit 1`, so a configured driver ends as a conflict and runs nothing; a name
+holding `=` or the private directory's placeholder is refused before git runs.
+The repository's filter drivers and committer are left to it. `AbandonReplay` is
+`rebase --abort`. `Unmerged` lists the conflicted paths with `diff --name-only -z
+--no-renames --diff-filter=U`. `nulSeparated` is the NUL-splitting helper both
+it and `ChangedBetween` use. `LinesFingerprint`, the context-free measure the
+landing compares from both sides, is in `landing.go` beside `Fingerprint`.
 
 ## internal/shellpolicy/refs.go
 
@@ -722,6 +774,12 @@ directory in `sdlc/locks`. `run` is `Run` with the tests handed in, which is
 how the tests reach what happens after `m.Run`. In `internal/cli` only
 `parallel.go` reads the session variable to refuse. `approve`, `unfreeze` and
 `ack` are refused to a session by the hook alone.
+
+The landing takes one more, `LockLandings` (`internal/store/guard.go`), at the
+project lock's path with `-landing` added. A stop takes it before it reads trunk
+and holds it through the replay, the commands and the fast-forward. Where it is
+held, the stop lets the project's lock go before it waits, up to `landingWait`
+(eight minutes, `internal/cli/landing.go`).
 
 ## internal/hook/deadline.go
 
