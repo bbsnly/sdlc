@@ -105,7 +105,7 @@ func newJob() (syscall.Handle, error) {
 	// The pointer is made in the call itself, which keeps what it points at
 	// where it is until the call returns.
 	if r, _, err := set.Call(uintptr(job), jobObjectExtendedLimitInformation,
-		uintptr(unsafe.Pointer(&limits)), unsafe.Sizeof(limits)); r == 0 {
+		uintptr(unsafe.Pointer(&limits)), unsafe.Sizeof(limits)); r == 0 { //nolint:gosec // G103: the call takes the structure by address and is told its size
 		_ = syscall.CloseHandle(job)
 		return 0, err
 	}
@@ -122,7 +122,7 @@ func joinGroup(cmd *exec.Cmd) error {
 	if g == nil {
 		return nil
 	}
-	p, err := syscall.OpenProcess(processSetQuota|processTerminate, false, uint32(cmd.Process.Pid))
+	p, err := syscall.OpenProcess(processSetQuota|processTerminate, false, uint32(cmd.Process.Pid)) //nolint:gosec // G115: a process id Windows gave is a DWORD, so it fits
 	if err != nil {
 		return err
 	}

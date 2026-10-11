@@ -32,7 +32,7 @@ func finalPath(p string) (string, bool) {
 	buf := make([]uint16, syscall.MAX_PATH)
 	for {
 		// The last argument, 0, asks for the name with a drive letter.
-		n, _, _ := getFinalPathNameByHandle.Call(uintptr(h), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0)
+		n, _, _ := getFinalPathNameByHandle.Call(uintptr(h), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0) //nolint:gosec // G103: the call takes the buffer by address and is told its length
 		switch {
 		case n == 0:
 			return "", false
