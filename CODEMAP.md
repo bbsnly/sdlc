@@ -770,7 +770,10 @@ that home where go's configuration directory is there, since a go process
 writing into the directory as it is removed left a `sdlc-testenv-*` behind.
 After the tests it names everything in `cache` but the empty `sdlc/locks` and
 fails the run, keeping a failing run's own exit code; a lock left held is a
-directory in `sdlc/locks`. `run` is `Run` with the tests handed in, which is
+directory in `sdlc/locks`. On Windows the `Microsoft` directory at the top of
+`cache` is left out (`systemOwned`), since the system's own programs keep it
+under `LocalAppData`; `leftoversOn` takes the system's name so the tests reach
+that on any machine. `run` is `Run` with the tests handed in, which is
 how the tests reach what happens after `m.Run`. In `internal/cli` only
 `parallel.go` reads the session variable to refuse. `approve`, `unfreeze` and
 `ack` are refused to a session by the hook alone.

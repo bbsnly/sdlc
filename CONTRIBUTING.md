@@ -59,7 +59,8 @@ and `npm_config_cache` stay as they were. npm's user configuration
 (`~/.npmrc`) is not read while the tests run, so a registry, proxy or cache set
 there has to be given as an `npm_config_` variable in your environment. A test
 that leaves anything in that cache directory fails the package and is named,
-and the message says how to find the test.
+and the message says how to find the test. On Windows the `Microsoft`
+directory there is left out: the system's own programs keep it, not a test.
 
 A leg that fails on a file it read also says whether git tracks that file,
 so you can tell whether the same failure would happen on a fresh clone.

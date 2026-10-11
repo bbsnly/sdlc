@@ -238,6 +238,12 @@ func goTelemetryOff(home string) error {
 // in. A lock still held is a directory in it. What cannot be read is named
 // too, since it cannot be shown to be empty. It reports and deletes nothing.
 func leftovers(cache string) []string {
+	return leftoversOn(runtime.GOOS, cache)
+}
+
+// leftoversOn is leftovers for the system named, so that what Windows is
+// allowed can be tested on a machine that is not one.
+func leftoversOn(goos, cache string) []string {
 	sdlc := filepath.Join(cache, "sdlc")
 	locks := filepath.Join(sdlc, "locks")
 	var left []string
@@ -249,6 +255,9 @@ func leftovers(cache string) []string {
 		if err == nil && d.IsDir() && (path == cache || path == sdlc || path == locks) {
 			return nil
 		}
+		if err == nil && d.IsDir() && systemOwned(goos, cache, path) {
+			return fs.SkipDir
+		}
 		left = append(left, path)
 		if d != nil && d.IsDir() {
 			return fs.SkipDir
@@ -256,4 +265,15 @@ func leftovers(cache string) []string {
 		return nil
 	})
 	return left
+}
+
+// systemOwned reports whether path is a directory Windows' own programs keep
+// under LocalAppData, which no test put there. The installer tests passed on
+// windows-11-arm and the run still failed on a "Microsoft" directory in the
+// cache: a program the tests start writes its own cache there, and nothing a
+// test does takes it back. sdlc keeps what it writes under "sdlc", so the name
+// is never its own. A file of that name, and the name anywhere deeper, are
+// still leftovers.
+func systemOwned(goos, cache, path string) bool {
+	return goos == "windows" && filepath.Dir(path) == cache && strings.EqualFold(filepath.Base(path), "Microsoft")
 }
