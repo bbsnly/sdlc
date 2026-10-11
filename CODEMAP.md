@@ -616,6 +616,24 @@ project, and under `os.TempDir()` where there is no cache directory;
 `parallel.go` reads the session variable to refuse. `approve`, `unfreeze` and
 `ack` are refused to a session by the hook alone.
 
+## internal/hook/deadline.go
+
+Package `hook`. Holds the hook's own deadline for a PreToolUse call: `hookDeadline`
+(25 s from the moment `run` starts, five short of the PreToolUse timeout in
+`plugin/hooks/hooks.json`), the rule name `deadlineRule` (`not-checked-in-time`) and
+the variable `deadlineEnv` (`SDLC_HOOK_DEADLINE_MS`). `deadlineIn(getenv)` returns the
+deadline in force: a whole number of milliseconds above 0 and below the fixed figure,
+otherwise the fixed figure. `deadlineVerdict(shell)` returns the refusal for a shell
+command or for a file change; both texts are constants and take nothing from the call.
+`clock` is the seam (`now`, `after`, `spawn`): `Run` passes `time.Now`, `time.After` and
+a goroutine, and `run` takes the same struct, which is how a test moves time. `warnings`
+is the locked list `run` answers with, closed by `taken()`. `outcome` is what the rest of
+a decision returns to `run`: a verdict, an ok flag, the `record` closure for an allowed
+commit's head, and a recovered panic. Imports `policy`. Nothing runs in `init`.
+
+`internal/hook/deadline_test.go` drives `run` through a fake `clock`.
+`test/e2e/hookdeadline_test.go` drives the built binary through the plugin launcher.
+
 ## The Stop guard and its count file
 
 `internal/hook/stop.go` holds the whole Stop guard: `decideStop`,
