@@ -22,6 +22,7 @@ package hook
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -154,9 +155,7 @@ func swOpenings(l swLayout) []swOpening {
 func swAsk(t *testing.T, session string, o swOpening, tool string, input map[string]any, carried map[string]string) reply {
 	t.Helper()
 	vars := map[string]string{"CLAUDE_PROJECT_DIR": o.project}
-	for k, v := range carried {
-		vars[k] = v
-	}
+	maps.Copy(vars, carried)
 	return wtAsk(t, session, o.cwd, tool, input, env(vars))
 }
 
@@ -186,9 +185,7 @@ func swFile(name string, o swOpening, tool, agent, path string) swRow {
 func swCall(t *testing.T, session string, r swRow, carried map[string]string) reply {
 	t.Helper()
 	vars := map[string]string{"CLAUDE_PROJECT_DIR": r.o.project}
-	for k, v := range carried {
-		vars[k] = v
-	}
+	maps.Copy(vars, carried)
 	e := map[string]any{
 		"hook_event_name": "PreToolUse", "session_id": session,
 		"tool_name": r.tool, "cwd": r.o.cwd, "tool_input": r.input,

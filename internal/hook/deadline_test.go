@@ -46,6 +46,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -906,9 +907,7 @@ func TestAC7TheDeadlineRefusesNothingWhereTheHookHasNothingToCheck(t *testing.T)
 		for _, variable := range []string{"", "1"} {
 			t.Run(c.name+", SDLC_HOOK_DEADLINE_MS="+variable, func(t *testing.T) {
 				pairs := map[string]string{"SDLC_HOOK_DEADLINE_MS": variable}
-				for k, v := range c.env {
-					pairs[k] = v
-				}
+				maps.Copy(pairs, c.env)
 				f := newFakeDeadline()
 				f.passOnAsk = true
 				f.fire()
@@ -938,7 +937,7 @@ func debugLines(t *testing.T) *lockedBuffer {
 // aboutTheDeadline is the debug lines that speak of the deadline.
 func aboutTheDeadline(log string) []string {
 	var out []string
-	for _, line := range strings.Split(log, "\n") {
+	for line := range strings.SplitSeq(log, "\n") {
 		if strings.Contains(line, "level=DEBUG") && strings.Contains(strings.ToLower(line), "deadline") {
 			out = append(out, line)
 		}
@@ -1108,7 +1107,10 @@ func TestAC11TheVariableShortensTheDeadlineAndNothingElse(t *testing.T) {
 		t.Fatalf("the fixed figure is %s, which is not a whole number of milliseconds above 2", hookDeadline)
 	}
 	itoa := func(n int64) string {
-		raw, _ := json.Marshal(n)
+		raw, err := json.Marshal(n)
+		if err != nil {
+			t.Fatal(err)
+		}
 		return string(raw)
 	}
 

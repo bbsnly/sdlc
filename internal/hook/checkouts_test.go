@@ -148,12 +148,15 @@ func TestT2ADecoyGitDirectoryInTheMainCheckoutIsWalkedPast(t *testing.T) {
 		plant func(t *testing.T, main string)
 	}{
 		{"T2 a repository made over .sdlc", func(t *testing.T, main string) {
+			t.Helper()
 			wtGit(t, filepath.Join(main, ".sdlc"), "init", "--quiet")
 		}},
 		{"T2 a pointer file in .sdlc leading to the main checkout's own git directory", func(t *testing.T, main string) {
+			t.Helper()
 			write(t, main, ".sdlc/.git", "gitdir: "+filepath.Join(main, ".git")+"\n")
 		}},
 		{"T2 a .git file in .sdlc that names nothing", func(t *testing.T, main string) {
+			t.Helper()
 			write(t, main, ".sdlc/.git", "not a pointer\n")
 		}},
 	} {
@@ -180,9 +183,11 @@ func TestT12WhatTheMainCheckoutKeepsIsFoundWhenItCannotBeEstablished(t *testing.
 		damage func(t *testing.T, main string)
 	}{
 		{"T12 core.bare", func(t *testing.T, main string) {
+			t.Helper()
 			wtGit(t, main, "config", "core.bare", "true")
 		}},
 		{"T12 commondir rewritten", func(t *testing.T, main string) {
+			t.Helper()
 			write(t, main, ".git/worktrees/wt/commondir", filepath.Join(wtTempDir(t), "nowhere")+"\n")
 		}},
 	} {

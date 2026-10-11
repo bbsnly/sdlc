@@ -20,6 +20,19 @@ type turnReply struct {
 	SystemMessage string `json:"systemMessage,omitempty"`
 }
 
+// RunbookLastSection is the last section of the /sdlc:next runbook. Compaction
+// keeps only the start of a long skill, so a runbook that no longer ends with it
+// was cut short, and a stop sent back says so.
+const RunbookLastSection = "Rework, at any gate"
+
+// subagentWait is how long a listed subagent holds the count, measured from the
+// first stop let through at the story's recorded progress. US-006 was handed to
+// a person while its researcher was still at work, because every stop made
+// waiting for it was counted. Without an end, a subagent that never finishes,
+// or a new one started each time the last ends, would hold the count for good.
+// It is fixed and not a setting, so the session it bounds cannot lengthen it.
+const subagentWait = 30 * time.Minute
+
 // decideStop is the stop guard.
 //
 // A session that ends its turn mid-story -- without finishing the gate, handing
@@ -48,30 +61,10 @@ type turnReply struct {
 // subagent or a stop counted in between, or one subagent after another would
 // hold the count for good. The clock is a parameter because the end of a wait
 // is tested by moving time, not by waiting for it.
-// RunbookLastSection is the last section of the /sdlc:next runbook. Compaction
-// keeps only the start of a long skill, so a runbook that no longer ends with it
-// was cut short, and a stop sent back says so.
-const RunbookLastSection = "Rework, at any gate"
-
-// subagentWait is how long a listed subagent holds the count, measured from the
-// first stop let through at the story's recorded progress. US-006 was handed to
-// a person while its researcher was still at work, because every stop made
-// waiting for it was counted. Without an end, a subagent that never finishes,
-// or a new one started each time the last ends, would hold the count for good.
-// It is fixed and not a setting, so the session it bounds cannot lengthen it.
-const subagentWait = 30 * time.Minute
-
 func decideStop(raw []byte, getenv func(string) string, warn func(string), now func() time.Time) turnReply {
 	allow := turnReply{Continue: true}
-	if getenv("SDLC_ENFORCE") == "0" {
-		return allow
-	}
-	var p payload
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return allow
-	}
-	project, story := findLoop(getenv, p, "", warn)
-	if story == "" || p.StopHookActive {
+	project, story, ok := stopStory(raw, getenv, warn)
+	if !ok {
 		return allow
 	}
 
@@ -95,12 +88,7 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string), now f
 		return allow
 	}
 	defer g.Release()
-	if active, err := s.Active(); err != nil || active != story {
-		return allow
-	}
-	// A copy of a story another checkout holds is not this session's to be
-	// sent back to: the work carries on where it is held.
-	if _, elsewhere, err := s.HeldElsewhere(story); err == nil && elsewhere {
+	if !stopIsHeldHere(s, story) {
 		return allow
 	}
 	progress, err := s.RecordProgress(story)
@@ -122,6 +110,57 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string), now f
 	// The lines logged here carry a fixed message, the wait's label and the
 	// count. Never the list, and never the stored time, which is whatever the
 	// file held.
+	count, letThrough := applySubagentWait(s, raw, count, now)
+	if letThrough {
+		return allow
+	}
+	if count.Blocks >= limit {
+		return handOver(s, story, count.Blocks)
+	}
+	count.Blocks++
+	if err := s.SaveStopCount(count); err != nil {
+		slog.Debug("stop guard could not keep its count", "err", err)
+		return allow
+	}
+	return turnReply{Continue: true, Decision: "block", Reason: stopReason(pl, story, count.Blocks, limit)}
+}
+
+// stopStory is the story a Stop event could send back to, and whether there is
+// one: not with enforcement turned off, an unreadable event, a session that
+// holds no story, or a stop the hook has already sent back once.
+func stopStory(raw []byte, getenv func(string) string, warn func(string)) (project, story string, ok bool) {
+	if getenv("SDLC_ENFORCE") == "0" {
+		return "", "", false
+	}
+	var p payload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return "", "", false
+	}
+	project, story = findLoop(getenv, p, "", warn)
+	if story == "" || p.StopHookActive {
+		return "", "", false
+	}
+	return project, story, true
+}
+
+// stopIsHeldHere reports whether the story is the active one and this checkout
+// holds it.
+func stopIsHeldHere(s *store.Store, story string) bool {
+	if active, err := s.Active(); err != nil || active != story {
+		return false
+	}
+	// A copy of a story another checkout holds is not this session's to be
+	// sent back to: the work carries on where it is held.
+	if _, elsewhere, err := s.HeldElsewhere(story); err == nil && elsewhere {
+		return false
+	}
+	return true
+}
+
+// applySubagentWait applies the wait a listed subagent earns a stop. letThrough is
+// true when the stop is let through uncounted; the count comes back with the
+// time the wait began, if this stop began it.
+func applySubagentWait(s *store.Store, raw []byte, count store.StopCount, now func() time.Time) (store.StopCount, bool) {
 	listed, known := subagentListed(raw)
 	switch {
 	case !known:
@@ -141,19 +180,11 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string), now f
 		// wait and no more, and the time it began is not any later stop's to move.
 		if wait == waitBegins || wait == waitRunning {
 			slog.Debug("stop guard let the stop through for a subagent", "wait", wait, "blocks", count.Blocks)
-			return allow
+			return count, true
 		}
 		slog.Debug("stop guard counted the stop with a subagent listed", "wait", wait, "blocks", count.Blocks)
 	}
-	if count.Blocks >= limit {
-		return handOver(s, story, count.Blocks)
-	}
-	count.Blocks++
-	if err := s.SaveStopCount(count); err != nil {
-		slog.Debug("stop guard could not keep its count", "err", err)
-		return allow
-	}
-	return turnReply{Continue: true, Decision: "block", Reason: stopReason(pl, story, count.Blocks, limit)}
+	return count, false
 }
 
 // subagentListed reads `background_tasks` from a Stop event: whether an entry

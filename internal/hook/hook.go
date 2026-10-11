@@ -161,17 +161,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	warn := said.warn
 
 	if args[0] == "Stop" || args[0] == "PostToolUse" {
-		var reply turnReply
-		if args[0] == "Stop" {
-			reply = decideStop(raw, getenv, warn, time.Now)
-		} else {
-			reply = formatWritten(raw, getenv, warn)
-		}
-		slog.Debug("hook turn decision", "event", args[0], "decision", reply.Decision)
-		if warnings := said.taken(); len(warnings) > 0 {
-			reply.SystemMessage = strings.TrimSpace(reply.SystemMessage + " sdlc: " + strings.Join(warnings, " "))
-		}
-		return emit(stdout, reply)
+		return answerTurn(stdout, args[0], raw, getenv, said)
 	}
 
 	limit := deadlineIn(getenv)
@@ -200,30 +190,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 		unknown("loop found", remaining)
 	}
 
-	// The one place a PreToolUse call is answered.
 	answer := func(o outcome, warnings []string) int {
-		// Why a hook did nothing is the hardest thing to find out from the outside,
-		// so every decision is available at debug level. SDLC_DEBUG_FILE is the way
-		// to see it: stderr from a hook that allowed the call is not shown.
-		slog.Debug("hook decision",
-			"event", event, "considered", o.ok, "allowed", o.verdict.Allowed, "rule", o.verdict.Rule)
-		message := ""
-		if len(warnings) > 0 {
-			message = "sdlc: " + strings.Join(warnings, " ")
-		}
-		if !o.ok || o.verdict.Allowed {
-			d := Allow()
-			d.SystemMessage = message
-			return emit(stdout, d)
-		}
-		return emit(stdout, preToolUseReply{
-			SystemMessage: message,
-			HookSpecificOutput: preToolUseOutput{
-				HookEventName:            event,
-				PermissionDecision:       "deny",
-				PermissionDecisionReason: o.verdict.Message(),
-			},
-		})
+		return answerPreToolUse(stdout, event, o, warnings)
 	}
 	if rest == nil {
 		return answer(outcome{verdict: policy.Allowed}, said.taken())
@@ -258,31 +226,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	// Room for the one result, so that the work never waits for run to take
 	// it: by then run may have answered and gone.
 	done := make(chan outcome, 1)
-	c.spawn(func() {
-		var o outcome
-		defer func() {
-			// A panic on this goroutine is one cmd/sdlc cannot recover: the
-			// process would end with a stack and no answer. It is handed to
-			// run, which raises it again where cmd/sdlc does recover.
-			if r := recover(); r != nil {
-				o = outcome{crashed: r, stack: debug.Stack()}
-			}
-			done <- o
-		}()
-		o = rest(ctx)
-	})
+	c.spawn(func() { decideInto(ctx, done, rest) })
 
-	var o outcome
-	select {
-	case o = <-done:
-	case <-timer:
-		select {
-		// Both were there when the hook looked. The decision answers: it is
-		// the fuller answer, and a crash must never come out as a refusal.
-		case o = <-done:
-		default:
-			return refuse("while the call was being decided")
-		}
+	o, decided := awaitOutcome(done, timer)
+	if !decided {
+		return refuse("while the call was being decided")
 	}
 	if o.crashed != nil {
 		// The stack cmd/sdlc prints is the one below, of this goroutine. Where
@@ -294,6 +242,83 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 		o.record()
 	}
 	return answer(o, said.taken())
+}
+
+// answerTurn answers a Stop or PostToolUse call, which have no deadline race
+// and no verdict of their own: the reply is the whole answer.
+func answerTurn(stdout io.Writer, event string, raw []byte, getenv func(string) string, said *warnings) int {
+	warn := said.warn
+	var reply turnReply
+	if event == "Stop" {
+		reply = decideStop(raw, getenv, warn, time.Now)
+	} else {
+		reply = formatWritten(raw, getenv, warn)
+	}
+	slog.Debug("hook turn decision", "event", event, "decision", reply.Decision)
+	if warnings := said.taken(); len(warnings) > 0 {
+		reply.SystemMessage = strings.TrimSpace(reply.SystemMessage + " sdlc: " + strings.Join(warnings, " "))
+	}
+	return emit(stdout, reply)
+}
+
+// answerPreToolUse is the one place a PreToolUse call is answered.
+func answerPreToolUse(stdout io.Writer, event string, o outcome, warnings []string) int {
+	// Why a hook did nothing is the hardest thing to find out from the outside,
+	// so every decision is available at debug level. SDLC_DEBUG_FILE is the way
+	// to see it: stderr from a hook that allowed the call is not shown.
+	slog.Debug("hook decision",
+		"event", event, "considered", o.ok, "allowed", o.verdict.Allowed, "rule", o.verdict.Rule)
+	message := ""
+	if len(warnings) > 0 {
+		message = "sdlc: " + strings.Join(warnings, " ")
+	}
+	if !o.ok || o.verdict.Allowed {
+		d := Allow()
+		d.SystemMessage = message
+		return emit(stdout, d)
+	}
+	return emit(stdout, preToolUseReply{
+		SystemMessage: message,
+		HookSpecificOutput: preToolUseOutput{
+			HookEventName:            event,
+			PermissionDecision:       "deny",
+			PermissionDecisionReason: o.verdict.Message(),
+		},
+	})
+}
+
+// decideInto runs the rest of the decision on the goroutine run spawned and
+// leaves its one result in done.
+func decideInto(ctx context.Context, done chan<- outcome, rest func(context.Context) outcome) {
+	var o outcome
+	defer func() {
+		// A panic on this goroutine is one cmd/sdlc cannot recover: the
+		// process would end with a stack and no answer. It is handed to
+		// run, which raises it again where cmd/sdlc does recover.
+		if r := recover(); r != nil {
+			o = outcome{crashed: r, stack: debug.Stack()}
+		}
+		done <- o
+	}()
+	o = rest(ctx)
+}
+
+// awaitOutcome is whichever of the decision and the deadline comes first;
+// decided is false when it was the deadline.
+func awaitOutcome(done <-chan outcome, timer <-chan time.Time) (o outcome, decided bool) {
+	select {
+	case o = <-done:
+		return o, true
+	case <-timer:
+		select {
+		// Both were there when the hook looked. The decision answers: it is
+		// the fuller answer, and a crash must never come out as a refusal.
+		case o = <-done:
+			return o, true
+		default:
+			return outcome{}, false
+		}
+	}
 }
 
 // decide works out whether the call is one the hook checks. Where it is, it
@@ -318,11 +343,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 		// whether it came from the one working a story, and a session that did
 		// not start one hears nothing from the plugin. It goes through, and the
 		// debug log says why.
-		why := "it is not valid JSON"
-		if len(raw) > maxPayload {
-			why = fmt.Sprintf("it is larger than the %d MiB the hook reads", maxPayload>>20)
-		}
-		slog.Debug("hook: the call could not be read, so it was not checked", "why", why)
+		slog.Debug("hook: the call could not be read, so it was not checked", "why", unreadableBecause(raw))
 		return nil, event, false
 	}
 	if p.HookEventName != "" {
@@ -348,18 +369,8 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 		// held in could otherwise approve it or lift its freeze. Where no story
 		// has one waiting, that is refused nobody. The command is read before the
 		// project's state, which is read only for a decision on a story.
-		if shellpolicy.Tools[p.ToolName] {
-			if projects := loopProjects(getenv, p); len(projects) > 0 {
-				// A command in a project that takes part is one the hook
-				// checks, whoever's session it is from.
-				return func(context.Context) outcome {
-					waits := storyWaits(getenv, p, projects)
-					if f, refused := shellpolicy.HumanDecisions(p.ToolInput.Command, p.ToolName == "PowerShell", waits); refused {
-						return outcome{verdict: policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, ok: true}
-					}
-					return outcome{verdict: policy.Allowed}
-				}, event, true
-			}
+		if rest := humanDecisionsOnly(getenv, p); rest != nil {
+			return rest, event, true
 		}
 		return nil, event, false
 	}
@@ -389,6 +400,36 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 			Backlog:       backlogPath(project),
 		})}
 	}, event, false
+}
+
+// unreadableBecause says why a call's payload could not be read, for the debug
+// log.
+func unreadableBecause(raw []byte) string {
+	if len(raw) > maxPayload {
+		return fmt.Sprintf("it is larger than the %d MiB the hook reads", maxPayload>>20)
+	}
+	return "it is not valid JSON"
+}
+
+// humanDecisionsOnly is the rest of the decision for a command in a project
+// that takes part when the session holds no story, and nil for any other call.
+func humanDecisionsOnly(getenv func(string) string, p payload) func(context.Context) outcome {
+	if !shellpolicy.Tools[p.ToolName] {
+		return nil
+	}
+	projects := loopProjects(getenv, p)
+	if len(projects) == 0 {
+		return nil
+	}
+	// A command in a project that takes part is one the hook
+	// checks, whoever's session it is from.
+	return func(context.Context) outcome {
+		waits := storyWaits(getenv, p, projects)
+		if f, refused := shellpolicy.HumanDecisions(p.ToolInput.Command, p.ToolName == toolPowerShell, waits); refused {
+			return outcome{verdict: policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, ok: true}
+		}
+		return outcome{verdict: policy.Allowed}
+	}
 }
 
 // backlogPath is the backlog file as the configuration names it,
@@ -486,7 +527,7 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	// ask: every one of them is a read of the disk or a run of git.
 	trunk := sync.OnceValue(func() string { return trunkOf(pl) })
 	resolved := map[string]bool{}
-	isTrunk := func(name string) bool {
+	isTrunk := func(name string) bool { //nolint:contextcheck // budget() is the command's own deadline, started on first use; it cannot be the caller's context without changing when the deadline begins
 		if is, ok := resolved[name]; ok {
 			return is
 		}
@@ -496,11 +537,11 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 		resolved[name] = is
 		return is
 	}
-	fresh := sync.OnceValues(func() (bool, string) { return reviewsFresh(pl, story, warn, budget) })
+	fresh := sync.OnceValues(func() (bool, string) { return reviewsFresh(pl, story, warn, budget) }) //nolint:contextcheck // reviewsFresh takes the command's lazily started budget, not ctx: the deadline must begin at the first git call
 	state := shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
-		Backlog: backlogPath(project), PowerShell: p.ToolName == "PowerShell",
+		Backlog: backlogPath(project), PowerShell: p.ToolName == toolPowerShell,
 		StoryFinished: storyFinished(pl, story),
 		Committed:     storyCommitted(pl, story),
 		Trunk:         trunk,
@@ -523,12 +564,16 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	if !refused {
 		o := outcome{verdict: policy.Allowed, ok: true}
 		if commits {
-			o.record = func() { observe(project, story, budget) }
+			o.record = func() { observe(project, story, budget) } //nolint:contextcheck // observe shares the command's budget so its git calls stay inside the same deadline
 		}
 		return o
 	}
 	return outcome{verdict: policy.Verdict{Rule: finding.Rule, Reason: finding.Reason, Route: finding.Route}, ok: true}
 }
+
+// toolPowerShell is the tool name Claude Code gives a PowerShell command, which
+// the shell policy reads with PowerShell's own quoting.
+const toolPowerShell = "PowerShell"
 
 // The warnings for a configuration that will not read. Each names what is still
 // enforced, because "not enforced" was the easy sentence and was not true.
@@ -742,19 +787,7 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 	if record == nil || err != nil {
 		return true, "" // commitReady has already refused over this
 	}
-	type stamped struct {
-		gate    model.Gate
-		role    string
-		subject string
-	}
-	var reviews []stamped
-	for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
-		for _, r := range model.ReviewersFor(gate) {
-			if latest, ok := record.LatestReview(gate, r.Role); ok {
-				reviews = append(reviews, stamped{gate, r.Role, latest.Subject})
-			}
-		}
-	}
+	reviews := stampedReviews(record)
 
 	cfg, err := config.Load(project)
 	if err != nil {
@@ -775,6 +808,55 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 		return true, ""
 	}
 
+	tree, refusal, fresh := reviewedTree(s, record, project, budget, warn)
+	if !fresh {
+		return refusal.allowed, refusal.why
+	}
+	if stale := staleReviewers(reviews, cfg, record, tree); len(stale) > 0 {
+		return false, "the work has changed since " + strings.Join(stale, ", ") + " reviewed it, " +
+			"so this commit is not what was approved; have the change reviewed again and record " +
+			"those gates again"
+	}
+	if why := record.WaitsForApproval(tier, tree); pauses && why != "" {
+		return false, why + "; hand it to a person with " +
+			"`sdlc escalate pre_commit_approval --message \"...\"` and stop"
+	}
+	return true, ""
+}
+
+// stampedReview is the latest review a reviewer recorded, and the tree it
+// was of.
+type stampedReview struct {
+	gate    model.Gate
+	role    string
+	subject string
+}
+
+// stampedReviews are the latest reviews recorded at the two review gates.
+func stampedReviews(record *model.Record) []stampedReview {
+	var reviews []stampedReview
+	for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
+		for _, r := range model.ReviewersFor(gate) {
+			if latest, ok := record.LatestReview(gate, r.Role); ok {
+				reviews = append(reviews, stampedReview{gate, r.Role, latest.Subject})
+			}
+		}
+	}
+	return reviews
+}
+
+// freshnessAnswer is what reviewsFresh returns where the tree could not be
+// measured to a value to compare.
+type freshnessAnswer struct {
+	allowed bool
+	why     string
+}
+
+// reviewedTree measures the tree the reviews are compared with. Where it
+// cannot be measured to one, fresh is false and the answer says what
+// reviewsFresh returns instead.
+func reviewedTree(s *store.Store, record *model.Record, project string, budget func() context.Context,
+	warn func(string)) (tree string, answer freshnessAnswer, fresh bool) {
 	// Route R1: once the retro has passed, the bookkeeper's CODEMAP.md at the
 	// root is committed on the story's branch, a plain file the reviews did not
 	// see change. Measured as HEAD has it, that first commit is the work the
@@ -790,9 +872,9 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 		// Files beneath CODEMAP.md are a shape the session chose, not a tree
 		// that could not be measured: answering fresh there let R1's one
 		// commit carry anything under that name.
-		return false, "CODEMAP.md at the root holds files beneath it, so it is not the bookkeeper's plain file " +
+		return "", freshnessAnswer{false, "CODEMAP.md at the root holds files beneath it, so it is not the bookkeeper's plain file " +
 			"and this commit is not what was reviewed; after the retro only CODEMAP.md, as a plain file, is " +
-			"committed on its own"
+			"committed on its own"}, false
 	}
 	if err != nil && len(also) > 0 {
 		// The override could not be applied where the tree measures without
@@ -800,15 +882,20 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 		// is an answer about the work, and not one that fails open.
 		if _, plain := s.ReviewSubject(budget()); plain == nil {
 			slog.Debug("hook could not measure the tree with CODEMAP.md as HEAD has it", "err", err)
-			return false, "CODEMAP.md at the root could not be measured as HEAD has it, so this commit is not " +
-				"what was reviewed; after the retro only CODEMAP.md, as a plain file, is committed on its own"
+			return "", freshnessAnswer{false, "CODEMAP.md at the root could not be measured as HEAD has it, so this commit is not " +
+				"what was reviewed; after the retro only CODEMAP.md, as a plain file, is committed on its own"}, false
 		}
 	}
 	if err != nil {
 		slog.Debug("hook could not measure the working tree", "err", err)
 		warn(unmeasuredTree)
-		return true, ""
+		return "", freshnessAnswer{true, ""}, false
 	}
+	return tree, freshnessAnswer{}, true
+}
+
+// staleReviewers names the reviewers whose latest review is of another tree.
+func staleReviewers(reviews []stampedReview, cfg config.Config, record *model.Record, tree string) []string {
 	var stale []string
 	for _, r := range reviews {
 		// A reviewer the staffing left out, that no changed path brought back
@@ -822,16 +909,7 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 			stale = append(stale, r.role+" ("+string(r.gate)+")")
 		}
 	}
-	if len(stale) > 0 {
-		return false, "the work has changed since " + strings.Join(stale, ", ") + " reviewed it, " +
-			"so this commit is not what was approved; have the change reviewed again and record " +
-			"those gates again"
-	}
-	if why := record.WaitsForApproval(tier, tree); pauses && why != "" {
-		return false, why + "; hand it to a person with " +
-			"`sdlc escalate pre_commit_approval --message \"...\"` and stop"
-	}
-	return true, ""
+	return stale
 }
 
 // unmeasuredTree is the warning for a commit the hook could not check.
@@ -1113,7 +1191,7 @@ func awaitsDecision(pl place) bool {
 func starts(getenv func(string) string, p payload, target string) []string {
 	out := []string{getenv("CLAUDE_PROJECT_DIR"), p.CWD, target}
 	if shellpolicy.Tools[p.ToolName] && p.CWD != "" {
-		for _, word := range shellpolicy.Places(p.ToolInput.Command, p.ToolName == "PowerShell") {
+		for _, word := range shellpolicy.Places(p.ToolInput.Command, p.ToolName == toolPowerShell) {
 			if abs, ok := pathrules.Abs(p.CWD, word); ok {
 				out = append(out, abs)
 			}
@@ -1182,7 +1260,7 @@ func atCeiling(dir string, ceilings []string) bool {
 }
 
 func exists(path string) bool {
-	_, err := os.Lstat(path)
+	_, err := os.Lstat(path) //nolint:gosec // G703: the path comes from the session, and this only asks whether it is there; nothing is read or written
 	return err == nil
 }
 

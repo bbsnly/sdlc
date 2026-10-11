@@ -122,6 +122,7 @@ func TestAFileIsLeftUnformattedWhenFormattingCannotRun(t *testing.T) {
 		{
 			name: "a human turned enforcement off",
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				withFormatter(t, root, `printf 'formatted\n' > "$FILE"`)
 			},
 			getenv: env(map[string]string{"SDLC_ENFORCE": "0"}),
@@ -129,6 +130,7 @@ func TestAFileIsLeftUnformattedWhenFormattingCannotRun(t *testing.T) {
 		{
 			name: "the configuration will not read",
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				write(t, root, ".sdlc/config.json", "{not json")
 			},
 			getenv: noEnv,
@@ -141,6 +143,7 @@ func TestAFileIsLeftUnformattedWhenFormattingCannotRun(t *testing.T) {
 		{
 			name: "no shell is on PATH",
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				withFormatter(t, root, `printf 'formatted\n' > "$FILE"`)
 				t.Setenv("PATH", "")
 			},

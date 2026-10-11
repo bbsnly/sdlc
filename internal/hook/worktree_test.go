@@ -233,9 +233,11 @@ func TestT12AMainCheckoutMadeUnfindableLeavesTheCommitRefusedAndTheFreezeHeld(t 
 	}{
 		{"T12 with the main checkout intact the worktree's copy does not count", func(*testing.T, string, string) {}},
 		{"T12 core.bare set in the common configuration", func(t *testing.T, main, _ string) {
+			t.Helper()
 			wtGit(t, main, "config", "core.bare", "true")
 		}},
 		{"T12 the worktree's commondir rewritten", func(t *testing.T, main, _ string) {
+			t.Helper()
 			write(t, main, ".git/worktrees/wt/commondir", filepath.Join(wtTempDir(t), "nowhere")+"\n")
 		}},
 	} {

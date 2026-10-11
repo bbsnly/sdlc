@@ -691,7 +691,7 @@ func debugLog(t *testing.T) *bytes.Buffer {
 
 func linesHolding(log, what string) []string {
 	var lines []string
-	for _, line := range strings.Split(log, "\n") {
+	for line := range strings.SplitSeq(log, "\n") {
 		if strings.Contains(line, what) {
 			lines = append(lines, line)
 		}
@@ -1095,9 +1095,11 @@ func TestAC3TheTaskListIsReadOnlyForAStopTheGuardWouldCount(t *testing.T) {
 		{name: "a stop already sent back", session: working, active: true, getenv: noEnv},
 		{name: "enforcement off", session: working, getenv: env(map[string]string{"SDLC_ENFORCE": "0"})},
 		{name: "the guard turned off", session: working, getenv: noEnv, prepare: func(t *testing.T, root string) {
+			t.Helper()
 			write(t, root, ".sdlc/config.json", `{"version":1,"loop":{"max_stop_blocks":0}}`)
 		}},
 		{name: "no iteration running", session: working, getenv: noEnv, prepare: func(t *testing.T, root string) {
+			t.Helper()
 			if err := os.Remove(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
 				t.Fatal(err)
 			}

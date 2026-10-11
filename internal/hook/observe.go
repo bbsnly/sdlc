@@ -40,8 +40,14 @@ import (
 func gitBudget(parent context.Context, now func() time.Time) (func() context.Context, context.CancelFunc) {
 	base, cancelBase := context.WithCancel(parent)
 	var once sync.Once
-	ctx, cancelDeadline := base, context.CancelFunc(func() {})
+	// Nothing to cancel until the deadline context exists: the first budget()
+	// call replaces this.
+	ctx, cancelDeadline := base, context.CancelFunc(func() {
+		// Deliberately empty: with no deadline taken yet, cancelBase is the only
+		// context there is to release.
+	})
 	budget := func() context.Context {
+		//nolint:fatcontext,gosec // derived from base, once: no context is ever nested in itself here; the deadline's cancel is kept in cancelDeadline and called by the func gitBudget returns
 		once.Do(func() { ctx, cancelDeadline = context.WithDeadline(base, now().Add(treeTimeout)) })
 		return ctx
 	}
