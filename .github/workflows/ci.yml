@@ -338,5 +338,8 @@ jobs:
         run: |
           set -euo pipefail
           # Everything except the installers, which the step above already ran
-          # and which are slow enough not to want twice.
-          go list ./... | grep -v '/test/install$' | xargs go test -count=1
+          # and which are slow enough not to want twice. The limit is the one
+          # `task test` gives: internal/cli passed in over eight minutes on
+          # windows-11-arm and then, with more tests, was killed at go test's
+          # default ten with nothing hung.
+          go list ./... | grep -v '/test/install$' | xargs go test -count=1 -timeout 20m
