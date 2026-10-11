@@ -14,6 +14,7 @@
 // and its own .sdlc/config.json names that branch as trunk, because each
 // checkout keeps reading its own configuration and, with story worktrees off,
 // a new story starts only on trunk.
+
 package e2e
 
 import (
@@ -253,8 +254,16 @@ func setStatus(t *testing.T, path, id, status string) {
 	t.Helper()
 	var backlog map[string]any
 	readJSON(t, path, &backlog)
-	for _, s := range backlog["stories"].([]any) {
-		if story := s.(map[string]any); story["id"] == id {
+	stories, ok := backlog["stories"].([]any)
+	if !ok {
+		t.Fatalf("%s: stories is a %T, want a list", path, backlog["stories"])
+	}
+	for _, s := range stories {
+		story, ok := s.(map[string]any)
+		if !ok {
+			t.Fatalf("%s: a story is a %T, want an object", path, s)
+		}
+		if story["id"] == id {
 			story["status"] = status
 		}
 	}
@@ -524,7 +533,7 @@ func newCode(t *testing.T, out string) string {
 
 // fixLine is the line of a rendered refusal that says what to do.
 func fixLine(out string) string {
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if rest, ok := strings.CutPrefix(line, "  fix  "); ok {
 			return strings.TrimSpace(rest)
 		}
@@ -894,13 +903,11 @@ func TestAC4StartsAtTheSameMomentInThreeCheckoutsNeverShareAStory(t *testing.T) 
 	gun := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := range cmds {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-gun
 			err := cmds[i].Run()
 			results[i] = result{stdout: outs[i].String(), stderr: errs[i].String(), err: err}
-		}()
+		})
 	}
 	close(gun)
 	wg.Wait()
@@ -1337,7 +1344,7 @@ func namedCommands(text, id string) [][]string {
 }
 
 func closingDelimiter(s string, delim byte) int {
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if s[i] == '\n' {
 			return i
 		}
@@ -1346,6 +1353,23 @@ func closingDelimiter(s string, delim byte) int {
 		}
 	}
 	return len(s)
+}
+
+// nextWord splits the first word off line, which does not start with a space:
+// a word in quotes runs to the closing quote, any other to the next space.
+func nextWord(line string) (word, rest string) {
+	if q := line[0]; q == '"' || q == '\'' {
+		end := strings.IndexByte(line[1:], q)
+		if end < 0 {
+			return line[1:], ""
+		}
+		return line[1 : 1+end], line[2+end:]
+	}
+	end := strings.IndexByte(line, ' ')
+	if end < 0 {
+		return line, ""
+	}
+	return line[:end], line[end:]
 }
 
 func commandArgs(line, id string) []string {
@@ -1357,21 +1381,7 @@ func commandArgs(line, id string) []string {
 			return args
 		}
 		var word string
-		if q := line[0]; q == '"' || q == '\'' {
-			end := strings.IndexByte(line[1:], q)
-			if end < 0 {
-				word, line = line[1:], ""
-			} else {
-				word, line = line[1:1+end], line[2+end:]
-			}
-		} else {
-			end := strings.IndexByte(line, ' ')
-			if end < 0 {
-				word, line = line, ""
-			} else {
-				word, line = line[:end], line[end:]
-			}
-		}
+		word, line = nextWord(line)
 		switch {
 		case word == "..." || word == "…" || word == "":
 			word = "the checkout that held it is gone"
@@ -1692,7 +1702,7 @@ func TestAC10ASingleCheckoutPrintsAndLeavesWhatTheReleasedToolDoes(t *testing.T)
 		t.Error("start left no gate record for US-001")
 	}
 	committed := map[string]bool{}
-	for _, name := range strings.Fields(gitOut(t, root, "ls-files", ".sdlc")) {
+	for name := range strings.FieldsSeq(gitOut(t, root, "ls-files", ".sdlc")) {
 		committed[strings.TrimPrefix(name, ".sdlc/")] = true
 	}
 	for name, body := range got {

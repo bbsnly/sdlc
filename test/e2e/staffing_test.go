@@ -154,10 +154,10 @@ func (sb sandbox) refusesAs(t *testing.T, agent, command string, rules ...string
 }
 
 // shows is `sdlc staffing show --json`, run by the main conversation.
-func (sb sandbox) shows(t *testing.T, args ...string) staffed {
+func (sb sandbox) shows(t *testing.T) staffed {
 	t.Helper()
 	var got staffed
-	out := sb.works(t, sb.tree(), "", "", append(append([]string{"staffing", "show"}, args...), "--json")...)
+	out := sb.works(t, sb.tree(), "", "", "staffing", "show", "--json")
 	if err := json.Unmarshal([]byte(out), &got); err != nil || !got.OK {
 		t.Fatalf("sdlc staffing show --json printed something else: %v\n%s", err, out)
 	}
@@ -170,6 +170,10 @@ func (sb sandbox) staffedGate(t *testing.T, gate model.Gate, out ...string) {
 	t.Helper()
 	tree := sb.tree()
 	switch gate {
+	case model.GateDoR, model.GateAnalysis, model.GateDesignReview, model.GateImplementation,
+		model.GateVerifierReview, model.GateCodeReview:
+		// Not worked here: the caller has done the gate's own work, or the gate
+		// is only its reviews, which are added below.
 	case model.GateTestsFrozen:
 		sb.writesFile(t, "sdet", "invoice_test.go", sandboxTest)
 		sb.works(t, tree, "sdet", sandboxTestPlan, "artifact", "write", "test_plan")
@@ -280,7 +284,7 @@ func TestUS026AStoryIsStaffedByTheProjectManagerAndWorkedToTrunkInTheSandbox(t *
 	assign := []string{"staffing", "assign", "architect", "--model", "opus", "--effort", "high", "--reason", "I want the design read"}
 	t.Run("AC-8 only a person assigns, and what they assign is not the project manager's to change", func(t *testing.T) {
 		for _, session := range []string{sandboxSession, sandboxOther} {
-			sb.refuses(t, session, tree, "Bash", map[string]any{"command": "sdlc " + strings.Join(assign[:8], " ") + ` "mine"`},
+			sb.refuses(t, session, tree, map[string]any{"command": "sdlc " + strings.Join(assign[:8], " ") + ` "mine"`},
 				"assignment-is-a-human-decision")
 		}
 		// The second barrier, for a spelling the hook cannot read: the command

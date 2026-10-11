@@ -163,7 +163,17 @@ func event(root, tool, agent, path string) string {
 	if agent != "" {
 		e["agent_type"] = agent
 	}
-	raw, _ := json.Marshal(e)
+	return mustMarshal(e)
+}
+
+// mustMarshal encodes an event the way Claude Code would send it. The events
+// here hold only strings and maps of strings, so an error is a mistake in the
+// test and not a case to handle.
+func mustMarshal(v any) string {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		panic("the test's event does not encode: " + err.Error())
+	}
 	return string(raw)
 }
 
@@ -191,7 +201,9 @@ func TestAStoryReachesTheAnalysisGate(t *testing.T) {
 	root := project(t, binary)
 
 	var status struct {
-		Next *struct{ Story string } `json:"next"`
+		Next *struct {
+			Story string `json:"Story"`
+		} `json:"next"`
 	}
 	if err := json.Unmarshal([]byte(runTool(t, binary, root, "status", "--json")), &status); err != nil {
 		t.Fatal(err)
@@ -671,8 +683,7 @@ func shell(root, agent, cmd string) string {
 	if agent != "" {
 		e["agent_type"] = agent
 	}
-	raw, _ := json.Marshal(e)
-	return string(raw)
+	return mustMarshal(e)
 }
 
 // An unattended run is the loop's second promise, after the gates themselves:
@@ -821,9 +832,7 @@ func TestReviewersRecordingAtTheSameTimeAllLand(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, len(roles))
 	for _, role := range roles {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			cmd := exec.CommandContext(t.Context(), binary,
 				"review", "add", "design_review", role, "approve")
 			cmd.Dir = root
@@ -831,7 +840,7 @@ func TestReviewersRecordingAtTheSameTimeAllLand(t *testing.T) {
 			if out, err := cmd.CombinedOutput(); err != nil {
 				errs <- fmt.Errorf("%s: %w\n%s", role, err, out)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -1080,7 +1089,7 @@ func TestAC1TheRangeHoldsACommitLandedBySomeSpellingOtherThanGitCommit(t *testin
 // lineFor picks one reviewer's row out of `sdlc review list`.
 func lineFor(t *testing.T, listing, role string) string {
 	t.Helper()
-	for _, line := range strings.Split(listing, "\n") {
+	for line := range strings.SplitSeq(listing, "\n") {
 		if strings.Contains(line, " "+role+" ") {
 			return line
 		}

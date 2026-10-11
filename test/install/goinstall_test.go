@@ -6,6 +6,7 @@
 // wrong is everything the other routes get right by accident -- the module
 // building at all from a clean cache, the binary landing where GOBIN says,
 // and `sdlc version` reporting something true about a build nobody published.
+
 package install
 
 import (
@@ -278,7 +279,7 @@ func evictFromModuleCache(t *testing.T) {
 				_ = os.Chmod(name, 0o755)
 			}
 			// A path that cannot be walked is one that is already not there.
-			return nil //nolint:nilerr // nothing to recover from; the RemoveAll below reports what matters
+			return nil // nothing to recover from; the RemoveAll below reports what matters
 		})
 		// Only tidiness rides on this: the version is unique to the tree, so a
 		// copy left behind cannot answer for it. A cache directory that will

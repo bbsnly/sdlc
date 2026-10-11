@@ -440,7 +440,7 @@ func fencedBlocks(text string) []string {
 	var blocks []string
 	var block []string
 	fenced := false
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "```") {
 			if fenced {
 				blocks = append(blocks, strings.Join(block, "\n")+"\n")

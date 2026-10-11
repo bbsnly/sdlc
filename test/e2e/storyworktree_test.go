@@ -13,6 +13,7 @@
 // means on. project turns it off, because the tests built on it hold start to
 // what the released tool does in one checkout; the fixtures here leave it out,
 // as the configuration of a project that never heard of it does.
+
 package e2e
 
 import (
@@ -176,7 +177,7 @@ func worktreesOf(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
 	at := ""
-	for _, line := range strings.Split(gitRaw(t, dir, "worktree", "list", "--porcelain"), "\n") {
+	for line := range strings.SplitSeq(gitRaw(t, dir, "worktree", "list", "--porcelain"), "\n") {
 		switch {
 		case strings.HasPrefix(line, "worktree "):
 			at = resolved(strings.TrimPrefix(line, "worktree "))
@@ -193,7 +194,7 @@ func branchesOf(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
 	listed := gitRaw(t, dir, "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads")
-	for _, line := range strings.Split(listed, "\n") {
+	for line := range strings.SplitSeq(listed, "\n") {
 		if name, sha, ok := strings.Cut(line, " "); ok {
 			out[name] = sha
 		}
@@ -225,10 +226,10 @@ type recordFields struct {
 	} `json:"gates"`
 }
 
-func recordOf(t *testing.T, main checkout, id string) recordFields {
+func recordOf(t *testing.T, main checkout) recordFields {
 	t.Helper()
 	var r recordFields
-	readJSON(t, main.record(id), &r)
+	readJSON(t, main.record("US-001"), &r)
 	return r
 }
 
@@ -394,12 +395,13 @@ type mainView struct {
 	files  map[string]string
 }
 
-func viewOf(t *testing.T, main checkout, id string) mainView {
+func viewOf(t *testing.T, main checkout) mainView {
 	t.Helper()
+	const id = "US-001"
 	const backlog = "user_stories.json"
 	record := ".sdlc/stories/" + id
 	var status []string
-	for _, line := range strings.Split(gitRaw(t, main.dir, "status", "--porcelain=v1", "--untracked-files=all"), "\n") {
+	for line := range strings.SplitSeq(gitRaw(t, main.dir, "status", "--porcelain=v1", "--untracked-files=all"), "\n") {
 		if len(line) < 4 {
 			continue
 		}
@@ -576,10 +578,10 @@ func (s *treeSession) refused(agent, tool string, input map[string]any) {
 	}
 }
 
-func (s *treeSession) run(agent string, args ...string) string {
+func (s *treeSession) run(agent string, args ...string) {
 	s.t.Helper()
 	s.do(agent, "Bash", running(s.at.in(s.tree, "sdlc "+strings.Join(args, " "))))
-	return s.here().run(s.t, args...)
+	s.here().run(s.t, args...)
 }
 
 func (s *treeSession) stores(agent, kind, body string) {
@@ -613,10 +615,13 @@ func (s *treeSession) nextGate() string {
 
 // workGate does what the runbook says at one gate, in the worktree, as whoever
 // it delegates the gate to, and records the outcome.
-func (s *treeSession) workGate(gate model.Gate, story string) {
+func (s *treeSession) workGate(gate model.Gate) {
 	s.t.Helper()
+	const story = "US-001"
 	switch gate {
 	case model.GateDoR:
+	case model.GateDesignReview, model.GateVerifierReview, model.GateCodeReview:
+		// Reviews only: the reviewers of the gate are added below.
 	case model.GateAnalysis:
 		s.stores("researcher", "analysis", "# Analysis\n\nAC-1 is testable.\n")
 		s.stores("researcher", "threats", "# Threats\n\nNothing crosses a trust boundary.\n")
@@ -682,7 +687,7 @@ func TestAC1StartMakesAWorktreeOnAStoryBranchCutFromTrunkAndSaysWhere(t *testing
 		if got := statuses(t, main.backlog())["US-001"]; got != "in_progress" {
 			t.Errorf("the backlog has US-001 %q, want in_progress", got)
 		}
-		if base := recordOf(t, main, "US-001").Base; base != tip {
+		if base := recordOf(t, main).Base; base != tip {
 			t.Errorf("the record's base is %q, want the commit the branch was cut from, %s", base, tip)
 		}
 	})
@@ -707,7 +712,7 @@ func TestAC1StartMakesAWorktreeOnAStoryBranchCutFromTrunkAndSaysWhere(t *testing
 
 		w := startIn(t, main, main.as(sessionFirst))
 		cutFromTrunk(t, main, w, tip)
-		if base := recordOf(t, main, "US-001").Base; base != tip {
+		if base := recordOf(t, main).Base; base != tip {
 			t.Errorf("the record's base is %q, want develop's tip %s, not the main checkout's HEAD", base, tip)
 		}
 	})
@@ -766,6 +771,7 @@ func TestAC2StartLeavesTheMainCheckoutAsItWasApartFromTheLoopsBookkeeping(t *tes
 	}{
 		{"AC-2 on trunk with nothing uncommitted", func(*testing.T, checkout) {}},
 		{"AC-2 on a branch of a person's own, with work staged, changed and new", func(t *testing.T, main checkout) {
+			t.Helper()
 			git(t, main.dir, "switch", "--quiet", "-c", "mine")
 			writeFile(t, filepath.Join(main.dir, "staged.go"), "package main\n")
 			git(t, main.dir, "add", "staged.go")
@@ -776,9 +782,9 @@ func TestAC2StartLeavesTheMainCheckoutAsItWasApartFromTheLoopsBookkeeping(t *tes
 		t.Run(c.name, func(t *testing.T) {
 			main := storyRepository(t, binary, spec{id: "US-001", priority: 1})
 			c.prepare(t, main)
-			before := viewOf(t, main, "US-001")
+			before := viewOf(t, main)
 			startIn(t, main, main.as(sessionFirst))
-			before.same(t, viewOf(t, main, "US-001"), "start")
+			before.same(t, viewOf(t, main), "start")
 		})
 	}
 
@@ -787,7 +793,7 @@ func TestAC2StartLeavesTheMainCheckoutAsItWasApartFromTheLoopsBookkeeping(t *tes
 	t.Run("AC-2 with GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE naming the main checkout", func(t *testing.T) {
 		main := storyRepository(t, binary, spec{id: "US-001", priority: 1})
 		tip := headOf(t, main.dir)
-		before, was := viewOf(t, main, "US-001"), footprintOf(t, main)
+		before, was := viewOf(t, main), footprintOf(t, main)
 
 		cmd := main.as(sessionFirst).command(t, "", "start", "--json")
 		cmd.Env = append(cmd.Env,
@@ -798,7 +804,7 @@ func TestAC2StartLeavesTheMainCheckoutAsItWasApartFromTheLoopsBookkeeping(t *tes
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		err := cmd.Run()
 
-		before.same(t, viewOf(t, main, "US-001"), "start with git's variables set")
+		before.same(t, viewOf(t, main), "start with git's variables set")
 		if err != nil {
 			// Refusing while they are set is one answer (THREATS T3), and then
 			// nothing is left behind.
@@ -828,14 +834,17 @@ func TestAC3AWorktreeStartIsNotRefusedForWhereTheMainCheckoutIsOrWhatIsInIt(t *t
 		prepare func(t *testing.T, main checkout)
 	}{
 		{"AC-3 the main checkout on another branch, SDLC-E0038 in one checkout", func(t *testing.T, main checkout) {
+			t.Helper()
 			git(t, main.dir, "switch", "--quiet", "-c", "mine")
 			writeFile(t, filepath.Join(main.dir, "mine.go"), "package main\n")
 			commitEverything(t, main.dir, "a person's own commit")
 		}},
 		{"AC-3 the main checkout with a detached HEAD", func(t *testing.T, main checkout) {
+			t.Helper()
 			git(t, main.dir, "switch", "--quiet", "--detach")
 		}},
 		{"AC-3 uncommitted work in the main checkout, SDLC-E0039 in one checkout", func(t *testing.T, main checkout) {
+			t.Helper()
 			writeFile(t, filepath.Join(main.dir, "staged.go"), "package main\n")
 			git(t, main.dir, "add", "staged.go")
 			writeFile(t, filepath.Join(main.dir, "go.mod"), readFile(t, filepath.Join(main.dir, "go.mod"))+"// a person's edit\n")
@@ -1072,7 +1081,7 @@ func TestAC6ASessionWorksItsStoryInItsWorktreeTheWayTheRunbookSaysTo(t *testing.
 		t.Run(c.name, func(t *testing.T) {
 			main := storyRepository(t, binary, spec{id: "US-001", priority: 1})
 			cut := headOf(t, main.dir)
-			before := viewOf(t, main, "US-001")
+			before := viewOf(t, main)
 			s := &treeSession{t: t, binary: binary, id: sessionFirst}
 			if c.openedInMain {
 				s.at = opening{"opened in the main checkout", main.dir, main.dir}
@@ -1089,10 +1098,10 @@ func TestAC6ASessionWorksItsStoryInItsWorktreeTheWayTheRunbookSaysTo(t *testing.
 			}
 
 			for gate := s.nextGate(); gate != ""; gate = s.nextGate() {
-				s.workGate(model.Gate(gate), "US-001")
+				s.workGate(model.Gate(gate))
 			}
 
-			record := recordOf(t, main, "US-001")
+			record := recordOf(t, main)
 			for _, gate := range model.Gates {
 				if got := record.Gates[string(gate)].Status; got != "pass" {
 					t.Errorf("%s is %q on the record in the main checkout, want pass", gate, got)
@@ -1107,7 +1116,7 @@ func TestAC6ASessionWorksItsStoryInItsWorktreeTheWayTheRunbookSaysTo(t *testing.
 			// Checked before the stop: since US-029.3, the stop of a finished
 			// story in its worktree lands it, which moves trunk in the main
 			// checkout by design. Working the story is what leaves it alone.
-			before.same(t, viewOf(t, main, "US-001"), "working the story in its worktree")
+			before.same(t, viewOf(t, main), "working the story in its worktree")
 			s.run("", "stop")
 		})
 	}
@@ -1448,7 +1457,7 @@ func TestAC7TrunkMovingTripsNoGateBeforeTheCommitAndTheWorktreeIsWhatIsReviewed(
 		if got := gitOut(t, main.dir, "merge-base", "main", w.branch); got != cut {
 			t.Errorf("%s and trunk meet at %s, want where the branch was cut, %s", w.branch, got, cut)
 		}
-		if r := recordOf(t, main, "US-001"); r.Base != cut || r.CommitBase != cut {
+		if r := recordOf(t, main); r.Base != cut || r.CommitBase != cut {
 			t.Errorf("the record measures from %q, and its range from %q; want both where the branch was cut, %s",
 				r.Base, r.CommitBase, cut)
 		}
@@ -1562,12 +1571,10 @@ func TestAC8TwoStartsAtTheSameMomentNeverShareAStoryOrAWorktree(t *testing.T) {
 		results[i] = &result{}
 		cmd := main.as(s).command(t, "", "start", "--json")
 		cmd.Stdout, cmd.Stderr = &results[i].stdout, &results[i].stderr
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-gun
 			results[i].err = cmd.Run()
-		}()
+		})
 	}
 	close(gun)
 	wg.Wait()
@@ -1679,16 +1686,20 @@ func TestAC9WithStoryWorktreesOffStartDoesWhatTheReleasedToolDoes(t *testing.T) 
 		prepare    func(t *testing.T, main checkout)
 	}{
 		{"AC-9 SDLC-E0038 on another branch", "SDLC-E0038", func(t *testing.T, main checkout) {
+			t.Helper()
 			git(t, main.dir, "switch", "--quiet", "-c", "mine")
 		}},
 		{"AC-9 SDLC-E0039 for work no story owns", "SDLC-E0039", func(t *testing.T, main checkout) {
+			t.Helper()
 			writeFile(t, filepath.Join(main.dir, "stray.go"), "package main\n")
 		}},
 		{"AC-9 SDLC-E0040 behind origin", "SDLC-E0040", func(t *testing.T, main checkout) {
+			t.Helper()
 			originMovesOn(t, withOrigin(t, main))
 		}},
 		// Run where start runs, the main checkout, where .git is a directory.
 		{"AC-9 SDLC-E0041 when smoke fails where start runs", "SDLC-E0041", func(t *testing.T, main checkout) {
+			t.Helper()
 			setConfig(t, main.dir, "commands", "smoke", "test ! -d .git")
 			commitEverything(t, main.dir, "a smoke check the main checkout fails")
 		}},
@@ -1889,7 +1900,7 @@ var sentences = regexp.MustCompile(`\. |; | — | -- `)
 // advisesDiscarding reports whether some sentence of text tells its reader to
 // discard work, rather than not to.
 func advisesDiscarding(text string) bool {
-	for _, line := range strings.Split(strings.ToLower(text), "\n") {
+	for line := range strings.SplitSeq(strings.ToLower(text), "\n") {
 		for _, s := range sentences.Split(line, -1) {
 			if strings.Contains(s, "discard") &&
 				!strings.Contains(s, "not ") && !strings.Contains(s, "n't ") && !strings.Contains(s, "never ") {

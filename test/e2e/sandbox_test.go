@@ -28,6 +28,7 @@
 // Claude Code session in the command's environment; the session under test is
 // an id the tests hand to the binary and to the hook, and every call it makes
 // is put to the hook first.
+
 package e2e
 
 import (
@@ -186,7 +187,7 @@ func runProgramIn(t *testing.T, dir, program string, env []string, args ...strin
 func printedPaths(t *testing.T, stdout string) map[string]string {
 	t.Helper()
 	paths := map[string]string{}
-	for _, line := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(stdout, "\n"), "\n") {
 		word, rest, ok := strings.Cut(strings.TrimRight(line, "\r"), " ")
 		if !ok {
 			continue
@@ -448,30 +449,32 @@ func (sb sandbox) allows(t *testing.T, dir, agent, tool string, input map[string
 	}
 }
 
-// refuses puts a tool call of a session to the hook, which has to refuse it
-// under the rule given, with a route, and returns the reason.
-func (sb sandbox) refuses(t *testing.T, session, dir, tool string, input map[string]any, rule string) string {
+// bashTool is the tool name Claude Code gives a shell command.
+const bashTool = "Bash"
+
+// refuses puts a Bash call of a session to the hook, which has to refuse it
+// under the rule given, with a route.
+func (sb sandbox) refuses(t *testing.T, session, dir string, input map[string]any, rule string) {
 	t.Helper()
-	stdout, stderr, code := sb.hook(t, "PreToolUse", toolCall(session, dir, "", tool, input))
+	stdout, stderr, code := sb.hook(t, "PreToolUse", toolCall(session, dir, "", bashTool, input))
 	if code != 0 {
-		t.Fatalf("the hook exited %d for %s, so its reply is never read:\n%s", code, describeInput(tool, input), stderr)
+		t.Fatalf("the hook exited %d for %s, so its reply is never read:\n%s", code, describeInput(bashTool, input), stderr)
 	}
 	if stdout == carryOn {
-		t.Fatalf("the hook let session %s run %s", session, describeInput(tool, input))
+		t.Fatalf("the hook let session %s run %s", session, describeInput(bashTool, input))
 	}
 	var r refusal
 	oneLine(t, stdout, &r)
 	out := r.HookSpecificOutput
 	if out.HookEventName != "PreToolUse" || out.PermissionDecision != "deny" {
-		t.Fatalf("the hook's reply to %s is not a refusal of a tool call: %q", describeInput(tool, input), stdout)
+		t.Fatalf("the hook's reply to %s is not a refusal of a tool call: %q", describeInput(bashTool, input), stdout)
 	}
 	if !strings.Contains(out.PermissionDecisionReason, "["+rule+"]") {
-		t.Errorf("%s was refused under another rule than %s:\n%s", describeInput(tool, input), rule, out.PermissionDecisionReason)
+		t.Errorf("%s was refused under another rule than %s:\n%s", describeInput(bashTool, input), rule, out.PermissionDecisionReason)
 	}
 	if !strings.Contains(out.PermissionDecisionReason, "Instead:") {
-		t.Errorf("the refusal of %s offers no route:\n%s", describeInput(tool, input), out.PermissionDecisionReason)
+		t.Errorf("the refusal of %s offers no route:\n%s", describeInput(bashTool, input), out.PermissionDecisionReason)
 	}
-	return out.PermissionDecisionReason
 }
 
 // result is what one command printed and how it ended.

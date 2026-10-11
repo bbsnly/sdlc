@@ -11,6 +11,7 @@
 // So `uname` is shimmed, the archive is cross-built for the target, and the
 // real install.sh runs against it start to finish. Everything except the last
 // line -- running a foreign binary -- is exercised for real.
+
 package install
 
 import (

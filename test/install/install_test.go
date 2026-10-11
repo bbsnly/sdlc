@@ -74,7 +74,7 @@ func TestMain(m *testing.M) {
 func built(t *testing.T) string {
 	t.Helper()
 	buildOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "sdlc-build-")
+		dir, err := os.MkdirTemp("", "sdlc-build-") //nolint:usetesting // built once for every test in the package, so it has to outlive the test that triggers the build; TestMain removes it
 		if err != nil {
 			buildOnce.err = err
 			return

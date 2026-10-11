@@ -231,7 +231,7 @@ func TestAC10TheHookRefusesACallItCouldNotCheckInTimeThroughTheBuiltBinaryAndThe
 // paragraphs is a document's paragraphs, each on one line.
 func paragraphs(text string) []string {
 	var out []string
-	for _, p := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n\n") {
+	for p := range strings.SplitSeq(strings.ReplaceAll(text, "\r\n", "\n"), "\n\n") {
 		if flat := strings.Join(strings.Fields(p), " "); flat != "" {
 			out = append(out, flat)
 		}

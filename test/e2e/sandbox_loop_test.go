@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -102,6 +103,8 @@ func (sb sandbox) worksGate(t *testing.T, gate model.Gate) {
 	t.Helper()
 	tree := sb.tree()
 	switch gate {
+	case model.GateDoR, model.GateDesignReview, model.GateVerifierReview, model.GateCodeReview:
+		// Nothing to produce: the reviewers of the gate are added below.
 	case model.GateAnalysis:
 		sb.works(t, tree, "researcher", sandboxAnalysis, "artifact", "write", "analysis")
 		sb.works(t, tree, "researcher", sandboxThreats, "artifact", "write", "threats")
@@ -284,7 +287,7 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 	}
 
 	t.Run("AC-2 the commit gate refuses a commit before the gates in front of it", func(t *testing.T) {
-		sb.refuses(t, sandboxSession, tree, "Bash", map[string]any{"command": "git commit -m early"}, "commit-gate")
+		sb.refuses(t, sandboxSession, tree, map[string]any{"command": "git commit -m early"}, "commit-gate")
 	})
 
 	t.Run("AC-2 gate, artifact write and freeze, up to the frozen tests", func(t *testing.T) {
@@ -448,7 +451,7 @@ func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunSt
 			if d.rule == "stop-is-a-human-decision" && when != "while the story is under way" {
 				continue // an iteration that has ended has nothing to stop
 			}
-			sb.refuses(t, session, tree, "Bash", map[string]any{"command": d.command}, d.rule)
+			sb.refuses(t, session, tree, map[string]any{"command": d.command}, d.rule)
 		}
 	}
 	t.Run("AC-3 the hook refuses each to the session working the story", func(t *testing.T) {
@@ -460,7 +463,7 @@ func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunSt
 	}
 
 	t.Run("AC-3 unfreeze", func(t *testing.T) {
-		sb.refuses(t, sandboxSession, tree, "Bash", map[string]any{"command": `sdlc unfreeze --reason "AC-1's test is wrong"`},
+		sb.refuses(t, sandboxSession, tree, map[string]any{"command": `sdlc unfreeze --reason "AC-1's test is wrong"`},
 			"unfreeze-is-a-human-decision")
 		r := sb.person(t, tree, "unfreeze", "--reason", "AC-1's test asserted the wrong total")
 		want := "US-001  freeze lifted on 1 test file\n  AC-1's test asserted the wrong total\n  reopened: tests_frozen\n"
@@ -499,7 +502,7 @@ func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunSt
 	})
 
 	t.Run("AC-3 a stop before the gates have passed", func(t *testing.T) {
-		sb.refuses(t, sandboxSession, tree, "Bash", map[string]any{"command": "sdlc stop"}, "stop-is-a-human-decision")
+		sb.refuses(t, sandboxSession, tree, map[string]any{"command": "sdlc stop"}, "stop-is-a-human-decision")
 		r := sb.person(t, tree, "stop")
 		want := "Stopped the iteration on US-001. Nothing was recorded; `sdlc start` picks it up again.\n"
 		if r.stdout != want || r.stderr != "" || r.code != 0 {
@@ -508,7 +511,7 @@ func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunSt
 	})
 
 	t.Run("AC-3 release", func(t *testing.T) {
-		sb.refuses(t, sandboxSession, tree, "Bash", map[string]any{"command": `sdlc release US-001 --reason "x"`},
+		sb.refuses(t, sandboxSession, tree, map[string]any{"command": `sdlc release US-001 --reason "x"`},
 			"release-is-a-human-decision")
 		r := sb.person(t, tree, "release", "US-001", "--reason", "the story is to be worked from a new session")
 		want := "Released US-001: the checkout at \"<worktree>\" no longer holds it. \"sdlc start US-001\" picks it up in any checkout.\n" +
@@ -536,7 +539,7 @@ func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunSt
 				"  escalated  spec_unclear: is a zero total refused too? (answered)\n"})
 		// Acknowledging is refused always, to any session, story or none.
 		for _, session := range []string{sandboxSession, sandboxOther} {
-			sb.refuses(t, session, main, "Bash", map[string]any{"command": "sdlc ack --through HEAD"},
+			sb.refuses(t, session, main, map[string]any{"command": "sdlc ack --through HEAD"},
 				"acknowledgement-is-a-human-decision")
 		}
 		r := sb.person(t, main, "ack", "--through", "HEAD")
@@ -738,7 +741,7 @@ func TestAC4TheHookIsGivenTheJSONClaudeCodeSendsAndItsStdoutIsTheProtocol(t *tes
 			oneLine(t, stdout, &r)
 			count := stopCount.FindStringSubmatch(r.Reason)
 			if !r.Continue || r.Decision != "block" || !strings.HasPrefix(r.Reason, "US-001 is still being worked on. Work dor and record it") ||
-				count == nil || count[1] != fmt.Sprint(want) {
+				count == nil || count[1] != strconv.Itoa(want) {
 				t.Errorf("stop %d of the session working the story was not sent back to the dor gate with its count: %q", want, stdout)
 			}
 		}
@@ -874,7 +877,7 @@ func (sb sandbox) stops(t *testing.T, list string) stopped {
 // saysItCannotTell is how many lines of a stop's debug log say so.
 func (s stopped) saysItCannotTell() int {
 	n := 0
-	for _, line := range strings.Split(s.log, "\n") {
+	for line := range strings.SplitSeq(s.log, "\n") {
 		if strings.Contains(line, stopCannotTell) {
 			n++
 		}
@@ -920,7 +923,7 @@ func (s stopped) counted(t *testing.T, n int, what string) {
 	oneLine(t, s.stdout, &r)
 	count := stopCount.FindStringSubmatch(r.Reason)
 	if !r.Continue || r.Decision != "block" || !strings.HasPrefix(r.Reason, "US-001 is still being worked on. Work ") ||
-		!strings.Contains(r.Reason, "after 3 stops in a row with nothing recorded") || count == nil || count[1] != fmt.Sprint(n) {
+		!strings.Contains(r.Reason, "after 3 stops in a row with nothing recorded") || count == nil || count[1] != strconv.Itoa(n) {
 		t.Fatalf("%s: the stop was not sent back as stop %d of 3: %q", what, n, s.stdout)
 	}
 	s.keepsNoText(t, what)

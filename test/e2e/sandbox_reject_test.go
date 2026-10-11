@@ -23,7 +23,7 @@ func TestAC1APersonRejectsEscalatedWorkWithAReasonAndTheSessionCarriesOnFromTher
 		t.Fatalf("the story is %q after the escalation, want awaiting_human", got["US-001"])
 	}
 
-	sb.refuses(t, sandboxSession, tree, "Bash", map[string]any{"command": `sdlc approve US-001 --reject "no"`},
+	sb.refuses(t, sandboxSession, tree, map[string]any{"command": `sdlc approve US-001 --reject "no"`},
 		"approval-is-a-human-decision")
 
 	// A rejection says why, because the work goes back to someone who has to

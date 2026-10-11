@@ -16,6 +16,7 @@
 // What this catches that nothing else does: a runbook step the hook refuses,
 // an agent whose write scope does not cover what its gate produces, and a
 // resume that picks up at the wrong gate.
+
 package e2e
 
 import (
@@ -87,17 +88,17 @@ func (s *session) refused(agent, tool string, input map[string]any) string {
 }
 
 // run is a shell command the runbook gives: past the hook, then actually run.
-func (s *session) run(agent string, args ...string) string {
+func (s *session) run(agent string, args ...string) {
 	s.t.Helper()
 	s.do(agent, "Bash", map[string]any{"command": "sdlc " + strings.Join(args, " ")})
-	return runTool(s.t, s.binary, s.root, args...)
+	runTool(s.t, s.binary, s.root, args...)
 }
 
 // stores is how a gate's documents arrive: through the tool, on standard input.
-func (s *session) stores(agent, kind, body string) string {
+func (s *session) stores(agent, kind, body string) {
 	s.t.Helper()
 	s.do(agent, "Bash", map[string]any{"command": "sdlc artifact write " + kind})
-	return runToolWithInput(s.t, s.binary, s.root, body, "artifact", "write", kind)
+	runToolWithInput(s.t, s.binary, s.root, body, "artifact", "write", kind)
 }
 
 // writes is a file the runbook expects an agent to write itself.
@@ -139,11 +140,11 @@ func describeAgent(agent string) string {
 }
 
 func describeInput(tool string, input map[string]any) string {
-	if c, ok := input["command"]; ok {
-		return tool + " `" + c.(string) + "`"
+	if c, ok := input["command"].(string); ok {
+		return tool + " `" + c + "`"
 	}
-	if p, ok := input["file_path"]; ok {
-		return tool + " " + p.(string)
+	if p, ok := input["file_path"].(string); ok {
+		return tool + " " + p
 	}
 	return tool
 }
@@ -155,6 +156,8 @@ func (s *session) workGate(gate model.Gate, story string) {
 	s.t.Helper()
 	switch gate {
 	case model.GateDoR:
+	case model.GateDesignReview, model.GateVerifierReview, model.GateCodeReview:
+		// Reviews only: the reviewers of the gate are added below.
 	case model.GateAnalysis:
 		s.stores("researcher", "analysis", "# Analysis\n\nAC-1 is testable.\n")
 		s.stores("researcher", "threats", "# Threats\n\nNothing crosses a trust boundary.\n")

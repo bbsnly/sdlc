@@ -39,7 +39,7 @@ func landFinished(t *testing.T, binary string, main checkout) *treeSession {
 	s.do("", "Bash", running("sdlc start --json"))
 	s.tree = startIn(t, main, main.as(sessionFirst)).dir
 	for gate := s.nextGate(); gate != ""; gate = s.nextGate() {
-		s.workGate(model.Gate(gate), "US-001")
+		s.workGate(model.Gate(gate))
 	}
 	return s
 }

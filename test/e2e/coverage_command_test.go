@@ -41,8 +41,7 @@ func printed(t *testing.T, binary, dir string, args ...string) (stdout string, c
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 		return out.String(), exit.ExitCode()
 	}
 	if err != nil {

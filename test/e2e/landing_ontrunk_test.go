@@ -79,6 +79,8 @@ func (s *ontoStory) worked() {
 	s.t.Helper()
 	for gate := s.nextGate(); gate != ""; gate = s.nextGate() {
 		switch model.Gate(gate) {
+		case model.GateDoR, model.GateDesignReview, model.GateVerifierReview, model.GateCodeReview:
+			// Nothing to produce: the reviewers of the gate are added below.
 		case model.GateAnalysis:
 			s.stores("researcher", "analysis", "# Analysis\n\nAC-1 is testable.\n")
 			s.stores("researcher", "threats", "# Threats\n\nNothing crosses a trust boundary.\n")
@@ -279,12 +281,10 @@ func TestAC13TwoSessionsStoppingAtTheSameMomentBothLand(t *testing.T) {
 		results[i] = &result{}
 		cmd := s.here().command(t, "", "stop")
 		cmd.Stdout, cmd.Stderr = &results[i].out, &results[i].out
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-gun
 			results[i].err = cmd.Run()
-		}()
+		})
 	}
 	close(gun)
 	wg.Wait()
@@ -490,9 +490,9 @@ func TestAC6TheHookStillRefusesAWriteToATestFileThatCameFromTrunk(t *testing.T) 
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1})
 	s := ontoBegun(t, binary, main, sessionFirst, "US-001")
 	for gate := s.nextGate(); gate != string(model.GateTestsFrozen); gate = s.nextGate() {
-		s.workGate(model.Gate(gate), "US-001")
+		s.workGate(model.Gate(gate))
 	}
-	s.workGate(model.GateTestsFrozen, "US-001")
+	s.workGate(model.GateTestsFrozen)
 	writeFile(t, filepath.Join(main.dir, "trunk_test.go"), "package main\n\n// another story's test\n")
 	commitPaths(t, main.dir, "another story's test lands", "trunk_test.go")
 	theirs, held := filepath.Join(s.tree, "trunk_test.go"), filepath.Join(s.tree, "invoice_test.go")
