@@ -64,6 +64,12 @@ func gitBudget(parent context.Context, now func() time.Time) (func() context.Con
 // recorder that could stop a commit would be the loop refusing finished work
 // over its own note to itself.
 //
+// A commit the hook's deadline refused is a refused commit too, which is why
+// run calls this, once the decision is known to be the answer, and the
+// goroutine the command is read on does not. It is not under that deadline
+// itself: a hook killed here has already allowed the commit, and loses the
+// observation.
+//
 // One allowed command plants one observation, of the head before it runs. A
 // command that commits twice -- `git commit -m a && git commit -m b` in one
 // call -- leaves its second commit's parent unwatched, and the range the

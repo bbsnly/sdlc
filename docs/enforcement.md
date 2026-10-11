@@ -3,6 +3,7 @@
 - [Introduction](#introduction)
 - [What this is, and what it is not](#what-this-is-and-what-it-is-not)
 - [When any of it applies](#when-any-of-it-applies)
+  - [`not-checked-in-time`](#not-checked-in-time)
 - [Rules on writing files](#rules-on-writing-files)
   - [`write-outside-repository`](#write-outside-repository)
   - [`write-protected-path`](#write-protected-path)
@@ -187,6 +188,87 @@ The exceptions are the files a rule exists to protect. A test freeze or a gate
 record that cannot be read is not treated as absent, because then breaking one
 would be the way round it: tests stay frozen and the commit waits until the file
 reads. `sdlc doctor` names it under "loop state".
+
+Running out of time is not one of those errors either. A call the hook checks
+and cannot decide in time is refused, with the rule name
+[`not-checked-in-time`](#not-checked-in-time). That section also says what is
+still left open.
+
+### `not-checked-in-time`
+
+Refuses a call the hook checks and could not check in time: a command it could
+not finish reading in time, or a change to a file it could not check in time.
+The refusal says that the hook ran out of time. It does not say the call broke
+a rule, and no rule was applied to it.
+
+Claude Code gives the hook 30 seconds for a tool call and then kills it. A
+killed hook says nothing, and the call runs with no rule applied. So the hook
+keeps a deadline of its own, 25 seconds from when it starts, and refuses a call
+it checks and has not decided by then. Reading the call, finding the project
+and the story, and reading the command all count against it. A command long
+enough to take that much reading could get round every rule on this page with
+nobody told. Once the hook knows it checks the call, it no longer can; see
+[What is still left open](#what-is-still-left-open).
+
+Measuring the working tree for a commit counts against the deadline too, but
+that check has a limit of its own, 20 seconds from the first `git` call the
+hook makes. Where that limit ends first, the commit goes through with a
+warning that the tree could not be measured, as it always has. Only a commit
+still being measured when the hook's 25 seconds end is refused.
+
+This refusal is given for the calls the hook checks:
+
+- any call from the session working a story;
+- a command from any session, in any project with `.sdlc/config.json` the call
+  reaches (the session's, the working directory's, or one a path in the command
+  names), which is where
+  [a person's decisions](#a-persons-decisions-refused-in-every-session) are
+  refused.
+
+So a session that holds no story can meet this refusal too, for a command in
+such a project that takes the hook too long to read. A file written by that
+session is never refused for time. Nor is any call that reaches no such
+project, nor anything while `SDLC_ENFORCE` is `0`. A call decided in time is
+answered exactly as it was before there was a deadline.
+
+*Instead:* run a command in shorter parts, one call for each. Try a change to a
+file again as it is. If a short command, a commit, or the same change is
+refused this way again, it is not the call that is slow: stop and tell the
+person running the session.
+
+If you are that person, [Troubleshooting](troubleshooting.md#warnings-the-hook-prints)
+says which lines of the hook's log to read. [Turning it off](#turning-it-off)
+is the last resort, because it disables every rule on this page and not only
+this refusal.
+
+[`SDLC_HOOK_DEADLINE_MS`](configuration.md#sdlc_hook_deadline_ms) can shorten
+the deadline. Nothing lengthens it.
+
+#### What is still left open
+
+The hook refuses only once it knows the call is one it checks, so that a call
+it does not check, such as a file written by a session holding no story, never
+hears from the plugin because the hook was slow. Until it knows, a deadline
+that passes changes nothing. The hook carries on finding out,
+refuses the call there and then if it is one it checks, and otherwise answers
+as it always does.
+
+So a hook that Claude Code kills before it has learnt whether the call is one it
+checks still lets the call through and says nothing. Finding the project means
+walking up from every path a command names, and that walk is not bounded: a
+command can make it outlast the 30 seconds, and so can a call that never
+finishes arriving. Nothing appears in the session. With `SDLC_DEBUG_FILE` set,
+the log may hold a line saying the deadline passed before the hook knew whether
+it checks the call, if the hook lived to write it.
+
+There is a second case. Once the hook has decided to allow a commit, it writes
+down the commit the work is made on, and that step is not under the deadline. A
+hook killed there has already allowed the commit, which goes through, and the
+note is lost; [SECURITY.md](../SECURITY.md) lists it among the limits of what
+the commit gate knows.
+
+This refusal makes no reading faster. It answers for the calls that run out of
+time once the hook knows what it is looking at.
 
 ## Rules on writing files
 
@@ -1544,6 +1626,13 @@ how you would notice.
 
 #### Commands the rules do not read
 
+- **A call the hook is killed on before it knows whether it checks it.** The
+  hook refuses a call it could not check in time only once it knows the call is
+  one it checks
+  ([`not-checked-in-time`](#not-checked-in-time)). A command that keeps the
+  hook finding the project for the whole of Claude Code's 30 seconds runs with
+  no rule applied and nothing said in the session. With `SDLC_DEBUG_FILE` set,
+  the log has no `hook decision` line for that call.
 - **A commit in the next call.** Each call is read on its own. A call that
   stages another checkout's work into the session's index, with
   `git --work-tree=<main> add` or `GIT_INDEX_FILE`, followed by a plain

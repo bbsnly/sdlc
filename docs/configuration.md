@@ -30,6 +30,8 @@
   - [Setting a floor with `lowest`](#setting-a-floor-with-lowest)
   - [Bringing a reviewer back with `bring_back`](#bringing-a-reviewer-back-with-bring_back)
   - [What a staffing cannot do](#what-a-staffing-cannot-do)
+- [Settings read from the environment](#settings-read-from-the-environment)
+  - [`SDLC_HOOK_DEADLINE_MS`](#sdlc_hook_deadline_ms)
 - [The other half of the contract](#the-other-half-of-the-contract)
 
 ## Introduction
@@ -54,6 +56,10 @@ A key `sdlc` does not know changes nothing, because the setting it was meant to
 be keeps its default. `sdlc doctor` names such a key as a problem, so run it
 after editing the file. A key that starts with `_` is a comment and is not
 reported, and `commands` takes any name.
+
+A few settings are not in the file at all. They are read from the environment
+the session starts with, and are listed under
+[Settings read from the environment](#settings-read-from-the-environment).
 
 ## What `init` writes for a Go project
 
@@ -540,6 +546,42 @@ With the staffing on, a section sdlc cannot use does not load
 ([SDLC-E0045](troubleshooting.md#sdlc-e0045)): an empty list, a name listed
 twice, a `lowest` its list does not have, a key that is not an agent, or a path
 that is not a plain relative one.
+
+## Settings read from the environment
+
+A few settings are not in `.sdlc/config.json`, because they belong to the person
+who starts the session and not to the project. They are read from the
+environment Claude Code was started in, and nothing run inside a session
+changes them. `SDLC_ENFORCE` is described under
+[Turning it off](enforcement.md#turning-it-off), and `SDLC_DEBUG`,
+`SDLC_DEBUG_FILE` and `SDLC_TRACE` under
+[Seeing what happened](enforcement.md#seeing-what-happened).
+
+### `SDLC_HOOK_DEADLINE_MS`
+
+`SDLC_HOOK_DEADLINE_MS` can only shorten the hook's deadline: the 25 seconds
+after which a call the hook could not check in time is refused, with the rule
+name [`not-checked-in-time`](enforcement.md#not-checked-in-time). It is a whole
+number of milliseconds, above 0 and below 25000.
+
+```console
+$ export SDLC_HOOK_DEADLINE_MS=10000
+```
+
+Any other value leaves the 25 seconds in force: `0`, a negative number, 25000
+or more, and anything not written in digits alone, such as `1.5`, `+5`, `5s`
+or a value with a space in it. Nothing in the session reports a value that was
+not taken. With `SDLC_DEBUG_FILE` set, the hook's log has a line for each call
+saying the fixed deadline is in force. Nothing lengthens the deadline, because
+the 25 seconds are what keeps the hook's answer ahead of Claude Code's own
+timeout.
+
+A shorter deadline refuses the calls that outlast it, and only those. A call
+the hook checks usually takes it a few milliseconds, and more for a commit,
+whose working tree is measured. A deadline shorter than that refuses calls
+that would have been allowed, and which ones depends on how busy the machine
+is. It turns no rule off. It is there for testing the refusal, and for a person
+who would rather be refused sooner than wait.
 
 ## The other half of the contract
 

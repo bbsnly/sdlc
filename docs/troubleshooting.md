@@ -1369,19 +1369,39 @@ it would have asked for.
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session working a story as a system message, and
-the tool call goes through: the hook fails open, always, because a bug in it must not be able
-to stop your session. What it will not do is fail open quietly in that session. Every other
-session hears nothing from the plugin at all.
+the tool call goes through: the hook fails open on an error of its own, always, because a bug
+in it must not be able to stop your session. What it will not do is fail open quietly in that
+session. Every other session hears nothing from the plugin at all.
 
 Each warning means a rule you are relying on is not running as it should, so it is worth a
 moment to fix. A frozen test that was changed is still refused at `tests_frozen`, `plan`,
 `implementation`, `verification` and `commit`, with `SDLC-E0025`.
 
-There is one exception the hook cannot warn you about, because by then it is no longer running.
-A hook that outlasts the timeout Claude Code gives it is killed, and a killed hook says nothing.
-With `SDLC_DEBUG_FILE` set it leaves a `hook considering` line with no `hook decision` after
-it, and `SDLC_TRACE=1` says how long each call that finishes took, which is the way to see one
-closing in on the timeout before it is killed.
+Running out of time is not a warning, and the call does not go through. A command the hook
+cannot finish reading in time, or a change it cannot check in time, is refused with the rule
+name [`not-checked-in-time`](enforcement.md#not-checked-in-time): for
+[the calls the hook checks](enforcement.md#not-checked-in-time), it gives itself 25 seconds
+from when it starts, inside the 30 seconds Claude Code gives it. The refusal says to run a command in
+shorter parts, or to try a change again, and to tell the person running the session if that is
+refused as well.
+
+If you are told that, set `SDLC_DEBUG_FILE` to a file in the environment you start the session
+from, and repeat the call. The `hook decision` line for the refused call names
+`not-checked-in-time`. The line before it, `the call was not decided by the deadline`, gives the
+deadline in force and how long the hook had run, and says whether the hook refused as it learnt
+that it checks the call or while it was deciding. With `SDLC_TRACE=1` set as well, a `stage`
+line gives the milliseconds each call that finishes took, a refused one included. A deadline
+far below 25 seconds in that log means `SDLC_HOOK_DEADLINE_MS` is set in the environment the
+session started with; see [the configuration page](configuration.md#sdlc_hook_deadline_ms).
+
+Two cases are left that the hook cannot tell you about, because by then it is no longer
+running. A hook that Claude Code kills before it has learnt whether the call is one it checks
+still lets the call through and says nothing. So does one killed after it has allowed a commit,
+while it writes down the commit the work is made on. With `SDLC_DEBUG_FILE` set, a hook killed
+after it knew leaves a `hook considering` line with no `hook decision` after it, and one killed
+before it knew leaves no line for the call, or only
+`the deadline passed before the hook knew whether it checks this call`. The `stage` lines of
+the calls before it are the way to see one closing in on the timeout before it is killed.
 
 ### `the sdlc binary was not found, so nothing is being enforced`
 

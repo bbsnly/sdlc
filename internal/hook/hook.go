@@ -21,6 +21,12 @@
 // or a gate record that is there and cannot be read is not treated as absent,
 // because then breaking it would be the way round it: tests stay frozen and the
 // commit waits until they read.
+//
+// And except when it runs out of time. Claude Code kills a hook that outlasts
+// its timeout and lets the call through, so a command long enough to read got
+// round every rule with nothing said. A call the hook knows it checks, and has
+// not decided by its own deadline, is refused. What is left is a hook killed
+// before it knows whether it checks the call: that one still goes through.
 package hook
 
 import (
@@ -33,6 +39,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -111,6 +118,27 @@ type payload struct {
 // Run dispatches a hook event. args is everything after the `hook` verb, so
 // args[0] is the event name.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
+	return run(args, stdin, stdout, stderr, getenv, clock{
+		now:   time.Now,
+		after: time.After,
+		spawn: func(work func()) { go work() },
+	})
+}
+
+// run is Run on the clock it is handed.
+//
+// A PreToolUse call has a deadline, hookDeadline, counted from here. Until the
+// hook knows whether the call is one it checks, a deadline that passes changes
+// nothing: the plugin is installed for every session, and one that is not
+// working a story must not be refused, or told anything, because the hook was
+// slow. At the moment the hook knows, a deadline already passed refuses the
+// call there and then. After that the rest of the decision runs on a goroutine
+// of its own against a timer, because nothing can interrupt the reading of a
+// command, and whichever comes first is the one answer.
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string, c clock) int {
+	// Before the input is read: a call that takes long to arrive has spent
+	// the time all the same.
+	start := c.now()
 	// The payload is read even when the answer is already known: leaving it
 	// unread can give the caller a broken pipe. One byte past the bound is read,
 	// so that a payload cut off there is known to be one.
@@ -129,16 +157,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	// goes to Claude Code's debug log and nowhere else, so a warning written
 	// only there is one nobody reads. It still goes to stderr as well, which
 	// is where the debug log picks it up.
-	var warnings []string
-	warn := func(msg string) {
-		for _, w := range warnings {
-			if w == msg {
-				return
-			}
-		}
-		warnings = append(warnings, msg)
-		fmt.Fprintln(stderr, "sdlc: "+msg)
-	}
+	said := &warnings{stderr: stderr}
+	warn := said.warn
 
 	if args[0] == "Stop" || args[0] == "PostToolUse" {
 		var reply turnReply
@@ -148,44 +168,148 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 			reply = formatWritten(raw, getenv, warn)
 		}
 		slog.Debug("hook turn decision", "event", args[0], "decision", reply.Decision)
-		if len(warnings) > 0 {
+		if warnings := said.taken(); len(warnings) > 0 {
 			reply.SystemMessage = strings.TrimSpace(reply.SystemMessage + " sdlc: " + strings.Join(warnings, " "))
 		}
 		return emit(stdout, reply)
 	}
 
-	verdict, event, ok := decide(args[0], raw, getenv, warn)
-	// Why a hook did nothing is the hardest thing to find out from the outside,
-	// so every decision is available at debug level. SDLC_DEBUG_FILE is the way
-	// to see it: stderr from a hook that allowed the call is not shown.
-	slog.Debug("hook decision",
-		"event", event, "considered", ok, "allowed", verdict.Allowed, "rule", verdict.Rule)
-	message := ""
-	if len(warnings) > 0 {
-		message = "sdlc: " + strings.Join(warnings, " ")
+	limit := deadlineIn(getenv)
+	left := func() time.Duration { return limit - c.now().Sub(start) }
+	// A deadline that passes before the hook knows is not an answer, and a
+	// hook Claude Code kills while it is still finding out says nothing at
+	// all. This line is then all a person has to go on, so it is written as
+	// soon as the hook can notice, and it carries nothing of the call.
+	unknown := func(stage string, remaining time.Duration) {
+		slog.Debug("hook: the deadline passed before the hook knew whether it checks this call",
+			"stage", stage, "deadline", limit.String(), "elapsed", (limit - remaining).String())
 	}
-	if !ok || verdict.Allowed {
-		d := Allow()
-		d.SystemMessage = message
-		return emit(stdout, d)
+	remaining := left()
+	late := remaining <= 0
+	if late {
+		unknown("call read", remaining)
 	}
-	return emit(stdout, preToolUseReply{
-		SystemMessage: message,
-		HookSpecificOutput: preToolUseOutput{
-			HookEventName:            event,
-			PermissionDecision:       "deny",
-			PermissionDecisionReason: verdict.Message(),
-		},
+
+	// Everything decide does runs here, on this goroutine, with no timer: a
+	// call the hook turns out not to check is answered as it always was.
+	rest, event, shell := decide(args[0], raw, getenv, warn, c.now)
+	// Read once decide has returned, so that it holds for every way the hook
+	// learns that it checks the call.
+	remaining = left()
+	if remaining <= 0 && !late {
+		unknown("loop found", remaining)
+	}
+
+	// The one place a PreToolUse call is answered.
+	answer := func(o outcome, warnings []string) int {
+		// Why a hook did nothing is the hardest thing to find out from the outside,
+		// so every decision is available at debug level. SDLC_DEBUG_FILE is the way
+		// to see it: stderr from a hook that allowed the call is not shown.
+		slog.Debug("hook decision",
+			"event", event, "considered", o.ok, "allowed", o.verdict.Allowed, "rule", o.verdict.Rule)
+		message := ""
+		if len(warnings) > 0 {
+			message = "sdlc: " + strings.Join(warnings, " ")
+		}
+		if !o.ok || o.verdict.Allowed {
+			d := Allow()
+			d.SystemMessage = message
+			return emit(stdout, d)
+		}
+		return emit(stdout, preToolUseReply{
+			SystemMessage: message,
+			HookSpecificOutput: preToolUseOutput{
+				HookEventName:            event,
+				PermissionDecision:       "deny",
+				PermissionDecisionReason: o.verdict.Message(),
+			},
+		})
+	}
+	if rest == nil {
+		return answer(outcome{verdict: policy.Allowed}, said.taken())
+	}
+
+	// What git runs under for the rest of the decision. It is cancelled when
+	// the deadline answers, so that a git still measuring the tree for a
+	// refused commit is not left running behind the hook, and only then: git
+	// that stops at the deadline of its own accord reads as a tree that could
+	// not be measured, which lets a commit through.
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	refuse := func(when string) int {
+		// The warnings are taken before git is cancelled. The work still
+		// running warns that the tree could not be measured the moment its git
+		// call is cancelled, and that would be said of a commit this refuses.
+		warnings := said.taken()
+		stop()
+		// With the deadline in force, because one shortened in a shell
+		// profile is otherwise nowhere to be seen.
+		slog.Debug("hook: the call was not decided by the deadline, so it is refused",
+			"when", when, "deadline", limit.String(), "elapsed", c.now().Sub(start).String())
+		return answer(outcome{verdict: deadlineVerdict(shell), ok: true}, warnings)
+	}
+	if remaining <= 0 {
+		// Nothing is handed on: no command is read, and no head written down,
+		// for a call that is already refused.
+		return refuse("as the hook learnt it checks the call")
+	}
+
+	timer := c.after(remaining)
+	// Room for the one result, so that the work never waits for run to take
+	// it: by then run may have answered and gone.
+	done := make(chan outcome, 1)
+	c.spawn(func() {
+		var o outcome
+		defer func() {
+			// A panic on this goroutine is one cmd/sdlc cannot recover: the
+			// process would end with a stack and no answer. It is handed to
+			// run, which raises it again where cmd/sdlc does recover.
+			if r := recover(); r != nil {
+				o = outcome{crashed: r, stack: debug.Stack()}
+			}
+			done <- o
+		}()
+		o = rest(ctx)
 	})
+
+	var o outcome
+	select {
+	case o = <-done:
+	case <-timer:
+		select {
+		// Both were there when the hook looked. The decision answers: it is
+		// the fuller answer, and a crash must never come out as a refusal.
+		case o = <-done:
+		default:
+			return refuse("while the call was being decided")
+		}
+	}
+	if o.crashed != nil {
+		// The stack cmd/sdlc prints is the one below, of this goroutine. Where
+		// the work gave way is only here.
+		slog.Debug("hook: the decision crashed on its own goroutine", "panic", o.crashed, "stack", string(o.stack))
+		panic(o.crashed)
+	}
+	if o.record != nil {
+		o.record()
+	}
+	return answer(o, said.taken())
 }
 
-// decide works out whether this event should be refused. ok is false whenever
-// the answer cannot be reached at all, which is treated exactly like an allow.
-func decide(event string, raw []byte, getenv func(string) string, warn func(string)) (policy.Verdict, string, bool) {
+// decide works out whether the call is one the hook checks. Where it is, it
+// returns the rest of the decision, which run then races against the deadline;
+// where it is not, or there is no telling, rest is nil and the call goes
+// through. shell is whether the call is a command, which a refusal for running
+// out of time is worded by.
+//
+// Nothing here may be handed to another goroutine: until this returns, the
+// hook does not know that it has anything to say to the session at all.
+func decide(event string, raw []byte, getenv func(string) string, warn func(string),
+	now func() time.Time) (rest func(context.Context) outcome, name string, shell bool) {
 	// A human who started the session can turn enforcement off. This is read
 	// from the environment, which a session cannot change from the inside.
 	if getenv("SDLC_ENFORCE") == "0" {
-		return policy.Allowed, event, false
+		return nil, event, false
 	}
 
 	var p payload
@@ -199,7 +323,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 			why = fmt.Sprintf("it is larger than the %d MiB the hook reads", maxPayload>>20)
 		}
 		slog.Debug("hook: the call could not be read, so it was not checked", "why", why)
-		return policy.Allowed, event, false
+		return nil, event, false
 	}
 	if p.HookEventName != "" {
 		event = p.HookEventName
@@ -226,36 +350,45 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 		// project's state, which is read only for a decision on a story.
 		if shellpolicy.Tools[p.ToolName] {
 			if projects := loopProjects(getenv, p); len(projects) > 0 {
-				waits := storyWaits(getenv, p, projects)
-				if f, refused := shellpolicy.HumanDecisions(p.ToolInput.Command, p.ToolName == "PowerShell", waits); refused {
-					return policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, event, true
-				}
+				// A command in a project that takes part is one the hook
+				// checks, whoever's session it is from.
+				return func(context.Context) outcome {
+					waits := storyWaits(getenv, p, projects)
+					if f, refused := shellpolicy.HumanDecisions(p.ToolInput.Command, p.ToolName == "PowerShell", waits); refused {
+						return outcome{verdict: policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, ok: true}
+					}
+					return outcome{verdict: policy.Allowed}
+				}, event, true
 			}
 		}
-		return policy.Allowed, event, false
+		return nil, event, false
 	}
 
 	if shellpolicy.Tools[p.ToolName] {
-		return inspectShell(placeOf(project), story, p, getenv, warn), event, true
+		return func(ctx context.Context) outcome {
+			return inspectShell(ctx, placeOf(project), story, p, getenv, warn, now)
+		}, event, true
 	}
 
-	rel, outside := pathrules.Rel(project, path)
-	slog.Debug("hook considering",
-		"tool", p.ToolName, "agent", p.AgentType, "role", policy.NormalizeAgent(p.AgentType),
-		"path", path, "rel", rel, "outside", outside, "story", story, "project", project)
+	return func(context.Context) outcome {
+		rel, outside := pathrules.Rel(project, path)
+		slog.Debug("hook considering",
+			"tool", p.ToolName, "agent", p.AgentType, "role", policy.NormalizeAgent(p.AgentType),
+			"path", path, "rel", rel, "outside", outside, "story", story, "project", project)
 
-	return policy.Evaluate(policy.Request{
-		Tool:    p.ToolName,
-		Agent:   p.AgentType,
-		Path:    rel,
-		Outside: outside && path != "",
-		// Asked only of a path inside the project, and only where the
-		// repository has another checkout that could be nested in it.
-		OtherCheckout: !outside && nestedCheckout(placeOf(project), path, p.CWD),
-		Story:         story,
-		Tests:         testState(project, story, rel, warn),
-		Backlog:       backlogPath(project),
-	}), event, true
+		return outcome{ok: true, verdict: policy.Evaluate(policy.Request{
+			Tool:    p.ToolName,
+			Agent:   p.AgentType,
+			Path:    rel,
+			Outside: outside && path != "",
+			// Asked only of a path inside the project, and only where the
+			// repository has another checkout that could be nested in it.
+			OtherCheckout: !outside && nestedCheckout(placeOf(project), path, p.CWD),
+			Story:         story,
+			Tests:         testState(project, story, rel, warn),
+			Backlog:       backlogPath(project),
+		})}
+	}, event, false
 }
 
 // backlogPath is the backlog file as the configuration names it,
@@ -301,7 +434,14 @@ func onDisk(resolver pathrules.Resolver, word string) string {
 
 // inspectShell applies the shell rules, which exist because every other rule in
 // this tool governs the file-writing tools and a shell command is not one.
-func inspectShell(pl place, story string, p payload, getenv func(string) string, warn func(string)) policy.Verdict {
+//
+// It runs against the hook's deadline, on a goroutine run does not wait for
+// once the deadline has answered. So it writes nothing down itself: the head
+// an allowed commit is made on is handed back as the outcome's record, for run
+// to write once this is known to be the answer. And git runs under ctx, which
+// run cancels when the deadline answers.
+func inspectShell(ctx context.Context, pl place, story string, p payload, getenv func(string) string,
+	warn func(string), now func() time.Time) outcome {
 	project := pl.project
 	ready, why := commitReady(pl, story)
 	slog.Debug("hook considering a command",
@@ -336,8 +476,11 @@ func inspectShell(pl place, story string, p payload, getenv func(string) string,
 		}
 	}
 	// Created just before the parse, and started only at the first git call.
-	budget, cancel := gitBudget(context.Background(), time.Now)
-	defer cancel()
+	// The cancel it returns is not kept: the budget has to outlive this
+	// function for the record, and it ends with ctx, which is run's to cancel.
+	// Calling that cancel from run would also read what a budget starting on
+	// this goroutine writes.
+	budget, _ := gitBudget(ctx, now)
 	commits := false
 	// Each asked at most once for the command, however many of its commands
 	// ask: every one of them is a read of the disk or a run of git.
@@ -378,12 +521,13 @@ func inspectShell(pl place, story string, p payload, getenv func(string) string,
 	}
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, state)
 	if !refused {
+		o := outcome{verdict: policy.Allowed, ok: true}
 		if commits {
-			observe(project, story, budget)
+			o.record = func() { observe(project, story, budget) }
 		}
-		return policy.Allowed
+		return o
 	}
-	return policy.Verdict{Rule: finding.Rule, Reason: finding.Reason, Route: finding.Route}
+	return outcome{verdict: policy.Verdict{Rule: finding.Rule, Reason: finding.Reason, Route: finding.Route}, ok: true}
 }
 
 // The warnings for a configuration that will not read. Each names what is still
@@ -575,6 +719,12 @@ func trunkOf(pl place) string {
 // check, not hold the session. hooks.json has to give the hook longer than this:
 // Claude Code kills a hook that outlasts its timeout, and a killed hook says
 // nothing -- the commit it was checking goes through unchecked.
+//
+// For a command it sits inside hookDeadline, which is counted from the start of
+// the hook and not from the first git call. Whichever ends first is the one
+// that answers: a tree still being measured when the deadline passes is a
+// commit refused, and one that runs out of this first is let through with a
+// warning, as it always was.
 const treeTimeout = 20 * time.Second
 
 // reviewsFresh reports whether the verifier's and the code reviewers' reviews

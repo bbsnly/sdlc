@@ -57,6 +57,14 @@ security defect rather than a bug:
   claims, to commit there, or to leave the hook's reach by adding worktrees, is
   in scope; the limits `docs/enforcement.md` lists under "A repository with more
   than one checkout" are known.
+- **The hook's deadline.** Claude Code kills a hook that outlasts the 30 seconds
+  it gives a tool call, and a killed hook lets the call through with no rule
+  applied. So the hook answers first: a command the hook cannot finish reading
+  in time, or a change to a file it cannot check in time, is refused 25 seconds
+  after the hook starts. A way to get a call the hook has learnt it checks past
+  that deadline without a refusal is in scope. So is a way to make the hook
+  refuse for time in a session that holds no story, other than for a command
+  in a project that takes part.
 
 What the commit gate checks is that its range holds exactly the commits it was
 told about, never that it holds every commit the story made. The known limits,
@@ -98,6 +106,20 @@ so that a report can say which one it goes past:
   no range.
 - Anyone who can write into the git directory can plant a HEAD, and what that
   buys is an unrelated commit already on trunk read as the story's.
+
+The deadline has a known limit of its own. The hook refuses only a call it has
+learnt it checks, so a hook that Claude Code kills before it has learnt whether
+the call is one it checks still lets the call through and says nothing. Before
+it knows, the hook looks for the project from every path a command names, and
+that search is not bounded; nor is a call that never finishes arriving.
+`docs/enforcement.md` describes the limit under `not-checked-in-time`. A report
+that gets the same result with a shorter command, or after the hook has learnt
+it checks the call, is a new finding and not this known limit.
+
+`SDLC_HOOK_DEADLINE_MS` can only shorten the deadline. It is read from the
+environment the session was started in, which nothing run inside the session
+changes, and it is not among the settings a command is refused for naming: the
+most it can do is have a call refused sooner.
 
 ## What is out of scope
 

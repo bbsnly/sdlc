@@ -55,6 +55,11 @@ stands; committing without them is for the person running the session to decide
 The rules run in order and the first refusal wins, so you only ever see one
 rule per call.
 
+One refusal is not about a rule at all. A refusal that says the sdlc hook ran
+out of time is not a rule the call broke: the hook could not check the call in
+time, and says what to try. See
+[`not-checked-in-time`](../enforcement.md#not-checked-in-time).
+
 ## Look the rule up
 
 Every rule id is a heading on the [enforcement](../enforcement.md) page, so the
@@ -111,10 +116,12 @@ and the ones after it show how to find out.
 
 When the hook cannot do its job, it still lets the call through. This is
 failing open. In the session working a story it does not happen silently: that
-session shows a system message that starts with `sdlc:`. There is one exception
-it cannot warn you about, because by then it is no longer running: a hook that
-outlasts the timeout Claude Code gives it is killed, and a killed hook says
-nothing. For example:
+session shows a system message that starts with `sdlc:`. Running out of time is
+different: a call the hook checks and cannot decide in time is refused, under
+[`not-checked-in-time`](../enforcement.md#not-checked-in-time). What is left is
+a hook it cannot warn you about, because by then it is no longer running: one
+that Claude Code kills before it has learnt whether the call is one it checks
+says nothing, and the call goes through. An example of a warning:
 
 ```json
 {"continue":true,"systemMessage":"sdlc: .sdlc/config.json could not be read, so tests are being recognised by the default patterns until it can be. Run `sdlc doctor` to see why."}
