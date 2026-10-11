@@ -334,10 +334,11 @@ func landIfFinished(cmd *cobra.Command, s *store.Store, active string, unlock *f
 // Phrases the landing's refusals share, which each have to say the same thing
 // in the same words.
 const (
-	whatLandsIs    = "what lands is "
-	andClause      = ", and "
-	isAtClause     = " is at "
-	commandsPrefix = "commands."
+	notWhatReviewersSaw = " is not the change its reviewers saw"
+	whatLandsIs         = "what lands is "
+	andClause           = ", and "
+	isAtClause          = " is at "
+	commandsPrefix      = "commands."
 )
 
 // noUnlock stands in for a lock that is not held, so that a deferred unlock
@@ -991,7 +992,7 @@ func (l *lander) requireReviewsAgain(ctx context.Context, st *landState) error {
 	}
 	if !holds {
 		return sdlcerr.New(sdlcerr.ReviewsMissing,
-			branch+" is not the change its reviewers saw",
+			branch+notWhatReviewersSaw,
 			"its change from "+st.from[:12]+" differs from the one reviewed, and "+l.m.trunk+" no longer holds "+
 				st.base[:12]+", where that one began, so the reviews cannot be recorded again on it").
 			WithFix(l.reopenFix())
@@ -1017,7 +1018,7 @@ func (l *lander) requireReviewsAgain(ctx context.Context, st *landState) error {
 		if !errors.As(err, &known) || known.Code != sdlcerr.ReviewsMissing {
 			return err
 		}
-		return sdlcerr.New(sdlcerr.ReviewsMissing, branch+" is not the change its reviewers saw", known.Why).
+		return sdlcerr.New(sdlcerr.ReviewsMissing, branch+notWhatReviewersSaw, known.Why).
 			WithFix(`in ` + in + `, have the verifier and the code reviewers review ` + branch + ` again as it is ` +
 				`committed and record their reviews ("sdlc review list" names who), then run "sdlc stop" there ` +
 				`again, which runs the configured ` +
@@ -1716,7 +1717,7 @@ func (l *lander) ontoTrunk(ctx context.Context, st landState) (landState, error)
 		return st, err
 	}
 	if !same {
-		return st, sdlcerr.New(sdlcerr.ReviewsMissing, branch+" is not the change its reviewers saw",
+		return st, sdlcerr.New(sdlcerr.ReviewsMissing, branch+notWhatReviewersSaw,
 			"its change onto "+trunk+" at "+T[:12]+" is not, line for line, the change that was reviewed at "+S[:12]+
 				"; "+branch+" now sits on "+trunk+", at "+after[:12]).
 			WithFix(`in ` + worktreeIn(l.id) + `, have the verifier and the code reviewers review ` + branch +

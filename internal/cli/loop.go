@@ -998,7 +998,9 @@ func (g *gateRun) save() (handedOver, message string, err error) {
 	message = fmt.Sprintf("%s has failed %d times, and loop.max_rework_rounds is %d, "+
 		"so another attempt would meet the same wall. The last note: %s",
 		g.gate, failures, limit, lastNote(g.note))
-	handedOver, err = handOverAt(g.cmd, g.s, g.record, nil, failures, limit, "gate_failing", message, "the gate failure")
+	handedOver, err = handOverAt(g.cmd, g.s, g.record, nil, limitCount{
+		count: failures, limit: limit, kind: "gate_failing", message: message, what: "the gate failure",
+	})
 	return handedOver, message, err
 }
 

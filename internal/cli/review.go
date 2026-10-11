@@ -216,7 +216,9 @@ func saveReview(cmd *cobra.Command, s *store.Store, record *model.Record, review
 	message = fmt.Sprintf("%s has blocked %s %d times, and loop.max_review_rounds is %d, "+
 		"so the rework is not converging on what it asks for. The last note: %s",
 		reviewer.Role, gate, blocks, limit, lastNote(note))
-	handedOver, err = handOverAt(cmd, s, record, doc, blocks, limit, "review_not_converging", message, "the block")
+	handedOver, err = handOverAt(cmd, s, record, doc, limitCount{
+		count: blocks, limit: limit, kind: "review_not_converging", message: message, what: "the block",
+	})
 	return handedOver, message, err
 }
 

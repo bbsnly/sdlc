@@ -209,18 +209,27 @@ func sayApproved(w io.Writer, s *store.Store, record *model.Record, id, event st
 //
 // The caller holds the project's lock.
 func handOverAt(cmd *cobra.Command, s *store.Store, record *model.Record, review *store.ReviewDocument,
-	count, limit int, kind, message, what string,
+	at limitCount,
 ) (string, error) {
-	if limit <= 0 || count < limit {
+	if at.limit <= 0 || at.count < at.limit {
 		return "", saveRecorded(s, record, review)
 	}
 	_, err := s.HandOver(cmd.Context(), store.HandOver{
-		Story: record.Story, Kind: kind, Message: message, Record: record, Review: review,
+		Story: record.Story, Kind: at.kind, Message: at.message, Record: record, Review: review,
 	})
 	if err != nil {
-		return "", notRecorded(err, what)
+		return "", notRecorded(err, at.what)
 	}
-	return kind, nil
+	return at.kind, nil
+}
+
+// limitCount is how far a story has got towards one of the loop's limits, and
+// the hand-over to make when it gets there.
+type limitCount struct {
+	count, limit int
+	kind         string // the kind of hand-over the limit makes
+	message      string // what the person is told
+	what         string // the thing being recorded, for a refusal
 }
 
 // saveRecorded saves a record, after the reviewer's document it lists where
