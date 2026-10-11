@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/bbsnly/sdlc/internal/fsx"
 	"github.com/bbsnly/sdlc/internal/model"
@@ -57,11 +58,11 @@ func (s *Store) SaveStopCount(c StopCount) error {
 func (s *Store) ClearStopCount() error {
 	path := filepath.Join(s.root, filepath.FromSlash(stopFile))
 	if s.leaves(path) {
-		return sdlcerr.New(sdlcerr.StateUnwritable, stopFile+" could not be removed", leavesWhy).WithFix(leavesFix)
+		return sdlcerr.New(sdlcerr.StateUnwritable, stopFile+couldNotBeRemoved, leavesWhy).WithFix(leavesFix)
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
-			stopFile+" could not be removed",
+			stopFile+couldNotBeRemoved,
 			"the loop could not reset the count of stops it sent back").WithCause(err)
 	}
 	return nil
@@ -125,6 +126,41 @@ type HandOver struct {
 // The caller holds the project's lock, which is what makes putting bytes back
 // safe: nothing else of the loop's wrote between the read and the write.
 func (s *Store) HandOver(ctx context.Context, h HandOver) (string, error) {
+	p, err := s.readForHandOver(ctx, h)
+	if err != nil {
+		return "", err
+	}
+	if p.active == p.id {
+		// The story's uncommitted work is in this checkout, and after a person's
+		// answer the story resumes here. The claim is written before the record
+		// and is not taken back: it says what the active file already said.
+		if err := s.keepClaim(p.id); err != nil {
+			return "", err
+		}
+	}
+	if err := s.writeHandOver(h, p); err != nil {
+		return "", err
+	}
+	return p.tree, nil
+}
+
+// handOverRead is everything a hand-over reads before it writes anything.
+type handOverRead struct {
+	id         string
+	wasWaiting bool
+	backlogWas []byte
+	tree       string
+	record     *model.Record
+	recordWas  []byte
+	dir        string
+	reviewPath string
+	reviewWas  []byte
+	active     string
+}
+
+// readForHandOver does every step of a hand-over that can refuse without
+// writing.
+func (s *Store) readForHandOver(ctx context.Context, h HandOver) (*handOverRead, error) {
 	id := h.Story
 	// The backlog is read before anything is written. A story it no longer
 	// holds cannot be marked as waiting for a person, and finding that out
@@ -132,26 +168,26 @@ func (s *Store) HandOver(ctx context.Context, h HandOver) (string, error) {
 	// with the iteration still running.
 	backlogWas, b, err := s.readBacklog()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	story, ok := b.Find(id)
 	if !ok {
-		return "", storyNotFound(b, id)
+		return nil, storyNotFound(b, id)
 	}
 	// Another checkout's story is measured on that checkout's tree, and its
 	// question asked there.
 	if holder, elsewhere, err := s.HeldElsewhere(id); err != nil {
-		return "", err
+		return nil, err
 	} else if elsewhere {
-		return "", HeldElsewhereError(id, holder, "a story is handed to a person from the checkout working it")
+		return nil, HeldElsewhereError(id, holder, "a story is handed to a person from the checkout working it")
 	}
 	tree, err := s.ReviewSubject(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	onDisk, recordWas, err := s.readRecord(id)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	record := h.Record
 	if record == nil {
@@ -159,76 +195,93 @@ func (s *Store) HandOver(ctx context.Context, h HandOver) (string, error) {
 	}
 	dir, err := s.StoryDir(id)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	// The reviewer's document is read here, before the claim is written, so
-	// that one that is there and cannot be read refuses with nothing to take
-	// back. Read as no file, it would be removed by a take-back and not
-	// restored. A path that leaves the repository is left to the write below,
-	// which refuses it as it always has.
-	var reviewPath string
-	var reviewWas []byte
-	if doc := h.Review; doc != nil {
-		reviewPath = filepath.Join(dir, reviewsDir, reviewName(doc.Gate, doc.Role, doc.Round))
-		reviewWas, err = os.ReadFile(reviewPath)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) && !s.leaves(reviewPath) {
-			return "", sdlcerr.New(sdlcerr.StateUnreadable,
-				"the review that is already at "+ReviewPath(id, doc.Gate, doc.Role, doc.Round)+" could not be read",
-				"the file exists but could not be opened, and the hand-over has to be able to put it back as it was").
-				WithFix("make the file readable, or move it aside if the story's record does not list it").
-				WithCause(err)
-		}
+	reviewPath, reviewWas, err := s.readReviewWas(id, dir, h.Review)
+	if err != nil {
+		return nil, err
 	}
 	active, err := s.Active()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if active == id {
-		// The story's uncommitted work is in this checkout, and after a person's
-		// answer the story resumes here. The claim is written before the record
-		// and is not taken back: it says what the active file already said.
-		if err := s.keepClaim(id); err != nil {
-			return "", err
-		}
-	}
+	return &handOverRead{
+		id: id, wasWaiting: story.Status == model.StatusAwaitingHuman, backlogWas: backlogWas,
+		tree: tree, record: record, recordWas: recordWas, dir: dir,
+		reviewPath: reviewPath, reviewWas: reviewWas, active: active,
+	}, nil
+}
 
+// readReviewWas is the path doc will be written at and what is there now.
+//
+// The reviewer's document is read before the claim is written, so that one
+// that is there and cannot be read refuses with nothing to take back. Read as
+// no file, it would be removed by a take-back and not restored. A path that
+// leaves the repository is left to the write, which refuses it as it always
+// has.
+func (s *Store) readReviewWas(id, dir string, doc *ReviewDocument) (string, []byte, error) {
+	if doc == nil {
+		return "", nil, nil
+	}
+	reviewPath := filepath.Join(dir, reviewsDir, reviewName(doc.Gate, doc.Role, doc.Round))
+	reviewWas, err := os.ReadFile(reviewPath)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) && !s.leaves(reviewPath) {
+		return "", nil, sdlcerr.New(sdlcerr.StateUnreadable,
+			"the review that is already at "+ReviewPath(id, doc.Gate, doc.Role, doc.Round)+couldNotBeRead,
+			"the file exists but could not be opened, and the hand-over has to be able to put it back as it was").
+			WithFix("make the file readable, or move it aside if the story's record does not list it").
+			WithCause(err)
+	}
+	return reviewPath, reviewWas, nil
+}
+
+// writeHandOver writes what a hand-over records, and takes back what it wrote
+// where a later step refuses.
+func (s *Store) writeHandOver(h HandOver, p *handOverRead) error {
+	id := p.id
 	var done []written
 	if doc := h.Review; doc != nil {
 		if _, err := s.WriteReview(id, doc.Gate, doc.Role, doc.Round, doc.Content); err != nil {
-			return "", err
+			return err
 		}
-		done = append(done, written{"the reviewer's document", func() error { return s.putBack(reviewPath, reviewWas) }})
+		done = append(done, written{"the reviewer's document", func() error { return s.putBack(p.reviewPath, p.reviewWas) }})
 	}
-	record.Escalate(h.Kind, h.Message, tree, s.Now())
-	record.Append("escalate", h.Kind+": "+h.Message, s.Now())
-	if err := s.SaveRecord(record); err != nil {
-		return "", s.takenBack(id, err, done)
+	p.record.Escalate(h.Kind, h.Message, p.tree, s.Now())
+	p.record.Append("escalate", h.Kind+": "+h.Message, s.Now())
+	if err := s.SaveRecord(p.record); err != nil {
+		return s.takenBack(id, err, done)
 	}
-	done = append(done, written{"the gate record", func() error { return s.putBack(filepath.Join(dir, recordFile), recordWas) }})
+	done = append(done, written{"the gate record", func() error { return s.putBack(filepath.Join(p.dir, recordFile), p.recordWas) }})
 	if err := s.SetStoryStatus(id, model.StatusAwaitingHuman); err != nil {
-		return "", s.takenBack(id, err, done)
+		return s.takenBack(id, err, done)
 	}
 	// A story already waiting was not written, and is not written back.
-	if story.Status != model.StatusAwaitingHuman {
-		done = append(done, written{"the backlog", func() error { return s.replaceBacklog(s.BacklogPath(), backlogWas) }})
+	if !p.wasWaiting {
+		done = append(done, written{"the backlog", func() error { return s.replaceBacklog(s.BacklogPath(), p.backlogWas) }})
 	}
-	if active == id {
+	if p.active == id {
 		// Ending the iteration removes the session and then the active file, and
 		// the second can fail after the first: a file another process holds open
 		// on Windows. The session is put back with the rest, where it went.
-		sessionPath := filepath.Join(s.root, filepath.FromSlash(sessionFile))
-		session, _ := os.ReadFile(sessionPath)
-		done = append(done, written{"the session working the story", func() error {
-			if session == nil || fsx.Exists(sessionPath) {
-				return nil
-			}
-			return s.writeFile(sessionPath, session)
-		}})
+		done = append(done, s.sessionPutBack())
 		if err := s.ClearActive(); err != nil {
-			return "", s.takenBack(id, err, done)
+			return s.takenBack(id, err, done)
 		}
 	}
-	return tree, nil
+	return nil
+}
+
+// sessionPutBack is how the session file, as it is now, is written back where
+// it went.
+func (s *Store) sessionPutBack() written {
+	sessionPath := filepath.Join(s.root, filepath.FromSlash(sessionFile))
+	session, _ := os.ReadFile(sessionPath)
+	return written{"the session working the story", func() error {
+		if session == nil || fsx.Exists(sessionPath) {
+			return nil
+		}
+		return s.writeFile(sessionPath, session)
+	}}
 }
 
 // written is one thing a hand-over wrote, and how it is put back.
@@ -245,12 +298,12 @@ type written struct {
 // before that then agrees with what is left: a record that holds the question
 // beside a backlog that says awaiting_human is a story `sdlc approve` answers.
 func (s *Store) takenBack(id string, failed error, done []written) error {
-	for i := len(done) - 1; i >= 0; i-- {
-		if err := done[i].back(); err != nil {
-			slog.Debug("a refused hand-over could not be taken back", "story", id, "what", done[i].what, "err", err)
-			return partlyHandedOver{sdlcerr.New(sdlcerr.StateUnwritable,
+	for _, d := range slices.Backward(done) {
+		if err := d.back(); err != nil {
+			slog.Debug("a refused hand-over could not be taken back", "story", id, "what", d.what, "err", err)
+			return partlyHandedOverError{sdlcerr.New(sdlcerr.StateUnwritable,
 				quote(id)+" is only partly handed over to a person",
-				"the hand-over stopped part-way, and "+done[i].what+" could not be put back as it was, "+
+				"the hand-over stopped part-way, and "+d.what+" could not be put back as it was, "+
 					"so the story's record may hold a question for a person that the backlog or the "+
 					"iteration does not show").
 				WithFix(`do not run the command again yet: a person runs "sdlc status" to see where the story is, ` +
@@ -272,23 +325,23 @@ func (s *Store) putBack(path string, was []byte) error {
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
-			relative(s.root, path)+" could not be removed",
+			relative(s.root, path)+couldNotBeRemoved,
 			"its directory may not be writable").WithCause(err)
 	}
 	return nil
 }
 
-// partlyHandedOver marks the one refusal of a hand-over after which the story
+// partlyHandedOverError marks the one refusal of a hand-over after which the story
 // is not as it was. It is a type and not a value built when the package loads,
 // which the hook pays for on every tool call.
-type partlyHandedOver struct{ err *sdlcerr.Error }
+type partlyHandedOverError struct{ err *sdlcerr.Error }
 
-func (p partlyHandedOver) Error() string { return p.err.Error() }
-func (p partlyHandedOver) Unwrap() error { return p.err }
+func (p partlyHandedOverError) Error() string { return p.err.Error() }
+func (p partlyHandedOverError) Unwrap() error { return p.err }
 
 // PartlyHandedOver reports whether err is a hand-over that could not be taken
 // back: a caller that says nothing was recorded must not say it of this one.
 func PartlyHandedOver(err error) bool {
-	var p partlyHandedOver
+	var p partlyHandedOverError
 	return errors.As(err, &p)
 }

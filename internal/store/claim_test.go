@@ -329,6 +329,7 @@ func TestAC8AClaimWhoseCheckoutIsNotACheckoutOfThisRepositoryIsNotLive(t *testin
 		named func(t *testing.T, wt string) string
 	}{
 		{"AC-8 a worktree removed from disk", func(t *testing.T, wt string) string {
+			t.Helper()
 			if err := os.RemoveAll(wt); err != nil {
 				t.Fatal(err)
 			}

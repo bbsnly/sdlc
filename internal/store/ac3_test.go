@@ -73,10 +73,7 @@ func TestAC3TheLandingLockRefusalNamesItsPathSlashSeparated(t *testing.T) {
 	_, err = s.LockLanding("US-001")
 	e := clError(t, err, sdlcerr.StateUnwritable)
 
-	project, perr := guardPath(s.LockRoot())
-	if perr != nil {
-		t.Fatal(perr)
-	}
+	project := guardPath(s.LockRoot())
 	pqSlashSeparated(t, e.Why, project+"-landing-US-001")
 }
 

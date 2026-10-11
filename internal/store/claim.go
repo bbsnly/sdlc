@@ -147,6 +147,13 @@ func (s *Store) Holders() (map[string]Holder, error) {
 		return nil, err
 	}
 	all := s.checkouts(co)
+	out := s.claimedHolders(b, co, all)
+	s.addNamedHolders(out, b, co, all)
+	return out, nil
+}
+
+// claimedHolders is the holder of each story a claim names.
+func (s *Store) claimedHolders(b *model.Backlog, co config.Checkout, all []string) map[string]Holder {
 	known := make(map[string]bool, len(all))
 	for _, p := range all {
 		known[config.PathKey(p)] = true
@@ -167,7 +174,12 @@ func (s *Store) Holders() (map[string]Holder, error) {
 		}
 		out[story.ID] = h
 	}
+	return out
+}
 
+// addNamedHolders adds to out the stories that no claim names but a checkout's
+// active does.
+func (s *Store) addNamedHolders(out map[string]Holder, b *model.Backlog, co config.Checkout, all []string) {
 	named := map[string][]Contender{}
 	var order []string
 	for _, dir := range all {
@@ -198,7 +210,6 @@ func (s *Store) Holders() (map[string]Holder, error) {
 		}
 		out[id] = Holder{Contenders: cs}
 	}
-	return out, nil
 }
 
 // HeldElsewhere is the holder of a story another checkout holds, or that more
@@ -304,7 +315,7 @@ func (s *Store) Claim(id string) error {
 	}
 	if err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
-			"the claim on "+quote(id)+" could not be written",
+			"the claim on "+quote(id)+couldNotBeWritten,
 			"it is kept in "+sdlcerr.QuotePath(dir)+", which may not be writable").WithCause(err)
 	}
 	return nil
@@ -321,7 +332,7 @@ func (s *Store) ReleaseClaim(id string) error {
 	}
 	if err := os.Remove(filepath.Join(dir, id+".json")); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
-			"the claim on "+quote(id)+" could not be removed",
+			"the claim on "+quote(id)+couldNotBeRemoved,
 			"it is kept in "+sdlcerr.QuotePath(dir)+", which may not be writable").WithCause(err)
 	}
 	return nil
@@ -407,6 +418,34 @@ func (s *Store) SessionHolder(session string, limit int) (checkout, story string
 	if err != nil {
 		return "", ""
 	}
+	candidates := s.sessionCandidates(co, limit)
+
+	var holders map[string]Holder
+	for _, dir := range candidates {
+		id := activeOfSession(dir, session)
+		if id == "" {
+			continue
+		}
+		if holders == nil {
+			if holders, err = s.Holders(); err != nil {
+				return "", ""
+			}
+		}
+		h, ok := holders[id]
+		if !ok {
+			continue
+		}
+		if h.holdsIn(dir) {
+			return dir, id
+		}
+	}
+	return "", ""
+}
+
+// sessionCandidates is the other checkouts SessionHolder asks, in the order it
+// asks them: the main one, those claims name, then the first limit linked
+// worktrees.
+func (s *Store) sessionCandidates(co config.Checkout, limit int) []string {
 	var candidates []string
 	seen := map[string]bool{config.PathKey(co.Root): true}
 	add := func(p string) {
@@ -422,31 +461,24 @@ func (s *Store) SessionHolder(session string, limit int) (checkout, story string
 	for _, wt := range co.WorktreesUpTo(limit) {
 		add(wt)
 	}
+	return candidates
+}
 
-	var holders map[string]Holder
-	for _, dir := range candidates {
-		if sessionIn(dir) != session {
-			continue
-		}
-		id, _ := activeIn(dir)
-		if id == "" {
-			continue
-		}
-		if holders == nil {
-			if holders, err = s.Holders(); err != nil {
-				return "", ""
-			}
-		}
-		h, ok := holders[id]
-		if !ok {
-			continue
-		}
-		if config.SamePath(h.Checkout, dir) ||
-			slices.ContainsFunc(h.Contenders, func(c Contender) bool { return config.SamePath(c.Checkout, dir) }) {
-			return dir, id
-		}
+// activeOfSession is the story dir's active names, where dir's session file
+// names session, and "" otherwise.
+func activeOfSession(dir, session string) string {
+	if sessionIn(dir) != session {
+		return ""
 	}
-	return "", ""
+	id, _ := activeIn(dir)
+	return id
+}
+
+// holdsIn reports whether dir is the holder's checkout or one of the
+// contenders'.
+func (h Holder) holdsIn(dir string) bool {
+	return config.SamePath(h.Checkout, dir) ||
+		slices.ContainsFunc(h.Contenders, func(c Contender) bool { return config.SamePath(c.Checkout, dir) })
 }
 
 // activeIn is the story a checkout's .sdlc/state/active names, and when it was

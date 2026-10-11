@@ -32,6 +32,17 @@ import (
 
 // Paths under the repository root, relative and slash-separated. They are the
 // same paths the shell kit used, so an existing project needs no migration.
+// The endings of the summaries a failed read, write or removal gives, which the
+// codes for them share.
+const (
+	couldNotBeRead        = " could not be read"
+	couldNotBeWritten     = " could not be written"
+	couldNotBeWrittenDown = " could not be written down"
+	couldNotBeRemoved     = " could not be removed"
+	isNotValidJSON        = " is not valid JSON"
+	existsButNotOpened    = " exists but could not be opened"
+)
+
 const (
 	stateDir   = config.Dir + "/state"
 	storiesDir = config.Dir + "/stories"
@@ -249,14 +260,14 @@ func (s *Store) readBacklog() ([]byte, *model.Backlog, error) {
 			"backlog.path in "+config.File+" names "+relative(s.root, path)+", which does not exist")
 	case err != nil:
 		return nil, nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
-			relative(s.root, path)+" could not be read",
+			relative(s.root, path)+couldNotBeRead,
 			"opening it failed").WithCause(err)
 	}
 
 	var b model.Backlog
 	if err := json.Unmarshal(bytes.TrimPrefix(raw, byteOrderMark), &b); err != nil {
 		return nil, nil, sdlcerr.New(sdlcerr.BacklogUnreadable,
-			relative(s.root, path)+" is not valid JSON",
+			relative(s.root, path)+isNotValidJSON,
 			"the loop reads every story from this file, so it stops rather than guess").WithCause(err)
 	}
 	// Ids are compared as a case-insensitive filesystem compares them: each one
@@ -370,7 +381,7 @@ func (s *Store) Active() (string, error) {
 	case err != nil:
 		return "", sdlcerr.New(sdlcerr.StateUnreadable,
 			"the loop's state could not be read",
-			activeFile+" exists but could not be opened").WithCause(err)
+			activeFile+existsButNotOpened).WithCause(err)
 	}
 	id := strings.TrimSpace(string(raw))
 	// An empty file is not one the tool leaves: ending an iteration removes
@@ -403,7 +414,7 @@ func (s *Store) Acknowledged() (string, bool, error) {
 		return "", false, nil
 	case err != nil:
 		return "", false, sdlcerr.New(sdlcerr.StateUnreadable,
-			AcknowledgedFile+" could not be read",
+			AcknowledgedFile+couldNotBeRead,
 			"it exists but could not be opened").WithCause(err)
 	}
 	return strings.TrimSpace(string(raw)), true, nil
@@ -482,13 +493,13 @@ func (s *Store) bindSession(id string) error {
 		return s.writeFile(path, []byte(id+"\n"))
 	}
 	if s.leaves(path) {
-		return sdlcerr.New(sdlcerr.StateUnwritable, relative(s.root, path)+" could not be removed", leavesWhy).
+		return sdlcerr.New(sdlcerr.StateUnwritable, relative(s.root, path)+couldNotBeRemoved, leavesWhy).
 			WithFix(leavesFix)
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"the session working the story could not be recorded",
-			sessionFile+" could not be removed").WithCause(err)
+			sessionFile+couldNotBeRemoved).WithCause(err)
 	}
 	return nil
 }
@@ -506,7 +517,7 @@ func (s *Store) ClearActive() error {
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return sdlcerr.New(sdlcerr.StateUnwritable,
 				"the iteration could not be ended",
-				file+" could not be removed").WithCause(err)
+				file+couldNotBeRemoved).WithCause(err)
 		}
 	}
 	return nil
@@ -521,18 +532,18 @@ func (s *Store) Lock() (*model.Lock, error) {
 	path := filepath.Join(s.root, filepath.FromSlash(lockFile))
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil is the documented "not frozen"; called from internal/cli, changing with it
 	}
 	if err != nil {
 		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
 			"the test freeze could not be read",
-			lockFile+" exists but could not be opened").WithCause(err)
+			lockFile+existsButNotOpened).WithCause(err)
 	}
 	var l model.Lock
 	if err := json.Unmarshal(raw, &l); err != nil {
 		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
 			"the test freeze could not be read",
-			lockFile+" is not valid JSON").WithCause(err)
+			lockFile+isNotValidJSON).WithCause(err)
 	}
 	return &l, nil
 }
@@ -552,7 +563,7 @@ func (s *Store) ClearLock() error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"the test freeze could not be lifted",
-			lockFile+" could not be removed").WithCause(err)
+			lockFile+couldNotBeRemoved).WithCause(err)
 	}
 	return nil
 }
@@ -581,7 +592,7 @@ func hashFile(path, rel, openWhy string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", sdlcerr.New(sdlcerr.StateUnreadable,
-			rel+" could not be read",
+			rel+couldNotBeRead,
 			openWhy).WithCause(err)
 	}
 	defer f.Close()
@@ -589,7 +600,7 @@ func hashFile(path, rel, openWhy string) (string, error) {
 	sum := sha256.New()
 	if _, err := io.Copy(sum, f); err != nil {
 		return "", sdlcerr.New(sdlcerr.StateUnreadable,
-			rel+" could not be read",
+			rel+couldNotBeRead,
 			"reading it stopped part way through").WithCause(err)
 	}
 	return hex.EncodeToString(sum.Sum(nil)), nil
@@ -615,14 +626,14 @@ func (s *Store) readRecord(id string) (*model.Record, []byte, error) {
 		return model.NewRecord(id, s.now()), nil, nil
 	case err != nil:
 		return nil, nil, sdlcerr.New(sdlcerr.StateUnreadable,
-			"the record for "+quote(id)+" could not be read",
-			storiesDir+"/"+id+"/"+recordFile+" exists but could not be opened").WithCause(err)
+			"the record for "+quote(id)+couldNotBeRead,
+			storiesDir+"/"+id+"/"+recordFile+existsButNotOpened).WithCause(err)
 	}
 
 	var r model.Record
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return nil, nil, sdlcerr.New(sdlcerr.StateUnreadable,
-			"the record for "+quote(id)+" is not valid JSON",
+			"the record for "+quote(id)+isNotValidJSON,
 			storiesDir+"/"+id+"/"+recordFile+" does not parse, and sdlc writes it whole or not "+
 				"at all, so it was edited or merged by hand; git has the last committed copy").WithCause(err)
 	}
@@ -754,7 +765,7 @@ func (s *Store) writeJSON(path string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
-			relative(s.root, path)+" could not be written",
+			relative(s.root, path)+couldNotBeWritten,
 			"the value could not be encoded as JSON").WithCause(err)
 	}
 	return s.writeFile(path, append(data, '\n'))
@@ -800,12 +811,12 @@ func within(root, path string) bool {
 // and believe it.
 func (s *Store) writeFile(path string, data []byte) error {
 	if s.leaves(path) {
-		return sdlcerr.New(sdlcerr.StateUnwritable, relative(s.root, path)+" could not be written", leavesWhy).
+		return sdlcerr.New(sdlcerr.StateUnwritable, relative(s.root, path)+couldNotBeWritten, leavesWhy).
 			WithFix(leavesFix)
 	}
 	if err := fsx.WriteFileAtomic(path, data, 0o644); err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
-			relative(s.root, path)+" could not be written",
+			relative(s.root, path)+couldNotBeWritten,
 			"its directory may not be writable, or the disk may be full").WithCause(err)
 	}
 	return nil
@@ -827,7 +838,7 @@ func (s *Store) replaceBacklog(path string, data []byte) error {
 	}
 	if err := fsx.WriteFileAtomic(target, data, perm); err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
-			relative(s.root, path)+" could not be written",
+			relative(s.root, path)+couldNotBeWritten,
 			"its directory may not be writable, or the disk may be full").WithCause(err)
 	}
 	return nil

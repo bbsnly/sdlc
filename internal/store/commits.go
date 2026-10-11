@@ -61,6 +61,9 @@ type observation struct {
 	At     string `json:"at"`
 }
 
+// theCommit starts the summary of an observation that could not be recorded.
+const theCommit = "the commit "
+
 // ObserveCommit writes down that the story's session was about to commit on
 // head. Writing the same head twice is not a failure: an observation is a fact
 // about a head, not a count, and the file is written only when it is absent.
@@ -73,7 +76,7 @@ func (s *Store) ObserveCommit(ctx context.Context, id, head string) error {
 	// is never anybody's first parent.
 	if !isHead(head) || head == gitx.NoCommits {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
-			"the commit "+quote(head)+" could not be written down",
+			theCommit+quote(head)+couldNotBeWrittenDown,
 			"what the loop writes down is a commit's full name, forty hexadecimal characters")
 	}
 	path := filepath.Join(dir, head)
@@ -83,11 +86,11 @@ func (s *Store) ObserveCommit(ctx context.Context, id, head string) error {
 	raw, err := json.Marshal(observation{Schema: observationSchema, Story: id, Head: head,
 		At: model.Timestamp(s.now())})
 	if err != nil {
-		return sdlcerr.New(sdlcerr.StateUnwritable, "the commit "+head+" could not be written down",
+		return sdlcerr.New(sdlcerr.StateUnwritable, theCommit+head+couldNotBeWrittenDown,
 			"the observation could not be encoded as JSON").WithCause(err)
 	}
 	if err := fsx.WriteFileAtomic(path, append(raw, '\n'), 0o644); err != nil {
-		return sdlcerr.New(sdlcerr.StateUnwritable, "the commit "+head+" could not be written down",
+		return sdlcerr.New(sdlcerr.StateUnwritable, theCommit+head+couldNotBeWrittenDown,
 			"the repository's git directory may not be writable, or the disk may be full").WithCause(err)
 	}
 	return nil
@@ -111,7 +114,7 @@ func (s *Store) ObservedCommits(ctx context.Context, id string) ([]string, error
 	}
 	if err != nil {
 		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
-			"the commits the loop watched for "+id+" could not be read",
+			"the commits the loop watched for "+id+couldNotBeRead,
 			"the repository's git directory could not be listed").WithCause(err)
 	}
 	var heads []string

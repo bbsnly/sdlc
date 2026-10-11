@@ -18,13 +18,12 @@ import (
 
 // Every test here points the lock at a directory of its own, because the real
 // one is keyed on the project path and shared by every process on the machine.
-func cacheDir(t *testing.T) string {
+func cacheDir(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", dir) // Linux
 	t.Setenv("HOME", dir)           // macOS
 	t.Setenv("LocalAppData", dir)   // Windows
-	return dir
 }
 
 // deadPID is the pid of a process that has exited: this test binary, run to do
@@ -282,9 +281,7 @@ func TestNoChangeIsLostUnderContention(t *testing.T) {
 	const writers = 12
 	var wg sync.WaitGroup
 	for range writers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			g, err := Lock(root, "gate")
 			if err != nil {
 				t.Error(err)
@@ -303,7 +300,7 @@ func TestNoChangeIsLostUnderContention(t *testing.T) {
 			if err := os.WriteFile(counter, make([]byte, n+1), 0o644); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -336,9 +333,7 @@ func TestCommandsBreakingOpenOneAbandonedLockDoNotAllGetIt(t *testing.T) {
 		var wg sync.WaitGroup
 		start := make(chan struct{})
 		for range 5 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				<-start
 				g, err := Lock(root, "review add")
 				if err != nil {
@@ -354,7 +349,7 @@ func TestCommandsBreakingOpenOneAbandonedLockDoNotAllGetIt(t *testing.T) {
 				time.Sleep(time.Millisecond)
 				holding.Add(-1)
 				g.Release()
-			}()
+			})
 		}
 		close(start)
 		wg.Wait()
@@ -621,10 +616,7 @@ func TestGuardPathFallsBackToTempDirWithNoCacheDirectory(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", "")
 	t.Setenv("LocalAppData", "")
 
-	path, err := guardPath(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := guardPath(t.TempDir())
 	if !strings.HasPrefix(path, os.TempDir()) {
 		t.Errorf("guardPath = %q, want it under %q", path, os.TempDir())
 	}
@@ -633,10 +625,7 @@ func TestGuardPathFallsBackToTempDirWithNoCacheDirectory(t *testing.T) {
 func TestLockFailsWhenTheLockDirectoryCannotBeCreated(t *testing.T) {
 	cacheDir(t)
 	root := t.TempDir()
-	path, err := guardPath(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := guardPath(root)
 	// A plain file where the lock's parent directory needs to be.
 	if err := os.MkdirAll(filepath.Dir(filepath.Dir(path)), 0o755); err != nil {
 		t.Fatal(err)

@@ -32,12 +32,7 @@ func (s *Store) ClearInterruptedWrites() {
 	if claims, ok := s.claimsPath(); ok {
 		// In the git directory, which is no checkout's: the leaves check below
 		// is about links out of a checkout, and this is not in one.
-		entries, _ := os.ReadDir(claims)
-		for _, e := range entries {
-			if interruptedWrite.MatchString(e.Name()) {
-				removeLeftover(filepath.Join(claims, e.Name()))
-			}
-		}
+		removeInterruptedIn(claims)
 	}
 	for _, root := range dirs {
 		// Where a link out of the repository leads, the files are not the
@@ -53,11 +48,25 @@ func (s *Store) ClearInterruptedWrites() {
 		})
 	}
 
-	// The backlog is the user's file, in a directory that is theirs, so only a
-	// write of the backlog itself is looked for there.
-	if err != nil {
-		return
+	if err == nil {
+		s.clearInterruptedBacklog(shared)
 	}
+}
+
+// removeInterruptedIn removes the leftovers of interrupted writes directly in dir.
+func removeInterruptedIn(dir string) {
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if interruptedWrite.MatchString(e.Name()) {
+			removeLeftover(filepath.Join(dir, e.Name()))
+		}
+	}
+}
+
+// clearInterruptedBacklog looks for a write of the backlog itself. The backlog
+// is the user's file, in a directory that is theirs, so nothing else there is
+// looked for.
+func (s *Store) clearInterruptedBacklog(shared string) {
 	backlog := s.cfg.BacklogPath(shared)
 	if resolved, err := filepath.EvalSymlinks(backlog); err == nil {
 		backlog = resolved

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/bbsnly/sdlc/internal/gitx"
@@ -110,18 +111,22 @@ func editStory(data []byte, id string, changes ...change) ([]byte, bool) {
 		if json.Unmarshal(data[idMember.valueStart:idMember.valueEnd], &storyID) != nil || storyID != id {
 			continue
 		}
-		edited := applyChanges(data, members, changes)
-		// Ended the way the file's lines already end: a bare newline after a
-		// file written with CRLF is a line ending nobody wrote.
-		if !bytes.HasSuffix(edited, []byte("\n")) {
-			if bytes.Contains(data, []byte("\r\n")) {
-				edited = append(edited, '\r')
-			}
-			edited = append(edited, '\n')
-		}
-		return edited, true
+		return endLikeFile(applyChanges(data, members, changes), data), true
 	}
 	return nil, false
+}
+
+// endLikeFile ends edited the way the lines of the file it was made from
+// already end: a bare newline after a file written with CRLF is a line ending
+// nobody wrote.
+func endLikeFile(edited, data []byte) []byte {
+	if !bytes.HasSuffix(edited, []byte("\n")) {
+		if bytes.Contains(data, []byte("\r\n")) {
+			edited = append(edited, '\r')
+		}
+		edited = append(edited, '\n')
+	}
+	return edited
 }
 
 // withoutStoryFields returns the backlog with the given keys taken out of every
@@ -303,7 +308,11 @@ func jsonString(s string) []byte {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(s) // a string always encodes
+	if err := enc.Encode(s); err != nil {
+		// Unreachable, since a string always encodes; Go's own quoting is the
+		// nearest valid JSON string should it ever happen.
+		return []byte(strconv.Quote(s))
+	}
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 }
 
@@ -312,9 +321,9 @@ func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\
 // lastMember finds the member encoding/json would read a key from: the last
 // one whose name matches without regard to case.
 func lastMember(members []member, key string) (member, bool) {
-	for i := len(members) - 1; i >= 0; i-- {
-		if strings.EqualFold(members[i].key, key) {
-			return members[i], true
+	for _, member := range slices.Backward(members) {
+		if strings.EqualFold(member.key, key) {
+			return member, true
 		}
 	}
 	return member{}, false

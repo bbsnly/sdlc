@@ -60,6 +60,13 @@ const (
 	guardPoll  = 10 * time.Millisecond
 )
 
+// ownerFile is the record inside a lock directory of who holds it, and
+// stateNotLocked the summary of every refusal to take the lock.
+const (
+	ownerFile      = "owner.json"
+	stateNotLocked = "the loop's state could not be locked"
+)
+
 // guardWait is a variable only so that a test can see a lock held past the
 // whole wait without spending the wait: the refusal that explains it was the
 // one message here no test reached, because reaching it took ten real seconds.
@@ -108,10 +115,7 @@ var held = struct {
 // record, the backlog and the active marker together, and a reader that saw one
 // of those without the others would see a story that never existed.
 func Lock(root, what string) (*Guard, error) {
-	path, err := guardPath(root)
-	if err != nil {
-		return nil, err
-	}
+	path := guardPath(root)
 	return take(path, what, guardWait, func() error {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"another sdlc command is still running",
@@ -133,10 +137,7 @@ func (s *Store) LockLanding(id string) (*Guard, error) {
 	if err := CheckID(id); err != nil {
 		return nil, err
 	}
-	project, err := guardPath(s.LockRoot())
-	if err != nil {
-		return nil, err
-	}
+	project := guardPath(s.LockRoot())
 	path := project + "-landing-" + id
 	return take(path, "stop "+id, 0, func() error {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
@@ -164,10 +165,7 @@ func (s *Store) LockLandings(id string, wait time.Duration) (*Guard, error) {
 	if err := CheckID(id); err != nil {
 		return nil, err
 	}
-	project, err := guardPath(s.LockRoot())
-	if err != nil {
-		return nil, err
-	}
+	project := guardPath(s.LockRoot())
 	path := project + "-landing"
 	return take(path, "stop "+id, wait, func() error {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
@@ -186,11 +184,11 @@ func (s *Store) LockLandings(id string, wait time.Duration) (*Guard, error) {
 // holds the landing lock.
 // It is a value of its own type, never shown: the refusal it is the cause of
 // says everything a person reads.
-var ErrLandingHeld error = landingHeld{}
+var ErrLandingHeld error = landingHeldError{}
 
-type landingHeld struct{}
+type landingHeldError struct{}
 
-func (landingHeld) Error() string { return "another stop holds the landing lock" }
+func (landingHeldError) Error() string { return "another stop holds the landing lock" }
 
 // take takes the lock at path, waiting up to wait for whoever has it, and
 // returns busy's refusal once it has waited that long.
@@ -205,20 +203,7 @@ func take(path, what string, wait time.Duration, busy func() error) (*Guard, err
 	for {
 		err := mkdir(path, 0o755)
 		if err == nil {
-			g := &Guard{path: path, token: rand.Text(), stop: make(chan struct{}), done: make(chan struct{})}
-			// A lock that does not say whose it is could never be let go of: its
-			// holder removes it only on seeing its own token there.
-			if err := g.describe(what); err != nil {
-				_ = os.RemoveAll(path)
-				return nil, sdlcerr.New(sdlcerr.StateUnwritable,
-					"the loop's state could not be locked",
-					path+" could not be written").WithCause(err)
-			}
-			go g.beat()
-			held.Lock()
-			held.guards[g] = struct{}{}
-			held.Unlock()
-			return g, nil
+			return newGuard(path, what)
 		}
 		// A denial is waited for rather than failed, however short the wait for
 		// a holder: on Windows it is how a lock being released looks (see
@@ -226,23 +211,55 @@ func take(path, what string, wait time.Duration, busy func() error) (*Guard, err
 		// really is.
 		denied := errors.Is(err, fs.ErrPermission)
 		if !denied && !errors.Is(err, fs.ErrExist) {
-			return nil, sdlcerr.New(sdlcerr.StateUnwritable,
-				"the loop's state could not be locked",
-				path+" could not be created").WithCause(err)
+			return nil, lockNotCreated(path, err)
 		}
 		if !denied && breakIfStale(path) {
 			continue
 		}
-		switch waited := time.Since(start); {
-		case denied && waited > guardWait:
-			return nil, sdlcerr.New(sdlcerr.StateUnwritable,
-				"the loop's state could not be locked",
-				path+" could not be created").WithCause(err)
-		case !denied && waited >= wait:
-			return nil, busy()
+		if err := waitedTooLong(path, err, denied, time.Since(start), wait, busy); err != nil {
+			return nil, err
 		}
 		time.Sleep(guardPoll)
 	}
+}
+
+// waitedTooLong is the refusal once the wait for a lock is over, and nil while
+// there is time to wait longer.
+func waitedTooLong(path string, cause error, denied bool, waited, wait time.Duration, busy func() error) error {
+	switch {
+	case denied && waited > guardWait:
+		return lockNotCreated(path, cause)
+	case !denied && waited >= wait:
+		return busy()
+	}
+	return nil
+}
+
+// lockNotCreated is the refusal where the lock at path could not be created
+// for a reason other than somebody holding it.
+func lockNotCreated(path string, cause error) error {
+	return sdlcerr.New(sdlcerr.StateUnwritable,
+		stateNotLocked,
+		path+" could not be created").WithCause(cause)
+}
+
+// newGuard is the guard for the lock directory this process has just made at
+// path: it says whose it is, and is kept alive until released.
+func newGuard(path, what string) (*Guard, error) {
+	g := &Guard{path: path, token: rand.Text(), stop: make(chan struct{}), done: make(chan struct{})}
+	// A lock that does not say whose it is could never be let go of: its
+	// holder removes it only on seeing its own token there.
+	if err := g.describe(what); err != nil {
+		_ = os.RemoveAll(path)
+		return nil, sdlcerr.New(sdlcerr.StateUnwritable,
+			stateNotLocked,
+			path+couldNotBeWritten).WithCause(err)
+	}
+	go g.beat()
+	held.Lock()
+	held.guards[g] = struct{}{}
+	held.Unlock()
+	return g, nil
 }
 
 // Release gives the lock up. It is safe to call more than once, and from more
@@ -324,7 +341,7 @@ func (g *Guard) describe(what string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(g.path, "owner.json"), append(raw, '\n'), 0o644)
+	return os.WriteFile(filepath.Join(g.path, ownerFile), append(raw, '\n'), 0o644) //nolint:gosec // G306: git hooks and other checkouts read the owner file
 }
 
 // breakIfStale removes a lock whose holder is long gone, and reports whether it
@@ -378,7 +395,7 @@ func breakIfStale(path string) bool {
 // described, or described by a process that died doing it -- is judged by its
 // age alone.
 func holderAlive(path string) bool {
-	raw, err := os.ReadFile(filepath.Join(path, "owner.json"))
+	raw, err := os.ReadFile(filepath.Join(path, ownerFile))
 	if err != nil {
 		return false
 	}
@@ -391,7 +408,7 @@ func holderAlive(path string) bool {
 
 // ownedBy reports whether the lock at path is still the one token took.
 func ownedBy(path, token string) bool {
-	raw, err := os.ReadFile(filepath.Join(path, "owner.json"))
+	raw, err := os.ReadFile(filepath.Join(path, ownerFile))
 	if err != nil {
 		return false
 	}
@@ -402,7 +419,7 @@ func ownedBy(path, token string) bool {
 // heldBy names whoever is holding the lock, for the one message that has to
 // explain a wait. A lock with no readable owner still gets a sentence.
 func heldBy(path string) string {
-	raw, err := os.ReadFile(filepath.Join(path, "owner.json"))
+	raw, err := os.ReadFile(filepath.Join(path, ownerFile))
 	if err != nil {
 		return "another command"
 	}
@@ -420,7 +437,7 @@ func heldBy(path string) string {
 // The user's cache directory rather than the system temp directory, because
 // that one is per-user and not world-writable: a lock in a shared /tmp is a
 // directory anybody on the machine can create first.
-func guardPath(root string) (string, error) {
+func guardPath(root string) string {
 	// Resolved, so that /tmp and /private/tmp on macOS -- or any other symlink
 	// on the way to the project -- are one project and not two.
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
@@ -435,5 +452,5 @@ func guardPath(root string) (string, error) {
 		// worse than a lock in a less private place.
 		base = os.TempDir()
 	}
-	return filepath.Join(base, "sdlc", "locks", name), nil
+	return filepath.Join(base, "sdlc", "locks", name)
 }

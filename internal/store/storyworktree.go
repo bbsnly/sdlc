@@ -112,7 +112,7 @@ func EnsureWorktreesIgnored(main string) error {
 		return notIgnored(main, "it is not a directory in the main checkout")
 	}
 	path := filepath.Join(main, filepath.FromSlash(worktreesIgnore))
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) //nolint:gosec // G302: a tracked-style ignore file other tools read, as git itself writes it
 	switch {
 	case err == nil:
 		_, werr := f.WriteString("*\n")
@@ -159,7 +159,7 @@ func (s *Store) EnsureStateIgnored(wt string) error {
 	if err := fsx.WriteFileAtomic(path, []byte("*\n"), 0o644); err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"the loop's state in "+sdlcerr.QuotePath(wt)+" could not be kept out of git's view",
-			sdlcerr.QuotePath(path)+" could not be written").WithCause(err)
+			sdlcerr.QuotePath(path)+couldNotBeWritten).WithCause(err)
 	}
 	return nil
 }
