@@ -74,7 +74,7 @@
   ],
   "staffing": {
     "enabled": true,
-    "models": ["haiku", "sonnet", "opus"],
+    "models": ["haiku", "sonnet", "opus", "fable"],
     "efforts": ["low", "medium", "high", "xhigh"],
     "bring_back": {
       "security": [
