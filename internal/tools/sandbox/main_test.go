@@ -32,6 +32,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The helpers here carry names the program is unlikely to want for itself
@@ -130,6 +131,27 @@ func mustCreate(t *testing.T) printedSandbox {
 		t.Fatalf("create exited %d:\nstdout %q\nstderr %q", code, stdout, stderr)
 	}
 	return readPrinted(t, stdout)
+}
+
+// renameWhenFree renames a sandbox, waiting out whatever Windows still has
+// open in it. On windows-11-arm a rename straight after create, or straight
+// after the rename before it, was refused with "Access is denied" in two runs
+// out of four: Windows will not rename a directory while any program holds a
+// file in it, and something outside the test briefly does. Go's own cleanup of
+// t.TempDir waits the same way.
+func renameWhenFree(t *testing.T, from, to string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := os.Rename(from, to)
+		if err == nil {
+			return
+		}
+		if runtime.GOOS != "windows" || time.Now().After(deadline) {
+			t.Fatal(err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func entriesOf(t *testing.T, dir string) []string {
@@ -438,17 +460,13 @@ func TestAC1RemoveRefusesEveryDirectoryCreateDidNotMake(t *testing.T) {
 		moved := filepath.Join(elsewhere, filepath.Base(m.dir))
 		renamed := filepath.Join(p.temp, "renamed")
 		for _, to := range []string{moved, renamed} {
-			if err := os.Rename(m.dir, to); err != nil {
-				t.Fatal(err)
-			}
+			renameWhenFree(t, m.dir, to)
 			stdout, stderr, code := runWith("-C", thisCheckout, "remove", to)
 			if !present(filepath.Join(to, filepath.Base(m.repo), "user_stories.json")) {
 				t.Fatalf("remove deleted %s", to)
 			}
 			wantRefused(t, to, stdout, stderr, code)
-			if err := os.Rename(to, m.dir); err != nil {
-				t.Fatal(err)
-			}
+			renameWhenFree(t, to, m.dir)
 		}
 	})
 
@@ -683,9 +701,7 @@ func TestAC1ASandboxRenamedToAnotherSandboxsNameIsTakenWholeOrLeftWhole(t *testi
 	p := isolated(t)
 	m := mustCreate(t)
 	renamed := filepath.Join(p.temp, wantedPrefix+"renamed")
-	if err := os.Rename(m.dir, renamed); err != nil {
-		t.Fatal(err)
-	}
+	renameWhenFree(t, m.dir, renamed)
 	stdout, stderr, code := runWith("-C", thisCheckout, "remove", renamed)
 	if code == 0 {
 		if present(renamed) || stderr != "" {
