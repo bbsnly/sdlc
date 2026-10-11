@@ -132,7 +132,7 @@ jobs:
             exit 1
           fi
           url="https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/${asset}"
-          curl -fsSL --retry 5 --retry-all-errors --retry-max-time 180 \
+          curl -fsSL --proto '=https' --retry 5 --retry-all-errors --retry-max-time 180 \
             --connect-timeout 20 -o "${RUNNER_TEMP}/${asset}" "$url" || {
             echo "::error::could not download ${asset} from ${url}" >&2
             exit 1
