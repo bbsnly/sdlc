@@ -1,0 +1,14 @@
+# Codecov reports coverage; it does not decide anything. The bar is
+# `./task check`, and the loop holds coverage to `coverage_min` in
+# .sdlc/config.json, so a status here that could fail would be a second,
+# slightly different rule about the same number.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+comment: false

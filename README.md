@@ -13,6 +13,7 @@ against the specification rather than against the diff, and a trunk that is
 always green.
 
 [![ci](https://github.com/bbsnly/sdlc/actions/workflows/ci.yml/badge.svg)](https://github.com/bbsnly/sdlc/actions/workflows/ci.yml)
+[![coverage](https://codecov.io/gh/bbsnly/sdlc/branch/main/graph/badge.svg)](https://codecov.io/gh/bbsnly/sdlc)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm downloads](https://img.shields.io/npm/dm/@bbsnly/sdlc?label=npm%20downloads)](https://www.npmjs.com/package/@bbsnly/sdlc)
 [![release downloads](https://img.shields.io/github/downloads/bbsnly/sdlc/total?label=release%20downloads)](https://github.com/bbsnly/sdlc/releases)
