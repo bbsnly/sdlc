@@ -71,8 +71,11 @@ function defaultDir(platform = process.platform, env = process.env) {
 function parseChecksums(text) {
   const out = new Map()
   for (const line of text.split('\n')) {
-    const match = line.trim().match(/^([0-9a-f]{64})\s+\*?(.+)$/i)
-    if (match) out.set(match[2].trim(), match[1].toLowerCase())
+    // The name starts at a non-space so that the space before it has one way
+    // to match; with `\*?(.+)` there, a long run of spaces backtracked
+    // quadratically. The marker comes off afterwards for the same reason.
+    const match = /^([0-9a-f]{64})\s+(\S.*)$/i.exec(line.trim())
+    if (match) out.set(match[2].replace(/^\*(?=.)/, '').trim(), match[1].toLowerCase())
   }
   return out
 }
@@ -89,8 +92,8 @@ function onPath(dir, env = process.env) {
 // not read HTTPS_PROXY by default: behind a proxy npm itself goes through, the
 // download went direct and failed with nothing more to say than that.
 function unreachable(url, what, err) {
-  const cause = err && err.cause
-  const reason = (cause && (cause.code || cause.message)) || (err && err.message) || String(err)
+  const cause = err?.cause
+  const reason = cause?.code || cause?.message || err?.message || String(err)
   return new Failure(what, [
     `why  ${url} could not be reached (${reason})`,
     'fix  check that this machine can reach github.com. Behind a proxy, use install.sh',
@@ -176,7 +179,7 @@ async function latestVersion() {
     throw unreachable(url, 'could not work out the latest version of sdlc.', err)
   }
   const location = response.headers.get('location') || ''
-  const match = location.match(/\/tag\/v([0-9][^/]*)$/)
+  const match = /\/tag\/v(\d[^/]*)$/.exec(location)
   if (!match) {
     throw new Failure('could not work out the latest version of sdlc.', [
       `why  ${url} did not redirect to a tag;`,
@@ -215,7 +218,7 @@ async function checksumsFor(version, archive, tmp, log) {
 // apostrophe in it -- O'Brien -- would otherwise end the string early and turn
 // a verified download into a parse error.
 function psQuote(value) {
-  return value.replace(/'/g, "''")
+  return value.replaceAll("'", "''")
 }
 
 function unpack(archive, into, binary) {

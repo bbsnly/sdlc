@@ -4,13 +4,13 @@
 const { install, Failure } = require('../lib/install.js')
 const pkg = require('../package.json')
 
-const USAGE = `Install sdlc, the story-driven delivery loop for Claude Code.
+const USAGE = String.raw`Install sdlc, the story-driven delivery loop for Claude Code.
 
   npx @bbsnly/sdlc install [--version X.Y.Z] [--dir PATH]
 
   --version X.Y.Z   install that version instead of this package's own
   --dir PATH        install somewhere other than the default
-                    (~/.local/bin, or %LOCALAPPDATA%\\Programs\\sdlc\\bin)
+                    (~/.local/bin, or %LOCALAPPDATA%\Programs\sdlc\bin)
   -h, --help        this
 
 The same settings can come from the environment: SDLC_VERSION and
@@ -19,6 +19,13 @@ SDLC_INSTALL_DIR.
 This package installs a native binary and then gets out of the way: what ends
 up on your PATH is sdlc itself, not a Node wrapper around it.`
 
+// splitFlag reads `--flag=value` as well as `--flag`; inline is null when there
+// is no `=`, so that an empty `--flag=` is still a value.
+function splitFlag(arg) {
+  const eq = arg.indexOf('=')
+  return eq === -1 ? [arg, null] : [arg.slice(0, eq), arg.slice(eq + 1)]
+}
+
 function parse(argv) {
   const options = {}
   for (let i = 0; i < argv.length; i++) {
@@ -26,7 +33,7 @@ function parse(argv) {
     if (arg === 'install') continue // `npx @bbsnly/sdlc install` reads better than the bare form
     if (arg === '-h' || arg === '--help') return { help: true }
     if (arg === '-v' || arg === '--print-version') return { printVersion: true }
-    const [flag, inline] = arg.includes('=') ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)] : [arg, null]
+    const [flag, inline] = splitFlag(arg)
     const value = inline !== null ? inline : argv[++i]
     if (flag === '--version') options.version = value
     else if (flag === '--dir') options.dir = value
@@ -66,7 +73,7 @@ main().catch((err) => {
     console.error(`sdlc: ${err.message}`)
     for (const line of err.advice) console.error(`  ${line}`)
   } else {
-    console.error(`sdlc: ${err && err.message ? err.message : err}`)
+    console.error(`sdlc: ${err?.message ? err.message : err}`)
   }
   process.exitCode = 1
 })
