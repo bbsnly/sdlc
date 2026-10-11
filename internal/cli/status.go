@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sort"
@@ -128,7 +129,7 @@ func newStatusCmd() *cobra.Command {
 				if next, ok := record.NextGate(); ok {
 					payload.NextGate = string(next)
 				}
-				if payload.Freeze, err = describeFreeze(s, active); err != nil {
+				if payload.Freeze, err = describeFreeze(cmd.Context(), s, active, record); err != nil {
 					return err
 				}
 				payload.Cost = describeCost(p.Config.Budget, record)
@@ -300,12 +301,20 @@ func isWaiting(waiting []waitingStory, id string) bool {
 // describeFreeze reports the freeze as it applies to this story. A freeze taken
 // for a different story is stale, and reporting it here would be worse than
 // reporting nothing: a skill would read it as this story's tests being locked.
-func describeFreeze(s *store.Store, story string) (*freezeState, error) {
+//
+// In the story's own worktree a frozen test that only trunk changed is not one
+// that changed since, as no gate holds it against the story.
+func describeFreeze(ctx context.Context, s *store.Store, story string, record *model.Record) (*freezeState, error) {
 	lock, err := s.Lock()
 	if err != nil || lock == nil || lock.Story != story {
 		return nil, err
 	}
 	changed := verifyFreeze(s, lock)
+	if len(changed) > 0 && record.Cut != "" && inItsWorktree(s, story) {
+		if h, err := heldTests(ctx, s, story, lock, freezeAt{cut: record.Cut}); err == nil {
+			changed = h.broken
+		}
+	}
 	return &freezeState{
 		Story: lock.Story, At: lock.At, Files: len(lock.Files),
 		Intact: len(changed) == 0, Changed: changed,

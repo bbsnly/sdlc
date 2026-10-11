@@ -294,30 +294,24 @@ func TestE0055sMissingBranchFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing
 	}
 }
 
-// SDLC-E0025 and SDLC-E0043: a frozen test trunk changed, or a test file
-// trunk added, brought in by a rebase, offer the reopen besides restoring
-// or dropping the test -- unfreezeRoute's answer-first route and worktree,
-// then "sdlc unfreeze --reason ..." once the iteration it reopens is
-// running.
+// SDLC-E0025 and SDLC-E0043 at the landing: a frozen test the story's branch
+// changed, or a test file it added, after the freeze -- trunk's own are
+// trunk's, US-088 -- offer the reopen besides restoring or dropping the test:
+// unfreezeRoute's answer-first route and worktree, then "sdlc unfreeze
+// --reason ..." once the iteration it reopens is running.
 func TestE0025AndE0043sFreezeFixesNameTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name, code string
-		trunk      func(t *testing.T, main string)
+		name, code, rel string
 	}{
-		{"E0025 a frozen test trunk changed", ldFrozenMoved, func(t *testing.T, main string) {
-			swCommitFile(t, main, "internal/tax_test.go", "package internal\n\n// changed on trunk\n",
-				"another story's change")
-		}},
-		{"E0043 a test file trunk added", ldUnfrozenTest, func(t *testing.T, main string) {
-			swCommitFile(t, main, "internal/refund_test.go", "package internal\n", "another story's test")
-		}},
+		{"E0025 a frozen test the story changed", ldFrozenMoved, "internal/tax_test.go"},
+		{"E0043 a test file the story added", ldUnfrozenTest, "internal/refund_test.go"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			main, wt := ldWalked(t, ldWalk{finished: true, taxTest: true})
 			ldBookkeeping(t, wt)
-			tc.trunk(t, main)
-			ldRebase(t, wt)
+			swCommitFile(t, wt, tc.rel, "package internal\n\n// changed by the story\n", "the story's own change to a test")
+			ldReviewAgain(t, wt)
 			before := ldTrunk(t, main)
 
 			out := swRefused(t, tc.code, wt, ldSession, "stop")
@@ -332,11 +326,12 @@ func TestE0025AndE0043sFreezeFixesNameTheAnswerFirstRouteAndTheWorktree(t *testi
 	}
 }
 
-// SDLC-E0037: a story in a tier that pauses, rebased since a person
-// approved it, is not approved for the tree as it now is. The fix hands it
-// to a person again and names the worktree the approval is read in, though
-// it offers no --reject: the work is not reopened, only approved or left
-// waiting.
+// SDLC-E0037: a story in a tier that pauses, whose change is no longer the
+// one a person approved, is not approved for the work as it now is. The fix
+// hands it to a person again and names the worktree the approval is read in,
+// though it offers no --reject: the work is not reopened, only approved or
+// left waiting. A change that is still the one approved keeps its approval
+// across the landing (US-088 AC-8).
 func TestE0037sFixNamesApproveInTheWorktree(t *testing.T) {
 	t.Parallel()
 	main, wt := ldWalked(t, ldWalk{tier: "high"})
@@ -345,15 +340,15 @@ func TestE0037sFixNamesApproveInTheWorktree(t *testing.T) {
 	ldApproved(t, wt)
 	swPass(t, wt, ldSession, model.GateCommit, "")
 	ldBookkeeping(t, wt)
-	ldMoveTrunk(t, main)
-	ldRebase(t, wt)
+	lxChangeAfterTheReviews(t, wt)
+	ldReviewAgain(t, wt)
 	before := ldTrunk(t, main)
 
 	out := swRefused(t, ldNotApproved, wt, ldSession, "stop")
 	_, fix := ldRefusal(t, out, ldNotApproved)
 	suSays(t, fix, `"sdlc escalate pre_commit_approval --message ..."`, `"sdlc approve US-001"`, worktreeIn("US-001"))
 	if got := ldTrunk(t, main); got != before {
-		t.Errorf("trunk moved to %s though the rebased tree was not approved", got)
+		t.Errorf("trunk moved to %s though the changed work was not approved", got)
 	}
 	ldStillHeld(t, main, wt)
 }

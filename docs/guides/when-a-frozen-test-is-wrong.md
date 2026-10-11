@@ -179,7 +179,9 @@ The command checks too, for whatever reached the tree some other way. A pass at
 `tests_frozen`, `plan`, `implementation`, `verification` or `commit` refuses if
 a frozen file changed or vanished
 ([SDLC-E0025](../troubleshooting.md#sdlc-e0025)), if a test file is there that
-the freeze does not hold ([SDLC-E0043](../troubleshooting.md#sdlc-e0043)), or if
+the freeze does not hold ([SDLC-E0043](../troubleshooting.md#sdlc-e0043); in a
+story's own worktree, a test file that only trunk changed since the story was
+cut is not one of these), or if
 the freeze is gone or belongs to another story
 ([SDLC-E0023](../troubleshooting.md#sdlc-e0023)).
 

@@ -556,44 +556,97 @@ A story worked in its worktree is not done when its
 last gate passes. It is done when it **lands**: when trunk moves to the story's
 commits by fast-forward, which `sdlc stop` does in the story's worktree once
 every gate has passed. Until then trunk does not have it, and a story that
-depends on it waits. The landing checks, in order:
+depends on it waits.
+
+Stories land one at a time. A stop that finds another story landing says which,
+waits up to eight minutes for it, and then carries on from trunk as that landing
+left it. A stop cut short while it waits has changed nothing and can be run
+again at once. The landing checks, in order:
 
 - the worktree is clean and on `story/<ID>`, with no rebase or merge part-way;
-- trunk has not moved past the story. Where it has, the landing refuses with
-  [`SDLC-E0054`](troubleshooting.md#sdlc-e0054) and gives the rebase to run: in
-  the story's worktree, `git rebase <trunk>`, and then `sdlc stop` again;
 - the commits that would land are the story's alone, with no merge among them,
   change nothing under `.sdlc/` or in the backlog, and leave the root
   `CODEMAP.md` a plain file;
-- the frozen tests are as the freeze holds them;
-- the change is the one the reviewers saw. A rebase that only moved it keeps the
-  reviews, and one that changed it needs them again
-  ([`SDLC-E0029`](troubleshooting.md#sdlc-e0029));
-- where the story was rebased or changed since the commit gate, the configured
-  commands pass on it, as trunk's committed configuration has them
-  ([configuration](configuration.md#commands)), and a story in a tier that waits
-  for a person is approved again.
+- trunk has not moved past the story. Where it has only moved on, as it does
+  each time another story lands, `sdlc stop` puts the story's commits onto
+  trunk as it is then, itself. Where they do not apply, it abandons that, leaves
+  the branch where it was, names the files in conflict and refuses with
+  [`SDLC-E0075`](troubleshooting.md#sdlc-e0075): resolving a conflict is a
+  person's. A trunk that was rewritten is a person's too
+  ([`SDLC-E0054`](troubleshooting.md#sdlc-e0054));
+- the frozen tests are as the freeze holds them, and no test file is there that
+  the freeze does not hold. Once the story sits on a later trunk commit than the
+  one it was cut from, a test file that only trunk changed in between is not
+  held against the story: one the story's commits do not touch and that is,
+  byte for byte on disk, the file trunk commits, or one the freeze held that
+  trunk removed. The command that accepts one says how many and names them, and
+  the record keeps the trunk commit they were compared with. A test file the
+  story's own commits added, changed or took away is refused as it always was,
+  and so is a frozen test that the story and trunk both changed, even in
+  different places
+  ([`SDLC-E0043`](troubleshooting.md#sdlc-e0043),
+  [`SDLC-E0025`](troubleshooting.md#sdlc-e0025)). In a checkout that converts
+  line endings (`core.autocrlf`) the file on disk is not byte for byte what
+  trunk commits, so there a test file trunk gained is still refused;
+- the change is the one the reviewers saw. Where the stop itself put the story
+  onto a trunk that moved, the reviews stand, and with them a person's approval
+  before the commit, for as long as the result is the reviewed change line for
+  line: the story's lines in the same files, and nothing else different but what
+  trunk changed. A change that differs needs the reviews again
+  ([`SDLC-E0029`](troubleshooting.md#sdlc-e0029)) and, in a tier that waits for
+  a person, the approval again
+  ([`SDLC-E0037`](troubleshooting.md#sdlc-e0037)). A story rebased any other way
+  is measured as it always was, with the lines around its change, and in a tier
+  that waits for a person it is approved again;
+- where the story was put onto a trunk that moved, or changed since the commit
+  gate, the configured commands pass on the tree that is about to be trunk, as
+  trunk's committed configuration has them
+  ([configuration](configuration.md#commands)). A command that fails there lands
+  nothing, and the story stays with its session to rework
+  ([`SDLC-E0055`](troubleshooting.md#sdlc-e0055)).
 
 Then trunk moves, by fast-forward and never by merge, and nothing is pushed.
 The record names the commits that reached trunk, the story becomes `done`, its
 claim and its freeze are let go, and its worktree and branch are removed. The
 record and the backlog change are written in the main checkout and wait there
-for a person to commit them. A refusal changes nothing: trunk stays where it
-was, and says so. `sdlc stop` run in the story's worktree with no iteration
+for a person to commit them. A refusal leaves trunk where it was, and says so.
+One that comes after the story was put onto trunk leaves the story's branch
+there, on top of trunk, with a `replayed` event on the record, and the next
+stop starts from it. `sdlc stop` run in the story's worktree with no iteration
 running lands a finished story too, after a person has answered an escalation.
+
+Putting the story onto trunk is a rebase. It makes the story's commits again,
+unsigned. It runs the filters the repository's configuration names, with the
+privileges of whoever runs the stop. It overwrites an ignored file at a path
+trunk has come to track. And an attribute that names `merge=union` for a path,
+committed in `.gitattributes` or written in the repository's own
+`info/attributes`, joins both sides' added lines there with no conflict.
+
+A stop that is killed while it lands, and not while it waits, can leave a
+rebase part-way in the story's worktree, or trunk already moved with the record
+not yet saying so. Nothing is lost in either case: stop again, and the stop
+says what it found ([`SDLC-E0055`](troubleshooting.md#sdlc-e0055)) or records
+the story as landed.
 
 ### Parallel stories and `CODEMAP.md`
 
-Both stories' bookkeepers usually edit
-the root `CODEMAP.md`, so the second story's rebase often stops on a conflict in
-its bookkeeper's commit. The runbook abandons the rebase and hands the story to
-a person, who resolves `CODEMAP.md` in their own terminal, answers with
-`sdlc approve <ID>` in the story's worktree, and runs `sdlc stop` there. No
-review is asked for again, because the change the reviewers saw leaves
-`CODEMAP.md` out; the commands run, because the story was rebased. A project
-that wants fewer of these can mark `CODEMAP.md` in `.gitattributes` with git's
-built-in union merge, `CODEMAP.md merge=union`, which keeps both sides' lines.
-That is the project's choice, and `sdlc` does not write it.
+Both stories' bookkeepers usually edit the root `CODEMAP.md`, so the second
+story's commits usually do not apply onto trunk at its bookkeeper's commit.
+This is the common case, and it still ends with a person: the stop names
+`CODEMAP.md` and refuses with [`SDLC-E0075`](troubleshooting.md#sdlc-e0075), the
+runbook hands the story over, and a person rebases it in their own terminal,
+resolves `CODEMAP.md`, answers with `sdlc approve <ID>` in the story's worktree
+and runs `sdlc stop` there. A conflict in `CODEMAP.md` alone asks for no review
+again, because the change the reviewers saw leaves `CODEMAP.md` out; a review is
+asked for again only where trunk also changed lines within three of the story's
+own. The commands run, because the story was rebased; in a tier that waits for
+a person, the approval they have just given is the one the stop reads.
+
+A project that wants fewer of these can mark `CODEMAP.md` in `.gitattributes`
+with git's built-in union merge, `CODEMAP.md merge=union`, which keeps both
+sides' lines. The stop's own replay honours it, so with it two stories'
+`CODEMAP.md` lines join and nobody is asked. That is the project's choice, and
+`sdlc` does not write it.
 
 ### Removing a worktree
 

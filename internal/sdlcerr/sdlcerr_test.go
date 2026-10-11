@@ -212,10 +212,11 @@ func TestErrorAppendsTheCauseWhenThereIsOne(t *testing.T) {
 // error. The catalogue refuses a duplicate on its own; this is what refuses a
 // renumbering, by making it a second, deliberate edit. A new code adds a row.
 func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
-	released := []struct {
+	type pin struct {
 		code Code
 		id   string
-	}{
+	}
+	released := []pin{
 		{NotAGitRepo, "SDLC-E0001"},
 		{NotInitialised, "SDLC-E0002"},
 		{AlreadyInitialised, "SDLC-E0003"},
@@ -293,6 +294,16 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 		{registered("SDLC-E0072"), "SDLC-E0072"},
 		{registered("SDLC-E0073"), "SDLC-E0073"},
 		{registered("SDLC-E0074"), "SDLC-E0074"},
+	}
+	// US-088: the landing may give a refusal of its own a code of its own --
+	// the story's commits not applying onto trunk, which goes to a person --
+	// or say it under a code it has; that is the plan's to choose, after this
+	// file is frozen with the story's tests. The next number is therefore
+	// pinned here ahead of the code: counted once it is registered, and until
+	// then standing for nothing. A new code under any other number still
+	// fails the count below.
+	if c := registered("SDLC-E0075"); c != (Code{}) {
+		released = append(released, pin{c, "SDLC-E0075"})
 	}
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {

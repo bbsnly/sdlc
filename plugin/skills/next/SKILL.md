@@ -345,17 +345,16 @@ Without a worktree, run `sdlc stop`, then commit the retro if the project keeps 
 backlog file.
 
 With one, commit only the bookkeeper's `CODEMAP.md` change, if any, in `<worktree>` as its own
-`docs:` commit, then run `sdlc stop` there with the Bash tool's longest timeout, 600000 ms, to
-land it on trunk. If its commands need longer, a person runs that stop in their own terminal,
-after reading the story: it runs the story's code as them. Once it lands, run later commands in
-`<main>`.
+`docs:` commit, then run `sdlc stop` there with the Bash tool's longest timeout, 600000 ms. If
+its commands need longer, a person runs that stop in their own terminal, after reading the
+story: it runs the story's code as them. Once it lands, run later commands in `<main>`.
 
-- `SDLC-E0054`: if its fix gives the plain `git rebase <trunk>`, run it in `<worktree>` and stop
-  again; else escalate. On a conflict, `CODEMAP.md` included, run `git rebase --abort` and
-  escalate.
-- `SDLC-E0029`: if the fix says it is a person's, escalate. Otherwise run Gate 6's verifier and
-  Gate 7's reviewers again, record their reviews and stop again; escalate only if one blocks.
-- Any other code, or a second refusal: escalate with its text.
+- `SDLC-E0006`, `SDLC-E0054` saying stop again, or a stop cut short: nothing is lost. Stop
+  again; it says if it landed.
+- `SDLC-E0055`: follow its fix. A failed command leaves the story yours to rework.
+- `SDLC-E0029`: escalate if its fix says it is a person's. Else run Gate 6's verifier and Gate 7's
+  reviewers again, record their reviews and stop again; escalate if one blocks.
+- `SDLC-E0075` (a conflict), another code, or a second refusal: escalate with its text.
 
 Tell the user what was built, what deviated from the plan, and what the retro says to do
 differently.

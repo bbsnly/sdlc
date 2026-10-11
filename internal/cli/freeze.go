@@ -360,14 +360,20 @@ func findTests(cmd *cobra.Command, p *config.Project, s *store.Store) ([]string,
 
 // verifyFreeze reports the frozen files that no longer match what was recorded.
 func verifyFreeze(s *store.Store, lock *model.Lock) []string {
-	var changed []string
+	return namesOf(differingFrozen(s, lock))
+}
+
+// differingFrozen is each frozen file that no longer matches what was recorded,
+// and whether it is gone.
+func differingFrozen(s *store.Store, lock *model.Lock) []frozenFile {
+	var changed []frozenFile
 	for _, path := range lock.Paths() {
 		sum, err := s.HashFile(path)
 		switch {
 		case err != nil:
-			changed = append(changed, path+" (gone)")
+			changed = append(changed, frozenFile{path: path, gone: true})
 		case sum != lock.Files[path]:
-			changed = append(changed, path)
+			changed = append(changed, frozenFile{path: path})
 		}
 	}
 	return changed

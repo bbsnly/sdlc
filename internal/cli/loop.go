@@ -791,6 +791,13 @@ func newGateCmd() *cobra.Command {
 				noteSensitivity(s, record, securitySensitive)
 				record.SetSecuritySensitive(securitySensitive)
 			}
+			// Only a gate that judged the freeze says what it accepted: a pass
+			// of any other would wipe what the last one that did had recorded.
+			if status == model.GatePass && rd.judged {
+				if recordAccepted(s, id, record, rd.trunkTests) != nil {
+					fmt.Fprintln(cmd.ErrOrStderr(), "sdlc: "+acceptedLine(id, trunkName(s), rd.trunkTests, false)+".")
+				}
+			}
 			reopened := record.SetGate(gate, status, note, s.Now())
 			// The story's commits are among the ones after HEAD when code review
 			// first passed, up to and including HEAD when the commit gate last
@@ -985,14 +992,14 @@ func requireEvidence(ctx context.Context, rd *reading, id string, gate model.Gat
 	case model.GateDoR:
 		return requireCriteria(s, id)
 	case model.GateTestsFrozen:
-		return requireFreeze(ctx, s, id)
+		return requireFreeze(ctx, rd, id, record)
 	case model.GatePlan, model.GateImplementation, model.GateVerification:
 		// The freeze is only worth anything if it is still intact every time
 		// the loop moves. Checking once at Gate 3 would let it be lifted in
 		// silence the moment the implementation got difficult.
-		return requireIntactFreeze(ctx, s, id)
+		return rd.requireIntactFreeze(ctx, id, record)
 	case model.GateCommit:
-		if err := requireIntactFreeze(ctx, s, id); err != nil {
+		if err := rd.requireIntactFreeze(ctx, id, record); err != nil {
 			return err
 		}
 		if err := requireFreshReviews(ctx, rd, id, record); err != nil {
@@ -1088,19 +1095,40 @@ func requireApproval(ctx context.Context, rd *reading, id string, record *model.
 		quote(id)+" has not been approved by a person for committing", why)
 }
 
-// requireIntactFreeze is the freeze, checked again.
-func requireIntactFreeze(ctx context.Context, s *store.Store, id string) error {
+// requireIntactFreeze is the freeze, checked again, at a gate: the story's test
+// files are judged at HEAD, and what was accepted as trunk's own is kept for
+// the gate to say and record.
+func (r *reading) requireIntactFreeze(ctx context.Context, id string, record *model.Record) error {
+	h, err := requireIntactFreeze(ctx, r.s, id, r.freezeAt(ctx, id, record))
+	r.trunkTests, r.judged = h.accepted, err == nil
+	return err
+}
+
+// freezeAt is where a gate judges the story's test files: at HEAD, which the
+// command has asked for already or asks for once here, and only where a test
+// file could be trunk's own.
+func (r *reading) freezeAt(ctx context.Context, id string, record *model.Record) freezeAt {
+	at := freezeAt{cut: record.Cut}
+	if at.cut != "" && inItsWorktree(r.s, id) {
+		at.tip, _ = r.headOf(ctx)
+	}
+	return at
+}
+
+// requireIntactFreeze is the freeze, checked again. It returns the freeze as
+// it was judged, with the test files accepted as trunk's own.
+func requireIntactFreeze(ctx context.Context, s *store.Store, id string, at freezeAt) (heldState, error) {
 	lock, err := s.Lock()
 	if err != nil {
-		return err
+		return heldState{}, err
 	}
 	if lock == nil || lock.Story != id {
-		return sdlcerr.New(sdlcerr.NotFrozen,
+		return heldState{}, sdlcerr.New(sdlcerr.NotFrozen,
 			"the acceptance tests are not frozen for this story",
 			"every gate from here on is measured against them, and a freeze that "+
 				"is not there cannot say whether they changed")
 	}
-	return requireHeldTests(ctx, s, lock)
+	return requireHeldTests(ctx, s, id, lock, at)
 }
 
 // requireHeldTests refuses a freeze that no longer describes the tests: a
@@ -1111,26 +1139,39 @@ func requireIntactFreeze(ctx context.Context, s *store.Store, id string) error {
 // one the test author added with freeze.allow_new_test_files on and nobody
 // froze -- ran at verification as though it had been written before the code,
 // and could have been written to pass.
-func requireHeldTests(ctx context.Context, s *store.Store, lock *model.Lock) error {
-	if changed := verifyFreeze(s, lock); len(changed) > 0 {
-		return brokenFreeze(changed)
+//
+// In a story's own worktree a test file that only trunk changed since the
+// story was cut is neither: heldTests says which those are, and they come back
+// for the caller to say and record.
+func requireHeldTests(ctx context.Context, s *store.Store, id string, lock *model.Lock, at freezeAt) (heldState, error) {
+	h, err := heldTests(ctx, s, id, lock, at)
+	switch {
+	case len(h.broken) > 0:
+		return h, brokenFreeze(h.broken)
+	case err != nil:
+		return h, err
+	case len(h.unheld)+len(h.taken) == 0:
+		return h, nil
 	}
-	unheld, err := unfrozenTests(ctx, s, lock)
-	if err != nil {
-		return err
+	var why []string
+	if len(h.unheld) > 0 {
+		why = append(why, strings.Join(h.unheld, ", ")+" appeared after the freeze was taken, so nothing says "+
+			"it was written before the code")
 	}
-	if len(unheld) == 0 {
-		return nil
+	if len(h.taken) > 0 {
+		why = append(why, takenWhy(trunkName(s), h.taken))
 	}
 	refusal := sdlcerr.New(sdlcerr.UnfrozenTests,
-		"there are test files the freeze does not hold",
-		strings.Join(unheld, ", ")+" appeared after the freeze was taken, so nothing says "+
-			"it was written before the code")
-	if s.Config().Freeze.AllowNewTestFiles {
-		return refusal.WithFix(`run "sdlc freeze" again -- freeze.allow_new_test_files is on, ` +
+		"there are test files the freeze does not hold", strings.Join(why, "; "))
+	switch {
+	case len(h.taken) > 0:
+		return h, refusal.WithFix(takenFix(s, id, h.taken[0]) + `; or they reopen the story to change the tests: ` +
+			`"sdlc unfreeze --reason ..." is theirs alone`)
+	case s.Config().Freeze.AllowNewTestFiles:
+		return h, refusal.WithFix(`run "sdlc freeze" again -- freeze.allow_new_test_files is on, ` +
 			"so it adds them to the freeze")
 	}
-	return refusal
+	return h, refusal
 }
 
 // requireFreshReviews re-asks the reviewed gates about the tree as it is now.
@@ -1201,7 +1242,8 @@ func plural(n int, one, many string) string {
 }
 
 // requireFreeze holds the test gate to the thing it exists for.
-func requireFreeze(ctx context.Context, s *store.Store, id string) error {
+func requireFreeze(ctx context.Context, rd *reading, id string, record *model.Record) error {
+	s := rd.s
 	lock, err := s.Lock()
 	if err != nil {
 		return err
@@ -1218,7 +1260,9 @@ func requireFreeze(ctx context.Context, s *store.Store, id string) error {
 			"a freeze covers one story's acceptance tests, and this one was taken "+
 				"for a different story")
 	}
-	return requireHeldTests(ctx, s, lock)
+	h, err := requireHeldTests(ctx, s, id, lock, rd.freezeAt(ctx, id, record))
+	rd.trunkTests, rd.judged = h.accepted, err == nil
+	return err
 }
 
 // requireDocuments refuses to record a pass for a gate whose documents are not

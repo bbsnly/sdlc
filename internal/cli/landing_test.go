@@ -514,29 +514,11 @@ func TestAC2AndT9AStoryAPersonAlreadyBroughtToTrunkIsRecordedAsLandedAndDone(t *
 
 var ldRebaseCommand = regexp.MustCompile(`git (-C \S+ )?rebase (refs/heads/)?main\b`)
 
-// AC-3: trunk moved since the branch was cut is a refusal of its own that says
-// the branch is to be rebased onto trunk and how, and moves no branch.
-func TestAC3LandingOnATrunkThatMovedIsRefusedAndSaysToRebaseAndHow(t *testing.T) {
-	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
-	ldMoveTrunk(t, main)
-	refs := swRefs(t, main)
-
-	out := swRefused(t, ldBehindTrunk, wt, ldSession, "stop")
-	suSays(t, out, "rebase")
-	if !ldRebaseCommand.MatchString(out) {
-		t.Errorf("the refusal does not give the command that rebases the branch onto trunk:\n%s", out)
-	}
-	if got := swRefs(t, main); got != refs {
-		t.Errorf("the refused landing moved a branch:\nbefore\n%s\nafter\n%s", refs, got)
-	}
-	ldStillHeld(t, main, wt)
-}
-
 // AC-3: a trunk rewritten so that it no longer holds the commit the branch was
-// cut from has moved too.
-func TestAC3ATrunkRewrittenSinceTheCutIsRefusedTheSameWay(t *testing.T) {
+// cut from is a refusal of its own, and moves no branch. A trunk that only
+// moved on is one the stop puts the story onto itself (US-088,
+// landing_ontrunk_test.go).
+func TestAC3ATrunkRewrittenSinceTheCutIsRefusedAndMovesNoBranch(t *testing.T) {
 	t.Parallel()
 	main, wt := ldWalked(t, ldWalk{finished: true, spike: true})
 	ldBookkeeping(t, wt)
@@ -592,7 +574,8 @@ func TestAC4ARebasedStoryLandsOnceItsTestsAndQualityCommandsPassOnTheRebasedTree
 }
 
 // AC-4: a configured command that fails on the rebased tree, and only there,
-// keeps the story off trunk, and the refusal names the command.
+// keeps the story off trunk, and the refusal names the command. The story
+// stays with its session to rework (US-088 AC-11): the fix hands it to nobody.
 func TestAC4ACommandThatFailsOnTheRebasedTreeKeepsTheStoryOffTrunk(t *testing.T) {
 	t.Parallel()
 	for _, key := range ldQuality {
@@ -633,7 +616,7 @@ func TestAC4ACommandThatFailsOnTheRebasedTreeKeepsTheStoryOffTrunk(t *testing.T)
 					t.Errorf("the refusal does not say commands.%s exited 1:\n%s", key, said)
 				}
 			}
-			suSays(t, fix, "sdlc escalate")
+			otNotHandedOver(t, main, fix)
 			if got := ldTrunk(t, main); got != before {
 				t.Errorf("trunk moved to %s though commands.%s failed on the tree", got, key)
 			}
@@ -642,21 +625,17 @@ func TestAC4ACommandThatFailsOnTheRebasedTreeKeepsTheStoryOffTrunk(t *testing.T)
 	}
 }
 
-// AC-4 and the person's answer to OQ-1: the freeze across a rebase is the
-// freeze as it is. A test file the rebase brought in, new or changed, is
-// refused as the freeze refuses it anywhere, and nothing is frozen again.
-func TestAC4AndQ1ATestFileTheRebaseBroughtInBreaksTheFreezeAndNothingIsFrozenAgain(t *testing.T) {
+// AC-4 and the freeze across a rebase: the freeze is the freeze as it is, and
+// nothing is frozen again. A test file the story's own branch brought in after
+// the rebase, new or a frozen one changed, is refused as the freeze refuses it
+// anywhere. The test files trunk brought in are trunk's (US-088 AC-1, AC-2).
+func TestAC4ATestFileTheStoryChangedAfterARebaseBreaksTheFreezeAndNothingIsFrozenAgain(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name, code string
-		trunk      func(t *testing.T, main string)
+		name, code, rel string
 	}{
-		{"Q1 a test file another story added", ldUnfrozenTest, func(t *testing.T, main string) {
-			swCommitFile(t, main, "internal/refund_test.go", "package internal\n", "another story's test")
-		}},
-		{"Q1 a frozen test another story changed", ldFrozenMoved, func(t *testing.T, main string) {
-			swCommitFile(t, main, "internal/tax_test.go", "package internal\n\n// changed on trunk\n", "another story's change")
-		}},
+		{"a test file the story added", ldUnfrozenTest, "internal/refund_test.go"},
+		{"a frozen test the story changed", ldFrozenMoved, "internal/tax_test.go"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			main, wt := ldWalked(t, ldWalk{finished: true, taxTest: true})
@@ -665,8 +644,10 @@ func TestAC4AndQ1ATestFileTheRebaseBroughtInBreaksTheFreezeAndNothingIsFrozenAga
 			if lock == "" {
 				t.Fatal("precondition: the story's worktree holds no freeze")
 			}
-			tc.trunk(t, main)
+			ldMoveTrunk(t, main)
 			ldRebase(t, wt)
+			swCommitFile(t, wt, tc.rel, "package internal\n\n// changed by the story\n", "the story's own change to a test")
+			ldReviewAgain(t, wt)
 			before := ldTrunk(t, main)
 
 			swRefused(t, tc.code, wt, ldSession, "stop")
@@ -682,34 +663,18 @@ func TestAC4AndQ1ATestFileTheRebaseBroughtInBreaksTheFreezeAndNothingIsFrozenAga
 }
 
 // AC-4 and the person's answer to OQ-2: a pre-commit approval holds for the
-// work it was given for. Rebased, a story in a tier that pauses is approved
-// again before it lands; not rebased, the approval it has is enough.
-func TestAC4AndQ2AStoryInATierThatPausesIsApprovedAgainAfterARebase(t *testing.T) {
+// work it was given for. A story in a tier that pauses lands on the approval
+// it has where its work is still that work.
+func TestAC4AndQ2AStoryInATierThatPausesLandsOnTheApprovalItHas(t *testing.T) {
 	t.Parallel()
-	for _, rebase := range []bool{true, false} {
-		name := map[bool]string{true: "Q2 rebased", false: "Q2 not rebased"}[rebase]
-		t.Run(name, func(t *testing.T) {
-			main, wt := ldWalked(t, ldWalk{tier: "high"})
-			ldWork(t, wt)
-			swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
-			ldApproved(t, wt)
-			swPass(t, wt, ldSession, model.GateCommit, "")
-			tip := ldBookkeeping(t, wt)
-			if !rebase {
-				ldLanded(t, main, wt, tip)
-				return
-			}
-			ldMoveTrunk(t, main)
-			ldRebase(t, wt)
-			before := ldTrunk(t, main)
+	main, wt := ldWalked(t, ldWalk{tier: "high"})
+	ldWork(t, wt)
+	swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
+	ldApproved(t, wt)
+	swPass(t, wt, ldSession, model.GateCommit, "")
+	tip := ldBookkeeping(t, wt)
 
-			swRefused(t, ldNotApproved, wt, ldSession, "stop")
-			if got := ldTrunk(t, main); got != before {
-				t.Errorf("a rebased story in a tier that pauses reached trunk, at %s, on the approval of the tree before", got)
-			}
-			ldStillHeld(t, main, wt)
-		})
-	}
+	ldLanded(t, main, wt, tip)
 }
 
 // ---------------------------------------------------------------- AC-5

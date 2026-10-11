@@ -1,10 +1,10 @@
 // US-029.3 end to end: a session working a story in its worktree, as the
 // runbook directs and through the shipped launcher, lands the finished story on
 // trunk itself -- the bookkeeper's CODEMAP.md committed on the story's branch
-// after the retro, then `sdlc stop` -- with no person running git; after a
-// refusal for a trunk that moved, it rebases and lands; and while it holds the
-// story, the hook refuses it the commands that would move trunk or a story
-// branch instead.
+// after the retro, then `sdlc stop` -- with no person running git; a story it
+// rebased onto a trunk that moved lands too; and while it holds the story, the
+// hook refuses it the commands that would move trunk or a story branch
+// instead.
 //
 // The project ignores the loop's own state, so that what a story commits is
 // its work and nothing of .sdlc/state is carried to trunk. Helpers carry a
@@ -119,10 +119,10 @@ func TestAC1TheRunbooksSessionLandsItsFinishedStoryWithoutAPersonRunningGit(t *t
 	}
 }
 
-// AC-3 and AC-4 as a session meets them: a trunk that moved is refused with
-// its own code, the hook lets the session rebase its own branch onto trunk,
-// and the rebased story lands.
-func TestAC3AndAC4ASessionRebasesOntoTheTrunkThatMovedAndThenLands(t *testing.T) {
+// AC-4 as a session meets it: a story the session rebased onto the trunk that
+// moved, which the hook lets it do on its own branch, lands as rebased. That
+// it need not rebase at all is US-088's, in landing_ontrunk_test.go.
+func TestAC4AStoryTheSessionRebasedOntoTheTrunkThatMovedLands(t *testing.T) {
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := landRepository(t, binary)
@@ -141,13 +141,6 @@ func TestAC3AndAC4ASessionRebasesOntoTheTrunkThatMovedAndThenLands(t *testing.T)
 	writeFile(t, filepath.Join(main.dir, "CHANGES.md"), "another story's work\n")
 	git(t, main.dir, "add", "--", "CHANGES.md")
 	git(t, main.dir, "-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--quiet", "-m", "another story lands")
-	moved := landTrunk(t, main)
-
-	out, code := s.here().try(t, "stop")
-	refusedWith(t, out, code != 0, "SDLC-E0054")
-	if got := landTrunk(t, main); got != moved {
-		t.Fatalf("the refused landing moved trunk to %s", got)
-	}
 
 	s.do("", "Bash", running(s.at.in(s.tree, "git rebase main")))
 	git(t, s.tree, "-c", "user.email=t@example.com", "-c", "user.name=Test", "rebase", "--quiet", "main")

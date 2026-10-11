@@ -48,7 +48,12 @@ var unsealed = []string{
 	"GIT_REPLACE_REF_BASE", "GIT_NO_REPLACE_OBJECTS", "GIT_GRAFT_FILE",
 	"GIT_ICASE_PATHSPECS", "GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS",
 	"GIT_ATTR_SOURCE",
+	"GIT_EDITOR", "GIT_SEQUENCE_EDITOR",
 }
+
+// privateDir stands, in a setting handed to sealedCall, for the call's private
+// directory, which exists only while the call runs.
+const privateDir = "{sdlc-private}"
 
 // sealedEnviron is the environment of a sealed call whose private directory
 // is private.
@@ -98,7 +103,7 @@ func sealedCall(ctx context.Context, dir string, settings []string, stdin []byte
 		"-c", "maintenance.auto=false",
 	}
 	for _, kv := range settings {
-		full = append(full, "-c", kv)
+		full = append(full, "-c", strings.ReplaceAll(kv, privateDir, filepath.ToSlash(private)))
 	}
 	if dir != "" {
 		if abs, err := filepath.Abs(dir); err == nil {
@@ -303,13 +308,7 @@ func ChangedBetween(ctx context.Context, root, base, tip string) ([]string, erro
 	if err != nil {
 		return nil, err
 	}
-	var changed []string
-	for _, name := range strings.Split(string(out), "\x00") {
-		if name != "" {
-			changed = append(changed, name)
-		}
-	}
-	return changed, nil
+	return nulSeparated(out), nil
 }
 
 // atOrUnder reports whether the slash path name is the path made of dir's
@@ -584,6 +583,21 @@ func rebasingOrBisecting(gitDir, branch string) bool {
 // Each hunk header is cut down to its marker, and each index line left out,
 // because both say where the change sits, and a rebase moves it.
 func Fingerprint(ctx context.Context, root, base, tip string, leaveOut ...string) (string, error) {
+	return fingerprint(ctx, root, "-U3", base, tip, leaveOut)
+}
+
+// LinesFingerprint is Fingerprint without the lines around a change: its own
+// added and removed lines, file by file. Trunk changing a line beside the
+// change moves Fingerprint and not this, and this alone cannot say where in a
+// file a line sits. The landing asks it from both sides of its own replay,
+// the story's change and trunk's, which together can.
+func LinesFingerprint(ctx context.Context, root, base, tip string, leaveOut ...string) (string, error) {
+	return fingerprint(ctx, root, "-U0", base, tip, leaveOut)
+}
+
+// fingerprint is the change from base to tip as one hash, with as many lines
+// of context as the -U option unified asks for.
+func fingerprint(ctx context.Context, root, unified, base, tip string, leaveOut []string) (string, error) {
 	if err := fullHashes(base, tip); err != nil {
 		return "", err
 	}
@@ -591,21 +605,16 @@ func Fingerprint(ctx context.Context, root, base, tip string, leaveOut ...string
 	// configuration and chosen by its attributes, outranked the one on the
 	// command line.
 	settings := []string{"core.quotePath=true", "diff.suppressBlankEmpty=false", "diff.relative=false"}
-	drivers, err := sealed(ctx, root, "config", "-z", "--get-regexp", `^diff\..+\.algorithm$`)
-	var exit *exec.ExitError
-	switch {
-	case errors.As(err, &exit) && exit.ExitCode() == 1:
-	case err != nil:
+	drivers, err := configured(ctx, root, `^diff\..+\.algorithm$`)
+	if err != nil {
 		return "", err
 	}
-	for _, entry := range strings.Split(string(drivers), "\x00") {
-		if key, _, _ := strings.Cut(entry, "\n"); key != "" {
-			settings = append(settings, key+"=myers")
-		}
+	for _, key := range drivers {
+		settings = append(settings, key+"=myers")
 	}
 	args := []string{"diff-tree", "-r", "-p", "--text", "--binary", "--full-index",
 		"--no-color", "--no-ext-diff", "--no-textconv", "--no-renames",
-		"-U3", "--inter-hunk-context=0", "--diff-algorithm=myers", "--indent-heuristic",
+		unified, "--inter-hunk-context=0", "--diff-algorithm=myers", "--indent-heuristic",
 		"--src-prefix=a/", "--dst-prefix=b/", "--submodule=short", "--ignore-submodules=none",
 		base + "^{commit}", tip + "^{commit}", "--"}
 	for _, p := range leaveOut {

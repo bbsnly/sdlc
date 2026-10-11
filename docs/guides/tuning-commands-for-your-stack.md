@@ -203,7 +203,9 @@ The same list is checked again as the story moves. A file that matches
 `paths.tests` and that the freeze does not hold refuses `tests_frozen`, `plan`,
 `implementation`, `verification` and `commit` with
 [SDLC-E0043](../troubleshooting.md#sdlc-e0043). That includes a file that
-became a test because you widened `paths.tests` mid-story. With
+became a test because you widened `paths.tests` mid-story. In a story's own
+worktree, a test file that only trunk changed since the story was cut is not
+one of these. With
 `freeze.allow_new_test_files` on, running `sdlc freeze` again adds such files.
 
 ### Omitted is not empty

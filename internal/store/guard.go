@@ -148,6 +148,50 @@ func (s *Store) LockLanding(id string) (*Guard, error) {
 	})
 }
 
+// LockLandings takes the one lock every landing of the project holds, from
+// before its first read of trunk to its last write, so that stories land one
+// after another and the second finds trunk where the first left it. Without
+// it two stops that began together each ran the project's commands and one
+// lost the race for trunk, to run them all again.
+//
+// It is beside the project's lock and each story's own, and none of them. It
+// is tried for up to wait, and at once where wait is nothing; the refusal
+// names whoever holds it, so that a stop can say whom it waits for.
+//
+// That refusal alone wraps ErrLandingHeld. A lock that could not be made at
+// all is refused with the same code, and has no holder to wait for.
+func (s *Store) LockLandings(id string, wait time.Duration) (*Guard, error) {
+	if err := CheckID(id); err != nil {
+		return nil, err
+	}
+	project, err := guardPath(s.LockRoot())
+	if err != nil {
+		return nil, err
+	}
+	path := project + "-landing"
+	return take(path, "stop "+id, wait, func() error {
+		return sdlcerr.New(sdlcerr.StateUnwritable,
+			"another story is still landing",
+			heldBy(path)+" holds the landing lock at "+sdlcerr.QuotePath(path)+", and stories land on trunk one at a time").
+			WithFix("nothing has changed, so run \"sdlc stop\" again once that landing has finished. Where it is hung, " +
+				"a person ends it -- Ctrl+C in its terminal, or by ending the process named above -- and it gives the " +
+				"lock back as it goes; one killed outright leaves the lock, which breaks open once it is " +
+				strconv.Itoa(int(guardStale/time.Minute)) + " minutes" + " old with its holder gone. An assistant runs \"sdlc stop\" once more and, " +
+				"refused again, hands the story to a person with \"sdlc escalate\" and stops").
+			WithCause(ErrLandingHeld)
+	})
+}
+
+// ErrLandingHeld is the cause of LockLandings' refusal where another stop
+// holds the landing lock.
+// It is a value of its own type, never shown: the refusal it is the cause of
+// says everything a person reads.
+var ErrLandingHeld error = landingHeld{}
+
+type landingHeld struct{}
+
+func (landingHeld) Error() string { return "another stop holds the landing lock" }
+
 // take takes the lock at path, waiting up to wait for whoever has it, and
 // returns busy's refusal once it has waited that long.
 func take(path, what string, wait time.Duration, busy func() error) (*Guard, error) {

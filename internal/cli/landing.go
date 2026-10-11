@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -248,12 +249,19 @@ type lander struct {
 	// run, and taken again after.
 	unlock *func()
 	m      mainSettings
+	// held is the freeze as the check that refused it judged it, for the fix.
+	held heldState
+	// put is the replay this stop made, where it put the story onto trunk.
+	put *model.Replay
 }
 
 // landState is what L1 to L8 found: T is trunkTip, S tip, B base and R from.
 type landState struct {
 	record                    *model.Record
 	trunkTip, tip, base, from string
+	// fork is where S left trunk's history, set only where trunk has moved on
+	// past it: the story is then put onto T before it lands.
+	fork string
 	// trunkCfg is the configuration trunk commits at T, which says what the
 	// commands are and what passing them means.
 	trunkCfg config.Config
@@ -266,6 +274,8 @@ type landState struct {
 	marked           bool
 	change           string
 	rebased, changed bool
+	// accepted is the test files the freeze check took as trunk's own.
+	accepted *model.TrunkTests
 }
 
 // needsCommands reports whether the configured commands run before the story
@@ -291,6 +301,19 @@ func landIfFinished(cmd *cobra.Command, s *store.Store, active string, unlock *f
 	if err != nil {
 		return true, l.refused(err)
 	}
+	// Stories land one at a time: every read of trunk, the replay, the
+	// commands and the move are inside the landing lock, so that the second of
+	// two stops finds trunk as the first left it.
+	turn, landed, err := l.waitItsTurn()
+	if turn != nil {
+		defer turn.Release()
+	}
+	if err != nil {
+		return true, l.refused(err)
+	}
+	if landed {
+		return true, l.landedMeanwhile()
+	}
 	// Held until stop returns, the commands included, so that a second stop
 	// cannot land the story beside this one while the project's lock is let go.
 	guard, err := s.LockLanding(id)
@@ -299,6 +322,102 @@ func landIfFinished(cmd *cobra.Command, s *store.Store, active string, unlock *f
 	}
 	defer guard.Release()
 	return true, l.land()
+}
+
+// landingWait is how long a stop waits for the landing in front of it. It is
+// under the ten minutes a session's command may run for, with room for the
+// stop's own work after it.
+const landingWait = 8 * time.Minute
+
+// waitItsTurn takes the lock every landing holds. Where another stop holds it,
+// it says which, lets the project's lock go so that every other command goes
+// on, waits, and asks L0 again once it has both: a person may have answered,
+// or sent the story back, while it waited. It reports true where the story
+// landed meanwhile.
+func (l *lander) waitItsTurn() (*store.Guard, bool, error) {
+	// Tried at once, with the project's lock held. On Windows a lock its
+	// holder is letting go of reads as a denial, which the store waits out for
+	// up to its guardWait before it says so: the same wait any command gives
+	// the project's lock, and only while a holder is on its way out.
+	turn, err := l.s.LockLandings(l.id, 0)
+	if err == nil {
+		return turn, false, nil
+	}
+	// Only a lock somebody holds is waited for. One that could not be made
+	// has no holder to name, and waiting would not make it.
+	var busy *sdlcerr.Error
+	if !errors.Is(err, store.ErrLandingHeld) || !errors.As(err, &busy) {
+		return nil, false, err
+	}
+	// The landing lock is never waited for with the project's lock held: the
+	// stop in front takes that one back once its commands have run.
+	(*l.unlock)()
+	*l.unlock = func() {}
+	fmt.Fprintf(l.cmd.ErrOrStderr(), "sdlc: %s; this waits up to %s for it. Nothing has changed: a stop cut short "+
+		"while it waits can be run again at once\n", busy.Why, minutes(landingWait))
+	if turn, err = l.s.LockLandings(l.id, landingWait); err != nil {
+		if errors.As(err, &busy) {
+			still := *busy
+			still.What = "another story was still landing after " + minutes(landingWait)
+			return nil, false, &still
+		}
+		return nil, false, err
+	}
+	g, err := store.Lock(l.s.LockRoot(), "stop")
+	if err != nil {
+		return turn, false, err
+	}
+	*l.unlock = g.Release
+	// The first stop of the same story takes its worktree away as it lands,
+	// and so can a person, for a story that did not land: the backlog says
+	// which, never the missing directory.
+	if _, err := os.Stat(l.s.Root()); errors.Is(err, fs.ErrNotExist) {
+		if story, _, err := l.s.Story(l.id); err == nil && story.Status == model.StatusDone {
+			return turn, true, nil
+		}
+		return turn, false, sdlcerr.New(sdlcerr.LandingCheckFailed,
+			worktreeIn(l.id)+" is gone, and "+quote(l.id)+" has not landed",
+			"the worktree was taken away while this stop waited its turn to land, and the backlog does not have "+
+				"the story as done").
+			WithFix(`run "sdlc status" and "sdlc doctor" in the main checkout, which say where the story and its ` +
+				`branch stand; ` + assistantStops)
+	}
+	active, err := l.s.Active()
+	if err != nil {
+		return turn, false, err
+	}
+	id, running, err := whenItLands(l.s, active)
+	if err != nil {
+		return turn, false, err
+	}
+	if id == l.id && running == l.running {
+		return turn, false, nil
+	}
+	if story, _, err := l.s.Story(l.id); err == nil && story.Status == model.StatusDone {
+		return turn, true, nil
+	}
+	return turn, false, sdlcerr.New(sdlcerr.LandingCheckFailed,
+		quote(l.id)+" changed while this stop waited its turn to land",
+		"the landing asks again, once the story in front has landed, whether this one is still finished and held "+
+			"here, and it no longer is: a gate on it was recorded again, a question went to a person, or the "+
+			"iteration ended").
+		WithFix(`nothing is to be put right for the landing: "sdlc status" in ` + worktreeIn(l.id) +
+			` says where the story stands now. Where a gate is open again, the loop carries on from it; where a ` +
+			`question is with a person, an assistant stops and tells the person`)
+}
+
+// minutes is a wait as a person reads it.
+func minutes(d time.Duration) string { return strconv.Itoa(int(d/time.Minute)) + " minutes" }
+
+// landedMeanwhile is what a stop says where another stop of the same story
+// landed it while this one waited: there is nothing left for it to do.
+func (l *lander) landedMeanwhile() error {
+	if wantJSON(l.cmd) {
+		return emitJSON(l.cmd.OutOrStdout(), stopPayload{OK: true, Story: l.id, Done: true})
+	}
+	fmt.Fprintf(l.cmd.OutOrStdout(), "%s landed while this stop waited, by another stop: there is nothing left to "+
+		"land here, and `sdlc status` in the main checkout says where things stand.\n", l.id)
+	return nil
 }
 
 // whenItLands is L0: the story stop lands in this checkout and whether an
@@ -378,6 +497,13 @@ func (l *lander) land() error {
 	if err != nil {
 		return l.refused(err)
 	}
+	// Trunk moved on since the story left it: everything above was asked of
+	// the story as it stands, and only then is it put onto trunk.
+	if st.fork != "" {
+		if st, err = l.ontoTrunk(ctx, st); err != nil {
+			return l.refused(err)
+		}
+	}
 	if st.needsCommands() {
 		if err := l.runLandingCommands(ctx, st); err != nil {
 			return l.refused(err)
@@ -434,9 +560,13 @@ func (l *lander) check(ctx context.Context) (landState, error) {
 		return st, err
 	}
 	// The freeze as it is, across a rebase too: nothing is frozen again.
-	if err := requireIntactFreeze(ctx, l.s, l.id); err != nil {
+	// A test file that only trunk changed since the story was cut is trunk's.
+	held, err := requireIntactFreeze(ctx, l.s, l.id, freezeAt{cut: st.record.Cut, on: st.from, tip: st.tip})
+	if err != nil {
+		l.held = held
 		return st, l.freezeFix(err)
 	}
+	st.accepted = held.accepted
 	if err := l.changeChecks(ctx, &st); err != nil {
 		return st, err
 	}
@@ -592,10 +722,24 @@ func (l *lander) whereTrunkStands(ctx context.Context, st *landState) error {
 		return err
 	}
 	if !forward {
-		what := trunk + " was rewritten since " + branch + " was cut"
-		if moved, err := gitx.IsAncestor(ctx, root, st.base, T); err == nil && moved {
-			what = trunk + " has moved on since " + branch + " was cut"
+		// A trunk that only moved on, as it does each time another story
+		// lands, is one the stop puts the story onto itself. The story is
+		// judged first from where it left trunk's history.
+		moved, err := gitx.IsAncestor(ctx, root, st.base, T)
+		if err != nil {
+			return err
 		}
+		if moved {
+			fork, err := gitx.MergeBase(ctx, root, T, S)
+			if err != nil {
+				return err
+			}
+			if fork != "" {
+				st.fork, st.from, st.marked = fork, fork, false
+				return nil
+			}
+		}
+		what := trunk + " was rewritten since " + branch + " was cut"
 		return sdlcerr.New(sdlcerr.BranchBehindTrunk, what,
 			trunk+" is at "+T[:12]+", which "+branch+" at "+S[:12]+" does not have in its history, and a landing "+
 				"only ever moves "+trunk+" forward to the story's commits").
@@ -734,7 +878,10 @@ func (l *lander) changeChecks(ctx context.Context, st *landState) error {
 	}
 	st.change = change
 	st.rebased = st.from != st.base
-	st.changed = st.record.Change == "" || change != st.record.Change
+	// A tip the stop made itself was held, as it was made, to the change the
+	// check before it had just passed. Every other tip is held to the change
+	// the commit gate recorded.
+	st.changed = !ownReplay(*st) && (st.record.Change == "" || change != st.record.Change)
 	if st.changed {
 		holds, err := gitx.IsAncestor(ctx, root, st.base, st.trunkTip)
 		if err != nil {
@@ -804,14 +951,80 @@ func (l *lander) requireApprovalAgain(ctx context.Context, st landState) error {
 	if why == "" {
 		return nil
 	}
-	since := "since it was rebased"
-	if !st.rebased {
-		since = "since its change changed"
+	since := " since it was rebased"
+	switch {
+	case ownReplay(st):
+		// The stop's own replay is the reviewed change line for line, so the
+		// question is the one the commit gate asked, of the tree it asked it
+		// of: no tree after the replay is one a person saw.
+		since = ""
+		if reviewed := reviewedTree(st.record); reviewed != "" {
+			if why = st.record.WaitsForApproval(tier, reviewed); why == "" {
+				return nil
+			}
+		}
+	case !st.rebased:
+		since = " since its change changed"
 	}
-	return sdlcerr.New(sdlcerr.ApprovalRequired, quote(l.id)+" has not been approved by a person "+since, why).
+	return sdlcerr.New(sdlcerr.ApprovalRequired, quote(l.id)+" has not been approved by a person"+since, why).
 		WithFix(`hand it to a person with "sdlc escalate pre_commit_approval --message ..." and stop; once they have ` +
 			`run "sdlc approve ` + l.id + `" in ` + worktreeIn(l.id) + ` on the work as it now is, "sdlc stop" there ` +
 			`lands it`)
+}
+
+// ownReplay reports whether S is the commit the stop itself made when it put
+// the story onto the trunk commit the change is now measured from. Commits are
+// named by their content, so a tip the mark names is the very commit that stop
+// made and measured, and no other tip is taken for it.
+func ownReplay(st landState) bool {
+	if st.record == nil || st.record.Replay == nil {
+		return false
+	}
+	r := st.record.Replay
+	return r.To == st.tip && r.Onto == st.from
+}
+
+// reviewedTree is the tree the story's code reviews are stamped with, as the
+// commit gate found them when it last passed, or "" where there is none to
+// name: no pass, no review, reviews of different trees, or a code review
+// recorded since that pass.
+//
+// A review is stamped with the tree as it is when it is recorded, whatever its
+// verdict, and a reviewer can record one at any time. One recorded after the
+// commit gate could otherwise choose which of a person's approvals the landing
+// reads: put the files back as they were for an earlier answer, record the
+// reviews, put the files back again. It is read from the record's events,
+// which are in the order they were written, because two timestamps in one
+// second do not say which came first.
+func reviewedTree(r *model.Record) string {
+	passed := -1
+	for i, e := range r.Events {
+		switch {
+		case e.Type == model.EventGate && e.Message == model.GateEvent(model.GateCommit, model.GatePass):
+			passed = i
+		case e.Type == model.EventReview:
+			// Any review at all, whichever gate it names: the texts are the
+			// ones the gate and review commands write, by the same constants,
+			// and a review event this could not read must not pass unseen.
+			passed = -1
+		}
+	}
+	if passed < 0 {
+		return ""
+	}
+	tree, seen := "", map[string]bool{}
+	for i := len(r.Reviews) - 1; i >= 0; i-- {
+		rv := r.Reviews[i]
+		if rv.Gate != model.GateCodeReview || seen[rv.Role] {
+			continue
+		}
+		seen[rv.Role] = true
+		if rv.Subject == "" || tree != "" && rv.Subject != tree {
+			return ""
+		}
+		tree = rv.Subject
+	}
+	return tree
 }
 
 // reopenFix is the fix where the reviewed change cannot be told apart from
@@ -835,17 +1048,27 @@ func reopenRoute(id string, g model.Gate) string {
 		in + `, then run "sdlc gate ` + string(g) + ` fail --story ` + id + ` --note ..." there and type /sdlc:next`
 }
 
-// rebaseFix is SDLC-E0054's fix against trunk at trunkTip: the plain rebase
-// the session may run where trunk still holds B, and otherwise the rebase a
-// person runs, which replays only the story's own commits. A command in it is
-// built from the checked id, trunk as a shell reads it, and B's checked hash.
+// stopAgainFix is SDLC-E0054's fix where trunk moved under the landing: the
+// next stop finds trunk where it is then.
+func (l *lander) stopAgainFix() string {
+	return `run "sdlc stop" in ` + shellPath(l.s.Root()) + ` again: it puts ` + store.StoryBranch(l.id) + ` onto ` +
+		l.m.trunk + ` as it is then and runs the configured commands on that tree; refused the same way again, hand ` +
+		`the story to a person with "sdlc escalate" and stop`
+}
+
+// rebaseFix is SDLC-E0054's fix against trunk at trunkTip, for a state the
+// stop does not put right itself: the plain rebase a person runs where trunk
+// still holds B, and otherwise the one that replays only the story's own
+// commits. A command in it is built from the checked id, trunk as a shell
+// reads it, and B's checked hash.
 func (l *lander) rebaseFix(ctx context.Context, base, trunkTip, tip string) string {
 	root, trunk, branch, in := l.s.Root(), shellWord(l.m.trunk), store.StoryBranch(l.id), worktreeIn(l.id)
 	if holds, err := gitx.IsAncestor(ctx, root, base, trunkTip); err == nil && holds {
-		return `in the story's worktree, ` + in + ` in the main checkout, run "git rebase ` + trunk + `" to put ` +
-			branch + ` on top of ` + trunk + `, then "sdlc stop" there again, which runs the configured commands on the ` +
-			`rebased tree; a rebase that stops on a conflict is abandoned with "git rebase --abort", and an assistant ` +
-			`then hands the story to a person with "sdlc escalate" and stops`
+		// Reached for a merge commit alone: a trunk that only moved on is
+		// one the stop puts the story onto itself.
+		return `a person, in their own terminal: cd -- ` + shellPath(root) + `; then git rebase ` + trunk +
+			`, which leaves the merge out; then sdlc stop, which runs the configured commands on the rebased tree; ` +
+			assistantEscalates
 	}
 	how := "a rebase that replays onto " + trunk + " only the story's own commits"
 	if held, err := gitx.IsAncestor(ctx, root, base, tip); err == nil && held {
@@ -865,15 +1088,27 @@ func (l *lander) freezeFix(err error) error {
 	if !errors.As(err, &e) {
 		return err
 	}
-	branch, in := store.StoryBranch(l.id), worktreeIn(l.id)
+	trunk, branch, in := l.m.trunk, store.StoryBranch(l.id), worktreeIn(l.id)
 	switch e.Code {
 	case sdlcerr.FreezeBroken:
-		return e.WithFix(`a person restores the frozen tests on ` + branch + ` and runs "sdlc stop" in ` + in +
-			` again; or, where trunk's change to them is to stay, they reopen the story: ` + unfreezeRoute(l.id))
+		// Restoring is right only where the branch alone changed the test:
+		// where trunk changed it too, the frozen copy is without trunk's side.
+		return e.WithFix(`a frozen test that only ` + trunk + ` changed or removed is accepted as ` + trunk +
+			` has it, so the ones named were changed on ` + branch + ` itself, or by ` + branch + ` and ` + trunk +
+			` both. Where ` + branch + ` alone changed one, a person restores it there as it was frozen and runs ` +
+			`"sdlc stop" in ` + in + ` again. Where ` + trunk + ` changed it too, restoring it would take ` + trunk +
+			`'s change away, so there, and wherever the change is to stay, they reopen the story: ` +
+			unfreezeRoute(l.id))
 	case sdlcerr.UnfrozenTests:
-		return e.WithFix(`a person decides whether the test files the freeze does not hold, which a rebase can bring ` +
-			`in from trunk, belong with the story's: they take them out of ` + branch + ` and run "sdlc stop" in ` + in +
-			` again; or, to keep them, they reopen the story: ` + unfreezeRoute(l.id))
+		var fix string
+		if len(l.held.taken) > 0 {
+			fix = takenFix(l.s, l.id, l.held.taken[0]) + `, and runs "sdlc stop" in ` + in + ` again; `
+		}
+		if len(l.held.unheld) > 0 || fix == "" {
+			fix += `the test files named are neither held by the freeze nor ` + trunk + `'s own as ` + trunk +
+				` has them: a person takes them out of ` + branch + `, and runs "sdlc stop" in ` + in + ` again; `
+		}
+		return e.WithFix(fix + `or, to keep them as they are, they reopen the story: ` + unfreezeRoute(l.id))
 	}
 	return err
 }
@@ -892,18 +1127,9 @@ func unfreezeRoute(id string) string {
 // runLandingCommands is L9: the configured commands, as trunk commits them at
 // T, run in the worktree on S, each held to leaving S as it found it.
 func (l *lander) runLandingCommands(ctx context.Context, st landState) error {
-	root := l.s.Root()
-	dirty, err := gitx.Uncommitted(ctx, root, true)
-	if err != nil {
+	if err := l.nothingUncommitted(ctx,
+		"the configured commands run on the tree that lands, and would run with these in it"); err != nil {
 		return err
-	}
-	if len(dirty) > 0 {
-		return sdlcerr.New(sdlcerr.TreeNotCommitted,
-			"the story's worktree has changes nobody committed: "+quoteSome(dirty),
-			"the configured commands run on the tree that lands, and would run with these in it").
-			WithFix(`commit them on ` + store.StoryBranch(l.id) + ` -- the change is then not the one reviewed, and ` +
-				`the reviews are recorded again -- or stash them with "git stash push -- <path>", in ` +
-				worktreeIn(l.id) + `, then run "sdlc stop" there again`)
 	}
 	// The project's lock is let go for the run: the commands are the
 	// project's own, and can run for longer than any other command waits for
@@ -925,6 +1151,20 @@ func (l *lander) runLandingCommands(ctx context.Context, st landState) error {
 	}
 	*l.unlock = g.Release
 	return nil
+}
+
+// nothingUncommitted refuses a worktree holding anything nobody committed,
+// before the stop does to it what why says. Nothing is ever stashed for it.
+func (l *lander) nothingUncommitted(ctx context.Context, why string) error {
+	dirty, err := gitx.Uncommitted(ctx, l.s.Root(), true)
+	if err != nil || len(dirty) == 0 {
+		return err
+	}
+	return sdlcerr.New(sdlcerr.TreeNotCommitted,
+		"the story's worktree has changes nobody committed: "+quoteSome(dirty), why).
+		WithFix(`commit them on ` + store.StoryBranch(l.id) + ` -- the change is then not the one reviewed, and ` +
+			`the reviews are recorded again -- or stash them with "git stash push -- <path>", in ` +
+			worktreeIn(l.id) + `, then run "sdlc stop" there again`)
 }
 
 // runCommand runs one configured command in the worktree, in a process group
@@ -967,16 +1207,42 @@ func (l *lander) runCommand(ctx context.Context, st landState, key, command stri
 // printed is set apart under a line of its own, after everything sdlc says,
 // so that none of it can pass for the refusal's why or its fix.
 func (l *lander) commandFailed(st landState, key, how, printed string) error {
-	why := how + "; the landing runs the configured commands on the tree that lands whenever the story was rebased " +
-		"or its change is not the one that was reviewed. " + l.nothingLanded()
+	trunk, branch, wt := l.m.trunk, store.StoryBranch(l.id), shellPath(l.s.Root())
+	why := how + "; the landing runs the configured commands on the tree that lands whenever the story was put onto " +
+		"a trunk that moved, or its change is not the one that was reviewed. "
+	if l.put != nil {
+		why += branch + " now sits on " + trunk + " at " + st.trunkTip[:12] + ", where this stop put it. "
+	}
+	why += l.nothingLanded()
 	if printed == "" {
 		why += "\n\n  commands." + key + " printed nothing"
 	} else {
 		why += "\n\n  commands." + key + " printed:\n" + setApart(printed)
 	}
+	// The story stays with its session: a command that fails on the tree
+	// about to land is rework, or trunk's own fault, and neither is a question
+	// only a person can answer.
 	return closedRefusal{sdlcerr.New(sdlcerr.LandingCheckFailed,
-		"commands."+key+", as trunk commits it at "+st.trunkTip[:12]+", failed on "+store.StoryBranch(l.id)+" at "+
-			st.tip[:12], why)}
+		"commands."+key+", as trunk commits it at "+st.trunkTip[:12]+", failed on "+branch+" at "+st.tip[:12], why).
+		WithFix(`the story is still the session's. Read what commands.` + key + ` printed, above, then run that same ` +
+			`command on ` + trunk + ` as it is: ` + l.whereTrunkIs(st) + `. Where it fails there too, the failure is ` +
+			trunk + `'s and not the story's: tell the person, who puts ` + trunk + ` right, and then run "sdlc stop" in ` +
+			wt + ` again. Where it passes there, rework the story: in ` + wt + `, sdlc gate implementation fail --story ` +
+			l.id + ` --note "<what failed>", put it right, take the story through its gates again, and "sdlc stop" ` +
+			`then lands it`)}
+}
+
+// whereTrunkIs says where a session finds trunk's files as trunk commits them:
+// a checkout that has trunk checked out, where there is one. The main checkout
+// usually is, though it need not be, and it can hold work nobody committed.
+func (l *lander) whereTrunkIs(st landState) string {
+	trunk := l.m.trunk
+	holding, err := gitx.CheckedOut(l.cmd.Context(), l.s.Root(), trunk)
+	if err != nil || len(holding) == 0 {
+		return `no checkout has ` + trunk + ` checked out, so ask the person to run it on ` + trunk + ` at ` + st.trunkTip[:12]
+	}
+	return `in ` + shellPath(holding[0]) + `, which has ` + trunk + ` checked out, once "git status" there shows ` +
+		`no change to a file ` + trunk + ` tracks`
 }
 
 // unmoved holds a command to what it ran on: HEAD and story/<ID> still at S,
@@ -1055,7 +1321,7 @@ func (l *lander) askAgain(ctx context.Context, before landState) (landState, err
 		return before, sdlcerr.New(sdlcerr.BranchBehindTrunk,
 			l.m.trunk+" moved while the configured commands ran",
 			"it was at "+before.trunkTip[:12]+" when they started, and is at "+after.trunkTip[:12]+" now").
-			WithFix(l.rebaseFix(ctx, after.base, after.trunkTip, after.tip))
+			WithFix(l.stopAgainFix())
 	}
 	return after, nil
 }
@@ -1075,9 +1341,7 @@ func (l *lander) move(ctx context.Context, st landState) error {
 	l.takeMarkOff(mark)
 	var refusal *sdlcerr.Error
 	if errors.Is(err, gitx.ErrNotFastForward) && errors.As(err, &refusal) {
-		if now, terr := gitx.BranchTip(ctx, l.s.Root(), l.m.trunk); terr == nil {
-			return refusal.WithFix(l.rebaseFix(ctx, st.base, now, st.tip))
-		}
+		return refusal.WithFix(l.stopAgainFix())
 	}
 	return err
 }
@@ -1102,6 +1366,7 @@ func (l *lander) finish(ctx context.Context, st landState) error {
 	r.CommitBase, r.Commit, r.Base = st.from, st.tip, st.tip
 	r.HeadPastCommit, r.RangeUnknown = "", false
 	r.ChangeBase, r.Change, r.Landing = st.from, st.change, nil
+	recordAccepted(l.s, l.id, r, st.accepted)
 	r.Append("landed", landedEvent(l.m.trunk, st), now)
 	if l.running {
 		r.Append("loop_end", "iteration ended", now)
@@ -1134,6 +1399,9 @@ func landedEvent(trunk string, st landState) string {
 	}
 	if st.from != st.base {
 		msg += "; the reviewed change began at " + st.base[:12]
+		if ownReplay(st) {
+			msg += ", and sdlc stop put it onto " + trunk + " at " + st.from[:12]
+		}
 	}
 	return msg
 }
@@ -1155,9 +1423,15 @@ func landedLines(id, trunk string, st landState, holding []string, running bool)
 		}
 		lines = append(lines, moved)
 	}
+	if ownReplay(st) {
+		lines = append(lines, replayedLine(id, trunk, *st.record.Replay, false)+".")
+	}
 	if st.from != st.base {
 		lines = append(lines, fmt.Sprintf("The reviewed change began at %s; the record names %s..%s as what landed.",
 			st.base[:12], st.from[:12], st.tip[:12]))
+	}
+	if st.accepted != nil {
+		lines = append(lines, acceptedLine(id, trunk, st.accepted, false)+".")
 	}
 	lines = append(lines, "The backlog and "+id+"'s record are changed in the main checkout and not committed.")
 	if running {
@@ -1307,4 +1581,168 @@ func setApart(printed string) string {
 		}, line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// ontoTrunk puts the story's commits onto trunk at T, where trunk has moved on
+// since S left its history, and returns the landing's checks asked again of
+// the result. It is reached only once every check has passed on S.
+//
+// The four commits it measures are the ones those checks read: S, the fork F
+// and T by their full hashes, never HEAD read again, and S' as the worktree
+// has it once the replay is done. A commit slipped in beside the stop, before
+// the replay or after it, fails the measure or is not the tip the mark names.
+func (l *lander) ontoTrunk(ctx context.Context, st landState) (landState, error) {
+	root, trunk, branch := l.s.Root(), l.m.trunk, store.StoryBranch(l.id)
+	S, F, T := st.tip, st.fork, st.trunkTip
+	if err := l.nothingUncommitted(ctx, "putting "+branch+"'s commits onto "+trunk+" writes the worktree's files, "+
+		"and nothing a person left there is stashed or written over"); err != nil {
+		return st, err
+	}
+	fmt.Fprintf(l.cmd.ErrOrStderr(), "sdlc: %s is at %s; putting %s's commits onto it in %s\n",
+		trunk, T[:12], branch, worktreeIn(l.id))
+	if err := gitx.Replay(ctx, root, T, F); err != nil {
+		return st, l.notReplayed(ctx, st, err)
+	}
+	after, err := l.worktreeReady(ctx)
+	if err != nil {
+		return st, err
+	}
+	// The result is the reviewed change line for line only where both hold:
+	// the story's change is the same on the new trunk, and what came under
+	// the story is trunk's change and nothing else. The first alone passes a
+	// line that moved within its file.
+	same, err := l.sameLines(ctx, [2]string{F, S}, [2]string{T, after})
+	if err == nil && same {
+		same, err = l.sameLines(ctx, [2]string{F, T}, [2]string{S, after})
+	}
+	if err != nil {
+		return st, err
+	}
+	if !same {
+		return st, sdlcerr.New(sdlcerr.ReviewsMissing, branch+" is not the change its reviewers saw",
+			"its change onto "+trunk+" at "+T[:12]+" is not, line for line, the change that was reviewed at "+S[:12]+
+				"; "+branch+" now sits on "+trunk+", at "+after[:12]).
+			WithFix(`in ` + worktreeIn(l.id) + `, have the verifier and the code reviewers review ` + branch +
+				` again as it is committed and record their reviews ("sdlc review list" names who), then run ` +
+				`"sdlc stop" there again, which runs the configured commands on it; if one of them blocks, hand the ` +
+				`story to a person with "sdlc escalate" and stop`)
+	}
+	// Only now, and in one save with its event: a mark is what lets a later
+	// stop take this tip for the reviewed change without asking again.
+	r, err := l.s.Record(l.id)
+	if err != nil {
+		return st, err
+	}
+	put := model.Replay{From: S, To: after, Onto: T}
+	r.Replay = &put
+	r.Append("replayed", replayedLine(l.id, trunk, put, true), l.s.Now())
+	if err := l.s.SaveRecord(r); err != nil {
+		return st, err
+	}
+	l.put = &put
+	slog.Debug("landing put the story onto trunk", "story", l.id, "from", S[:12], "onto", T[:12], "to", after[:12])
+
+	again, err := l.check(ctx)
+	if err != nil {
+		return again, err
+	}
+	switch {
+	case again.trunkTip != T:
+		return again, sdlcerr.New(sdlcerr.BranchBehindTrunk,
+			trunk+" moved while "+branch+" was being put onto it",
+			"it was at "+T[:12]+" when the story's commits were put there, and is at "+again.trunkTip[:12]+" now").
+			WithFix(l.stopAgainFix())
+	case again.tip != after:
+		return again, sdlcerr.New(sdlcerr.LandingCheckFailed,
+			branch+" moved while it was being put onto "+trunk,
+			"the stop left it at "+after[:12]+", and it is at "+again.tip[:12]+" now").
+			WithFix(`run "sdlc stop" in ` + worktreeIn(l.id) + ` again, which judges the branch as it is now`)
+	}
+	return again, nil
+}
+
+// sameLines reports whether two ranges change the same lines of the same
+// files, the lines around them left out. A fingerprint that could not be read
+// is an error and never an equal.
+func (l *lander) sameLines(ctx context.Context, a, b [2]string) (bool, error) {
+	one, err := gitx.LinesFingerprint(ctx, l.s.Root(), a[0], a[1], leftOut...)
+	if err != nil {
+		return false, err
+	}
+	other, err := gitx.LinesFingerprint(ctx, l.s.Root(), b[0], b[1], leftOut...)
+	if err != nil {
+		return false, err
+	}
+	return one == other, nil
+}
+
+// replayedLine says what a replay did: the commit the story was at, the trunk
+// commit it was put onto and the commit it became, in full for the record.
+func replayedLine(id, trunk string, r model.Replay, full bool) string {
+	short := func(h string) string {
+		if full {
+			return h
+		}
+		return h[:min(len(h), 12)]
+	}
+	return "Replayed " + id + " from " + short(r.From) + " onto " + trunk + " at " + short(r.Onto) + "; " +
+		store.StoryBranch(id) + " is now " + short(r.To)
+}
+
+// notReplayed is the refusal for commits that did not apply onto trunk, once
+// the worktree is back as it was. A replay that stops is abandoned at once:
+// resolving a conflict is a person's, and a rebase left part-way would be read
+// by the next command as somebody's work in progress.
+func (l *lander) notReplayed(ctx context.Context, st landState, cause error) error {
+	root, trunk, branch, in := l.s.Root(), l.m.trunk, store.StoryBranch(l.id), worktreeIn(l.id)
+	wt, T, S := shellPath(root), st.trunkTip[:12], st.tip
+	files, _ := gitx.Unmerged(ctx, root)
+	if op, err := gitx.InProgress(ctx, root); err != nil || op != "" {
+		if err := gitx.AbandonReplay(ctx, root); err != nil {
+			slog.Debug("the replay could not be abandoned", "story", l.id, "err", err)
+		}
+	}
+	if tip, err := l.worktreeReady(ctx); err != nil || tip != S {
+		return sdlcerr.New(sdlcerr.LandingCheckFailed, in+" could not be put back as it was",
+			"putting "+branch+"'s commits onto "+trunk+" did not finish, and abandoning it did not leave "+branch+
+				" at "+S+" with nothing part-way").
+			WithFix(`a person, in their own terminal: cd -- ` + wt + `; then git rebase --abort; if git names a lock ` +
+				`file left behind, remove that file and abort again; then git status, which must name ` + branch +
+				` and nothing part-way; where ` + branch + ` is not at ` + S + `, git reset --hard ` + S +
+				`, which discards what the stop left and nothing of the story's, whose commits are all at or before ` +
+				`that commit; then sdlc stop. Until then the story's commits are safe: they are in ` + S +
+				` and in the reflog. An assistant hands the story to a person with "sdlc escalate" and stops`).WithCause(cause)
+	}
+	back := branch + " is back at " + S[:12] + " with its tracked files, index and stashes as they were"
+	if len(files) > 0 {
+		return sdlcerr.New(sdlcerr.StoryConflictsWithTrunk,
+			branch+"'s commits do not apply onto "+trunk+" at "+T,
+			"putting them onto "+trunk+" stopped on a conflict in "+quoteSome(files)+"; the rebase was abandoned, and "+
+				back+". Resolving a conflict is a person's").
+			WithFix(`a person, in their own terminal: cd -- ` + wt + `; then git rebase ` + shellWord(trunk) +
+				`; resolve the files it stops on, "git add" them and carry the rebase on as git says until it ` +
+				`finishes; then, where an assistant handed this story over, sdlc approve ` + l.id + `, after resolving ` +
+				`and not before, so that the approval is of the work as it now is; then sdlc stop, which runs the ` +
+				`configured commands on the result. In a tier that waits for a person the rebased work is approved ` +
+				`again: where no question is open on the story, that stop says so with SDLC-E0037, and its fix says ` +
+				`how the question is asked and answered. That rebase is git's own and not sdlc's: it runs the hooks, ` +
+				`merge drivers, editor and filters the repository's configuration names, with that person's ` +
+				`privileges, so they read "git config --show-origin --list" and .gitattributes there first. Where ` +
+				`the only file is ` + codemap + `, docs/the-loop.md, "Parallel stories and CODEMAP.md", says how ` +
+				`"merge=union" lets two stories' lines join with nobody resolving them. An assistant does not ` +
+				`resolve it: it hands the story to a person with "sdlc escalate" and stops`).WithCause(cause)
+	}
+	said := "nothing"
+	var git *sdlcerr.Error
+	if errors.As(cause, &git) {
+		first, _, _ := strings.Cut(strings.TrimSpace(git.Why), "\n")
+		said = quote(first)
+	}
+	return sdlcerr.New(sdlcerr.LandingCheckFailed,
+		branch+"'s commits could not be put onto "+trunk+" at "+T,
+		"git would not make them again there, saying "+said+"; "+back).
+		WithFix(`a person reads what git said, above. Where it names no committer: git config user.name and ` +
+			`user.email, then sdlc stop in ` + wt + `. Where it is a conflict git names no file for, such as a ` +
+			`directory against a file: cd -- ` + wt + `; then git rebase ` + shellWord(trunk) + `; resolve it; then ` +
+			`sdlc stop. An assistant hands the story to a person with "sdlc escalate" and stops`).WithCause(cause)
 }

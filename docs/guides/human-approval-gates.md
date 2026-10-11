@@ -159,6 +159,12 @@ with `sdlc escalate pre_commit_approval`, and until a person has approved the
 work, both `git commit` (refused by the
 [`commit-gate`](../enforcement.md#commit-gate) rule) and
 `sdlc gate commit pass` ([SDLC-E0037](../troubleshooting.md#sdlc-e0037)) refuse.
+An approval stands when `sdlc stop` itself puts the story onto a trunk that
+moved and the result is the approved change line for line. A story rebased by
+hand is approved again. So is one whose reviews were recorded again after its
+commit: there the approval is of the tree as it stood when you gave it, so run
+`sdlc stop` after approving and before trunk moves again, or the stop puts the
+story onto the new trunk and asks for the approval once more.
 
 An approval is bound to the work it was given for. Change anything after it and
 it needs approving again. Work you sent back stays sent back until it changes,

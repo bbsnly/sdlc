@@ -732,7 +732,16 @@ type Record struct {
 	// Landing is the mark a landing leaves between moving trunk and writing
 	// this record, so that a landing cut short there is finished by the next
 	// one with its whole range.
-	Landing     *Mark               `json:"landing,omitempty"`
+	Landing *Mark `json:"landing,omitempty"`
+	// Replay is the mark sdlc stop leaves when it has itself put the story's
+	// commits onto a trunk that moved and found the result to be the reviewed
+	// change. It is the tool's: a tip it does not name was rebased by somebody
+	// else, and is held to the measure every rebase is held to.
+	Replay *Replay `json:"replay,omitempty"`
+	// TrunkTests is the trunk commit the story's test files were last compared
+	// with, and the ones accepted as trunk's own there: a story is not held to
+	// a test file that only trunk changed since the story was cut.
+	TrunkTests  *TrunkTests         `json:"trunk_tests,omitempty"`
 	Gates       map[Gate]GateResult `json:"gates"`
 	Events      []Event             `json:"events"`
 	Escalations []Escalation        `json:"escalations"`
@@ -850,6 +859,23 @@ func (r *Record) StoodDown(role string) bool {
 type Mark struct {
 	From string `json:"from"`
 	To   string `json:"to"`
+}
+
+// Replay names the commits of a replay sdlc stop made itself: To is the tip it
+// made, Onto the trunk commit under it, and From the tip before.
+type Replay struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Onto string `json:"onto"`
+}
+
+// TrunkTests is what a story accepted as trunk's own among its test files:
+// Commit is the trunk commit they were compared with, Files the ones there as
+// trunk has them, and Gone the frozen ones trunk removed.
+type TrunkTests struct {
+	Commit string   `json:"commit"`
+	Files  []string `json:"files,omitempty"`
+	Gone   []string `json:"gone,omitempty"`
 }
 
 // Spend is one amount recorded against the story, in US dollars.
@@ -1129,6 +1155,8 @@ func (r *Record) forgetCommit() {
 		r.Change = ""
 		r.ChangeBase = ""
 		r.Landing = nil
+		r.Replay = nil
+		r.TrunkTests = nil
 	}
 }
 

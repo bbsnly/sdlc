@@ -210,8 +210,10 @@ and the landing replaces the commit gate's range with the commits that reached
 trunk, as they are after any rebase onto it. Everything in that range was
 checked before trunk moved: no merge commit, nothing under `.sdlc/` and no
 backlog change, the reviewed change or reviews recorded again, and the
-configured commands passing where it was rebased
-([the loop](../the-loop.md#done-when-it-lands) lists the checks). Two things
+configured commands passing where it was put onto a trunk that moved
+([the loop](../the-loop.md#done-when-it-lands) lists the checks). The record's
+`replayed` event names the commit the story was at before, the trunk commit it
+was put onto and the commit it became. Two things
 are still worth a look:
 
 - **`CODEMAP.md`.** The bookkeeper's commit after the retro is the one change in

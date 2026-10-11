@@ -245,10 +245,14 @@ person runs that stop in their own terminal.
 > holds, with the person's own privileges and credentials: read the story before
 > you run it.
 
-With several stories worked at once, trunk moves each time one lands, so each of
-the others is refused with [SDLC-E0054](troubleshooting.md#sdlc-e0054), rebased,
-and has its commands run before it lands. With n stories open, the last to land
-can go round n - 1 times, which is one more reason to keep the commands fast.
+With several stories worked at once, trunk moves each time one lands. Stories
+land one at a time, and each of the others is put onto the new trunk by its own
+`sdlc stop` and has its commands run once before it lands. A stop waits eight
+minutes for the landing in front of it, and that wait and its own commands have
+to fit in the 600 seconds a session's stop has. A session refused with
+[SDLC-E0006](troubleshooting.md#sdlc-e0006) stops once more, and refused again
+hands its story to a person, so commands that take longer than a few minutes
+send the waiting stories to a person; one more reason to keep them fast.
 
 ## `thresholds`
 

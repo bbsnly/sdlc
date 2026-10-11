@@ -443,8 +443,21 @@ Removed .sdlc/worktrees/US-001, with the files git ignored in it, and story/US-0
 ```
 
 The `running` lines go to standard error, one for each configured command the
-landing runs, and only where the story was rebased or its change is not the one
-reviewed ([configuration](configuration.md#at-landing)). Where no checkout has
+landing runs, and only where the story was put onto a trunk that moved, was
+rebased, or its change is not the one reviewed
+([configuration](configuration.md#at-landing)). Where another story is landing,
+a line on standard error names the stop that holds the landing lock and says
+how long this one waits for it. Where trunk had moved on, a line says the
+story's commits are being put onto it, and the stop's last lines say from which
+commit to which:
+
+```text
+sdlc: main is at 5b2e9c7a1d3f; putting story/US-001's commits onto it in .sdlc/worktrees/US-001
+Replayed US-001 from 8a0e5d6c1f2b onto main at 5b2e9c7a1d3f; story/US-001 is now c4d1e8f02a6b.
+```
+
+Where test files were accepted as trunk's, a line says how many and names them
+([the loop](the-loop.md#done-when-it-lands)). Where no checkout has
 trunk checked out, the first line ends `no checkout has main checked out, so
 only the branch moved.` instead. Where trunk already held the story, it says
 `US-001 was already on main at 8a0e5d6c1f2b; recorded it as landed.` Where
@@ -464,8 +477,12 @@ With `--json` these lines go to standard error, and standard output has `ok`,
 
 Every refusal leaves trunk where it was, and ends with `Nothing landed: main is
 unchanged, and the iteration on US-001 is still running`, or, with no iteration
-running, `... and US-001 waits in .sdlc/worktrees/US-001`. Trunk has moved past
-the story: [SDLC-E0054](troubleshooting.md#sdlc-e0054). The worktree, its
+running, `... and US-001 waits in .sdlc/worktrees/US-001`. The story's commits
+do not apply onto a trunk that moved:
+[SDLC-E0075](troubleshooting.md#sdlc-e0075). Trunk was rewritten, or moved
+while the landing ran: [SDLC-E0054](troubleshooting.md#sdlc-e0054). Another
+story was still landing after eight minutes:
+[SDLC-E0006](troubleshooting.md#sdlc-e0006). The worktree, its
 commits or a command are not fit to land:
 [SDLC-E0055](troubleshooting.md#sdlc-e0055). A checkout with trunk checked out
 has changes nobody committed that the fast-forward would write over:

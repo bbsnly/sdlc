@@ -327,14 +327,16 @@ func TestALandingCommandThatMovesTrunkIsCaughtWhenEverythingIsAskedAgain(t *test
 	lqForgetChange(t, main, "US-001")
 	ldReviewAgain(t, wt)
 
-	out := wtRefused(t, ldBehindTrunk, wt, ldSession, "", "stop")
-	said, fix := ldRefusal(t, out, ldBehindTrunk)
-	if !strings.Contains(said, "moved while the configured commands ran") {
-		t.Errorf("the refusal = %q, want it to say trunk moved while the commands ran", said)
+	// Which code the refusal carries, and its words, are the landing's to
+	// choose (US-088 leaves open whether a trunk that moves under the commands
+	// is tried again): what is held is that a command moving trunk is not a
+	// landing.
+	out := wtRefused(t, ldAny, wt, ldSession, "", "stop")
+	if !strings.Contains(out, "  fix  ") {
+		t.Errorf("the refusal must still say how to go on:\n%s", out)
 	}
-	if fix == "" {
-		t.Error("the fix must still say how to go on")
-	}
+	suSays(t, out, "Nothing landed")
+	lxNotDone(t, main)
 	ldStillHeld(t, main, wt)
 }
 

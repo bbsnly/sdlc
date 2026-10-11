@@ -1301,8 +1301,10 @@ checkout; a tag or another ref with trunk's short name makes it refused. It
 takes `-q` or `--quiet` and nothing else: no other option, no `git -c`, alias,
 `--git-dir` or `GIT_DIR`, and no `-C` but one into the session's own worktree.
 
-`--continue`, `--skip` and `--quit` are refused after the commit gate: the
-runbook abandons a rebase that stops, and never resumes one. Trunk is the one
+`--continue`, `--skip` and `--quit` are refused after the commit gate:
+resolving a conflict is a person's. The runbook no longer rebases at all:
+`sdlc stop` puts a finished story onto a trunk that moved itself, and abandons
+its own rebase where the commits do not apply. Trunk is the one
 the main checkout's configuration names.
 
 #### A git command in another repository
@@ -1507,8 +1509,13 @@ Two moves of the story's own branch are the session's.
 
 - After the commit gate, the plain rebase of its worktree's branch onto trunk,
   `git rebase <trunk>`, named by trunk's branch or as `refs/heads/<trunk>` and
-  with nothing but `--quiet`, which the landing asks for when trunk has moved;
-  and a bare `git rebase --abort` there.
+  with nothing but `--quiet`; and a bare `git rebase --abort` there. Nothing
+  asks for that rebase any longer, since `sdlc stop` puts the story onto a trunk
+  that moved itself. The hook still admits it for a session that runs one
+  before it stops, and the abort for a rebase the session started; a story
+  rebased that way is judged at the landing as one rebased by hand
+  ([SDLC-E0029](troubleshooting.md#sdlc-e0029),
+  [SDLC-E0037](troubleshooting.md#sdlc-e0037)).
 - After the retro, one commit of the root `CODEMAP.md` alone, the bookkeeper's.
 
 The landing checks what either did before trunk moves, and it holds the purpose
@@ -1597,7 +1604,16 @@ how you would notice.
   trunk's history, the loop's files and the change, and a person notices the
   program only by reading the repository's configuration with
   `git config --show-origin --list` and its `.gitattributes`; `sdlc` does not
-  report it.
+  report it. While `sdlc stop` puts a story's commits onto trunk, every merge
+  driver the configuration named when the stop read it, one with an empty name
+  included, is replaced by one that stops as a conflict, and a driver whose name
+  holds an equals sign or the text `{sdlc-private}` makes the stop refuse before
+  git runs, commits are not signed, no editor runs, and no
+  attributes file outside the repository is read; a filter the configuration
+  names does run, as it does on any checkout, and an attribute in the
+  repository's own `info/attributes` counts as one committed in
+  `.gitattributes` does, `merge=union` among them. So does an attributes file
+  in the worktree that `git status` does not show.
 - **Repository configuration that changes what the allowed rebase does to other
   refs.** The landing refuses a range that is not the story's alone. A person
   sees other refs move in `git reflog` for them.
@@ -1627,7 +1643,27 @@ how you would notice.
 - **Two identical stretches of context give one fingerprint.** The change the
   reviewers saw is compared with its hunk headers cut down to their marker, so a
   change that moved to an identical stretch elsewhere in a file compares equal.
-  A person reading the landed range sees where the lines went.
+  A person reading the landed range sees where the lines went. Where `sdlc stop`
+  itself puts a story onto a trunk that moved, the result is compared with the
+  reviewed change without the lines around it, from both sides: the story's
+  change on the new trunk, and trunk's change on top of the story. A line moved
+  among lines identical to it is the same file and is not seen. Nothing else is
+  compared this way: a commit after the reviews and a rebase by hand are
+  measured with their context, as before.
+- **An ignored file is not part of any tree the loop measures.** One left in the
+  worktree is there when the landing's commands run, and one at a path trunk has
+  come to track is overwritten when the story is put onto trunk.
+- **A frozen test put back by hand over trunk's change.** In a story's own
+  worktree a test file that only trunk changed is trunk's, and one the story and
+  trunk both changed is refused. A commit made by hand after a rebase that puts
+  a frozen test trunk changed back to its frozen copy reads as an intact freeze,
+  and takes trunk's change to that test away. The reviewers see the test in the
+  diff when the change is reviewed again; the stop's own replay cannot make such
+  a commit.
+- **A rebase a person runs is not sealed.** [SDLC-E0075](troubleshooting.md#sdlc-e0075)
+  sends a person to rebase a story by hand. That rebase runs the hooks, merge
+  drivers, editor and filters the configuration names, with that person's
+  privileges; read the configuration first, as above.
 - **A shallow repository** can only hide ancestry, and the landing then refuses
   with [SDLC-E0054](troubleshooting.md#sdlc-e0054).
 - **Ignored files go with a landed story's worktree.** They are removed with it,

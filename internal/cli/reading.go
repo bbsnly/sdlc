@@ -34,6 +34,10 @@ type reading struct {
 	changed     []string
 	changedOK   bool
 	unreadRange bool
+	// trunkTests is what the gate's check of the freeze accepted as trunk's
+	// own, and judged whether this gate checked the freeze at all.
+	trunkTests *model.TrunkTests
+	judged     bool
 }
 
 func readingOf(s *store.Store) *reading { return &reading{s: s} }
@@ -84,7 +88,16 @@ func (r *reading) changedPaths(ctx context.Context, record *model.Record) ([]str
 	case record.CommitBase == "":
 		r.unreadRange = true
 	case head != record.CommitBase:
-		if committed, err = gitx.ChangedBetween(ctx, root, record.CommitBase, head); err != nil {
+		from := record.CommitBase
+		// A story rebased in its own worktree sits on a later trunk commit
+		// than the one HEAD was at then, and what trunk gained in between is
+		// not the story's.
+		if _, ok := r.s.StoryWorktreeOf(); ok && record.Cut != "" {
+			if on := sittingOn(ctx, r.s, head); on != "" && on != record.Cut && on != head {
+				from = on
+			}
+		}
+		if committed, err = gitx.ChangedBetween(ctx, root, from, head); err != nil {
 			return nil, err
 		}
 	}
