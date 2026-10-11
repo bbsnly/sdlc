@@ -910,7 +910,29 @@ answered for the story hands the story to that person, as
 [`sdlc escalate`](#sdlc-escalate) `gate_failing` would, and says so —
 `handed_over` in `--json`.
 
-<<<<<<< HEAD
+That failure and the hand-over are recorded together or not at all. Where the
+story cannot be handed over — git cannot measure the tree, or the backlog, the
+claim or `.sdlc/state` cannot be written — the command is refused with the code
+of whatever stopped it, exits non-zero, and leaves the record, the backlog and
+the iteration as they were. The refusal says so, after its own reason and fix.
+With git missing:
+
+```text
+sdlc: git add did not finish
+
+  why  git add gave no error message; git may not be installed or on PATH, this may not be a repository git can read, or git may have stopped without saying why. The gate failure was not recorded, because recording it would reach the limit at which the story is handed to a person, and the story could not be handed over
+  fix  check that git is installed and that this directory is a repository git can read; then run the same command again, which is safe: the gate failure is counted once
+
+  SDLC-E0021  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0021
+```
+
+Put the cause right and run the same command again: the failure is counted
+once, and the story is handed over. A failure below the limit asks for none of
+this and is recorded as it always was. The promise is for a command that is
+refused; one that is killed part-way can leave the failure and the question on
+the record with the backlog not yet showing it, which
+[`sdlc approve`](#sdlc-approve) answers.
+
 When recording a gate reopens the gates after it, the command names them in gate
 order on a `reopened:` line beneath the note, and `--json` lists them under
 `reopened`. Each of those gates is back to `pending` and has to be passed again
@@ -923,31 +945,6 @@ US-001  plan  fail
   the plan misses the migration
   reopened: design_review, implementation, verification
 ```
-||||||| parent of b2ac680 (fix(cli)!: count a failure at the limit once, or not at all)
-=======
-That failure and the hand-over are recorded together or not at all. Where the
-story cannot be handed over — git cannot measure the tree, or the backlog, the
-claim or `.sdlc/state` cannot be written — the command is refused with the code
-of whatever stopped it, exits non-zero, and leaves the record, the backlog and
-the iteration as they were. The refusal says so, after its own reason and fix.
-With git missing:
-
-```text
-sdlc: git add did not finish
-
-  why  git add gave no error message; git may not be installed or on PATH, this may not be a repository git can read, or git may have stopped without saying why. Nothing was recorded: the gate failure was not recorded, because recording it would reach the limit at which the story is handed to a person, and the story could not be handed over
-  fix  check that git is installed and that this directory is a repository git can read; then run the same command again, which is safe: the gate failure is counted once
-
-  SDLC-E0021  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0021
-```
-
-Put the cause right and run the same command again: the failure is counted
-once, and the story is handed over. A failure below the limit asks for none of
-this and is recorded as it always was. The promise is for a command that is
-refused; one that is killed part-way can leave the failure and the question on
-the record with the backlog not yet showing it, which
-[`sdlc approve`](#sdlc-approve) answers.
->>>>>>> b2ac680 (fix(cli)!: count a failure at the limit once, or not at all)
 
 ### How the commit range is recorded
 

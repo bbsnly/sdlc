@@ -157,6 +157,28 @@ func (s *Store) HandOver(ctx context.Context, h HandOver) (string, error) {
 	if record == nil {
 		record = onDisk
 	}
+	dir, err := s.StoryDir(id)
+	if err != nil {
+		return "", err
+	}
+	// The reviewer's document is read here, before the claim is written, so
+	// that one that is there and cannot be read refuses with nothing to take
+	// back. Read as no file, it would be removed by a take-back and not
+	// restored. A path that leaves the repository is left to the write below,
+	// which refuses it as it always has.
+	var reviewPath string
+	var reviewWas []byte
+	if doc := h.Review; doc != nil {
+		reviewPath = filepath.Join(dir, reviewsDir, reviewName(doc.Gate, doc.Role, doc.Round))
+		reviewWas, err = os.ReadFile(reviewPath)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) && !s.leaves(reviewPath) {
+			return "", sdlcerr.New(sdlcerr.StateUnreadable,
+				"the review that is already at "+ReviewPath(id, doc.Gate, doc.Role, doc.Round)+" could not be read",
+				"the file exists but could not be opened, and the hand-over has to be able to put it back as it was").
+				WithFix("make the file readable, or move it aside if the story's record does not list it").
+				WithCause(err)
+		}
+	}
 	active, err := s.Active()
 	if err != nil {
 		return "", err
@@ -170,18 +192,12 @@ func (s *Store) HandOver(ctx context.Context, h HandOver) (string, error) {
 		}
 	}
 
-	dir, err := s.StoryDir(id)
-	if err != nil {
-		return "", err
-	}
 	var done []written
 	if doc := h.Review; doc != nil {
-		path := filepath.Join(dir, reviewsDir, reviewName(doc.Gate, doc.Role, doc.Round))
-		was, _ := os.ReadFile(path)
 		if _, err := s.WriteReview(id, doc.Gate, doc.Role, doc.Round, doc.Content); err != nil {
 			return "", err
 		}
-		done = append(done, written{"the reviewer's document", func() error { return s.putBack(path, was) }})
+		done = append(done, written{"the reviewer's document", func() error { return s.putBack(reviewPath, reviewWas) }})
 	}
 	record.Escalate(h.Kind, h.Message, tree, s.Now())
 	record.Append("escalate", h.Kind+": "+h.Message, s.Now())

@@ -226,7 +226,8 @@ func notRecorded(err error, what string) error {
 	if why != "" {
 		why += ". "
 	}
-	out.Why = why + "Nothing was recorded: " + what + " was not recorded, because recording it would reach the limit " +
+	// what begins a sentence here and sits inside one in the fix.
+	out.Why = why + strings.ToUpper(what[:1]) + what[1:] + " was not recorded, because recording it would reach the limit " +
 		"at which the story is handed to a person, and the story could not be handed over"
 	out.Fix = strings.TrimSuffix(strings.TrimSpace(out.Fix), ".") +
 		"; then run the same command again, which is safe: " + what + " is counted once"

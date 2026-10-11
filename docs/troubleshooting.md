@@ -80,8 +80,8 @@ Fix the JSON, or delete the file and run `sdlc init` again to get a fresh one.
 ### SDLC-E0005
 
 A file the loop depends on could not be read: the iteration or the freeze under `.sdlc/state/`, a
-story's `PLAN.md` or `gate-record.json` under `.sdlc/stories/`, or a test file the freeze has to
-hash. The message names it.
+story's `PLAN.md`, `gate-record.json` or a review under `.sdlc/stories/`, or a test file the
+freeze has to hash. The message names it.
 
 `sdlc` writes its own files whole or not at all, so one that will not parse was usually edited
 or merged by hand. Gate records are committed with the work, and a merge conflict in one is
@@ -96,8 +96,9 @@ If `sdlc` itself left a file it cannot read, that is a bug: please open an issue
 ### SDLC-E0006
 
 `sdlc` could not write to `.sdlc/`, or could not take the lock it needs to. State is written
-atomically, so nothing was left half-finished, but nothing was recorded either. The message says
-which of the causes below it is.
+atomically, so a write is whole or absent, and nothing was recorded. The one exception is a
+hand-over stopped part-way, at the end of this section. The message says which of the causes
+below it is.
 
 - **It cannot write.** Check that the directory is writable and that the disk is not full.
 - **`.sdlc/`, or a directory in it, is a link to somewhere outside the repository**, as a clone
@@ -122,8 +123,9 @@ which of the causes below it is.
 **At a limit.** `sdlc gate ... fail` and `sdlc review add ... block` hand the story to a person
 when the failure or the block reaches its limit, and the hand-over writes the backlog, the claim
 on the story and `.sdlc/state` as well as the record. Where one of them cannot be written the
-command is refused and what it had written is put back, so the reason ends "Nothing was
-recorded: the gate failure was not recorded" (or "the block"), and the fix ends "then run the
+command is refused and what it had written is put back, so the reason ends "The gate failure
+was not recorded, because recording it would reach the limit at which the story is handed to a
+person, and the story could not be handed over" (or "The block"), and the fix ends "then run the
 same command again, which is safe". Put right what the message names and run the same command
 again: the failure is counted once. The Stop hook hands a story over in the same way, and where
 it cannot, it lets the stop through, says so, and tries again at the next stop.
@@ -293,9 +295,10 @@ git can read. `sdlc doctor` checks both.
 
 A gate failure or a block that reaches its limit hands the story to a person, and the hand-over
 measures the working tree. Where git cannot, the command is refused before anything is written,
-so the reason ends "Nothing was recorded: the gate failure was not recorded" (or "the block"),
-and the fix ends "then run the same command again, which is safe". Once git works, run the same
-command again: the failure is counted once, and the story is handed over.
+so the reason ends "The gate failure was not recorded, because recording it would reach the
+limit at which the story is handed to a person, and the story could not be handed over" (or "The
+block"), and the fix ends "then run the same command again, which is safe". Once git works, run
+the same command again: the failure is counted once, and the story is handed over.
 
 ### SDLC-E0022
 
