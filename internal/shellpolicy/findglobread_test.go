@@ -1,7 +1,7 @@
 package shellpolicy
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -262,7 +262,7 @@ func TestAMalformedGlobIsReadWithoutPanicking(t *testing.T) {
 	s := freezing(xTest)
 	s.Checkouts = func() CheckoutSet { return CheckoutSet{Checkouts: []string{"/work/project", "/work/main"}} }
 	for i, glob := range malformedGlobs() {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			noPanic(t, "findPattern", glob, func() {
 				if re := findPattern(glob); re != nil {
 					re.MatchString("./internal/x_test.go")

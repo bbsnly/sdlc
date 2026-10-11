@@ -97,7 +97,7 @@ func reaches(root, dir string, s State, m *memo) bool {
 	if isAbsolute(clean(root)) {
 		r = clean(root)
 	}
-	if strings.ContainsAny(r, "$%~*?[{") {
+	if strings.ContainsAny(r, unsettledChars) {
 		return true
 	}
 	if isAbsolute(r) {
@@ -108,7 +108,7 @@ func reaches(root, dir string, s State, m *memo) bool {
 		rel := m.resolve(s, r)
 		return rel == "" || rel == "."
 	}
-	for _, segment := range strings.Split(r, "/") {
+	for segment := range strings.SplitSeq(r, "/") {
 		if segment != "." && segment != ".." {
 			return false
 		}
@@ -132,20 +132,28 @@ func foundBy(roots, names, patterns, shapes []string) []string {
 			}
 		}
 		for _, g := range pathGlobs {
-			if g == nil {
-				continue
-			}
-			for _, root := range roots {
-				// The path find comes to it by starts at the root: `./x` from `.`,
-				// and `internal/x` from `internal` for the project's internal/x.
-				full := strings.TrimSuffix(clean(root), "/") + "/" + shape
-				if r := clean(root); r != "." && strings.HasPrefix(shape, r+"/") {
-					full = shape
-				}
-				if g.MatchString(full) {
-					out = append(out, shape)
-				}
-			}
+			out = appendFoundByPath(out, g, roots, shape)
+		}
+	}
+	return out
+}
+
+// appendFoundByPath adds shape to out once for each root from which find
+// comes to it by a path the glob matches; a glob that cannot be read adds
+// nothing.
+func appendFoundByPath(out []string, g *globPattern, roots []string, shape string) []string {
+	if g == nil {
+		return out
+	}
+	for _, root := range roots {
+		// The path find comes to it by starts at the root: `./x` from `.`,
+		// and `internal/x` from `internal` for the project's internal/x.
+		full := strings.TrimSuffix(clean(root), "/") + "/" + shape
+		if r := clean(root); r != "." && strings.HasPrefix(shape, r+"/") {
+			full = shape
+		}
+		if g.MatchString(full) {
+			out = append(out, shape)
 		}
 	}
 	return out
@@ -264,28 +272,15 @@ func readGlob(text string) ([]globPart, bool) {
 			parts = append(parts, globPart{negated: true})
 			i++
 		case '[':
-			part, next, closed, held := readClass(text, i+1)
-			if next < 0 {
+			part, next, open, ok := readBracket(text, i, unclosed)
+			if !ok {
 				return nil, false
 			}
-			if closed {
-				parts = append(parts, part)
-				i = next
-				continue
+			parts = append(parts, part)
+			if open {
+				literal, unclosed = true, true
 			}
-			// A `[` nothing closes is the bracket it is, and reading goes on
-			// after it, as bash reads it; where find matches nothing with such
-			// a glob, this reading matches more. Not where the bracket held a
-			// collating symbol or an equivalence class: zsh and path.Match end
-			// the class at that item's `]`, and read as a literal `[` the glob
-			// would match less than either. Nor a second one: no `[` is read to
-			// the end of the glob twice, and the reading stays linear.
-			if unclosed || held {
-				return nil, false
-			}
-			parts = append(parts, globPart{runes: []rune{'['}})
-			literal, unclosed = true, true
-			i++
+			i = next
 		default:
 			r, size, ok := escapedRune(text, i)
 			if !ok {
@@ -297,6 +292,31 @@ func readGlob(text string) ([]globPart, bool) {
 		}
 	}
 	return parts, literal
+}
+
+// readBracket reads what the `[` at text[i] is: a class, with where reading
+// goes on after it, or with open the bracket itself where nothing closes it.
+// unclosed is whether an earlier `[` of this glob was already read that way.
+// It is not ok where the glob cannot be read.
+func readBracket(text string, i int, unclosed bool) (part globPart, next int, open, ok bool) {
+	part, next, closed, held := readClass(text, i+1)
+	if next < 0 {
+		return globPart{}, 0, false, false
+	}
+	if closed {
+		return part, next, false, true
+	}
+	// A `[` nothing closes is the bracket it is, and reading goes on
+	// after it, as bash reads it; where find matches nothing with such
+	// a glob, this reading matches more. Not where the bracket held a
+	// collating symbol or an equivalence class: zsh and path.Match end
+	// the class at that item's `]`, and read as a literal `[` the glob
+	// would match less than either. Nor a second one: no `[` is read to
+	// the end of the glob twice, and the reading stays linear.
+	if unclosed || held {
+		return globPart{}, 0, false, false
+	}
+	return globPart{runes: []rune{'['}}, i + 1, true, true
 }
 
 // readClass reads a bracket expression from just after its `[`: the part it
@@ -313,32 +333,29 @@ func readClass(text string, i int) (part globPart, next int, closed, held bool) 
 		if text[i] == ']' && i > start {
 			return part, i + 1, true, held
 		}
-		lo, after, ok := readItem(text, i)
+		after, symbol, ok := readMember(&part, text, i)
+		held = held || symbol
 		if !ok {
 			return part, -1, false, held
 		}
-		held = held || lo.kind == collatingItem || lo.kind == equivalenceItem
 		i = after
-		// A `-` last, or before the `]` that closes, is a member.
-		if i+1 < len(text) && text[i] == '-' && text[i+1] != ']' {
-			hi, after, ok := readItem(text, i+1)
-			held = held || hi.kind == collatingItem || hi.kind == equivalenceItem
-			// A range runs between two characters: a named class or an
-			// equivalence class at either end is nothing find agrees on.
-			if !ok || lo.kind == namedItem || lo.kind == equivalenceItem || hi.kind == namedItem || hi.kind == equivalenceItem {
-				return part, -1, false, held
-			}
-			// Between any other two characters the order is the locale's. Read
-			// by code point, `[{-b]` held nothing and `find . -name '[{-b]ctive'
-			// -delete` was allowed, where find in en_US.UTF-8 picks active.
-			if plainRange(lo.r, hi.r) {
-				part.ranges = append(part.ranges, [2]rune{lo.r, hi.r})
-			} else {
-				part.anyOne = true
-			}
-			i = after
-			continue
-		}
+	}
+	return part, i, false, held
+}
+
+// readMember reads one member of a bracket expression at i, an item or a
+// range between two, adds it to part, and returns where reading goes on and
+// whether it held a collating symbol or an equivalence class. It is not ok
+// where the member cannot be read, and then adds nothing.
+func readMember(part *globPart, text string, i int) (next int, held, ok bool) {
+	lo, after, ok := readItem(text, i)
+	if !ok {
+		return -1, false, false
+	}
+	held = lo.kind == collatingItem || lo.kind == equivalenceItem
+	i = after
+	// A `-` last, or before the `]` that closes, is a member.
+	if i+1 >= len(text) || text[i] != '-' || text[i+1] == ']' {
 		switch lo.kind {
 		case namedItem:
 			part.classes = append(part.classes, lo.class)
@@ -348,8 +365,24 @@ func readClass(text string, i int) (part globPart, next int, closed, held bool) 
 		default:
 			part.runes = append(part.runes, lo.r)
 		}
+		return i, held, true
 	}
-	return part, i, false, held
+	hi, after, ok := readItem(text, i+1)
+	held = held || hi.kind == collatingItem || hi.kind == equivalenceItem
+	// A range runs between two characters: a named class or an
+	// equivalence class at either end is nothing find agrees on.
+	if !ok || lo.kind == namedItem || lo.kind == equivalenceItem || hi.kind == namedItem || hi.kind == equivalenceItem {
+		return -1, held, false
+	}
+	// Between any other two characters the order is the locale's. Read
+	// by code point, `[{-b]` held nothing and `find . -name '[{-b]ctive'
+	// -delete` was allowed, where find in en_US.UTF-8 picks active.
+	if plainRange(lo.r, hi.r) {
+		part.ranges = append(part.ranges, [2]rune{lo.r, hi.r})
+	} else {
+		part.anyOne = true
+	}
+	return after, held, true
 }
 
 // plainRange reports whether a range runs between two lower-case letters, two
@@ -556,9 +589,10 @@ func (c unreadCause) String() string {
 		return "the shell expands or unescapes part of it before find sees it"
 	case splitCause:
 		return "a quote or white space splits the word before find sees it"
+	default:
+		return "it holds a bracket expression, an escape or a byte the hook cannot read, or is longer than " +
+			strconv.Itoa(maxGlob) + " bytes"
 	}
-	return "it holds a bracket expression, an escape or a byte the hook cannot read, or is longer than " +
-		strconv.Itoa(maxGlob) + " bytes"
 }
 
 // unreadGlob is the first glob a find is given that the hook cannot read, as
@@ -602,7 +636,23 @@ func spelledFields(segment string) (unquoted, raw []string) {
 // spells it, and why. Quotes are followed over the word alone, so a `'` inside
 // another quote elsewhere on the line, as in `echo "it's"`, does not count.
 func unreadWord(word string) (unreadCause, bool) {
-	var quote byte
+	quote, shell := quoteLeftOpen(word)
+	if shell {
+		return shellCause, true
+	}
+	if quote != 0 {
+		return splitCause, true
+	}
+	if findPattern(unquote(word)) == nil {
+		return readCause, true
+	}
+	return 0, false
+}
+
+// quoteLeftOpen follows the quotes over a word and returns the one still open
+// at its end, or with shell that the word holds something the shell fills in
+// or escapes, at which the reading stops.
+func quoteLeftOpen(word string) (quote byte, shell bool) {
 	ansi := false
 	for i := 0; i < len(word); i++ {
 		switch c := word[i]; {
@@ -614,8 +664,8 @@ func unreadWord(word string) (unreadCause, bool) {
 			if ansi && c == '\\' {
 				i++
 			}
-		case c == '`' || c == '\\' || c == '$' && (i+1 == len(word) || word[i+1] != '\'' && word[i+1] != '"'):
-			return shellCause, true
+		case shellSpells(word, i):
+			return 0, true
 		case c == '$' && quote == 0:
 			// $'...' and $"..." are quotes; inside "..." a `$` before a quote
 			// is the character it is.
@@ -625,13 +675,14 @@ func unreadWord(word string) (unreadCause, bool) {
 			quote, ansi = c, false
 		}
 	}
-	if quote != 0 {
-		return splitCause, true
-	}
-	if findPattern(unquote(word)) == nil {
-		return readCause, true
-	}
-	return 0, false
+	return quote, false
+}
+
+// shellSpells reports whether the character at word[i] is one the shell acts
+// on: a backquote, a backslash, or a `$` that does not open $'...' or $"...".
+func shellSpells(word string, i int) bool {
+	c := word[i]
+	return c == '`' || c == '\\' || c == '$' && (i+1 == len(word) || word[i+1] != '\'' && word[i+1] != '"')
 }
 
 // couldHold is whether find, started at root from dir, could come to what the
@@ -658,9 +709,9 @@ func couldHold(root, dir string, lost bool, frozen []string, s State, m *memo) (
 func placedRoot(root, dir string, lost bool, s State, m *memo) bool {
 	c := clean(root)
 	if isAbsolute(c) {
-		return !strings.ContainsAny(c, "$%~*?[{") && s.Resolve != nil && m.resolve(s, c) != ""
+		return !strings.ContainsAny(c, unsettledChars) && s.Resolve != nil && m.resolve(s, c) != ""
 	}
-	return !lost && !strings.ContainsAny(path.Join(dir, c), "$%~*?[{")
+	return !lost && !strings.ContainsAny(path.Join(dir, c), unsettledChars)
 }
 
 // unreadFinding refuses a find that goes on to change what it finds under root
@@ -685,7 +736,7 @@ func unreadFinding(rule, glob, root string, cause unreadCause, what string, know
 // ruleWayOut is the sanctioned route the two find rules end a refusal with: the
 // unfreeze for the freeze, the sdlc command for the loop's own files.
 func ruleWayOut(rule string) string {
-	if rule == "frozen-test-through-the-tool" {
+	if rule == ruleFrozenTest {
 		return ". If a frozen test genuinely has to change, say which and why: the person running " +
 			"the session lifts the freeze with `sdlc unfreeze --reason ...`"
 	}
@@ -750,7 +801,7 @@ func unfollowedFinding(rule string, e findExpression, root, what string, known b
 // that find is refused under from the project's own directory, wherever it
 // starts and whatever it does: the hook has read neither.
 func spentFinding(e findExpression) Finding {
-	const rule = "loop-state-through-the-tool"
+	const rule = ruleLoopState
 	why := e.why
 	if e.word != "" {
 		why += ", at " + shown(e.word)

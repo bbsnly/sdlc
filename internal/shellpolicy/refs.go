@@ -86,20 +86,9 @@ func (j *gitRules) branchMoves(g gitRead, r ran, dir string, e *environment, asG
 	case "update-ref", "filter-branch", "fast-import", "send-pack", "receive-pack", "http-push":
 		what = "`git " + g.sub + "` writes refs directly"
 	case "branch":
-		if branchOption(rest, []string{"force", "delete"}, nil, "fdD", "u") {
-			what = "`git branch` forcing or deleting a branch moves or takes away one that exists"
-		} else if branchOption(rest, []string{"move", "copy"}, nil, "mMcC", "u") {
-			what = "`git branch` renaming or copying a branch can write over one that exists"
-		}
+		what = branchMovedByBranch(rest)
 	case "checkout", "switch":
-		switch {
-		case branchOption(rest, []string{"ignore-other-worktrees"}, nil, "", ""):
-			what = "`git " + g.sub + " --ignore-other-worktrees` checks out a branch another worktree has, " +
-				"whose next commit then moves it"
-		case g.sub == "checkout" && branchOption(rest, nil, nil, "B", "b"),
-			g.sub == "switch" && branchOption(rest, []string{"force-create"}, []string{"force"}, "C", "c"):
-			what = "`git " + g.sub + "` resetting a branch moves one that exists to where it starts it"
-		}
+		what = branchMovedByCheckout(g.sub, rest)
 	case "symbolic-ref":
 		if symbolicRefWrites(rest) {
 			what = "`git symbolic-ref` writing HEAD puts a checkout on another branch, whose next commit " +
@@ -112,12 +101,7 @@ func (j *gitRules) branchMoves(g gitRead, r ran, dir string, e *environment, asG
 			what = "`git remote update` fetches, and writes refs into this repository"
 		}
 	case "reset":
-		if resetMoves(rest) && (j.s.Committed || j.inAnotherCheckout(g, r, dir, e)) {
-			what = "`git reset` naming a commit moves the branch its checkout has checked out"
-			if !j.s.Committed {
-				what += ", and this one is another checkout's"
-			}
-		}
+		what = j.branchMovedByReset(g, r, dir, e, rest)
 	case "rebase":
 		if defining {
 			// An alias that rebases is refused where it runs.
@@ -129,6 +113,46 @@ func (j *gitRules) branchMoves(g gitRead, r ran, dir string, e *environment, asG
 		return Finding{}, false
 	}
 	return branchFinding(what), true
+}
+
+// branchMovedByBranch is how the words of `git branch` move a branch, or
+// nothing where they move none.
+func branchMovedByBranch(rest []string) string {
+	if branchOption(rest, []string{"force", "delete"}, nil, "fdD", "u") {
+		return "`git branch` forcing or deleting a branch moves or takes away one that exists"
+	}
+	if branchOption(rest, []string{"move", "copy"}, nil, "mMcC", "u") {
+		return "`git branch` renaming or copying a branch can write over one that exists"
+	}
+	return ""
+}
+
+// branchMovedByCheckout is how the words of `git checkout` or `git switch`,
+// whichever sub is, move a branch, or nothing where they move none.
+func branchMovedByCheckout(sub string, rest []string) string {
+	switch {
+	case branchOption(rest, []string{"ignore-other-worktrees"}, nil, "", ""):
+		return "`git " + sub + " --ignore-other-worktrees` checks out a branch another worktree has, " +
+			"whose next commit then moves it"
+	case sub == "checkout" && branchOption(rest, nil, nil, "B", "b"),
+		sub == "switch" && branchOption(rest, []string{"force-create"}, []string{"force"}, "C", "c"):
+		return "`git " + sub + "` resetting a branch moves one that exists to where it starts it"
+	}
+	return ""
+}
+
+// branchMovedByReset is how a `git reset` moves a branch, or nothing where it
+// moves none: one that names a commit, in the checkout a story has committed
+// in or in another checkout.
+func (j *gitRules) branchMovedByReset(g gitRead, r ran, dir string, e *environment, rest []string) string {
+	if !resetMoves(rest) || !j.s.Committed && !j.inAnotherCheckout(g, r, dir, e) {
+		return ""
+	}
+	what := "`git reset` naming a commit moves the branch its checkout has checked out"
+	if !j.s.Committed {
+		what += ", and this one is another checkout's"
+	}
+	return what
 }
 
 // branchFinding is the rule's refusal of a command that moves a branch.
@@ -287,14 +311,24 @@ func branchOption(args, long, own []string, short, valued string) bool {
 				return true
 			}
 		case strings.HasPrefix(a, "-"):
-			for _, c := range a[1:] {
-				if strings.ContainsRune(short, c) {
-					return true
-				}
-				if strings.ContainsRune(valued, c) {
-					break
-				}
+			if bundleHolds(a[1:], short, valued) {
+				return true
 			}
+		}
+	}
+	return false
+}
+
+// bundleHolds reports whether a bundle of option letters holds one in short,
+// read up to the first in valued, which takes the rest of the word as its
+// value.
+func bundleHolds(letters, short, valued string) bool {
+	for _, c := range letters {
+		if strings.ContainsRune(short, c) {
+			return true
+		}
+		if strings.ContainsRune(valued, c) {
+			return false
 		}
 	}
 	return false

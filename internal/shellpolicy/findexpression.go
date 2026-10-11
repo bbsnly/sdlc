@@ -68,7 +68,7 @@ func findTakes(option string) (values int, known bool) {
 	// otherwise be read as a value it does not always take.
 	case "-empty", "-true", "-false", "-print", "-print0", "-prune", "-daystart", "-follow",
 		"-xdev", "-mount", "-noleaf", "-nouser", "-nogroup", "-readable", "-writable",
-		"-executable", "-ls", "-quit", "-depth", "-delete",
+		"-executable", "-ls", "-quit", "-depth", findDelete,
 		"-d", "-acl", "-xattr", "-sparse", "-ignore_readdir_race", "-noignore_readdir_race",
 		"-warn", "-nowarn", "-nocolor":
 		return 0, true
@@ -81,7 +81,7 @@ func findTakes(option string) (values int, known bool) {
 // picking a file, even where its test does not.
 func findAction(option string) bool {
 	switch option {
-	case "-delete", "-print", "-print0", "-printf", "-ls", "-quit",
+	case findDelete, "-print", "-print0", "-printf", "-ls", "-quit",
 		"-fprint", "-fprint0", "-fprintf", "-fls",
 		"-exec", "-execdir", "-ok", "-okdir":
 		return true
@@ -163,28 +163,11 @@ func (e *findExpression) picks(operand func(it findItem) bool) bool {
 		switch it.op {
 		case opNone:
 			st = append(st, pickAct{operand(it), it.action})
-		case opNot:
-			if len(st) < 1 {
+		default:
+			var ok bool
+			if st, ok = applyPick(st, it.op); !ok {
 				return false
 			}
-			a := st[len(st)-1]
-			st[len(st)-1] = pickAct{true, a.act}
-		case opAnd:
-			if len(st) < 2 {
-				return false
-			}
-			b := st[len(st)-1]
-			a := st[len(st)-2]
-			st = st[:len(st)-1]
-			st[len(st)-1] = pickAct{a.pick && b.pick, a.act || (a.pick && b.act)}
-		case opOr:
-			if len(st) < 2 {
-				return false
-			}
-			b := st[len(st)-1]
-			a := st[len(st)-2]
-			st = st[:len(st)-1]
-			st[len(st)-1] = pickAct{a.pick || b.pick, a.act || b.act}
 		}
 	}
 	e.stack = st
@@ -193,6 +176,38 @@ func (e *findExpression) picks(operand func(it findItem) bool) bool {
 	}
 	top := st[len(st)-1]
 	return top.pick || top.act
+}
+
+// applyPick applies an operator to the values on top of the evaluation stack,
+// and is not ok where the stack holds fewer than the operator takes.
+func applyPick(st []pickAct, op findOp) ([]pickAct, bool) {
+	switch op {
+	case opNot:
+		if len(st) < 1 {
+			return st, false
+		}
+		a := st[len(st)-1]
+		st[len(st)-1] = pickAct{true, a.act}
+	case opAnd:
+		if len(st) < 2 {
+			return st, false
+		}
+		b := st[len(st)-1]
+		a := st[len(st)-2]
+		st = st[:len(st)-1]
+		st[len(st)-1] = pickAct{a.pick && b.pick, a.act || (a.pick && b.act)}
+	case opOr:
+		if len(st) < 2 {
+			return st, false
+		}
+		b := st[len(st)-1]
+		a := st[len(st)-2]
+		st = st[:len(st)-1]
+		st[len(st)-1] = pickAct{a.pick || b.pick, a.act || b.act}
+	default:
+		// No operator: the stack stands as it is.
+	}
+	return st, true
 }
 
 // pickedShapes is the shapes among shapes the expression picks, from any of the
@@ -344,7 +359,7 @@ func (l *quoteLevel) step(s string, i int) {
 }
 
 // balanced reports whether the shell is outside every quote and substitution.
-func (l quoteLevel) balanced() bool {
+func (l *quoteLevel) balanced() bool {
 	return l.quote == 0 && !l.tick && l.psub == 0
 }
 
@@ -591,19 +606,7 @@ func (sc *findScan) read(idx int, segment string, words []string, evals int) fou
 	// from is where the find's own piece ends in the text.
 	from := 0
 	fail := func(cause findCause, word, why string) foundFind {
-		out = foundFind{exp: unfollowed(cause, word, why)}
-		// The bytes to the end are charged before they are read. Past the budget
-		// nothing is made: the command spends the budget itself, so the answer
-		// there is the caller's, and reads nothing of the command.
-		if sc.budget -= len(sc.flat) - from; sc.budget < 0 {
-			out.spent = true
-			return out
-		}
-		out.segment = segment + " " + sc.flat[from:]
-		all, _, _ := parse(out.segment)
-		full, _ := underEval(program(all))
-		out.more, out.toEnd, out.words = true, true, full.words
-		return out
+		return sc.givenUp(segment, from, cause, word, why)
 	}
 	if !sc.lined || idx >= len(sc.pieces) || len(words) == 0 {
 		return fail(causeDiffer, sc.differ, whyDiffer)
@@ -617,26 +620,12 @@ func (sc *findScan) read(idx int, segment string, words []string, evals int) fou
 	if n < 0 {
 		return fail(causeDiffer, words[0], whyNoStart)
 	}
-	a := p.from + fields[n].at
 	q := p.q0
-	for i := p.from; i < a; i++ {
-		q.step(sc.sp, i)
+	script, opened, a, why := sc.standing(&q, p.from, p.from+fields[n].at)
+	if why != "" {
+		return fail(causeScript, "", why)
 	}
-	// How deep in quotes the find stands.
-	script, opened := q.script(), false
-	switch {
-	case script != 0:
-		if !q.in.balanced() || isQuote(sc.sp[a]) {
-			return fail(causeScript, "", "the find is in a script inside a script")
-		}
-	case !q.out.balanced():
-		return fail(causeScript, "", "a quote or a substitution is still open where the find starts")
-	case isQuote(sc.sp[a]):
-		q.step(sc.sp, a)
-		a++
-		script, opened = q.script(), true
-	}
-	if evals > 0 && (evals > 1 || !opened || n == 0 || base(unquote(fields[n-1].text)) != "eval") {
+	if evalParsesAgain(evals, opened, n, fields) {
 		return fail(causeScript, "eval", "the script given to eval is not one quoted word, so eval parses it a second time")
 	}
 	b, why := sc.end(idx, a, q, script)
@@ -657,7 +646,7 @@ func (sc *findScan) read(idx int, segment string, words []string, evals int) fou
 		out.more, out.words, out.segment = true, full.words, sc.flat[a:b]
 		words = full.words
 	}
-	if strings.Contains(sc.sp[a:b], "<(") || strings.Contains(sc.sp[a:b], ">(") {
+	if substitutesAProcess(sc.sp[a:b]) {
 		return fail(causeScript, "", "the find is given a process substitution")
 	}
 	tokens, cause, word, why := sc.tokens(a, b, q, script, words)
@@ -668,6 +657,64 @@ func (sc *findScan) read(idx int, segment string, words []string, evals int) fou
 	return out
 }
 
+// substitutesAProcess reports whether the text of a find holds a process
+// substitution, `<(` or `>(`.
+func substitutesAProcess(text string) bool {
+	return strings.Contains(text, "<(") || strings.Contains(text, ">(")
+}
+
+// givenUp is the answer for a find the reader gives up on: not followed, and
+// with every word to the end of the command for the rules to judge it by.
+// from is where the find's own piece ends in the text.
+func (sc *findScan) givenUp(segment string, from int, cause findCause, word, why string) foundFind {
+	out := foundFind{exp: unfollowed(cause, word, why)}
+	// The bytes to the end are charged before they are read. Past the budget
+	// nothing is made: the command spends the budget itself, so the answer
+	// there is the caller's, and reads nothing of the command.
+	if sc.budget -= len(sc.flat) - from; sc.budget < 0 {
+		out.spent = true
+		return out
+	}
+	out.segment = segment + " " + sc.flat[from:]
+	all, _, _ := parse(out.segment)
+	full, _ := underEval(program(all))
+	out.more, out.toEnd, out.words = true, true, full.words
+	return out
+}
+
+// standing follows the quotes from the start of the find's piece, at from,
+// to a, where the find starts, and says how deep in quotes the find stands:
+// the quote of the script it is in, whether that quote opens at a, and with
+// it where the find starts inside the quote. why is set where the find
+// cannot be followed from there.
+func (sc *findScan) standing(q *quoting, from, a int) (script byte, opened bool, at int, why string) {
+	for i := from; i < a; i++ {
+		q.step(sc.sp, i)
+	}
+	// How deep in quotes the find stands.
+	script = q.script()
+	switch {
+	case script != 0:
+		if !q.in.balanced() || isQuote(sc.sp[a]) {
+			return script, false, a, "the find is in a script inside a script"
+		}
+	case !q.out.balanced():
+		return script, false, a, "a quote or a substitution is still open where the find starts"
+	case isQuote(sc.sp[a]):
+		q.step(sc.sp, a)
+		a++
+		script, opened = q.script(), true
+	}
+	return script, opened, a, ""
+}
+
+// evalParsesAgain reports whether a find that evals stand in front of is not
+// one eval's single quoted word: more than one eval, a find that is not at
+// the opening of a quote, or a word before it that is not eval.
+func evalParsesAgain(evals int, opened bool, n int, fields []field) bool {
+	return evals > 0 && (evals > 1 || !opened || n == 0 || base(unquote(fields[n-1].text)) != "eval")
+}
+
 // end is where the find that starts at a ends, or why that cannot be told.
 // Outside a script it is the end of the first piece, from its own on, that
 // ends outside every quote: a separator inside a quoted word, or inside a
@@ -676,21 +723,31 @@ func (sc *findScan) read(idx int, segment string, words []string, evals int) fou
 // quote closes, which has to be the end of the script's word.
 func (sc *findScan) end(idx, a int, q quoting, script byte) (int, string) {
 	if script == 0 {
-		if sc.next == nil {
-			sc.next = make([]int, len(sc.pieces)+1)
-			sc.next[len(sc.pieces)] = -1
-			for k := len(sc.pieces) - 1; k >= 0; k-- {
-				sc.next[k] = sc.next[k+1]
-				if sc.pieces[k].q1.out.balanced() && !sc.pieces[k].joined {
-					sc.next[k] = k
-				}
+		return sc.endOutside(idx)
+	}
+	return sc.endInScript(idx, a, q, script)
+}
+
+// endOutside is end for a find that stands outside every quote.
+func (sc *findScan) endOutside(idx int) (int, string) {
+	if sc.next == nil {
+		sc.next = make([]int, len(sc.pieces)+1)
+		sc.next[len(sc.pieces)] = -1
+		for k := len(sc.pieces) - 1; k >= 0; k-- {
+			sc.next[k] = sc.next[k+1]
+			if sc.pieces[k].q1.out.balanced() && !sc.pieces[k].joined {
+				sc.next[k] = k
 			}
 		}
-		if k := sc.next[idx]; k >= 0 {
-			return sc.pieces[k].to, ""
-		}
-		return 0, "a quote in the find is never closed"
 	}
+	if k := sc.next[idx]; k >= 0 {
+		return sc.pieces[k].to, ""
+	}
+	return 0, "a quote in the find is never closed"
+}
+
+// endInScript is end for a find inside a script written as one quoted word.
+func (sc *findScan) endInScript(idx, a int, q quoting, script byte) (int, string) {
 	// One pass from the find to the end of the script at the most, and the
 	// budget stops a command that asks for it over and over.
 	k := idx
@@ -705,24 +762,29 @@ func (sc *findScan) end(idx, a int, q quoting, script byte) (int, string) {
 			return i, ""
 		}
 		q.step(sc.sp, i)
-		if q.script() == script {
-			continue
+		if q.script() != script {
+			return sc.scriptClosedAt(i, k, &q)
 		}
-		// The script's quote has closed. Whatever follows it in the command is
-		// no word of the script.
-		if !q.in.balanced() {
-			return 0, "a quote inside the script is never closed"
-		}
-		rest := len(sc.sp)
-		if k < len(sc.pieces) && sc.pieces[k].from <= i {
-			rest = sc.pieces[k].to
-		}
-		if after, _ := fieldWords(sc.flat[i+1 : rest]); len(after) > 0 {
-			return 0, "the script's quote closes before the end of the command it is given to"
-		}
-		return i, ""
 	}
 	return 0, "the script's quote is never closed"
+}
+
+// scriptClosedAt is the end of a find whose script's quote closes at i, in
+// or before piece k, or why that is no end.
+func (sc *findScan) scriptClosedAt(i, k int, q *quoting) (int, string) {
+	// The script's quote has closed. Whatever follows it in the command is
+	// no word of the script.
+	if !q.in.balanced() {
+		return 0, "a quote inside the script is never closed"
+	}
+	rest := len(sc.sp)
+	if k < len(sc.pieces) && sc.pieces[k].from <= i {
+		rest = sc.pieces[k].to
+	}
+	if after, _ := fieldWords(sc.flat[i+1 : rest]); len(after) > 0 {
+		return 0, "the script's quote closes before the end of the command it is given to"
+	}
+	return i, ""
 }
 
 // tokens are the words of the find that stands in the spelled text from a to
@@ -732,55 +794,55 @@ func (sc *findScan) end(idx, a int, q quoting, script byte) (int, string) {
 // swallowed into a quote the reader did not follow shows as a list that does
 // not agree.
 func (sc *findScan) tokens(a, b int, q quoting, script byte, words []string) ([]token, findCause, string, string) {
-	sp := sc.sp
-	blank := func(i int) bool { return sp[i] == ' ' || sp[i] == '\t' || sp[i] == '\n' || sp[i] == '\r' }
-	var out []token
-	var got []string
-	pending := false
-	emit := func(start, end int) (findCause, string, string) {
-		raw := sp[start:end]
-		if sep := markerSep(raw); sep != 0 {
-			// The replacer puts a space on each side of an escaped separator, so
-			// one written against another word shows as that word two bytes off.
-			if len(raw) == 1 && (start-2 >= a && !blank(start-2) || end+1 < b && !blank(end+1)) {
-				return causeScript, string(sep), "an escaped separator is written against another word"
-			}
-			out = append(out, token{raw: string(sep), word: string(sep), marker: sep})
-			return causeNone, "", ""
-		}
-		if strings.ContainsAny(raw, "\x1c\x1d\x1e\x1f") {
-			return causeScript, "", "a quoted or escaped separator is part of a longer word"
-		}
-		if script == '"' && (strings.Contains(raw, `\\`) || strings.Contains(raw, `\"`)) {
-			return causeScript, raw, "a script in double quotes holds a backslash before a quote or another backslash"
-		}
-		fields, open := fieldWords(sc.flat[start:end])
-		if pending && len(fields) > 0 {
-			// The target of the redirect that ended the word before.
-			fields, pending = fields[1:], false
-		}
-		pending = pending || open
-		if len(fields) == 0 {
-			return causeNone, "", ""
-		}
-		got = append(got, fields...)
-		filled, splittable, _, _ := shellFill(raw, 0, false)
-		// What a script in double quotes holds, the outer shell fills in before
-		// the script's own shell reads a word of it.
-		filled = filled || script == '"' && strings.ContainsAny(raw, "$`")
-		out = append(out, token{raw: raw, word: unquote(raw), fields: len(fields), filled: filled, splittable: splittable})
-		return causeNone, "", ""
-	}
+	ts := tokenScan{sc: sc, a: a, b: b, script: script}
 	level := &q.out
 	if script != 0 {
 		level = &q.in
 	}
+	start, cause, word, why := ts.split(&q, level)
+	if cause != causeNone {
+		return nil, cause, word, why
+	}
+	if start >= 0 {
+		if cause, word, why := ts.emit(start, b); cause != causeNone {
+			return nil, cause, word, why
+		}
+	}
+	if !level.balanced() {
+		return nil, causeScript, "", "a quote in the find is never closed"
+	}
+	return ts.agreed(words)
+}
+
+// tokenScan is tokens part way through the find's text: the tokens made so
+// far, the fields the path rules would make of the same text, and whether
+// the word before ended in a redirect whose target is still to come.
+type tokenScan struct {
+	sc      *findScan
+	a, b    int
+	script  byte
+	out     []token
+	got     []string
+	pending bool
+}
+
+// blankAt reports whether the character at sp[i] is white space.
+func blankAt(sp string, i int) bool {
+	return sp[i] == ' ' || sp[i] == '\t' || sp[i] == '\n' || sp[i] == '\r'
+}
+
+// split cuts the find's text into words at the white space outside every
+// quote of level, which is one of q's, and makes a token of each. It returns
+// where a word still open at the end of the text starts, or -1, and the
+// cause of the first word no token could be made of.
+func (ts *tokenScan) split(q *quoting, level *quoteLevel) (int, findCause, string, string) {
+	sp := ts.sc.sp
 	start := -1
-	for i := a; i < b; i++ {
-		space := level.quote == 0 && !level.esc && blank(i)
+	for i := ts.a; i < ts.b; i++ {
+		space := level.quote == 0 && !level.esc && blankAt(sp, i)
 		if space && start >= 0 {
-			if cause, word, why := emit(start, i); cause != causeNone {
-				return nil, cause, word, why
+			if cause, word, why := ts.emit(start, i); cause != causeNone {
+				return start, cause, word, why
 			}
 			start = -1
 		} else if !space && start < 0 {
@@ -788,14 +850,58 @@ func (sc *findScan) tokens(a, b int, q quoting, script byte, words []string) ([]
 		}
 		q.step(sp, i)
 	}
-	if start >= 0 {
-		if cause, word, why := emit(start, b); cause != causeNone {
-			return nil, cause, word, why
-		}
+	return start, causeNone, "", ""
+}
+
+// emit makes a token of the word from start to end, or says why none can be
+// made.
+func (ts *tokenScan) emit(start, end int) (findCause, string, string) {
+	raw := ts.sc.sp[start:end]
+	if sep := markerSep(raw); sep != 0 {
+		return ts.separator(raw, sep, start, end)
 	}
-	if !level.balanced() {
-		return nil, causeScript, "", "a quote in the find is never closed"
+	if strings.ContainsAny(raw, "\x1c\x1d\x1e\x1f") {
+		return causeScript, "", "a quoted or escaped separator is part of a longer word"
 	}
+	if ts.script == '"' && (strings.Contains(raw, `\\`) || strings.Contains(raw, `\"`)) {
+		return causeScript, raw, "a script in double quotes holds a backslash before a quote or another backslash"
+	}
+	fields, open := fieldWords(ts.sc.flat[start:end])
+	if ts.pending && len(fields) > 0 {
+		// The target of the redirect that ended the word before.
+		fields, ts.pending = fields[1:], false
+	}
+	ts.pending = ts.pending || open
+	if len(fields) == 0 {
+		return causeNone, "", ""
+	}
+	ts.got = append(ts.got, fields...)
+	filled, splittable, _, _ := shellFill(raw, 0, false)
+	// What a script in double quotes holds, the outer shell fills in before
+	// the script's own shell reads a word of it.
+	filled = filled || ts.script == '"' && strings.ContainsAny(raw, "$`")
+	ts.out = append(ts.out, token{raw: raw, word: unquote(raw), fields: len(fields), filled: filled, splittable: splittable})
+	return causeNone, "", ""
+}
+
+// separator makes the token of a separator the shell hid from find, sep,
+// spelled raw from start to end.
+func (ts *tokenScan) separator(raw string, sep byte, start, end int) (findCause, string, string) {
+	sp := ts.sc.sp
+	// The replacer puts a space on each side of an escaped separator, so
+	// one written against another word shows as that word two bytes off.
+	if len(raw) == 1 && (start-2 >= ts.a && !blankAt(sp, start-2) || end+1 < ts.b && !blankAt(sp, end+1)) {
+		return causeScript, string(sep), "an escaped separator is written against another word"
+	}
+	ts.out = append(ts.out, token{raw: string(sep), word: string(sep), marker: sep})
+	return causeNone, "", ""
+}
+
+// agreed is the tokens after the program's own, once every word the path
+// rules made of the find is accounted for by one of them, or why they are
+// not.
+func (ts *tokenScan) agreed(words []string) ([]token, findCause, string, string) {
+	got, out := ts.got, ts.out
 	if len(got) > 0 {
 		got[0] = strings.TrimLeft(got[0], "({!")
 	}
@@ -821,11 +927,8 @@ func shellFill(word string, quote byte, ansi bool) (filled, splittable bool, out
 			if ansi && c == '\\' {
 				i++
 			}
-		case c == '`' || c == '\\' || c == '$' && (i+1 == len(word) || word[i+1] != '\'' && word[i+1] != '"'):
-			filled = true
-			if quote != '"' {
-				splittable = true
-			}
+		case shellSpells(word, i):
+			filled, splittable = true, splittable || quote != '"'
 			if c == '\\' {
 				// The byte a backslash takes is no quote, whatever it is.
 				i++
@@ -833,17 +936,19 @@ func shellFill(word string, quote byte, ansi bool) (filled, splittable bool, out
 		case c == '$':
 			// $'...' and $"..." are quotes the shell reads and then the word is
 			// one word: filled, and splittable only outside double quotes.
-			filled = true
-			if quote != '"' {
-				splittable = true
-			}
+			filled, splittable = true, splittable || quote != '"'
 			quote, ansi = word[i+1], word[i+1] == '\''
 			i++
-		case quote == 0 && (c == '\'' || c == '"'):
+		case opensAQuote(quote, c):
 			quote, ansi = c, false
 		}
 	}
 	return filled, splittable, quote, ansi
+}
+
+// opensAQuote reports whether c, read outside every quote, opens one.
+func opensAQuote(quote, c byte) bool {
+	return quote == 0 && (c == '\'' || c == '"')
 }
 
 // readFind reads a find's words, after the program, into a postfix list for
@@ -889,117 +994,161 @@ func isLeadingFlag(word string) bool {
 // recursion, so a crafted depth of groups cannot overflow it. Its last
 // statement is the one place an expression is called followed.
 func (e *findExpression) readExpression(tokens []token) {
-	var ops []findOp // operators and group marks (opNone marks a `(`)
-	wantOperand := true
-	fail := func(cause findCause, word, why string) { e.cause, e.word, e.why = cause, word, why }
-	popTo := func(prec int) {
-		for len(ops) > 0 {
-			top := ops[len(ops)-1]
-			if top == opNone || opPrec(top) < prec {
-				return
-			}
-			e.postfix = append(e.postfix, findItem{op: top})
-			ops = ops[:len(ops)-1]
-		}
-	}
+	y := operatorYard{e: e, wantOperand: true}
 	for i := 0; i < len(tokens); i++ {
-		t := tokens[i]
-		switch {
-		case t.marker == ')':
-			if wantOperand {
-				fail(causeShape, ")", "a closing parenthesis with no test before it")
-				return
-			}
-			// Pop to the matching `(`.
-			for len(ops) > 0 && ops[len(ops)-1] != opNone {
-				e.postfix = append(e.postfix, findItem{op: ops[len(ops)-1]})
-				ops = ops[:len(ops)-1]
-			}
-			if len(ops) == 0 {
-				fail(causeShape, ")", "a closing parenthesis with no group open")
-				return
-			}
-			ops = ops[:len(ops)-1] // drop the `(`
-			e.operated = true
-			wantOperand = false
-		case t.marker != 0:
-			fail(causeStray, t.raw, "a separator where find reads a test, an action or an operator")
+		next, ok := y.read(tokens, i)
+		if !ok {
 			return
-		case t.word == "(" || t.word == `\(`:
-			if !wantOperand {
-				popTo(opPrec(opAnd))
-				ops = append(ops, opAnd)
-			}
-			ops = append(ops, opNone)
-			e.operated = true
-			wantOperand = true
-		case t.word == "!" || t.word == `\!` || t.word == "-not":
-			if !wantOperand {
-				popTo(opPrec(opAnd))
-				ops = append(ops, opAnd)
-			}
-			ops = append(ops, opNot)
-			e.operated = true
-			wantOperand = true
-		case t.word == "-o" || t.word == "-or":
-			if wantOperand {
-				fail(causeShape, t.raw, "an alternation with no test before it")
-				return
-			}
-			popTo(opPrec(opOr))
-			ops = append(ops, opOr)
-			e.operated = true
-			wantOperand = true
-		case t.word == "-a" || t.word == "-and":
-			if wantOperand {
-				fail(causeShape, t.raw, "a conjunction with no test before it")
-				return
-			}
-			popTo(opPrec(opAnd))
-			ops = append(ops, opAnd)
-			wantOperand = true
-		case t.word == ",":
-			fail(causeShape, ",", "a comma, which the hook does not read between find's tests")
-			return
-		case t.filled:
-			fail(causeFilled, t.raw, "a word the shell fills in where an operator could be")
-			return
-		case !strings.HasPrefix(t.word, "-"):
-			fail(causeStray, t.raw, "a word that is neither a test nor an operator, where only one of those can stand")
-			return
-		default:
-			// A primary: a test or an action, and the values it is given.
-			item, next, word, why := e.readPrimary(tokens, i)
-			if why != "" {
-				fail(causeFilled, word, why)
-				return
-			}
-			if !wantOperand {
-				popTo(opPrec(opAnd))
-				ops = append(ops, opAnd)
-			}
-			e.postfix = append(e.postfix, item)
-			wantOperand = false
-			i = next
 		}
+		i = next
 	}
-	if wantOperand && len(e.postfix)+len(ops) > 0 {
-		fail(causeShape, "", "an operator or a group with no test to govern")
+	if !y.finish() {
 		return
-	}
-	for len(ops) > 0 {
-		top := ops[len(ops)-1]
-		if top == opNone {
-			fail(causeShape, "(", "a group that is never closed")
-			return
-		}
-		e.postfix = append(e.postfix, findItem{op: top})
-		ops = ops[:len(ops)-1]
 	}
 	// An expression that holds an option the reader does not know is not
 	// followed: how many words the option took cannot be told, so neither can
 	// what the words after it are.
 	e.followed = e.unknown == ""
+}
+
+// operatorYard is readExpression part way through the tokens: the operators
+// still to be written to the postfix list, and whether a test, an action or
+// what opens one is what may stand next.
+type operatorYard struct {
+	e           *findExpression
+	ops         []findOp // operators and group marks (opNone marks a `(`)
+	wantOperand bool
+}
+
+// fail records the first word that could not be followed, and why. It
+// answers false, for the caller to hand on.
+func (y *operatorYard) fail(cause findCause, word, why string) bool {
+	y.e.cause, y.e.word, y.e.why = cause, word, why
+	return false
+}
+
+// popTo writes out the operators on the stack that bind at least as tightly
+// as prec, down to the nearest group mark.
+func (y *operatorYard) popTo(prec int) {
+	for len(y.ops) > 0 {
+		top := y.ops[len(y.ops)-1]
+		if top == opNone || opPrec(top) < prec {
+			return
+		}
+		y.e.postfix = append(y.e.postfix, findItem{op: top})
+		y.ops = y.ops[:len(y.ops)-1]
+	}
+}
+
+// and puts the AND find reads between two tests written side by side, where
+// one has just been read.
+func (y *operatorYard) and() {
+	if !y.wantOperand {
+		y.popTo(opPrec(opAnd))
+		y.ops = append(y.ops, opAnd)
+	}
+}
+
+// read reads the token at i, and with it the values a test or an action
+// takes, and returns the index of the last token it read. It is not ok at
+// the first word it could not follow, which it has recorded.
+func (y *operatorYard) read(tokens []token, i int) (int, bool) {
+	t := tokens[i]
+	switch {
+	case t.marker == ')':
+		return i, y.closeGroup()
+	case t.marker != 0:
+		return i, y.fail(causeStray, t.raw, "a separator where find reads a test, an action or an operator")
+	case t.word == "(" || t.word == `\(`:
+		y.prefix(opNone)
+	case t.word == "!" || t.word == `\!` || t.word == "-not":
+		y.prefix(opNot)
+	case t.word == "-o" || t.word == "-or":
+		if !y.infix(opOr, t.raw, "an alternation with no test before it") {
+			return i, false
+		}
+		y.e.operated = true
+	case t.word == "-a" || t.word == "-and":
+		return i, y.infix(opAnd, t.raw, "a conjunction with no test before it")
+	case t.word == ",":
+		return i, y.fail(causeShape, ",", "a comma, which the hook does not read between find's tests")
+	case t.filled:
+		return i, y.fail(causeFilled, t.raw, "a word the shell fills in where an operator could be")
+	case !strings.HasPrefix(t.word, "-"):
+		return i, y.fail(causeStray, t.raw, "a word that is neither a test nor an operator, where only one of those can stand")
+	default:
+		return y.primary(tokens, i)
+	}
+	return i, true
+}
+
+// closeGroup reads a `)`.
+func (y *operatorYard) closeGroup() bool {
+	if y.wantOperand {
+		return y.fail(causeShape, ")", "a closing parenthesis with no test before it")
+	}
+	// Pop to the matching `(`.
+	for len(y.ops) > 0 && y.ops[len(y.ops)-1] != opNone {
+		y.e.postfix = append(y.e.postfix, findItem{op: y.ops[len(y.ops)-1]})
+		y.ops = y.ops[:len(y.ops)-1]
+	}
+	if len(y.ops) == 0 {
+		return y.fail(causeShape, ")", "a closing parenthesis with no group open")
+	}
+	y.ops = y.ops[:len(y.ops)-1] // drop the `(`
+	y.e.operated = true
+	y.wantOperand = false
+	return true
+}
+
+// prefix reads what stands before a test: a `(`, whose mark is opNone, or a
+// negation.
+func (y *operatorYard) prefix(op findOp) {
+	y.and()
+	y.ops = append(y.ops, op)
+	y.e.operated = true
+	y.wantOperand = true
+}
+
+// infix reads an operator written between two tests, spelled raw, and fails
+// with why where no test stands before it.
+func (y *operatorYard) infix(op findOp, raw, why string) bool {
+	if y.wantOperand {
+		return y.fail(causeShape, raw, why)
+	}
+	y.popTo(opPrec(op))
+	y.ops = append(y.ops, op)
+	y.wantOperand = true
+	return true
+}
+
+// primary reads a test or an action at i, and the values it is given.
+func (y *operatorYard) primary(tokens []token, i int) (int, bool) {
+	item, next, word, why := y.e.readPrimary(tokens, i)
+	if why != "" {
+		return i, y.fail(causeFilled, word, why)
+	}
+	y.and()
+	y.e.postfix = append(y.e.postfix, item)
+	y.wantOperand = false
+	return next, true
+}
+
+// finish writes out the operators left on the stack once the tokens are
+// read, and fails where one has no test to govern or a group is still open.
+func (y *operatorYard) finish() bool {
+	if y.wantOperand && len(y.e.postfix)+len(y.ops) > 0 {
+		return y.fail(causeShape, "", "an operator or a group with no test to govern")
+	}
+	for len(y.ops) > 0 {
+		top := y.ops[len(y.ops)-1]
+		if top == opNone {
+			return y.fail(causeShape, "(", "a group that is never closed")
+		}
+		y.e.postfix = append(y.e.postfix, findItem{op: top})
+		y.ops = y.ops[:len(y.ops)-1]
+	}
+	return true
 }
 
 // readPrimary reads one test or action at i and the values it takes, and
@@ -1056,11 +1205,8 @@ func readExec(tokens []token, i int) (int, string, string) {
 		if t.word == "+" && last == "{}" {
 			return i, "", ""
 		}
-		if t.splittable {
-			return i, t.raw, "a word in an -exec command the shell could split into the terminator"
-		}
-		if filledBefore && (findOperator(t.word) || strings.HasPrefix(t.word, "-")) {
-			return i, t.raw, "a word after an -exec command that could stand where the expression goes on"
+		if cause := execUnfollowed(t, filledBefore); cause != "" {
+			return i, t.raw, cause
 		}
 		if t.filled {
 			filledBefore = true
@@ -1072,6 +1218,19 @@ func readExec(tokens []token, i int) (int, string, string) {
 	return i - 1, "", ""
 }
 
+// execUnfollowed is why a word of an -exec command cannot be followed, or
+// nothing where it can: the split is asked before the place after a filled
+// word, as readExec has always asked them.
+func execUnfollowed(t token, filledBefore bool) string {
+	if t.splittable {
+		return "a word in an -exec command the shell could split into the terminator"
+	}
+	if filledBefore && (findOperator(t.word) || strings.HasPrefix(t.word, "-")) {
+		return "a word after an -exec command that could stand where the expression goes on"
+	}
+	return ""
+}
+
 // opPrec is an operator's binding: a negation binds tighter than an implicit or
 // written AND, which binds tighter than OR. It is asked of those three only: a
 // group's mark is stopped at before its binding is asked for.
@@ -1081,6 +1240,7 @@ func opPrec(op findOp) int {
 		return 3
 	case opAnd:
 		return 2
+	default:
+		return 1
 	}
-	return 1
 }

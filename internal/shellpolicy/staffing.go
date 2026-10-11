@@ -60,19 +60,7 @@ func sdlcUses(words []string) []sdlcUse {
 		// Nothing in the words says which is which, so each one is read as the
 		// run, but for one whose next word is sdlc again: that one named the
 		// package. Read as the only run, it hid the command behind it.
-		var uses []sdlcUse
-		for i := -1; i < len(args); i++ {
-			if i >= 0 && !isSdlc(args[i]) {
-				continue
-			}
-			if next, _, _ := nextWord(args[i+1:]); !isSdlc(next) {
-				// The launcher's own words and what it was told to run before
-				// this one: a program there that feeds words makes this fed.
-				before := words[:len(words)-len(args)+max(i, 0)]
-				uses = append(uses, sdlcUse{args: args[i+1:], fed: slices.ContainsFunc(before, feeds)})
-			}
-		}
-		return uses
+		return launchedUses(words, args)
 	}
 	if mentionsOnly(base(words[0])) {
 		return nil
@@ -88,6 +76,24 @@ func sdlcUses(words []string) []sdlcUse {
 			uses = append(uses, sdlcUse{args: words[i+1:], way: way, fed: fed})
 		}
 		fed = fed || feeds(words[i])
+	}
+	return uses
+}
+
+// launchedUses is every run of sdlc a launcher's words can spell, args being
+// what follows the first of them among words.
+func launchedUses(words, args []string) []sdlcUse {
+	var uses []sdlcUse
+	for i := -1; i < len(args); i++ {
+		if i >= 0 && !isSdlc(args[i]) {
+			continue
+		}
+		if next, _, _ := nextWord(args[i+1:]); !isSdlc(next) {
+			// The launcher's own words and what it was told to run before
+			// this one: a program there that feeds words makes this fed.
+			before := words[:len(words)-len(args)+max(i, 0)]
+			uses = append(uses, sdlcUse{args: args[i+1:], fed: slices.ContainsFunc(before, feeds)})
+		}
 	}
 	return uses
 }

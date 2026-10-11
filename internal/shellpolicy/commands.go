@@ -209,80 +209,120 @@ func (l *lexer) substitute(inner []rune) {
 
 func (l *lexer) read(rs []rune) {
 	for i := 0; i < len(rs); i++ {
-		r := rs[i]
-		switch {
-		case r == '\\' && i+1 < len(rs) && rs[i+1] == '\n':
-			i++
-			l.endWord()
-		case r == '\\' && !l.powerShell && i+1 < len(rs) && strings.ContainsRune(";&|'\"", rs[i+1]):
-			// An escaped separator is a character of the word, as find's `\;`
-			// is. Read as a separator, it ended find before a second -exec. So
-			// is an escaped quote: read as a backslash and then a quote, it
-			// opened a string, and `echo \'; git commit -m x; echo \'` was one
-			// echo, and `'it'\''s'` was it\s.
-			i++
-			l.putRune(rs[i])
-			l.started = true
-		case r == '\'':
-			end := find(rs, i+1, '\'')
-			l.put(string(rs[i+1 : end]))
-			l.started = true
-			i = end
-		case r == '"':
-			i = l.quoted(rs, i+1)
-		case r == '`':
-			end := find(rs, i+1, '`')
-			l.substitute(rs[i+1 : end])
-			i = end
-		case r == '$' && i+1 < len(rs) && rs[i+1] == '(':
-			end := closing(rs, i+2)
-			l.substitute(rs[i+2 : end])
-			i = end
-		case r == '$' && i+1 < len(rs) && rs[i+1] == '{':
-			end := find(rs, i+2, '}')
-			l.put(string(rs[i:min(end+1, len(rs))]))
-			l.started = true
-			i = end
-		case l.powerShell && r == '<' && i+1 < len(rs) && rs[i+1] == '#':
-			// PowerShell's block comment. Read as a redirect and then a line
-			// comment, `<# note #> sdlc approve` hid the command after it.
-			l.endWord()
-			j := i + 2
-			for j+1 < len(rs) && (rs[j] != '#' || rs[j+1] != '>') {
-				j++
-			}
-			i = j + 1
-		case r == '#' && !l.started:
-			// A comment runs to the end of the line, and nothing in it runs.
-			i = find(rs, i, '\n') - 1
-		case r == '>' || r == '<' || (r == '&' && i+1 < len(rs) && rs[i+1] == '>'):
-			i = l.redirect(rs, i)
-		case r == ' ' || r == '\t' || r == '\r':
-			l.endWord()
-		case r == '{' && i+1 < len(rs) && rs[i+1] == '}':
-			// `{}` is a word, the one find puts each file in. Read as a group,
-			// `-exec true {} +` ended find before the -exec after it.
-			i++
-			l.put("{}")
-			l.started = true
-		case r == '(':
-			l.endCommand()
-			l.open = append(l.open, l.subshells.start(l.group()))
-		case r == ')':
-			l.endCommand()
-			if len(l.open) > 1 {
-				l.open = l.open[:len(l.open)-1]
-			}
-		case l.powerShell && r == '&' && (i+1 == len(rs) || rs[i+1] != '&') && (i == 0 || rs[i-1] != '&'):
-			l.endCommand()
-			l.call = true
-		case strings.ContainsRune("\n;&|{}", r):
-			l.endCommand()
-		default:
-			l.putRune(r)
-			l.started = true
+		// The escapes, quotes and substitutions are asked first, and only a
+		// character that is none of them is read as a separator or a
+		// character of a word: the order is the one the cases were always
+		// tried in.
+		if at, ok := l.readQuoting(rs, i); ok {
+			i = at
+			continue
 		}
+		i = l.readPlain(rs, i)
 	}
+}
+
+// readQuoting reads the character at i where it opens an escape, a quote or
+// a substitution, and returns the index of the last character it read. It is
+// not ok for any other character, of which it has read nothing.
+func (l *lexer) readQuoting(rs []rune, i int) (int, bool) {
+	r := rs[i]
+	switch {
+	case r == '\\' && i+1 < len(rs) && rs[i+1] == '\n':
+		i++
+		l.endWord()
+	case r == '\\' && !l.powerShell && i+1 < len(rs) && strings.ContainsRune(";&|'\"", rs[i+1]):
+		// An escaped separator is a character of the word, as find's `\;`
+		// is. Read as a separator, it ended find before a second -exec. So
+		// is an escaped quote: read as a backslash and then a quote, it
+		// opened a string, and `echo \'; git commit -m x; echo \'` was one
+		// echo, and `'it'\''s'` was it\s.
+		i++
+		l.putRune(rs[i])
+		l.started = true
+	case r == '\'':
+		end := find(rs, i+1, '\'')
+		l.put(string(rs[i+1 : end]))
+		l.started = true
+		i = end
+	case r == '"':
+		i = l.quoted(rs, i+1)
+	case r == '`':
+		end := find(rs, i+1, '`')
+		l.substitute(rs[i+1 : end])
+		i = end
+	case r == '$' && i+1 < len(rs) && rs[i+1] == '(':
+		end := closing(rs, i+2)
+		l.substitute(rs[i+2 : end])
+		i = end
+	case r == '$' && i+1 < len(rs) && rs[i+1] == '{':
+		end := find(rs, i+2, '}')
+		l.put(string(rs[i:min(end+1, len(rs))]))
+		l.started = true
+		i = end
+	default:
+		return i, false
+	}
+	return i, true
+}
+
+// readPlain reads the character at i, one readQuoting did not take: a
+// comment, a redirect, a separator, or a character of a word. It returns the
+// index of the last character it read.
+func (l *lexer) readPlain(rs []rune, i int) int {
+	r := rs[i]
+	switch {
+	case l.powerShell && r == '<' && i+1 < len(rs) && rs[i+1] == '#':
+		// PowerShell's block comment. Read as a redirect and then a line
+		// comment, `<# note #> sdlc approve` hid the command after it.
+		l.endWord()
+		i = blockCommentEnd(rs, i)
+	case r == '#' && !l.started:
+		// A comment runs to the end of the line, and nothing in it runs.
+		i = find(rs, i, '\n') - 1
+	case r == '>' || r == '<' || (r == '&' && i+1 < len(rs) && rs[i+1] == '>'):
+		i = l.redirect(rs, i)
+	case r == ' ' || r == '\t' || r == '\r':
+		l.endWord()
+	case r == '{' && i+1 < len(rs) && rs[i+1] == '}':
+		// `{}` is a word, the one find puts each file in. Read as a group,
+		// `-exec true {} +` ended find before the -exec after it.
+		i++
+		l.put("{}")
+		l.started = true
+	case r == '(':
+		l.endCommand()
+		l.open = append(l.open, l.subshells.start(l.group()))
+	case r == ')':
+		l.endCommand()
+		if len(l.open) > 1 {
+			l.open = l.open[:len(l.open)-1]
+		}
+	case l.powerShell && loneAmpersand(rs, i):
+		l.endCommand()
+		l.call = true
+	case strings.ContainsRune("\n;&|{}", r):
+		l.endCommand()
+	default:
+		l.putRune(r)
+		l.started = true
+	}
+	return i
+}
+
+// blockCommentEnd is the index of the `>` that closes the PowerShell block
+// comment opening at i, or past the end where nothing closes it.
+func blockCommentEnd(rs []rune, i int) int {
+	j := i + 2
+	for j+1 < len(rs) && (rs[j] != '#' || rs[j+1] != '>') {
+		j++
+	}
+	return j + 1
+}
+
+// loneAmpersand reports whether the character at i is an `&` with no other
+// beside it, which in PowerShell is the call operator and not `&&`.
+func loneAmpersand(rs []rune, i int) bool {
+	return rs[i] == '&' && (i+1 == len(rs) || rs[i+1] != '&') && (i == 0 || rs[i-1] != '&')
 }
 
 // quoted reads a double-quoted string from just after its opening quote, and
@@ -413,86 +453,132 @@ func programsAt(line string, powerShell bool) ([]ran, *subshells) {
 }
 
 func programsWithin(line string, powerShell bool, t *subshells, group, depth int, substituted, piped bool) []ran {
-	var out []ran
-	l := lexIn(line, powerShell, t, group)
-	for i, words := range l.commands {
-		marks := l.marks[i]
-		var prefix []string
-		for len(words) > 0 && isAssignment(words[0]) {
-			prefix = append(prefix, marks[0])
-			words, marks = words[1:], marks[1:]
+	p := programScan{powerShell: powerShell, t: t, depth: depth, substituted: substituted, piped: piped}
+	p.l = lexIn(line, powerShell, t, group)
+	for i, words := range p.l.commands {
+		p.command(i, words)
+	}
+	return p.out
+}
+
+// programScan is programsWithin part way through a line: the line as lexed,
+// what the line itself was handed with, and the commands found so far.
+type programScan struct {
+	powerShell         bool
+	t                  *subshells
+	depth              int
+	substituted, piped bool
+	l                  *lexer
+	out                []ran
+}
+
+// lexedCommand is one command of a line as programScan reads it: the
+// program it runs, with what wraps it taken off, from its words and again
+// from its words with the substitutions marked; the subshell it runs in;
+// whether it or the line holds a substitution, and whether it is fed more
+// words on standard input; the variables it runs with, and those a
+// `${NAME:=word}` among its words sets.
+type lexedCommand struct {
+	run, marked   invocation
+	in            int
+	cut, fed      bool
+	env, defaults []string
+}
+
+// command adds what the i-th command of the line runs.
+func (p *programScan) command(i int, words []string) {
+	l, t := p.l, p.t
+	marks := l.marks[i]
+	var prefix []string
+	for len(words) > 0 && isAssignment(words[0]) {
+		prefix = append(prefix, marks[0])
+		words, marks = words[1:], marks[1:]
+	}
+	run := program(words)
+	c := lexedCommand{run: run, in: l.groups[i], cut: p.substituted || l.substituted[i], fed: p.piped || run.piped}
+	if !p.powerShell {
+		c.defaults = defaulted(l.marks[i])
+	}
+	if len(run.words) == 0 {
+		if len(prefix) > 0 && !run.shell {
+			// A line of assignments alone keeps them for what follows:
+			// `GIT_DIR=/elsewhere/.git; git log`.
+			p.out = append(p.out, ran{group: c.in, sets: slices.Concat(c.defaults, prefix)})
 		}
-		run := program(words)
-		in, cut, fed := l.groups[i], substituted || l.substituted[i], piped || run.piped
-		var defaults []string
-		if !powerShell {
-			defaults = defaulted(l.marks[i])
+		return
+	}
+	c.marked = program(marks)
+	c.env = slices.Concat(prefix, c.marked.assigns)
+	script := run.words
+	switch {
+	case run.shell:
+		c.in = t.start(c.in)
+		t.script[c.in] = true
+		t.startsWith(c.in, c.env)
+	case base(script[0]) == "eval":
+		// eval runs its string in this shell, so a `cd` in it moves this one,
+		// and what is set in front of it stays set, as it does for the
+		// shell's own builtins.
+		script = script[1:]
+		if len(c.env) > 0 {
+			p.out = append(p.out, ran{group: c.in, sets: c.env})
 		}
-		if len(run.words) == 0 {
-			if len(prefix) > 0 && !run.shell {
-				// A line of assignments alone keeps them for what follows:
-				// `GIT_DIR=/elsewhere/.git; git log`.
-				out = append(out, ran{group: in, sets: slices.Concat(defaults, prefix)})
-			}
+	default:
+		p.plain(i, c)
+		return
+	}
+	if p.depth >= 4 {
+		return
+	}
+	p.script(script, c)
+}
+
+// plain adds a command that hands no string to a shell, and with a find the
+// commands its -exec run.
+func (p *programScan) plain(i int, c lexedCommand) {
+	l, run, marked := p.l, c.run, c.marked
+	sets := slices.Concat(c.defaults, exported(marked.words, l.inputs[i], p.powerShell))
+	p.out = append(p.out, ran{words: run.words, group: c.in, redirects: l.writes[i], substituted: c.cut,
+		marked: marked.words, env: c.env, sets: sets, chdir: marked.chdir, piped: c.fed,
+		expression: p.powerShell && !l.calls[i]})
+	if base(run.words[0]) != "find" {
+		return
+	}
+	// Each -exec runs a command:
+	// `find . -exec true \; -exec git commit -m x \;` runs git.
+	for j, w := range run.words {
+		if !findRuns(w) {
 			continue
 		}
-		marked := program(marks)
-		env := slices.Concat(prefix, marked.assigns)
-		script := run.words
-		switch {
-		case run.shell:
-			in = t.start(in)
-			t.script[in] = true
-			t.startsWith(in, env)
-		case base(script[0]) == "eval":
-			// eval runs its string in this shell, so a `cd` in it moves this one,
-			// and what is set in front of it stays set, as it does for the
-			// shell's own builtins.
-			script = script[1:]
-			if len(env) > 0 {
-				out = append(out, ran{group: in, sets: env})
-			}
-		default:
-			sets := slices.Concat(defaults, exported(marked.words, l.inputs[i], powerShell))
-			out = append(out, ran{words: run.words, group: in, redirects: l.writes[i], substituted: cut,
-				marked: marked.words, env: env, sets: sets, chdir: marked.chdir, piped: fed,
-				expression: powerShell && !l.calls[i]})
-			if base(run.words[0]) == "find" {
-				// Each -exec runs a command:
-				// `find . -exec true \; -exec git commit -m x \;` runs git.
-				for j, w := range run.words {
-					if !findRuns(w) {
-						continue
-					}
-					if exec := program(run.words[j+1:]); len(exec.words) > 0 {
-						out = append(out, ran{words: exec.words, group: in, substituted: cut,
-							marked: exec.words, env: env, piped: fed})
-					}
-				}
-			}
-			continue
-		}
-		if depth >= 4 {
-			continue
-		}
-		out = append(out, programsWithin(strings.Join(script, " "), powerShell, t, in, depth+1, cut, fed)...)
-		// The script once more as the shell will run it, with each substitution
-		// standing where it was: to the reading above, `sh -c "git $(echo
-		// worktree) prune"` is `git  prune`, and git's subcommand is not empty.
-		if len(marked.words) >= len(script) {
-			markedScript := marked.words[len(marked.words)-len(script):]
-			if !slices.Equal(markedScript, script) {
-				again := t.start(in)
-				t.script[again] = run.shell
-				t.startsWith(again, env)
-				for _, r := range programsWithin(strings.Join(markedScript, " "), powerShell, t, again, depth+1, cut, fed) {
-					r.extra = true
-					out = append(out, r)
-				}
-			}
+		if exec := program(run.words[j+1:]); len(exec.words) > 0 {
+			p.out = append(p.out, ran{words: exec.words, group: c.in, substituted: c.cut,
+				marked: exec.words, env: c.env, piped: c.fed})
 		}
 	}
-	return out
+}
+
+// script adds the commands a string handed to a shell or to eval runs,
+// script being the words of that string.
+func (p *programScan) script(script []string, c lexedCommand) {
+	t := p.t
+	p.out = append(p.out, programsWithin(strings.Join(script, " "), p.powerShell, t, c.in, p.depth+1, c.cut, c.fed)...)
+	// The script once more as the shell will run it, with each substitution
+	// standing where it was: to the reading above, `sh -c "git $(echo
+	// worktree) prune"` is `git  prune`, and git's subcommand is not empty.
+	if len(c.marked.words) < len(script) {
+		return
+	}
+	markedScript := c.marked.words[len(c.marked.words)-len(script):]
+	if slices.Equal(markedScript, script) {
+		return
+	}
+	again := t.start(c.in)
+	t.script[again] = c.run.shell
+	t.startsWith(again, c.env)
+	for _, r := range programsWithin(strings.Join(markedScript, " "), p.powerShell, t, again, p.depth+1, c.cut, c.fed) {
+		r.extra = true
+		p.out = append(p.out, r)
+	}
 }
 
 // exported is what export, declare and their like set for the commands after
@@ -590,13 +676,42 @@ func readSets(args, input []string) []string {
 // cannot know. powerShellSets reads a few orders of them; read by it alone,
 // `Set-Item -Value <main checkout>/.git -Path Env:GIT_DIR` set nothing.
 func powerShellItemSets(cmdlet string, args []string) []string {
-	var path, name, value string
-	var named, valued bool
-	var positional []string
+	p := powerShellItemParams(cmdlet, args)
+	if !p.named && len(p.positional) > 0 {
+		p.path, p.positional = p.positional[0], p.positional[1:]
+	}
+	if !p.valued {
+		p.value = unknownValue
+		if len(p.positional) > 0 {
+			p.value = p.positional[0]
+		}
+	}
+	rest, ok := cutPrefixFold(p.path, "env:")
+	if rest = strings.TrimLeft(rest, `\/`); rest != "" {
+		p.name = rest
+	}
+	if !ok || p.name == "" {
+		return nil
+	}
+	return []string{p.name + "=" + p.value}
+}
+
+// itemParams is what the words of one of those cmdlets bind: its path, name
+// and value, whether the path and the value were given by name, and the words
+// no parameter took.
+type itemParams struct {
+	path, name, value string
+	named, valued     bool
+	positional        []string
+}
+
+// powerShellItemParams reads the parameters powerShellItemSets goes by.
+func powerShellItemParams(cmdlet string, args []string) itemParams {
+	var p itemParams
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if len(a) < 2 || a[0] != '-' {
-			positional = append(positional, a)
+			p.positional = append(p.positional, a)
 			continue
 		}
 		param, v, joined := strings.Cut(a[1:], ":")
@@ -611,30 +726,14 @@ func powerShellItemSets(cmdlet string, args []string) []string {
 		}
 		switch {
 		case cutShort(param, "path"), cutShort(param, "literalpath"), param == "pspath", param == "lp":
-			path, named = v, true
+			p.path, p.named = v, true
 		case cutShort(param, "name"):
-			name = v
+			p.name = v
 		case cutShort(param, "value"):
-			value, valued = v, true
+			p.value, p.valued = v, true
 		}
 	}
-	if !named && len(positional) > 0 {
-		path, positional = positional[0], positional[1:]
-	}
-	if !valued {
-		value = unknownValue
-		if len(positional) > 0 {
-			value = positional[0]
-		}
-	}
-	rest, ok := cutPrefixFold(path, "env:")
-	if rest = strings.TrimLeft(rest, `\/`); rest != "" {
-		name = rest
-	}
-	if !ok || name == "" {
-		return nil
-	}
-	return []string{name + "=" + value}
+	return p
 }
 
 // powerShellSwitch reports whether a parameter of the cmdlet, lower case and
@@ -693,38 +792,52 @@ func defaulted(words []string) []string {
 		}
 		closes := closeBraces(w)
 		for i := 0; i+1 < len(w); i++ {
-			if w[i] != '$' || w[i+1] != '{' {
-				continue
-			}
-			j := i + 2
-			for j < len(w) && nameRune(rune(w[j])) {
-				j++
-			}
-			name := w[i+2 : j]
-			if name == "" || name[0] >= '0' && name[0] <= '9' {
-				continue
-			}
-			if k := j; k < len(w) && w[k] == ':' {
-				j++
-			}
-			if j >= len(w) || w[j] != '=' {
-				continue
-			}
-			start := j + 1
-			end := closes[start]
-			if end == len(w) {
-				// No `}` closes it, and none later can either, since a later
-				// `${` starts further right than this value does.
+			set, ok, last := defaultedAt(w, i, closes)
+			if last {
 				break
 			}
-			value := w[start:end]
-			if strings.IndexByte(value, '$') >= 0 {
-				value = unknownValue
+			if ok {
+				sets = append(sets, set)
 			}
-			sets = append(sets, name+"="+value)
 		}
 	}
 	return sets
+}
+
+// defaultedAt is what a `${NAME:=word}` or `${NAME=word}` that opens at
+// w[i] sets, where one does; i is before the last character of w, and closes
+// is closeBraces of w. last is set where one opens there that nothing
+// closes, after which no other in the word is closed either.
+func defaultedAt(w string, i int, closes []int) (set string, ok, last bool) {
+	if w[i] != '$' || w[i+1] != '{' {
+		return "", false, false
+	}
+	j := i + 2
+	for j < len(w) && nameRune(rune(w[j])) {
+		j++
+	}
+	name := w[i+2 : j]
+	if name == "" || name[0] >= '0' && name[0] <= '9' {
+		return "", false, false
+	}
+	if k := j; k < len(w) && w[k] == ':' {
+		j++
+	}
+	if j >= len(w) || w[j] != '=' {
+		return "", false, false
+	}
+	start := j + 1
+	end := closes[start]
+	if end == len(w) {
+		// No `}` closes it, and none later can either, since a later
+		// `${` starts further right than this value does.
+		return "", false, true
+	}
+	value := w[start:end]
+	if strings.IndexByte(value, '$') >= 0 {
+		value = unknownValue
+	}
+	return name + "=" + value, true, false
 }
 
 // closeBraces[p] is the index of the first `}` at or after p in w, or len(w)
@@ -830,20 +943,12 @@ func gitCall(args []string) (sub, dir string, rest, alias []string) {
 		switch a := args[i]; {
 		case a == "-C" && i+1 < len(args):
 			i++
-			if to := clean(args[i]); isAbsolute(to) {
-				dir = to
-			} else {
-				dir = path.Join(dir, to)
-			}
+			dir = movedBy(dir, args[i])
 		case a == "-c" && i+1 < len(args):
 			i++
-			if name, value, ok := strings.Cut(args[i], "="); ok {
-				if name, ok := strings.CutPrefix(strings.ToLower(name), "alias."); ok {
-					aliases[name] = value
-				}
-			}
-		case a == "--git-dir" || a == "--work-tree" || a == "--namespace" ||
-			a == "--config-env" || a == "--attr-source":
+			noteAlias(aliases, args[i])
+		case a == optGitDir || a == optWorkTree || a == optNamespace ||
+			a == optConfigEnv || a == optAttrSource:
 			// Read as the subcommand, the value hid it: `git --attr-source HEAD
 			// commit` was a command called HEAD.
 			i++
@@ -858,6 +963,26 @@ func gitCall(args []string) (sub, dir string, rest, alias []string) {
 		}
 	}
 	return "", dir, nil, nil
+}
+
+// movedBy is where a -C takes git from dir: to the directory it names where
+// that is absolute, and to it below dir where it is not.
+func movedBy(dir, word string) string {
+	to := clean(word)
+	if isAbsolute(to) {
+		return to
+	}
+	return path.Join(dir, to)
+}
+
+// noteAlias records the alias a `-c alias.NAME=VALUE` defines, under its name
+// in lower case; any other setting is not one gitCall reads.
+func noteAlias(aliases map[string]string, setting string) {
+	if name, value, ok := strings.Cut(setting, "="); ok {
+		if name, ok := strings.CutPrefix(strings.ToLower(name), aliasPrefix); ok {
+			aliases[name] = value
+		}
+	}
 }
 
 // inThisRepository reports whether a git command run in dir works on the
@@ -923,13 +1048,13 @@ func workTreeOf(words []string, dir string) string {
 	args, tree := words[1:], ""
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
-		case a == "--work-tree" && i+1 < len(args):
+		case a == optWorkTree && i+1 < len(args):
 			i++
 			tree = clean(args[i])
 		case strings.HasPrefix(a, "--work-tree="):
 			tree = clean(strings.TrimPrefix(a, "--work-tree="))
-		case a == "-C" || a == "-c" || a == "--git-dir" || a == "--namespace" ||
-			a == "--config-env" || a == "--attr-source":
+		case a == "-C" || a == "-c" || a == optGitDir || a == optNamespace ||
+			a == optConfigEnv || a == optAttrSource:
 			i++
 		case !strings.HasPrefix(a, "-"):
 			i = len(args)
@@ -1036,18 +1161,18 @@ func ownRepository(words []string, dir string, s State) bool {
 func placedGit(args []string) bool {
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
-		case (a == "-C" || a == "--git-dir") && i+1 < len(args):
+		case (a == "-C" || a == optGitDir) && i+1 < len(args):
 			i++
 			// Empty is where a substitution was: `git -C "$(mktemp -d)"`.
 			if args[i] == "" || !placedWords(args[i:i+1]) {
 				return false
 			}
-		case strings.HasPrefix(a, "--git-dir="):
-			if a == "--git-dir=" || !placedWords([]string{strings.TrimPrefix(a, "--git-dir=")}) {
+		case strings.HasPrefix(a, optGitDirEquals):
+			if a == optGitDirEquals || !placedWords([]string{strings.TrimPrefix(a, optGitDirEquals)}) {
 				return false
 			}
-		case a == "-c" || a == "--work-tree" || a == "--namespace" ||
-			a == "--config-env" || a == "--attr-source":
+		case a == "-c" || a == optWorkTree || a == optNamespace ||
+			a == optConfigEnv || a == optAttrSource:
 			i++
 		case !strings.HasPrefix(a, "-"):
 			return true
@@ -1069,7 +1194,7 @@ func aliasedCommand(value string) (string, []string) {
 
 // makesCommits are the git subcommands that put a commit on the branch.
 var makesCommits = map[string]bool{
-	"commit": true, "commit-tree": true, "merge": true, "cherry-pick": true, "revert": true,
+	"commit": true, "commit-tree": true, "merge": true, subCherryPick: true, "revert": true,
 	"am": true, "rebase": true,
 }
 
@@ -1091,9 +1216,9 @@ func leavesItUncommitted(words []string, sub string) bool {
 		case gitValueFlags[words[i-1]]:
 		case w == "--commit":
 			return false
-		case w == "--no-commit" && (sub == "merge" || sub == "cherry-pick" || sub == "revert"),
+		case w == "--no-commit" && (sub == "merge" || sub == subCherryPick || sub == "revert"),
 			w == "--squash" && sub == "merge",
-			w == "-n" && (sub == "cherry-pick" || sub == "revert"):
+			w == "-n" && (sub == subCherryPick || sub == "revert"):
 			uncommitted = true
 		}
 	}
@@ -1107,7 +1232,7 @@ func makesACommit(words []string, sub string) bool {
 	if sub == "config" {
 		// An alias set now is a commit later: `git config alias.ci commit`.
 		for i := 1; i+1 < len(words); i++ {
-			if strings.HasPrefix(strings.ToLower(words[i]), "alias.") {
+			if strings.HasPrefix(strings.ToLower(words[i]), aliasPrefix) {
 				sub, _ := aliasedCommand(words[i+1])
 				return makesCommits[sub]
 			}
@@ -1286,18 +1411,18 @@ var commitRows = map[string]commitRow{
 		abbreviates: true,
 	},
 	"merge": {
-		never: []string{"squash", "help"}, letters: "h", held: []string{"no-commit"},
+		never: []string{"squash", "help"}, letters: "h", held: []string{longNoCommit},
 		ends: "mFsSX", next: "mFsX",
-		valued:      []string{"message", "file", "strategy", "strategy-option", "into-name", "cleanup"},
+		valued:      []string{"message", "file", "strategy", longStrategyOption, "into-name", "cleanup"},
 		abbreviates: true,
 	},
-	"cherry-pick": {
-		never: []string{"help"}, letters: "h", held: []string{"no-commit"}, heldLetters: "n",
-		ends: "mSX", next: "mX", valued: []string{"mainline", "strategy", "strategy-option", "cleanup"},
+	subCherryPick: {
+		never: []string{"help"}, letters: "h", held: []string{longNoCommit}, heldLetters: "n",
+		ends: "mSX", next: "mX", valued: []string{"mainline", "strategy", longStrategyOption, "cleanup"},
 	},
 	"revert": {
-		never: []string{"help"}, letters: "h", held: []string{"no-commit"}, heldLetters: "n",
-		ends: "mSX", next: "mX", valued: []string{"mainline", "strategy", "strategy-option", "cleanup"},
+		never: []string{"help"}, letters: "h", held: []string{longNoCommit}, heldLetters: "n",
+		ends: "mSX", next: "mX", valued: []string{"mainline", "strategy", longStrategyOption, "cleanup"},
 	},
 	"am":     {never: []string{"help"}, letters: "h", ends: "CpS"},
 	"rebase": {never: []string{"help"}, letters: "h", ends: "sSX", next: "sX"},
@@ -1309,42 +1434,64 @@ func (r commitRow) commitsNothing(words []string) bool {
 	held := false
 	for i := 0; i < len(words); i++ {
 		w := words[i]
-		switch {
-		case w == "--commit":
+		if w == "--commit" {
 			held = false
-		case strings.HasPrefix(w, "--"):
-			name, _, valued := strings.Cut(w[2:], "=")
-			if name == "" {
-				continue
-			}
-			if prefixOfAny(name, r.never) {
-				return true
-			}
-			if prefixOfAny(name, r.held) {
-				held = true
-			}
-			if !valued && r.takesNext(name) {
-				i++
-			}
-		case strings.HasPrefix(w, "-") && len(w) > 1:
-			for j := 1; j < len(w); j++ {
-				c := w[j : j+1]
-				if strings.Contains(r.letters, c) {
-					return true
-				}
-				if strings.Contains(r.heldLetters, c) {
-					held = true
-				}
-				if strings.Contains(r.ends, c) {
-					if j == len(w)-1 && strings.Contains(r.next, c) {
-						i++
-					}
-					break
-				}
-			}
+			continue
+		}
+		never, holds, skip := r.option(w)
+		if never {
+			return true
+		}
+		held = held || holds
+		if skip {
+			i++
 		}
 	}
 	return held
+}
+
+// option reads one word other than --commit as this row's options: never
+// where it holds one that makes the command commit nothing, holds where it
+// holds one a later --commit undoes, and skip where its last option takes the
+// next word as its value. A word that is no option is none of the three.
+func (r commitRow) option(w string) (never, holds, skip bool) {
+	switch {
+	case strings.HasPrefix(w, "--"):
+		return r.long(w)
+	case strings.HasPrefix(w, "-") && len(w) > 1:
+		return r.bundle(w)
+	}
+	return false, false, false
+}
+
+// long is option for a long option.
+func (r commitRow) long(w string) (never, holds, skip bool) {
+	name, _, valued := strings.Cut(w[2:], "=")
+	if name == "" {
+		return false, false, false
+	}
+	if prefixOfAny(name, r.never) {
+		return true, false, false
+	}
+	return false, prefixOfAny(name, r.held), !valued && r.takesNext(name)
+}
+
+// bundle is option for a bundle of letters, read up to the first whose
+// value is the rest of the word.
+func (r commitRow) bundle(w string) (never, holds, skip bool) {
+	for j := 1; j < len(w); j++ {
+		c := w[j : j+1]
+		if strings.Contains(r.letters, c) {
+			return true, false, false
+		}
+		if strings.Contains(r.heldLetters, c) {
+			holds = true
+		}
+		if strings.Contains(r.ends, c) {
+			return false, holds, j == len(w)-1 && strings.Contains(r.next, c)
+		}
+	}
+	return false, holds, false
 }
 
 // takesNext reports whether the long option name takes the next word as its
@@ -1371,13 +1518,13 @@ func gitDirOf(args []string) string {
 	gitDir := ""
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
-		case a == "--git-dir" && i+1 < len(args):
+		case a == optGitDir && i+1 < len(args):
 			i++
 			gitDir = clean(args[i])
-		case strings.HasPrefix(a, "--git-dir="):
-			gitDir = clean(strings.TrimPrefix(a, "--git-dir="))
-		case a == "-C" || a == "-c" || a == "--work-tree" || a == "--namespace" ||
-			a == "--config-env" || a == "--attr-source":
+		case strings.HasPrefix(a, optGitDirEquals):
+			gitDir = clean(strings.TrimPrefix(a, optGitDirEquals))
+		case a == "-C" || a == "-c" || a == optWorkTree || a == optNamespace ||
+			a == optConfigEnv || a == optAttrSource:
 			i++
 		case !strings.HasPrefix(a, "-"):
 			return gitDir

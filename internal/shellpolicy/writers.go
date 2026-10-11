@@ -22,7 +22,7 @@ func writtenTo(words []string) []string {
 		return copyWrites(args, scpValued)
 	case "find":
 		// Listing into a file is not a write to what is listed.
-		if !hasWord(args, "-delete") && !runsAWriter(args) {
+		if !hasWord(args, findDelete) && !runsAWriter(args) {
 			return printedTo(args)
 		}
 	case "cp", "copy", "copy-item", "cpi", "mv", "move", "move-item", "mi":
@@ -48,67 +48,87 @@ func tarWrites(args []string) []string {
 // tarArguments are the archives tar is given, the directories it is told to
 // change to, its operands, and whether it extracts.
 func tarArguments(args []string) (archives, into, operands []string, extract bool) {
-	// value is the value of an option: the rest of its bundle, or the next word,
-	// which old-style bundles such as `tar cvfC a.tar dir` hand out in the order
-	// their letters are written.
-	next := 0
-	value := func(rest string) string {
-		if rest == "" && next < len(args) {
-			next++
-			return args[next-1]
-		}
-		return rest
-	}
-	// changeTo is -C: where tar extracts, and where the operands after it are.
-	dir := ""
-	changeTo := func(to string) {
-		into = append(into, to)
-		dir = to
-	}
-	for next < len(args) {
-		a := args[next]
-		next++
+	t := tarScan{args: args}
+	for t.next < len(args) {
+		a := args[t.next]
+		t.next++
 		switch {
 		case a == "--extract" || a == "--get":
-			extract = true
+			t.extract = true
 		case a == "--file" || a == "--listed-incremental":
-			archives = append(archives, value(""))
+			v := t.value("")
+			t.archives = append(t.archives, v)
 		case a == "--directory":
-			changeTo(value(""))
+			t.changeTo(t.value(""))
 		case a == "--exclude" || a == "--exclude-from" || a == "--files-from":
-			value("")
+			t.value("")
 		case strings.HasPrefix(a, "--file=") || strings.HasPrefix(a, "--listed-incremental="):
 			_, v, _ := strings.Cut(a, "=")
-			archives = append(archives, v)
+			t.archives = append(t.archives, v)
 		case strings.HasPrefix(a, "--directory="):
-			changeTo(strings.TrimPrefix(a, "--directory="))
+			t.changeTo(strings.TrimPrefix(a, "--directory="))
 		case strings.HasPrefix(a, "--"):
-		case strings.HasPrefix(a, "-") || next == 1:
+		case strings.HasPrefix(a, "-") || t.next == 1:
 			// The first word is options whether or not it starts with a dash.
-			bundle := strings.TrimPrefix(a, "-")
-			for i := 0; i < len(bundle); i++ {
-				switch bundle[i] {
-				case 'x':
-					extract = true
-				case 'f', 'g':
-					archives = append(archives, value(bundle[i+1:]))
-					i = len(bundle)
-				case 'C':
-					changeTo(value(bundle[i+1:]))
-					i = len(bundle)
-				case 'T', 'X':
-					value(bundle[i+1:])
-					i = len(bundle)
-				}
-			}
+			t.bundle(strings.TrimPrefix(a, "-"))
 		default:
-			if dir != "" {
-				a = path.Join(dir, a)
+			if t.dir != "" {
+				a = path.Join(t.dir, a)
 			}
-			operands = append(operands, a)
+			t.operands = append(t.operands, a)
 		}
 	}
-	return archives, into, operands, extract
+	return t.archives, t.into, t.operands, t.extract
+}
+
+// tarScan is tarArguments part way through tar's words: what it has read so
+// far, and next, the word it reads next.
+type tarScan struct {
+	args                     []string
+	next                     int
+	archives, into, operands []string
+	extract                  bool
+	// dir is where the last -C sent tar, which the operands after it are
+	// below.
+	dir string
+}
+
+// value is the value of an option: the rest of its bundle, or the next word,
+// which old-style bundles such as `tar cvfC a.tar dir` hand out in the order
+// their letters are written.
+func (t *tarScan) value(rest string) string {
+	if rest == "" && t.next < len(t.args) {
+		t.next++
+		return t.args[t.next-1]
+	}
+	return rest
+}
+
+// changeTo is -C: where tar extracts, and where the operands after it are.
+func (t *tarScan) changeTo(to string) {
+	t.into = append(t.into, to)
+	t.dir = to
+}
+
+// bundle reads one bundle of tar's option letters, up to the first that
+// takes a value, which is the rest of the bundle or the next word.
+func (t *tarScan) bundle(bundle string) {
+	for i := 0; i < len(bundle); i++ {
+		switch bundle[i] {
+		case 'x':
+			t.extract = true
+		case 'f', 'g':
+			v := t.value(bundle[i+1:])
+			t.archives = append(t.archives, v)
+			i = len(bundle)
+		case 'C':
+			t.changeTo(t.value(bundle[i+1:]))
+			i = len(bundle)
+		case 'T', 'X':
+			t.value(bundle[i+1:])
+			i = len(bundle)
+		}
+	}
 }
 
 // rsyncValued and scpValued are the options that take the next word as their
@@ -137,6 +157,20 @@ var scpValued = map[string]bool{
 // copyWrites is the destination of a copy, its last operand, and the values of
 // the options named in writes, which are files it writes as well.
 func copyWrites(args []string, valued map[string]bool, writes ...string) []string {
+	written := writtenByOptions(args, writes)
+	// A single operand is a listing, not a copy.
+	operands := copyOperands(args, valued)
+	if len(operands) <= 1 {
+		return written
+	}
+	to := operands[len(operands)-1]
+	written = append(written, to)
+	return append(written, landedUnder(to, operands[:len(operands)-1])...)
+}
+
+// writtenByOptions are the values of the options named in writes, glued on
+// with `=` or in the word after.
+func writtenByOptions(args, writes []string) []string {
 	var written []string
 	for i, a := range args {
 		name, v, glued := strings.Cut(a, "=")
@@ -149,23 +183,25 @@ func copyWrites(args []string, valued map[string]bool, writes ...string) []strin
 			}
 		}
 	}
-	// A single operand is a listing, not a copy.
-	if operands := copyOperands(args, valued); len(operands) > 1 {
-		to := operands[len(operands)-1]
-		written = append(written, to)
-		// Into a directory, a file lands under its own name: `scp
-		// host:proj/CLAUDE.md .` writes CLAUDE.md. Not on another machine.
-		if !remote(to) && intoADirectory(to, len(operands)-1) {
-			for _, from := range operands[:len(operands)-1] {
-				name := clean(from)
-				if remote(from) {
-					_, name, _ = strings.Cut(name, ":")
-				}
-				written = append(written, path.Join(to, path.Base(name)))
-			}
-		}
-	}
 	return written
+}
+
+// landedUnder are the names a copy's sources take in its destination.
+func landedUnder(to string, sources []string) []string {
+	// Into a directory, a file lands under its own name: `scp
+	// host:proj/CLAUDE.md .` writes CLAUDE.md. Not on another machine.
+	if remote(to) || !intoADirectory(to, len(sources)) {
+		return nil
+	}
+	var landed []string
+	for _, from := range sources {
+		name := clean(from)
+		if remote(from) {
+			_, name, _ = strings.Cut(name, ":")
+		}
+		landed = append(landed, path.Join(to, path.Base(name)))
+	}
+	return landed
 }
 
 // intoADirectory reports whether a copy's destination is a directory the files land

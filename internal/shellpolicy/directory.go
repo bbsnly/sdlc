@@ -34,13 +34,7 @@ func takenAway(words []string) []string {
 		// where it was as much as one rm -rf removed.
 		return args
 	case "gio":
-		switch {
-		case len(args) == 0:
-		case args[0] == "trash":
-			return args[1:]
-		case args[0] == "move" || args[0] == "rename":
-			return sources(args[1:])
-		}
+		return gioTakenAway(args)
 	case "tar":
 		// Each file goes once it is in the archive.
 		if hasWord(args, "--remove-files") {
@@ -50,45 +44,71 @@ func takenAway(words []string) []string {
 	case "rsync":
 		// Each file goes once it is copied, which empties a directory of them.
 		if hasWord(args, "--remove-source-files") {
-			if operands := copyOperands(args, rsyncValued); len(operands) > 1 {
-				return operands[:len(operands)-1]
-			}
+			return rsyncSources(args)
 		}
 	case "find":
 		// With a name to look for, find deletes what has it, which foundBy reads.
-		if roots, names, patterns := findArguments(args); hasWord(args, "-delete") && len(names)+len(patterns) == 0 {
+		if roots, names, patterns := findArguments(args); hasWord(args, findDelete) && len(names)+len(patterns) == 0 {
 			return roots
 		}
 	case "git":
-		sub, moved, rest, _ := gitCall(args)
-		var named []string
-		switch sub {
-		case "rm", "checkout", "restore":
-			if gitChangesFiles(args) {
-				named = rest
-			}
-		case "mv":
-			named = sources(rest)
-		case "stash":
-			named = stashPaths(rest)
-		case "clean":
-			// Without -f, git clean cleans nothing.
-			if gitOption(rest, "--force") || shortFlag(rest, 'f') {
-				named = cleaned(rest)
-			}
-		}
-		if moved == "" {
-			return named
-		}
-		// A new slice: named shares the command's own words, and joined in
-		// place, the next rule to read them read internal/internal/calc.
-		joined := make([]string, len(named))
-		for j, w := range named {
-			joined[j] = path.Join(moved, clean(w))
-		}
-		return joined
+		return gitTakenAway(args)
 	}
 	return nil
+}
+
+// gioTakenAway are the words `gio trash`, `gio move` and `gio rename` take
+// away.
+func gioTakenAway(args []string) []string {
+	switch {
+	case len(args) == 0:
+	case args[0] == "trash":
+		return args[1:]
+	case args[0] == "move" || args[0] == "rename":
+		return sources(args[1:])
+	}
+	return nil
+}
+
+// rsyncSources are what an rsync copies from, which is every operand but the
+// last; a single operand is a listing, and takes nothing away.
+func rsyncSources(args []string) []string {
+	if operands := copyOperands(args, rsyncValued); len(operands) > 1 {
+		return operands[:len(operands)-1]
+	}
+	return nil
+}
+
+// gitTakenAway are the words a git command puts back, moves from or clears
+// out, below the directory its -C sends it to.
+func gitTakenAway(args []string) []string {
+	sub, moved, rest, _ := gitCall(args)
+	var named []string
+	switch sub {
+	case "rm", "checkout", "restore":
+		if gitChangesFiles(args) {
+			named = rest
+		}
+	case "mv":
+		named = sources(rest)
+	case "stash":
+		named = stashPaths(rest)
+	case "clean":
+		// Without -f, git clean cleans nothing.
+		if gitOption(rest, optForce) || shortFlag(rest, 'f') {
+			named = cleaned(rest)
+		}
+	}
+	if moved == "" {
+		return named
+	}
+	// A new slice: named shares the command's own words, and joined in
+	// place, the next rule to read them read internal/internal/calc.
+	joined := make([]string, len(named))
+	for j, w := range named {
+		joined[j] = path.Join(moved, clean(w))
+	}
+	return joined
 }
 
 // removes reports whether all a command does to the files it names is take
@@ -119,13 +139,13 @@ func discardsTheWorkTree(words []string) bool {
 	case "stash":
 		return len(rest) == 0 || !stashKeeps[rest[0]] && wholeTree(stashPaths(rest))
 	case "clean":
-		return (gitOption(rest, "--force") || shortFlag(rest, 'f')) && wholeTree(cleaned(rest))
+		return (gitOption(rest, optForce) || shortFlag(rest, 'f')) && wholeTree(cleaned(rest))
 	case "restore":
 		return gitChangesFiles(words[1:]) && wholeTree(cleaned(rest))
 	case "reset":
 		return gitOption(rest, "--hard") || gitOption(rest, "--merge") || gitOption(rest, "--keep")
 	case "checkout", "switch":
-		return gitOption(rest, "--force") || gitOption(rest, "--discard-changes") || shortFlag(rest, 'f') ||
+		return gitOption(rest, optForce) || gitOption(rest, "--discard-changes") || shortFlag(rest, 'f') ||
 			wholeTree(cleaned(rest))
 	case "read-tree":
 		return shortFlag(rest, 'u')
@@ -250,8 +270,8 @@ func moveArguments(args []string) (from []string, to string, target bool) {
 			target, to = true, strings.TrimPrefix(a, "--target-directory=")
 		case strings.HasPrefix(a, "-t"):
 			target, to = true, a[len("-t"):]
-		case len(a) > len("-Destination:") && strings.EqualFold(a[:len("-Destination:")], "-Destination:"):
-			target, to = true, a[len("-Destination:"):]
+		case len(a) > len(destinationColon) && strings.EqualFold(a[:len(destinationColon)], destinationColon):
+			target, to = true, a[len(destinationColon):]
 		case strings.HasPrefix(a, "-"):
 		default:
 			from = append(from, a)
@@ -270,7 +290,7 @@ func holding(word string, frozen []string) (string, bool) {
 	w := pathrules.Fold(c)
 	for _, f := range frozen {
 		folded := pathrules.Fold(f)
-		for i := 0; i < len(folded); i++ {
+		for i := range len(folded) {
 			if folded[i] != '/' {
 				continue
 			}

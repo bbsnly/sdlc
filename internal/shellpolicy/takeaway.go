@@ -165,15 +165,27 @@ func (t *checkoutTree) step(st globState, seg string, next map[globState]bool) {
 		t.up(st, next)
 		return
 	case !glob:
-		if n := t.nodes[st.node]; st.off == 0 && n != nil {
-			if child, ok := n.children[pathrules.Fold(seg)]; ok {
-				next[globState{child, 0}] = true
-				return
-			}
-		}
-		next[globState{st.node, st.off + 1}] = true
+		t.stepNamed(st, seg, next)
 		return
 	}
+	t.stepGlob(st, seg, next)
+}
+
+// stepNamed adds to next where a segment with no pattern in it takes st: the
+// child of that name where the tree knows one, and a level off the tree
+// where it does not.
+func (t *checkoutTree) stepNamed(st globState, seg string, next map[globState]bool) {
+	if n := t.nodes[st.node]; st.off == 0 && n != nil {
+		if child, ok := n.children[pathrules.Fold(seg)]; ok {
+			next[globState{child, 0}] = true
+			return
+		}
+	}
+	next[globState{st.node, st.off + 1}] = true
+}
+
+// stepGlob adds to next where a segment with a pattern in it takes st.
+func (t *checkoutTree) stepGlob(st globState, seg string, next map[globState]bool) {
 	// A glob can name any entry the tree does not know of, as well as those it
 	// does. `.*` is also `.` and `..`, as bash before 5.2 and some other
 	// shells expand it.
@@ -209,41 +221,11 @@ func (t *checkoutTree) up(st globState, next map[globState]bool) {
 // can come back to either, as `../*` can. levels is how many directories above
 // the checkout it can name, the checkout itself being 0.
 func lexically(word string) (levels int, ok bool) {
-	// Where the word can be: k levels above the checkout on the way to it,
-	// and off levels down from there in a directory off that way.
-	type at struct{ k, off int }
-	states := map[at]bool{{0, 0}: true}
-	for _, seg := range strings.Split(word, "/") {
-		next := map[at]bool{}
+	states := map[levelState]bool{{0, 0}: true}
+	for seg := range strings.SplitSeq(word, "/") {
+		next := map[levelState]bool{}
 		for st := range states {
-			up := func() {
-				if st.off > 0 {
-					next[at{st.k, st.off - 1}] = true
-				} else {
-					next[at{st.k + 1, 0}] = true
-				}
-			}
-			switch {
-			case seg == "" || seg == ".":
-				next[st] = true
-			case seg == "..":
-				up()
-			case !strings.ContainsAny(seg, "*?["):
-				next[at{st.k, st.off + 1}] = true
-			default:
-				next[at{st.k, st.off + 1}] = true
-				if segmentMatches(seg, ".") {
-					next[st] = true
-				}
-				if segmentMatches(seg, "..") {
-					up()
-				}
-				// A segment that matches every name matches the one on the
-				// way back down.
-				if st.off == 0 && st.k > 0 && everyName(seg) {
-					next[at{st.k - 1, 0}] = true
-				}
-			}
+			st.step(seg, next)
 		}
 		if len(next) > maxStates {
 			return 0, true
@@ -257,6 +239,45 @@ func lexically(word string) (levels int, ok bool) {
 		}
 	}
 	return levels, ok
+}
+
+// levelState is where a word lexically follows can be: k levels above the
+// checkout on the way to it, and off levels down from there in a directory
+// off that way.
+type levelState struct{ k, off int }
+
+// up adds to next where `..` takes st.
+func (st levelState) up(next map[levelState]bool) {
+	if st.off > 0 {
+		next[levelState{st.k, st.off - 1}] = true
+	} else {
+		next[levelState{st.k + 1, 0}] = true
+	}
+}
+
+// step adds to next where one segment of a word can take st.
+func (st levelState) step(seg string, next map[levelState]bool) {
+	switch {
+	case seg == "" || seg == ".":
+		next[st] = true
+	case seg == "..":
+		st.up(next)
+	case !strings.ContainsAny(seg, "*?["):
+		next[levelState{st.k, st.off + 1}] = true
+	default:
+		next[levelState{st.k, st.off + 1}] = true
+		if segmentMatches(seg, ".") {
+			next[st] = true
+		}
+		if segmentMatches(seg, "..") {
+			st.up(next)
+		}
+		// A segment that matches every name matches the one on the
+		// way back down.
+		if st.off == 0 && st.k > 0 && everyName(seg) {
+			next[levelState{st.k - 1, 0}] = true
+		}
+	}
 }
 
 // throughDotDot is a glob with each segment that can match `..` written as
@@ -338,26 +359,62 @@ func checkTakesACheckout(line, segment string, run invocation, t takeAway) (Find
 	}
 	t.from = t.dir + "\x00" + t.pwd + "\x00" + t.old + "\x00" + strconv.FormatBool(t.lost) + strconv.FormatBool(t.pwdLost)
 	removed := takenAway(words)
+	if f, ok := t.removedWords(words, removed); ok {
+		return f, true
+	}
+	if f, ok := t.rsyncDestination(words); ok {
+		return f, true
+	}
+	if f, ok := t.findRemoval(words); ok {
+		return f, true
+	}
+	if f, ok := t.pipedRemover(run, removed, line); ok {
+		return f, true
+	}
+	return t.inlineRemoval(words, segment, line)
+}
+
+// removedWords refuses a word the command takes away whole that names a
+// checkout.
+func (t takeAway) removedWords(words, removed []string) (Finding, bool) {
 	// find's own roots are find's to judge, below, with its filters: taken
 	// away whole, `find .. -empty -delete` was the directory holding the
 	// checkout, which -empty never removes.
-	if base(words[0]) != "find" {
-		for _, w := range removed {
-			if f, ok := t.word(w, false, ""); ok {
-				return f, true
-			}
+	if base(words[0]) == "find" {
+		return Finding{}, false
+	}
+	return t.anyWord(removed, false)
+}
+
+// anyWord refuses the first of words that names a checkout.
+func (t takeAway) anyWord(words []string, loose bool) (Finding, bool) {
+	for _, w := range words {
+		if f, ok := t.word(w, loose, ""); ok {
+			return f, true
 		}
 	}
+	return Finding{}, false
+}
+
+// rsyncDestination refuses an `rsync --delete` into a checkout.
+func (t takeAway) rsyncDestination(words []string) (Finding, bool) {
 	if dest, ok := rsyncDeletes(words); ok {
-		if f, ok := t.word(dest, false, "rsync"); ok {
-			return f, true
-		}
+		return t.word(dest, false, "rsync")
 	}
-	if base(words[0]) == "find" && (hasWord(words[1:], "-delete") || findRemoves(words[1:])) {
-		if f, ok := t.find(words[1:]); ok {
-			return f, true
-		}
+	return Finding{}, false
+}
+
+// findRemoval refuses a find that removes a checkout.
+func (t takeAway) findRemoval(words []string) (Finding, bool) {
+	if base(words[0]) == "find" && (hasWord(words[1:], findDelete) || findRemoves(words[1:])) {
+		return t.find(words[1:])
 	}
+	return Finding{}, false
+}
+
+// pipedRemover refuses a remover handed, from another segment, a path that
+// names a checkout.
+func (t takeAway) pipedRemover(run invocation, removed []string, line string) (Finding, bool) {
 	// A path handed to a remover in another segment, `echo <path> | xargs rm
 	// -rf`, is found among the words of the whole line, relative ones as much
 	// as absolute: read as a program's are, `echo ../B-2 | xargs rm -rf` took
@@ -366,31 +423,34 @@ func checkTakesACheckout(line, segment string, run invocation, t takeAway) (Find
 	// The line is read once from each directory, and each word in it once: a
 	// hundred `echo ... | xargs rm -rf` in one command read it a hundred times,
 	// and took 3.3 s.
-	if run.piped && len(removed) > 0 && t.m.first("piped remover", t.from) {
-		seen := map[string]bool{}
-		for _, w := range loosePaths(line) {
-			if seen[w] {
-				continue
-			}
-			seen[w] = true
-			if end := path.Base(clean(unquote(w))); end == "." || end == ".." {
-				continue
-			}
-			if f, ok := t.word(w, false, ""); ok {
-				return f, true
-			}
+	if !run.piped || len(removed) == 0 || !t.m.first("piped remover", t.from) {
+		return Finding{}, false
+	}
+	seen := map[string]bool{}
+	for _, w := range loosePaths(line) {
+		if seen[w] {
+			continue
+		}
+		seen[w] = true
+		if end := path.Base(clean(unquote(w))); end == "." || end == ".." {
+			continue
+		}
+		if f, ok := t.word(w, false, ""); ok {
+			return f, true
 		}
 	}
+	return Finding{}, false
+}
+
+// inlineRemoval refuses a program written on the command line that removes
+// a checkout it names.
+func (t takeAway) inlineRemoval(words []string, segment, line string) (Finding, bool) {
 	// Inside a program, only what names a place wherever it stands counts: a
 	// bare `.` in a program is not the checkout, and `os.listdir(".")` is not a
 	// removal.
 	inline := runsInlineCode(words, segment) || t.s.PowerShell && ioCall.MatchString(segment)
 	if inline && removesInCode(line) {
-		for _, w := range loosePaths(line) {
-			if f, ok := t.word(w, true, ""); ok {
-				return f, true
-			}
-		}
+		return t.anyWord(loosePaths(line), true)
 	}
 	return Finding{}, false
 }
@@ -427,27 +487,25 @@ func (t takeAway) word(w string, loose bool, how string) (Finding, bool) {
 	if c == "" || strings.ContainsAny(c, "$`%") {
 		return Finding{}, false
 	}
-	joined := c
-	if !isAbsolute(c) && !strings.HasPrefix(c, "~") && !shellName {
-		if t.lost {
-			return Finding{}, false
-		}
-		joined = path.Join(t.dir, c)
+	joined, placed := t.joined(c, shellName)
+	if !placed {
+		return Finding{}, false
 	}
+	return t.reached(w, c, joined, how)
+}
+
+// reached refuses the word w, cleaned c and placed at joined, where one of
+// the paths its brace lists expand to names a checkout or a directory
+// holding one.
+func (t takeAway) reached(w, c, joined, how string) (Finding, bool) {
 	words, done := expandedBraces(joined)
 	if !done {
 		return takenFinding(w, "", thisCheckout, true, how), true
 	}
 	for _, e := range words {
 		glob := strings.ContainsAny(e, "*?[")
-		if !isAbsolute(e) && !strings.HasPrefix(e, "~") && !t.lost {
-			if levels, ok := lexically(e); ok {
-				kind := thisCheckout
-				if levels > 0 {
-					kind = holdingOne
-				}
-				return takenFinding(w, backUp(c, t.dir, levels), kind, glob, how), true
-			}
+		if f, ok := t.byName(w, c, e, glob, how); ok {
+			return f, true
 		}
 		tree := t.m.checkouts(t.s)
 		if tree == nil {
@@ -458,6 +516,37 @@ func (t takeAway) word(w string, loose bool, how string) (Finding, bool) {
 		}
 	}
 	return Finding{}, false
+}
+
+// joined is a cleaned word as a path from where the command runs: the word
+// itself where it says where it is, and below the command's directory where
+// it does not. It is not placed where that directory is lost.
+func (t takeAway) joined(c string, shellName bool) (string, bool) {
+	if !isAbsolute(c) && !strings.HasPrefix(c, "~") && !shellName {
+		if t.lost {
+			return "", false
+		}
+		return path.Join(t.dir, c), true
+	}
+	return c, true
+}
+
+// byName refuses e, one expansion of the word w, cleaned c, where its name
+// alone says it is the checkout the command started in or a directory
+// holding it.
+func (t takeAway) byName(w, c, e string, glob bool, how string) (Finding, bool) {
+	if isAbsolute(e) || strings.HasPrefix(e, "~") || t.lost {
+		return Finding{}, false
+	}
+	levels, ok := lexically(e)
+	if !ok {
+		return Finding{}, false
+	}
+	kind := thisCheckout
+	if levels > 0 {
+		kind = holdingOne
+	}
+	return takenFinding(w, backUp(c, t.dir, levels), kind, glob, how), true
 }
 
 // shellNames is a word with the shell's names for where it is, and where it
@@ -524,14 +613,25 @@ func expandedBraces(word string) ([]string, bool) {
 // reaches is the directory of the tree a word, literal or a glob, can name.
 func (t *checkoutTree) reaches(word string, glob bool, m *memo) (*checkoutNode, bool) {
 	if !glob {
-		var best *checkoutNode
-		for _, p := range m.place(t, word) {
-			if n, ok := t.nodes[pathrules.Fold(path.Clean(p))]; ok && (best == nil || n.kind > best.kind) {
-				best = n
-			}
-		}
-		return best, best != nil
+		return t.reachesNamed(word, m)
 	}
+	return t.reachesGlob(word, m)
+}
+
+// reachesNamed is the directory of the tree a word with no pattern in it
+// names, the one of the highest kind among the places it can be.
+func (t *checkoutTree) reachesNamed(word string, m *memo) (*checkoutNode, bool) {
+	var best *checkoutNode
+	for _, p := range m.place(t, word) {
+		if n, ok := t.nodes[pathrules.Fold(path.Clean(p))]; ok && (best == nil || n.kind > best.kind) {
+			best = n
+		}
+	}
+	return best, best != nil
+}
+
+// reachesGlob is the directory of the tree a glob can name.
+func (t *checkoutTree) reachesGlob(word string, m *memo) (*checkoutNode, bool) {
 	// A glob is placed up to its first segment with a pattern in it, which is
 	// a directory the filesystem can say where it is, and followed through the
 	// tree from there.
@@ -568,106 +668,148 @@ func (t *checkoutTree) reaches(word string, glob bool, m *memo) (*checkoutNode, 
 // before it do not look at.
 func (t takeAway) find(args []string) (Finding, bool) {
 	roots, names, patterns := findArguments(args)
-	nameGlobs, pathGlobs := readGlobs(names), readGlobs(patterns)
-	exp := t.exp
-	if exp == nil {
-		exp = &findExpression{}
+	rf := removingFind{t: t, args: args, filtered: len(names)+len(patterns) != 0}
+	rf.nameGlobs, rf.pathGlobs = readGlobs(names), readGlobs(patterns)
+	rf.exp = t.exp
+	if rf.exp == nil {
+		rf.exp = &findExpression{}
 	}
-	flat := func(name, whole string) bool {
-		if hasWord(args, "-empty") {
-			return false
-		}
-		for i, a := range args {
-			if a == "-type" && i+1 < len(args) && !strings.Contains(args[i+1], "d") {
-				return false
-			}
-		}
-		if len(names)+len(patterns) == 0 {
-			return true
-		}
-		for _, g := range nameGlobs {
-			if g == nil || g.MatchString(name) {
-				return true
-			}
-		}
-		for _, g := range pathGlobs {
-			if g == nil || g.MatchString(whole) {
-				return true
-			}
-		}
-		return false
-	}
-	// Today's flat answer, or what the expression leaves in once its operators
-	// are read: a negated or alternated test keeps a checkout its name does not
-	// say. -empty and a -type that is not d answer false as tests here, so they
-	// narrow only the branch they govern.
-	passes := func(name, whole string) bool {
-		if flat(name, whole) {
-			return true
-		}
-		if !exp.followed || !exp.operated {
-			return false
-		}
-		return exp.picks(func(it findItem) bool {
-			switch {
-			case it.isGlob:
-				if it.glob == nil {
-					return true
-				}
-				if it.whole {
-					return it.glob.MatchString(whole)
-				}
-				return it.glob.MatchString(name)
-			case it.empty, it.notDir:
-				return false
-			}
-			return it.pick
-		})
-	}
-	least, most := findDepth(args, "-mindepth", 0), findDepth(args, "-maxdepth", -1)
+	rf.least, rf.most = findDepth(args, "-mindepth", 0), findDepth(args, "-maxdepth", -1)
 	for _, root := range roots {
-		c := clean(root)
-		if least == 0 && c != "." && passes(path.Base(c), c) {
-			if f, ok := t.word(root, false, ""); ok {
-				return f, true
-			}
-		}
-		tree := t.m.checkouts(t.s)
-		if tree == nil || strings.ContainsAny(c, "$`%*?[{") {
-			continue
-		}
-		named, known, shellName := t.shellNames(c)
-		if !known {
-			continue
-		}
-		if !shellName && !isAbsolute(named) && !strings.HasPrefix(named, "~") {
-			if t.lost {
-				continue
-			}
-			named = path.Join(t.dir, named)
-		}
-		var best *checkoutNode
-		for _, p := range t.m.place(tree, named) {
-			start := pathrules.Fold(path.Clean(p))
-			for key, n := range tree.nodes {
-				rel, below := strings.CutPrefix(key, strings.TrimSuffix(start, "/")+"/")
-				if !below {
-					continue
-				}
-				depth := strings.Count(rel, "/") + 1
-				if depth < least || most >= 0 && depth > most {
-					continue
-				}
-				if passes(path.Base(n.path), c+"/"+rel) && prefers(n, best) {
-					best = n
-				}
-			}
-		}
-		if best != nil {
-			return takenFinding(root, best.path, best.kind, true, ""), true
+		if f, ok := rf.root(root); ok {
+			return f, true
 		}
 	}
 	return Finding{}, false
+}
+
+// removingFind is a find that removes what it finds, as takeAway.find asks
+// what it could remove: its words, whether they filter by a name or a path
+// and the globs they filter by, its expression, and the depths it works
+// between, most being -1 where nothing bounds it.
+type removingFind struct {
+	t                    takeAway
+	args                 []string
+	filtered             bool
+	nameGlobs, pathGlobs []*globPattern
+	exp                  *findExpression
+	least, most          int
+}
+
+// flat is whether the find's words, read as a flat list of filters, let a
+// directory of this name through, whole being the path find comes to it by.
+func (rf *removingFind) flat(name, whole string) bool {
+	if hasWord(rf.args, "-empty") {
+		return false
+	}
+	for i, a := range rf.args {
+		if a == "-type" && i+1 < len(rf.args) && !strings.Contains(rf.args[i+1], "d") {
+			return false
+		}
+	}
+	if !rf.filtered {
+		return true
+	}
+	return unreadOrMatches(rf.nameGlobs, name) || unreadOrMatches(rf.pathGlobs, whole)
+}
+
+// unreadOrMatches reports whether one of the globs matches s, or cannot be
+// read, which says nothing of what it picks.
+func unreadOrMatches(globs []*globPattern, s string) bool {
+	for _, g := range globs {
+		if g == nil || g.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// passes is today's flat answer, or what the expression leaves in once its
+// operators are read: a negated or alternated test keeps a checkout its name
+// does not say. -empty and a -type that is not d answer false as tests here,
+// so they narrow only the branch they govern.
+func (rf *removingFind) passes(name, whole string) bool {
+	if rf.flat(name, whole) {
+		return true
+	}
+	if !rf.exp.followed || !rf.exp.operated {
+		return false
+	}
+	return rf.exp.picks(func(it findItem) bool {
+		switch {
+		case it.isGlob:
+			if it.glob == nil {
+				return true
+			}
+			if it.whole {
+				return it.glob.MatchString(whole)
+			}
+			return it.glob.MatchString(name)
+		case it.empty, it.notDir:
+			return false
+		}
+		return it.pick
+	})
+}
+
+// root refuses the find where, started from root, it removes a checkout:
+// root itself, or one the tree knows below it.
+func (rf *removingFind) root(root string) (Finding, bool) {
+	t := rf.t
+	c := clean(root)
+	if rf.least == 0 && c != "." && rf.passes(path.Base(c), c) {
+		if f, ok := t.word(root, false, ""); ok {
+			return f, true
+		}
+	}
+	tree := t.m.checkouts(t.s)
+	if tree == nil || strings.ContainsAny(c, "$`%*?[{") {
+		return Finding{}, false
+	}
+	named, known, shellName := t.shellNames(c)
+	if !known {
+		return Finding{}, false
+	}
+	if !shellName && !isAbsolute(named) && !strings.HasPrefix(named, "~") {
+		if t.lost {
+			return Finding{}, false
+		}
+		named = path.Join(t.dir, named)
+	}
+	if best := rf.below(tree, named, c); best != nil {
+		return takenFinding(root, best.path, best.kind, true, ""), true
+	}
+	return Finding{}, false
+}
+
+// below is the checkout, or the directory holding one, the find could
+// remove below named, the place of the root it spells c: the one prefers
+// picks among those within its depths that pass its filters.
+func (rf *removingFind) below(tree *checkoutTree, named, c string) *checkoutNode {
+	var best *checkoutNode
+	for _, p := range rf.t.m.place(tree, named) {
+		start := pathrules.Fold(path.Clean(p))
+		for key, n := range tree.nodes {
+			if rf.picksBelow(key, n, start, c) && prefers(n, best) {
+				best = n
+			}
+		}
+	}
+	return best
+}
+
+// picksBelow reports whether the tree's directory n, keyed key, is below
+// start, within the find's depths, and passes its filters.
+func (rf *removingFind) picksBelow(key string, n *checkoutNode, start, c string) bool {
+	rel, below := strings.CutPrefix(key, strings.TrimSuffix(start, "/")+"/")
+	if !below {
+		return false
+	}
+	depth := strings.Count(rel, "/") + 1
+	if depth < rf.least || rf.most >= 0 && depth > rf.most {
+		return false
+	}
+	return rf.passes(path.Base(n.path), c+"/"+rel)
 }
 
 // findDepth is the value of find's -mindepth or -maxdepth, or def.
@@ -775,7 +917,7 @@ func takenFinding(word, place string, kind int, glob bool, how string) Finding {
 			what + ", with " + takes
 	}
 	return Finding{
-		Rule:   "loop-state-through-the-tool",
+		Rule:   ruleLoopState,
 		Reason: reason,
 		Route: "remove only what the story made, by naming it inside the checkout, such as `rm -rf build`; " +
 			"a checkout is removed by a person, in their own terminal",

@@ -51,18 +51,8 @@ func (run *invocation) envOptions(args []string) (rest []string, split string, f
 		case !strings.HasPrefix(a, "-"):
 			return args[i:], split, found
 		case strings.HasPrefix(a, "--"):
-			name, v, glued := strings.Cut(a, "=")
-			switch name {
-			case "--split-string", "--chdir", "--unset", "--argv0":
-				if !glued {
-					v = value("")
-				}
-				switch name {
-				case "--split-string":
-					split, found = v, true
-				case "--chdir":
-					run.chdir = v
-				}
+			if s, ok := run.envLong(a, value); ok {
+				split, found = s, true
 			}
 		default:
 			if s, ok := run.envBundle(a, value); ok {
@@ -71,6 +61,26 @@ func (run *invocation) envOptions(args []string) (rest []string, split string, f
 		}
 	}
 	return nil, split, found
+}
+
+// envLong reads one of env's long options, taking the next word through
+// value where the option takes one and has none glued on, and returns the
+// string a --split-string gave.
+func (run *invocation) envLong(a string, value func(string) string) (string, bool) {
+	name, v, glued := strings.Cut(a, "=")
+	switch name {
+	case "--split-string", "--chdir", "--unset", "--argv0":
+		if !glued {
+			v = value("")
+		}
+		switch name {
+		case "--split-string":
+			return v, true
+		case "--chdir":
+			run.chdir = v
+		}
+	}
+	return "", false
 }
 
 // envBundle reads one bundle of env's short options, `-iu NAME`, where a
@@ -135,17 +145,8 @@ func scripted(args []string) (words []string, line bool) {
 			break
 		}
 		if strings.HasPrefix(a, "--") {
-			name, v, glued := strings.Cut(a, "=")
-			switch name {
-			case "--command":
-				if glued {
-					return []string{v}, true
-				}
-				return commandLine(args[i+1:]), true
-			case "--echo", "--log-in", "--log-out", "--log-io", "--log-timing", "--logging-format", "--output-limit":
-				if !glued {
-					i++
-				}
+			if words, ok := scriptLong(a, args, &i); ok {
+				return words, true
 			}
 			continue
 		}
@@ -158,6 +159,24 @@ func scripted(args []string) (words []string, line bool) {
 		return nil, false
 	}
 	return args[i+1:], false
+}
+
+// scriptLong reads one of script's long options, moving i past a value given
+// in the next word, and returns the command line a --command gives.
+func scriptLong(a string, args []string, i *int) ([]string, bool) {
+	name, v, glued := strings.Cut(a, "=")
+	switch name {
+	case "--command":
+		if glued {
+			return []string{v}, true
+		}
+		return commandLine(args[*i+1:]), true
+	case "--echo", "--log-in", "--log-out", "--log-io", "--log-timing", "--logging-format", "--output-limit":
+		if !glued {
+			*i++
+		}
+	}
+	return nil, false
 }
 
 // scriptBundle reads one bundle of script's short options, moving i past a

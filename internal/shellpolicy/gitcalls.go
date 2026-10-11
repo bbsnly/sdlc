@@ -158,8 +158,8 @@ func (e *environment) get(r ran, name string) (value string, here, ok bool) {
 
 // assigned is the last value assigns, NAME=value, gives name.
 func assigned(assigns []string, name string) (string, bool) {
-	for i := len(assigns) - 1; i >= 0; i-- {
-		if n, v, _ := strings.Cut(assigns[i], "="); strings.ToUpper(n) == name {
+	for _, assign := range slices.Backward(assigns) {
+		if n, v, _ := strings.Cut(assign, "="); strings.ToUpper(n) == name {
 			return v, true
 		}
 	}
@@ -359,13 +359,13 @@ func readGit(args []string, env []setting, lookup func(string) (string, bool, bo
 		case !found:
 			return g
 		case seen[name]:
-			g.unread = "the alias " + shown(g.sub) + ", which leads back to itself"
+			g.unread = theAlias + shown(g.sub) + ", which leads back to itself"
 			return g
 		case !known:
-			g.unread = "the alias " + shown(g.sub) + ", whose value the shell has yet to expand"
+			g.unread = theAlias + shown(g.sub) + ", whose value the shell has yet to expand"
 			return g
 		case len(seen) == maxGitDepth:
-			g.unread = "the alias " + shown(g.sub) + ", one of aliases nested deeper than the rules read"
+			g.unread = theAlias + shown(g.sub) + ", one of aliases nested deeper than the rules read"
 			return g
 		}
 		seen[name] = true
@@ -382,9 +382,8 @@ func readGit(args []string, env []setting, lookup func(string) (string, bool, bo
 // alias is the value git gives the alias name: the last one among the
 // settings.
 func (g gitRead) alias(name string) (value string, known, found bool) {
-	for i := len(g.settings) - 1; i >= 0; i-- {
-		s := g.settings[i]
-		if k, ok := strings.CutPrefix(strings.ToLower(s.key), "alias."); ok && k == name {
+	for _, s := range slices.Backward(g.settings) {
+		if k, ok := strings.CutPrefix(strings.ToLower(s.key), aliasPrefix); ok && k == name {
 			return s.value, s.known, true
 		}
 	}
@@ -401,12 +400,12 @@ func gitOptions(args []string, env []setting, lookup func(string) (string, bool,
 			i++
 			key, value, _ := strings.Cut(args[i], "=")
 			settings = append(settings, setting{key: key, value: value, here: true, known: !unexpanded(value)})
-		case a == "--config-env" && i+1 < len(args):
+		case a == optConfigEnv && i+1 < len(args):
 			i++
 			settings = append(settings, configEnv(args[i], lookup))
 		case strings.HasPrefix(a, "--config-env="):
 			settings = append(settings, configEnv(strings.TrimPrefix(a, "--config-env="), lookup))
-		case a == "-C" || a == "--git-dir" || a == "--work-tree" || a == "--namespace" || a == "--attr-source":
+		case a == "-C" || a == optGitDir || a == optWorkTree || a == optNamespace || a == optAttrSource:
 			i++
 		case strings.HasPrefix(a, "-"):
 		default:
@@ -568,7 +567,7 @@ func (j *gitRules) check(r ran, dir string, e *environment, depth int, defining 
 	lookup := func(name string) (string, bool, bool) { return e.get(r, name) }
 	var first gitCommit
 	for n, g := range gitReadings(words[1:], env, lookup, j.s.undecoded) {
-		c, f, ok := j.judge(g, r, dir, e, words[0], asGit, depth, defining)
+		c, f, ok := j.judge(g, r, dir, e, words[0], judging{asGit: asGit, depth: depth, defining: defining})
 		if ok {
 			return c, f, true
 		}
@@ -579,19 +578,22 @@ func (j *gitRules) check(r ran, dir string, e *environment, depth int, defining 
 	return first, Finding{}, false
 }
 
+// judging is how one reading of a git command is being judged: asGit where
+// its program is a word the shell has yet to expand, read as git; depth, how
+// many aliases deep it stands; and defining where it is an alias being
+// defined rather than run.
+type judging struct {
+	asGit    bool
+	depth    int
+	defining bool
+}
+
 // judge applies the git rules to one reading of a git command.
-func (j *gitRules) judge(g gitRead, r ran, dir string, e *environment, program string, asGit bool, depth int, defining bool) (gitCommit, Finding, bool) {
+func (j *gitRules) judge(g gitRead, r ran, dir string, e *environment, program string, how judging) (gitCommit, Finding, bool) {
+	asGit, depth, defining := how.asGit, how.depth, how.defining
 	c := gitCommit{asGit: asGit}
 	if g.unread != "" {
-		if asGit && g.at < len(g.args) && unexpanded(g.args[g.at]) {
-			return c, Finding{
-				Rule: "git-command-cannot-be-read",
-				Reason: shown(program) + " is not expanded yet, so the hook reads it as git, and " +
-					shown(g.args[g.at]) + " would then be git's subcommand",
-				Route: "name the program itself, such as `python3`, rather than a variable",
-			}, true
-		}
-		return c, unreadable(g.unread), true
+		return c, unreadGit(g, program, asGit), true
 	}
 	if !asGit {
 		if part := unreadSetting(g.settings); part != "" {
@@ -599,20 +601,8 @@ func (j *gitRules) judge(g gitRead, r ran, dir string, e *environment, program s
 		}
 	}
 	here := placeDir(r, dir, g)
-	switch g.sub {
-	case "worktree":
-		if action, reads := worktreeAction(g.args[g.at+1:]); !reads {
-			return c, worktreeFinding(action), true
-		}
-	case "config":
-		if f, ok := j.config(g, r, here, e, depth); ok {
-			return c, f, true
-		}
-	}
-	if g.script != "" {
-		if f, ok := j.script(g.script, r, here, e, g.settings, depth, defining); ok {
-			return c, f, true
-		}
+	if f, ok := j.subcommand(g, r, here, e, depth, defining); ok {
+		return c, f, true
 	}
 	if f, ok := j.branch(g, r, dir, e, asGit, depth, defining); ok {
 		return c, f, true
@@ -622,17 +612,63 @@ func (j *gitRules) judge(g gitRead, r ran, dir string, e *environment, program s
 		j.staged = true
 	}
 	c.away = j.staged || j.elsewhere(places, here, "dti")
+	c.words = wordsToRecord(g, r, asGit)
+	return c, Finding{}, false
+}
+
+// unreadGit is the refusal of a reading of a git command that could not be
+// read: of the program itself where that is what the shell has yet to
+// expand, and of what the reading names otherwise.
+func unreadGit(g gitRead, program string, asGit bool) Finding {
+	if asGit && g.at < len(g.args) && unexpanded(g.args[g.at]) {
+		return Finding{
+			Rule: "git-command-cannot-be-read",
+			Reason: shown(program) + " is not expanded yet, so the hook reads it as git, and " +
+				shown(g.args[g.at]) + " would then be git's subcommand",
+			Route: "name the program itself, such as `python3`, rather than a variable",
+		}
+	}
+	return unreadable(g.unread)
+}
+
+// subcommand applies the rules that go by the subcommand itself, worktree's
+// and config's, and then, where an alias hands the shell a command line,
+// judges that line. here is where the command works.
+func (j *gitRules) subcommand(g gitRead, r ran, here string, e *environment, depth int, defining bool) (Finding, bool) {
+	switch g.sub {
+	case "worktree":
+		if action, reads := worktreeAction(g.args[g.at+1:]); !reads {
+			return worktreeFinding(action), true
+		}
+	case "config":
+		if f, ok := j.config(g, r, here, e, depth); ok {
+			return f, true
+		}
+	}
+	if g.script != "" {
+		if f, ok := j.script(g.script, r, here, e, g.settings, depth, defining); ok {
+			return f, true
+		}
+	}
+	return Finding{}, false
+}
+
+// wordsToRecord are the words the commit rules read in place of the
+// command's own, or nil where they read its own: the reading's, where the
+// program was read as git, or where an alias expands to a commit the words
+// as written do not show.
+func wordsToRecord(g gitRead, r ran, asGit bool) []string {
 	expanded := append([]string{"git"}, g.args...)
 	switch {
 	case g.sub == "":
 	case asGit:
-		c.words = expanded
+		return expanded
 	case g.aliased && len(r.words) > 1:
 		if sub, _, _, _ := gitCall(r.words[1:]); !makesACommit(r.words, sub) && makesACommit(expanded, g.sub) {
-			c.words = expanded
+			return expanded
 		}
 	}
-	return c, Finding{}, false
+	return nil
 }
 
 // commit applies the commit rules to a command, read as j.check read it: the
@@ -715,19 +751,26 @@ func (j *gitRules) config(g gitRead, r ran, dir string, e *environment, depth in
 		case !change.valued:
 		case isInclude(key, change.section):
 			return unreadable(shown(change.key) + ", an include, which reads settings from a file the hook does not read"), true
-		case !change.section && strings.HasPrefix(key, "alias."):
-			if unexpanded(change.value) {
-				if j.s.undecoded {
-					continue
-				}
-				return unreadable("the alias " + shown(change.key) + ", whose value the shell has yet to expand"), true
-			}
-			if f, ok := j.alias(change.value, r, dir, e, depth); ok {
+		case !change.section && strings.HasPrefix(key, aliasPrefix):
+			if f, ok := j.aliasChange(change, r, dir, e, depth); ok {
 				return f, true
 			}
 		}
 	}
 	return Finding{}, false
+}
+
+// aliasChange judges `git config` defining an alias. One whose value the
+// shell has yet to expand is left to the reading that expands it, where there
+// is one to come, and is unreadable where there is not.
+func (j *gitRules) aliasChange(change configChange, r ran, dir string, e *environment, depth int) (Finding, bool) {
+	if unexpanded(change.value) {
+		if j.s.undecoded {
+			return Finding{}, false
+		}
+		return unreadable(theAlias + shown(change.key) + ", whose value the shell has yet to expand"), true
+	}
+	return j.alias(change.value, r, dir, e, depth)
 }
 
 // alias judges an alias being defined as it would run: `git config alias.gone
@@ -772,8 +815,8 @@ func unreadSetting(settings []setting) string {
 			return "the setting " + shown(s.key) + ", whose name the shell has yet to expand"
 		case isInclude(key, false):
 			return shown(s.key) + ", an include, which reads settings from a file the hook does not read"
-		case strings.HasPrefix(key, "alias.") && !s.known:
-			return "the alias " + shown(s.key) + ", whose value cannot be read"
+		case strings.HasPrefix(key, aliasPrefix) && !s.known:
+			return theAlias + shown(s.key) + ", whose value cannot be read"
 		}
 	}
 	return ""
@@ -827,26 +870,7 @@ type configChange struct {
 // and the sections it removes or renames, in the syntax before git 2.46 and
 // after. A read changes nothing.
 func configChanges(args []string) []configChange {
-	var words []string
-	action := ""
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		name, _, glued := strings.Cut(a, "=")
-		switch {
-		case a == "--":
-			words = append(words, args[i+1:]...)
-			i = len(args)
-		case configValued[name]:
-			if !glued {
-				i++
-			}
-		case configActions[name]:
-			action = name
-		case strings.HasPrefix(a, "-"):
-		default:
-			words = append(words, a)
-		}
-	}
+	words, action := configWords(args)
 	if action == "" && len(words) > 0 && configSubcommands[words[0]] {
 		action, words = words[0], words[1:]
 	}
@@ -869,6 +893,31 @@ func configChanges(args []string) []configChange {
 		}
 	}
 	return nil
+}
+
+// configWords are the words of a `git config` command that are not options
+// or their values, and the action it spells as an option, the last where it
+// spells more than one.
+func configWords(args []string) (words []string, action string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		name, _, glued := strings.Cut(a, "=")
+		switch {
+		case a == "--":
+			words = append(words, args[i+1:]...)
+			i = len(args)
+		case configValued[name]:
+			if !glued {
+				i++
+			}
+		case configActions[name]:
+			action = name
+		case strings.HasPrefix(a, "-"):
+		default:
+			words = append(words, a)
+		}
+	}
+	return words, action
 }
 
 // configValued are git config's options that take a value.
@@ -923,17 +972,17 @@ func pointedAt(g gitRead, r ran, e *environment) []placeRef {
 	args := g.args[:g.at]
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
-		case a == "--git-dir" && i+1 < len(args):
+		case a == optGitDir && i+1 < len(args):
 			i++
 			out = append(out, placeRef{args[i], 'd'})
-		case a == "--work-tree" && i+1 < len(args):
+		case a == optWorkTree && i+1 < len(args):
 			i++
 			out = append(out, placeRef{args[i], 't'})
-		case strings.HasPrefix(a, "--git-dir="):
-			out = append(out, placeRef{strings.TrimPrefix(a, "--git-dir="), 'd'})
+		case strings.HasPrefix(a, optGitDirEquals):
+			out = append(out, placeRef{strings.TrimPrefix(a, optGitDirEquals), 'd'})
 		case strings.HasPrefix(a, "--work-tree="):
 			out = append(out, placeRef{strings.TrimPrefix(a, "--work-tree="), 't'})
-		case a == "-C" || a == "-c" || a == "--namespace" || a == "--config-env" || a == "--attr-source":
+		case a == "-C" || a == "-c" || a == optNamespace || a == optConfigEnv || a == optAttrSource:
 			i++
 		}
 	}

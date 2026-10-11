@@ -23,7 +23,7 @@ const maxBraces = 64
 // a `*` segment is any one name, as a story's id is.
 func protectedShapes(backlog string) []string {
 	shapes := []string{
-		".sdlc", ".sdlc/state", ".sdlc/config.json", ".sdlc/claude-progress.json",
+		".sdlc", loopStateDir, loopConfigFile, ".sdlc/claude-progress.json",
 		".sdlc/stories", ".sdlc/stories/*/reviews", ".sdlc/stories/*/" + model.RecordFile,
 	}
 	for _, a := range model.Artifacts {
@@ -196,9 +196,9 @@ func braces(word string) []string {
 			continue
 		}
 		w := out[i]
-		expanded := make([]string, len(parts))
-		for j, p := range parts {
-			expanded[j] = w[:open] + p + w[end+1:]
+		expanded := make([]string, 0, len(parts))
+		for _, p := range parts {
+			expanded = append(expanded, w[:open]+p+w[end+1:])
 		}
 		out = append(out[:i], append(expanded, out[i+1:]...)...)
 	}
@@ -212,29 +212,22 @@ func braces(word string) []string {
 // `{` in turn was quadratic, and a word of a hundred thousand braces that
 // never closed took seconds, past the time Claude Code gives the hook.
 func braceGroup(w string) (int, int, []string) {
-	type group struct {
-		open   int
-		commas []int
-		name   bool // `${`, a variable and never a list
-	}
-	var stack []group
+	var stack []braceOpen
 	best, bestEnd := -1, -1
 	var bestCommas []int
-	for i := 0; i < len(w); i++ {
+	for i := range len(w) {
 		switch w[i] {
 		case '{':
-			stack = append(stack, group{open: i, name: i > 0 && w[i-1] == '$'})
+			stack = append(stack, braceOpen{open: i, name: i > 0 && w[i-1] == '$'})
 		case ',':
-			if len(stack) > 0 {
-				stack[len(stack)-1].commas = append(stack[len(stack)-1].commas, i)
-			}
+			noteComma(stack, i)
 		case '}':
 			if len(stack) == 0 {
 				continue
 			}
 			g := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
-			if !g.name && len(g.commas) > 0 && (best < 0 || g.open < best) {
+			if g.list() && (best < 0 || g.open < best) {
 				best, bestEnd, bestCommas = g.open, i, g.commas
 			}
 		}
@@ -242,11 +235,37 @@ func braceGroup(w string) (int, int, []string) {
 	if best < 0 {
 		return -1, -1, nil
 	}
-	parts := make([]string, 0, len(bestCommas)+1)
-	from := best + 1
-	for _, c := range bestCommas {
+	return best, bestEnd, betweenCommas(w, best, bestEnd, bestCommas)
+}
+
+// braceOpen is a `{` braceGroup has read and not yet seen closed.
+type braceOpen struct {
+	open   int
+	commas []int
+	name   bool // `${`, a variable and never a list
+}
+
+// noteComma records a comma at i in the innermost group open, where one is.
+func noteComma(stack []braceOpen, i int) {
+	if len(stack) > 0 {
+		stack[len(stack)-1].commas = append(stack[len(stack)-1].commas, i)
+	}
+}
+
+// list is whether the group, now closed, is a list the shell expands: not a
+// variable, and with a comma at its own depth.
+func (g braceOpen) list() bool {
+	return !g.name && len(g.commas) > 0
+}
+
+// betweenCommas is what a group of w holds between its braces, cut at the
+// commas at its own depth.
+func betweenCommas(w string, open, end int, commas []int) []string {
+	parts := make([]string, 0, len(commas)+1)
+	from := open + 1
+	for _, c := range commas {
 		parts = append(parts, w[from:c])
 		from = c + 1
 	}
-	return best, bestEnd, append(parts, w[from:bestEnd])
+	return append(parts, w[from:end])
 }
