@@ -359,9 +359,84 @@ test code, and no task or program performs them. Before these files no test
 here ran `sdlc ack`, or held the hook's refusal of `approve`, `unfreeze` or
 `ack` end to end.
 
+## test/e2e/zcommands_test.go: the command guard
+
+Package `e2e`. `TestAC1EveryCommandAndTheHookHaveACaseThatRanItToTheResultItExpected`
+fails, naming each command and the hook, that no case in the package ran to the
+result the case expected. The file's name is part of how it works: Go runs a
+package's tests in file-name order, so the guard runs after every test that can
+record a run. Runs are recorded by `noteRun` and `noteHook` at the launch sites.
+A command counts when it exited 0 where it was started, or when a case expected
+another exit and compared its streams (`sandbox.holds`, which covers `doctor`'s
+exit 1). The hook counts when it answered. A refusal does not count, and nor
+does a command spelled inside a payload handed to the hook. A command only a
+person may run counts when a case runs it through `sandbox.person`, which the
+single `approve --reject` case in `sandbox_reject_test.go` does.
+
+`knownGaps()` lists the commands no case runs, each with its reason:
+`story`, `artifact`, `review` and `staffing` print their help only, and
+`parallel` has no run on Windows. The guard skips with a reason under `-run`,
+`-skip`, `-shuffle` and `-list`, because the package has then not run whole.
+
+## internal/testscan
+
+Package `testscan`. Development tooling that reads this repository's command
+tree and Go sources without running either. Only `test/e2e` and
+`internal/tools/testreport` import it; `go list -deps ./cmd/sdlc` does not name
+it. It imports `internal/cli` (for the tree `cli.New` builds), `internal/model`
+(for `Gates`) and cobra.
+
+- `Commands()` is the commands as typed after `sdlc`, plus `hook`. It walks the
+  tree and skips hidden commands, `help` and `completion`; nothing is listed by
+  hand.
+- `Resolve(args)` is the command an argument list runs, by cobra's `Find` on a
+  fresh tree, or `hook` when the first word is `hook`. It is false for a single
+  word holding a whole command line, an unknown word, `help` and `completion`.
+  Flags after the command do not change the answer, so `freeze --help` resolves
+  to `freeze`.
+- `Unrun(ran, gaps)` gives the guard's failure lines: first the commands in
+  neither set, then each gap that names no such command, has no reason, or was
+  run by a case after all.
+- `Report(root, w)` writes what `testreport` prints (below).
+- `Sleeps(root)` and `CheckSleeps(root, allowed)` find every `time.Sleep` call in
+  a test function under `root`, and match them against a list by file and
+  function. Only a call through the file's own import of `time` counts.
+
+Files are parsed with `go/parser`, not searched. The walk (`files`) skips
+`.git`, `.sdlc`, `node_modules` and `dist` only at the module root, and
+`testdata` at any depth. A directory that cannot be read is an error.
+
+The sleep list is `allowedSleeps` in `internal/testscan/sleeps_test.go`: six
+entries, one per function, each with its reason. Four are in
+`internal/store/guard_test.go`, one in `internal/hook/stop_test.go` and one in
+`internal/fsx/fsx_test.go`. The key is the function, so a new sleep inside a
+listed function is not reported. `time.After`, `time.NewTimer`, `time.Tick` and
+a dot import are not seen.
+
+## internal/tools/testreport
+
+Package `main`, run by `./task test-report` as `go run ./internal/tools/testreport`.
+The task is silent, takes no words, and is not a leg of `check`. The tool's one
+flag is `-C <dir>`, the module to read (default `.`); any other word
+exits 2. Exit 1 means the directory cannot be read. Exit 0 means the report was
+written, however long it is. Stdout holds one line per fact:
+
+- `command <name>` for each of `Commands()` that no test in `test/e2e` runs;
+- `gate <key>` for each key in `model.Gates` that no test in `test/e2e` passes;
+- `<class> <count> <dir>` for each directory holding tests. The class is `e2e`
+  for `test/e2e`, `other` for any other directory under `test/` and for a
+  directory with a `.test.js` file, and `unit` for the rest. The count is the
+  top-level `Test` functions, `TestMain` excluded; a JavaScript file counts its
+  `test(` lines.
+
+It reads sources only and runs nothing, so it can differ from the guard. It
+credits a literal in an expected-text list as a run (`staffing`, in
+`staffing_test.go`), and skips refusal helpers by callee name, any name
+beginning `refus`.
+
 ## Taskfile.yml's `check` legs: what each reads, and whether `.gitignore` applies
 
-`check` runs sixteen tasks in sequence. What a leg reads decides whether it can
+`check` runs seventeen tasks in sequence. What a leg reads decides whether it can
 fail on a file a clean clone would not have, so each is listed by how it finds
 its files.
 
