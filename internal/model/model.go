@@ -1074,14 +1074,15 @@ func (r *Record) NextGate() (Gate, bool) {
 	return "", false
 }
 
-// SetGate records an outcome for a gate, and reopens every gate after it.
+// SetGate records an outcome for a gate, and reopens every gate after it. It
+// returns the gates it reopened, in gate order, and nil when there were none.
 //
 // Recording a gate again means the work behind it changed, so nothing that was
 // passed on top of the old work still stands. Leaving those passes in place let
 // the loop go around rather than back: after `plan fail` and a new `plan pass`,
 // the next gate was code_review, and the design review of the old plan -- every
 // one of its reviews stale -- was never asked about the new one.
-func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) {
+func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) []string {
 	if r.Gates == nil {
 		r.Gates = map[Gate]GateResult{}
 	}
@@ -1091,11 +1092,13 @@ func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) {
 	prev.Note = note
 	r.Gates[g] = prev
 
-	if reopened := r.reopenAfter(g, "reopened when "+string(g)+" was recorded "+string(status), at); len(reopened) > 0 {
+	reopened := r.reopenAfter(g, "reopened when "+string(g)+" was recorded "+string(status), at)
+	if len(reopened) > 0 {
 		r.Append("gates_reopened", strings.Join(reopened, ", ")+" reopened: "+
 			string(g)+" was recorded "+string(status), at)
 	}
 	r.forgetCommit()
+	return reopened
 }
 
 // Reopen puts a gate that had passed back to pending, with every gate after it,

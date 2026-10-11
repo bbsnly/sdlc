@@ -903,6 +903,19 @@ answered for the story hands the story to that person, as
 [`sdlc escalate`](#sdlc-escalate) `gate_failing` would, and says so —
 `handed_over` in `--json`.
 
+When recording a gate reopens the gates after it, the command names them in gate
+order on a `reopened:` line beneath the note, and `--json` lists them under
+`reopened`. Each of those gates is back to `pending` and has to be passed again
+before the story can move on. Neither the line nor the key appears when nothing
+was reopened, and [`sdlc log`](#sdlc-log) shows the same gates.
+
+```console
+$ sdlc gate plan fail --note "the plan misses the migration"
+US-001  plan  fail
+  the plan misses the migration
+  reopened: design_review, implementation, verification
+```
+
 ### How the commit range is recorded
 
 The rest of this section explains the range that the `code_review` and `commit`

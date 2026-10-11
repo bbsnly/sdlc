@@ -392,7 +392,8 @@ again once the person has answered.
 
 Recording a gate again, pass or fail, reopens every gate after it: each goes
 back to `pending`, with a note saying why, and has to be passed again. A new
-plan cannot inherit the design review of the old one. [When a reviewer
+plan cannot inherit the design review of the old one. The command names the
+gates it reopened. [When a reviewer
 blocks](guides/when-a-reviewer-blocks.md) shows a rework round from the
 reviewer's side.
 

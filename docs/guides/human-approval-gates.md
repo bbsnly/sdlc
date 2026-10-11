@@ -269,7 +269,8 @@ $ sdlc gate verification fail --note "changed the refund rounding after review"
 ```
 
 Recording a gate reopens every gate after it, so the verifier and the code
-reviewers see your change before the loop commits it.
+reviewers see your change before the loop commits it. The command names the
+gates it reopened.
 
 ## Where to go next
 

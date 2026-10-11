@@ -611,6 +611,8 @@ type gatePayload struct {
 	RangeUnknown bool `json:"range_unknown,omitempty"`
 	// HeadPastCommit is HEAD at this pass, where it was past Commit.
 	HeadPastCommit string `json:"head_past_commit,omitempty"`
+	// Reopened is the gates this record took back, in gate order.
+	Reopened []string `json:"reopened,omitempty"`
 	// Done reports that this gate was the last one: the story left the backlog.
 	Done bool `json:"done"`
 	// HandedOver is the kind of escalation, when this failure was one too many
@@ -789,7 +791,7 @@ func newGateCmd() *cobra.Command {
 				noteSensitivity(s, record, securitySensitive)
 				record.SetSecuritySensitive(securitySensitive)
 			}
-			record.SetGate(gate, status, note, s.Now())
+			reopened := record.SetGate(gate, status, note, s.Now())
 			// The story's commits are among the ones after HEAD when code review
 			// first passed, up to and including HEAD when the commit gate last
 			// passed.
@@ -868,13 +870,16 @@ func newGateCmd() *cobra.Command {
 				return emitJSON(cmd.OutOrStdout(), gatePayload{
 					OK: true, Story: id, Gate: string(gate), Status: string(status), Note: note,
 					CommitBase: start, Commit: end, RangeUnknown: gate == model.GateCommit && record.RangeUnknown,
-					HeadPastCommit: past,
-					Done:           done, HandedOver: handedOver,
+					HeadPastCommit: past, Reopened: reopened,
+					Done: done, HandedOver: handedOver,
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n", id, gate, status)
 			if note != "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", oneLine(note))
+			}
+			if len(reopened) > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "  reopened: %s\n", strings.Join(reopened, ", "))
 			}
 			if end != "" {
 				landed := end[:min(len(end), 12)]
