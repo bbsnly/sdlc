@@ -450,6 +450,11 @@ on it refuses the run ([SDLC-E0066](troubleshooting.md#sdlc-e0066)): this file
 is writable by a session on the project, so it never widens what a session may
 do. Without `--unattended` the setting is not read.
 
+To let the sessions use a command the list does not have, add an allow rule to
+your Claude Code settings, not to this file:
+[adding a command](enforcement.md#adding-a-command) says where and what it
+hands over.
+
 ## `staffing`
 
 Staffing lets a project manager agent say, story by story, which agents the

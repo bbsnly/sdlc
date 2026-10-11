@@ -653,7 +653,9 @@ its record and not from what the session said, in the order named:
   `cd` to run it from.
 - `ended early`: the session ended normally and nothing is waiting on you. The
   story is where the session left it. The usual cause is a tool that default
-  permissions deny.
+  permissions deny: pass `--unattended`, or
+  [add the command it names](enforcement.md#adding-a-command) to your Claude
+  Code settings, and run it again.
 - `failed`: the session exited with a failing status, which is shown.
 
 The last of each stopped or failed session's output is printed beneath its story,

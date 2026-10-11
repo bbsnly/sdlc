@@ -1721,8 +1721,9 @@ blanket skip of permissions in either mode.
 
 ### What `--unattended` pre-approves
 
-With `--unattended` each session is given exactly this list to use without
-asking, and nothing else:
+With `--unattended` the launcher gives each session exactly this list to use
+without asking, and adds nothing else. What your own Claude Code settings allow
+still applies on top of it, which is [how you add a command](#adding-a-command):
 
 ```text
 Read
@@ -1793,6 +1794,60 @@ list names the built-in entries to keep, an empty one keeps none, and an entry
 that is not built in refuses the run
 ([SDLC-E0066](troubleshooting.md#sdlc-e0066)). The file is writable by a session
 on the project, which is why it is never allowed to widen anything.
+
+### Adding a command
+
+Nothing in `sdlc` adds to the list: there is no flag for it, and `parallel.allow`
+only takes entries away. A session is an ordinary Claude Code session, though,
+started in the main checkout, so it reads your Claude Code settings as any
+session there does. An allow rule in those settings is a tool the session uses
+without asking, with `--unattended` or without it.
+
+To let the sessions run one more command, add a rule for it to
+`.claude/settings.local.json` in the main checkout:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(make lint:*)",
+      "Bash(git diff:*)"
+    ]
+  }
+}
+```
+
+`Bash(make lint:*)` lets through `make lint` and `make lint` followed by
+anything. The session's last words, printed beneath an `ended early` story,
+usually name the command that was denied, which is the one to add. Run
+`sdlc parallel` for that story again and it resumes where it stopped.
+
+Which file you choose decides who gets the rule:
+
+| File | Who gets the rule |
+| --- | --- |
+| `.claude/settings.local.json` in the main checkout | your sessions in this project. Claude Code keeps the file out of git |
+| `.claude/settings.json` in the main checkout | everyone who works on the project, once it is committed |
+| `~/.claude/settings.json` | every session you start, in every project |
+
+Before you add one:
+
+- **The rule is not only for unattended sessions.** Every Claude Code session
+  that reads the file stops asking about that command, the ones you sit in
+  front of included.
+- **None of what [the list leaves out](#what-the-list-leaves-out) is left out
+  for you any longer.** A rule for a runner (`./task`, `make`, `npm run`, an
+  interpreter) pre-approves whatever that runner can be made to run, and a rule
+  for `git diff` pre-approves its `--output`.
+- **A deny rule in the same settings applies too**, and beats every allow,
+  the built-in list included.
+- **The hook still decides first.** A rule for `sdlc approve` or for
+  `git commit` does not get a session past what
+  [a person's decisions](#a-persons-decisions-refused-in-every-session) and the
+  gates refuse.
+- **Some commands are asked about whatever the rules say.** Claude Code asks
+  about a `cd` joined to a `git` command (`cd dir && git status`) even when
+  both halves are allowed, and no rule changes that.
 
 ### What the hook still holds, and what nothing stops
 
