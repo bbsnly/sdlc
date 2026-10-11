@@ -703,8 +703,23 @@ a real process; the released binary has no way to cause one.
 
 Every command that writes takes its lock under
 `os.UserCacheDir()/sdlc/locks/` (`internal/store/guard.go`), outside the
-project, and under `os.TempDir()` where there is no cache directory;
-`internal/testenv` does not redirect either. In `internal/cli` only
+project, and under `os.TempDir()` where there is no cache directory.
+`testenv.Run` (`internal/testenv`) gives the tests a home and a cache
+directory of their own: `HOME` and `USERPROFILE` point at `home` and
+`XDG_CACHE_HOME` and `LocalAppData` at `cache`, both in the directory it makes
+and removes. `GOCACHE`, `GOMODCACHE`, `GOPATH` and `GOENV` keep their values,
+taken from `go env` once when one is unset, before the redirection; a go that
+cannot say stops the run. `npm_config_cache` keeps its value too, or becomes
+the `.npm` under the home the machine had (`npm-cache` under `LocalAppData` on
+Windows), named and not made; if either spelling is set, or no home can be
+found, nothing is exported and the run carries on. `~/.npmrc` is not read
+while the tests run. It writes `off` to go's telemetry mode file under
+that home where go's configuration directory is there, since a go process
+writing into the directory as it is removed left a `sdlc-testenv-*` behind.
+After the tests it names everything in `cache` but the empty `sdlc/locks` and
+fails the run, keeping a failing run's own exit code; a lock left held is a
+directory in `sdlc/locks`. `run` is `Run` with the tests handed in, which is
+how the tests reach what happens after `m.Run`. In `internal/cli` only
 `parallel.go` reads the session variable to refuse. `approve`, `unfreeze` and
 `ack` are refused to a session by the hook alone.
 

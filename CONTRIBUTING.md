@@ -52,6 +52,15 @@ The lines `e2e`, `unit` and `other` give the number of tests in each package.
 The exit is always 0, and the task is not part of `./task check`. It reads the
 test files, so it can differ from the check above, which records real runs.
 
+The tests of a package that starts with `testenv.Run` run with `HOME` and the
+cache directory redirected into a throwaway directory, so that no test takes a
+lock in your own cache directory; `GOCACHE`, `GOMODCACHE`, `GOPATH`, `GOENV`
+and `npm_config_cache` stay as they were. npm's user configuration
+(`~/.npmrc`) is not read while the tests run, so a registry, proxy or cache set
+there has to be given as an `npm_config_` variable in your environment. A test
+that leaves anything in that cache directory fails the package and is named,
+and the message says how to find the test.
+
 A leg that fails on a file it read also says whether git tracks that file,
 so you can tell whether the same failure would happen on a fresh clone.
 

@@ -67,8 +67,10 @@ func TestRunFailsWithoutStartingTheTestsWhenItCannotPrepareTheEnvironment(t *tes
 	// before it ever tries to create the temp directory that would set them
 	// again; failing here, as this test makes it do, leaves them unset for
 	// every test that runs after this one in the same binary unless they are
-	// put back.
-	for _, v := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_CEILING_DIRECTORIES"} {
+	// put back. So are the variables it points at the directory it makes, and
+	// the Go ones it keeps, should it get as far as exporting any of them
+	// before it fails.
+	for _, v := range us087Restored {
 		t.Setenv(v, os.Getenv(v))
 	}
 	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
