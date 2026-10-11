@@ -10,12 +10,12 @@ import (
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
-// storyUnderWay is a project with an iteration running, started in session, or
-// from a terminal when session is empty.
-func storyUnderWay(t *testing.T, session string) string {
+// storyUnderWay is a project with an iteration running, started in the session
+// "session-owner".
+func storyUnderWay(t *testing.T) string {
 	t.Helper()
 	root := gitProjectInitialised(t)
-	setenv(t, store.SessionEnv, session)
+	setenv(t, store.SessionEnv, "session-owner")
 	mustRun(t, "start")
 	return root
 }
@@ -73,7 +73,7 @@ func TestAStoryIsChangedOnlyFromTheSessionWorkingIt(t *testing.T) {
 		{"stop", "", []string{"stop"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			root := storyUnderWay(t, owner)
+			root := storyUnderWay(t)
 			setenv(t, store.SessionEnv, other)
 			before := projectFiles(t, root)
 			r := runWith(t, c.stdin, c.args...)
@@ -109,7 +109,7 @@ func TestAStoryIsChangedOnlyFromTheSessionWorkingIt(t *testing.T) {
 				{"another session, with no session recorded", other, true},
 				{"a session id that cannot be one, as a terminal", "not a session!", false},
 			} {
-				root := storyUnderWay(t, owner)
+				root := storyUnderWay(t)
 				if allowed.unrecorded {
 					if err := os.Remove(filepath.Join(root, ".sdlc", "state", "session")); err != nil {
 						t.Fatal(err)
@@ -134,7 +134,7 @@ func TestAStoryIsChangedOnlyFromTheSessionWorkingIt(t *testing.T) {
 // came from is the one refused.
 func TestAnotherSessionTakesAStoryOverWithStart(t *testing.T) {
 	t.Parallel()
-	root := storyUnderWay(t, "session-owner")
+	root := storyUnderWay(t)
 	setenv(t, store.SessionEnv, "session-other")
 	if r := runWith(t, "# Analysis\n", "artifact", "write", "analysis"); !sessionRefused(r) {
 		t.Fatalf("another session wrote into the story before taking it over:\n%s", r.stderr)
@@ -159,7 +159,7 @@ func TestTheSessionCheckKeepsOnlyAStoryUnderWay(t *testing.T) {
 	t.Parallel()
 	const owner, other = "session-owner", "session-other"
 	t.Run("a session record left with no story under way", func(t *testing.T) {
-		root := storyUnderWay(t, owner)
+		root := storyUnderWay(t)
 		mustRun(t, "stop")
 		writeFile(t, root, ".sdlc/state/session", owner+"\n")
 		setenv(t, store.SessionEnv, other)
@@ -168,20 +168,20 @@ func TestTheSessionCheckKeepsOnlyAStoryUnderWay(t *testing.T) {
 		}
 	})
 	t.Run("sdlc ack while a story is under way", func(t *testing.T) {
-		storyUnderWay(t, owner)
+		storyUnderWay(t)
 		setenv(t, store.SessionEnv, other)
 		if r := run(t, "ack", "--through", "HEAD"); r.code != 0 {
 			t.Errorf("sdlc ack from another session: exit %d\n%s", r.code, r.stderr)
 		}
 	})
 	t.Run("a session record that names no session", func(t *testing.T) {
-		root := storyUnderWay(t, owner)
+		root := storyUnderWay(t)
 		writeFile(t, root, ".sdlc/state/session", "not a session!\n")
 		setenv(t, store.SessionEnv, other)
 		mustRunWith(t, "# Analysis\n", "artifact", "write", "analysis")
 	})
 	t.Run("an active story that cannot be read", func(t *testing.T) {
-		root := storyUnderWay(t, owner)
+		root := storyUnderWay(t)
 		active := filepath.Join(root, ".sdlc", "state", "active")
 		if err := os.Remove(active); err != nil {
 			t.Fatal(err)

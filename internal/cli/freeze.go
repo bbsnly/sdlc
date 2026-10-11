@@ -45,85 +45,107 @@ func newFreezeCmd() *cobra.Command {
 			"Which files count as tests comes from paths.tests in .sdlc/config.json.",
 		Example: "  sdlc freeze\n  sdlc freeze --json",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, p, unlock, err := openStoreForWriting(cmd)
-			if err != nil {
-				return err
-			}
-			defer unlock()
-			id, err := activeStory(s, "freeze locks the tests for the story being worked on")
-			if err != nil {
-				return err
-			}
-			if err := refuseIfHeldElsewhere(s, id, "the freeze holds the tests in that checkout, not this one's"); err != nil {
-				return err
-			}
-
-			lock, err := s.Lock()
-			if err != nil {
-				return err
-			}
-			if lock == nil {
-				if err := refuseALostFreeze(s, id); err != nil {
-					return err
-				}
-			}
-			if lock != nil {
-				stale, err := freezeIsALeftover(s, lock, id)
-				if err != nil {
-					return err
-				}
-				if !stale {
-					// A project that allows new test files after the freeze
-					// takes them into it here, so that from now on they are
-					// held like the rest. With nothing new to add this is a
-					// second freeze over the top, and refused as one.
-					if lock.Story == id && p.Config.Freeze.AllowNewTestFiles {
-						added, err := addToFreeze(cmd.Context(), s, lock)
-						if err != nil {
-							return err
-						}
-						if len(added) > 0 {
-							return sayFrozen(cmd, s, id, lock.Paths(), added)
-						}
-					}
-					refusal := sdlcerr.New(sdlcerr.AlreadyFrozen,
-						"the tests are already frozen",
-						"they were frozen for "+lock.Story+" at "+lock.At+", covering "+
-							countFiles(len(lock.Files)))
-					// Another story's freeze is not this story's to lift. The
-					// usual fix, unfreeze, would take it off a story that is
-					// still under way.
-					if lock.Story != "" && lock.Story != id {
-						return refusal.WithFix(lock.Story + " still holds it: finish that story " +
-							`("sdlc stop", then "sdlc start ` + lock.Story + `"), or mark it dropped ` +
-							"in the backlog, which releases its freeze")
-					}
-					return refusal
-				}
-				if err := s.ClearLock(); err != nil {
-					return err
-				}
-			}
-
-			files, err := findTests(cmd, p, s)
-			if err != nil {
-				return err
-			}
-			hashes := make(map[string]string, len(files))
-			for _, f := range files {
-				sum, err := s.HashFile(f)
-				if err != nil {
-					return err
-				}
-				hashes[f] = sum
-			}
-			if err := s.SaveLock(model.NewLock(id, hashes, s.Now())); err != nil {
-				return err
-			}
-			return sayFrozen(cmd, s, id, files, nil)
-		},
+		RunE:    func(cmd *cobra.Command, _ []string) error { return runFreeze(cmd) },
 	}
+}
+
+func runFreeze(cmd *cobra.Command) error {
+	s, p, unlock, err := openStoreForWriting(cmd)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	id, err := activeStory(s, "freeze locks the tests for the story being worked on")
+	if err != nil {
+		return err
+	}
+	if err := refuseIfHeldElsewhere(s, id, "the freeze holds the tests in that checkout, not this one's"); err != nil {
+		return err
+	}
+
+	lock, err := s.Lock()
+	if err != nil {
+		return err
+	}
+	if lock == nil {
+		if err := refuseALostFreeze(s, id); err != nil {
+			return err
+		}
+	} else if done, err := meetExistingFreeze(cmd, s, p, lock, id); done || err != nil {
+		return err
+	}
+
+	files, err := findTests(cmd, p, s)
+	if err != nil {
+		return err
+	}
+	hashes, err := hashAll(s, files)
+	if err != nil {
+		return err
+	}
+	if err := s.SaveLock(model.NewLock(id, hashes, s.Now())); err != nil {
+		return err
+	}
+	return sayFrozen(cmd, s, id, files, nil)
+}
+
+// hashAll is the content hash of each of the files.
+func hashAll(s *store.Store, files []string) (map[string]string, error) {
+	hashes := make(map[string]string, len(files))
+	for _, f := range files {
+		sum, err := s.HashFile(f)
+		if err != nil {
+			return nil, err
+		}
+		hashes[f] = sum
+	}
+	return hashes, nil
+}
+
+// meetExistingFreeze deals with a freeze already on disk. It reports done when
+// the command has ended there, with the error it ended on; a leftover freeze is
+// cleared and the command carries on to take its own.
+func meetExistingFreeze(cmd *cobra.Command, s *store.Store, p *config.Project, lock *model.Lock, id string) (bool, error) {
+	stale, err := freezeIsALeftover(s, lock, id)
+	if err != nil {
+		return true, err
+	}
+	if !stale {
+		return true, refuseOrExtendFreeze(cmd, s, p, lock, id)
+	}
+	return false, s.ClearLock()
+}
+
+// refuseOrExtendFreeze is what a freeze that still stands means for a second
+// `sdlc freeze`: new test files taken into it where the project allows them,
+// and a refusal otherwise.
+func refuseOrExtendFreeze(cmd *cobra.Command, s *store.Store, p *config.Project, lock *model.Lock, id string) error {
+	// A project that allows new test files after the freeze
+	// takes them into it here, so that from now on they are
+	// held like the rest. With nothing new to add this is a
+	// second freeze over the top, and refused as one.
+	if lock.Story == id && p.Config.Freeze.AllowNewTestFiles {
+		added, err := addToFreeze(cmd.Context(), s, lock)
+		if err != nil {
+			return err
+		}
+		if len(added) > 0 {
+			return sayFrozen(cmd, s, id, lock.Paths(), added)
+		}
+	}
+	refusal := sdlcerr.New(sdlcerr.AlreadyFrozen,
+		"the tests are already frozen",
+		"they were frozen for "+lock.Story+" at "+lock.At+", covering "+
+			countFiles(len(lock.Files)))
+	// Another story's freeze is not this story's to lift. The
+	// usual fix, unfreeze, would take it off a story that is
+	// still under way.
+	if lock.Story != "" && lock.Story != id {
+		return refusal.WithFix(lock.Story + " still holds it: finish that story " +
+			`("sdlc stop", then "sdlc start ` + lock.Story + `"), or mark it dropped ` +
+			"in the backlog, which releases its freeze")
+	}
+	return refusal
 }
 
 // sayFrozen puts a freeze on the record and reports it: the files it holds,
@@ -246,93 +268,105 @@ func newUnfreezeCmd() *cobra.Command {
 			"a decision somebody can review and the other into evidence.",
 		Example: `  sdlc unfreeze --reason "AC-2's test asserted the old error message"`,
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if strings.TrimSpace(reason) == "" {
-				return sdlcerr.New(sdlcerr.ReasonRequired,
-					"lifting the freeze needs a reason",
-					"the freeze is what stops an agent editing its way to green, so "+
-						"lifting it belongs on the record")
-			}
-			s, _, unlock, err := openStoreForWriting(cmd)
-			if err != nil {
-				return err
-			}
-			defer unlock()
-			id, err := activeStory(s, "unfreeze lifts the freeze on the story being worked on")
-			if err != nil {
-				return err
-			}
-			if err := refuseIfHeldElsewhere(s, id, "the freeze holds the tests in that checkout, not this one's"); err != nil {
-				return err
-			}
-			// A freeze that will not read, or one that went missing without
-			// being lifted, is lifted here like any other. Freezing again is
-			// refused over both, and this is the one way past them that puts a
-			// reason on the record.
-			lock, err := s.Lock()
-			var unreadable *sdlcerr.Error
-			if err != nil && (!errors.As(err, &unreadable) || unreadable.Code != sdlcerr.StateUnreadable) {
-				return err
-			}
-			if err == nil && lock == nil {
-				record, err := s.Record(id)
-				if err != nil {
-					return err
-				}
-				if _, standing := record.StandingFreeze(); !standing {
-					return sdlcerr.New(sdlcerr.NotFrozen,
-						"there is no freeze to lift",
-						"the acceptance tests have not been frozen for this story")
-				}
-			}
-			// The freeze belongs to the story it was taken for. Lifting another
-			// story's freeze from this one put the event on the wrong record and
-			// left that story's tests editable when it was picked up again --
-			// and "already frozen" on this story used to send people here.
-			if lock != nil && lock.Story != "" && lock.Story != id {
-				return sdlcerr.New(sdlcerr.NotFrozen,
-					"there is no freeze on "+quote(id)+" to lift",
-					"the tests are frozen for "+lock.Story+", which is not the story being worked on").
-					WithFix("finish " + lock.Story + ` ("sdlc stop", then "sdlc start ` + lock.Story +
-						`") and lift it there if it has to be lifted, or mark it dropped in the backlog`)
-			}
-			if err := s.ClearLock(); err != nil {
-				return err
-			}
-			// The tests are about to change, so Gate 3 no longer stands, and
-			// nor does anything passed on top of it. Left passed, the loop
-			// carried on from where it was: nobody was sent back to change the
-			// test, the design review passed on tests nobody had frozen, and the
-			// first gate to notice said to freeze the wrong test again.
-			record, err := s.Record(id)
-			if err != nil {
-				return err
-			}
-			record.Append("unfreeze", reason, s.Now())
-			reopened := record.Reopen(model.GateTestsFrozen, "the freeze was lifted: "+reason, s.Now())
-			if err := s.SaveRecord(record); err != nil {
-				return err
-			}
-			held := 0
-			if lock != nil {
-				held = len(lock.Files)
-			}
-
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), unfreezePayload{
-					OK: true, Story: id, Reason: reason, Count: held, Reopened: reopened,
-				})
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  freeze lifted on %s\n  %s\n",
-				id, countFiles(held), reason)
-			if len(reopened) > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "  reopened: %s\n", strings.Join(reopened, ", "))
-			}
-			return nil
-		},
+		RunE:    func(cmd *cobra.Command, _ []string) error { return runUnfreeze(cmd, reason) },
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "why the frozen tests have to change")
 	return cmd
+}
+
+func runUnfreeze(cmd *cobra.Command, reason string) error {
+	if strings.TrimSpace(reason) == "" {
+		return sdlcerr.New(sdlcerr.ReasonRequired,
+			"lifting the freeze needs a reason",
+			"the freeze is what stops an agent editing its way to green, so "+
+				"lifting it belongs on the record")
+	}
+	s, _, unlock, err := openStoreForWriting(cmd)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	id, err := activeStory(s, "unfreeze lifts the freeze on the story being worked on")
+	if err != nil {
+		return err
+	}
+	if err := refuseIfHeldElsewhere(s, id, "the freeze holds the tests in that checkout, not this one's"); err != nil {
+		return err
+	}
+	lock, err := liftableFreeze(s, id)
+	if err != nil {
+		return err
+	}
+	if err := s.ClearLock(); err != nil {
+		return err
+	}
+	// The tests are about to change, so Gate 3 no longer stands, and
+	// nor does anything passed on top of it. Left passed, the loop
+	// carried on from where it was: nobody was sent back to change the
+	// test, the design review passed on tests nobody had frozen, and the
+	// first gate to notice said to freeze the wrong test again.
+	record, err := s.Record(id)
+	if err != nil {
+		return err
+	}
+	record.Append("unfreeze", reason, s.Now())
+	reopened := record.Reopen(model.GateTestsFrozen, "the freeze was lifted: "+reason, s.Now())
+	if err := s.SaveRecord(record); err != nil {
+		return err
+	}
+	held := 0
+	if lock != nil {
+		held = len(lock.Files)
+	}
+
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), unfreezePayload{
+			OK: true, Story: id, Reason: reason, Count: held, Reopened: reopened,
+		})
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s  freeze lifted on %s\n  %s\n",
+		id, countFiles(held), reason)
+	if len(reopened) > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "  reopened: %s\n", strings.Join(reopened, ", "))
+	}
+	return nil
+}
+
+// liftableFreeze reads the freeze that `sdlc unfreeze` is to lift, and refuses
+// when there is none of this story's to lift.
+func liftableFreeze(s *store.Store, id string) (*model.Lock, error) {
+	// A freeze that will not read, or one that went missing without
+	// being lifted, is lifted here like any other. Freezing again is
+	// refused over both, and this is the one way past them that puts a
+	// reason on the record.
+	lock, err := s.Lock()
+	var unreadable *sdlcerr.Error
+	if err != nil && (!errors.As(err, &unreadable) || unreadable.Code != sdlcerr.StateUnreadable) {
+		return nil, err
+	}
+	if err == nil && lock == nil {
+		record, err := s.Record(id)
+		if err != nil {
+			return nil, err
+		}
+		if _, standing := record.StandingFreeze(); !standing {
+			return nil, sdlcerr.New(sdlcerr.NotFrozen,
+				"there is no freeze to lift",
+				"the acceptance tests have not been frozen for this story")
+		}
+	}
+	// The freeze belongs to the story it was taken for. Lifting another
+	// story's freeze from this one put the event on the wrong record and
+	// left that story's tests editable when it was picked up again --
+	// and "already frozen" on this story used to send people here.
+	if lock != nil && lock.Story != "" && lock.Story != id {
+		return nil, sdlcerr.New(sdlcerr.NotFrozen,
+			"there is no freeze on "+quote(id)+" to lift",
+			"the tests are frozen for "+lock.Story+", which is not the story being worked on").
+			WithFix("finish " + lock.Story + ` ("sdlc stop", then "sdlc start ` + lock.Story +
+				`") and lift it there if it has to be lifted, or mark it dropped in the backlog`)
+	}
+	return lock, nil
 }
 
 // findTests lists the project's test files as git sees the working tree, so

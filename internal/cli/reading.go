@@ -82,7 +82,20 @@ func (r *reading) changedPaths(ctx context.Context, record *model.Record) ([]str
 	if err != nil {
 		return nil, err
 	}
+	committed, err := r.committedSince(ctx, record, head)
+	if err != nil {
+		return nil, err
+	}
+	r.changed, r.changedOK = slices.Concat(listed, files, committed), true
+	return r.changed, nil
+}
+
+// committedSince is what the story has committed since code review first
+// passed, as far as the record says where that was.
+func (r *reading) committedSince(ctx context.Context, record *model.Record, head string) ([]string, error) {
+	root := r.s.Root()
 	var committed []string
+	var err error
 	switch {
 	case head == gitx.NoCommits || !record.Pass(model.GateCodeReview) && record.CommitBase == "":
 	case record.CommitBase == "":
@@ -101,8 +114,7 @@ func (r *reading) changedPaths(ctx context.Context, record *model.Record) ([]str
 			return nil, err
 		}
 	}
-	r.changed, r.changedOK = slices.Concat(listed, files, committed), true
-	return r.changed, nil
+	return committed, nil
 }
 
 // headOf is HEAD in the store's checkout, asked once.

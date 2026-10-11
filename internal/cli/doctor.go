@@ -82,7 +82,7 @@ func newDoctorCmd() *cobra.Command {
 				printChecks(cmd.OutOrStdout(), checks, problems)
 			}
 			if problems > 0 {
-				return quietExit{code: 1}
+				return quietExitError{code: 1}
 			}
 			return nil
 		},
@@ -123,6 +123,21 @@ func printChecks(w io.Writer, checks []check, problems int) {
 	}
 }
 
+// The names of the checks, which the report prints and skipRest matches.
+const (
+	checkGitRepository   = "git repository"
+	checkGitCommand      = "git command"
+	checkLoopState       = "loop state"
+	checkProjectContract = "project contract"
+	checkSdlcOnPath      = "sdlc on PATH"
+	checkConfiguration   = "configuration"
+	checkBacklog         = "backlog"
+	checkCommands        = "commands"
+)
+
+// worktreeOf joins a story's id to the path of its worktree in a sentence.
+const worktreeOf = "'s worktree, "
+
 // runChecks walks from the outside in: each check assumes the ones before it
 // passed, and says it was skipped rather than reporting a second failure with
 // the same cause.
@@ -140,12 +155,12 @@ func runChecks(ctx context.Context) []check {
 
 	root, err := config.FindRoot(env.dir)
 	if err != nil {
-		add(check{Name: "git repository", State: stateProblem,
+		add(check{Name: checkGitRepository, State: stateProblem,
 			Detail: "this is not inside a Git repository",
 			Fix:    `run "git init", or change to a directory inside your repository`})
-		return append(out, skipRest("git repository", "git repository")...)
+		return append(out, skipRest(checkGitRepository, checkGitRepository)...)
 	}
-	add(check{Name: "git repository", State: stateOK, Detail: root})
+	add(check{Name: checkGitRepository, State: stateOK, Detail: root})
 
 	cfg, err := config.Load(root)
 	// Which git is old enough depends on whether start makes each story a
@@ -159,21 +174,20 @@ func runChecks(ctx context.Context) []check {
 		// The error's own words: its cause alone said nothing of which setting
 		// was wrong, and "sdlc init" does not fix a file that is already there.
 		detail, fix := err.Error(), `if you want the loop in this repository, run "sdlc init" in `+root+` yourself`
-		var e *sdlcerr.Error
-		if errors.As(err, &e) {
+		if e, ok := errors.AsType[*sdlcerr.Error](err); ok {
 			detail, fix = e.What, e.Fix
 			if e.Why != "" {
 				detail += ": " + e.Why
 			}
 		}
-		add(check{Name: "configuration", State: stateProblem, Detail: detail, Fix: fix})
-		add(check{Name: "backlog", State: stateSkipped,
+		add(check{Name: checkConfiguration, State: stateProblem, Detail: detail, Fix: fix})
+		add(check{Name: checkBacklog, State: stateSkipped,
 			Detail: "not checked: configuration has to work first"})
 		// The loop's state does not come from the configuration, and a broken
 		// configuration is when the hook warns about both and sends you here --
 		// so this is the one check that still runs.
 		add(stateCheck(ctx, store.New(&config.Project{Root: root, Config: config.Default()}).WithEnv(env.getenv)))
-		return append(out, skipRest("loop state", "configuration")...)
+		return append(out, skipRest(checkLoopState, checkConfiguration)...)
 	}
 	stack, _ := scaffold.Detect(root)
 	detail := config.File
@@ -181,13 +195,13 @@ func runChecks(ctx context.Context) []check {
 		detail += "  (" + stack.Name + " project)"
 	}
 	if unknown := config.UnknownKeys(root); len(unknown) > 0 {
-		add(check{Name: "configuration", State: stateProblem,
+		add(check{Name: checkConfiguration, State: stateProblem,
 			Detail: config.File + " has settings sdlc does not know, which change nothing: " +
 				strings.Join(unknown, ", "),
 			Fix: "correct the spelling, or remove them — docs/configuration.md lists every setting, " +
 				"and a key that starts with _ is a comment"})
 	} else {
-		add(check{Name: "configuration", State: stateOK, Detail: detail})
+		add(check{Name: checkConfiguration, State: stateOK, Detail: detail})
 	}
 
 	s := store.New(&config.Project{Root: root, Config: cfg}).WithEnv(env.getenv)
@@ -211,121 +225,173 @@ func runChecks(ctx context.Context) []check {
 // Every problem at once, not the first: a broken iteration file reported alone
 // hid a broken freeze behind it, and a second run of doctor to find it.
 func stateCheck(ctx context.Context, s *store.Store) check {
-	var details, fixes []string
-	problem := func(detail, fix string) {
-		details = append(details, detail)
-		fixes = append(fixes, fix)
-	}
+	p := &stateProbe{s: s}
 	// Said once: every record is kept where the backlog is, and each of them
 	// failing to read for the one reason says nothing more.
-	shared := s.SharedErr()
-	var e *sdlcerr.Error
-	if errors.As(shared, &e) {
-		problem(noMainCheckout(e))
+	p.shared = s.SharedErr()
+	if e, ok := errors.AsType[*sdlcerr.Error](p.shared); ok {
+		p.problem(noMainCheckout(e))
 	}
-	active, err := s.Active()
-	if err != nil {
-		problem(err.Error(), "nothing is enforced until .sdlc/state/active names a story: "+
-			`a person runs "sdlc stop" to remove it, then "sdlc start" or types /sdlc:next in Claude Code to begin again`)
-	} else if active != "" && shared == nil {
-		// Record starts a fresh record when there is none, which is right for
-		// the command and wrong here: `sdlc start` always writes one, so a
-		// missing record mid-iteration is damage, and the hook refuses the
-		// commit over it and sends people to this check.
-		if dir, err := s.StoryDir(active); err == nil {
-			if _, statErr := os.Stat(filepath.Join(dir, model.RecordFile)); errors.Is(statErr, fs.ErrNotExist) {
-				problem(".sdlc/stories/"+active+"/"+model.RecordFile+" is missing", "no commit goes through without it: restore it if you keep a copy, or run "+
-					`"sdlc stop" to end the iteration and commit as yourself`)
-			}
-		}
-		if _, err := s.Record(active); err != nil {
-			problem(err.Error(), "no commit goes through while .sdlc/stories/"+active+"/"+
-				model.RecordFile+` cannot be read: restore it if you keep a copy, or run "sdlc stop" `+
-				"to end the iteration and commit as yourself")
-		}
-	}
-	// A story nobody is working on has its record read again when it is next
-	// started, and a record that does not read stops that start with an error
-	// that calls itself a bug. So every record is read here, not only the
-	// active story's.
-	var stories []string
-	if shared == nil {
-		if stories, err = s.StoriesOnDisk(); err != nil {
-			problem(err.Error(), "no story can be started until .sdlc/stories can be listed: fix its permissions, "+
-				"or move aside whatever is there in place of the directory")
-		}
-	}
-	for _, id := range stories {
-		if id == active {
-			continue
-		}
-		if _, err := s.Record(id); err != nil {
-			problem(err.Error(), `"sdlc start `+id+`" fails until .sdlc/stories/`+id+"/"+model.RecordFile+
-				" reads: restore it if you keep a copy, or remove it to take the story through its gates again")
-		}
-	}
-	lock, err := s.Lock()
-	if err != nil {
-		problem(err.Error(), "every test is treated as frozen until .sdlc/state/tests.lock reads: "+
-			`restore it if you keep a copy, or lift it on the record with "sdlc unfreeze --reason ..." `+
-			`in your own terminal and run "sdlc freeze", which freezes the tests as they are now`)
-	} else if active != "" && shared == nil && (lock == nil || lock.Story != active) {
-		// The hook treats every test as frozen over this, and sends people here.
-		if record, err := s.Record(active); err == nil {
-			if at, standing := record.StandingFreeze(); standing {
-				problem("the tests for "+active+" were frozen at "+at+", and .sdlc/state/tests.lock no longer holds that freeze",
-					"every test is treated as frozen until it does: restore it if you keep a copy, or lift the "+
-						`freeze on the record with "sdlc unfreeze --reason ..." in your own terminal and run "sdlc freeze"`)
-			}
-		}
-	}
-	// The log refuses a commit acknowledged that git does not have. No file is
-	// nothing acknowledged, which is fine. Git that does not run cannot say
-	// either way, and the git command check has already said why, so the commit
-	// goes unchecked rather than reported missing for the same cause.
-	if named, ok, err := s.Acknowledged(); err != nil {
-		problem(err.Error(), `"sdlc log" cannot start where you left off until `+store.AcknowledgedFile+
-			" reads: fix its permissions, or remove it to list every story")
-	} else if ok {
-		if _, headErr := gitx.Head(ctx, s.Root()); headErr == nil {
-			if _, err := gitx.Resolve(ctx, s.Root(), named); gitx.NamesNoCommit(err) {
-				problem(store.AcknowledgedFile+" names "+quote(named)+", which is no commit in this repository",
-					`"sdlc log" refuses to start until it does: run "sdlc ack --through <commit>" in your own `+
-						"terminal, or remove the file to list every story")
-			}
-		}
-	}
-	if co, err := s.Checkout(); err == nil || co.Common != "" {
-		if n := len(co.Worktrees()); n > store.SessionScanLimit {
-			problem(fmt.Sprintf("this repository has %d linked worktrees, counting ones never pruned; the hook "+
-				"looks through only the first %d for a session whose story no claim records yet, so such a "+
-				"session in the rest is not held to the rules protecting the other checkouts until its first "+
-				"writing command", n, store.SessionScanLimit),
-				`run "git worktree prune", and remove worktrees no longer used`)
-		}
-	}
+	p.readActive()
+	p.readOtherRecords()
+	p.readFreeze()
+	p.readAcknowledged(ctx)
+	p.countWorktrees()
 	held := describeHolders(s)
-	if len(details) > 0 {
-		return check{Name: "loop state", State: stateProblem,
-			Detail: strings.Join(details, "; ") + held, Fix: strings.Join(fixes, "; ")}
+	if len(p.details) > 0 {
+		return check{Name: checkLoopState, State: stateProblem,
+			Detail: strings.Join(p.details, "; ") + held, Fix: strings.Join(p.fixes, "; ")}
 	}
 	detail := "the iteration, every gate record, the test freeze and the commit acknowledged all read" + held
 	// Not a problem: a story started from a terminal is picked up in a session
 	// when a person types /sdlc:next. Until then the hook holds no session to it, and says so
 	// nowhere, so this does.
-	if _, held := s.WorkingSession(); active != "" && !held {
-		detail += "; no Claude Code session is working " + active + ", so nothing is enforced until a " +
+	if _, held := s.WorkingSession(); p.active != "" && !held {
+		detail += "; no Claude Code session is working " + p.active + ", so nothing is enforced until a " +
 			"person picks it up by typing /sdlc:next in Claude Code"
 	}
-	return check{Name: "loop state", State: stateOK, Detail: detail}
+	return check{Name: checkLoopState, State: stateOK, Detail: detail}
+}
+
+// stateProbe gathers what stateCheck finds, a problem at a time.
+type stateProbe struct {
+	s              *store.Store
+	details, fixes []string
+	shared         error
+	active         string
+}
+
+func (p *stateProbe) problem(detail, fix string) {
+	p.details = append(p.details, detail)
+	p.fixes = append(p.fixes, fix)
+}
+
+// readActive checks the iteration file and the record of the story it names.
+func (p *stateProbe) readActive() {
+	s := p.s
+	active, err := s.Active()
+	if err != nil {
+		p.problem(err.Error(), "nothing is enforced until .sdlc/state/active names a story: "+
+			`a person runs "sdlc stop" to remove it, then "sdlc start" or types /sdlc:next in Claude Code to begin again`)
+		return
+	}
+	p.active = active
+	if active == "" || p.shared != nil {
+		return
+	}
+	// Record starts a fresh record when there is none, which is right for
+	// the command and wrong here: `sdlc start` always writes one, so a
+	// missing record mid-iteration is damage, and the hook refuses the
+	// commit over it and sends people to this check.
+	if dir, err := s.StoryDir(active); err == nil {
+		if _, statErr := os.Stat(filepath.Join(dir, model.RecordFile)); errors.Is(statErr, fs.ErrNotExist) {
+			p.problem(".sdlc/stories/"+active+"/"+model.RecordFile+" is missing", "no commit goes through without it: restore it if you keep a copy, or run "+
+				`"sdlc stop" to end the iteration and commit as yourself`)
+		}
+	}
+	if _, err := s.Record(active); err != nil {
+		p.problem(err.Error(), "no commit goes through while .sdlc/stories/"+active+"/"+
+			model.RecordFile+` cannot be read: restore it if you keep a copy, or run "sdlc stop" `+
+			"to end the iteration and commit as yourself")
+	}
+}
+
+// readOtherRecords reads the records of the stories nobody is working on.
+// A story nobody is working on has its record read again when it is next
+// started, and a record that does not read stops that start with an error
+// that calls itself a bug. So every record is read here, not only the
+// active story's.
+func (p *stateProbe) readOtherRecords() {
+	if p.shared != nil {
+		return
+	}
+	stories, err := p.s.StoriesOnDisk()
+	if err != nil {
+		p.problem(err.Error(), "no story can be started until .sdlc/stories can be listed: fix its permissions, "+
+			"or move aside whatever is there in place of the directory")
+	}
+	for _, id := range stories {
+		if id == p.active {
+			continue
+		}
+		if _, err := p.s.Record(id); err != nil {
+			p.problem(err.Error(), `"sdlc start `+id+`" fails until .sdlc/stories/`+id+"/"+model.RecordFile+
+				" reads: restore it if you keep a copy, or remove it to take the story through its gates again")
+		}
+	}
+}
+
+// readFreeze reads the test freeze, and sets it against the record's.
+func (p *stateProbe) readFreeze() {
+	active := p.active
+	lock, err := p.s.Lock()
+	if err != nil {
+		p.problem(err.Error(), "every test is treated as frozen until .sdlc/state/tests.lock reads: "+
+			`restore it if you keep a copy, or lift it on the record with "sdlc unfreeze --reason ..." `+
+			`in your own terminal and run "sdlc freeze", which freezes the tests as they are now`)
+		return
+	}
+	if active == "" || p.shared != nil || (lock != nil && lock.Story == active) {
+		return
+	}
+	// The hook treats every test as frozen over this, and sends people here.
+	record, err := p.s.Record(active)
+	if err != nil {
+		return
+	}
+	if at, standing := record.StandingFreeze(); standing {
+		p.problem("the tests for "+active+" were frozen at "+at+", and .sdlc/state/tests.lock no longer holds that freeze",
+			"every test is treated as frozen until it does: restore it if you keep a copy, or lift the "+
+				`freeze on the record with "sdlc unfreeze --reason ..." in your own terminal and run "sdlc freeze"`)
+	}
+}
+
+// readAcknowledged checks the commit acknowledged is one git has.
+// The log refuses a commit acknowledged that git does not have. No file is
+// nothing acknowledged, which is fine. Git that does not run cannot say
+// either way, and the git command check has already said why, so the commit
+// goes unchecked rather than reported missing for the same cause.
+func (p *stateProbe) readAcknowledged(ctx context.Context) {
+	named, ok, err := p.s.Acknowledged()
+	if err != nil {
+		p.problem(err.Error(), `"sdlc log" cannot start where you left off until `+store.AcknowledgedFile+
+			" reads: fix its permissions, or remove it to list every story")
+		return
+	}
+	if !ok {
+		return
+	}
+	if _, headErr := gitx.Head(ctx, p.s.Root()); headErr != nil {
+		return
+	}
+	if _, err := gitx.Resolve(ctx, p.s.Root(), named); gitx.NamesNoCommit(err) {
+		p.problem(store.AcknowledgedFile+" names "+quote(named)+", which is no commit in this repository",
+			`"sdlc log" refuses to start until it does: run "sdlc ack --through <commit>" in your own `+
+				"terminal, or remove the file to list every story")
+	}
+}
+
+// countWorktrees warns when there are more linked worktrees than the hook scans.
+func (p *stateProbe) countWorktrees() {
+	co, err := p.s.Checkout()
+	if err != nil && co.Common == "" {
+		return
+	}
+	if n := len(co.Worktrees()); n > store.SessionScanLimit {
+		p.problem(fmt.Sprintf("this repository has %d linked worktrees, counting ones never pruned; the hook "+
+			"looks through only the first %d for a session whose story no claim records yet, so such a "+
+			"session in the rest is not held to the rules protecting the other checkouts until its first "+
+			"writing command", n, store.SessionScanLimit),
+			`run "git worktree prune", and remove worktrees no longer used`)
+	}
 }
 
 // checkOrder is every check doctor makes, in the order it makes them. It is
 // also what skipRest walks, so the report has the same shape whether or not it
 // got all the way through.
 var checkOrder = []string{
-	"git repository", "git command", "configuration", "backlog", "loop state",
-	"project contract", "commands", "sdlc on PATH",
+	checkGitRepository, checkGitCommand, checkConfiguration, checkBacklog, checkLoopState,
+	checkProjectContract, checkCommands, checkSdlcOnPath,
 }
 
 // skipRest reports the checks after the one named that could not run, so that
@@ -385,10 +451,10 @@ func backlogCheck(s *store.Store, root string) check {
 		case e.Code == sdlcerr.NoMainCheckout:
 			detail, fix = noMainCheckout(e)
 		}
-		return check{Name: "backlog", State: stateProblem, Detail: detail, Fix: fix}
+		return check{Name: checkBacklog, State: stateProblem, Detail: detail, Fix: fix}
 	}
 	if len(backlog.Stories) == 0 {
-		return check{Name: "backlog", State: stateProblem,
+		return check{Name: checkBacklog, State: stateProblem,
 			Detail: relativeTo(root, path) + " has no stories",
 			Fix:    "add a story to it: https://github.com/bbsnly/sdlc/blob/main/docs/guides/writing-stories.md"}
 	}
@@ -401,7 +467,7 @@ func backlogCheck(s *store.Store, root string) check {
 	if _, ok := pickable(backlog, holders).Next(); ok {
 		runnable = "one runnable"
 	}
-	return check{Name: "backlog", State: stateOK, Detail: fmt.Sprintf("%s  (%d %s, %s)",
+	return check{Name: checkBacklog, State: stateOK, Detail: fmt.Sprintf("%s  (%d %s, %s)",
 		relativeTo(root, path), len(backlog.Stories), noun, runnable)}
 }
 
@@ -415,7 +481,7 @@ func backlogCheck(s *store.Store, root string) check {
 // begins.
 func gitCheck(ctx context.Context, worktrees bool) check {
 	if _, err := exec.LookPath("git"); err != nil {
-		return check{Name: "git command", State: stateProblem,
+		return check{Name: checkGitCommand, State: stateProblem,
 			Detail: "git is not on your PATH",
 			Fix: "install git -- the test freeze and every review are recorded " +
 				"against what git says is in the working tree"}
@@ -424,14 +490,14 @@ func gitCheck(ctx context.Context, worktrees bool) check {
 		least := gitx.MinimumVersion
 		major, minor, err := gitx.Version(ctx)
 		if err == nil && (major < least[0] || major == least[0] && minor < least[1]) {
-			return check{Name: "git command", State: stateProblem,
+			return check{Name: checkGitCommand, State: stateProblem,
 				Detail: fmt.Sprintf("git is %d.%d, and sdlc start makes each story's worktree with commands "+
 					"that came in git %d.%d", major, minor, least[0], least[1]),
 				Fix: fmt.Sprintf("install git %d.%d or newer, or set git.worktrees to false in .sdlc/config.json "+
 					"to begin each story in the checkout sdlc start runs in", least[0], least[1])}
 		}
 	}
-	return check{Name: "git command", State: stateOK, Detail: "found on PATH"}
+	return check{Name: checkGitCommand, State: stateOK, Detail: "found on PATH"}
 }
 
 // storyWorktreesCheck is what start's worktrees leave for a person to do: a
@@ -534,7 +600,7 @@ func holdsIt(h store.Holder, dir string) bool {
 func unheldWorktree(ctx context.Context, w gitx.Worktree, id, trunk string) (detail, fix string) {
 	rel := worktreeIn(id)
 	if w.Gone {
-		return id + "'s worktree, " + rel + ", is gone, and git still lists it",
+		return id + worktreeOf + rel + ", is gone, and git still lists it",
 			`"git worktree prune" in the main checkout makes git forget it`
 	}
 	branch := store.StoryBranch(id)
@@ -548,18 +614,18 @@ func unheldWorktree(ctx context.Context, w gitx.Worktree, id, trunk string) (det
 		if own {
 			kept = "on " + branch
 		}
-		details = append(details, id+"'s worktree, "+rel+", has changes nobody committed, and no checkout holds "+id)
+		details = append(details, id+worktreeOf+rel+", has changes nobody committed, and no checkout holds "+id)
 		fixes = append(fixes, "the changes nobody committed may be somebody's work: a person keeps what is wanted, "+
 			"committed "+kept+" or copied elsewhere, before removing anything")
 	}
 	switch {
 	case w.Branch != "" && !own:
-		details = append(details, id+"'s worktree, "+rel+", is on the branch "+shellWord(w.Branch)+", not "+branch+
+		details = append(details, id+worktreeOf+rel+", is on the branch "+shellWord(w.Branch)+", not "+branch+
 			", and no checkout holds "+id)
 		fixes = append(fixes, "that is not the branch start made: a person looks at what it holds, with "+
 			lookAt(id, trunk)+" in the main checkout, before merging or removing anything")
 	case err != nil:
-		details = append(details, id+"'s worktree, "+rel+", is held by no checkout, and git could not read what it "+
+		details = append(details, id+worktreeOf+rel+", is held by no checkout, and git could not read what it "+
 			"holds")
 		fixes = append(fixes, "a person looks at what it holds, with "+lookAt(id, trunk)+
 			" in the main checkout, before removing anything")
@@ -580,13 +646,13 @@ func unheldWorktree(ctx context.Context, w gitx.Worktree, id, trunk string) (det
 			lookAt(id, trunk), keepOn(id)))
 	}
 	if len(details) > 0 {
-		return strings.Join(details, "; "), strings.Join(fixes, "; then ")
+		return strings.Join(details, "; "), strings.Join(fixes, thenClause)
 	}
 	remove := `"git worktree remove ` + rel + `"`
 	if own {
 		remove += ` and "git branch -d ` + branch + `"`
 	}
-	detail = id + "'s worktree, " + rel + ", is held by no checkout, and has nothing trunk does not"
+	detail = id + worktreeOf + rel + ", is held by no checkout, and has nothing trunk does not"
 	fix = `if no "sdlc start" is running for ` + id + `, a person can remove it with ` + remove + " in the main checkout"
 	if loops {
 		detail += " but the loop's own files under .sdlc/state"
@@ -615,16 +681,16 @@ func workChanges(ctx context.Context, dir string) (changes []string, loops bool,
 func contractCheck(root string) check {
 	raw, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
 	if err != nil {
-		return check{Name: "project contract", State: stateProblem,
+		return check{Name: checkProjectContract, State: stateProblem,
 			Detail: "there is no CLAUDE.md",
 			Fix:    `run "sdlc init" -- it writes one without touching anything else`}
 	}
 	if !scaffold.HasContract(string(raw)) {
-		return check{Name: "project contract", State: stateProblem,
+		return check{Name: checkProjectContract, State: stateProblem,
 			Detail: `CLAUDE.md has no "` + scaffold.ContractHeading + `" section`,
 			Fix:    `run "sdlc init" -- it appends the section and leaves the rest alone`}
 	}
-	return check{Name: "project contract", State: stateOK,
+	return check{Name: checkProjectContract, State: stateOK,
 		Detail: `CLAUDE.md carries the "` + scaffold.ContractHeading + `" section`}
 }
 
@@ -641,12 +707,12 @@ func commandChecks(root string, cfg config.Config) []check {
 	sort.Strings(names)
 
 	if len(names) == 0 {
-		return []check{{Name: "commands", State: stateProblem,
+		return []check{{Name: checkCommands, State: stateProblem,
 			Detail: "no commands are configured, so every gate that runs one is skipped",
 			Fix:    "fill in commands.test and commands.lint in " + config.File}}
 	}
 
-	out := []check{{Name: "commands", State: stateOK, Detail: strings.Join(names, ", ")}}
+	out := []check{{Name: checkCommands, State: stateOK, Detail: strings.Join(names, ", ")}}
 	missing := map[string][]string{}
 	for _, name := range names {
 		for _, program := range programsIn(cfg.Commands[name]) {
@@ -680,7 +746,7 @@ func commandChecks(root string, cfg config.Config) []check {
 			out = append(out, check{
 				Name:   "commands and hook",
 				State:  stateProblem,
-				Detail: "commands." + name + " may be refused by the hook under " + f.Rule + " (judged without a story or a role)",
+				Detail: commandsPrefix + name + " may be refused by the hook under " + f.Rule + " (judged without a story or a role)",
 				Fix: "edit commands." + name + " in " + config.File + " by hand, so that it no longer does what " +
 					f.Rule + " refuses; see docs/enforcement.md, under " + f.Rule,
 			})
@@ -706,7 +772,7 @@ func programsIn(command string) []string {
 		"&&", "\n", "||", "\n", "|", "\n", ";", "\n", "$(", "\n", "`", "\n")
 	seen := map[string]bool{}
 	var out []string
-	for _, segment := range strings.Split(replacer.Replace(command), "\n") {
+	for segment := range strings.SplitSeq(replacer.Replace(command), "\n") {
 		fields := strings.Fields(segment)
 		// `case "$FILE" in *.go) gofmt -w "$FILE" ;; esac` runs gofmt, not
 		// case: the program is the word after the pattern.
@@ -756,7 +822,7 @@ func binaryCheck(env commandEnv) check {
 	named, _ := pathrules.Abs(env.dir, bin)
 	named = filepath.Clean(named)
 	if bin != "" && runnable(named) {
-		return check{Name: "sdlc on PATH", State: stateOK, Detail: "SDLC_BIN: " + named}
+		return check{Name: checkSdlcOnPath, State: stateOK, Detail: "SDLC_BIN: " + named}
 	}
 	path, err := exec.LookPath("sdlc")
 	offPath := false
@@ -773,12 +839,12 @@ func binaryCheck(env commandEnv) check {
 		if err == nil {
 			instead = "run " + path + " instead"
 		}
-		return check{Name: "sdlc on PATH", State: stateProblem,
+		return check{Name: checkSdlcOnPath, State: stateProblem,
 			Detail: "SDLC_BIN names " + bin + ", which is not a program, so the hooks " + instead,
 			Fix:    "point SDLC_BIN at the sdlc binary, or unset it"}
 	}
 	if err != nil {
-		return check{Name: "sdlc on PATH", State: stateProblem,
+		return check{Name: checkSdlcOnPath, State: stateProblem,
 			Detail: "the hooks cannot find sdlc, so nothing is enforced",
 			Fix: `install it with "npx @bbsnly/sdlc install", which puts it where the hooks find it ` +
 				`without PATH; from a checkout "./task build" prints the line to add to PATH. A desktop app ` +
@@ -786,10 +852,10 @@ func binaryCheck(env commandEnv) check {
 				`after changing PATH, or set SDLC_BIN to the binary`}
 	}
 	if offPath {
-		return check{Name: "sdlc on PATH", State: stateOK,
+		return check{Name: checkSdlcOnPath, State: stateOK,
 			Detail: path + ", where the installers put it: not on PATH, and the hooks look there anyway"}
 	}
-	return check{Name: "sdlc on PATH", State: stateOK, Detail: path}
+	return check{Name: checkSdlcOnPath, State: stateOK, Detail: path}
 }
 
 // installedWhereTheInstallersPutIt is the binary in the directory the install
@@ -798,7 +864,7 @@ func binaryCheck(env commandEnv) check {
 // hooks missed a binary every new terminal found.
 func installedWhereTheInstallersPutIt(getenv func(string) string) string {
 	var at string
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == goosWindows {
 		local := getenv("LOCALAPPDATA")
 		if local == "" {
 			return ""
@@ -826,7 +892,7 @@ func runnable(bin string) bool {
 	if err != nil || !info.Mode().IsRegular() {
 		return false
 	}
-	return runtime.GOOS == "windows" || info.Mode().Perm()&0o111 != 0
+	return runtime.GOOS == goosWindows || info.Mode().Perm()&0o111 != 0
 }
 
 func sortedKeys[V any](m map[string]V) []string {

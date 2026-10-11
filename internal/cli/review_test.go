@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -111,7 +112,15 @@ func TestTheHumanAdvocateReadsTheStoryAtGate1WhenTheProjectAsks(t *testing.T) {
 	if err := json.Unmarshal([]byte(backlogBytes(t, root)), &backlog); err != nil {
 		t.Fatal(err)
 	}
-	backlog["stories"].([]any)[0].(map[string]any)["title"] = "Something else entirely"
+	stories, ok := backlog["stories"].([]any)
+	if !ok {
+		t.Fatalf("the backlog has no list of stories: %v", backlog["stories"])
+	}
+	first, ok := stories[0].(map[string]any)
+	if !ok {
+		t.Fatalf("the backlog's first story is not an object: %v", stories[0])
+	}
+	first["title"] = "Something else entirely"
 	changed, err := json.Marshal(backlog)
 	if err != nil {
 		t.Fatal(err)
@@ -145,12 +154,7 @@ func approveAll(t *testing.T, gate model.Gate, except ...string) {
 }
 
 func contains(haystack []string, needle string) bool {
-	for _, h := range haystack {
-		if h == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }
 
 func TestAReviewIsStoredWhereTheNextRoundCanReadIt(t *testing.T) {

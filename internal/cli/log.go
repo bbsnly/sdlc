@@ -122,92 +122,115 @@ func newLogCmd() *cobra.Command {
 			"a list to read, not a list to revert. log changes nothing.",
 		Example: "  sdlc log\n  sdlc log --since HEAD~20\n  sdlc log --all --json",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			sinceGiven := cmd.Flags().Changed("since")
-			if all && sinceGiven {
-				return usage(cmd, "--since and --all cannot be used together: --all already lists every story")
-			}
-			s, _, err := openStore(cmd)
-			if err != nil {
-				return err
-			}
-			backlog, err := s.Backlog()
-			if err != nil {
-				return err
-			}
-			ctx := cmd.Context()
-			head, err := gitx.Head(ctx, s.Root())
-			if err != nil {
-				return err
-			}
-
-			payload := logPayload{OK: true, Entries: []logEntry{}}
-			switch {
-			case all:
-				payload.SinceSource = sinceAll
-			case sinceGiven:
-				payload.SinceSource = sinceFlag
-				if payload.Since, err = gitx.Resolve(ctx, s.Root(), since); err != nil {
-					if !gitx.NamesNoCommit(err) {
-						return err
-					}
-					return sdlcerr.New(sdlcerr.BadArgument,
-						"--since "+quote(since)+" names no commit in this repository",
-						"the log starts after the commit --since names, and git cannot read that as one").
-						WithFix(`give a commit git knows: a hash, a tag, or a name like HEAD~20`).
-						WithCause(err)
-				}
-			default:
-				if payload.Since, payload.SinceSource, err = acknowledged(ctx, s); err != nil {
-					return err
-				}
-			}
-
-			ids, err := s.StoriesOnDisk()
-			if err != nil {
-				return err
-			}
-			holders, shown := holdersShown(s)
-			for _, id := range ids {
-				record, err := s.Record(id)
-				if err != nil {
-					return err
-				}
-				if !record.Pass(model.GateCommit) {
-					continue
-				}
-				entry := describeCommitted(record, backlog)
-				if h, ok := holders[id]; ok && shown {
-					entry.HeldBy, entry.heldIn = h.Checkout, heldIn(id, h)
-				}
-				if err := placeRange(ctx, s.Root(), head, &entry, record); err != nil {
-					return err
-				}
-				read, err := alreadyRead(ctx, s.Root(), payload.Since, entry)
-				if err != nil {
-					return err
-				}
-				if !read {
-					payload.Entries = append(payload.Entries, entry)
-				}
-			}
-			// The stories are listed in name order, so two committed in the
-			// same second read the same way every time.
-			sort.SliceStable(payload.Entries, func(i, j int) bool {
-				return payload.Entries[i].CommittedAt < payload.Entries[j].CommittedAt
-			})
-
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), payload)
-			}
-			printLog(cmd.OutOrStdout(), payload)
-			return nil
-		},
+		RunE:    func(cmd *cobra.Command, _ []string) error { return runLog(cmd, since, all) },
 	}
 	cmd.Flags().StringVar(&since, "since", "",
 		"list the stories committed after this commit, instead of after the last one acknowledged")
 	cmd.Flags().BoolVar(&all, "all", false, "list every committed story, whatever has been acknowledged")
 	return cmd
+}
+
+func runLog(cmd *cobra.Command, since string, all bool) error {
+	sinceGiven := cmd.Flags().Changed("since")
+	if all && sinceGiven {
+		return usage(cmd, "--since and --all cannot be used together: --all already lists every story")
+	}
+	s, _, err := openStore(cmd)
+	if err != nil {
+		return err
+	}
+	backlog, err := s.Backlog()
+	if err != nil {
+		return err
+	}
+	ctx := cmd.Context()
+	head, err := gitx.Head(ctx, s.Root())
+	if err != nil {
+		return err
+	}
+
+	payload := logPayload{OK: true, Entries: []logEntry{}}
+	if err := startLogAfter(ctx, s, &payload, since, all, sinceGiven); err != nil {
+		return err
+	}
+	if err := listCommitted(ctx, s, backlog, head, &payload); err != nil {
+		return err
+	}
+	// The stories are listed in name order, so two committed in the
+	// same second read the same way every time.
+	sort.SliceStable(payload.Entries, func(i, j int) bool {
+		return payload.Entries[i].CommittedAt < payload.Entries[j].CommittedAt
+	})
+
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), payload)
+	}
+	printLog(cmd.OutOrStdout(), payload)
+	return nil
+}
+
+// startLogAfter sets the commit the log starts after, and where that came from.
+func startLogAfter(ctx context.Context, s *store.Store, payload *logPayload, since string, all, sinceGiven bool) error {
+	var err error
+	switch {
+	case all:
+		payload.SinceSource = sinceAll
+	case sinceGiven:
+		payload.SinceSource = sinceFlag
+		if payload.Since, err = gitx.Resolve(ctx, s.Root(), since); err != nil {
+			if !gitx.NamesNoCommit(err) {
+				return err
+			}
+			return sdlcerr.New(sdlcerr.BadArgument,
+				"--since "+quote(since)+" names no commit in this repository",
+				"the log starts after the commit --since names, and git cannot read that as one").
+				WithFix(`give a commit git knows: a hash, a tag, or a name like HEAD~20`).
+				WithCause(err)
+		}
+	default:
+		payload.Since, payload.SinceSource, err = acknowledged(ctx, s)
+	}
+	return err
+}
+
+// listCommitted adds an entry for each committed story the log has not already
+// shown as read.
+func listCommitted(ctx context.Context, s *store.Store, backlog *model.Backlog, head string, payload *logPayload) error {
+	ids, err := s.StoriesOnDisk()
+	if err != nil {
+		return err
+	}
+	holders, shown := holdersShown(s)
+	for _, id := range ids {
+		record, err := s.Record(id)
+		if err != nil {
+			return err
+		}
+		if !record.Pass(model.GateCommit) {
+			continue
+		}
+		entry := describeCommitted(record, backlog)
+		if h, ok := holders[id]; ok && shown {
+			entry.HeldBy, entry.heldIn = h.Checkout, heldIn(id, h)
+		}
+		read, err := placeAndCheck(ctx, s.Root(), head, payload.Since, &entry, record)
+		if err != nil {
+			return err
+		}
+		if !read {
+			payload.Entries = append(payload.Entries, entry)
+		}
+	}
+	return nil
+}
+
+// placeAndCheck places the entry's range, and reports whether the commit the
+// log starts after has already read it.
+func placeAndCheck(ctx context.Context, root, head, since string, entry *logEntry, record *model.Record) (bool, error) {
+	if err := placeRange(ctx, root, head, entry, record); err != nil {
+		return false, err
+	}
+	return alreadyRead(ctx, root, since, *entry)
 }
 
 // acknowledged is the commit the log starts after by default. A file that names
@@ -240,6 +263,19 @@ func describeCommitted(r *model.Record, b *model.Backlog) logEntry {
 	} else {
 		e.NotInBacklog = true
 	}
+	noteReviews(&e, r)
+	noteEvents(&e, r)
+	noteStaffing(&e, r)
+	for _, esc := range r.Escalations {
+		e.Escalations = append(e.Escalations, logEscalation{
+			At: esc.At, Type: esc.Type, Message: esc.Message, Resolved: esc.Resolved,
+		})
+	}
+	return e
+}
+
+// noteReviews counts the rounds each gate's reviews took, and what blocked.
+func noteReviews(e *logEntry, r *model.Record) {
 	for _, rev := range r.Reviews {
 		if rev.Round > e.Rounds[string(rev.Gate)] {
 			if e.Rounds == nil {
@@ -251,6 +287,10 @@ func describeCommitted(r *model.Record, b *model.Backlog) logEntry {
 			e.Blocks = append(e.Blocks, logBlock{Gate: string(rev.Gate), Role: rev.Role, Round: rev.Round, Note: rev.Note})
 		}
 	}
+}
+
+// noteEvents lists the events worth a second look.
+func noteEvents(e *logEntry, r *model.Record) {
 	for _, ev := range r.Events {
 		switch {
 		case ev.Type == "gates_reopened":
@@ -263,23 +303,22 @@ func describeCommitted(r *model.Record, b *model.Backlog) logEntry {
 			e.StaffingEvents = append(e.StaffingEvents, logEvent{At: ev.At, Message: ev.Type + ": " + ev.Message})
 		}
 	}
-	if staffed(r) {
-		e.Staffing = &logStaffing{Agents: staffingInfos(r), Amendments: append([]model.Amendment{}, r.Staffing.Amendments...)}
-		// Who a changed path brought back when the code review last passed, as
-		// the record keeps it: the log is read after the change is gone from
-		// the tree, and without this a reviewer that reviewed read as left out.
-		for i, a := range e.Staffing.Agents {
-			if r.LeftOut(a.Agent) {
-				e.Staffing.Agents[i].BroughtBackBy = r.Staffing.BroughtBack[a.Agent]
-			}
+}
+
+// noteStaffing copies the staffing the record holds, if it holds one.
+func noteStaffing(e *logEntry, r *model.Record) {
+	if !staffed(r) {
+		return
+	}
+	e.Staffing = &logStaffing{Agents: staffingInfos(r), Amendments: append([]model.Amendment{}, r.Staffing.Amendments...)}
+	// Who a changed path brought back when the code review last passed, as
+	// the record keeps it: the log is read after the change is gone from
+	// the tree, and without this a reviewer that reviewed read as left out.
+	for i, a := range e.Staffing.Agents {
+		if r.LeftOut(a.Agent) {
+			e.Staffing.Agents[i].BroughtBackBy = r.Staffing.BroughtBack[a.Agent]
 		}
 	}
-	for _, esc := range r.Escalations {
-		e.Escalations = append(e.Escalations, logEscalation{
-			At: esc.At, Type: esc.Type, Message: esc.Message, Resolved: esc.Resolved,
-		})
-	}
-	return e
 }
 
 // placeRange finds where a committed story's commits are. The record says,
@@ -351,15 +390,7 @@ func alreadyRead(ctx context.Context, root, since string, e logEntry) (bool, err
 
 func printLog(w io.Writer, p logPayload) {
 	if len(p.Entries) == 0 {
-		switch p.SinceSource {
-		case sinceAcknowledged:
-			fmt.Fprintf(w, "No story has been committed since %s, the last commit acknowledged. "+
-				"`sdlc log --all` lists every one.\n", shortCommit(p.Since))
-		case sinceFlag:
-			fmt.Fprintf(w, "No story has been committed since %s.\n", shortCommit(p.Since))
-		default:
-			fmt.Fprintln(w, "No story has been committed yet.")
-		}
+		printNothingLogged(w, p)
 		return
 	}
 	switch p.SinceSource {
@@ -373,75 +404,108 @@ func printLog(w io.Writer, p logPayload) {
 		if i > 0 {
 			fmt.Fprintln(w)
 		}
-		title := oneLine(e.Title)
-		if e.NotInBacklog {
-			title = "(not in the backlog)"
+		printLogEntry(w, e)
+	}
+}
+
+// printNothingLogged says that the log has no story to list.
+func printNothingLogged(w io.Writer, p logPayload) {
+	switch p.SinceSource {
+	case sinceAcknowledged:
+		fmt.Fprintf(w, "No story has been committed since %s, the last commit acknowledged. "+
+			"`sdlc log --all` lists every one.\n", shortCommit(p.Since))
+	case sinceFlag:
+		fmt.Fprintf(w, "No story has been committed since %s.\n", shortCommit(p.Since))
+	default:
+		fmt.Fprintln(w, "No story has been committed yet.")
+	}
+}
+
+// printLogEntry prints one committed story and what it went through.
+func printLogEntry(w io.Writer, e logEntry) {
+	title := oneLine(e.Title)
+	if e.NotInBacklog {
+		title = "(not in the backlog)"
+	}
+	fmt.Fprintf(w, "%s  %s  %s\n", describeRange(e), e.Story, title)
+	printLogRange(w, e)
+	printLogReviews(w, e)
+	for _, ev := range e.Reopened {
+		fmt.Fprintf(w, "  reopened   %s\n", oneLine(ev.Message))
+	}
+	for _, ev := range e.Unfrozen {
+		fmt.Fprintf(w, "  unfrozen   %s\n", oneLine(ev.Message))
+	}
+	for _, esc := range e.Escalations {
+		answer := "waiting"
+		if esc.Resolved {
+			answer = "answered"
 		}
-		fmt.Fprintf(w, "%s  %s  %s\n", describeRange(e), e.Story, title)
-		switch {
-		case e.RangeUnknown:
-			fmt.Fprintln(w, "  range      unknown: "+noSingleRange)
-		case e.RangeSource == rangeUnknown:
-			fmt.Fprintf(w, "  range      unknown: the record names no commit, and no commit message names %s\n", e.Story)
-		case e.Missing:
-			fmt.Fprintln(w, "  range      not in this repository")
-		case e.OffBranch:
-			fmt.Fprintln(w, "  range      not on this branch")
-		case e.RangeSource == rangeFromMessage:
-			fmt.Fprintln(w, "  range      inferred from commit messages")
+		fmt.Fprintf(w, "  escalated  %s: %s (%s)\n", oneLine(esc.Type), oneLine(esc.Message), answer)
+	}
+	printLogStaffing(w, e)
+	if e.SpentUSD > 0 {
+		fmt.Fprintf(w, "  spent      %s\n", money(e.SpentUSD))
+	}
+	if e.heldIn != "" {
+		fmt.Fprintf(w, "  held       %s\n", strings.TrimPrefix(e.heldIn, "held "))
+	}
+}
+
+// printLogRange says how far the entry's range can be trusted.
+func printLogRange(w io.Writer, e logEntry) {
+	switch {
+	case e.RangeUnknown:
+		fmt.Fprintln(w, "  range      unknown: "+noSingleRange)
+	case e.RangeSource == rangeUnknown:
+		fmt.Fprintf(w, "  range      unknown: the record names no commit, and no commit message names %s\n", e.Story)
+	case e.Missing:
+		fmt.Fprintln(w, "  range      not in this repository")
+	case e.OffBranch:
+		fmt.Fprintln(w, "  range      not on this branch")
+	case e.RangeSource == rangeFromMessage:
+		fmt.Fprintln(w, "  range      inferred from commit messages")
+	}
+	if e.HeadPastCommit != "" {
+		fmt.Fprintln(w, "  range      "+headPast(e.HeadPastCommit, e.Commit))
+	}
+}
+
+// printLogReviews prints how many rounds each gate took, and what blocked.
+func printLogReviews(w io.Writer, e logEntry) {
+	var rounds []string
+	for _, g := range model.Gates {
+		if n := e.Rounds[string(g)]; n > 0 {
+			rounds = append(rounds, fmt.Sprintf("%s %d", g, n))
 		}
-		if e.HeadPastCommit != "" {
-			fmt.Fprintln(w, "  range      "+headPast(e.HeadPastCommit, e.Commit))
+	}
+	if len(rounds) > 0 {
+		fmt.Fprintf(w, "  rounds     %s\n", strings.Join(rounds, " · "))
+	}
+	if len(e.Blocks) > 0 {
+		blocks := make([]string, 0, len(e.Blocks))
+		for _, b := range e.Blocks {
+			blocks = append(blocks, fmt.Sprintf("%s %s (round %d)", b.Gate, oneLine(b.Role), b.Round))
 		}
-		var rounds []string
-		for _, g := range model.Gates {
-			if n := e.Rounds[string(g)]; n > 0 {
-				rounds = append(rounds, fmt.Sprintf("%s %d", g, n))
-			}
+		fmt.Fprintf(w, "  blocks     %d: %s\n", len(e.Blocks), strings.Join(blocks, ", "))
+	}
+}
+
+// printLogStaffing prints the staffing the story had and how it changed.
+func printLogStaffing(w io.Writer, e logEntry) {
+	if e.Staffing != nil {
+		for _, a := range e.Staffing.Agents {
+			fmt.Fprintf(w, "  staffing   %s: %s\n", a.Agent, describeStaffed(a))
 		}
-		if len(rounds) > 0 {
-			fmt.Fprintf(w, "  rounds     %s\n", strings.Join(rounds, " · "))
+		for _, a := range e.Staffing.Amendments {
+			fmt.Fprintf(w, "  staffing   amended %s\n", describeAmendment(a))
 		}
-		if len(e.Blocks) > 0 {
-			blocks := make([]string, 0, len(e.Blocks))
-			for _, b := range e.Blocks {
-				blocks = append(blocks, fmt.Sprintf("%s %s (round %d)", b.Gate, oneLine(b.Role), b.Round))
-			}
-			fmt.Fprintf(w, "  blocks     %d: %s\n", len(e.Blocks), strings.Join(blocks, ", "))
-		}
-		for _, ev := range e.Reopened {
-			fmt.Fprintf(w, "  reopened   %s\n", oneLine(ev.Message))
-		}
-		for _, ev := range e.Unfrozen {
-			fmt.Fprintf(w, "  unfrozen   %s\n", oneLine(ev.Message))
-		}
-		for _, esc := range e.Escalations {
-			answer := "waiting"
-			if esc.Resolved {
-				answer = "answered"
-			}
-			fmt.Fprintf(w, "  escalated  %s: %s (%s)\n", oneLine(esc.Type), oneLine(esc.Message), answer)
-		}
-		if e.Staffing != nil {
-			for _, a := range e.Staffing.Agents {
-				fmt.Fprintf(w, "  staffing   %s: %s\n", a.Agent, describeStaffed(a))
-			}
-			for _, a := range e.Staffing.Amendments {
-				fmt.Fprintf(w, "  staffing   amended %s\n", describeAmendment(a))
-			}
-		}
-		// The record's own line for each change, beside the staffing and not
-		// only in its place: a staffing recorded a second time has the events
-		// of the first and none of its rows.
-		for _, ev := range e.StaffingEvents {
-			fmt.Fprintf(w, "  staffing   %s  %s\n", oneLine(ev.At), oneLine(ev.Message))
-		}
-		if e.SpentUSD > 0 {
-			fmt.Fprintf(w, "  spent      %s\n", money(e.SpentUSD))
-		}
-		if e.heldIn != "" {
-			fmt.Fprintf(w, "  held       %s\n", strings.TrimPrefix(e.heldIn, "held "))
-		}
+	}
+	// The record's own line for each change, beside the staffing and not
+	// only in its place: a staffing recorded a second time has the events
+	// of the first and none of its rows.
+	for _, ev := range e.StaffingEvents {
+		fmt.Fprintf(w, "  staffing   %s  %s\n", oneLine(ev.At), oneLine(ev.Message))
 	}
 }
 

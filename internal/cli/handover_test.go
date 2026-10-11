@@ -68,6 +68,7 @@ var hoCauses = []hoCause{
 		// The reported case: the hand-over measures the tree, and git is gone.
 		name: "git is not on PATH",
 		stop: func(t *testing.T, _ string) func() {
+			t.Helper()
 			path := os.Getenv("PATH")
 			t.Setenv("PATH", t.TempDir())
 			return func() { t.Setenv("PATH", path) }
@@ -79,6 +80,7 @@ var hoCauses = []hoCause{
 		name:        "a file in the tree cannot be read",
 		permissions: true,
 		stop: func(t *testing.T, root string) func() {
+			t.Helper()
 			writeFile(t, root, "notes.txt", "what the story is about\n")
 			path := filepath.Join(root, "notes.txt")
 			if err := os.Chmod(path, 0o000); err != nil {
@@ -107,6 +109,7 @@ var hoCauses = []hoCause{
 		name:        "the claim on the story cannot be kept",
 		permissions: true,
 		stop: func(t *testing.T, root string) func() {
+			t.Helper()
 			claims := filepath.Join(root, ".git", "sdlc", "claims")
 			if err := os.Remove(filepath.Join(claims, "US-001.json")); err != nil {
 				t.Fatal(err)
@@ -120,6 +123,7 @@ var hoCauses = []hoCause{
 		name:        "the iteration cannot be ended",
 		permissions: true,
 		stop: func(t *testing.T, root string) func() {
+			t.Helper()
 			return hoDeny(t, filepath.Join(root, ".sdlc", "state"))
 		},
 	},
@@ -238,6 +242,7 @@ var hoDorFailed = model.GateEvent(model.GateDoR, model.GateFail)
 
 func TestAC1AGateFailureWhoseHandOverCannotBeCompletedLeavesTheRecordByteForByte(t *testing.T) {
 	hoEachCause(t, func(t *testing.T, cause hoCause) {
+		t.Helper()
 		root := hoGateAtTheLimit(t)
 		before := hoRecordBytes(t, root)
 		mend := cause.stop(t, root)
@@ -270,6 +275,7 @@ func TestAC1AGateFailureWhoseHandOverCannotBeCompletedLeavesTheRecordByteForByte
 
 func TestAC5TheRefusedGateFailureSaysItWasNotRecordedAndIsSafeToRunAgain(t *testing.T) {
 	hoEachCause(t, func(t *testing.T, cause hoCause) {
+		t.Helper()
 		root := hoGateAtTheLimit(t)
 		cause.stop(t, root)
 
@@ -308,6 +314,7 @@ func TestAC5ARefusalThatIsNotAHandOverDoesNotSayAFailureWentUnrecorded(t *testin
 
 func TestAC2TheGateFailureRunAgainAfterTheCauseIsRemovedIsCountedOnceAndHandsTheStoryOver(t *testing.T) {
 	hoEachCause(t, func(t *testing.T, cause hoCause) {
+		t.Helper()
 		root := hoGateAtTheLimit(t)
 		mend := cause.stop(t, root)
 		for range 2 {
@@ -370,6 +377,7 @@ var (
 
 func TestAC3ABlockWhoseHandOverCannotBeCompletedLeavesTheRecordAndNoReviewFile(t *testing.T) {
 	hoEachCause(t, func(t *testing.T, cause hoCause) {
+		t.Helper()
 		root := hoBlockedOnce(t)
 		before, files := hoRecordBytes(t, root), hoReviewFiles(t, root)
 		mend := cause.stop(t, root)
@@ -405,6 +413,7 @@ func TestAC3ABlockWhoseHandOverCannotBeCompletedLeavesTheRecordAndNoReviewFile(t
 
 func TestAC3TheBlockRunAgainAfterTheCauseIsRemovedIsCountedOnceAndHandsTheStoryOver(t *testing.T) {
 	hoEachCause(t, func(t *testing.T, cause hoCause) {
+		t.Helper()
 		root := hoBlockedOnce(t)
 		mend := cause.stop(t, root)
 		for range 2 {
@@ -518,6 +527,7 @@ func TestAC4AGateFailureBelowTheLimitIsRecordedTheSameWithGitAndWithoutIt(t *tes
 // them is asked for, so none of them is in the way.
 func TestAC4AGateFailureBelowTheLimitIsRecordedWhateverWouldStopAHandOver(t *testing.T) {
 	hoEachCause(t, func(t *testing.T, cause hoCause) {
+		t.Helper()
 		root := gitProjectInitialised(t)
 		setConfigOnDisk(t, root, "loop", map[string]any{"max_rework_rounds": 3, "max_review_rounds": 2, "max_stop_blocks": 3})
 		mustRun(t, "start")
@@ -576,6 +586,7 @@ func TestAC4WithALimitOfZeroEveryFailureIsRecordedWithoutGit(t *testing.T) {
 // there are, are recorded with nothing that a hand-over needs.
 func TestAC4ABlockBelowTheLimitIsRecordedWhateverWouldStopAHandOver(t *testing.T) {
 	hoEachCause(t, func(t *testing.T, cause hoCause) {
+		t.Helper()
 		root := planned(t)
 		mend := cause.stop(t, root)
 

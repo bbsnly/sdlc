@@ -63,6 +63,8 @@ func satisfy(t *testing.T, root string, gate model.Gate) {
 		mustRunWith(t, "# Retro\n", "artifact", "write", "retro")
 	case model.GateCommit:
 		commitEverything(t, root)
+	case model.GateDoR, model.GateDesignReview, model.GateImplementation, model.GateVerifierReview, model.GateCodeReview:
+		// Nothing of its own to do: only its reviews, below.
 	}
 	for _, r := range model.ReviewersFor(gate) {
 		if r.WhenDoRAdvocate {
@@ -169,6 +171,7 @@ func startedAt(t *testing.T, upTo model.Gate) string {
 func startedAtFrom(t *testing.T, upTo model.Gate) (root, head string) {
 	t.Helper()
 	root, notes := walkedCopyNoted(t, "started, reached "+string(upTo), func(t *testing.T, root string) map[string]string {
+		t.Helper()
 		gitProjectInitialisedAt(t, root)
 		mustRun(t, "start")
 		head := headOf(t, root)
@@ -186,8 +189,9 @@ func startedAtFrom(t *testing.T, upTo model.Gate) (root, head string) {
 func twoStoriesDone(t *testing.T) string {
 	t.Helper()
 	root := walkedCopy(t, "two stories done", func(t *testing.T, root string) {
+		t.Helper()
 		gitProjectInitialisedAt(t, root)
-		addStory(t, root, "US-002")
+		addStory(t, root)
 		for range 2 {
 			mustRun(t, "start")
 			reach(t, root, "")
@@ -516,7 +520,7 @@ func TestStatusSaysWhenTheActiveStoryHasLeftTheBacklog(t *testing.T) {
 
 // addStory appends a second story to the scaffolded backlog, so that a test
 // can be about what happens after the first one is finished.
-func addStory(t *testing.T, root, id string) {
+func addStory(t *testing.T, root string) {
 	t.Helper()
 	path := filepath.Join(root, "user_stories.json")
 	raw, err := os.ReadFile(path)
@@ -534,7 +538,7 @@ func addStory(t *testing.T, root, id string) {
 		t.Fatal("the scaffolded backlog is empty")
 	}
 	next := maps.Clone(backlog.Stories[0])
-	next["id"] = id
+	next["id"] = "US-002"
 	next["title"] = "The story after the first one"
 	next["status"] = string(model.StatusReady)
 	next["priority"] = 2
@@ -558,7 +562,7 @@ func addStory(t *testing.T, root, id string) {
 func TestASecondStoryCanFreezeItsOwnTests(t *testing.T) {
 	t.Parallel()
 	root := gitProjectInitialised(t)
-	addStory(t, root, "US-002")
+	addStory(t, root)
 	mustRun(t, "start")
 
 	reach(t, root, "")

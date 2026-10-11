@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-// quietExit's report is the command's own -- doctor's checks, printed to
+// quietExitError's report is the command's own -- doctor's checks, printed to
 // stdout -- so an empty "sdlc: " line on stderr would be noise nobody asked
 // for.
 func TestQuietExitCarriesNoMessageOfItsOwn(t *testing.T) {
 	t.Parallel()
-	if got := (quietExit{code: 1}).Error(); got != "" {
+	if got := (quietExitError{code: 1}).Error(); got != "" {
 		t.Errorf("Error() = %q, want empty", got)
 	}
 }

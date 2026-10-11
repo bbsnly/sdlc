@@ -59,8 +59,12 @@ func suBacklogWith(t *testing.T, main, path string, done ...string) {
 	t.Helper()
 	var backlog map[string]any
 	wtReadJSON(t, filepath.Join(main, "user_stories.json"), &backlog)
-	for _, s := range backlog["stories"].([]any) {
-		if story := s.(map[string]any); slices.Contains(done, story["id"].(string)) {
+	for _, story := range wtStoriesIn(t, backlog) {
+		id, ok := story["id"].(string)
+		if !ok {
+			t.Fatalf("a story has no id: %v", story)
+		}
+		if slices.Contains(done, id) {
 			story["status"] = string(model.StatusDone)
 		}
 	}
@@ -134,30 +138,37 @@ func TestAC4EveryCauseOfAWorktreeThatCannotBeMadeHasItsOwnFixAndLeavesNothing(t 
 		says    []string
 	}{
 		{"AC-4 a .gitignore in .sdlc/worktrees that shows the worktrees", func(t *testing.T, main string) {
+			t.Helper()
 			writeFile(t, main, ".sdlc/worktrees/.gitignore", "*\n!US-001\n")
 		}, []string{".gitignore", `put a line "*"`}},
 		{"AC-4 trunk has no .sdlc/config.json committed", func(t *testing.T, main string) {
+			t.Helper()
 			swGit(t, main, "rm", "--cached", "--quiet", "--", ".sdlc/config.json")
 			swGit(t, main, "-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--quiet", "-m", "untracked")
 		}, []string{`"main", has no .sdlc/config.json committed`, "commit .sdlc/config.json and CLAUDE.md to trunk"}},
 		{"AC-4 trunk's .sdlc/config.json does not read", func(t *testing.T, main string) {
+			t.Helper()
 			good := wtRead(t, filepath.Join(main, ".sdlc", "config.json"))
 			writeFile(t, main, ".sdlc/config.json", "{\n")
 			suCommit(t, main, "broken", ".sdlc/config.json")
 			writeFile(t, main, ".sdlc/config.json", good)
 		}, []string{"the .sdlc/config.json trunk commits cannot be read", "commit it to trunk"}},
 		{"AC-4 trunk is not a branch here", func(t *testing.T, main string) {
+			t.Helper()
 			setGitOnDisk(t, main, "trunk_branch", "develop")
 			suCommit(t, main, "trunk", ".sdlc/config.json")
 		}, []string{`"develop"`, "create the branch git.trunk_branch names"}},
 		{"AC-4 trunk_branch is an option", func(t *testing.T, main string) {
+			t.Helper()
 			setGitOnDisk(t, main, "trunk_branch", "--orphan")
 			suCommit(t, main, "trunk", ".sdlc/config.json")
 		}, []string{"set git.trunk_branch in .sdlc/config.json"}},
 		{"AC-4 git cannot finish checking the worktree out", func(t *testing.T, main string) {
+			t.Helper()
 			suHook(t, main, "post-checkout", "echo 'post-checkout: not today' >&2\nexit 1")
 		}, []string{"could not be made", "set git.worktrees to false"}},
 		{"AC-4 a .gitignore that shows the worktrees appears while one is made", func(t *testing.T, main string) {
+			t.Helper()
 			// git runs the hook in the new worktree, .sdlc/worktrees/US-001.
 			suHook(t, main, "post-checkout", `printf '!US-001\n' > ../.gitignore`)
 		}, []string{".gitignore", `put a line "*"`}},
@@ -542,11 +553,11 @@ func TestD7UncommittedWorkAfterAPassedOverStoryMayBeThatStorysOwn(t *testing.T) 
 
 // ---------------------------------------------------------------- doctor
 
-// suChecked is doctor's check of that name, and whether it ran.
-func suChecked(t *testing.T, dir, name string) (check, bool) {
+// suChecked is doctor's check of the story worktrees, and whether it ran.
+func suChecked(t *testing.T, dir string) (check, bool) {
 	t.Helper()
 	for _, c := range decode[doctorPayload](t, wtRun(t, dir, "", "", "doctor", "--json")).Checks {
-		if c.Name == name {
+		if c.Name == "story worktrees" {
 			return c, true
 		}
 	}
@@ -610,11 +621,11 @@ func TestDoctorDescribesEachStoryWorktreeNobodyHoldsByWhatIsTrueOfIt(t *testing.
 	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"}, wtStory{id: "US-003"},
 		wtStory{id: "US-004"}, wtStory{id: "US-005"}, wtStory{id: "US-006"})
-	if got, ok := suChecked(t, main, "story worktrees"); ok {
+	if got, ok := suChecked(t, main); ok {
 		t.Errorf("a repository with no story worktrees has the check %+v", got)
 	}
 	swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
-	if got, ok := suChecked(t, main, "story worktrees"); ok {
+	if got, ok := suChecked(t, main); ok {
 		t.Errorf("a story worktree that holds its story is described: %+v", got)
 	}
 
@@ -633,7 +644,7 @@ func TestDoctorDescribesEachStoryWorktreeNobodyHoldsByWhatIsTrueOfIt(t *testing.
 	swGit(t, main, "worktree", "add", "--quiet", "-b", "odd", filepath.Join(main, ".sdlc", "worktrees", "not a story"), "main")
 	swGit(t, main, "worktree", "add", "--quiet", "-b", "US-007", filepath.Join(wtTempDir(t), "US-007"), "main")
 
-	c, ok := suChecked(t, main, "story worktrees")
+	c, ok := suChecked(t, main)
 	if !ok || c.State != stateProblem {
 		t.Fatalf("doctor has no story worktrees problem: %+v", c)
 	}
@@ -678,7 +689,7 @@ func TestDoctorSaysATrunkWithNoConfigurationCommittedCannotBeginAStoryInAWorktre
 			swGit(t, main, "rm", "--cached", "--quiet", "--", ".sdlc/config.json")
 			swGit(t, main, "-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--quiet", "-m", "untracked")
 
-			c, ok := suChecked(t, main, "story worktrees")
+			c, ok := suChecked(t, main)
 			if !tc.on {
 				if ok {
 					t.Errorf("with worktrees off, doctor reports %+v", c)
@@ -707,7 +718,7 @@ func TestDoctorLeavesATiedStoryAndAnUnreadableBacklogToTheirOwnChecks(t *testing
 		writeFile(t, main, ".sdlc/state/active", "US-001\n")
 		wtSetStatus(t, main, "US-001", model.StatusInProgress)
 
-		if c, ok := suChecked(t, main, "story worktrees"); ok {
+		if c, ok := suChecked(t, main); ok {
 			t.Errorf("a worktree tied for its story is described as held by nobody: %+v", c)
 		}
 	})
@@ -716,7 +727,7 @@ func TestDoctorLeavesATiedStoryAndAnUnreadableBacklogToTheirOwnChecks(t *testing
 		swGit(t, main, "worktree", "add", "--quiet", "-b", swBranchOf("US-001"), swWorktreeOf(main, "US-001"), "main")
 		writeFile(t, main, "user_stories.json", "{\n")
 
-		if c, ok := suChecked(t, main, "story worktrees"); ok {
+		if c, ok := suChecked(t, main); ok {
 			t.Errorf("with a backlog that does not read, doctor describes %+v", c)
 		}
 	})

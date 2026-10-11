@@ -2,10 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
 )
@@ -33,77 +35,82 @@ func newReleaseCmd() *cobra.Command {
 			"on the story's record.",
 		Example: `  sdlc release US-001 --reason "the worktree it was started in was deleted"`,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			id := args[0]
-			if strings.TrimSpace(reason) == "" {
-				return sdlcerr.New(sdlcerr.ReasonRequired,
-					"releasing a story needs a reason",
-					"the story's record says why the story moved from the checkout that held it").
-					WithFix("pass --reason with the one line that explains why " + quote(id) +
-						" is moving to another checkout")
-			}
-			if err := store.CheckID(id); err != nil {
-				return err
-			}
-			s, _, unlock, err := openStoreForWriting(cmd)
-			if err != nil {
-				return err
-			}
-			defer unlock()
-			if _, _, err := s.Story(id); err != nil {
-				return err
-			}
-			holders, err := s.Holders()
-			if err != nil {
-				return err
-			}
-			h, held := holders[id]
-			if !held {
-				if wantJSON(cmd) {
-					return emitJSON(cmd.OutOrStdout(), releasePayload{OK: true, Story: id})
-				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Nothing to release: %s is not held by any checkout.\n", quote(id))
-				return nil
-			}
-			if err := refuseIfRunning(id, h); err != nil {
-				return err
-			}
-			if err := s.ReleaseClaim(id); err != nil {
-				return err
-			}
-			record, err := s.Record(id)
-			if err != nil {
-				return err
-			}
-			// The reason and nothing else: the record is committed, and the
-			// path of somebody's checkout is nobody else's business.
-			record.Append("release", reason, s.Now())
-			if err := s.SaveRecord(record); err != nil {
-				return err
-			}
-
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), releasePayload{OK: true, Story: id, Checkout: h.Checkout})
-			}
-			w := cmd.OutOrStdout()
-			fmt.Fprintf(w, "Released %s: the checkout at %s no longer holds it. %s picks it up in any checkout.\n",
-				id, sdlcerr.QuotePath(h.Checkout), quote("sdlc start "+id))
-			if h.Live {
-				fmt.Fprintf(w, "Anything the checkout at %s has not committed stays there, and is not moved.\n",
-					sdlcerr.QuotePath(h.Checkout))
-			}
-			// Not where this checkout's own freeze is the story's: it is the checkout the
-			// story was released from, moved here, and the freeze is here with it.
-			if _, frozen := record.StandingFreeze(); frozen && !frozenHere(s, id) {
-				fmt.Fprintln(w, "Its tests were frozen in that checkout, and the freeze does not move with it: "+
-					`in the checkout that picks it up, a person lifts it with "sdlc unfreeze --reason ..." `+
-					`in their own terminal, and the tests are frozen again with "sdlc freeze".`)
-			}
-			return nil
-		},
+		RunE:    func(cmd *cobra.Command, args []string) error { return runRelease(cmd, args[0], reason) },
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "why the story is moving to another checkout")
 	return cmd
+}
+
+func runRelease(cmd *cobra.Command, id, reason string) error {
+	if strings.TrimSpace(reason) == "" {
+		return sdlcerr.New(sdlcerr.ReasonRequired,
+			"releasing a story needs a reason",
+			"the story's record says why the story moved from the checkout that held it").
+			WithFix("pass --reason with the one line that explains why " + quote(id) +
+				" is moving to another checkout")
+	}
+	if err := store.CheckID(id); err != nil {
+		return err
+	}
+	s, _, unlock, err := openStoreForWriting(cmd)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if _, _, err := s.Story(id); err != nil {
+		return err
+	}
+	holders, err := s.Holders()
+	if err != nil {
+		return err
+	}
+	h, held := holders[id]
+	if !held {
+		if wantJSON(cmd) {
+			return emitJSON(cmd.OutOrStdout(), releasePayload{OK: true, Story: id})
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Nothing to release: %s is not held by any checkout.\n", quote(id))
+		return nil
+	}
+	if err := refuseIfRunning(id, h); err != nil {
+		return err
+	}
+	if err := s.ReleaseClaim(id); err != nil {
+		return err
+	}
+	record, err := s.Record(id)
+	if err != nil {
+		return err
+	}
+	// The reason and nothing else: the record is committed, and the
+	// path of somebody's checkout is nobody else's business.
+	record.Append("release", reason, s.Now())
+	if err := s.SaveRecord(record); err != nil {
+		return err
+	}
+
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), releasePayload{OK: true, Story: id, Checkout: h.Checkout})
+	}
+	sayReleased(cmd.OutOrStdout(), s, record, id, h)
+	return nil
+}
+
+// sayReleased says what a release did and did not move.
+func sayReleased(w io.Writer, s *store.Store, record *model.Record, id string, h store.Holder) {
+	fmt.Fprintf(w, "Released %s: the checkout at %s no longer holds it. %s picks it up in any checkout.\n",
+		id, sdlcerr.QuotePath(h.Checkout), quote("sdlc start "+id))
+	if h.Live {
+		fmt.Fprintf(w, "Anything the checkout at %s has not committed stays there, and is not moved.\n",
+			sdlcerr.QuotePath(h.Checkout))
+	}
+	// Not where this checkout's own freeze is the story's: it is the checkout the
+	// story was released from, moved here, and the freeze is here with it.
+	if _, frozen := record.StandingFreeze(); frozen && !frozenHere(s, id) {
+		fmt.Fprintln(w, "Its tests were frozen in that checkout, and the freeze does not move with it: "+
+			`in the checkout that picks it up, a person lifts it with "sdlc unfreeze --reason ..." `+
+			`in their own terminal, and the tests are frozen again with "sdlc freeze".`)
+	}
 }
 
 // refuseIfRunning keeps release off a story an iteration is running on. A

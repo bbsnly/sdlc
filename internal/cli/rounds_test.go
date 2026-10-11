@@ -15,7 +15,7 @@ func TestAGateThatKeepsFailingIsHandedToAPerson(t *testing.T) {
 	t.Parallel()
 	root := gitProjectInitialised(t)
 	setConfigOnDisk(t, root, "loop", map[string]any{"max_rework_rounds": 2, "max_review_rounds": 2, "max_stop_blocks": 3})
-	addStory(t, root, "US-002")
+	addStory(t, root)
 	mustRun(t, "start")
 
 	if first := decode[gatePayload](t, mustRun(t, "gate", "dor", "fail", "--note", "AC-2 is not testable", "--json")); first.HandedOver != "" {

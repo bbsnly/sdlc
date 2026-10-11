@@ -29,10 +29,10 @@ import (
 // as a record written before this release has neither (PLAN.md: "For a story
 // committed before this release, B is the merge base of T and S, and C is
 // empty").
-func lqForgetChange(t *testing.T, main, id string) {
+func lqForgetChange(t *testing.T, main string) {
 	t.Helper()
 	var rec map[string]any
-	path := wtRecordPath(main, id)
+	path := wtRecordPath(main, "US-001")
 	wtReadJSON(t, path, &rec)
 	delete(rec, "change_base")
 	delete(rec, "change")
@@ -239,7 +239,7 @@ func TestALegacyRecordMeasuresItsBaseAsTrunksMergeBaseWithTheTip(t *testing.T) {
 	t.Parallel()
 	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true})
 	tip := ldBookkeeping(t, wt)
-	lqForgetChange(t, main, "US-001")
+	lqForgetChange(t, main)
 	// With no change recorded, the landing cannot tell the tree apart from one
 	// nobody reviewed, and asks for the reviews again on it as it stands.
 	ldReviewAgain(t, wt)
@@ -257,7 +257,7 @@ func TestALegacyRecordWhoseBranchSharesNoHistoryWithTrunkIsRefused(t *testing.T)
 	t.Parallel()
 	main, wt := ldWalked(t, ldWalk{finished: true})
 	ldBookkeeping(t, wt)
-	lqForgetChange(t, main, "US-001")
+	lqForgetChange(t, main)
 
 	// Rewrite the story's branch onto an unrelated history, as if it had once
 	// been cut from a trunk with none of this repository's commits. The
@@ -324,7 +324,7 @@ func TestALandingCommandThatMovesTrunkIsCaughtWhenEverythingIsAskedAgain(t *test
 	main := lxRepository(t, map[string]string{"build": "git update-ref refs/heads/main HEAD && exit 0"}, nil)
 	wt := ldFinished(t, main)
 	ldBookkeeping(t, wt)
-	lqForgetChange(t, main, "US-001")
+	lqForgetChange(t, main)
 	ldReviewAgain(t, wt)
 
 	// Which code the refusal carries, and its words, are the landing's to
@@ -408,7 +408,7 @@ func TestChangeChecksRefusesADifferentChangeWhoseWorktreeHasUncommittedChanges(t
 	t.Parallel()
 	main, wt := ldWalked(t, ldWalk{finished: true})
 	ldBookkeeping(t, wt)
-	lqForgetChange(t, main, "US-001")
+	lqForgetChange(t, main)
 	writeFile(t, wt, "billing.go", ldBilling+"\n// left uncommitted\n")
 
 	out := wtRefused(t, ldStale, wt, ldSession, "", "stop")

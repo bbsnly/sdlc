@@ -7,6 +7,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -60,12 +61,12 @@ func newStaffingCmd() *cobra.Command {
 // handed its story to a person, or not started one, write a staffing itself.
 // assign is a person's, and takes a story that waits for them as well.
 func staffingStory(cmd *cobra.Command, named string) (*store.Store, string, *model.Record, func(), error) {
-	nothing := func() {}
+	nothing := noUnlock
 	verb := cmd.Name()
 	var s *store.Store
 	var err error
 	unlock := nothing
-	if verb == "show" {
+	if verb == verbShow {
 		s, _, err = openStore(cmd)
 	} else {
 		s, _, unlock, err = openStoreForWriting(cmd)
@@ -82,34 +83,11 @@ func staffingStory(cmd *cobra.Command, named string) (*store.Store, string, *mod
 			"the staffing is off in this project",
 			"staffing.enabled is not true in "+config.File+", so every agent takes part in every story"))
 	}
-	id := named
-	if verb != "show" || id == "" {
-		active, err := s.Active()
-		if err != nil {
-			return fail(err)
-		}
-		switch {
-		case verb == "assign" && named != "":
-			story, _, err := s.Story(named)
-			if err != nil {
-				return fail(err)
-			}
-			if story.Status != model.StatusInProgress && story.Status != model.StatusAwaitingHuman {
-				return fail(usageWith(cmd, quote(named)+" has not been started, and a model or an effort is "+
-					"assigned to a story that has", "start the story with /sdlc:next, then assign"))
-			}
-		case active == "":
-			return fail(sdlcerr.New(sdlcerr.NoActiveIteration,
-				"there is no story being worked on",
-				"the staffing belongs to the story being worked on, and no iteration is running"))
-		case named != "" && named != active:
-			return fail(usageWith(cmd, "the staffing is written for the story being worked on, which is "+
-				quote(active)+", not "+quote(named), "leave --story out; /sdlc:next picks a story up"))
-		default:
-			id = active
-		}
+	id, err := staffingStoryID(cmd, s, verb, named)
+	if err != nil {
+		return fail(err)
 	}
-	if verb != "show" {
+	if verb != verbShow {
 		if err := refuseIfHeldElsewhere(s, id, "the staffing is of the work in that checkout, not this one"); err != nil {
 			return fail(err)
 		}
@@ -119,6 +97,38 @@ func staffingStory(cmd *cobra.Command, named string) (*store.Store, string, *mod
 		return fail(err)
 	}
 	return s, id, record, unlock, nil
+}
+
+// staffingStoryID is the story a staffing command is about: the one named, or
+// the one being worked on.
+func staffingStoryID(cmd *cobra.Command, s *store.Store, verb, named string) (string, error) {
+	if verb == verbShow && named != "" {
+		return named, nil
+	}
+	active, err := s.Active()
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case verb == "assign" && named != "":
+		story, _, err := s.Story(named)
+		if err != nil {
+			return "", err
+		}
+		if story.Status != model.StatusInProgress && story.Status != model.StatusAwaitingHuman {
+			return "", usageWith(cmd, quote(named)+" has not been started, and a model or an effort is "+
+				"assigned to a story that has", "start the story with /sdlc:next, then assign")
+		}
+		return named, nil
+	case active == "":
+		return "", sdlcerr.New(sdlcerr.NoActiveIteration,
+			"there is no story being worked on",
+			"the staffing belongs to the story being worked on, and no iteration is running")
+	case named != "" && named != active:
+		return "", usageWith(cmd, "the staffing is written for the story being worked on, which is "+
+			quote(active)+", not "+quote(named), "leave --story out; /sdlc:next picks a story up")
+	}
+	return active, nil
 }
 
 // usageWith is a command line refused with its own way on, where "see --help"
@@ -311,7 +321,7 @@ func noteSensitivity(s *store.Store, record *model.Record, sensitive bool) {
 	}
 	record.Staffing.Amendments = append(record.Staffing.Amendments, model.Amendment{
 		At: model.Timestamp(s.Now()), Agent: "security", Change: change,
-		Reason: "sdlc gate analysis pass --security-sensitive=" + fmt.Sprint(sensitive), By: "gate analysis",
+		Reason: "sdlc gate analysis pass --security-sensitive=" + strconv.FormatBool(sensitive), By: "gate analysis",
 	})
 	record.Append(model.EventStaffingAmend, "security: "+change, s.Now())
 }
@@ -326,7 +336,7 @@ func staffingRoster(cfg config.Staffing) error {
 	for agent := range cfg.Lowest {
 		if !slices.Contains(model.Agents, agent) {
 			problems = append(problems, "staffing.lowest names "+quote(agent)+", which is not an agent: "+
-				"the agents are "+strings.Join(model.Agents, ", "))
+				agentsAre+strings.Join(model.Agents, ", "))
 		}
 	}
 	for reviewer := range cfg.BringBack {
@@ -411,7 +421,7 @@ func describeStaffing(record *model.Record) string {
 func newStaffingShowCmd() *cobra.Command {
 	var storyID, gateName string
 	cmd := &cobra.Command{
-		Use:   "show",
+		Use:   verbShow,
 		Short: "Show the story's staffing, and who to delegate to at a gate",
 		Long: "show prints the staffing: for every agent whether the story needs it and why,\n" +
 			"and the model and effort it is asked for.\n\n" +
@@ -420,62 +430,79 @@ func newStaffingShowCmd() *cobra.Command {
 			"for, a reviewer a changed path brought back included.",
 		Example: "  sdlc staffing show\n  sdlc staffing show --gate code_review --json",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			gate := model.Gate(gateName)
-			if gateName != "" && !gate.Valid() {
-				return sdlcerr.New(sdlcerr.UnknownGate,
-					"there is no gate called "+quote(gateName),
-					"this version knows "+model.GateNames())
-			}
-			s, id, record, _, err := staffingStory(cmd, storyID)
-			if err != nil {
-				return err
-			}
-			if !staffed(record) {
-				return noStaffing(id)
-			}
-			if gateName == "" {
-				gate, _ = record.NextGate()
-			}
-
-			payload := staffingPayload{
-				OK: true, Story: id, Gate: string(gate), Agents: staffingInfos(record),
-				AtGate: []atGateInfo{}, Amendments: append([]model.Amendment{}, record.Staffing.Amendments...),
-			}
-			at := func(agent string) {
-				row := staffingRow(record, agent)
-				payload.AtGate = append(payload.AtGate, atGateInfo{Agent: agent, AskedModel: row.AskedModel, AskedEffort: row.AskedEffort})
-			}
-			for _, d := range model.Doers {
-				if d.Gate == gate {
-					at(d.Agent)
-				}
-			}
-			rd, policy := readingOf(s), reviewPolicy(s, record)
-			for _, r := range model.ReviewersFor(gate) {
-				out, by, err := waited(cmd.Context(), rd, record, gate, r.Role)
-				if err != nil {
-					return err
-				}
-				if !out && r.Expected(policy) {
-					at(r.Role)
-				}
-				for i := range payload.Agents {
-					if payload.Agents[i].Agent == r.Role {
-						payload.Agents[i].BroughtBackBy = by
-					}
-				}
-			}
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), payload)
-			}
-			printStaffing(cmd.OutOrStdout(), s.Config().Staffing, payload)
-			return nil
-		},
+		RunE:    func(cmd *cobra.Command, _ []string) error { return runStaffingShow(cmd, storyID, gateName) },
 	}
 	cmd.Flags().StringVar(&gateName, "gate", "", "who to delegate to at this gate, instead of the one the story is at")
 	cmd.Flags().StringVar(&storyID, "story", "", "for this story instead of the one being worked on")
 	return cmd
+}
+
+func runStaffingShow(cmd *cobra.Command, storyID, gateName string) error {
+	gate := model.Gate(gateName)
+	if gateName != "" && !gate.Valid() {
+		return sdlcerr.New(sdlcerr.UnknownGate,
+			"there is no gate called "+quote(gateName),
+			"this version knows "+model.GateNames())
+	}
+	s, id, record, _, err := staffingStory(cmd, storyID)
+	if err != nil {
+		return err
+	}
+	if !staffed(record) {
+		return noStaffing(id)
+	}
+	if gateName == "" {
+		gate, _ = record.NextGate()
+	}
+
+	payload := staffingPayload{
+		OK: true, Story: id, Gate: string(gate), Agents: staffingInfos(record),
+		AtGate: []atGateInfo{}, Amendments: append([]model.Amendment{}, record.Staffing.Amendments...),
+	}
+	if err := staffedAtGate(cmd.Context(), s, record, gate, &payload); err != nil {
+		return err
+	}
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), payload)
+	}
+	printStaffing(cmd.OutOrStdout(), s.Config().Staffing, payload)
+	return nil
+}
+
+// staffedAtGate lists who to delegate to at the gate: the agent that does its
+// work and each reviewer it waits for, and marks a reviewer a changed path
+// brought back.
+func staffedAtGate(ctx context.Context, s *store.Store, record *model.Record, gate model.Gate, payload *staffingPayload) error {
+	at := func(agent string) {
+		row := staffingRow(record, agent)
+		payload.AtGate = append(payload.AtGate, atGateInfo{Agent: agent, AskedModel: row.AskedModel, AskedEffort: row.AskedEffort})
+	}
+	for _, d := range model.Doers {
+		if d.Gate == gate {
+			at(d.Agent)
+		}
+	}
+	rd, policy := readingOf(s), reviewPolicy(s, record)
+	for _, r := range model.ReviewersFor(gate) {
+		out, by, err := waited(ctx, rd, record, gate, r.Role)
+		if err != nil {
+			return err
+		}
+		if !out && r.Expected(policy) {
+			at(r.Role)
+		}
+		payload.markBroughtBack(r.Role, by)
+	}
+	return nil
+}
+
+// markBroughtBack names who brought the reviewer back, on its row.
+func (p *staffingPayload) markBroughtBack(role, by string) {
+	for i := range p.Agents {
+		if p.Agents[i].Agent == role {
+			p.Agents[i].BroughtBackBy = by
+		}
+	}
 }
 
 func printStaffing(w io.Writer, cfg config.Staffing, p staffingPayload) {
@@ -541,104 +568,140 @@ func newStaffingSetCmd() *cobra.Command {
 			"read.",
 		Example: "  sdlc staffing set < staffing.json\n  sdlc staffing set --file /tmp/staffing.json",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			content, err := readDocument(cmd, file)
-			if err != nil {
-				return err
-			}
-			s, id, record, unlock, err := staffingStory(cmd, storyID)
-			if err != nil {
-				return err
-			}
-			defer unlock()
-			// Its own type, with the rows and nothing else: decoded into the
-			// record's, a document could carry what only assign and amend write.
-			var doc struct {
-				Agents []model.Staffed `json:"agents"`
-			}
-			incomplete := func(why string) error {
-				return sdlcerr.New(sdlcerr.StaffingInvalid, "the staffing for "+id+" was not recorded", why)
-			}
-			if err := json.Unmarshal(content, &doc); err != nil {
-				return incomplete("the document is not a staffing: " + oneLine(err.Error()))
-			}
-			if staffed(record) {
-				return incomplete(id + " already has a staffing, which `sdlc staffing amend` changes an agent at a time")
-			}
-			rows := make([]model.Staffed, 0, len(model.Agents))
-			for _, agent := range model.Agents {
-				at := slices.IndexFunc(doc.Agents, func(a model.Staffed) bool { return a.Agent == agent })
-				if at < 0 {
-					return incomplete("it has no row for " + agent + ": a staffing names every agent, needed or not")
-				}
-				rows = append(rows, doc.Agents[at])
-			}
-			needed := 0
-			for _, a := range doc.Agents {
-				n := 0
-				for _, other := range doc.Agents {
-					if other.Agent == a.Agent {
-						n++
-					}
-				}
-				switch {
-				case !slices.Contains(model.Agents, a.Agent) || n > 1:
-					return incomplete(quote(a.Agent) + " is not an agent the plugin ships, or is named more than once: " +
-						"the agents are " + strings.Join(model.Agents, ", "))
-				case blankOrLong(a.Reason):
-					return incomplete(a.Agent + " has no reason, or one over " + fmt.Sprint(maxReason) + " characters: say why the story needs it or does not")
-				case a.Needed && (a.AskedModel == "" || a.AskedEffort == "" || blankOrLong(a.AskedReason)):
-					return incomplete(a.Agent + " is needed and has no asked_model, asked_effort or asked_reason")
-				}
-				if a.Needed {
-					needed++
-				}
-			}
-			for i := range rows {
-				a := &rows[i]
-				pin, pinned := assigned(record, a.Agent)
-				switch {
-				case pinned && !a.Needed:
-					return personAssigned(a.Agent, "a place in the story")
-				case pinned && (pin.Model != "" && pin.Model != a.AskedModel || pin.Effort != "" && pin.Effort != a.AskedEffort):
-					return personAssigned(a.Agent, strings.TrimSpace("the model "+quote(pin.Model)+" and the effort "+quote(pin.Effort)))
-				case !a.Needed:
-					if err := refuseLeavingOut(record, a.Agent); err != nil {
-						return err
-					}
-					a.AskedModel, a.AskedEffort, a.AskedReason = "", "", ""
-				default:
-					if err := refuseOutsideLimits(s.Config().Staffing, a.Agent, a.AskedModel, a.AskedEffort); err != nil {
-						return err
-					}
-				}
-			}
-			if record.Staffing == nil {
-				record.Staffing = &model.Staffing{}
-			}
-			// Counted from the record's history, which an sdlc from before the
-			// staffing keeps when it drops the staffing itself: a number above
-			// nought on a first staffing says one was lost.
-			before := 0
-			for _, ev := range record.Events {
-				if slices.Contains([]string{model.EventStaffingSet, model.EventStaffingAmend, model.EventStaffingAssign}, ev.Type) {
-					before++
-				}
-			}
-			record.Staffing.At, record.Staffing.Agents = model.Timestamp(s.Now()), rows
-			said := fmt.Sprintf("%d agents needed, %d left out", needed, len(rows)-needed)
-			if err := saveStaffing(s, record, model.EventStaffingSet,
-				fmt.Sprintf("%s; staffing changes on the record before this: %d", said, before)); err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s  staffing recorded: %s\n", id, said)
-			return err
-		},
+		RunE:    func(cmd *cobra.Command, _ []string) error { return runStaffingSet(cmd, file, storyID) },
 	}
 	cmd.Flags().StringVar(&file, "file", "", "read the staffing from this path instead of standard input")
 	cmd.Flags().StringVar(&storyID, "story", "", "the story being worked on, which is the only one a staffing is recorded for")
 	return cmd
 }
+
+func runStaffingSet(cmd *cobra.Command, file, storyID string) error {
+	content, err := readDocument(cmd, file)
+	if err != nil {
+		return err
+	}
+	s, id, record, unlock, err := staffingStory(cmd, storyID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	// Its own type, with the rows and nothing else: decoded into the
+	// record's, a document could carry what only assign and amend write.
+	var doc struct {
+		Agents []model.Staffed `json:"agents"`
+	}
+	if err := json.Unmarshal(content, &doc); err != nil {
+		return staffingNotRecorded(id, "the document is not a staffing: "+oneLine(err.Error()))
+	}
+	if staffed(record) {
+		return staffingNotRecorded(id, id+" already has a staffing, which `sdlc staffing amend` changes an agent at a time")
+	}
+	rows, err := rowsForEveryAgent(id, doc.Agents)
+	if err != nil {
+		return err
+	}
+	needed, err := checkStaffingRows(id, doc.Agents)
+	if err != nil {
+		return err
+	}
+	if err := checkAgainstPins(s, record, rows); err != nil {
+		return err
+	}
+	if record.Staffing == nil {
+		record.Staffing = &model.Staffing{}
+	}
+	// Counted from the record's history, which an sdlc from before the
+	// staffing keeps when it drops the staffing itself: a number above
+	// nought on a first staffing says one was lost.
+	before := 0
+	for _, ev := range record.Events {
+		if slices.Contains([]string{model.EventStaffingSet, model.EventStaffingAmend, model.EventStaffingAssign}, ev.Type) {
+			before++
+		}
+	}
+	record.Staffing.At, record.Staffing.Agents = model.Timestamp(s.Now()), rows
+	said := fmt.Sprintf("%d agents needed, %d left out", needed, len(rows)-needed)
+	if err := saveStaffing(s, record, model.EventStaffingSet,
+		fmt.Sprintf("%s; staffing changes on the record before this: %d", said, before)); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s  staffing recorded: %s\n", id, said)
+	return err
+}
+
+// rowsForEveryAgent is the document's row for each agent, in the order the
+// agents are listed.
+func rowsForEveryAgent(id string, agents []model.Staffed) ([]model.Staffed, error) {
+	rows := make([]model.Staffed, 0, len(model.Agents))
+	for _, agent := range model.Agents {
+		at := slices.IndexFunc(agents, func(a model.Staffed) bool { return a.Agent == agent })
+		if at < 0 {
+			return nil, staffingNotRecorded(id, "it has no row for "+agent+": a staffing names every agent, needed or not")
+		}
+		rows = append(rows, agents[at])
+	}
+	return rows, nil
+}
+
+// staffingNotRecorded is the refusal of a staffing document, with why.
+func staffingNotRecorded(id, why string) error {
+	return sdlcerr.New(sdlcerr.StaffingInvalid, "the staffing for "+id+" was not recorded", why)
+}
+
+// checkStaffingRows holds each row of the document to what a row has to say,
+// and counts the agents it needs.
+func checkStaffingRows(id string, agents []model.Staffed) (needed int, err error) {
+	for _, a := range agents {
+		n := 0
+		for _, other := range agents {
+			if other.Agent == a.Agent {
+				n++
+			}
+		}
+		switch {
+		case !slices.Contains(model.Agents, a.Agent) || n > 1:
+			return 0, staffingNotRecorded(id, quote(a.Agent)+" is not an agent the plugin ships, or is named more than once: "+
+				agentsAre+strings.Join(model.Agents, ", "))
+		case blankOrLong(a.Reason):
+			return 0, staffingNotRecorded(id, a.Agent+" has no reason, or one over "+strconv.Itoa(maxReason)+" characters: say why the story needs it or does not")
+		case a.Needed && (a.AskedModel == "" || a.AskedEffort == "" || blankOrLong(a.AskedReason)):
+			return 0, staffingNotRecorded(id, a.Agent+" is needed and has no asked_model, asked_effort or asked_reason")
+		}
+		if a.Needed {
+			needed++
+		}
+	}
+	return needed, nil
+}
+
+// checkAgainstPins holds the rows to what a person assigned, to what may be
+// left out, and to the project's limits. A row left out is cleared of what was
+// asked for.
+func checkAgainstPins(s *store.Store, record *model.Record, rows []model.Staffed) error {
+	for i := range rows {
+		a := &rows[i]
+		pin, pinned := assigned(record, a.Agent)
+		switch {
+		case pinned && !a.Needed:
+			return personAssigned(a.Agent, "a place in the story")
+		case pinned && (pin.Model != "" && pin.Model != a.AskedModel || pin.Effort != "" && pin.Effort != a.AskedEffort):
+			return personAssigned(a.Agent, strings.TrimSpace("the model "+quote(pin.Model)+" and the effort "+quote(pin.Effort)))
+		case !a.Needed:
+			if err := refuseLeavingOut(record, a.Agent); err != nil {
+				return err
+			}
+			a.AskedModel, a.AskedEffort, a.AskedReason = "", "", ""
+		default:
+			if err := refuseOutsideLimits(s.Config().Staffing, a.Agent, a.AskedModel, a.AskedEffort); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// agentsAre begins the list of the agents a staffing may name.
+const agentsAre = "the agents are "
 
 func blankOrLong(reason string) bool {
 	return strings.TrimSpace(reason) == "" || len(reason) > maxReason
@@ -652,8 +715,8 @@ func requireReason(reason, what string) error {
 		return sdlcerr.New(sdlcerr.ReasonRequired,
 			what+" needs a reason",
 			"the reason is what a later reader has to go on, so it says something and is at most "+
-				fmt.Sprint(maxReason)+" characters").
-			WithFix("give --reason with one or two sentences that say why, at most " + fmt.Sprint(maxReason) + " characters")
+				strconv.Itoa(maxReason)+" characters").
+			WithFix("give --reason with one or two sentences that say why, at most " + strconv.Itoa(maxReason) + " characters")
 	}
 	return nil
 }
@@ -676,76 +739,8 @@ func newStaffingAmendCmd() *cobra.Command {
 			`  sdlc staffing amend researcher --model opus --reason "its first pass missed the callers"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			agent := args[0]
-			// The project first: with the staffing off, that is the answer,
-			// whatever else the command line lacks.
-			s, id, record, unlock, err := staffingStory(cmd, storyID)
-			if err != nil {
-				return err
-			}
-			defer unlock()
-			if err := requireReason(reason, "an amendment"); err != nil {
-				return err
-			}
-			switch {
-			case !needed && !leftOut && askedModel == "" && askedEffort == "":
-				return usage(cmd, "nothing to change: give --needed, --left-out, --model or --effort")
-			case leftOut && (needed || askedModel != "" || askedEffort != ""):
-				return usage(cmd, "--left-out takes no --needed, --model or --effort: an agent left out is asked for nothing")
-			}
-			if !slices.Contains(model.Agents, agent) {
-				return sdlcerr.New(sdlcerr.StaffingInvalid,
-					quote(agent)+" is not an agent the plugin ships",
-					"the agents are "+strings.Join(model.Agents, ", "))
-			}
-			if !staffed(record) {
-				return noStaffing(id)
-			}
-			row := staffingRow(record, agent)
-			pin, pinned := assigned(record, agent)
-			var change string
-			switch {
-			case leftOut && !row.Needed:
-				return usage(cmd, agent+" is already left out: there is nothing to change")
-			case leftOut:
-				if pinned {
-					return personAssigned(agent, "a place in the story")
-				}
-				if err := refuseLeavingOut(record, agent); err != nil {
-					return err
-				}
-				change = "needed -> left out"
-				*row = model.Staffed{Agent: agent, Reason: reason}
-			case !row.Needed && (askedModel == "" || askedEffort == ""):
-				return usage(cmd, agent+" is left out, and an agent brought in comes with --model and --effort")
-			case needed && row.Needed && askedModel == "" && askedEffort == "":
-				return usage(cmd, agent+" is already needed: give --model or --effort to change what it is asked for")
-			case askedModel != "" && pin.Model != "" && askedModel != pin.Model:
-				return personAssigned(agent, "the model "+quote(pin.Model))
-			case askedEffort != "" && pin.Effort != "" && askedEffort != pin.Effort:
-				return personAssigned(agent, "the effort "+quote(pin.Effort))
-			default:
-				to := model.Staffed{
-					Agent: agent, Needed: true, Reason: row.Reason, AskedReason: reason,
-					AskedModel: cmpOr(askedModel, row.AskedModel), AskedEffort: cmpOr(askedEffort, row.AskedEffort),
-				}
-				if err := refuseOutsideLimits(s.Config().Staffing, agent, to.AskedModel, to.AskedEffort); err != nil {
-					return err
-				}
-				change = describeAsked(*row) + " -> " + describeAsked(to)
-				if !row.Needed {
-					to.Reason = reason
-				}
-				*row = to
-			}
-			record.Staffing.Amendments = append(record.Staffing.Amendments, model.Amendment{
-				At: model.Timestamp(s.Now()), Agent: agent, Change: change, Reason: reason, By: "staffing amend",
-			})
-			if err := saveStaffing(s, record, model.EventStaffingAmend, agent+": "+change); err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s  staffing amended: %s: %s\n", id, agent, change)
-			return err
+			return runStaffingAmend(cmd, args[0], amendFlags{story: storyID, model: askedModel, effort: askedEffort,
+				reason: reason, needed: needed, leftOut: leftOut})
 		},
 	}
 	cmd.Flags().BoolVar(&needed, "needed", false, "the story needs the agent after all; give --model and --effort with it")
@@ -755,6 +750,97 @@ func newStaffingAmendCmd() *cobra.Command {
 	cmd.Flags().StringVar(&reason, "reason", "", "why, from what happened or what the work is")
 	cmd.Flags().StringVar(&storyID, "story", "", "the story being worked on, which is the only one a staffing is amended for")
 	return cmd
+}
+
+// amendFlags are the flags `sdlc staffing amend` was given.
+type amendFlags struct {
+	story, model, effort, reason string
+	needed, leftOut              bool
+}
+
+func runStaffingAmend(cmd *cobra.Command, agent string, f amendFlags) error {
+	// The project first: with the staffing off, that is the answer,
+	// whatever else the command line lacks.
+	s, id, record, unlock, err := staffingStory(cmd, f.story)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := requireReason(f.reason, "an amendment"); err != nil {
+		return err
+	}
+	switch {
+	case !f.needed && !f.leftOut && f.model == "" && f.effort == "":
+		return usage(cmd, "nothing to change: give --needed, --left-out, --model or --effort")
+	case f.leftOut && (f.needed || f.model != "" || f.effort != ""):
+		return usage(cmd, "--left-out takes no --needed, --model or --effort: an agent left out is asked for nothing")
+	}
+	if !slices.Contains(model.Agents, agent) {
+		return sdlcerr.New(sdlcerr.StaffingInvalid,
+			quote(agent)+" is not an agent the plugin ships",
+			agentsAre+strings.Join(model.Agents, ", "))
+	}
+	if !staffed(record) {
+		return noStaffing(id)
+	}
+	change, err := amendRow(cmd, s, record, agent, f)
+	if err != nil {
+		return err
+	}
+	record.Staffing.Amendments = append(record.Staffing.Amendments, model.Amendment{
+		At: model.Timestamp(s.Now()), Agent: agent, Change: change, Reason: f.reason, By: "staffing amend",
+	})
+	if err := saveStaffing(s, record, model.EventStaffingAmend, agent+": "+change); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s  staffing amended: %s: %s\n", id, agent, change)
+	return err
+}
+
+// amendRow changes the agent's row as the flags say, and returns the change as
+// the amendment keeps it.
+func amendRow(cmd *cobra.Command, s *store.Store, record *model.Record, agent string, f amendFlags) (string, error) {
+	row := staffingRow(record, agent)
+	pin, pinned := assigned(record, agent)
+	switch {
+	case f.leftOut && !row.Needed:
+		return "", usage(cmd, agent+" is already left out: there is nothing to change")
+	case f.leftOut:
+		return leaveAgentOut(record, row, agent, f.reason, pinned)
+	case !row.Needed && (f.model == "" || f.effort == ""):
+		return "", usage(cmd, agent+" is left out, and an agent brought in comes with --model and --effort")
+	case f.needed && row.Needed && f.model == "" && f.effort == "":
+		return "", usage(cmd, agent+" is already needed: give --model or --effort to change what it is asked for")
+	case f.model != "" && pin.Model != "" && f.model != pin.Model:
+		return "", personAssigned(agent, "the model "+quote(pin.Model))
+	case f.effort != "" && pin.Effort != "" && f.effort != pin.Effort:
+		return "", personAssigned(agent, "the effort "+quote(pin.Effort))
+	}
+	to := model.Staffed{
+		Agent: agent, Needed: true, Reason: row.Reason, AskedReason: f.reason,
+		AskedModel: cmpOr(f.model, row.AskedModel), AskedEffort: cmpOr(f.effort, row.AskedEffort),
+	}
+	if err := refuseOutsideLimits(s.Config().Staffing, agent, to.AskedModel, to.AskedEffort); err != nil {
+		return "", err
+	}
+	change := describeAsked(*row) + " -> " + describeAsked(to)
+	if !row.Needed {
+		to.Reason = f.reason
+	}
+	*row = to
+	return change, nil
+}
+
+// leaveAgentOut takes the agent out of the staffing, if nothing stops it.
+func leaveAgentOut(record *model.Record, row *model.Staffed, agent, reason string, pinned bool) (string, error) {
+	if pinned {
+		return "", personAssigned(agent, "a place in the story")
+	}
+	if err := refuseLeavingOut(record, agent); err != nil {
+		return "", err
+	}
+	*row = model.Staffed{Agent: agent, Reason: reason}
+	return "needed -> left out", nil
 }
 
 func cmpOr(a, b string) string {
@@ -791,66 +877,7 @@ func newStaffingAssignCmd() *cobra.Command {
 		// would learn from the error what the command takes.
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// The hook refuses this to every session. This is the second barrier,
-			// for a spelling the hook cannot read, and it comes before anything is
-			// read, so the error answers no question. It holds only while the
-			// session leaves its own environment alone.
-			if envOf(cmd).getenv(store.SessionEnv) != "" {
-				return sdlcerr.New(sdlcerr.StaffingAssignInSession,
-					"sdlc staffing assign was run from inside a Claude Code session",
-					"choosing a model or an effort for an agent in a person's name is a person's decision")
-			}
-			if err := requireReason(reason, "an assignment"); err != nil {
-				return err
-			}
-			if len(args) != 1 || askedModel == "" && askedEffort == "" {
-				return usage(cmd, "name one agent, and give --model, --effort or both")
-			}
-			agent := args[0]
-			s, id, record, unlock, err := staffingStory(cmd, storyID)
-			if err != nil {
-				return err
-			}
-			defer unlock()
-			if !slices.Contains(model.Agents, agent) {
-				return sdlcerr.New(sdlcerr.StaffingInvalid,
-					quote(agent)+" is not an agent the plugin ships",
-					"the agents are "+strings.Join(model.Agents, ", "))
-			}
-			if record.Staffing == nil {
-				record.Staffing = &model.Staffing{}
-			}
-			row := staffingRow(record, agent)
-			if (!staffed(record) || !row.Needed) && (askedModel == "" || askedEffort == "") {
-				return usage(cmd, agent+" has nothing asked for yet, so give both --model and --effort")
-			}
-			to := model.Staffed{
-				Agent: agent, Needed: true, Reason: row.Reason, AskedReason: reason,
-				AskedModel: cmpOr(askedModel, row.AskedModel), AskedEffort: cmpOr(askedEffort, row.AskedEffort),
-			}
-			if err := refuseOutsideLimits(s.Config().Staffing, agent, to.AskedModel, to.AskedEffort); err != nil {
-				return err
-			}
-			pin, _ := assigned(record, agent)
-			pin = model.Assigned{Agent: agent, Model: cmpOr(askedModel, pin.Model), Effort: cmpOr(askedEffort, pin.Effort)}
-			record.Staffing.Assigned = append(slices.DeleteFunc(record.Staffing.Assigned,
-				func(a model.Assigned) bool { return a.Agent == agent }), pin)
-			change := "a person assigned " + strings.TrimSpace("model "+quote(pin.Model)+" effort "+quote(pin.Effort))
-			if staffed(record) {
-				if !row.Needed {
-					to.Reason = reason
-				}
-				change = describeAsked(*row) + " -> " + describeAsked(to)
-				*row = to
-			}
-			record.Staffing.Amendments = append(record.Staffing.Amendments, model.Amendment{
-				At: model.Timestamp(s.Now()), Agent: agent, Change: change, Reason: reason, By: "person",
-			})
-			if err := saveStaffing(s, record, model.EventStaffingAssign, agent+": "+change); err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s  assigned by a person: %s: %s\n", id, agent, change)
-			return err
+			return runStaffingAssign(cmd, args, assignFlags{story: storyID, model: askedModel, effort: askedEffort, reason: reason})
 		},
 	}
 	cmd.Flags().StringVar(&askedModel, "model", "", "the model to ask for, one of staffing.models")
@@ -858,4 +885,82 @@ func newStaffingAssignCmd() *cobra.Command {
 	cmd.Flags().StringVar(&reason, "reason", "", "why")
 	cmd.Flags().StringVar(&storyID, "story", "", "a story that has been started, instead of the one being worked on")
 	return cmd
+}
+
+// assignFlags are the flags `sdlc staffing assign` was given.
+type assignFlags struct {
+	story, model, effort, reason string
+}
+
+func runStaffingAssign(cmd *cobra.Command, args []string, f assignFlags) error {
+	// The hook refuses this to every session. This is the second barrier,
+	// for a spelling the hook cannot read, and it comes before anything is
+	// read, so the error answers no question. It holds only while the
+	// session leaves its own environment alone.
+	if envOf(cmd).getenv(store.SessionEnv) != "" {
+		return sdlcerr.New(sdlcerr.StaffingAssignInSession,
+			"sdlc staffing assign was run from inside a Claude Code session",
+			"choosing a model or an effort for an agent in a person's name is a person's decision")
+	}
+	if err := requireReason(f.reason, "an assignment"); err != nil {
+		return err
+	}
+	if len(args) != 1 || f.model == "" && f.effort == "" {
+		return usage(cmd, "name one agent, and give --model, --effort or both")
+	}
+	agent := args[0]
+	s, id, record, unlock, err := staffingStory(cmd, f.story)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if !slices.Contains(model.Agents, agent) {
+		return sdlcerr.New(sdlcerr.StaffingInvalid,
+			quote(agent)+" is not an agent the plugin ships",
+			agentsAre+strings.Join(model.Agents, ", "))
+	}
+	if record.Staffing == nil {
+		record.Staffing = &model.Staffing{}
+	}
+	change, err := assignAgent(cmd, s, record, agent, f)
+	if err != nil {
+		return err
+	}
+	record.Staffing.Amendments = append(record.Staffing.Amendments, model.Amendment{
+		At: model.Timestamp(s.Now()), Agent: agent, Change: change, Reason: f.reason, By: "person",
+	})
+	if err := saveStaffing(s, record, model.EventStaffingAssign, agent+": "+change); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s  assigned by a person: %s: %s\n", id, agent, change)
+	return err
+}
+
+// assignAgent pins what the agent is asked for, and returns the change as the
+// amendment keeps it.
+func assignAgent(cmd *cobra.Command, s *store.Store, record *model.Record, agent string, f assignFlags) (string, error) {
+	row := staffingRow(record, agent)
+	if (!staffed(record) || !row.Needed) && (f.model == "" || f.effort == "") {
+		return "", usage(cmd, agent+" has nothing asked for yet, so give both --model and --effort")
+	}
+	to := model.Staffed{
+		Agent: agent, Needed: true, Reason: row.Reason, AskedReason: f.reason,
+		AskedModel: cmpOr(f.model, row.AskedModel), AskedEffort: cmpOr(f.effort, row.AskedEffort),
+	}
+	if err := refuseOutsideLimits(s.Config().Staffing, agent, to.AskedModel, to.AskedEffort); err != nil {
+		return "", err
+	}
+	pin, _ := assigned(record, agent)
+	pin = model.Assigned{Agent: agent, Model: cmpOr(f.model, pin.Model), Effort: cmpOr(f.effort, pin.Effort)}
+	record.Staffing.Assigned = append(slices.DeleteFunc(record.Staffing.Assigned,
+		func(a model.Assigned) bool { return a.Agent == agent }), pin)
+	change := "a person assigned " + strings.TrimSpace("model "+quote(pin.Model)+" effort "+quote(pin.Effort))
+	if staffed(record) {
+		if !row.Needed {
+			to.Reason = f.reason
+		}
+		change = describeAsked(*row) + " -> " + describeAsked(to)
+		*row = to
+	}
+	return change, nil
 }

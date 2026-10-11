@@ -97,78 +97,101 @@ func newApproveCmd() *cobra.Command {
 		Example: "  sdlc approve US-001\n" +
 			`  sdlc approve US-001 --reject "the migration has no way back"`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			rejected := cmd.Flags().Changed("reject")
-			if rejected && strings.TrimSpace(reject) == "" {
-				return sdlcerr.New(sdlcerr.BadArgument,
-					"a rejection needs a reason",
-					"the work goes back to whoever does it next, and they need to know what to change")
-			}
-			s, _, unlock, err := openStoreForWriting(cmd)
-			if err != nil {
-				return err
-			}
-			defer unlock()
-			var id string
-			if len(args) == 1 {
-				id = args[0]
-			} else if id, err = activeStory(s, "approve answers for the story named, or the one being worked on"); err != nil {
-				return err
-			}
-			if err := refuseIfHeldElsewhere(s, id, "a person's answer is about the work in that checkout, not this one"); err != nil {
-				return err
-			}
-			if _, _, err := s.Story(id); err != nil {
-				return err
-			}
-			record, err := s.Record(id)
-			if err != nil {
-				return err
-			}
-			if _, ok := record.PendingEscalation(); !ok {
-				return sdlcerr.New(sdlcerr.NothingToApprove,
-					"nothing on "+quote(id)+" is waiting for a decision",
-					"no escalation is pending: a story waits for a person only after `sdlc escalate`")
-			}
-			tree, err := s.ReviewSubject(cmd.Context())
-			if err != nil {
-				return err
-			}
-			approval, _ := record.Decide(!rejected, reject, tree, s.Now())
-			event := approval.Decision + " (" + approval.Type + ")"
-			if rejected {
-				event += ": " + reject
-			}
-			record.Append(model.EventApproval, event, s.Now())
-			if err := s.SaveRecord(record); err != nil {
-				return err
-			}
-			if err := s.SetStoryStatus(id, model.StatusInProgress); err != nil {
-				return err
-			}
-			if releasedSinceStart(record) {
-				noteRelease(cmd.ErrOrStderr(), s, id)
-			}
-
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), approvePayload{
-					OK: true, Story: id, Decision: approval.Decision, Type: approval.Type,
-					Reason: approval.Reason, Tree: tree,
-				})
-			}
-			if _, remaining := record.NextGate(); !rejected && !remaining && inItsWorktree(s, id) {
-				// Start refuses a finished story, and the stop here lands it.
-				fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n\n`sdlc stop` in %s lands it: run it in your own terminal, "+
-					"or type /sdlc:next in Claude Code.\n", id, oneLine(event), worktreeIn(id))
-				return nil
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n\nA person runs `sdlc start %s`, or types /sdlc:next in Claude Code, to carry on.\n",
-				id, oneLine(event), id)
-			return nil
-		},
+		RunE: func(cmd *cobra.Command, args []string) error { return runApprove(cmd, args, reject) },
 	}
 	cmd.Flags().StringVar(&reject, "reject", "", "send the work back instead, saying why")
 	return cmd
+}
+
+func runApprove(cmd *cobra.Command, args []string, reject string) error {
+	rejected := cmd.Flags().Changed("reject")
+	if rejected && strings.TrimSpace(reject) == "" {
+		return sdlcerr.New(sdlcerr.BadArgument,
+			"a rejection needs a reason",
+			"the work goes back to whoever does it next, and they need to know what to change")
+	}
+	s, _, unlock, err := openStoreForWriting(cmd)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	id, err := approveTarget(s, args)
+	if err != nil {
+		return err
+	}
+	if err := refuseIfHeldElsewhere(s, id, "a person's answer is about the work in that checkout, not this one"); err != nil {
+		return err
+	}
+	record, err := recordAwaitingAnswer(s, id)
+	if err != nil {
+		return err
+	}
+	tree, err := s.ReviewSubject(cmd.Context())
+	if err != nil {
+		return err
+	}
+	approval, _ := record.Decide(!rejected, reject, tree, s.Now())
+	event := approval.Decision + " (" + approval.Type + ")"
+	if rejected {
+		event += ": " + reject
+	}
+	record.Append(model.EventApproval, event, s.Now())
+	if err := s.SaveRecord(record); err != nil {
+		return err
+	}
+	if err := s.SetStoryStatus(id, model.StatusInProgress); err != nil {
+		return err
+	}
+	if releasedSinceStart(record) {
+		noteRelease(cmd.ErrOrStderr(), s, id)
+	}
+
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), approvePayload{
+			OK: true, Story: id, Decision: approval.Decision, Type: approval.Type,
+			Reason: approval.Reason, Tree: tree,
+		})
+	}
+	sayApproved(cmd.OutOrStdout(), s, record, id, event, rejected)
+	return nil
+}
+
+// approveTarget is the story named, or the one being worked on.
+func approveTarget(s *store.Store, args []string) (string, error) {
+	if len(args) == 1 {
+		return args[0], nil
+	}
+	return activeStory(s, "approve answers for the story named, or the one being worked on")
+}
+
+// recordAwaitingAnswer is the story's record, once it is known to hold an
+// escalation nobody has answered.
+func recordAwaitingAnswer(s *store.Store, id string) (*model.Record, error) {
+	if _, _, err := s.Story(id); err != nil {
+		return nil, err
+	}
+	record, err := s.Record(id)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := record.PendingEscalation(); !ok {
+		return nil, sdlcerr.New(sdlcerr.NothingToApprove,
+			"nothing on "+quote(id)+" is waiting for a decision",
+			"no escalation is pending: a story waits for a person only after `sdlc escalate`")
+	}
+	return record, nil
+}
+
+// sayApproved prints what follows a person's answer: where the work carries on.
+func sayApproved(w io.Writer, s *store.Store, record *model.Record, id, event string, rejected bool) {
+	if _, remaining := record.NextGate(); !rejected && !remaining && inItsWorktree(s, id) {
+		// Start refuses a finished story, and the stop here lands it.
+		fmt.Fprintf(w, "%s  %s\n\n`sdlc stop` in %s lands it: run it in your own terminal, "+
+			"or type /sdlc:next in Claude Code.\n", id, oneLine(event), worktreeIn(id))
+		return
+	}
+	fmt.Fprintf(w, "%s  %s\n\nA person runs `sdlc start %s`, or types /sdlc:next in Claude Code, to carry on.\n",
+		id, oneLine(event), id)
 }
 
 // handOverAt hands a story to a person when one of the loop's limits is reached:

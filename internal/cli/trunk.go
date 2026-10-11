@@ -78,7 +78,7 @@ func checkTrunk(cmd *cobra.Command, s *store.Store, passedOver bool) error {
 			where = "HEAD is on " + quote(branch)
 		}
 		return sdlcerr.New(sdlcerr.NotOnTrunk,
-			"a new story starts from "+quote(trunk)+", and "+where,
+			"a new story starts from "+quote(trunk)+andClause+where,
 			"the loop commits every story straight to trunk, so work started "+
 				"anywhere else is not where its commit is recorded as landing")
 	}

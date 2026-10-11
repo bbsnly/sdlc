@@ -332,8 +332,7 @@ func TestEverySettingIsDocumented(t *testing.T) {
 // noticing.
 func jsonKeys(t reflect.Type) []string {
 	var out []string
-	for i := range t.NumField() {
-		f := t.Field(i)
+	for f := range t.Fields() {
 		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
 		if name == "" || name == "-" {
 			continue
@@ -405,7 +404,10 @@ func TestTheConfigurationExampleIsWhatInitWrites(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(shown, written) {
-		want, _ := json.MarshalIndent(written, "", "  ")
+		want, err := json.MarshalIndent(written, "", "  ")
+		if err != nil {
+			t.Fatalf("the configuration init writes cannot be shown: %v", err)
+		}
 		t.Errorf("docs/configuration.md shows a configuration init does not write; init writes:\n%s", want)
 	}
 }
@@ -509,7 +511,7 @@ func warningsSection(t *testing.T) string {
 // already collapsed to single spaces) that holds needle, so a check can be
 // about the sentence making a claim rather than the page that holds it.
 func sentenceContaining(flat, needle string) (string, bool) {
-	for _, s := range strings.Split(flat, ". ") {
+	for s := range strings.SplitSeq(flat, ". ") {
 		if strings.Contains(s, needle) {
 			return s, true
 		}

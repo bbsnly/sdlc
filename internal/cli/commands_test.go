@@ -319,6 +319,7 @@ func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
 			name: "approve reading a record that is not JSON",
 			args: []string{"approve", "US-001"},
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				mustRun(t, "start")
 				writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
 			},
@@ -329,6 +330,7 @@ func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
 			name: "cost reading a record that is not JSON",
 			args: []string{"cost"},
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				mustRun(t, "start")
 				writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
 			},
@@ -339,6 +341,7 @@ func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
 			name: "cost add reading a record that is not JSON",
 			args: []string{"cost", "add", "--usd", "1"},
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				mustRun(t, "start")
 				writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
 			},
@@ -349,6 +352,7 @@ func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
 			name: "status reading a waiting story's record that is not JSON",
 			args: []string{"status"},
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				mustRun(t, "start")
 				mustRun(t, "escalate", "spec_unclear", "--message", "which one?")
 				writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
@@ -360,6 +364,7 @@ func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
 			name: "status --json reading a waiting story's record that is not JSON",
 			args: []string{"status", "--json"},
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				mustRun(t, "start")
 				mustRun(t, "escalate", "spec_unclear", "--message", "which one?")
 				writeFile(t, root, ".sdlc/stories/US-001/gate-record.json", "{not json")
@@ -371,6 +376,7 @@ func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
 			name: "status reading a freeze that is not JSON",
 			args: []string{"status"},
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				mustRun(t, "start")
 				writeFile(t, root, ".sdlc/state/tests.lock", "{not json")
 			},
@@ -381,6 +387,7 @@ func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
 			name: "story list reading a backlog that is not JSON",
 			args: []string{"story", "list"},
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				writeFile(t, root, "user_stories.json", "{not json")
 			},
 			wantFile: "user_stories.json",
@@ -390,6 +397,7 @@ func TestACorruptFileIsNamedByWhicheverCommandReadsIt(t *testing.T) {
 			name: "log reading a backlog that is not JSON",
 			args: []string{"log"},
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				writeFile(t, root, "user_stories.json", "{not json")
 			},
 			wantFile: "user_stories.json",
@@ -1133,6 +1141,7 @@ func TestDoctorSkipsWhatItCannotCheckYet(t *testing.T) {
 			problems++
 		case stateSkipped:
 			skipped++
+		case stateOK:
 		}
 	}
 	if problems != 1 {
@@ -1473,6 +1482,7 @@ func TestDoctorNamesLoopStatePathsThatAreTheWrongKindOfEntry(t *testing.T) {
 		{
 			name: "stories directory replaced by a file",
 			corrupt: func(t *testing.T, root string) {
+				t.Helper()
 				writeFile(t, root, ".sdlc/stories", "not a directory")
 			},
 			wantDetail: ".sdlc/stories",
@@ -1480,6 +1490,7 @@ func TestDoctorNamesLoopStatePathsThatAreTheWrongKindOfEntry(t *testing.T) {
 		{
 			name: "acknowledged file replaced by a directory",
 			corrupt: func(t *testing.T, root string) {
+				t.Helper()
 				if err := os.MkdirAll(filepath.Join(root, ".sdlc", "state", "acknowledged"), 0o755); err != nil {
 					t.Fatal(err)
 				}

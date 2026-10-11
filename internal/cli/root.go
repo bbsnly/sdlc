@@ -29,6 +29,16 @@ import (
 // subcommand it belongs to.
 const jsonFlag = "json"
 
+// goosWindows is runtime.GOOS on Windows, where the file mode carries no execute
+// bit to read.
+const goosWindows = "windows"
+
+// verbList and verbShow are the sub-commands several command groups share.
+const (
+	verbList = "list"
+	verbShow = "show"
+)
+
 // New builds the root command with its subcommands attached.
 func New(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	root := &cobra.Command{
@@ -166,7 +176,11 @@ func processEnv() commandEnv {
 // a command that ran in the process's directory without a word would write
 // into whatever repository that is.
 func envIn(ctx context.Context) commandEnv {
-	return ctx.Value(commandEnvKey{}).(commandEnv)
+	env, ok := ctx.Value(commandEnvKey{}).(commandEnv)
+	if !ok {
+		panic("cli: the command's context carries no commandEnv")
+	}
+	return env
 }
 
 func envOf(cmd *cobra.Command) commandEnv { return envIn(cmd.Context()) }
@@ -188,8 +202,7 @@ func executeAt(env commandEnv, args []string, stdin io.Reader, stdout, stderr io
 		return 0
 	}
 	// A command that has already said its piece just wants an exit code.
-	var quiet quietExit
-	if errors.As(err, &quiet) {
+	if quiet, ok := errors.AsType[quietExitError](err); ok {
 		return quiet.code
 	}
 	// The flag is read after the fact because cobra parses it during Execute,
@@ -203,16 +216,15 @@ func executeAt(env commandEnv, args []string, stdin io.Reader, stdout, stderr io
 	return exitCode(err)
 }
 
-// quietExit ends the command with a code and no error text. doctor uses it:
+// quietExitError ends the command with a code and no error text. doctor uses it:
 // its report is the message, and "sdlc: " followed by nothing would be noise.
-type quietExit struct{ code int }
+type quietExitError struct{ code int }
 
-func (q quietExit) Error() string { return "" }
+func (q quietExitError) Error() string { return "" }
 
 // exitCode keeps 1 for "this did not work" and lets a command choose its own.
 func exitCode(err error) int {
-	var quiet quietExit
-	if errors.As(err, &quiet) {
+	if quiet, ok := errors.AsType[quietExitError](err); ok {
 		return quiet.code
 	}
 	return 1
@@ -289,7 +301,7 @@ func openStore(cmd *cobra.Command) (*store.Store, *config.Project, error) {
 // reading taken a moment before the write, which is what reading concurrently
 // means anywhere.
 func openStoreForWriting(cmd *cobra.Command) (*store.Store, *config.Project, func(), error) {
-	nothing := func() {}
+	nothing := noUnlock
 	s, p, err := openStore(cmd)
 	if err != nil {
 		return nil, nil, nothing, err

@@ -130,7 +130,7 @@ func TestFreeTextStaysOnTheLineItIsPrintedOn(t *testing.T) {
 	  {"id":"PAY-1","title":"Refunds\n`+injected+`","status":"ready","risk_tier":"low","priority":1,
 	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN a paid invoice is refunded, the money goes back"}]}]}`)
 	startsALine := func(out string) bool {
-		for _, line := range strings.Split(out, "\n") {
+		for line := range strings.SplitSeq(out, "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), "Next: run sdlc gate") {
 				return true
 			}

@@ -132,6 +132,7 @@ func TestAC1AStoryWhoseOwnGate3RemovedOrRenamedATestFileStillPassesAndLands(t *t
 	const renamed = "internal/duty_test.go"
 	for _, kind := range []string{"removed", "renamed"} {
 		gate3 := func(t *testing.T) func(wt string) {
+			t.Helper()
 			// Through git, so that the index no longer names the file: the
 			// freeze reads every test file git knows of.
 			return func(wt string) {
@@ -232,12 +233,14 @@ func TestAC3ATrunksTestFileThatIsNoLongerAPlainFileOfTrunksModeIsStillRefused(t 
 		do   func(t *testing.T, wt, path string)
 	}{
 		{"AC-3 made executable with core.fileMode off", func(t *testing.T, wt, path string) {
+			t.Helper()
 			swGit(t, wt, "config", "core.fileMode", "false")
 			if err := os.Chmod(path, 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}},
 		{"AC-3 a link to the same bytes under --assume-unchanged", func(t *testing.T, wt, path string) {
+			t.Helper()
 			target := filepath.Join(wtTempDir(t), "refund_test.go")
 			if err := os.WriteFile(target, []byte(otRefundV1), 0o644); err != nil {
 				t.Fatal(err)
@@ -546,9 +549,11 @@ func TestAC9AMergeDriverTheRepositoryConfiguresDoesNotDecideWhatTheStopLands(t *
 		name2     func(t *testing.T, main string)
 	}{
 		{name: "AC-9 named by merge.default", name2: func(t *testing.T, main string) {
+			t.Helper()
 			swGit(t, main, "config", "merge.default", "steer")
 		}},
 		{name: "AC-9 named by an attribute", mayRefuse: true, name2: func(t *testing.T, main string) {
+			t.Helper()
 			writeFile(t, main, ".git/info/attributes", "ledger.go merge=steer\n")
 		}},
 	} {

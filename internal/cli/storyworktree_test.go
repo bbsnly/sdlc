@@ -390,6 +390,7 @@ func TestAC2StartLeavesTheMainCheckoutAsItWasApartFromTheLoopsOwnBookkeeping(t *
 	}{
 		{"AC-2 a clean main checkout on trunk", func(*testing.T, string) {}},
 		{"AC-2 a main checkout on another branch with work nobody committed", func(t *testing.T, main string) {
+			t.Helper()
 			swGit(t, main, "switch", "--quiet", "--create", "spike")
 			swCommitFile(t, main, "spike.md", "a person's spike\n", "spike")
 			writeFile(t, main, "notes/idea.md", "half a thought\n")
@@ -456,18 +457,22 @@ func TestAC3AStoryBeginsInAWorktreeWhateverTheMainCheckoutIsOnOrHasNotCommitted(
 		prepare func(t *testing.T, main string)
 	}{
 		{"AC-3 on another branch", func(t *testing.T, main string) {
+			t.Helper()
 			swGit(t, main, "switch", "--quiet", "--create", "spike")
 			swCommitFile(t, main, "spike.md", "a person's spike\n", "spike")
 		}},
 		{"AC-3 detached", func(t *testing.T, main string) {
+			t.Helper()
 			swGit(t, main, "switch", "--quiet", "--detach", "main")
 		}},
 		{"AC-3 on a branch trunk has moved past", func(t *testing.T, main string) {
+			t.Helper()
 			swGit(t, main, "branch", "old")
 			swCommitFile(t, main, "CHANGES.md", "trunk moved on\n", "later work")
 			swGit(t, main, "switch", "--quiet", "old")
 		}},
 		{"AC-3 with work nobody committed", func(t *testing.T, main string) {
+			t.Helper()
 			writeFile(t, main, "notes/idea.md", "half a thought\n")
 			writeFile(t, main, "CLAUDE.md", "edited, and not committed\n")
 		}},
@@ -668,17 +673,20 @@ func TestAC4AWorktreeThatCannotBeMadeIsRefusedWithSDLCE0053AndLeavesNothingBehin
 		place bool
 	}{
 		{"AC-4 a branch of that name is already there", "US-001", func(t *testing.T, main string) map[string]string {
+			t.Helper()
 			swGit(t, main, "switch", "--quiet", "--create", swBranchOf("US-001"))
 			swCommitFile(t, main, "mine.md", "a person's work on a branch of that name\n", "mine")
 			swGit(t, main, "switch", "--quiet", "main")
 			return nil
 		}, []string{swBranchOf("US-001")}, false},
 		{"AC-4 a directory is already where the worktree goes", "US-001", func(t *testing.T, main string) map[string]string {
+			t.Helper()
 			notes := filepath.Join(swWorktreeOf(main, "US-001"), "notes.md")
 			writeFile(t, filepath.Dir(notes), "notes.md", "a person's notes\n")
 			return map[string]string{notes: "a person's notes\n"}
 		}, []string{"US-001"}, true},
 		{"AC-4 a worktree an interrupted start left", "US-001", func(t *testing.T, main string) map[string]string {
+			t.Helper()
 			wt := swWorktreeOf(main, "US-001")
 			swGit(t, main, "worktree", "add", "--quiet", "-b", swBranchOf("US-001"), wt, "main")
 			writeFile(t, wt, "draft.go", "package draft\n")
@@ -688,6 +696,7 @@ func TestAC4AWorktreeThatCannotBeMadeIsRefusedWithSDLCE0053AndLeavesNothingBehin
 			return nil
 		}, []string{"US-1.lock"}, false},
 		{"AC-4 the worktrees directory is a file", "US-001", func(t *testing.T, main string) map[string]string {
+			t.Helper()
 			path := filepath.Join(main, ".sdlc", "worktrees")
 			writeFile(t, main, ".sdlc/worktrees", "not a directory\n")
 			return map[string]string{path: "not a directory\n"}
@@ -845,7 +854,11 @@ func TestAC5AStoryTheMainCheckoutAlreadyHoldsResumesThereAndNoWorktreeIsMade(t *
 	// The upgrade: the switch goes, and worktrees are on.
 	var cfg map[string]any
 	wtReadJSON(t, filepath.Join(main, ".sdlc", "config.json"), &cfg)
-	delete(cfg["git"].(map[string]any), "worktrees")
+	gitCfg, ok := cfg["git"].(map[string]any)
+	if !ok {
+		t.Fatalf("the configuration has no git section: %v", cfg["git"])
+	}
+	delete(gitCfg, "worktrees")
 	wtWriteJSON(t, filepath.Join(main, ".sdlc", "config.json"), cfg)
 	shape := swShape(t, main)
 
@@ -971,9 +984,11 @@ func TestAC9TheSwitchDecidesWhetherStartMakesAWorktreeAndAbsentMeansOn(t *testin
 	}{
 		{"AC-9 absent", func(*testing.T) func(string) { return nil }, true},
 		{"AC-9 true", func(t *testing.T) func(string) {
+			t.Helper()
 			return func(root string) { setGitOnDisk(t, root, "worktrees", true) }
 		}, true},
 		{"AC-9 false", func(t *testing.T) func(string) {
+			t.Helper()
 			return func(root string) { worktreesOff(t, root) }
 		}, false},
 	} {
@@ -1097,9 +1112,11 @@ func TestAC5AndAC8APlainStartPassesOverAStoppedStoryItsWorktreeHoldsAndNamingItR
 		resume func(t *testing.T, main, wt string) swStart
 	}{
 		{"AC-5 named from the main checkout", func(t *testing.T, main, _ string) swStart {
+			t.Helper()
 			return swStarted(t, main, swSessionC, "US-001")
 		}},
 		{"AC-5 from its worktree", func(t *testing.T, _, wt string) swStart {
+			t.Helper()
 			return swStarted(t, wt, swSessionC)
 		}},
 	} {
@@ -1317,10 +1334,12 @@ func TestD7ARecordWrittenFromAWorktreeNamesNoCheckoutPath(t *testing.T) {
 		start func(t *testing.T) (main, wt string)
 	}{
 		{"D7 a story worktree", func(t *testing.T) (string, string) {
+			t.Helper()
 			main := swRepository(t, wtStory{id: "US-001"})
 			return main, swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
 		}},
 		{"D7 a worktree made by hand", func(t *testing.T) (string, string) {
+			t.Helper()
 			main := wtRepository(t, wtStory{id: "US-001"})
 			wt := wtWorktree(t, main, "wt")
 			wtStarted(t, wt, swSessionA)

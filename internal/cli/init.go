@@ -39,56 +39,68 @@ func newInitCmd() *cobra.Command {
 			"project commits is the project's decision.",
 		Example: "  sdlc init\n  sdlc init --force   # restore the default settings, keeping your stories",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			env := envOf(cmd)
-			if env.dirErr != nil {
-				return sdlcerr.New(sdlcerr.NotAGitRepo,
-					"the current directory could not be read",
-					"sdlc sets up the repository you run it in").WithCause(env.dirErr)
-			}
-			root, err := config.FindRoot(env.dir)
-			if err != nil {
-				return err
-			}
-			// A linked worktree's backlog is the main checkout's, so that is
-			// where the starter one goes, and a repository with no main
-			// checkout has nowhere to put it: refused before anything is written.
-			co, err := config.FindCheckout(root)
-			if err != nil {
-				return err
-			}
-			shared := root
-			if co.Linked() {
-				shared = co.Main
-			}
-			// The running story is held to the settings it started under, and
-			// the file rules keep an agent's hands off them; --force put the
-			// defaults back from the shell, which no rule was looking at.
-			if force {
-				if _, err := os.Stat(filepath.Join(root, ".sdlc", "state", "active")); err == nil {
-					return sdlcerr.New(sdlcerr.IterationAlreadyActive,
-						"the default settings were not restored",
-						"a story is being worked on, and it is held to the settings it started under").
-						WithFix(`finish the story, or run "sdlc stop" to end the iteration, then "sdlc init --force"`)
-				}
-			}
-			res, err := scaffold.InitAt(root, shared, force)
-			if err != nil {
-				return err
-			}
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), initPayload{
-					OK: true, Root: res.Root, Stack: res.Stack,
-					AlsoSeen: res.AlsoSeen, Created: res.Created, Kept: res.Kept,
-				})
-			}
-			printInit(cmd.OutOrStdout(), res)
-			return nil
-		},
+		RunE:    func(cmd *cobra.Command, _ []string) error { return runInit(cmd, force) },
 	}
 	cmd.Flags().BoolVar(&force, "force", false,
 		"restore the default settings over an existing setup, keeping your stories")
 	return cmd
+}
+
+func runInit(cmd *cobra.Command, force bool) error {
+	root, shared, err := initTarget(cmd)
+	if err != nil {
+		return err
+	}
+	// The running story is held to the settings it started under, and
+	// the file rules keep an agent's hands off them; --force put the
+	// defaults back from the shell, which no rule was looking at.
+	if force {
+		if _, err := os.Stat(filepath.Join(root, ".sdlc", "state", "active")); err == nil {
+			return sdlcerr.New(sdlcerr.IterationAlreadyActive,
+				"the default settings were not restored",
+				"a story is being worked on, and it is held to the settings it started under").
+				WithFix(`finish the story, or run "sdlc stop" to end the iteration, then "sdlc init --force"`)
+		}
+	}
+	res, err := scaffold.InitAt(root, shared, force)
+	if err != nil {
+		return err
+	}
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), initPayload{
+			OK: true, Root: res.Root, Stack: res.Stack,
+			AlsoSeen: res.AlsoSeen, Created: res.Created, Kept: res.Kept,
+		})
+	}
+	printInit(cmd.OutOrStdout(), res)
+	return nil
+}
+
+// initTarget is the repository to set up, and the checkout that keeps its
+// backlog.
+func initTarget(cmd *cobra.Command) (root, shared string, err error) {
+	env := envOf(cmd)
+	if env.dirErr != nil {
+		return "", "", sdlcerr.New(sdlcerr.NotAGitRepo,
+			"the current directory could not be read",
+			"sdlc sets up the repository you run it in").WithCause(env.dirErr)
+	}
+	root, err = config.FindRoot(env.dir)
+	if err != nil {
+		return "", "", err
+	}
+	// A linked worktree's backlog is the main checkout's, so that is
+	// where the starter one goes, and a repository with no main
+	// checkout has nowhere to put it: refused before anything is written.
+	co, err := config.FindCheckout(root)
+	if err != nil {
+		return "", "", err
+	}
+	shared = root
+	if co.Linked() {
+		shared = co.Main
+	}
+	return root, shared, nil
 }
 
 func printInit(w io.Writer, res *scaffold.Result) {

@@ -104,7 +104,7 @@ func wtNamedCommands(text, id string) [][]string {
 			}
 			body := rest[i+len("sdlc ")+1:]
 			end := len(body)
-			for j := 0; j < len(body); j++ {
+			for j := range len(body) {
 				if body[j] == '\n' || (body[j] == delim && (delim != '"' || j == 0 || body[j-1] != '\\')) {
 					end = j
 					break
@@ -120,6 +120,23 @@ func wtNamedCommands(text, id string) [][]string {
 	return out
 }
 
+// wtFirstWord splits line, which has no leading space, into its first word,
+// quoted or not, and what follows it.
+func wtFirstWord(line string) (word, rest string) {
+	if q := line[0]; q == '"' || q == '\'' {
+		end := strings.IndexByte(line[1:], q)
+		if end < 0 {
+			return line[1:], ""
+		}
+		return line[1 : 1+end], line[2+end:]
+	}
+	end := strings.IndexByte(line, ' ')
+	if end < 0 {
+		return line, ""
+	}
+	return line[:end], line[end:]
+}
+
 func wtCommandArgs(line, id string) []string {
 	line = strings.ReplaceAll(line, `\"`, `"`)
 	var args []string
@@ -129,21 +146,7 @@ func wtCommandArgs(line, id string) []string {
 			return args
 		}
 		var word string
-		if q := line[0]; q == '"' || q == '\'' {
-			end := strings.IndexByte(line[1:], q)
-			if end < 0 {
-				word, line = line[1:], ""
-			} else {
-				word, line = line[1:1+end], line[2+end:]
-			}
-		} else {
-			end := strings.IndexByte(line, ' ')
-			if end < 0 {
-				word, line = line, ""
-			} else {
-				word, line = line[:end], line[end:]
-			}
-		}
+		word, line = wtFirstWord(line)
 		switch {
 		case word == "..." || word == "…" || word == "":
 			word = "the checkout that held it is gone"
@@ -433,6 +436,7 @@ func TestT12AWorktreeWhoseMainCheckoutWasMadeUnfindableRecordsNoGate(t *testing.
 		// The repository now reads as bare, and D6 gives a bare repository
 		// AC-9's code.
 		{"T12 core.bare set in the common configuration", wtNoMainCheckout, func(t *testing.T, main string) {
+			t.Helper()
 			wtGit(t, main, "config", "core.bare", "true")
 		}},
 		// Git itself can no longer read this worktree, so which code refuses
@@ -441,6 +445,7 @@ func TestT12AWorktreeWhoseMainCheckoutWasMadeUnfindableRecordsNoGate(t *testing.
 		// the guard against a main checkout that, not found, falls back to the
 		// worktree's own files.
 		{"T12 the worktree's commondir rewritten", "", func(t *testing.T, main string) {
+			t.Helper()
 			writeFile(t, main, ".git/worktrees/wt/commondir", filepath.Join(wtTempDir(t), "nowhere")+"\n")
 		}},
 	} {

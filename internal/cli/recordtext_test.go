@@ -52,7 +52,7 @@ func TestRecordTextStaysOnTheLineItIsPrintedOn(t *testing.T) {
 	}
 	check := func(what, out string) {
 		t.Helper()
-		for _, line := range strings.Split(out, "\n") {
+		for line := range strings.SplitSeq(out, "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), "Next: run sdlc gate") {
 				t.Errorf("%s started a line of its own:\n%s", what, out)
 				return
@@ -65,8 +65,15 @@ func TestRecordTextStaysOnTheLineItIsPrintedOn(t *testing.T) {
 
 	edit(func(r map[string]any) {
 		r["gates"] = map[string]any{"dor": map[string]any{"status": "pass" + injected, "at": "2026-09-15T00:00:00Z"}}
-		reviews := r["reviews"].([]any)
-		reviews[0].(map[string]any)["verdict"] = "approve" + injected
+		reviews, ok := r["reviews"].([]any)
+		if !ok {
+			t.Fatalf("the record's reviews are not a list: %v", r["reviews"])
+		}
+		review, ok := reviews[0].(map[string]any)
+		if !ok {
+			t.Fatalf("the record's first review is not an object: %v", reviews[0])
+		}
+		review["verdict"] = "approve" + injected
 	})
 	check("a gate's status", mustRun(t, "status").stdout)
 	check("a review's verdict", mustRun(t, "review", "list", "--gate", "dor").stdout)
@@ -81,7 +88,7 @@ func TestRecordTextStaysOnTheLineItIsPrintedOn(t *testing.T) {
 	writeFile(t, root, filepath.Join(".sdlc", "state", "tests.lock"), string(lock))
 	out := mustRun(t, "status").stdout
 	check("the freeze", out)
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "tests ") && strings.Count(line, `\nNext: run sdlc gate`) != 2 {
 			t.Errorf("the freeze's time and its changed file are not both shown:\n%s", out)
 		}
@@ -92,8 +99,15 @@ func TestRecordTextStaysOnTheLineItIsPrintedOn(t *testing.T) {
 
 	mustRun(t, "escalate", "spec_unclear", "--message", "which one?")
 	edit(func(r map[string]any) {
-		escalations := r["escalations"].([]any)
-		escalations[len(escalations)-1].(map[string]any)["type"] = "spec_unclear" + injected
+		escalations, ok := r["escalations"].([]any)
+		if !ok {
+			t.Fatalf("the record's escalations are not a list: %v", r["escalations"])
+		}
+		last, ok := escalations[len(escalations)-1].(map[string]any)
+		if !ok {
+			t.Fatalf("the record's last escalation is not an object: %v", escalations[len(escalations)-1])
+		}
+		last["type"] = "spec_unclear" + injected
 	})
 	check("the type of a question", mustRun(t, "status").stdout)
 }

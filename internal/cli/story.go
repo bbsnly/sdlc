@@ -46,7 +46,7 @@ func newStoryCmd() *cobra.Command {
 
 func newStoryListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
+		Use:   verbList,
 		Short: "List the backlog, and say what is holding each story back",
 		Long: "list shows every story with its status and priority, marks the one that\n" +
 			"`sdlc start` would pick, and names the unfinished dependencies of any story\n" +

@@ -93,13 +93,11 @@ func otRemoveOnTrunk(t *testing.T, main, rel string) string {
 	return ldTrunk(t, main)
 }
 
-// otCommitAll commits everything the story's worktree holds, and returns the
-// new tip.
-func otCommitAll(t *testing.T, wt, message string) string {
+// otCommitAll commits everything the story's worktree holds.
+func otCommitAll(t *testing.T, wt, message string) {
 	t.Helper()
 	swGit(t, wt, "add", "-A")
 	swGit(t, wt, "-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--quiet", "-m", message)
-	return swRev(t, wt, "HEAD")
 }
 
 // otSubjects is the subject of every commit in from..to, newest first.
@@ -314,13 +312,18 @@ func TestAC8TheOneStopPutsAFinishedStoryOntoTheTrunkThatMovedAndLandsIt(t *testi
 		name  string
 		trunk func(t *testing.T, main string)
 	}{
-		{"AC-8 another story's file", func(t *testing.T, main string) { ldMoveTrunk(t, main) }},
+		{"AC-8 another story's file", func(t *testing.T, main string) {
+			t.Helper()
+			ldMoveTrunk(t, main)
+		}},
 		{"AC-8 several commits", func(t *testing.T, main string) {
+			t.Helper()
 			ldMoveTrunk(t, main)
 			swCommitFile(t, main, "NOTES.md", "a second story's work\n", "a second story lands")
 			swCommitFile(t, main, "CHANGES.md", "another story's work, changed\n", "a third story lands")
 		}},
 		{"AC-8 a change to a file trunk already had", func(t *testing.T, main string) {
+			t.Helper()
 			swCommitFile(t, main, "README.md", "# Billing\n\nAnother story's paragraph.\n", "another story's README")
 		}},
 	} {
@@ -593,15 +596,19 @@ func TestAC12AConflictLeavesTheWorktreeAndBranchAsTheyWereAndHandsTheStoryToAPer
 		trunk      func(t *testing.T, main string)
 	}{
 		{"AC-12 both changed the same lines", "billing.go", func(t *testing.T, main string) {
+			t.Helper()
 			swCommitFile(t, main, "billing.go", ldBilling+"\n// Ledger is what another story adds.\ntype Ledger struct{}\n", "another story's ledger")
 		}},
 		{"AC-12 both bookkeepers changed CODEMAP.md", "CODEMAP.md", func(t *testing.T, main string) {
+			t.Helper()
 			swCommitFile(t, main, "CODEMAP.md", "# CODEMAP\n\nledger.go keeps the ledger.\n", "docs: map another story")
 		}},
 		{"AC-12 trunk removed a file the story changed", "price list.txt", func(t *testing.T, main string) {
+			t.Helper()
 			otRemoveOnTrunk(t, main, "price list.txt")
 		}},
 		{"AC-12 both added the same file", "refund.go", func(t *testing.T, main string) {
+			t.Helper()
 			swCommitFile(t, main, "refund.go", "package billing\n\n// Refund, as another story has it.\ntype Refund struct{ Cents int }\n", "another story's refund")
 		}},
 	} {
@@ -759,12 +766,10 @@ func TestAC13TwoStoriesStoppedAtTheSameMomentBothLandOneAfterTheOther(t *testing
 	gun := make(chan struct{})
 	var wg sync.WaitGroup
 	for i, s := range stops {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-gun
 			results[i] = otStop(s.dir, s.session)
-		}()
+		})
 	}
 	close(gun)
 	wg.Wait()
@@ -1035,31 +1040,49 @@ func TestAC3ATestFileThatOnlyLooksLikeTrunksIsStillRefused(t *testing.T) {
 	}{
 		{name: "AC-3 trunk's copy at an older commit than the one the story sits on", file: otRefundTest,
 			trunk: func(t *testing.T, main string) {
+				t.Helper()
 				swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
 				swCommitFile(t, main, otRefundTest, otRefundV2, "another story changes it")
 			},
-			story: func(t *testing.T, _, wt string) { writeFile(t, wt, otRefundTest, otRefundV1) }},
+			story: func(t *testing.T, _, wt string) {
+				t.Helper()
+				writeFile(t, wt, otRefundTest, otRefundV1)
+			}},
 		{name: "AC-3 a file trunk had and has since removed", file: otRefundTest,
 			trunk: func(t *testing.T, main string) {
+				t.Helper()
 				swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
 				otRemoveOnTrunk(t, main, otRefundTest)
 			},
-			story: func(t *testing.T, _, wt string) { writeFile(t, wt, otRefundTest, otRefundV1) }},
+			story: func(t *testing.T, _, wt string) {
+				t.Helper()
+				writeFile(t, wt, otRefundTest, otRefundV1)
+			}},
 		{name: "AC-3 trunk's bytes at a path trunk does not have", file: otLaterTest,
 			trunk: func(t *testing.T, main string) {
-				swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
-			},
-			story: func(t *testing.T, _, wt string) { writeFile(t, wt, otLaterTest, otRefundV1) }},
-		{name: "AC-3 a link to a file with trunk's bytes", file: otRefundTest,
-			trunk: func(t *testing.T, main string) {
-				swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
-			},
-			story: func(t *testing.T, _, wt string) { otSymlink(t, wt, otRefundTest, otRefundV1) }},
-		{name: "AC-3 trunk's bytes made executable", file: otRefundTest,
-			trunk: func(t *testing.T, main string) {
+				t.Helper()
 				swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
 			},
 			story: func(t *testing.T, _, wt string) {
+				t.Helper()
+				writeFile(t, wt, otLaterTest, otRefundV1)
+			}},
+		{name: "AC-3 a link to a file with trunk's bytes", file: otRefundTest,
+			trunk: func(t *testing.T, main string) {
+				t.Helper()
+				swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
+			},
+			story: func(t *testing.T, _, wt string) {
+				t.Helper()
+				otSymlink(t, wt, otRefundTest, otRefundV1)
+			}},
+		{name: "AC-3 trunk's bytes made executable", file: otRefundTest,
+			trunk: func(t *testing.T, main string) {
+				t.Helper()
+				swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
+			},
+			story: func(t *testing.T, _, wt string) {
+				t.Helper()
 				swGit(t, wt, "update-index", "--chmod=+x", "--", otRefundTest)
 				if runtime.GOOS != "windows" {
 					if err := os.Chmod(filepath.Join(wt, filepath.FromSlash(otRefundTest)), 0o755); err != nil {
@@ -1069,12 +1092,20 @@ func TestAC3ATestFileThatOnlyLooksLikeTrunksIsStillRefused(t *testing.T) {
 			}},
 		{name: "AC-3 trunk's file edited and not committed", file: otRefundTest, uncommitted: true,
 			trunk: func(t *testing.T, main string) {
+				t.Helper()
 				swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
 			},
-			story: func(t *testing.T, _, wt string) { writeFile(t, wt, otRefundTest, otRefundV2) }},
+			story: func(t *testing.T, _, wt string) {
+				t.Helper()
+				writeFile(t, wt, otRefundTest, otRefundV2)
+			}},
 		{name: "AC-3 a tag, a branch and a remote's branch named like trunk at the story's own commit", file: otLaterTest,
-			trunk: func(t *testing.T, main string) { ldMoveTrunk(t, main) },
+			trunk: func(t *testing.T, main string) {
+				t.Helper()
+				ldMoveTrunk(t, main)
+			},
 			story: func(t *testing.T, main, wt string) {
+				t.Helper()
 				tip := swCommitFile(t, wt, otLaterTest, otOwn, "a test written after the freeze")
 				swGit(t, main, "tag", "main", tip)
 				swGit(t, main, "update-ref", "refs/heads/heads/main", tip)
@@ -1206,29 +1237,69 @@ func TestAC4AFrozenTestThatIsNeitherAsFrozenNorTrunksBreaksTheFreeze(t *testing.
 		story      func(t *testing.T, wt string)
 	}{
 		{name: "AC-4 changed again after trunk changed it", file: otTaxTest,
-			trunk: func(t *testing.T, main string) { swCommitFile(t, main, otTaxTest, otTaxV2, "another story's change") },
-			story: func(t *testing.T, wt string) { writeFile(t, wt, otTaxTest, otTaxV3) }},
+			trunk: func(t *testing.T, main string) {
+				t.Helper()
+				swCommitFile(t, main, otTaxTest, otTaxV2, "another story's change")
+			},
+			story: func(t *testing.T, wt string) {
+				t.Helper()
+				writeFile(t, wt, otTaxTest, otTaxV3)
+			}},
 		{name: "AC-4 trunk's copy at an older commit than the one the story sits on", file: otTaxTest,
 			trunk: func(t *testing.T, main string) {
+				t.Helper()
 				swCommitFile(t, main, otTaxTest, otTaxV2, "another story's change")
 				swCommitFile(t, main, otTaxTest, otTaxV3, "and another")
 			},
-			story: func(t *testing.T, wt string) { writeFile(t, wt, otTaxTest, otTaxV2) }},
+			story: func(t *testing.T, wt string) {
+				t.Helper()
+				writeFile(t, wt, otTaxTest, otTaxV2)
+			}},
 		{name: "AC-4 removed by the story where trunk only changed it", file: otTaxTest,
-			trunk: func(t *testing.T, main string) { swCommitFile(t, main, otTaxTest, otTaxV2, "another story's change") },
-			story: func(t *testing.T, wt string) { swGit(t, wt, "rm", "--quiet", "--", otTaxTest) }},
+			trunk: func(t *testing.T, main string) {
+				t.Helper()
+				swCommitFile(t, main, otTaxTest, otTaxV2, "another story's change")
+			},
+			story: func(t *testing.T, wt string) {
+				t.Helper()
+				swGit(t, wt, "rm", "--quiet", "--", otTaxTest)
+			}},
 		{name: "AC-4 the story's own frozen test removed, which trunk never had", file: otInvoiceTest,
-			trunk: func(t *testing.T, main string) { ldMoveTrunk(t, main) },
-			story: func(t *testing.T, wt string) { swGit(t, wt, "rm", "--quiet", "--", otInvoiceTest) }},
+			trunk: func(t *testing.T, main string) {
+				t.Helper()
+				ldMoveTrunk(t, main)
+			},
+			story: func(t *testing.T, wt string) {
+				t.Helper()
+				swGit(t, wt, "rm", "--quiet", "--", otInvoiceTest)
+			}},
 		{name: "AC-4 the story's own frozen test changed, which trunk never had", file: otInvoiceTest,
-			trunk: func(t *testing.T, main string) { ldMoveTrunk(t, main) },
-			story: func(t *testing.T, wt string) { writeFile(t, wt, otInvoiceTest, otOwn) }},
+			trunk: func(t *testing.T, main string) {
+				t.Helper()
+				ldMoveTrunk(t, main)
+			},
+			story: func(t *testing.T, wt string) {
+				t.Helper()
+				writeFile(t, wt, otInvoiceTest, otOwn)
+			}},
 		{name: "AC-4 put back changed where trunk removed it", file: otTaxTest,
-			trunk: func(t *testing.T, main string) { otRemoveOnTrunk(t, main, otTaxTest) },
-			story: func(t *testing.T, wt string) { writeFile(t, wt, otTaxTest, otTaxV3) }},
+			trunk: func(t *testing.T, main string) {
+				t.Helper()
+				otRemoveOnTrunk(t, main, otTaxTest)
+			},
+			story: func(t *testing.T, wt string) {
+				t.Helper()
+				writeFile(t, wt, otTaxTest, otTaxV3)
+			}},
 		{name: "AC-4 a link to a file with trunk's bytes", file: otTaxTest,
-			trunk: func(t *testing.T, main string) { swCommitFile(t, main, otTaxTest, otTaxV2, "another story's change") },
-			story: func(t *testing.T, wt string) { otSymlink(t, wt, otTaxTest, otTaxV2) }},
+			trunk: func(t *testing.T, main string) {
+				t.Helper()
+				swCommitFile(t, main, otTaxTest, otTaxV2, "another story's change")
+			},
+			story: func(t *testing.T, wt string) {
+				t.Helper()
+				otSymlink(t, wt, otTaxTest, otTaxV2)
+			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			main, wt, _ := otFinished(t)

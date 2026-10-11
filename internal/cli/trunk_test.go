@@ -88,7 +88,7 @@ func TestWorkNobodyCommittedHoldsANewStoryBack(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(root, "notes")); err != nil {
 		t.Fatal(err)
 	}
-	addStory(t, root, "US-002")
+	addStory(t, root)
 	writeFile(t, root, ".sdlc/stories/US-001/scratch.md", "the loop's own\n")
 	mustRun(t, "start")
 }

@@ -132,6 +132,7 @@ var gitInitTemplate templateCache
 func seedGitInit(t *testing.T, root string) {
 	t.Helper()
 	materialise(t, root, gitInitTemplate.get(t, func(t *testing.T, scratch string) {
+		t.Helper()
 		wtGit(t, scratch, "init", "--quiet", "--initial-branch=main")
 		runIn(t, scratch, "init")
 	}))
@@ -158,6 +159,7 @@ func gitProjectInitialised(t *testing.T) string {
 func gitProjectInitialisedAt(t *testing.T, root string) {
 	t.Helper()
 	materialise(t, root, initialisedTemplate.get(t, func(t *testing.T, scratch string) {
+		t.Helper()
 		wtGit(t, scratch, "init", "--quiet", "--initial-branch=main")
 		initialised(t, scratch)
 	}))
@@ -208,6 +210,7 @@ var walkedTemplates sync.Map
 func walkedCopy(t *testing.T, key string, build func(t *testing.T, root string)) string {
 	t.Helper()
 	root, _ := walkedCopyNoted(t, key, func(t *testing.T, root string) map[string]string {
+		t.Helper()
 		build(t, root)
 		return nil
 	})
@@ -221,7 +224,10 @@ func walkedCopy(t *testing.T, key string, build func(t *testing.T, root string))
 func walkedCopyNoted(t *testing.T, key string, build func(t *testing.T, root string) map[string]string) (string, map[string]string) {
 	t.Helper()
 	v, _ := walkedTemplates.LoadOrStore(key, &walkedTemplate{})
-	tpl := v.(*walkedTemplate)
+	tpl, ok := v.(*walkedTemplate)
+	if !ok {
+		t.Fatalf("the template for %q is a %T, not a *walkedTemplate", key, v)
+	}
 	tpl.once.Do(func() {
 		raw, root := tempDirSpellings(t)
 		var notes map[string]string

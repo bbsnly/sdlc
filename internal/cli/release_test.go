@@ -36,10 +36,10 @@ func rlFixLine(out string) string {
 
 // rlHeld is a repository whose worktree started US-001 and was then stopped by
 // a person, so the worktree holds the story with no iteration running on it.
-func rlHeld(t *testing.T) (main, wt string) {
+func rlHeld(t *testing.T) string {
 	t.Helper()
-	main = wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
-	wt = wtWorktree(t, main, "wt")
+	main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
+	wt := wtWorktree(t, main, "wt")
 	if got := wtStarted(t, wt, wtSessionWorktree); got.Story != "US-001" {
 		t.Fatalf("start in the worktree gave %q", got.Story)
 	}
@@ -47,12 +47,12 @@ func rlHeld(t *testing.T) (main, wt string) {
 	if !wtExists(rlClaimFile(main, "US-001")) {
 		t.Fatal("precondition: stop let go of the claim on an unfinished story (D3)")
 	}
-	return main, wt
+	return main
 }
 
 func TestAC8ReleaseWithoutAReasonIsRefusedAndChangesNothing(t *testing.T) {
 	t.Parallel()
-	main, _ := rlHeld(t)
+	main := rlHeld(t)
 	before := wtLoopState(t, main)
 	for _, args := range [][]string{
 		{"release", "US-001"},
@@ -73,7 +73,7 @@ func TestAC8ReleaseWithoutAReasonIsRefusedAndChangesNothing(t *testing.T) {
 
 func TestAC8ReleasingAStoryNobodyHoldsSaysSo(t *testing.T) {
 	t.Parallel()
-	main, _ := rlHeld(t)
+	main := rlHeld(t)
 	r := wtMust(t, main, "", "", "release", "US-002", "--reason", "tidying up")
 	if !strings.Contains(r.stdout, "Nothing to release") || !strings.Contains(r.stdout, strconv.Quote("US-002")) {
 		t.Errorf("releasing a story nobody holds said:\n%s", r.stdout)
@@ -103,13 +103,16 @@ func TestAC8ReleaseIsRefusedWhileAnIterationRunsOnTheStory(t *testing.T) {
 		named []string
 	}{
 		{"AC-8 an iteration running in the worktree", func(t *testing.T, _, wt string) {
+			t.Helper()
 			wtStarted(t, wt, wtSessionWorktree)
 		}, []string{"wt"}},
 		{"AC-8 an iteration held by its active alone", func(t *testing.T, main, wt string) {
+			t.Helper()
 			wtSetStatus(t, main, "US-001", model.StatusInProgress)
 			writeFile(t, wt, ".sdlc/state/active", "US-001\n")
 		}, []string{"wt"}},
 		{"AC-8 two checkouts naming the story", func(t *testing.T, main, wt string) {
+			t.Helper()
 			wtSetStatus(t, main, "US-001", model.StatusInProgress)
 			writeFile(t, wt, ".sdlc/state/active", "US-001\n")
 			writeFile(t, main, ".sdlc/state/active", "US-001\n")

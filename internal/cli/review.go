@@ -87,106 +87,7 @@ func newReviewAddCmd() *cobra.Command {
 			"  sdlc review add code_review perf note --file /tmp/perf.md",
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			gate := model.Gate(args[0])
-			if !gate.Valid() {
-				return sdlcerr.New(sdlcerr.UnknownGate,
-					"there is no gate called "+quote(args[0]),
-					"this version knows "+model.GateNames())
-			}
-			reviewer, ok := model.FindReviewer(gate, args[1])
-			if !ok {
-				return sdlcerr.New(sdlcerr.UnknownReviewer,
-					string(gate)+" does not expect a review from "+quote(args[1]),
-					"it expects "+model.ReviewerNames(gate))
-			}
-			verdict := model.Verdict(strings.ToLower(strings.TrimSpace(args[2])))
-			if !verdict.Valid() {
-				return sdlcerr.New(sdlcerr.UnknownVerdict,
-					quote(args[2])+" is not a verdict",
-					"a reviewer approves, blocks, or leaves a note")
-			}
-
-			// Read before the lock is taken, as artifact write does: every
-			// other writer would wait on standard input otherwise.
-			content, err := readDocument(cmd, file)
-			if err != nil {
-				return err
-			}
-
-			s, _, unlock, err := openStoreForWriting(cmd)
-			if err != nil {
-				return err
-			}
-			defer unlock()
-			id := storyID
-			if id == "" {
-				if id, err = activeStory(s, "a review belongs to the story being worked on"); err != nil {
-					return err
-				}
-			} else if _, _, err := s.Story(id); err != nil {
-				// As gate --story does: a mistyped id is refused, not given a
-				// review that no gate will ever read.
-				return err
-			}
-			if err := refuseIfHeldElsewhere(s, id, "a review is of the work in that checkout, not this one"); err != nil {
-				return err
-			}
-			record, err := s.Record(id)
-			if err != nil {
-				return err
-			}
-			if !reviewer.Expected(reviewPolicy(s, record)) {
-				return sdlcerr.New(sdlcerr.UnknownReviewer,
-					string(gate)+" does not expect a review from "+quote(reviewer.Role)+" in this project",
-					"it does only when human_gates.dor_advocate_check is on in .sdlc/config.json")
-			}
-			subject, err := gateSubject(cmd.Context(), readingOf(s), id, gate)
-			if err != nil {
-				return err
-			}
-
-			// The document is written with the record and not before it: a
-			// block whose hand-over is refused leaves no file the record does
-			// not list, and the round it would have been is still to come.
-			doc := &store.ReviewDocument{
-				Gate: gate, Role: reviewer.Role, Round: record.Round(gate, reviewer.Role) + 1, Content: content,
-			}
-			path := store.ReviewPath(id, gate, reviewer.Role, doc.Round)
-			rev := record.AddReview(model.Review{
-				Gate: gate, Role: reviewer.Role, Verdict: verdict,
-				Subject: subject, File: path, Note: note,
-			}, s.Now())
-			record.Append(model.EventReview, model.ReviewEvent(gate, reviewer.Role, verdict), s.Now())
-			// A block that cannot stop the gate is a finding, not a round
-			// the rework lost, so only a block that stops it counts.
-			handedOver, message := "", ""
-			if reviewer.Stops(reviewPolicy(s, record), verdict) {
-				limit := s.Config().Loop.MaxReviewRounds
-				blocks := record.SinceDecision(model.EventReview,
-					model.ReviewEvent(gate, reviewer.Role, model.VerdictBlock))
-				message = fmt.Sprintf("%s has blocked %s %d times, and loop.max_review_rounds is %d, "+
-					"so the rework is not converging on what it asks for. The last note: %s",
-					reviewer.Role, gate, blocks, limit, lastNote(note))
-				if handedOver, err = handOverAt(cmd, s, record, doc, blocks, limit, "review_not_converging", message, "the block"); err != nil {
-					return err
-				}
-			} else if err := saveRecorded(s, record, doc); err != nil {
-				return err
-			}
-
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), reviewPayload{
-					OK: true, Story: id, Gate: string(gate), Role: reviewer.Role,
-					Verdict: string(verdict), Round: rev.Round, Path: path, Subject: subject,
-					HandedOver: handedOver,
-				})
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s  %s (round %d)\n  %s\n",
-				id, gate, reviewer.Role, verdict, rev.Round, path)
-			if handedOver != "" {
-				sayHandedOver(cmd.OutOrStdout(), id, message)
-			}
-			return nil
+			return runReviewAdd(cmd, args, reviewFlags{story: storyID, file: file, note: note})
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "read the review from this path instead of standard input")
@@ -195,84 +96,231 @@ func newReviewAddCmd() *cobra.Command {
 	return cmd
 }
 
+// reviewFlags are the flags `sdlc review add` was given.
+type reviewFlags struct {
+	story, file, note string
+}
+
+func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
+	gate := model.Gate(args[0])
+	if !gate.Valid() {
+		return sdlcerr.New(sdlcerr.UnknownGate,
+			"there is no gate called "+quote(args[0]),
+			"this version knows "+model.GateNames())
+	}
+	reviewer, ok := model.FindReviewer(gate, args[1])
+	if !ok {
+		return sdlcerr.New(sdlcerr.UnknownReviewer,
+			string(gate)+" does not expect a review from "+quote(args[1]),
+			"it expects "+model.ReviewerNames(gate))
+	}
+	verdict := model.Verdict(strings.ToLower(strings.TrimSpace(args[2])))
+	if !verdict.Valid() {
+		return sdlcerr.New(sdlcerr.UnknownVerdict,
+			quote(args[2])+" is not a verdict",
+			"a reviewer approves, blocks, or leaves a note")
+	}
+
+	// Read before the lock is taken, as artifact write does: every
+	// other writer would wait on standard input otherwise.
+	content, err := readDocument(cmd, f.file)
+	if err != nil {
+		return err
+	}
+
+	s, _, unlock, err := openStoreForWriting(cmd)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	id, err := reviewedStory(s, f.story)
+	if err != nil {
+		return err
+	}
+	if err := refuseIfHeldElsewhere(s, id, "a review is of the work in that checkout, not this one"); err != nil {
+		return err
+	}
+	record, err := s.Record(id)
+	if err != nil {
+		return err
+	}
+	if !reviewer.Expected(reviewPolicy(s, record)) {
+		return sdlcerr.New(sdlcerr.UnknownReviewer,
+			string(gate)+" does not expect a review from "+quote(reviewer.Role)+" in this project",
+			"it does only when human_gates.dor_advocate_check is on in .sdlc/config.json")
+	}
+	subject, err := gateSubject(cmd.Context(), readingOf(s), id, gate)
+	if err != nil {
+		return err
+	}
+
+	// The document is written with the record and not before it: a
+	// block whose hand-over is refused leaves no file the record does
+	// not list, and the round it would have been is still to come.
+	doc := &store.ReviewDocument{
+		Gate: gate, Role: reviewer.Role, Round: record.Round(gate, reviewer.Role) + 1, Content: content,
+	}
+	path := store.ReviewPath(id, gate, reviewer.Role, doc.Round)
+	rev := record.AddReview(model.Review{
+		Gate: gate, Role: reviewer.Role, Verdict: verdict,
+		Subject: subject, File: path, Note: f.note,
+	}, s.Now())
+	record.Append(model.EventReview, model.ReviewEvent(gate, reviewer.Role, verdict), s.Now())
+	handedOver, message, err := saveReview(cmd, s, record, reviewer, doc, verdict, f.note)
+	if err != nil {
+		return err
+	}
+
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), reviewPayload{
+			OK: true, Story: id, Gate: string(gate), Role: reviewer.Role,
+			Verdict: string(verdict), Round: rev.Round, Path: path, Subject: subject,
+			HandedOver: handedOver,
+		})
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s  %s (round %d)\n  %s\n",
+		id, gate, reviewer.Role, verdict, rev.Round, path)
+	if handedOver != "" {
+		sayHandedOver(cmd.OutOrStdout(), id, message)
+	}
+	return nil
+}
+
+// reviewedStory is the story a review is recorded against: the one named, or
+// the one being worked on.
+func reviewedStory(s *store.Store, named string) (string, error) {
+	if named == "" {
+		return activeStory(s, "a review belongs to the story being worked on")
+	}
+	// As gate --story does: a mistyped id is refused, not given a
+	// review that no gate will ever read.
+	if _, _, err := s.Story(named); err != nil {
+		return "", err
+	}
+	return named, nil
+}
+
+// saveReview saves the record with the review on it. A block that cannot stop
+// the gate is a finding, not a round the rework lost, so only a block that
+// stops it counts towards handing the story over.
+func saveReview(cmd *cobra.Command, s *store.Store, record *model.Record, reviewer model.Reviewer,
+	doc *store.ReviewDocument, verdict model.Verdict, note string,
+) (handedOver, message string, err error) {
+	if !reviewer.Stops(reviewPolicy(s, record), verdict) {
+		return "", "", saveRecorded(s, record, doc)
+	}
+	gate := doc.Gate
+	limit := s.Config().Loop.MaxReviewRounds
+	blocks := record.SinceDecision(model.EventReview,
+		model.ReviewEvent(gate, reviewer.Role, model.VerdictBlock))
+	message = fmt.Sprintf("%s has blocked %s %d times, and loop.max_review_rounds is %d, "+
+		"so the rework is not converging on what it asks for. The last note: %s",
+		reviewer.Role, gate, blocks, limit, lastNote(note))
+	handedOver, err = handOverAt(cmd, s, record, doc, blocks, limit, "review_not_converging", message, "the block")
+	return handedOver, message, err
+}
+
 func newReviewListCmd() *cobra.Command {
 	var storyID, gateName string
 	cmd := &cobra.Command{
-		Use:     "list",
+		Use:     verbList,
 		Short:   "Show which reviews each gate expects and where they have got to",
 		Example: "  sdlc review list\n  sdlc review list --gate code_review",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			var only model.Gate
-			if gateName != "" {
-				only = model.Gate(gateName)
-				if !only.Valid() {
-					return sdlcerr.New(sdlcerr.UnknownGate,
-						"there is no gate called "+quote(gateName),
-						"this version knows "+model.GateNames())
-				}
-			}
-
-			s, _, err := openStore(cmd)
-			if err != nil {
-				return err
-			}
-			id := storyID
-			if id == "" {
-				if id, err = activeStory(s, "reviews belong to the story being worked on"); err != nil {
-					return err
-				}
-			}
-			record, err := s.Record(id)
-			if err != nil {
-				return err
-			}
-
-			infos := make([]reviewInfo, 0, len(model.Reviewers))
-			policy := reviewPolicy(s, record)
-			// One tree for every reviewer listed: they were all stamped
-			// against the same one.
-			rd := readingOf(s)
-			for _, r := range model.Reviewers {
-				if (only != "" && r.Gate != only) || !r.Expected(policy) {
-					continue
-				}
-				subject, err := gateSubject(cmd.Context(), rd, id, r.Gate)
-				if err != nil {
-					return err
-				}
-				info := reviewInfo{
-					Gate: string(r.Gate), Role: r.Role,
-					Blocking:       r.Blocks(policy),
-					BlocksOnBreach: !r.Blocks(policy) && r.BlocksOnBreach,
-				}
-				if latest, ok := record.LatestReview(r.Gate, r.Role); ok {
-					info.Verdict, info.Round = string(latest.Verdict), latest.Round
-					info.Stale = latest.Subject != subject
-				}
-				if info.LeftOut, info.BroughtBackBy, err = waited(cmd.Context(), rd, record, r.Gate, r.Role); err != nil {
-					return err
-				}
-				if info.LeftOut || info.BroughtBackBy != "" {
-					info.Reason = staffingRow(record, r.Role).Reason
-				}
-				infos = append(infos, info)
-			}
-
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), reviewListPayload{OK: true, Story: id, Reviews: infos})
-			}
-			w := cmd.OutOrStdout()
-			for _, i := range infos {
-				fmt.Fprintf(w, "  %-15s %-15s %-9s %s\n", i.Gate, i.Role,
-					describeReviewPower(i), describeReviewState(i))
-			}
-			return nil
-		},
+		RunE:    func(cmd *cobra.Command, _ []string) error { return runReviewList(cmd, storyID, gateName) },
 	}
 	cmd.Flags().StringVar(&gateName, "gate", "", "only this gate's reviews")
 	cmd.Flags().StringVar(&storyID, "story", "", "for this story instead of the one being worked on")
 	return cmd
+}
+
+func runReviewList(cmd *cobra.Command, storyID, gateName string) error {
+	var only model.Gate
+	if gateName != "" {
+		only = model.Gate(gateName)
+		if !only.Valid() {
+			return sdlcerr.New(sdlcerr.UnknownGate,
+				"there is no gate called "+quote(gateName),
+				"this version knows "+model.GateNames())
+		}
+	}
+
+	s, _, err := openStore(cmd)
+	if err != nil {
+		return err
+	}
+	id := storyID
+	if id == "" {
+		if id, err = activeStory(s, "reviews belong to the story being worked on"); err != nil {
+			return err
+		}
+	}
+	record, err := s.Record(id)
+	if err != nil {
+		return err
+	}
+
+	infos, err := describeReviewers(cmd.Context(), s, record, id, only)
+	if err != nil {
+		return err
+	}
+
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), reviewListPayload{OK: true, Story: id, Reviews: infos})
+	}
+	w := cmd.OutOrStdout()
+	for _, i := range infos {
+		fmt.Fprintf(w, "  %-15s %-15s %-9s %s\n", i.Gate, i.Role,
+			describeReviewPower(i), describeReviewState(i))
+	}
+	return nil
+}
+
+// describeReviewers is where each expected reviewer's review stands, for one
+// gate or for all of them.
+func describeReviewers(ctx context.Context, s *store.Store, record *model.Record, id string, only model.Gate) ([]reviewInfo, error) {
+	infos := make([]reviewInfo, 0, len(model.Reviewers))
+	policy := reviewPolicy(s, record)
+	// One tree for every reviewer listed: they were all stamped
+	// against the same one.
+	rd := readingOf(s)
+	for _, r := range model.Reviewers {
+		if (only != "" && r.Gate != only) || !r.Expected(policy) {
+			continue
+		}
+		info, err := describeReviewer(ctx, rd, record, id, r, policy)
+		if err != nil {
+			return nil, err
+		}
+		infos = append(infos, info)
+	}
+	return infos, nil
+}
+
+// describeReviewer is where one expected reviewer's review of the story stands.
+func describeReviewer(ctx context.Context, rd *reading, record *model.Record, id string,
+	r model.Reviewer, policy model.ReviewPolicy,
+) (reviewInfo, error) {
+	subject, err := gateSubject(ctx, rd, id, r.Gate)
+	if err != nil {
+		return reviewInfo{}, err
+	}
+	info := reviewInfo{
+		Gate: string(r.Gate), Role: r.Role,
+		Blocking:       r.Blocks(policy),
+		BlocksOnBreach: !r.Blocks(policy) && r.BlocksOnBreach,
+	}
+	if latest, ok := record.LatestReview(r.Gate, r.Role); ok {
+		info.Verdict, info.Round = string(latest.Verdict), latest.Round
+		info.Stale = latest.Subject != subject
+	}
+	if info.LeftOut, info.BroughtBackBy, err = waited(ctx, rd, record, r.Gate, r.Role); err != nil {
+		return reviewInfo{}, err
+	}
+	if info.LeftOut || info.BroughtBackBy != "" {
+		info.Reason = staffingRow(record, r.Role).Reason
+	}
+	return info, nil
 }
 
 func describeReviewPower(i reviewInfo) string {
@@ -347,19 +395,9 @@ func reviewPolicy(s *store.Store, record *model.Record) model.ReviewPolicy {
 // requireReviews holds a reviewed gate to what being reviewed means.
 func requireReviews(ctx context.Context, rd *reading, id string, gate model.Gate, record *model.Record) error {
 	policy := reviewPolicy(rd.s, record)
-	var reviewers []model.Reviewer
-	back := map[string]string{}
-	for _, r := range model.ReviewersFor(gate) {
-		out, by, err := waited(ctx, rd, record, gate, r.Role)
-		if err != nil {
-			return err
-		}
-		if r.Expected(policy) && !out {
-			reviewers = append(reviewers, r)
-			if by != "" {
-				back[r.Role] = " (the staffing leaves it out, and it is brought back by " + quote(by) + ")"
-			}
-		}
+	reviewers, back, err := expectedReviewers(ctx, rd, record, gate, policy)
+	if err != nil {
+		return err
 	}
 	if len(reviewers) == 0 {
 		return nil
@@ -395,6 +433,28 @@ func requireReviews(ctx context.Context, rd *reading, id string, gate model.Gate
 			strings.Join(outstanding, "; "))
 	}
 	return nil
+}
+
+// expectedReviewers is who the gate waits for, and for each one brought back
+// by a changed path, the words that say so.
+func expectedReviewers(ctx context.Context, rd *reading, record *model.Record, gate model.Gate,
+	policy model.ReviewPolicy,
+) ([]model.Reviewer, map[string]string, error) {
+	var reviewers []model.Reviewer
+	back := map[string]string{}
+	for _, r := range model.ReviewersFor(gate) {
+		out, by, err := waited(ctx, rd, record, gate, r.Role)
+		if err != nil {
+			return nil, nil, err
+		}
+		if r.Expected(policy) && !out {
+			reviewers = append(reviewers, r)
+			if by != "" {
+				back[r.Role] = " (the staffing leaves it out, and it is brought back by " + quote(by) + ")"
+			}
+		}
+	}
+	return reviewers, back, nil
 }
 
 func describeNote(note string) string {

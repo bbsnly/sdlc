@@ -83,18 +83,20 @@ func nearestInvocation(name string) invocation {
 }
 
 // invocationOf is what t's commands run with.
-func invocationOf(t testing.TB) invocation {
+func invocationOf(tb testing.TB) invocation {
+	tb.Helper()
 	invocationsMu.Lock()
 	defer invocationsMu.Unlock()
-	return nearestInvocation(t.Name())
+	return nearestInvocation(tb.Name())
 }
 
 // ownInvocation applies change to t's own invocation, making it first from its
 // parent's.
-func ownInvocation(t testing.TB, change func(*invocation)) {
+func ownInvocation(tb testing.TB, change func(*invocation)) {
+	tb.Helper()
 	invocationsMu.Lock()
 	defer invocationsMu.Unlock()
-	name := t.Name()
+	name := tb.Name()
 	inv, ok := invocations[name]
 	if !ok {
 		parent := nearestInvocation(name)
@@ -103,7 +105,7 @@ func ownInvocation(t testing.TB, change func(*invocation)) {
 			inv.env = map[string]string{}
 		}
 		invocations[name] = inv
-		t.Cleanup(func() {
+		tb.Cleanup(func() {
 			invocationsMu.Lock()
 			defer invocationsMu.Unlock()
 			delete(invocations, name)
@@ -114,40 +116,41 @@ func ownInvocation(t testing.TB, change func(*invocation)) {
 
 // chdir is t.Chdir for the commands t runs, and only for them: the process
 // stays where it is.
-func chdir(t testing.TB, dir string) {
-	t.Helper()
+func chdir(tb testing.TB, dir string) {
+	tb.Helper()
 	if !filepath.IsAbs(dir) {
-		t.Fatalf("chdir(%q): a test's directory is absolute, so that nothing depends on the process's", dir)
+		tb.Fatalf("chdir(%q): a test's directory is absolute, so that nothing depends on the process's", dir)
 	}
-	ownInvocation(t, func(inv *invocation) { inv.dir = dir })
+	ownInvocation(tb, func(inv *invocation) { inv.dir = dir })
 }
 
 // setenv is t.Setenv for the commands t runs, and only for them. It takes only
 // the variables ExecuteIn reads through getenv: anything else has to be set for
 // the process, with t.Setenv, in a test that is not parallel.
-func setenv(t testing.TB, name, value string) {
-	t.Helper()
+func setenv(tb testing.TB, name, value string) {
+	tb.Helper()
 	if !slices.Contains(sdlcVariables, name) {
-		t.Fatalf("setenv(%q): ExecuteIn does not read %s through getenv; set it with t.Setenv in a test that is not parallel", name, name)
+		tb.Fatalf("setenv(%q): ExecuteIn does not read %s through getenv; set it with t.Setenv in a test that is not parallel", name, name)
 	}
-	ownInvocation(t, func(inv *invocation) { inv.env[name] = value })
+	ownInvocation(tb, func(inv *invocation) { inv.env[name] = value })
 }
 
 // workdir is the directory t's commands run in: what os.Getwd was before
 // ExecuteIn, and what a relative path in a test is relative to.
-func workdir(t testing.TB) string {
-	return invocationOf(t).dir
+func workdir(tb testing.TB) string {
+	tb.Helper()
+	return invocationOf(tb).dir
 }
 
 // execute runs one command as t's commands run.
-func execute(t testing.TB, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	t.Helper()
-	inv := invocationOf(t)
+func execute(tb testing.TB, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	tb.Helper()
+	inv := invocationOf(tb)
 	code := ExecuteIn(inv.dir, inv.getenv, args, stdin, stdout, stderr)
 	// ExecuteIn has the directory it was given, and a command that moved the
 	// process would move every other test running at the same time.
 	if wd, err := os.Getwd(); err != nil || wd != packageDir() {
-		t.Errorf("after sdlc %s the process's working directory is %q (%v), not %s: ExecuteIn must leave it alone",
+		tb.Errorf("after sdlc %s the process's working directory is %q (%v), not %s: ExecuteIn must leave it alone",
 			strings.Join(args, " "), wd, err, packageDir())
 	}
 	return code
@@ -156,13 +159,11 @@ func execute(t testing.TB, args []string, stdin io.Reader, stdout, stderr io.Wri
 // runIn runs one command in dir with nothing the test set, which is what a
 // template is built with: the test that happens to build it must not be left
 // anywhere by doing so.
-func runIn(t testing.TB, dir string, args ...string) result {
-	t.Helper()
+func runIn(tb testing.TB, dir string, args ...string) {
+	tb.Helper()
 	var out, errb bytes.Buffer
 	code := ExecuteIn(dir, os.Getenv, args, strings.NewReader(""), &out, &errb)
-	r := result{stdout: out.String(), stderr: errb.String(), code: code}
-	if r.code != 0 {
-		t.Fatalf("sdlc %s in %s exited %d:\n%s%s", strings.Join(args, " "), dir, r.code, r.stdout, r.stderr)
+	if code != 0 {
+		tb.Fatalf("sdlc %s in %s exited %d:\n%s%s", strings.Join(args, " "), dir, code, out.String(), errb.String())
 	}
-	return r
 }

@@ -57,7 +57,7 @@ func newArtifactCmd() *cobra.Command {
 
 func newArtifactListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "list",
+		Use:     verbList,
 		Short:   "List the documents this version can store",
 		Example: "  sdlc artifact list",
 		Args:    cobra.NoArgs,
@@ -115,14 +115,8 @@ func newArtifactWriteCmd() *cobra.Command {
 				return err
 			}
 			defer unlock()
-			id := storyID
-			if id == "" {
-				if id, err = activeStory(s, "a gate's documents belong to the story being worked on"); err != nil {
-					return err
-				}
-			} else if _, _, err := s.Story(id); err != nil {
-				// As gate --story does: a mistyped id is refused, not given a
-				// directory that no gate will ever read.
+			id, err := artifactStory(s, storyID)
+			if err != nil {
 				return err
 			}
 			if err := refuseIfHeldElsewhere(s, id, "a gate's documents are about the work in that checkout, not this one"); err != nil {
@@ -141,6 +135,20 @@ func newArtifactWriteCmd() *cobra.Command {
 	cmd.Flags().StringVar(&storyID, "story", "",
 		"store against this story instead of the one being worked on")
 	return cmd
+}
+
+// artifactStory is the story a document is stored for: the one named, or the
+// one being worked on.
+func artifactStory(s *store.Store, named string) (string, error) {
+	if named == "" {
+		return activeStory(s, "a gate's documents belong to the story being worked on")
+	}
+	// As gate --story does: a mistyped id is refused, not given a
+	// directory that no gate will ever read.
+	if _, _, err := s.Story(named); err != nil {
+		return "", err
+	}
+	return named, nil
 }
 
 // readDocument reads a gate's document from --file or standard input.

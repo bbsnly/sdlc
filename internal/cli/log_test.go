@@ -26,9 +26,9 @@ func readRecord(t *testing.T, root, id string) model.Record {
 
 // editRecord rewrites a story's record the way an older sdlc, or a person, can
 // leave it: as JSON, with whatever change makes to it.
-func editRecord(t *testing.T, root, id string, change func(map[string]any)) {
+func editRecord(t *testing.T, root string, change func(map[string]any)) {
 	t.Helper()
-	path := filepath.Join(root, ".sdlc", "stories", id, "gate-record.json")
+	path := filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestTheLogFlagsWhatIsWorthASecondLook(t *testing.T) {
 	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop") // lifts the finished story's freeze, which is not flagged
-	editRecord(t, root, "US-001", func(r map[string]any) {
+	editRecord(t, root, func(r map[string]any) {
 		appendTo(r, "reviews", map[string]any{
 			"at": "2026-09-15T10:00:00Z", "gate": "design_review", "role": "architect",
 			"verdict": "block", "round": 2, "note": "AC-3 has no step",
@@ -203,7 +203,7 @@ func TestAStoryWhoseRecordNamesNoCommitIsFoundByItsCommitMessages(t *testing.T) 
 	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
-	editRecord(t, root, "US-001", forgetRange)
+	editRecord(t, root, forgetRange)
 	before := headOf(t, root)
 	commitNamed(t, root, "US-001: the first part")
 	commitNamed(t, root, "US-0010 is another story")
@@ -229,7 +229,7 @@ func TestAStoryNoCommitNamesIsListedWithItsRangeUnknown(t *testing.T) {
 	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
-	editRecord(t, root, "US-001", forgetRange)
+	editRecord(t, root, forgetRange)
 	writeFile(t, root, ".sdlc/state/acknowledged", headOf(t, root)+"\n")
 
 	payload := decode[logPayload](t, mustRun(t, "log", "--json"))
@@ -342,7 +342,7 @@ func TestTheLogNamesTheCommitsInFull(t *testing.T) {
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	record := readRecord(t, root, "US-001")
-	editRecord(t, root, "US-001", func(r map[string]any) {
+	editRecord(t, root, func(r map[string]any) {
 		r["commit_base"], r["commit"] = record.CommitBase[:12], record.Commit[:12]
 	})
 
@@ -366,7 +366,7 @@ func TestAStoryWhoseCommitIsNotInTheRepositoryIsListed(t *testing.T) {
 	writeFile(t, root, ".sdlc/state/acknowledged", headOf(t, root)+"\n")
 
 	for _, commit := range []string{strings.Repeat("f", 40), "-x"} {
-		editRecord(t, root, "US-001", func(r map[string]any) { r["commit"] = commit })
+		editRecord(t, root, func(r map[string]any) { r["commit"] = commit })
 		e := onlyEntry(t, decode[logPayload](t, mustRun(t, "log", "--json")))
 		if !e.Missing || e.OffBranch || e.Commit != commit {
 			t.Errorf("a record naming %q gave %q (missing %v, off branch %v)", commit, e.Commit, e.Missing, e.OffBranch)
@@ -385,7 +385,7 @@ func TestAStoryWhoseCommitIsNotOnThisBranchIsListed(t *testing.T) {
 	mustRun(t, "stop")
 	elsewhere := gitOut(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test",
 		"commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "made on another branch")
-	editRecord(t, root, "US-001", func(r map[string]any) { r["commit"] = elsewhere })
+	editRecord(t, root, func(r map[string]any) { r["commit"] = elsewhere })
 	writeFile(t, root, ".sdlc/state/acknowledged", headOf(t, root)+"\n")
 
 	for _, args := range [][]string{{"log", "--json"}, {"log", "--since", elsewhere, "--json"}} {
@@ -477,7 +477,7 @@ func TestALogEntryWithNoRangeOnABranchWithNoCommitsIsUnknownRatherThanSearched(t
 	t.Parallel()
 	root := finishedStory(t)
 	mustRun(t, "stop")
-	editRecord(t, root, "US-001", forgetRange)
+	editRecord(t, root, forgetRange)
 	gitOut(t, root, "checkout", "--quiet", "--orphan", "fresh")
 
 	e := onlyEntry(t, decode[logPayload](t, mustRun(t, "log", "--all", "--json")))
@@ -525,7 +525,7 @@ func TestALogEntryWithACommitButNoBaseHasNoRange(t *testing.T) {
 	root := finishedStory(t)
 	mustRun(t, "stop")
 	record := readRecord(t, root, "US-001")
-	editRecord(t, root, "US-001", func(r map[string]any) { delete(r, "commit_base") })
+	editRecord(t, root, func(r map[string]any) { delete(r, "commit_base") })
 
 	out := mustRun(t, "log").stdout
 	want := shortCommit(record.Commit) + "  US-001"

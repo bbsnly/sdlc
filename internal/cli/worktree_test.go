@@ -165,12 +165,31 @@ func wtSetStatus(t *testing.T, root, id string, status model.Status) {
 	path := filepath.Join(root, "user_stories.json")
 	var backlog map[string]any
 	wtReadJSON(t, path, &backlog)
-	for _, s := range backlog["stories"].([]any) {
-		if story := s.(map[string]any); story["id"] == id {
+	for _, story := range wtStoriesIn(t, backlog) {
+		if story["id"] == id {
 			story["status"] = string(status)
 		}
 	}
 	wtWriteJSON(t, path, backlog)
+}
+
+// wtStoriesIn is the stories of a backlog read as a generic object, which a
+// test edits in place.
+func wtStoriesIn(t *testing.T, backlog map[string]any) []map[string]any {
+	t.Helper()
+	list, ok := backlog["stories"].([]any)
+	if !ok {
+		t.Fatalf("the backlog has no list of stories: %v", backlog["stories"])
+	}
+	stories := make([]map[string]any, 0, len(list))
+	for _, s := range list {
+		story, ok := s.(map[string]any)
+		if !ok {
+			t.Fatalf("the backlog has a story that is not an object: %v", s)
+		}
+		stories = append(stories, story)
+	}
+	return stories
 }
 
 // wtStatuses is each story's status in root's backlog.

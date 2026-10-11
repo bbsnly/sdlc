@@ -88,145 +88,183 @@ func newStatusCmd() *cobra.Command {
 			"It changes nothing, so it is safe to run at any point.",
 		Example: "  sdlc status\n  sdlc status --json",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, p, err := openStore(cmd)
-			if err != nil {
-				return err
-			}
-			active, err := s.Active()
-			if err != nil {
-				return err
-			}
-			backlog, err := s.Backlog()
-			if err != nil {
-				return err
-			}
+		RunE:    func(cmd *cobra.Command, _ []string) error { return runStatus(cmd) },
+	}
+}
 
-			waiting, err := waitingStories(s, backlog)
-			if err != nil {
-				return err
-			}
+// statusView is what `sdlc status` has read: the payload it emits, and the
+// parts of it the text version prints from.
+type statusView struct {
+	s       *store.Store
+	backlog *model.Backlog
+	payload statusPayload
+	record  *model.Record
+	holders map[string]store.Holder
+	shown   bool
+}
 
-			holders, shown := holdersShown(s)
-			payload := statusPayload{OK: true, Active: active, Backlog: countStatuses(backlog), Waiting: waiting}
-			if shown {
-				payload.Held = heldStories(backlog, holders)
-			}
-			var record *model.Record
-			if active != "" {
-				if story, ok := backlog.Find(active); ok {
-					payload.Title = story.Title
-				} else {
-					payload.NotInBacklog = true
-				}
-				if record, err = s.Record(active); err != nil {
-					return err
-				}
-				payload.Gates = map[string]string{}
-				for gate, result := range record.Gates {
-					payload.Gates[string(gate)] = string(result.Status)
-				}
-				if next, ok := record.NextGate(); ok {
-					payload.NextGate = string(next)
-				}
-				if payload.Freeze, err = describeFreeze(cmd.Context(), s, active, record); err != nil {
-					return err
-				}
-				payload.Cost = describeCost(p.Config.Budget, record)
-				if p.Config.Staffing.Enabled {
-					payload.Staffing = "none"
-					if staffed(record) {
-						payload.Staffing = "recorded"
-					}
-				}
-				if id, held := s.WorkingSession(); held {
-					payload.Session = id
-				}
-			} else if sel, ok := pickable(backlog, holders).Next(); ok && !isWaiting(waiting, sel.Story.ID) {
-				// A waiting story is the one start would pick, and start refuses
-				// it, so offering it as next up would send the reader into a wall.
-				payload.Next = &nextUp{Story: sel.Story.ID, Title: sel.Story.Title}
-			}
+func runStatus(cmd *cobra.Command) error {
+	s, p, err := openStore(cmd)
+	if err != nil {
+		return err
+	}
+	active, err := s.Active()
+	if err != nil {
+		return err
+	}
+	backlog, err := s.Backlog()
+	if err != nil {
+		return err
+	}
 
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), payload)
-			}
+	waiting, err := waitingStories(s, backlog)
+	if err != nil {
+		return err
+	}
 
-			// An active story with no gate left is finished but not yet put
-			// down, and calling that "in progress" would invite a session to
-			// carry on working something that has nothing left to work.
-			finished := active != "" && payload.NextGate == ""
-			notHere, notHereNext := "", ""
-			if active != "" {
-				notHere, notHereNext = notHeldHere(active, finished, holders, shown, s.HasLinkedWorktree())
-			}
+	holders, shown := holdersShown(s)
+	v := &statusView{s: s, backlog: backlog, holders: holders, shown: shown,
+		payload: statusPayload{OK: true, Active: active, Backlog: countStatuses(backlog), Waiting: waiting}}
+	if shown {
+		v.payload.Held = heldStories(backlog, holders)
+	}
+	if active != "" {
+		if err := v.readActive(cmd.Context(), p); err != nil {
+			return err
+		}
+	} else if sel, ok := pickable(backlog, holders).Next(); ok && !isWaiting(waiting, sel.Story.ID) {
+		// A waiting story is the one start would pick, and start refuses
+		// it, so offering it as next up would send the reader into a wall.
+		v.payload.Next = &nextUp{Story: sel.Story.ID, Title: sel.Story.Title}
+	}
 
-			w := cmd.OutOrStdout()
-			if active == "" {
-				fmt.Fprintln(w, "No iteration running.")
-			} else {
-				state := "in progress"
-				if finished {
-					state = "finished   "
-				}
-				title := oneLine(payload.Title)
-				if payload.NotInBacklog {
-					title = "(not in the backlog)"
-				}
-				fmt.Fprintf(w, "%s  %s  %s%s\n\n", active, state, title, notHere)
-				printGates(w, record)
-				printFreeze(w, payload.Freeze)
-				printCost(w, payload.Cost)
-				if payload.Staffing != "" {
-					fmt.Fprintf(w, "\n  staffing  %s\n", describeStaffing(record))
-				}
-				if payload.NextGate != "" {
-					fmt.Fprintf(w, "\n  next   %s\n", payload.NextGate)
-				}
-				// Started from a terminal, or with the record of the session
-				// spoiled, the story holds no session, and nothing tells the
-				// sessions in the repository so: the hook speaks only in the one
-				// working it. Not for a story that cannot be carried on, where it
-				// would send the reader towards a commit that is refused.
-				if payload.Session == "" && !finished && !payload.NotInBacklog && notHereNext == "" {
-					fmt.Fprint(w, "\n  No Claude Code session is working it, so nothing is enforced "+
-						"until a person picks it up by typing /sdlc:next in Claude Code.\n")
-				}
-			}
-			fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))
-			for _, ws := range payload.Waiting {
-				fmt.Fprintf(w, "  waiting  %s  %s: %s\n", ws.Story, oneLine(ws.Type), oneLine(ws.Message))
-			}
-			for _, hs := range payload.Held {
-				fmt.Fprintf(w, "  held     %s  %s\n", hs.Story, strings.TrimPrefix(heldIn(hs.Story, holders[hs.Story]), "held "))
-			}
-			switch {
-			case payload.NotInBacklog:
-				// Carrying on would end at the commit gate, which refuses a story
-				// whose risk tier it cannot read.
-				fmt.Fprintf(w, "\n%s is not in %s any more, so it cannot be committed. "+
-					"Put it back, or run `sdlc stop` to end the iteration.\n", active, s.Config().Backlog.Path)
-			case finished && inItsWorktree(s, active):
-				// Not done until it lands, and the stop here is what lands it.
-				fmt.Fprintf(w, "\nEvery gate has passed. Run `sdlc stop` here to land it on %s.\n", trunkName(s))
-			case finished:
-				fmt.Fprint(w, "\nEvery gate has passed. Run `sdlc stop` to end the iteration.\n")
-			case notHereNext != "":
-				fmt.Fprintf(w, "\n%s\n", notHereNext)
-			case active == "" && payload.Next == nil && len(payload.Waiting) > 0:
-				fmt.Fprintf(w, "\nA person answers first, in their own terminal: `sdlc approve %s`, "+
-					"or `sdlc approve %s --reject \"why\"`.\n", payload.Waiting[0].Story, payload.Waiting[0].Story)
-			case active != "":
-				fmt.Fprint(w, "\nA person types /sdlc:next in Claude Code to carry on, "+
-					"or runs `sdlc stop` to put it down.\n")
-			case payload.Next != nil:
-				fmt.Fprintf(w, "  next up  %s  %s\n", payload.Next.Story, oneLine(payload.Next.Title))
-				fmt.Fprint(w, "\nA person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.\n")
-			default:
-				fmt.Fprint(w, nothingToStart(backlog, s.Config().Backlog.Path, elsewhere(backlog, holders)))
-			}
-			return nil
-		},
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), v.payload)
+	}
+	v.print(cmd.OutOrStdout())
+	return nil
+}
+
+// readActive fills in what the payload says of the story being worked on.
+func (v *statusView) readActive(ctx context.Context, p *config.Project) error {
+	payload, s, active := &v.payload, v.s, v.payload.Active
+	var err error
+	if story, ok := v.backlog.Find(active); ok {
+		payload.Title = story.Title
+	} else {
+		payload.NotInBacklog = true
+	}
+	if v.record, err = s.Record(active); err != nil {
+		return err
+	}
+	record := v.record
+	payload.Gates = map[string]string{}
+	for gate, result := range record.Gates {
+		payload.Gates[string(gate)] = string(result.Status)
+	}
+	if next, ok := record.NextGate(); ok {
+		payload.NextGate = string(next)
+	}
+	if payload.Freeze, err = describeFreeze(ctx, s, active, record); err != nil {
+		return err
+	}
+	payload.Cost = describeCost(p.Config.Budget, record)
+	if p.Config.Staffing.Enabled {
+		payload.Staffing = "none"
+		if staffed(record) {
+			payload.Staffing = "recorded"
+		}
+	}
+	if id, held := s.WorkingSession(); held {
+		payload.Session = id
+	}
+	return nil
+}
+
+// print writes the status as text.
+func (v *statusView) print(w io.Writer) {
+	payload, s, active := &v.payload, v.s, v.payload.Active
+	// An active story with no gate left is finished but not yet put
+	// down, and calling that "in progress" would invite a session to
+	// carry on working something that has nothing left to work.
+	finished := active != "" && payload.NextGate == ""
+	notHereNext := ""
+	if active != "" {
+		var notHere string
+		notHere, notHereNext = notHeldHere(active, finished, v.holders, v.shown, s.HasLinkedWorktree())
+		v.printActive(w, finished, notHere, notHereNext)
+	} else {
+		fmt.Fprintln(w, "No iteration running.")
+	}
+	fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))
+	for _, ws := range payload.Waiting {
+		fmt.Fprintf(w, "  waiting  %s  %s: %s\n", ws.Story, oneLine(ws.Type), oneLine(ws.Message))
+	}
+	for _, hs := range payload.Held {
+		fmt.Fprintf(w, "  held     %s  %s\n", hs.Story, strings.TrimPrefix(heldIn(hs.Story, v.holders[hs.Story]), "held "))
+	}
+	v.printAdvice(w, finished, notHereNext)
+}
+
+// printActive prints the story being worked on and where it has got to.
+func (v *statusView) printActive(w io.Writer, finished bool, notHere, notHereNext string) {
+	payload, active, record := &v.payload, v.payload.Active, v.record
+	state := "in progress"
+	if finished {
+		state = "finished   "
+	}
+	title := oneLine(payload.Title)
+	if payload.NotInBacklog {
+		title = "(not in the backlog)"
+	}
+	fmt.Fprintf(w, "%s  %s  %s%s\n\n", active, state, title, notHere)
+	printGates(w, record)
+	printFreeze(w, payload.Freeze)
+	printCost(w, payload.Cost)
+	if payload.Staffing != "" {
+		fmt.Fprintf(w, "\n  staffing  %s\n", describeStaffing(record))
+	}
+	if payload.NextGate != "" {
+		fmt.Fprintf(w, "\n  next   %s\n", payload.NextGate)
+	}
+	// Started from a terminal, or with the record of the session
+	// spoiled, the story holds no session, and nothing tells the
+	// sessions in the repository so: the hook speaks only in the one
+	// working it. Not for a story that cannot be carried on, where it
+	// would send the reader towards a commit that is refused.
+	if payload.Session == "" && !finished && !payload.NotInBacklog && notHereNext == "" {
+		fmt.Fprint(w, "\n  No Claude Code session is working it, so nothing is enforced "+
+			"until a person picks it up by typing /sdlc:next in Claude Code.\n")
+	}
+}
+
+// printAdvice closes the status with what a person does next.
+func (v *statusView) printAdvice(w io.Writer, finished bool, notHereNext string) {
+	payload, s, active := &v.payload, v.s, v.payload.Active
+	switch {
+	case payload.NotInBacklog:
+		// Carrying on would end at the commit gate, which refuses a story
+		// whose risk tier it cannot read.
+		fmt.Fprintf(w, "\n%s is not in %s any more, so it cannot be committed. "+
+			"Put it back, or run `sdlc stop` to end the iteration.\n", active, s.Config().Backlog.Path)
+	case finished && inItsWorktree(s, active):
+		// Not done until it lands, and the stop here is what lands it.
+		fmt.Fprintf(w, "\nEvery gate has passed. Run `sdlc stop` here to land it on %s.\n", trunkName(s))
+	case finished:
+		fmt.Fprint(w, "\nEvery gate has passed. Run `sdlc stop` to end the iteration.\n")
+	case notHereNext != "":
+		fmt.Fprintf(w, "\n%s\n", notHereNext)
+	case active == "" && payload.Next == nil && len(payload.Waiting) > 0:
+		fmt.Fprintf(w, "\nA person answers first, in their own terminal: `sdlc approve %s`, "+
+			"or `sdlc approve %s --reject \"why\"`.\n", payload.Waiting[0].Story, payload.Waiting[0].Story)
+	case active != "":
+		fmt.Fprint(w, "\nA person types /sdlc:next in Claude Code to carry on, "+
+			"or runs `sdlc stop` to put it down.\n")
+	case payload.Next != nil:
+		fmt.Fprintf(w, "  next up  %s  %s\n", payload.Next.Story, oneLine(payload.Next.Title))
+		fmt.Fprint(w, "\nA person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.\n")
+	default:
+		fmt.Fprint(w, nothingToStart(v.backlog, s.Config().Backlog.Path, elsewhere(v.backlog, v.holders)))
 	}
 }
 

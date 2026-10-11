@@ -654,20 +654,20 @@ type plReport struct {
 // with its story unfinished and nothing pending, two escalate (one then exits
 // with a failing status), and one exits with a failing status having done
 // nothing.
-func plMixed(t *testing.T) (main string, rig *plRig) {
+func plMixed(t *testing.T) string {
 	t.Helper()
-	main = plRepository(t, 4)
-	rig = plInstall(t, map[string]plBehaviour{
+	main := plRepository(t, 4)
+	plInstall(t, map[string]plBehaviour{
 		"US-001": {Actions: []string{"start"}},
 		"US-002": {Actions: []string{"start", "escalate"}, Message: "\x1b[31mred\x1b[0m \x1b]0;pwned\x07 the migration has no down step"},
 		"US-003": {Exit: 3},
 		"US-004": {Actions: []string{"start", "escalate"}, Exit: 1},
 	}, false)
-	return main, rig
+	return main
 }
 
 func TestAC6TheStatusViewGivesEveryStoryItsGateAndItsState(t *testing.T) {
-	main, _ := plMixed(t)
+	main := plMixed(t)
 	r := plRun(t, main, "", "--json", "--max", "2", "US-001", "US-002", "US-003", "US-004")
 	report := decode[plReport](t, r)
 	if len(report.Stories) != 4 {
@@ -702,7 +702,7 @@ func TestAC6TheStatusViewGivesEveryStoryItsGateAndItsState(t *testing.T) {
 }
 
 func TestAC6TheProseViewGathersWhatWaitsOnAPersonLastWithTheCommandToRun(t *testing.T) {
-	main, _ := plMixed(t)
+	main := plMixed(t)
 	r := plRun(t, main, "", "--max", "2", "US-001", "US-002", "US-003", "US-004")
 	out := r.stdout + r.stderr
 
@@ -754,11 +754,19 @@ func abs(n int) int {
 // What a story's escalation message says came from a file the clone brought
 // along, and could retitle or overwrite the person's terminal.
 func TestAC6NothingAStoryCarriesCanControlThePersonsTerminal(t *testing.T) {
-	main, _ := plMixed(t)
+	main := plMixed(t)
 	var backlog map[string]any
 	wtReadJSON(t, filepath.Join(main, "user_stories.json"), &backlog)
-	for _, s := range backlog["stories"].([]any) {
-		if story := s.(map[string]any); story["id"] == "US-001" {
+	stories, ok := backlog["stories"].([]any)
+	if !ok {
+		t.Fatalf("the backlog has no list of stories: %v", backlog["stories"])
+	}
+	for _, s := range stories {
+		story, ok := s.(map[string]any)
+		if !ok {
+			t.Fatalf("the backlog has a story that is not an object: %v", s)
+		}
+		if story["id"] == "US-001" {
 			story["title"] = "Story \x1b]0;pwned\x07\x1b[2J US-001"
 		}
 	}

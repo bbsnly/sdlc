@@ -129,23 +129,33 @@ func startLocked(cmd *cobra.Command, asked string, checked bool, said *startSaid
 		}
 	}
 	if plan.running {
-		// Picked up in another session, the story is that session's now.
-		was, _ := target.WorkingSession()
-		session, err := target.BindSession(true)
-		if err != nil {
-			return false, err
-		}
-		if session != "" && was != "" && was != session {
-			slog.Debug("start took the story over from the session working it",
-				"story", plan.id, "checkout", target.Root(), "from", was, "to", session)
-		}
-		if err := target.Claim(plan.id); err != nil {
-			return false, err
-		}
-		said.went = plan.id
-		return false, reportStart(cmd, target, plan.id, true, session, plan.at != "")
+		return false, carryOnStory(cmd, target, plan, said)
 	}
+	return false, beginIteration(cmd, s, target, plan, said)
+}
 
+// carryOnStory picks up an iteration that is already running in the target.
+func carryOnStory(cmd *cobra.Command, target *store.Store, plan startPlan, said *startSaid) error {
+	// Picked up in another session, the story is that session's now.
+	was, _ := target.WorkingSession()
+	session, err := target.BindSession(true)
+	if err != nil {
+		return err
+	}
+	if session != "" && was != "" && was != session {
+		slog.Debug("start took the story over from the session working it",
+			"story", plan.id, "checkout", target.Root(), "from", was, "to", session)
+	}
+	if err := target.Claim(plan.id); err != nil {
+		return err
+	}
+	said.went = plan.id
+	return reportStart(cmd, target, plan.id, true, session, plan.at != "")
+}
+
+// beginIteration starts an iteration on the story the plan names, or picks it
+// up again.
+func beginIteration(cmd *cobra.Command, s, target *store.Store, plan startPlan, said *startSaid) error {
 	id := plan.id
 	// A story that is already in progress is being picked up again, whether
 	// or not the iteration that started it is still running.
@@ -155,19 +165,19 @@ func startLocked(cmd *cobra.Command, asked string, checked bool, said *startSaid
 	// for, which keeps a resume out of the tree the reviewers were stamped
 	// against.
 	if err := s.SetStoryStatus(id, model.StatusInProgress); err != nil {
-		return false, err
+		return err
 	}
 	if err := target.SetActive(id); err != nil {
-		return false, err
+		return err
 	}
 	session, err := target.BindSession(false)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	record, err := s.Record(id)
 	if err != nil {
-		return false, err
+		return err
 	}
 	released := releasedSinceStart(record)
 	// Where trunk is now is where this iteration's work starts from. Outside a
@@ -177,18 +187,18 @@ func startLocked(cmd *cobra.Command, asked string, checked bool, said *startSaid
 	}
 	record.Append("loop_start", "iteration started", s.Now())
 	if err := s.SaveRecord(record); err != nil {
-		return false, err
+		return err
 	}
 	// Last, so that a start killed before it leaves a story in progress,
 	// which the next start in any checkout picks up first.
 	if err := target.Claim(id); err != nil {
-		return false, err
+		return err
 	}
 	if released {
 		noteRelease(cmd.ErrOrStderr(), target, id)
 	}
 	said.went = id
-	return false, reportStart(cmd, target, id, resume, session, plan.at != "")
+	return reportStart(cmd, target, id, resume, session, plan.at != "")
 }
 
 // refuseIfNotRunnable holds a story named to `sdlc start` to what picking one
@@ -213,6 +223,8 @@ func refuseIfNotRunnable(b *model.Backlog, story *model.Story) error {
 			quote(id)+" is marked done",
 			"the backlog says it is finished, though its gate record does not").
 			WithFix("set its status back to ready in the backlog if the work is not finished")
+	case model.StatusTodo, model.StatusReady, model.StatusInProgress, model.StatusAwaitingHuman:
+		// Runnable by status; what it waits on is checked below.
 	}
 	blocked := b.BlockedBy(story)
 	if len(blocked) == 0 {
@@ -252,7 +264,7 @@ func refuseIfFinished(s *store.Store, id string) (*sdlcerr.Error, error) {
 		return nil, err
 	}
 	if _, remaining := record.NextGate(); remaining {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil, nil is the documented "not finished": every caller tests the refusal for nil
 	}
 	// The story is named: no iteration runs when this refuses a start, and a
 	// gate recorded without --story is refused for that, which sent whoever
@@ -457,104 +469,141 @@ func newStopCmd() *cobra.Command {
 			"Stopping when nothing is running is not an error.",
 		Example: "  sdlc stop",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, _, unlock, err := openStoreForWriting(cmd)
-			if err != nil {
-				return err
-			}
-			// Called through the variable: a landing lets the lock go while
-			// its commands run, and takes it again.
-			defer func() { unlock() }()
-			active, err := s.Active()
-			var unusable *sdlcerr.Error
-			switch {
-			case errors.As(err, &unusable) &&
-				(unusable.Code == sdlcerr.UnsafeStoryID || unusable.Code == sdlcerr.StateUnreadable):
-				// While the file names no story the hook enforces nothing, and
-				// doctor sends you here. Stop is the way out of a broken state,
-				// so it ends the iteration rather than refuse over the file.
-				fmt.Fprintln(cmd.ErrOrStderr(), "sdlc: .sdlc/state/active does not name a story, "+
-					"so this stop removes it without writing to any record.")
-				active = ""
-			case err != nil:
-				return err
-			}
-			if err == nil {
-				if landed, err := landIfFinished(cmd, s, active, &unlock); landed || err != nil {
-					return err
-				}
-			}
-			done := false
-			onRecord, closing := true, ""
-			if active != "" {
-				onRecord, closing = onTheRecord(cmd, s, active)
-			}
-			if active != "" && onRecord {
-				record, err := s.Record(active)
-				var unreadable *sdlcerr.Error
-				switch {
-				case errors.As(err, &unreadable) && unreadable.Code == sdlcerr.StateUnreadable:
-					// The hook refuses a commit while the record cannot be
-					// read, and its refusal sends you here to commit as
-					// yourself. So stop must not be one more thing the broken
-					// record traps: the iteration ends, off the record.
-					fmt.Fprintln(cmd.ErrOrStderr(), "sdlc: .sdlc/stories/"+active+"/"+model.RecordFile+
-						" could not be read, so this stop is not written to it. Run `sdlc doctor` to see why.")
-				case err != nil:
-					return err
-				default:
-					record.Append("loop_end", "iteration ended", s.Now())
-					if err := s.SaveRecord(record); err != nil {
-						return err
-					}
-					// The same function that owns the invariant, so that the
-					// sentence stop prints and the backlog cannot disagree.
-					if done, err = settleStory(s, active, record); err != nil {
-						// A story the backlog has lost must not trap the
-						// iteration: stop is the way out of a broken state.
-						var known *sdlcerr.Error
-						if !errors.As(err, &known) || known.Code != sdlcerr.StoryNotFound {
-							return err
-						}
-					}
-					if done {
-						if err := releaseFreeze(s, active); err != nil {
-							return err
-						}
-						forgetWatched(cmd.Context(), s, active)
-					} else if err := s.KeepClaim(active); err != nil {
-						// Put down, the story stays this checkout's until it is
-						// finished or a person releases it.
-						return err
-					}
-				}
-			}
-			if err := s.ClearActive(); err != nil {
-				return err
-			}
-
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(),
-					stopPayload{OK: true, Story: active, WasA: active != "", Done: done})
-			}
-			switch {
-			case active == "":
-				fmt.Fprintln(cmd.OutOrStdout(), "No iteration was running.")
-			case done:
-				fmt.Fprintf(cmd.OutOrStdout(),
-					"Ended the iteration on %s. Every gate passed, so the story is done "+
-						"and `sdlc start` moves on to the next one.\n", active)
-			case closing != "":
-				fmt.Fprint(cmd.OutOrStdout(), closing)
-			default:
-				fmt.Fprintf(cmd.OutOrStdout(),
-					"Stopped the iteration on %s. Nothing was recorded; `sdlc start` picks it up again.\n",
-					active)
-			}
-			return nil
-		},
+		RunE:    func(cmd *cobra.Command, _ []string) error { return runStop(cmd) },
 	}
 }
+
+func runStop(cmd *cobra.Command) error {
+	s, _, unlock, err := openStoreForWriting(cmd)
+	if err != nil {
+		return err
+	}
+	// Called through the variable: a landing lets the lock go while
+	// its commands run, and takes it again.
+	defer func() { unlock() }()
+	active, broken, err := activeToStop(cmd, s)
+	if err != nil {
+		return err
+	}
+	if !broken {
+		if landed, err := landIfFinished(cmd, s, active, &unlock); landed || err != nil {
+			return err
+		}
+	}
+	done, closing, err := endIteration(cmd, s, active)
+	if err != nil {
+		return err
+	}
+	if err := s.ClearActive(); err != nil {
+		return err
+	}
+
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(),
+			stopPayload{OK: true, Story: active, WasA: active != "", Done: done})
+	}
+	switch {
+	case active == "":
+		fmt.Fprintln(cmd.OutOrStdout(), "No iteration was running.")
+	case done:
+		fmt.Fprintf(cmd.OutOrStdout(),
+			"Ended the iteration on %s. Every gate passed, so the story is done "+
+				"and `sdlc start` moves on to the next one.\n", active)
+	case closing != "":
+		fmt.Fprint(cmd.OutOrStdout(), closing)
+	default:
+		fmt.Fprintf(cmd.OutOrStdout(),
+			stoppedIterationOn+"%s. Nothing was recorded; `sdlc start` picks it up again.\n",
+			active)
+	}
+	return nil
+}
+
+// activeToStop is the story the iteration is on. broken is set where the file
+// that names it cannot be used, and the iteration is ended without one.
+func activeToStop(cmd *cobra.Command, s *store.Store) (active string, broken bool, err error) {
+	active, err = s.Active()
+	var unusable *sdlcerr.Error
+	switch {
+	case errors.As(err, &unusable) &&
+		(unusable.Code == sdlcerr.UnsafeStoryID || unusable.Code == sdlcerr.StateUnreadable):
+		// While the file names no story the hook enforces nothing, and
+		// doctor sends you here. Stop is the way out of a broken state,
+		// so it ends the iteration rather than refuse over the file.
+		fmt.Fprintln(cmd.ErrOrStderr(), "sdlc: .sdlc/state/active does not name a story, "+
+			"so this stop removes it without writing to any record.")
+		return "", true, nil
+	case err != nil:
+		return active, true, err
+	}
+	return active, false, nil
+}
+
+// endIteration writes the end of the iteration to the story's record where
+// stop may, and reports whether that finished the story. closing is the line
+// stop ends with in place of its usual one.
+func endIteration(cmd *cobra.Command, s *store.Store, active string) (done bool, closing string, err error) {
+	if active == "" {
+		return false, "", nil
+	}
+	onRecord, closing := onTheRecord(cmd, s, active)
+	if !onRecord {
+		return false, closing, nil
+	}
+	done, err = recordLoopEnd(cmd, s, active)
+	return done, closing, err
+}
+
+// recordLoopEnd appends the end of the iteration to the story's record, and
+// settles the story if every gate has passed.
+func recordLoopEnd(cmd *cobra.Command, s *store.Store, active string) (bool, error) {
+	record, err := s.Record(active)
+	var unreadable *sdlcerr.Error
+	switch {
+	case errors.As(err, &unreadable) && unreadable.Code == sdlcerr.StateUnreadable:
+		// The hook refuses a commit while the record cannot be
+		// read, and its refusal sends you here to commit as
+		// yourself. So stop must not be one more thing the broken
+		// record traps: the iteration ends, off the record.
+		fmt.Fprintln(cmd.ErrOrStderr(), "sdlc: .sdlc/stories/"+active+"/"+model.RecordFile+
+			" could not be read, so this stop is not written to it. Run `sdlc doctor` to see why.")
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	record.Append("loop_end", "iteration ended", s.Now())
+	if err := s.SaveRecord(record); err != nil {
+		return false, err
+	}
+	// The same function that owns the invariant, so that the
+	// sentence stop prints and the backlog cannot disagree.
+	done, err := settleStory(s, active, record)
+	if err != nil {
+		// A story the backlog has lost must not trap the
+		// iteration: stop is the way out of a broken state.
+		var known *sdlcerr.Error
+		if !errors.As(err, &known) || known.Code != sdlcerr.StoryNotFound {
+			return done, err
+		}
+	}
+	if done {
+		if err := releaseFreeze(s, active); err != nil {
+			return done, err
+		}
+		forgetWatched(cmd.Context(), s, active)
+	} else if err := s.KeepClaim(active); err != nil {
+		// Put down, the story stays this checkout's until it is
+		// finished or a person releases it.
+		return done, err
+	}
+	return done, nil
+}
+
+// What stop says when it puts an iteration down without writing to a record.
+const (
+	stoppedIterationOn = "Stopped the iteration on "
+	notRecordedHere    = " in this checkout. Nothing was recorded; "
+)
 
 // onTheRecord reports whether stop writes to the story's record. It does not
 // where this checkout has no business writing it: with no main checkout to keep
@@ -578,18 +627,18 @@ func onTheRecord(cmd *cobra.Command, s *store.Store, active string) (onRecord bo
 	case h.Tied():
 		fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s is named by more than one checkout of this repository, "+
 			"so this stop puts it down here and writes nothing to its record.\n", active)
-		return false, "Stopped the iteration on " + active + " in this checkout. Nothing was recorded; " +
+		return false, stoppedIterationOn + active + notRecordedHere +
 			"once one checkout alone names it, `sdlc start` there picks it up again.\n"
 	case !h.Live:
 		fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s is held by a checkout that no longer exists, "+
 			"so this stop puts down this checkout's copy and writes nothing to its record.\n", active)
-		return false, "Stopped the iteration on " + active + " in this checkout. Nothing was recorded; " +
+		return false, stoppedIterationOn + active + notRecordedHere +
 			"the checkout that holds it is gone: a person runs `sdlc release " + active + " --reason \"...\"` " +
 			"in their own terminal, then `sdlc start " + active + "`.\n"
 	default:
 		fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s is held by another checkout of this repository, "+
 			"so this stop puts down this checkout's copy and writes nothing to its record.\n", active)
-		return false, "Stopped the iteration on " + active + " in this checkout. Nothing was recorded; " +
+		return false, stoppedIterationOn + active + notRecordedHere +
 			"the story carries on in the checkout that holds it.\n"
 	}
 }
@@ -724,210 +773,7 @@ func newGateCmd() *cobra.Command {
 			"  sdlc gate code_review fail --note \"AC-2 is untested\"",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			gate := model.Gate(args[0])
-			if !gate.Valid() {
-				return sdlcerr.New(sdlcerr.UnknownGate,
-					"there is no gate called "+quote(args[0]),
-					"this version knows "+model.GateNames())
-			}
-			status := model.GateStatus(args[1])
-			if !status.Valid() {
-				return sdlcerr.New(sdlcerr.UnknownGateStatus,
-					quote(args[1])+" is not a gate outcome",
-					"a gate either passed, failed, or has not been reached yet")
-			}
-
-			s, _, unlock, err := openStoreForWriting(cmd)
-			if err != nil {
-				return err
-			}
-			defer unlock()
-			id := storyID
-			if id == "" {
-				if id, err = activeStory(s, "gate records an outcome for the story being worked on"); err != nil {
-					return err
-				}
-			}
-			if err := refuseIfHeldElsewhere(s, id, "what a gate records is measured on the work in that checkout, not this one"); err != nil {
-				return err
-			}
-
-			// A gate is recorded against a story in the backlog, and the
-			// backlog is read before anything is written: a mistyped --story
-			// is refused rather than starting a record nothing will ever read.
-			if _, _, err := s.Story(id); err != nil {
-				return err
-			}
-			record, err := s.Record(id)
-			if err != nil {
-				return err
-			}
-			// What this gate asks git about the tree and HEAD, up to saving the
-			// record, which writes nothing either of them measures.
-			rd := readingOf(s)
-			// A passed code review is where the story's own commit is allowed,
-			// so HEAD moved since then is that commit, and a gate reopened on it
-			// measures from there. Held to where the story started, a code review
-			// reopened on work already committed could never pass again.
-			//
-			// The commit gate passing reads HEAD once, after its checks, below:
-			// read here, the HEAD it records would come before the clean check,
-			// and a commit made in between would hold work the record leaves out.
-			committing := gate == model.GateCommit && status == model.GatePass
-			if record.Pass(model.GateCodeReview) && !committing {
-				if head, err := rd.headOf(cmd.Context()); err == nil {
-					record.Base = head
-				}
-			}
-			if status == model.GatePass {
-				if err := requireEvidence(cmd.Context(), rd, id, gate, record); err != nil {
-					return err
-				}
-			}
-			if err := staffTheGate(cmd.Context(), rd, id, gate, status, record); err != nil {
-				return err
-			}
-			if gate == model.GateAnalysis && cmd.Flags().Changed(securityFlag) {
-				noteSensitivity(s, record, securitySensitive)
-				record.SetSecuritySensitive(securitySensitive)
-			}
-			// Only a gate that judged the freeze says what it accepted: a pass
-			// of any other would wipe what the last one that did had recorded.
-			if status == model.GatePass && rd.judged {
-				if recordAccepted(s, id, record, rd.trunkTests) != nil {
-					fmt.Fprintln(cmd.ErrOrStderr(), "sdlc: "+acceptedLine(id, trunkName(s), rd.trunkTests, false)+".")
-				}
-			}
-			reopened := record.SetGate(gate, status, note, s.Now())
-			// The story's commits are among the ones after HEAD when code review
-			// first passed, up to and including HEAD when the commit gate last
-			// passed.
-			//
-			// The hook refuses them until code review has passed, and
-			// requireUnmoved has just held HEAD to where the story started, so
-			// HEAD at the first pass is trunk before any of them. Only that pass
-			// takes the start, and the record's history says which pass it was,
-			// not an empty field: a later pass would take a HEAD after whatever
-			// the story had committed by then. A first pass with no commit to
-			// name, or one an older sdlc recorded, leaves the start unknown.
-			//
-			// The commit gate refused anything uncommitted, so HEAD at its pass
-			// holds all of the reviewed work, and a pass where HEAD names no
-			// commit is not recorded. Which of the commits since the code review
-			// are the story's is placeCommits' to say.
-			if status == model.GatePass {
-				switch {
-				case gate == model.GateCodeReview &&
-					record.Count(model.EventGate, model.GateEvent(model.GateCodeReview, model.GatePass)) == 0:
-					if record.CommitBase, err = headCommit(cmd.Context(), rd); err != nil {
-						return err
-					}
-				case gate == model.GateCommit:
-					var head string
-					if head, err = headCommit(cmd.Context(), rd); err != nil {
-						return err
-					}
-					// Keyed on HEAD, not on what the record ends up naming: no
-					// range is an outcome now, and a pass everywhere else.
-					if head == "" {
-						return sdlcerr.New(sdlcerr.RepositoryUnreadable,
-							"HEAD names no commit, so the commit gate cannot record where the story landed",
-							"the gate records the commit that holds the story's work, and git reports none")
-					}
-					// requireEvidence has just held this gate to a passed code
-					// review, so this is the HEAD a gate reopened on the story
-					// measures from, as every other gate takes it above.
-					record.Base = head
-					landed := placeCommits(cmd.Context(), s, id, record, head)
-					if err := requireNoteInRange(cmd.Context(), s.Root(), landed, note); err != nil {
-						return err
-					}
-					if inItsWorktree(s, id) {
-						if err := recordChange(cmd, s, id, record, head); err != nil {
-							return err
-						}
-					}
-				}
-			}
-			record.Append(model.EventGate, model.GateEvent(gate, status), s.Now())
-			// A failure is counted on the record before it is saved: one that
-			// reaches the limit is saved with the hand-over, or not at all.
-			handedOver, message := "", ""
-			if status == model.GateFail {
-				limit := s.Config().Loop.MaxReworkRounds
-				failures := record.SinceDecision(model.EventGate, model.GateEvent(gate, model.GateFail))
-				message = fmt.Sprintf("%s has failed %d times, and loop.max_rework_rounds is %d, "+
-					"so another attempt would meet the same wall. The last note: %s",
-					gate, failures, limit, lastNote(note))
-				if handedOver, err = handOverAt(cmd, s, record, nil, failures, limit, "gate_failing", message, "the gate failure"); err != nil {
-					return err
-				}
-			} else if err := s.SaveRecord(record); err != nil {
-				return err
-			}
-			// A story handed over is the backlog's awaiting_human, written with
-			// the hand-over; there is nothing left to settle, and nothing left
-			// that could fail once a person has been asked.
-			done := false
-			if handedOver == "" {
-				if done, err = settleStory(s, id, record); err != nil {
-					return err
-				}
-			}
-
-			start, end, past := "", "", ""
-			if gate == model.GateCommit {
-				start, end, past = record.CommitBase, record.Commit, record.HeadPastCommit
-			}
-			if wantJSON(cmd) {
-				return emitJSON(cmd.OutOrStdout(), gatePayload{
-					OK: true, Story: id, Gate: string(gate), Status: string(status), Note: note,
-					CommitBase: start, Commit: end, RangeUnknown: gate == model.GateCommit && record.RangeUnknown,
-					HeadPastCommit: past, Reopened: reopened,
-					Done: done, HandedOver: handedOver,
-				})
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s\n", id, gate, status)
-			if note != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", oneLine(note))
-			}
-			if len(reopened) > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "  reopened: %s\n", strings.Join(reopened, ", "))
-			}
-			if end != "" {
-				landed := end[:min(len(end), 12)]
-				if start != "" {
-					landed = start[:min(len(start), 12)] + ".." + landed
-				}
-				if inItsWorktree(s, id) {
-					// Committed on its branch: trunk has none of it until the
-					// story lands.
-					fmt.Fprintf(cmd.OutOrStdout(), "  committed on %s in %s\n", store.StoryBranch(id), landed)
-				} else {
-					fmt.Fprintf(cmd.OutOrStdout(), "  landed in %s\n", landed)
-				}
-				// Not a refusal: the sign that the range may stop short, kept on
-				// the record for `sdlc log`, and true in every case it fires, the
-				// ordinary one included, where a person committed after the
-				// session did. The reverse carries no sign: an end that is HEAD
-				// can still be somebody else's commit.
-				if past != "" {
-					fmt.Fprintln(cmd.OutOrStdout(), "  "+headPast(past, end))
-				}
-			}
-			if gate == model.GateCommit && record.RangeUnknown {
-				fmt.Fprintln(cmd.OutOrStdout(), "  no range recorded: "+noSingleRange)
-			}
-			if done {
-				fmt.Fprintf(cmd.OutOrStdout(), "\n%s is done: every gate has passed.\n", id)
-			} else if _, remaining := record.NextGate(); !remaining && inItsWorktree(s, id) {
-				fmt.Fprintf(cmd.OutOrStdout(), "\nEvery gate on %s has passed. `sdlc stop` in %s lands it on %s.\n",
-					id, worktreeIn(id), trunkName(s))
-			}
-			if handedOver != "" {
-				sayHandedOver(cmd.OutOrStdout(), id, message)
-			}
-			return nil
+			return runGate(cmd, args, gateFlags{note: note, story: storyID, securitySensitive: securitySensitive})
 		},
 	}
 	cmd.Flags().StringVar(&note, "note", "", "why the gate came out this way, in one line")
@@ -937,6 +783,288 @@ func newGateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&storyID, "story", "",
 		"record against this story instead of the one being worked on")
 	return cmd
+}
+
+// gateFlags are the flags `sdlc gate` was given.
+type gateFlags struct {
+	note, story       string
+	securitySensitive bool
+}
+
+// gateRun is one `sdlc gate` in progress: the story, the gate and outcome being
+// recorded, and the record they are recorded on.
+type gateRun struct {
+	cmd    *cobra.Command
+	s      *store.Store
+	rd     *reading
+	id     string
+	gate   model.Gate
+	status model.GateStatus
+	note   string
+	record *model.Record
+}
+
+func runGate(cmd *cobra.Command, args []string, flags gateFlags) error {
+	gate, status, err := parseGate(args)
+	if err != nil {
+		return err
+	}
+
+	s, _, unlock, err := openStoreForWriting(cmd)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	id := flags.story
+	if id == "" {
+		if id, err = activeStory(s, "gate records an outcome for the story being worked on"); err != nil {
+			return err
+		}
+	}
+	if err := refuseIfHeldElsewhere(s, id, "what a gate records is measured on the work in that checkout, not this one"); err != nil {
+		return err
+	}
+
+	// A gate is recorded against a story in the backlog, and the
+	// backlog is read before anything is written: a mistyped --story
+	// is refused rather than starting a record nothing will ever read.
+	if _, _, err := s.Story(id); err != nil {
+		return err
+	}
+	record, err := s.Record(id)
+	if err != nil {
+		return err
+	}
+	// What this gate asks git about the tree and HEAD, up to saving the
+	// record, which writes nothing either of them measures.
+	g := &gateRun{cmd: cmd, s: s, rd: readingOf(s), id: id, gate: gate, status: status, note: flags.note, record: record}
+	if err := g.checkAndStaff(flags); err != nil {
+		return err
+	}
+	reopened := record.SetGate(gate, status, flags.note, s.Now())
+	if err := g.noteCommits(); err != nil {
+		return err
+	}
+	record.Append(model.EventGate, model.GateEvent(gate, status), s.Now())
+	handedOver, message, err := g.save()
+	if err != nil {
+		return err
+	}
+	// A story handed over is the backlog's awaiting_human, written with
+	// the hand-over; there is nothing left to settle, and nothing left
+	// that could fail once a person has been asked.
+	done := false
+	if handedOver == "" {
+		if done, err = settleStory(s, id, record); err != nil {
+			return err
+		}
+	}
+	return g.report(reopened, done, handedOver, message)
+}
+
+// parseGate is the gate and the outcome the command line names.
+func parseGate(args []string) (model.Gate, model.GateStatus, error) {
+	gate := model.Gate(args[0])
+	if !gate.Valid() {
+		return "", "", sdlcerr.New(sdlcerr.UnknownGate,
+			"there is no gate called "+quote(args[0]),
+			"this version knows "+model.GateNames())
+	}
+	status := model.GateStatus(args[1])
+	if !status.Valid() {
+		return "", "", sdlcerr.New(sdlcerr.UnknownGateStatus,
+			quote(args[1])+" is not a gate outcome",
+			"a gate either passed, failed, or has not been reached yet")
+	}
+	return gate, status, nil
+}
+
+// checkAndStaff holds the gate to the evidence it needs, and takes what it
+// measures onto the record, short of recording the gate itself.
+func (g *gateRun) checkAndStaff(flags gateFlags) error {
+	ctx, rd, record := g.cmd.Context(), g.rd, g.record
+	// A passed code review is where the story's own commit is allowed,
+	// so HEAD moved since then is that commit, and a gate reopened on it
+	// measures from there. Held to where the story started, a code review
+	// reopened on work already committed could never pass again.
+	//
+	// The commit gate passing reads HEAD once, after its checks, below:
+	// read here, the HEAD it records would come before the clean check,
+	// and a commit made in between would hold work the record leaves out.
+	committing := g.gate == model.GateCommit && g.status == model.GatePass
+	if record.Pass(model.GateCodeReview) && !committing {
+		g.moveBase(ctx)
+	}
+	if g.status == model.GatePass {
+		if err := requireEvidence(ctx, rd, g.id, g.gate, record); err != nil {
+			return err
+		}
+	}
+	if err := staffTheGate(ctx, rd, g.id, g.gate, g.status, record); err != nil {
+		return err
+	}
+	if g.gate == model.GateAnalysis && g.cmd.Flags().Changed(securityFlag) {
+		noteSensitivity(g.s, record, flags.securitySensitive)
+		record.SetSecuritySensitive(flags.securitySensitive)
+	}
+	// Only a gate that judged the freeze says what it accepted: a pass
+	// of any other would wipe what the last one that did had recorded.
+	if g.status == model.GatePass && rd.judged {
+		if recordAccepted(g.s, g.id, record, rd.trunkTests) != nil {
+			fmt.Fprintln(g.cmd.ErrOrStderr(), "sdlc: "+acceptedLine(g.id, trunkName(g.s), rd.trunkTests, false)+".")
+		}
+	}
+	return nil
+}
+
+// moveBase measures the story from HEAD as it is now, where HEAD can be read.
+func (g *gateRun) moveBase(ctx context.Context) {
+	if head, err := g.rd.headOf(ctx); err == nil {
+		g.record.Base = head
+	}
+}
+
+// noteCommits takes the story's commits onto the record when the gate that
+// passes is the one that bounds them.
+//
+// The story's commits are among the ones after HEAD when code review
+// first passed, up to and including HEAD when the commit gate last
+// passed.
+//
+// The hook refuses them until code review has passed, and
+// requireUnmoved has just held HEAD to where the story started, so
+// HEAD at the first pass is trunk before any of them. Only that pass
+// takes the start, and the record's history says which pass it was,
+// not an empty field: a later pass would take a HEAD after whatever
+// the story had committed by then. A first pass with no commit to
+// name, or one an older sdlc recorded, leaves the start unknown.
+//
+// The commit gate refused anything uncommitted, so HEAD at its pass
+// holds all of the reviewed work, and a pass where HEAD names no
+// commit is not recorded. Which of the commits since the code review
+// are the story's is placeCommits' to say.
+func (g *gateRun) noteCommits() error {
+	if g.status != model.GatePass {
+		return nil
+	}
+	switch {
+	case g.gate == model.GateCodeReview &&
+		g.record.Count(model.EventGate, model.GateEvent(model.GateCodeReview, model.GatePass)) == 0:
+		var err error
+		g.record.CommitBase, err = headCommit(g.cmd.Context(), g.rd)
+		return err
+	case g.gate == model.GateCommit:
+		return g.noteCommitGate()
+	}
+	return nil
+}
+
+// noteCommitGate records where the story landed when the commit gate passes.
+func (g *gateRun) noteCommitGate() error {
+	ctx, record := g.cmd.Context(), g.record
+	head, err := headCommit(ctx, g.rd)
+	if err != nil {
+		return err
+	}
+	// Keyed on HEAD, not on what the record ends up naming: no
+	// range is an outcome now, and a pass everywhere else.
+	if head == "" {
+		return sdlcerr.New(sdlcerr.RepositoryUnreadable,
+			"HEAD names no commit, so the commit gate cannot record where the story landed",
+			"the gate records the commit that holds the story's work, and git reports none")
+	}
+	// requireEvidence has just held this gate to a passed code
+	// review, so this is the HEAD a gate reopened on the story
+	// measures from, as every other gate takes it above.
+	record.Base = head
+	landed := placeCommits(ctx, g.s, g.id, record, head)
+	if err := requireNoteInRange(ctx, g.s.Root(), landed, g.note); err != nil {
+		return err
+	}
+	if inItsWorktree(g.s, g.id) {
+		return recordChange(g.cmd, g.s, g.id, record, head)
+	}
+	return nil
+}
+
+// save writes the record. A failure is counted on it before it is saved: one
+// that reaches the limit is saved with the hand-over, or not at all.
+func (g *gateRun) save() (handedOver, message string, err error) {
+	if g.status != model.GateFail {
+		return "", "", g.s.SaveRecord(g.record)
+	}
+	limit := g.s.Config().Loop.MaxReworkRounds
+	failures := g.record.SinceDecision(model.EventGate, model.GateEvent(g.gate, model.GateFail))
+	message = fmt.Sprintf("%s has failed %d times, and loop.max_rework_rounds is %d, "+
+		"so another attempt would meet the same wall. The last note: %s",
+		g.gate, failures, limit, lastNote(g.note))
+	handedOver, err = handOverAt(g.cmd, g.s, g.record, nil, failures, limit, "gate_failing", message, "the gate failure")
+	return handedOver, message, err
+}
+
+// report says, or emits, what the gate recorded.
+func (g *gateRun) report(reopened []string, done bool, handedOver, message string) error {
+	cmd, record, id, gate, note := g.cmd, g.record, g.id, g.gate, g.note
+	start, end, past := "", "", ""
+	if gate == model.GateCommit {
+		start, end, past = record.CommitBase, record.Commit, record.HeadPastCommit
+	}
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), gatePayload{
+			OK: true, Story: id, Gate: string(gate), Status: string(g.status), Note: note,
+			CommitBase: start, Commit: end, RangeUnknown: gate == model.GateCommit && record.RangeUnknown,
+			HeadPastCommit: past, Reopened: reopened,
+			Done: done, HandedOver: handedOver,
+		})
+	}
+	w := cmd.OutOrStdout()
+	fmt.Fprintf(w, "%s  %s  %s\n", id, gate, g.status)
+	if note != "" {
+		fmt.Fprintf(w, "  %s\n", oneLine(note))
+	}
+	if len(reopened) > 0 {
+		fmt.Fprintf(w, "  reopened: %s\n", strings.Join(reopened, ", "))
+	}
+	if end != "" {
+		g.sayLanded(start, end, past)
+	}
+	if gate == model.GateCommit && record.RangeUnknown {
+		fmt.Fprintln(w, "  no range recorded: "+noSingleRange)
+	}
+	if done {
+		fmt.Fprintf(w, "\n%s is done: every gate has passed.\n", id)
+	} else if _, remaining := record.NextGate(); !remaining && inItsWorktree(g.s, id) {
+		fmt.Fprintf(w, "\nEvery gate on %s has passed. `sdlc stop` in %s lands it on %s.\n",
+			id, worktreeIn(id), trunkName(g.s))
+	}
+	if handedOver != "" {
+		sayHandedOver(w, id, message)
+	}
+	return nil
+}
+
+// sayLanded says where the commit gate found the story's commits.
+func (g *gateRun) sayLanded(start, end, past string) {
+	w := g.cmd.OutOrStdout()
+	landed := end[:min(len(end), 12)]
+	if start != "" {
+		landed = start[:min(len(start), 12)] + ".." + landed
+	}
+	if inItsWorktree(g.s, g.id) {
+		// Committed on its branch: trunk has none of it until the
+		// story lands.
+		fmt.Fprintf(w, "  committed on %s in %s\n", store.StoryBranch(g.id), landed)
+	} else {
+		fmt.Fprintf(w, "  landed in %s\n", landed)
+	}
+	// Not a refusal: the sign that the range may stop short, kept on
+	// the record for `sdlc log`, and true in every case it fires, the
+	// ordinary one included, where a person committed after the
+	// session did. The reverse carries no sign: an end that is HEAD
+	// can still be somebody else's commit.
+	if past != "" {
+		fmt.Fprintln(w, "  "+headPast(past, end))
+	}
 }
 
 // ---------------------------------------------------------------- shared

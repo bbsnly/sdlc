@@ -63,7 +63,7 @@ func TestDoctorOffersNoRemovalOfAStoryWorktreeWhoseHeadHoldsACommitOnNoBranch(t 
 	swGit(t, main, "worktree", "add", "--quiet", "--detach", wt, "main")
 	swCommitFile(t, wt, "work.go", "package work\n", "work on no branch")
 
-	c, ok := suChecked(t, main, "story worktrees")
+	c, ok := suChecked(t, main)
 	if !ok || c.State != stateProblem {
 		t.Fatalf("doctor has no story worktrees problem: %+v", c)
 	}
@@ -81,7 +81,7 @@ func TestDoctorKeepsABranchNameOutOfTheCommandsItGives(t *testing.T) {
 	swGit(t, main, "worktree", "add", "--quiet", "-b", "odd;touch-x", wt, "main")
 	swCommitFile(t, wt, "work.go", "package work\n", "work on another branch")
 
-	c, ok := suChecked(t, main, "story worktrees")
+	c, ok := suChecked(t, main)
 	if !ok || c.State != stateProblem {
 		t.Fatalf("doctor has no story worktrees problem: %+v", c)
 	}

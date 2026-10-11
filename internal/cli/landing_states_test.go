@@ -25,6 +25,7 @@ package cli
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -53,9 +54,7 @@ func lxRepository(t *testing.T, set map[string]string, thresholds map[string]any
 func lxRepositoryAt(t *testing.T, root string, set map[string]string, thresholds map[string]any, stories ...wtStory) {
 	t.Helper()
 	commands := ldPassing()
-	for k, v := range set {
-		commands[k] = v
-	}
+	maps.Copy(commands, set)
 	ldRepositoryAt(t, root, func(root string) {
 		setConfigOnDisk(t, root, "commands", commands)
 		if thresholds == nil {
@@ -390,34 +389,54 @@ func TestLandingRefusesEachStateWithItsCode(t *testing.T) {
 	}{
 		{name: "E0055 the worktree part-way through a rebase", code: ldCheckFailed,
 			prepare: func(t *testing.T, main, wt string) {
+				t.Helper()
 				ldMoveTrunk(t, main)
 				swGitTry(t, wt, "-c", "user.email=t@example.com", "-c", "user.name=Test", "rebase", "--exec", "false", "main")
 			}},
 		{name: "E0055 the worktree on no branch", code: ldCheckFailed,
-			prepare: func(t *testing.T, _, wt string) { swGit(t, wt, "switch", "--quiet", "--detach") }},
+			prepare: func(t *testing.T, _, wt string) {
+				t.Helper()
+				swGit(t, wt, "switch", "--quiet", "--detach")
+			}},
 		{name: "E0055 the worktree on another branch", code: ldCheckFailed,
-			prepare: func(t *testing.T, _, wt string) { swGit(t, wt, "switch", "--quiet", "-c", "other") }},
+			prepare: func(t *testing.T, _, wt string) {
+				t.Helper()
+				swGit(t, wt, "switch", "--quiet", "-c", "other")
+			}},
 		{name: "E0055 the story's branch gone", code: ldCheckFailed,
 			prepare: func(t *testing.T, _, wt string) {
+				t.Helper()
 				swGit(t, wt, "switch", "--quiet", "--detach")
 				swGit(t, wt, "branch", "--quiet", "-D", "story/US-001")
 			}},
 		{name: "E0045 trunk's branch gone", code: "SDLC-E0045", spike: true,
-			prepare: func(t *testing.T, main, _ string) { swGit(t, main, "branch", "--quiet", "-D", "main") }},
+			prepare: func(t *testing.T, main, _ string) {
+				t.Helper()
+				swGit(t, main, "branch", "--quiet", "-D", "main")
+			}},
 		{name: "E0054 a merge commit on the story's branch", code: ldBehindTrunk,
-			prepare: func(t *testing.T, main, wt string) { lxMerge(t, main, wt) }},
+			prepare: func(t *testing.T, main, wt string) {
+				t.Helper()
+				lxMerge(t, main, wt)
+			}},
 		{name: "E0055 a merge commit trunk already holds", code: ldCheckFailed, spike: true, already: true,
-			prepare: func(t *testing.T, main, wt string) { lxMerge(t, main, wt) }},
+			prepare: func(t *testing.T, main, wt string) {
+				t.Helper()
+				lxMerge(t, main, wt)
+			}},
 		{name: "E0055 the loop's own files in the range", code: ldCheckFailed, names: ".sdlc/notes.json",
 			prepare: func(t *testing.T, _, wt string) {
+				t.Helper()
 				swCommitFile(t, wt, ".sdlc/notes.json", "{}\n", "the loop's files")
 			}},
 		{name: "E0055 the loop's own files in another case", code: ldCheckFailed, spike: true,
 			prepare: func(t *testing.T, _, wt string) {
+				t.Helper()
 				swCommitFile(t, wt, ".SDLC/notes.json", "{}\n", "the loop's files, in capitals")
 			}},
 		{name: "E0032 the worktree not clean before the commands", code: "SDLC-E0032",
 			prepare: func(t *testing.T, main, wt string) {
+				t.Helper()
 				ldMoveTrunk(t, main)
 				ldRebase(t, wt)
 				writeFile(t, wt, "README.md", "# Billing, edited in the worktree\n")
@@ -425,27 +444,34 @@ func TestLandingRefusesEachStateWithItsCode(t *testing.T) {
 		{name: "E0055 a command that moves a branch", code: ldCheckFailed, ownMove: true,
 			commands: map[string]string{"test": "git -c user.email=t@example.com -c user.name=Test commit --quiet --allow-empty -m sneaky"},
 			prepare: func(t *testing.T, main, wt string) {
+				t.Helper()
 				ldMoveTrunk(t, main)
 				ldRebase(t, wt)
 			}},
 		{name: "E0055 a command that rewrites a tracked file", code: ldCheckFailed, names: "README.md",
 			commands: map[string]string{"build": "echo rebuilt >> README.md"},
 			prepare: func(t *testing.T, main, wt string) {
+				t.Helper()
 				ldMoveTrunk(t, main)
 				ldRebase(t, wt)
 			}},
 		{name: "E0055 coverage that prints no number", code: ldCheckFailed,
 			commands: map[string]string{"coverage": "exit 0"},
 			prepare: func(t *testing.T, main, wt string) {
+				t.Helper()
 				ldMoveTrunk(t, main)
 				ldRebase(t, wt)
 			}},
 		{name: "E0056 a merge part-way in the main checkout", code: ldUncommitted,
 			prepare: func(t *testing.T, main, _ string) {
+				t.Helper()
 				writeFile(t, main, ".git/MERGE_HEAD", ldTrunk(t, main)+"\n")
 			}},
 		{name: "E0056 the main checkout's index locked", code: ldUncommitted, names: "index.lock",
-			prepare: func(t *testing.T, main, _ string) { writeFile(t, main, ".git/index.lock", "") }},
+			prepare: func(t *testing.T, main, _ string) {
+				t.Helper()
+				writeFile(t, main, ".git/index.lock", "")
+			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			main, wt := ldWalked(t, ldWalk{finished: true, lx: true, set: tc.commands, spike: tc.spike})

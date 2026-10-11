@@ -218,9 +218,16 @@ func quoteSome(names []string) string {
 
 // ---------------------------------------------------------------- the landing
 
+// commandCoverage and commandMutation are the configured commands whose last
+// number is held to a threshold.
+const (
+	commandCoverage = "coverage"
+	commandMutation = "mutation"
+)
+
 // landingCommands are the configured commands a landing runs on the tree that
 // lands, in the order it runs them.
-var landingCommands = []string{"build", "test", "lint", "fmt_check", "coverage", "mutation"}
+var landingCommands = []string{"build", "test", "lint", "fmt_check", commandCoverage, commandMutation}
 
 const (
 	// commandOutputLimit is how much of what a failed command printed its
@@ -324,6 +331,21 @@ func landIfFinished(cmd *cobra.Command, s *store.Store, active string, unlock *f
 	return true, l.land()
 }
 
+// Phrases the landing's refusals share, which each have to say the same thing
+// in the same words.
+const (
+	whatLandsIs    = "what lands is "
+	andClause      = ", and "
+	isAtClause     = " is at "
+	commandsPrefix = "commands."
+)
+
+// noUnlock stands in for a lock that is not held, so that a deferred unlock
+// has something to call.
+func noUnlock() {
+	// Empty on purpose: the lock was let go before this was put in its place.
+}
+
 // landingWait is how long a stop waits for the landing in front of it. It is
 // under the ten minutes a session's command may run for, with room for the
 // stop's own work after it.
@@ -352,7 +374,7 @@ func (l *lander) waitItsTurn() (*store.Guard, bool, error) {
 	// The landing lock is never waited for with the project's lock held: the
 	// stop in front takes that one back once its commands have run.
 	(*l.unlock)()
-	*l.unlock = func() {}
+	*l.unlock = noUnlock
 	fmt.Fprintf(l.cmd.ErrOrStderr(), "sdlc: %s; this waits up to %s for it. Nothing has changed: a stop cut short "+
 		"while it waits can be run again at once\n", busy.Why, minutes(landingWait))
 	if turn, err = l.s.LockLandings(l.id, landingWait); err != nil {
@@ -368,14 +390,21 @@ func (l *lander) waitItsTurn() (*store.Guard, bool, error) {
 		return turn, false, err
 	}
 	*l.unlock = g.Release
+	landed, err := l.landedWhileWaiting()
+	return turn, landed, err
+}
+
+// landedWhileWaiting asks L0 again once the stop has both locks, and reports
+// true where the story landed meanwhile.
+func (l *lander) landedWhileWaiting() (bool, error) {
 	// The first stop of the same story takes its worktree away as it lands,
 	// and so can a person, for a story that did not land: the backlog says
 	// which, never the missing directory.
 	if _, err := os.Stat(l.s.Root()); errors.Is(err, fs.ErrNotExist) {
-		if story, _, err := l.s.Story(l.id); err == nil && story.Status == model.StatusDone {
-			return turn, true, nil
+		if l.isDone() {
+			return true, nil
 		}
-		return turn, false, sdlcerr.New(sdlcerr.LandingCheckFailed,
+		return false, sdlcerr.New(sdlcerr.LandingCheckFailed,
 			worktreeIn(l.id)+" is gone, and "+quote(l.id)+" has not landed",
 			"the worktree was taken away while this stop waited its turn to land, and the backlog does not have "+
 				"the story as done").
@@ -384,19 +413,19 @@ func (l *lander) waitItsTurn() (*store.Guard, bool, error) {
 	}
 	active, err := l.s.Active()
 	if err != nil {
-		return turn, false, err
+		return false, err
 	}
 	id, running, err := whenItLands(l.s, active)
 	if err != nil {
-		return turn, false, err
+		return false, err
 	}
 	if id == l.id && running == l.running {
-		return turn, false, nil
+		return false, nil
 	}
-	if story, _, err := l.s.Story(l.id); err == nil && story.Status == model.StatusDone {
-		return turn, true, nil
+	if l.isDone() {
+		return true, nil
 	}
-	return turn, false, sdlcerr.New(sdlcerr.LandingCheckFailed,
+	return false, sdlcerr.New(sdlcerr.LandingCheckFailed,
 		quote(l.id)+" changed while this stop waited its turn to land",
 		"the landing asks again, once the story in front has landed, whether this one is still finished and held "+
 			"here, and it no longer is: a gate on it was recorded again, a question went to a person, or the "+
@@ -404,6 +433,12 @@ func (l *lander) waitItsTurn() (*store.Guard, bool, error) {
 		WithFix(`nothing is to be put right for the landing: "sdlc status" in ` + worktreeIn(l.id) +
 			` says where the story stands now. Where a gate is open again, the loop carries on from it; where a ` +
 			`question is with a person, an assistant stops and tells the person`)
+}
+
+// isDone reports whether the backlog has the story as done.
+func (l *lander) isDone() bool {
+	story, _, err := l.s.Story(l.id)
+	return err == nil && story.Status == model.StatusDone
 }
 
 // minutes is a wait as a person reads it.
@@ -488,29 +523,9 @@ func claimedHere(s *store.Store, id string) bool {
 // land is L1 to L12, once L0 has found the story to land and its lock is held.
 func (l *lander) land() error {
 	ctx := l.cmd.Context()
-	m, err := mainSettingsOf(l.s)
+	st, err := l.readyToMove(ctx)
 	if err != nil {
 		return l.refused(err)
-	}
-	l.m = m
-	st, err := l.check(ctx)
-	if err != nil {
-		return l.refused(err)
-	}
-	// Trunk moved on since the story left it: everything above was asked of
-	// the story as it stands, and only then is it put onto trunk.
-	if st.fork != "" {
-		if st, err = l.ontoTrunk(ctx, st); err != nil {
-			return l.refused(err)
-		}
-	}
-	if st.needsCommands() {
-		if err := l.runLandingCommands(ctx, st); err != nil {
-			return l.refused(err)
-		}
-		if st, err = l.askAgain(ctx, st); err != nil {
-			return l.refused(err)
-		}
 	}
 	holding, err := gitx.CheckedOut(ctx, l.s.Root(), l.m.trunk)
 	if err != nil {
@@ -526,6 +541,41 @@ func (l *lander) land() error {
 	if err := l.finish(ctx, st); err != nil {
 		return err
 	}
+	return l.reportLanded(ctx, st, holding)
+}
+
+// readyToMove is L1 to L10, up to the move itself: the checks, the story put
+// onto trunk where trunk moved, and the commands the landing runs.
+func (l *lander) readyToMove(ctx context.Context) (landState, error) {
+	m, err := mainSettingsOf(l.s)
+	if err != nil {
+		return landState{}, err
+	}
+	l.m = m
+	st, err := l.check(ctx)
+	if err != nil {
+		return st, err
+	}
+	// Trunk moved on since the story left it: everything above was asked of
+	// the story as it stands, and only then is it put onto trunk.
+	if st.fork != "" {
+		if st, err = l.ontoTrunk(ctx, st); err != nil {
+			return st, err
+		}
+	}
+	if st.needsCommands() {
+		if err := l.runLandingCommands(ctx, st); err != nil {
+			return st, err
+		}
+		if st, err = l.askAgain(ctx, st); err != nil {
+			return st, err
+		}
+	}
+	return st, nil
+}
+
+// reportLanded says what landed, on stderr where stdout is the JSON.
+func (l *lander) reportLanded(ctx context.Context, st landState, holding []string) error {
 	notes := l.cmd.OutOrStdout()
 	if wantJSON(l.cmd) {
 		notes = l.cmd.ErrOrStderr()
@@ -586,7 +636,7 @@ func (l *lander) worktreeReady(ctx context.Context) (string, error) {
 	if op != "" {
 		return "", sdlcerr.New(sdlcerr.LandingCheckFailed,
 			"the story's worktree is part-way through "+op,
-			"what lands is "+branch+" as it is committed, and part-way through "+op+
+			whatLandsIs+branch+" as it is committed, and part-way through "+op+
 				" the worktree is on neither what was committed nor what will be").
 			WithFix(`a person finishes ` + op + ` in ` + in + `, or abandons it -- "git rebase --abort" abandons a ` +
 				`rebase -- then runs "sdlc stop" there again; an assistant abandons a rebase it started with ` +
@@ -613,14 +663,14 @@ func (l *lander) worktreeReady(ctx context.Context) (string, error) {
 	case on == "":
 		return "", sdlcerr.New(sdlcerr.LandingCheckFailed,
 			"the story's worktree is on no branch",
-			"what lands is "+branch+", and the worktree's HEAD is not on it").
+			whatLandsIs+branch+", and the worktree's HEAD is not on it").
 			WithFix(`a person keeps any commit made there on no branch, then switches the worktree back with "git switch ` +
 				branch + `" in ` + in + ` and runs "sdlc stop" there again; ` + assistantEscalates)
 	case on != branch:
 		// Named as a shell reads it back: a branch name can hold anything.
 		return "", sdlcerr.New(sdlcerr.LandingCheckFailed,
 			"the story's worktree is on "+shellWord(on)+", not "+branch,
-			"what lands is "+branch+", and the worktree's HEAD is on another branch").
+			whatLandsIs+branch+", and the worktree's HEAD is on another branch").
 			WithFix(`a person keeps what ` + shellWord(on) + ` holds, then switches the worktree back with "git switch ` +
 				branch + `" in ` + in + ` and runs "sdlc stop" there again; ` + assistantEscalates)
 	}
@@ -649,9 +699,8 @@ func (l *lander) readTrunk(ctx context.Context, st *landState) error {
 	}
 	if err != nil {
 		why := "the landing reads the commands, and what passing them means, from trunk as it commits them"
-		var known *sdlcerr.Error
-		if errors.As(err, &known) {
-			why += ", and " + known.What + ": " + known.Why
+		if known, ok := errors.AsType[*sdlcerr.Error](err); ok {
+			why += andClause + known.What + ": " + known.Why
 		}
 		return sdlcerr.New(sdlcerr.ConfigInvalid,
 			trunk+"'s "+config.File+" at "+tip[:12]+" could not be read", why).
@@ -668,23 +717,10 @@ func (l *lander) readTrunk(ctx context.Context, st *landState) error {
 
 // whereTrunkStands is L3: B, and R from where trunk stands against S.
 func (l *lander) whereTrunkStands(ctx context.Context, st *landState) error {
-	root, trunk, branch := l.s.Root(), l.m.trunk, store.StoryBranch(l.id)
+	root := l.s.Root()
 	T, S := st.trunkTip, st.tip
-	st.base = st.record.ChangeBase
-	if st.base == "" {
-		// Committed before the change was measured at the commit gate: the
-		// story's change is what S has that trunk has not.
-		base, err := gitx.MergeBase(ctx, root, T, S)
-		if err != nil {
-			return err
-		}
-		if base == "" {
-			return sdlcerr.New(sdlcerr.BranchBehindTrunk,
-				branch+" shares no history with "+trunk,
-				trunk+" is at "+T[:12]+" and "+branch+" at "+S[:12]+", and neither has a commit of the other's").
-				WithFix(`a person decides how the story's commits are to reach ` + trunk + `; ` + assistantEscalates)
-		}
-		st.base = base
+	if err := l.findBase(ctx, st); err != nil {
+		return err
 	}
 	if mk := st.record.Landing; mk != nil && l.markStands(ctx, *mk, T, S) {
 		st.from, st.marked = mk.From, true
@@ -701,65 +737,115 @@ func (l *lander) whereTrunkStands(ctx context.Context, st *landState) error {
 		// A person brought the story in, or a landing was cut short: nothing
 		// moves.
 		st.already = true
-		if st.marked {
-			return nil
-		}
-		holds, err := gitx.IsAncestor(ctx, root, st.base, S)
-		if err != nil {
-			return err
-		}
-		if !holds {
-			return sdlcerr.New(sdlcerr.ReviewsMissing,
-				trunk+" already holds "+branch+", and not the change its reviewers saw",
-				branch+" at "+S[:12]+" no longer holds "+st.base[:12]+", where the reviewed change began").
-				WithFix(l.reopenFix())
-		}
-		st.from = st.base
-		return nil
+		return l.alreadyOnTrunk(ctx, st)
 	}
 	forward, err := gitx.IsAncestor(ctx, root, T, S)
 	if err != nil {
 		return err
 	}
 	if !forward {
-		// A trunk that only moved on, as it does each time another story
-		// lands, is one the stop puts the story onto itself. The story is
-		// judged first from where it left trunk's history.
-		moved, err := gitx.IsAncestor(ctx, root, st.base, T)
-		if err != nil {
-			return err
-		}
-		if moved {
-			fork, err := gitx.MergeBase(ctx, root, T, S)
-			if err != nil {
-				return err
-			}
-			if fork != "" {
-				st.fork, st.from, st.marked = fork, fork, false
-				return nil
-			}
-		}
-		what := trunk + " was rewritten since " + branch + " was cut"
-		return sdlcerr.New(sdlcerr.BranchBehindTrunk, what,
-			trunk+" is at "+T[:12]+", which "+branch+" at "+S[:12]+" does not have in its history, and a landing "+
-				"only ever moves "+trunk+" forward to the story's commits").
-			WithFix(l.rebaseFix(ctx, st.base, T, S))
+		return l.notAheadOfTrunk(ctx, st)
 	}
-	if T != st.base {
-		behind, err := gitx.IsAncestor(ctx, root, T, st.base)
-		if err != nil {
-			return err
-		}
-		if behind {
-			return sdlcerr.New(sdlcerr.BranchBehindTrunk,
-				trunk+" went back behind the commit "+branch+"'s reviewed change began from",
-				trunk+" is at "+T[:12]+", before "+st.base[:12]+", so moving it to "+S[:12]+
-					" would carry commits that are not the story's").
-				WithFix(l.rebaseFix(ctx, st.base, T, S))
-		}
+	if err := l.refuseTrunkBehindBase(ctx, st); err != nil {
+		return err
 	}
 	if !st.marked {
 		st.from = T
+	}
+	return nil
+}
+
+// findBase sets B: the commit the reviewed change began from.
+func (l *lander) findBase(ctx context.Context, st *landState) error {
+	st.base = st.record.ChangeBase
+	if st.base != "" {
+		return nil
+	}
+	trunk, branch := l.m.trunk, store.StoryBranch(l.id)
+	T, S := st.trunkTip, st.tip
+	// Committed before the change was measured at the commit gate: the
+	// story's change is what S has that trunk has not.
+	base, err := gitx.MergeBase(ctx, l.s.Root(), T, S)
+	if err != nil {
+		return err
+	}
+	if base == "" {
+		return sdlcerr.New(sdlcerr.BranchBehindTrunk,
+			branch+" shares no history with "+trunk,
+			trunk+isAtClause+T[:12]+" and "+branch+" at "+S[:12]+", and neither has a commit of the other's").
+			WithFix(`a person decides how the story's commits are to reach ` + trunk + `; ` + assistantEscalates)
+	}
+	st.base = base
+	return nil
+}
+
+// alreadyOnTrunk is L3 where trunk holds the story: it is refused unless what
+// trunk holds is the change the reviewers saw.
+func (l *lander) alreadyOnTrunk(ctx context.Context, st *landState) error {
+	if st.marked {
+		return nil
+	}
+	trunk, branch, S := l.m.trunk, store.StoryBranch(l.id), st.tip
+	holds, err := gitx.IsAncestor(ctx, l.s.Root(), st.base, S)
+	if err != nil {
+		return err
+	}
+	if !holds {
+		return sdlcerr.New(sdlcerr.ReviewsMissing,
+			trunk+" already holds "+branch+", and not the change its reviewers saw",
+			branch+" at "+S[:12]+" no longer holds "+st.base[:12]+", where the reviewed change began").
+			WithFix(l.reopenFix())
+	}
+	st.from = st.base
+	return nil
+}
+
+// notAheadOfTrunk is L3 where S is not ahead of trunk. A trunk that only moved
+// on, as it does each time another story lands, is one the stop puts the story
+// onto itself; one that was rewritten is refused.
+func (l *lander) notAheadOfTrunk(ctx context.Context, st *landState) error {
+	root, trunk, branch := l.s.Root(), l.m.trunk, store.StoryBranch(l.id)
+	T, S := st.trunkTip, st.tip
+	// The story is judged first from where it left trunk's history.
+	moved, err := gitx.IsAncestor(ctx, root, st.base, T)
+	if err != nil {
+		return err
+	}
+	if moved {
+		fork, err := gitx.MergeBase(ctx, root, T, S)
+		if err != nil {
+			return err
+		}
+		if fork != "" {
+			st.fork, st.from, st.marked = fork, fork, false
+			return nil
+		}
+	}
+	what := trunk + " was rewritten since " + branch + " was cut"
+	return sdlcerr.New(sdlcerr.BranchBehindTrunk, what,
+		trunk+isAtClause+T[:12]+", which "+branch+" at "+S[:12]+" does not have in its history, and a landing "+
+			"only ever moves "+trunk+" forward to the story's commits").
+		WithFix(l.rebaseFix(ctx, st.base, T, S))
+}
+
+// refuseTrunkBehindBase refuses a trunk that went back behind the commit the
+// reviewed change began from.
+func (l *lander) refuseTrunkBehindBase(ctx context.Context, st *landState) error {
+	T, S := st.trunkTip, st.tip
+	if T == st.base {
+		return nil
+	}
+	trunk, branch := l.m.trunk, store.StoryBranch(l.id)
+	behind, err := gitx.IsAncestor(ctx, l.s.Root(), T, st.base)
+	if err != nil {
+		return err
+	}
+	if behind {
+		return sdlcerr.New(sdlcerr.BranchBehindTrunk,
+			trunk+" went back behind the commit "+branch+"'s reviewed change began from",
+			trunk+isAtClause+T[:12]+", before "+st.base[:12]+", so moving it to "+S[:12]+
+				" would carry commits that are not the story's").
+			WithFix(l.rebaseFix(ctx, st.base, T, S))
 	}
 	return nil
 }
@@ -789,7 +875,7 @@ func (l *lander) rangeChecks(ctx context.Context, st landState) error {
 	case merges && st.already:
 		return sdlcerr.New(sdlcerr.LandingCheckFailed,
 			trunk+" already holds "+branch+", with a merge commit among the story's commits",
-			"a landing records the story's commits as a line on "+trunk+", and "+st.from[:12]+".."+st.tip[:12]+
+			"a landing records the story's commits as a line on "+trunk+andClause+st.from[:12]+".."+st.tip[:12]+
 				" holds a merge").
 			WithFix(`a person reads what reached ` + trunk + `, and either reverts it there and runs "sdlc stop" in ` + in +
 				` again, or ends the story by hand; ` + assistantEscalates)
@@ -809,13 +895,15 @@ func (l *lander) rangeChecks(ctx context.Context, st landState) error {
 	}
 	fix := `a person takes those changes out of the story's commits, or brings them to ` + trunk + ` themselves, then ` +
 		`runs "sdlc stop" in ` + in + ` again`
+	var fixSb892 strings.Builder
 	for _, f := range files {
 		if atOrUnderFold(f, config.Dir+"/state") {
-			fix += `; where they are the loop's state, which ` + trunk + ` tracks, they stop tracking it on ` + trunk +
-				` and ignore it first`
+			fixSb892.WriteString(`; where they are the loop's state, which ` + trunk + ` tracks, they stop tracking it on ` + trunk +
+				` and ignore it first`)
 			break
 		}
 	}
+	fix += fixSb892.String()
 	return sdlcerr.New(sdlcerr.LandingCheckFailed,
 		branch+" changes the loop's own files or the backlog: "+quoteSome(files),
 		"no story lands those: the tool writes the records and the backlog in the main checkout, and the "+
@@ -871,7 +959,7 @@ func atOrUnderFold(name, dir string) bool {
 // reviewed again, and one rebased or changed in a tier that pauses is
 // approved again.
 func (l *lander) changeChecks(ctx context.Context, st *landState) error {
-	root, branch, in := l.s.Root(), store.StoryBranch(l.id), worktreeIn(l.id)
+	root := l.s.Root()
 	change, err := gitx.Fingerprint(ctx, root, st.from, st.tip, leftOut...)
 	if err != nil {
 		return err
@@ -883,48 +971,59 @@ func (l *lander) changeChecks(ctx context.Context, st *landState) error {
 	// the commit gate recorded.
 	st.changed = !ownReplay(*st) && (st.record.Change == "" || change != st.record.Change)
 	if st.changed {
-		holds, err := gitx.IsAncestor(ctx, root, st.base, st.trunkTip)
-		if err != nil {
+		if err := l.requireReviewsAgain(ctx, st); err != nil {
 			return err
-		}
-		if !holds {
-			return sdlcerr.New(sdlcerr.ReviewsMissing,
-				branch+" is not the change its reviewers saw",
-				"its change from "+st.from[:12]+" differs from the one reviewed, and "+l.m.trunk+" no longer holds "+
-					st.base[:12]+", where that one began, so the reviews cannot be recorded again on it").
-				WithFix(l.reopenFix())
-		}
-		dirty, err := gitx.Uncommitted(ctx, root, true)
-		if err != nil {
-			return err
-		}
-		if len(dirty) > 0 {
-			return sdlcerr.New(sdlcerr.ReviewsMissing,
-				branch+" is not the change its reviewers saw, and its worktree has changes nobody committed: "+
-					quoteSome(dirty),
-				"the reviews are recorded again on the change as it is committed, and a worktree with anything else "+
-					"in it is not that").
-				WithFix(`commit them on ` + branch + `, or stash them with "git stash push -- <path>", in ` + in +
-					`; then have the verifier and the code reviewers review the change again and record their reviews ` +
-					`("sdlc review list" names who), and run "sdlc stop" there again; if one of them blocks, hand the ` +
-					`story to a person with ` +
-					`"sdlc escalate" and stop`)
-		}
-		if err := requireFreshReviews(ctx, readingOf(l.s), l.id, st.record); err != nil {
-			var known *sdlcerr.Error
-			if !errors.As(err, &known) || known.Code != sdlcerr.ReviewsMissing {
-				return err
-			}
-			return sdlcerr.New(sdlcerr.ReviewsMissing, branch+" is not the change its reviewers saw", known.Why).
-				WithFix(`in ` + in + `, have the verifier and the code reviewers review ` + branch + ` again as it is ` +
-					`committed and record their reviews ("sdlc review list" names who), then run "sdlc stop" there ` +
-					`again, which runs the configured ` +
-					`commands on it; if one of them blocks, hand the story to a person with "sdlc escalate" and stop`)
 		}
 	}
 	if st.rebased || st.changed {
 		return l.requireApprovalAgain(ctx, *st)
 	}
+	return nil
+}
+
+// requireReviewsAgain is L7 where the change is not the one reviewed: it has to
+// be committed whole, still reachable from trunk, and reviewed afresh.
+func (l *lander) requireReviewsAgain(ctx context.Context, st *landState) error {
+	root, branch, in := l.s.Root(), store.StoryBranch(l.id), worktreeIn(l.id)
+	holds, err := gitx.IsAncestor(ctx, root, st.base, st.trunkTip)
+	if err != nil {
+		return err
+	}
+	if !holds {
+		return sdlcerr.New(sdlcerr.ReviewsMissing,
+			branch+" is not the change its reviewers saw",
+			"its change from "+st.from[:12]+" differs from the one reviewed, and "+l.m.trunk+" no longer holds "+
+				st.base[:12]+", where that one began, so the reviews cannot be recorded again on it").
+			WithFix(l.reopenFix())
+	}
+	dirty, err := gitx.Uncommitted(ctx, root, true)
+	if err != nil {
+		return err
+	}
+	if len(dirty) > 0 {
+		return sdlcerr.New(sdlcerr.ReviewsMissing,
+			branch+" is not the change its reviewers saw, and its worktree has changes nobody committed: "+
+				quoteSome(dirty),
+			"the reviews are recorded again on the change as it is committed, and a worktree with anything else "+
+				"in it is not that").
+			WithFix(`commit them on ` + branch + `, or stash them with "git stash push -- <path>", in ` + in +
+				`; then have the verifier and the code reviewers review the change again and record their reviews ` +
+				`("sdlc review list" names who), and run "sdlc stop" there again; if one of them blocks, hand the ` +
+				`story to a person with ` +
+				`"sdlc escalate" and stop`)
+	}
+	if err := requireFreshReviews(ctx, readingOf(l.s), l.id, st.record); err != nil {
+		var known *sdlcerr.Error
+		if !errors.As(err, &known) || known.Code != sdlcerr.ReviewsMissing {
+			return err
+		}
+		return sdlcerr.New(sdlcerr.ReviewsMissing, branch+" is not the change its reviewers saw", known.Why).
+			WithFix(`in ` + in + `, have the verifier and the code reviewers review ` + branch + ` again as it is ` +
+				`committed and record their reviews ("sdlc review list" names who), then run "sdlc stop" there ` +
+				`again, which runs the configured ` +
+				`commands on it; if one of them blocks, hand the story to a person with "sdlc escalate" and stop`)
+	}
+
 	return nil
 }
 
@@ -1013,8 +1112,7 @@ func reviewedTree(r *model.Record) string {
 		return ""
 	}
 	tree, seen := "", map[string]bool{}
-	for i := len(r.Reviews) - 1; i >= 0; i-- {
-		rv := r.Reviews[i]
+	for _, rv := range slices.Backward(r.Reviews) {
 		if rv.Gate != model.GateCodeReview || seen[rv.Role] {
 			continue
 		}
@@ -1135,7 +1233,7 @@ func (l *lander) runLandingCommands(ctx context.Context, st landState) error {
 	// project's own, and can run for longer than any other command waits for
 	// it. The landing's own lock stays held.
 	(*l.unlock)()
-	*l.unlock = func() {}
+	*l.unlock = noUnlock
 	for _, key := range landingCommands {
 		command := strings.TrimSpace(st.trunkCfg.Commands[key])
 		if command == "" {
@@ -1174,7 +1272,7 @@ func (l *lander) runCommand(ctx context.Context, st landState, key, command stri
 	c, err := shellx.Command(ctx, l.s.Root(), command)
 	if err != nil {
 		return sdlcerr.New(sdlcerr.LandingCheckFailed,
-			"commands."+key+" could not be run", err.Error()).WithCause(err)
+			commandsPrefix+key+" could not be run", err.Error()).WithCause(err)
 	}
 	shellx.InGroup(c)
 	c.Env = gitx.Environ()
@@ -1193,12 +1291,12 @@ func (l *lander) runCommand(ctx context.Context, st landState, key, command stri
 		exit = c.ProcessState.ExitCode()
 	case runErr != nil:
 		return sdlcerr.New(sdlcerr.LandingCheckFailed,
-			"commands."+key+" could not be run", runErr.Error()).WithCause(runErr)
+			commandsPrefix+key+" could not be run", runErr.Error()).WithCause(runErr)
 	}
-	slog.Debug("landing ran a command", "story", l.id, "command", "commands."+key, "trunk", st.trunkTip[:12],
+	slog.Debug("landing ran a command", "story", l.id, "command", commandsPrefix+key, "trunk", st.trunkTip[:12],
 		"tip", st.tip[:12], "exit", exit, "duration", time.Since(started))
 	if ok, how := passes(key, exit, stdout.String(), thresholdOf(st.trunkCfg, key)); !ok {
-		return l.commandFailed(st, key, how, output.String())
+		return l.commandFailed(ctx, st, key, how, output.String())
 	}
 	return l.unmoved(ctx, st, key)
 }
@@ -1206,7 +1304,7 @@ func (l *lander) runCommand(ctx context.Context, st landState, key, command stri
 // commandFailed is SDLC-E0055 for a command that did not pass. What it
 // printed is set apart under a line of its own, after everything sdlc says,
 // so that none of it can pass for the refusal's why or its fix.
-func (l *lander) commandFailed(st landState, key, how, printed string) error {
+func (l *lander) commandFailed(ctx context.Context, st landState, key, how, printed string) error {
 	trunk, branch, wt := l.m.trunk, store.StoryBranch(l.id), shellPath(l.s.Root())
 	why := how + "; the landing runs the configured commands on the tree that lands whenever the story was put onto " +
 		"a trunk that moved, or its change is not the one that was reviewed. "
@@ -1222,10 +1320,10 @@ func (l *lander) commandFailed(st landState, key, how, printed string) error {
 	// The story stays with its session: a command that fails on the tree
 	// about to land is rework, or trunk's own fault, and neither is a question
 	// only a person can answer.
-	return closedRefusal{sdlcerr.New(sdlcerr.LandingCheckFailed,
-		"commands."+key+", as trunk commits it at "+st.trunkTip[:12]+", failed on "+branch+" at "+st.tip[:12], why).
+	return closedRefusalError{sdlcerr.New(sdlcerr.LandingCheckFailed,
+		commandsPrefix+key+", as trunk commits it at "+st.trunkTip[:12]+", failed on "+branch+" at "+st.tip[:12], why).
 		WithFix(`the story is still the session's. Read what commands.` + key + ` printed, above, then run that same ` +
-			`command on ` + trunk + ` as it is: ` + l.whereTrunkIs(st) + `. Where it fails there too, the failure is ` +
+			`command on ` + trunk + ` as it is: ` + l.whereTrunkIs(ctx, st) + `. Where it fails there too, the failure is ` +
 			trunk + `'s and not the story's: tell the person, who puts ` + trunk + ` right, and then run "sdlc stop" in ` +
 			wt + ` again. Where it passes there, rework the story: in ` + wt + `, sdlc gate implementation fail --story ` +
 			l.id + ` --note "<what failed>", put it right, take the story through its gates again, and "sdlc stop" ` +
@@ -1235,9 +1333,9 @@ func (l *lander) commandFailed(st landState, key, how, printed string) error {
 // whereTrunkIs says where a session finds trunk's files as trunk commits them:
 // a checkout that has trunk checked out, where there is one. The main checkout
 // usually is, though it need not be, and it can hold work nobody committed.
-func (l *lander) whereTrunkIs(st landState) string {
+func (l *lander) whereTrunkIs(ctx context.Context, st landState) string {
 	trunk := l.m.trunk
-	holding, err := gitx.CheckedOut(l.cmd.Context(), l.s.Root(), trunk)
+	holding, err := gitx.CheckedOut(ctx, l.s.Root(), trunk)
 	if err != nil || len(holding) == 0 {
 		return `no checkout has ` + trunk + ` checked out, so ask the person to run it on ` + trunk + ` at ` + st.trunkTip[:12]
 	}
@@ -1264,7 +1362,7 @@ func (l *lander) unmoved(ctx context.Context, st landState, key string) error {
 	}
 	if on != branch || head != st.tip || tip != st.tip {
 		return sdlcerr.New(sdlcerr.LandingCheckFailed,
-			"commands."+key+" moved HEAD or "+branch+" while it ran",
+			commandsPrefix+key+" moved HEAD or "+branch+" while it ran",
 			"the configured commands ran on "+st.tip[:12]+", and what lands has to be the tree they passed").
 			WithFix(`a person puts ` + branch + ` and the worktree's HEAD back at ` + st.tip[:12] + ` in ` + in +
 				`, keeping anything the command made that is worth keeping, and changes commands.` + key + ` on trunk ` +
@@ -1276,7 +1374,7 @@ func (l *lander) unmoved(ctx context.Context, st landState, key string) error {
 	}
 	if len(changed) > 0 {
 		return sdlcerr.New(sdlcerr.LandingCheckFailed,
-			"commands."+key+" changed files the story commits: "+quoteSome(changed),
+			commandsPrefix+key+" changed files the story commits: "+quoteSome(changed),
 			"the configured commands passed a tree that is not "+branch+" as committed, and what lands has to be "+
 				"the tree they passed").
 			WithFix(`a person puts those files back as ` + branch + ` commits them, in ` + in + `, and changes commands.` +
@@ -1315,7 +1413,7 @@ func (l *lander) askAgain(ctx context.Context, before landState) (landState, err
 	case after.tip != before.tip:
 		return before, sdlcerr.New(sdlcerr.LandingCheckFailed,
 			store.StoryBranch(l.id)+" moved while the configured commands ran",
-			"they passed "+before.tip[:12]+", and "+store.StoryBranch(l.id)+" is at "+after.tip[:12]+" now").
+			"they passed "+before.tip[:12]+andClause+store.StoryBranch(l.id)+isAtClause+after.tip[:12]+" now").
 			WithFix(`run "sdlc stop" in ` + worktreeIn(l.id) + ` again, which runs them on the tree as it is now`)
 	case after.trunkTip != before.trunkTip:
 		return before, sdlcerr.New(sdlcerr.BranchBehindTrunk,
@@ -1460,39 +1558,38 @@ func keptLine(id string, kept []string, err error) string {
 	case err == nil:
 		line += "it holds changes nobody committed, " + quoteSome(kept) + "."
 	case errors.As(err, &refusal):
-		line += refusal.What + ", and " + refusal.Why + "."
+		line += refusal.What + andClause + refusal.Why + "."
 	default:
 		line += err.Error() + "."
 	}
 	line += " `sdlc doctor` in the main checkout says what to do with it."
-	if err != nil && runtime.GOOS == "windows" {
+	if err != nil && runtime.GOOS == goosWindows {
 		line += " On Windows, a shell whose current directory is in the worktree keeps it there: leave it, then run " +
 			"`sdlc doctor` again."
 	}
 	return line
 }
 
-// closedRefusal marks a refusal whose Why already ends with the sentence every
-// landing refusal ends with, put there by the caller itself for its own
+// closedRefusalError marks a refusal whose Why already ends with the sentence
+// every landing refusal ends with, put there by the caller itself for its own
 // reasons (commandFailed, to keep it ahead of what a command printed). refused
 // reads this flag rather than searching Why for the words "Nothing landed":
 // a quoted escalation message or a command's own output can contain them
 // without meaning the sentence is there.
-type closedRefusal struct{ err *sdlcerr.Error }
+type closedRefusalError struct{ err *sdlcerr.Error }
 
-func (c closedRefusal) Error() string { return c.err.Error() }
-func (c closedRefusal) Unwrap() error { return c.err }
+func (c closedRefusalError) Error() string { return c.err.Error() }
+func (c closedRefusalError) Unwrap() error { return c.err }
 
 // refused ends a refusal of the landing as every one ends: nothing landed, and
 // where the story is.
 func (l *lander) refused(err error) error {
-	var e *sdlcerr.Error
-	if !errors.As(err, &e) {
+	e, ok := errors.AsType[*sdlcerr.Error](err)
+	if !ok {
 		return err
 	}
 	slog.Debug("landing refused", "story", l.id, "code", e.Code.String())
-	var closed closedRefusal
-	if errors.As(err, &closed) {
+	if _, closed := errors.AsType[closedRefusalError](err); closed {
 		return err
 	}
 	out := *e
@@ -1520,9 +1617,9 @@ func (l *lander) nothingLanded() string {
 // has one.
 func thresholdOf(cfg config.Config, key string) float64 {
 	switch key {
-	case "coverage":
+	case commandCoverage:
 		return cfg.Thresholds.CoverageMin
-	case "mutation":
+	case commandMutation:
 		return cfg.Thresholds.MutationMin
 	}
 	return 0
@@ -1538,7 +1635,7 @@ func passes(key string, exit int, stdout string, threshold float64) (bool, strin
 		return false, "it was stopped before it finished"
 	case exit != 0:
 		return false, fmt.Sprintf("it exited with status %d", exit)
-	case key != "coverage" && key != "mutation" || threshold <= 0:
+	case key != commandCoverage && key != commandMutation || threshold <= 0:
 		return true, ""
 	}
 	name := "thresholds." + key + "_min"
@@ -1733,8 +1830,7 @@ func (l *lander) notReplayed(ctx context.Context, st landState, cause error) err
 				`resolve it: it hands the story to a person with "sdlc escalate" and stops`).WithCause(cause)
 	}
 	said := "nothing"
-	var git *sdlcerr.Error
-	if errors.As(cause, &git) {
+	if git, ok := errors.AsType[*sdlcerr.Error](cause); ok {
 		first, _, _ := strings.Cut(strings.TrimSpace(git.Why), "\n")
 		said = quote(first)
 	}

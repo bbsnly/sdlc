@@ -176,6 +176,7 @@ func ldWalked(t *testing.T, w ldWalk) (main, wt string) {
 func ldWalkedFrom(t *testing.T, w ldWalk) (main, wt, cut string) {
 	t.Helper()
 	main, notes := walkedCopyNoted(t, fmt.Sprintf("landing %+v", w), func(t *testing.T, root string) map[string]string {
+		t.Helper()
 		configure := func(root string) {
 			if w.tier != "" {
 				ldTier(t, root, "US-001", w.tier)
@@ -294,8 +295,16 @@ func ldTier(t *testing.T, root, id, tier string) {
 	path := filepath.Join(root, "user_stories.json")
 	var backlog map[string]any
 	wtReadJSON(t, path, &backlog)
-	for _, s := range backlog["stories"].([]any) {
-		if story := s.(map[string]any); story["id"] == id {
+	stories, ok := backlog["stories"].([]any)
+	if !ok {
+		t.Fatalf("%s has no list of stories: %v", path, backlog["stories"])
+	}
+	for _, s := range stories {
+		story, ok := s.(map[string]any)
+		if !ok {
+			t.Fatalf("%s has a story that is not an object: %v", path, s)
+		}
+		if story["id"] == id {
 			story["risk_tier"] = tier
 		}
 	}
@@ -895,7 +904,7 @@ func TestAC7AWorktreeHoldingWorkNobodyCommittedIsKeptAndNamedAndTheStoryIsStillD
 	if _, ok := swGitTry(t, main, "cat-file", "-e", "main:scratch.txt"); ok {
 		t.Error("an untracked file reached trunk")
 	}
-	c, ok := suChecked(t, main, "story worktrees")
+	c, ok := suChecked(t, main)
 	if !ok {
 		t.Fatal("doctor does not describe the worktree that was kept")
 	}

@@ -93,7 +93,7 @@ func newCrashSandbox(t *testing.T) crashSandbox {
 		t.Fatalf("sandbox create: %v\n%s%s", err, stdout.String(), stderr.String())
 	}
 	paths := map[string]string{}
-	for _, line := range strings.Split(strings.TrimRight(stdout.String(), "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(stdout.String(), "\n"), "\n") {
 		if word, rest, ok := strings.Cut(strings.TrimRight(line, "\r"), " "); ok {
 			paths[word] = strings.TrimSpace(rest)
 		}
@@ -135,8 +135,7 @@ func (sb crashSandbox) hook(t *testing.T, panicOn, event, payload string, extra 
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 		code = exit.ExitCode()
 	} else if err != nil {
 		t.Fatalf("running the hook: %v", err)

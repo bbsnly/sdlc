@@ -13,7 +13,7 @@ import (
 // the HEAD the session was on at the moment the command went through. These
 // tests drive the CLI with no hook running at all, so a story here has watched
 // nothing unless it says so -- which is itself one of the cases below.
-func watched(t *testing.T, root, id string, heads ...string) {
+func watched(t *testing.T, root string, heads ...string) {
 	t.Helper()
 	cfg, err := config.Load(root)
 	if err != nil {
@@ -21,7 +21,7 @@ func watched(t *testing.T, root, id string, heads ...string) {
 	}
 	s := store.New(&config.Project{Root: root, Config: cfg})
 	for _, head := range heads {
-		if err := s.ObserveCommit(t.Context(), id, head); err != nil {
+		if err := s.ObserveCommit(t.Context(), "US-001", head); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -86,7 +86,7 @@ func TestAC1ARangeThatWouldSwallowAMergedSideBranchIsNotRecorded(t *testing.T) {
 
 	// The hook watched both of the session's commands: the commit, made on the
 	// base, and the merge, made on that commit.
-	watched(t, root, "US-001", base, ours)
+	watched(t, root, base, ours)
 
 	passed := decode[gatePayload](t, mustRun(t, "gate", "commit", "pass", "--note", "on trunk", "--json"))
 	if passed.Commit != "" {
@@ -106,7 +106,7 @@ func TestAC1TheRangeEndsAtTheLastCommitTheLoopWatchedAndNotAtHead(t *testing.T) 
 	root, base, first := landedStory(t)
 	second := onTop(t, root, "more.md", "US-001: the rest of the work")
 	theirs := onTop(t, root, "chore.md", "chore(sdlc): a person's own commit, made afterwards")
-	watched(t, root, "US-001", base, first)
+	watched(t, root, base, first)
 
 	passed := decode[gatePayload](t, mustRun(t, "gate", "commit", "pass", "--note", "on trunk", "--json"))
 	held, want := revList(t, root, passed.CommitBase, passed.Commit), []string{second, first}
@@ -125,7 +125,7 @@ func TestAC3CommitsWatchedWithSomebodyElsesBetweenThemAreRecordedAsNoRange(t *te
 	root, base, _ := landedStory(t)
 	theirs := onTop(t, root, "chore.md", "chore(sdlc): a person's own commit")
 	onTop(t, root, "last.md", "US-001: the last of it")
-	watched(t, root, "US-001", base, theirs)
+	watched(t, root, base, theirs)
 
 	passed := mustRun(t, "gate", "commit", "pass", "--note", "the work is in "+base)
 	// N3: a narrower answer is only honest if the pass says so rather than
@@ -189,12 +189,12 @@ func TestAC3ABaseTheRecordNamesIsResolvedBeforeItReachesGit(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, base, commit := landedStory(t)
-			watched(t, root, "US-001", base)
+			watched(t, root, base)
 			from := tc.base
 			if tc.readable {
 				from = base[:8]
 			}
-			editRecord(t, root, "US-001", func(r map[string]any) { r["commit_base"] = from })
+			editRecord(t, root, func(r map[string]any) { r["commit_base"] = from })
 			// The record is tracked here, as it is in any project that does
 			// not ignore .sdlc/, and the commit gate refuses an unclean tree.
 			// So the edit arrives the way an older sdlc's record would have:

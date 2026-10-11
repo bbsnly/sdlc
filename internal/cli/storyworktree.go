@@ -78,16 +78,9 @@ func startRound(cmd *cobra.Command, asked string, said *startSaid) (again bool, 
 // them.
 func beginInWorktree(cmd *cobra.Command, s *store.Store, asked string, plan startPlan, said *startSaid) (bool, error) {
 	ctx := cmd.Context()
-	cfg := s.Config()
-	trunk := trunkOf(cfg)
-	if cfg.Git.Remote {
-		if err := checkRemote(cmd, s.Root(), trunk); err != nil {
-			return false, behindInWorktrees(err, trunk)
-		}
-	}
-	// After trunk, as it always was, and before anything is made.
-	if plan.refused != nil {
-		return false, plan.refused
+	trunk := trunkOf(s.Config())
+	if err := checkTrunkFirst(cmd, s, trunk, plan); err != nil {
+		return false, err
 	}
 	co, err := s.Checkout()
 	if err != nil {
@@ -107,29 +100,14 @@ func beginInWorktree(cmd *cobra.Command, s *store.Store, asked string, plan star
 		return false, err
 	}
 	defer g.Release()
-	if changed, err := decidedElsewise(cmd, asked, plan); err != nil || changed {
-		if changed {
-			fmt.Fprintln(cmd.ErrOrStderr(), retryLine)
-		}
+	if changed, err := decidedAgain(cmd, asked, plan); err != nil || changed {
 		return changed, err
 	}
 	if err := store.CheckWorktreesIgnored(co.Main); err != nil {
 		return false, err
 	}
-	if err := gitx.AddWorktree(ctx, co.Main, wt, branch, trunk); err != nil {
-		if errors.Is(err, gitx.ErrInTheWay) {
-			// A start that got here first has made it, and may have claimed
-			// the story by now; what is in the way is then that start's.
-			changed, err := decidedElsewise(cmd, asked, plan)
-			if err != nil {
-				return false, err
-			}
-			if changed {
-				fmt.Fprintln(cmd.ErrOrStderr(), retryLine)
-				return true, nil
-			}
-		}
-		return false, notMadeFor(ctx, err, co.Main, wt, id, trunk)
+	if changed, err := addWorktree(cmd, asked, plan, co.Main, wt, trunk); changed || err != nil {
+		return changed, err
 	}
 	slog.Debug("start made the story's worktree", "story", id, "worktree", wt, "branch", branch, "trunk", trunk)
 
@@ -144,30 +122,86 @@ func beginInWorktree(cmd *cobra.Command, s *store.Store, asked string, plan star
 		}
 		return err
 	}
-	if err := store.EnsureWorktreesIgnored(co.Main); err != nil {
-		return false, rolledBack(err, id, undo())
+	if err := checkNewWorktree(cmd, s, co.Main, wt, id, trunk, undo); err != nil {
+		return false, err
+	}
+	return recordInWorktree(cmd, asked, plan, wt, undo, said)
+}
+
+// checkTrunkFirst holds start to trunk before anything is made: it is checked
+// against its remote where the project has one, and only after that does a
+// story that cannot begin say why.
+func checkTrunkFirst(cmd *cobra.Command, s *store.Store, trunk string, plan startPlan) error {
+	if s.Config().Git.Remote {
+		if err := checkRemote(cmd, s.Root(), trunk); err != nil {
+			return behindInWorktrees(err, trunk)
+		}
+	}
+	// After trunk, as it always was, and before anything is made.
+	return plan.refused
+}
+
+// decidedAgain is decidedElsewise, with the line that says start goes round
+// where it did.
+func decidedAgain(cmd *cobra.Command, asked string, plan startPlan) (bool, error) {
+	changed, err := decidedElsewise(cmd, asked, plan)
+	if changed && err == nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), retryLine)
+	}
+	return changed, err
+}
+
+// addWorktree makes the story's worktree. It reports changed where start would
+// now do something else, and goes round.
+func addWorktree(cmd *cobra.Command, asked string, plan startPlan, main, wt, trunk string) (changed bool, err error) {
+	ctx, id := cmd.Context(), plan.id
+	err = gitx.AddWorktree(ctx, main, wt, store.StoryBranch(id), trunk)
+	if err == nil {
+		return false, nil
+	}
+	if errors.Is(err, gitx.ErrInTheWay) {
+		// A start that got here first has made it, and may have claimed
+		// the story by now; what is in the way is then that start's.
+		changed, err := decidedElsewise(cmd, asked, plan)
+		if err != nil {
+			return false, err
+		}
+		if changed {
+			fmt.Fprintln(cmd.ErrOrStderr(), retryLine)
+			return true, nil
+		}
+	}
+	return false, notMadeFor(ctx, err, main, wt, id, trunk)
+}
+
+// checkNewWorktree holds the new worktree to what start promises of it: it is
+// ignored where it has to be, and the project's smoke check passes in it.
+// Whatever refuses leaves nothing the start made.
+func checkNewWorktree(cmd *cobra.Command, s *store.Store, main, wt, id, trunk string, undo func() error) error {
+	if err := store.EnsureWorktreesIgnored(main); err != nil {
+		return rolledBack(err, id, undo())
 	}
 	if err := s.EnsureStateIgnored(wt); err != nil {
-		return false, rolledBack(err, id, undo())
+		return rolledBack(err, id, undo())
 	}
 	// The worktree's own configuration, which is trunk's as committed: the
 	// loop in the worktree reads it, so the smoke check is the one it names.
 	wtCfg, err := config.Load(wt)
 	if err != nil {
-		return false, rolledBack(noConfigOnTrunk(err, trunk), id, undo())
+		return rolledBack(noConfigOnTrunk(err, trunk), id, undo())
 	}
 	// git's own variables, where they are set, name wherever start was run
 	// from, and would point the project's command at that repository instead.
 	failed, output, err := smoke(cmd, wt, wtCfg.Commands["smoke"], gitx.Environ())
 	if err != nil {
-		return false, rolledBack(err, id, undo())
+		return rolledBack(err, id, undo())
 	}
 	if failed != nil {
 		slog.Debug("commands.smoke failed in the story's new worktree", "story", id, "worktree", wt, "err", failed)
-		return false, smokeFailedInWorktree(wt, id, failed, output, undo())
+		return smokeFailedInWorktree(wt, id, failed, output, undo())
 	}
 	slog.Debug("commands.smoke passed in the story's new worktree", "story", id, "worktree", wt)
-	return recordInWorktree(cmd, asked, plan, wt, undo, said)
+	return nil
 }
 
 // recordInWorktree records the story as begun in its new worktree, under the
@@ -344,6 +378,9 @@ func notMadeFor(ctx context.Context, err error, main, wt, id, trunk string) erro
 	return err
 }
 
+// thenClause joins the steps of a fix, in the order a person takes them.
+const thenClause = "; then "
+
 // inTheWayFix says what to do about a worktree, a branch or a directory
 // already where the story's worktree goes. What is there may be a start still
 // running, or somebody's work, so the fix says to look before anything goes,
@@ -352,18 +389,9 @@ func notMadeFor(ctx context.Context, err error, main, wt, id, trunk string) erro
 // gets no command that removes it: its removal had been given, and lost the
 // commits only that HEAD had.
 func inTheWayFix(ctx context.Context, main, wt, id, trunk string) string {
-	branch := store.StoryBranch(id)
-	listed, gone, on := false, false, ""
-	if trees, err := gitx.Worktrees(ctx, main); err == nil {
-		for _, w := range trees {
-			if config.SamePath(w.Path, wt) {
-				listed, gone, on = true, w.Gone, w.Branch
-			}
-		}
-	}
-	_, err := gitx.Resolve(ctx, main, "refs/heads/"+branch)
-	hasBranch := err == nil
-	if !listed && !hasBranch {
+	w := &inTheWay{main: main, wt: wt, id: id, trunk: trunk, branch: store.StoryBranch(id)}
+	w.find(ctx)
+	if !w.listed && !w.hasBranch {
 		return "move what is in " + worktreeIn(id) + " in the main checkout somewhere else, then start again: " +
 			"start never writes over or removes what it did not make; " + assistantStops
 	}
@@ -374,66 +402,107 @@ func inTheWayFix(ctx context.Context, main, wt, id, trunk string) string {
 	// is committed on the branch before the branch goes to trunk. The loop's
 	// own files under .sdlc/state are in every story worktree, and are not
 	// somebody's changes.
-	var steps []string
-	loops, mayLose := false, false
 	switch {
-	case gone:
-		steps = append(steps, `its directory is gone, and "git worktree prune" makes git forget it`)
-	case listed:
-		changes, own, err := workChanges(ctx, wt)
-		loops = own
-		if err == nil && len(changes) > 0 {
-			where := "there"
-			if on == branch {
-				where = "on " + branch
+	case w.gone:
+		w.steps = append(w.steps, `its directory is gone, and "git worktree prune" makes git forget it`)
+	case w.listed:
+		w.stepsForWorktree(ctx)
+	}
+	w.stepForBranch(ctx)
+	w.stepToRemove()
+	return fix + strings.Join(w.steps, thenClause) + "; and start again; " + assistantStops
+}
+
+// inTheWay is what stands where a story's worktree goes, and the steps a
+// person takes about it.
+type inTheWay struct {
+	main, wt, id, trunk     string
+	branch                  string
+	listed, gone, hasBranch bool
+	on                      string
+	steps                   []string
+	loops, mayLose          bool
+}
+
+// find reads whether git lists the worktree, and whether the branch exists.
+func (w *inTheWay) find(ctx context.Context) {
+	if trees, err := gitx.Worktrees(ctx, w.main); err == nil {
+		for _, t := range trees {
+			if config.SamePath(t.Path, w.wt) {
+				w.listed, w.gone, w.on = true, t.Gone, t.Branch
 			}
-			steps = append(steps, "the worktree has changes nobody committed, which may be somebody's work: "+
-				"keep what is wanted, committed "+where+" or copied elsewhere")
-		}
-		if on != "" {
-			break
-		}
-		n, err := gitx.HeadAhead(ctx, wt, trunk)
-		switch {
-		case err != nil:
-			steps = append(steps, "the worktree is on no branch, and git could not count the commits its HEAD has "+
-				"that trunk does not: "+lostWithIt(0)+", so look at them with "+lookAt(id, trunk)+", and keep what is "+
-				"wanted on a branch, with "+keepOn(id)+", before merging or removing anything")
-			mayLose = true
-		case n > 0:
-			steps = append(steps, fmt.Sprintf("the worktree is on no branch, and its HEAD has %d %s trunk does not "+
-				"have: %s, so look at %s with %s, and keep what is wanted on a branch, with %s, before merging or "+
-				"removing anything", n, plural(n, "commit", "commits"), lostWithIt(n), plural(n, "it", "them"),
-				lookAt(id, trunk), keepOn(id)))
-			mayLose = true
 		}
 	}
-	if hasBranch {
-		if n, err := gitx.Ahead(ctx, main, branch, trunk); err == nil && n > 0 {
-			steps = append(steps, fmt.Sprintf("%s has %d %s trunk does not have, which may be the story's work: "+
-				"bring %s to trunk, with trunk checked out, with \"git merge --ff-only %s\" (if git cannot "+
-				"fast-forward, first rebase %s on trunk in its worktree and run the tests), or keep the branch "+
-				"under another name with \"git branch -m %s <new name>\"",
-				branch, n, plural(n, "commit", "commits"), plural(n, "it", "them"), branch, branch, branch))
+	_, err := gitx.Resolve(ctx, w.main, "refs/heads/"+w.branch)
+	w.hasBranch = err == nil
+}
+
+// stepsForWorktree is what to do about changes in the worktree, and about
+// commits its HEAD holds on no branch.
+func (w *inTheWay) stepsForWorktree(ctx context.Context) {
+	changes, own, err := workChanges(ctx, w.wt)
+	w.loops = own
+	if err == nil && len(changes) > 0 {
+		where := "there"
+		if w.on == w.branch {
+			where = "on " + w.branch
 		}
+		w.steps = append(w.steps, "the worktree has changes nobody committed, which may be somebody's work: "+
+			"keep what is wanted, committed "+where+" or copied elsewhere")
 	}
-	// A worktree whose HEAD may hold commits on no branch is a person's to take
-	// away once they have looked, and so is the branch that goes with it.
+	if w.on != "" {
+		return
+	}
+	id, trunk := w.id, w.trunk
+	n, err := gitx.HeadAhead(ctx, w.wt, trunk)
+	switch {
+	case err != nil:
+		w.steps = append(w.steps, "the worktree is on no branch, and git could not count the commits its HEAD has "+
+			"that trunk does not: "+lostWithIt(0)+", so look at them with "+lookAt(id, trunk)+", and keep what is "+
+			"wanted on a branch, with "+keepOn(id)+", before merging or removing anything")
+		w.mayLose = true
+	case n > 0:
+		w.steps = append(w.steps, fmt.Sprintf("the worktree is on no branch, and its HEAD has %d %s trunk does not "+
+			"have: %s, so look at %s with %s, and keep what is wanted on a branch, with %s, before merging or "+
+			"removing anything", n, plural(n, "commit", "commits"), lostWithIt(n), plural(n, "it", "them"),
+			lookAt(id, trunk), keepOn(id)))
+		w.mayLose = true
+	}
+}
+
+// stepForBranch is what to do about commits only the story's branch has.
+func (w *inTheWay) stepForBranch(ctx context.Context) {
+	if !w.hasBranch {
+		return
+	}
+	branch := w.branch
+	if n, err := gitx.Ahead(ctx, w.main, branch, w.trunk); err == nil && n > 0 {
+		w.steps = append(w.steps, fmt.Sprintf("%s has %d %s trunk does not have, which may be the story's work: "+
+			"bring %s to trunk, with trunk checked out, with \"git merge --ff-only %s\" (if git cannot "+
+			"fast-forward, first rebase %s on trunk in its worktree and run the tests), or keep the branch "+
+			"under another name with \"git branch -m %s <new name>\"",
+			branch, n, plural(n, "commit", "commits"), plural(n, "it", "them"), branch, branch, branch))
+	}
+}
+
+// stepToRemove is the last step: taking away what is in the way. A worktree
+// whose HEAD may hold commits on no branch is a person's to take away once
+// they have looked, and so is the branch that goes with it.
+func (w *inTheWay) stepToRemove() {
 	var remove []string
-	if listed && !gone && !mayLose {
-		remove = append(remove, `"git worktree remove `+worktreeIn(id)+`"`)
+	if w.listed && !w.gone && !w.mayLose {
+		remove = append(remove, `"git worktree remove `+worktreeIn(w.id)+`"`)
 	}
-	if hasBranch && !mayLose {
-		remove = append(remove, `"git branch -d `+branch+`"`)
+	if w.hasBranch && !w.mayLose {
+		remove = append(remove, `"git branch -d `+w.branch+`"`)
 	}
 	if len(remove) > 0 {
 		step := "remove what is in the way with " + strings.Join(remove, " and then ")
-		if loops {
+		if w.loops {
 			step += ", where the loop's own files under .sdlc/state are safe to lose if git refuses over them"
 		}
-		steps = append(steps, step)
+		w.steps = append(w.steps, step)
 	}
-	return fix + strings.Join(steps, "; then ") + "; and start again; " + assistantStops
 }
 
 // behindInWorktrees is SDLC-E0040 as it reads where the story is cut from
@@ -492,7 +561,7 @@ func smokeFailedInWorktree(wt, id string, failed error, output string, left erro
 		`that to trunk, which is where a new worktree reads .sdlc/config.json from; then start again, or set ` +
 		`git.worktrees to false in this checkout's .sdlc/config.json`
 	if left != nil {
-		fix = leftBehind(id) + "; then " + fix
+		fix = leftBehind(id) + thenClause + fix
 	}
 	return sdlcerr.New(sdlcerr.TrunkBroken, "commands.smoke failed in the story's new worktree", why).WithFix(fix)
 }
@@ -512,7 +581,7 @@ func rolledBack(err error, id string, left error) error {
 		out.Why += "; "
 	}
 	out.Why += "and the worktree start made could not all be taken away again: " + describe(left)
-	out.Fix = leftBehind(id) + "; then " + e.Fix
+	out.Fix = leftBehind(id) + thenClause + e.Fix
 	return &out
 }
 
@@ -543,7 +612,7 @@ func leftBegun(err error, id string, held bool) error {
 	if out.Fix == "" {
 		out.Fix = "once what is said above is put right, " + next
 	} else {
-		out.Fix += "; then " + next
+		out.Fix += thenClause + next
 	}
 	return &out
 }
@@ -558,8 +627,7 @@ func leftBehind(id string) string {
 
 // describe is an error as the why of another reads it.
 func describe(err error) string {
-	var e *sdlcerr.Error
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*sdlcerr.Error](err); ok {
 		if e.Why != "" {
 			return e.What + ": " + e.Why
 		}

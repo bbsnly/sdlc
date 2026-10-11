@@ -67,58 +67,18 @@ func newParallelCmd() *cobra.Command {
 }
 
 func runParallel(cmd *cobra.Command, ids []string, maxFlag string, unattended bool) error {
-	// The hook is the first barrier, and refuses the command in any session.
-	// This is the second, for a spelling it cannot read. It comes before
-	// anything is read, so the error cannot be used to ask the backlog a
-	// question. A session id is all it looks at, as refuseAnotherSession does.
-	if envOf(cmd).getenv(store.SessionEnv) != "" {
-		return sdlcerr.New(sdlcerr.ParallelFromASession,
-			"sdlc parallel was run from inside a Claude Code session",
-			"starting model sessions is a person's decision")
-	}
-	limit, err := strconv.Atoi(maxFlag)
-	if err != nil || limit < 1 {
-		return sdlcerr.New(sdlcerr.ParallelBadMax,
-			"--max is "+quote(maxFlag)+", which is not a whole number of 1 or more",
-			"it is the most sessions to run at the same time")
-	}
-	seen := map[string]bool{}
-	for _, id := range ids {
-		if err := store.CheckID(id); err != nil {
-			return err
-		}
-		if seen[id] {
-			return sdlcerr.New(sdlcerr.ParallelListedTwice,
-				quote(id)+" is named more than once",
-				"two sessions on one story would work in the same worktree")
-		}
-		seen[id] = true
+	limit, err := parallelLimit(cmd, ids, maxFlag)
+	if err != nil {
+		return err
 	}
 
 	s, _, err := openStore(cmd)
 	if err != nil {
 		return err
 	}
-	// The main checkout, wherever this ran from: the backlog, the records and
-	// the claims are read there, and the sessions start there.
-	co, err := s.Checkout()
+	main, allow, err := parallelMain(s, unattended)
 	if err != nil {
 		return err
-	}
-	main, err := s.At(co.Main)
-	if err != nil {
-		return err
-	}
-	if !main.Config().Git.WorktreesOn() {
-		return sdlcerr.New(sdlcerr.ParallelNeedsWorktrees,
-			"git.worktrees is off in this project",
-			"each story is worked in a worktree of its own, and so is not worked at once without them")
-	}
-	var allow []string
-	if unattended {
-		if allow, err = parallel.Narrow(main.Config().Parallel.Allow); err != nil {
-			return err
-		}
 	}
 
 	backlog, err := main.Backlog()
@@ -131,6 +91,105 @@ func runParallel(cmd *cobra.Command, ids []string, maxFlag string, unattended bo
 		}
 	}
 
+	results, tails := launchSessions(cmd, main, ids, limit, allow, unattended)
+
+	// From here the launcher only reads: what a session did to its story is the
+	// session's, and a run never says a story is done.
+	rows, failed, err := classifyRuns(main, results)
+	if err != nil {
+		return err
+	}
+	if wantJSON(cmd) {
+		if err := emitJSON(cmd.OutOrStdout(), parallelPayload{OK: !failed, Stories: rows}); err != nil {
+			return err
+		}
+	} else {
+		printParallel(cmd.OutOrStdout(), main, backlog, rows, tails)
+	}
+	if failed {
+		return quietExitError{code: 1}
+	}
+	return nil
+}
+
+// classifyRuns reads each story's record and says how its session went.
+func classifyRuns(main *store.Store, results []parallel.Result) (rows []parallel.Row, failed bool, err error) {
+	rows = make([]parallel.Row, len(results))
+	for i, r := range results {
+		rec, err := main.Record(r.Story)
+		if err != nil {
+			return nil, false, err
+		}
+		rows[i] = parallel.Classify(r.Story, rec, r.Exit)
+		failed = failed || rows[i].State == parallel.StateFailed
+	}
+	return rows, failed, nil
+}
+
+// parallelLimit checks the command line, and returns how many sessions may run
+// at once.
+func parallelLimit(cmd *cobra.Command, ids []string, maxFlag string) (int, error) {
+	// The hook is the first barrier, and refuses the command in any session.
+	// This is the second, for a spelling it cannot read. It comes before
+	// anything is read, so the error cannot be used to ask the backlog a
+	// question. A session id is all it looks at, as refuseAnotherSession does.
+	if envOf(cmd).getenv(store.SessionEnv) != "" {
+		return 0, sdlcerr.New(sdlcerr.ParallelFromASession,
+			"sdlc parallel was run from inside a Claude Code session",
+			"starting model sessions is a person's decision")
+	}
+	limit, err := strconv.Atoi(maxFlag)
+	if err != nil || limit < 1 {
+		return 0, sdlcerr.New(sdlcerr.ParallelBadMax,
+			"--max is "+quote(maxFlag)+", which is not a whole number of 1 or more",
+			"it is the most sessions to run at the same time")
+	}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if err := store.CheckID(id); err != nil {
+			return 0, err
+		}
+		if seen[id] {
+			return 0, sdlcerr.New(sdlcerr.ParallelListedTwice,
+				quote(id)+" is named more than once",
+				"two sessions on one story would work in the same worktree")
+		}
+		seen[id] = true
+	}
+	return limit, nil
+}
+
+// parallelMain is the main checkout, wherever this ran from: the backlog, the
+// records and the claims are read there, and the sessions start there. It also
+// narrows the tools the sessions may use without asking, where they may.
+func parallelMain(s *store.Store, unattended bool) (*store.Store, []string, error) {
+	co, err := s.Checkout()
+	if err != nil {
+		return nil, nil, err
+	}
+	main, err := s.At(co.Main)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !main.Config().Git.WorktreesOn() {
+		return nil, nil, sdlcerr.New(sdlcerr.ParallelNeedsWorktrees,
+			"git.worktrees is off in this project",
+			"each story is worked in a worktree of its own, and so is not worked at once without them")
+	}
+	var allow []string
+	if unattended {
+		if allow, err = parallel.Narrow(main.Config().Parallel.Allow); err != nil {
+			return nil, nil, err
+		}
+	}
+	return main, allow, nil
+}
+
+// launchSessions runs a session for each story, at most limit at once, and
+// returns how each ended with what each printed last.
+func launchSessions(cmd *cobra.Command, main *store.Store, ids []string, limit int, allow []string,
+	unattended bool,
+) ([]parallel.Result, map[string]*shellx.TailWriter) {
 	stderr := cmd.ErrOrStderr()
 	// Sessions end on goroutines of their own, and the writer behind stderr
 	// is not safe for two of them at once.
@@ -152,51 +211,33 @@ func runParallel(cmd *cobra.Command, ids []string, maxFlag string, unattended bo
 	}
 	run := func(ctx context.Context, id string) (int, error) {
 		defer say("the session for %s has ended", id)
-		session, err := parallel.Command(ctx, main.Root(), id, allow)
-		if err != nil {
-			return -1, err
-		}
-		session.Stdout, session.Stderr = tails[id], tails[id]
-		err = shellx.Run(session)
-		var exited *exec.ExitError
-		switch {
-		case err == nil:
-			return 0, nil
-		case errors.As(err, &exited):
-			return exited.ExitCode(), nil
-		}
-		// It never started, or was never waited for: the person reads why
-		// beneath the story, with whatever else the session printed.
-		fmt.Fprintln(tails[id], err)
-		return -1, err
+		return runSession(ctx, main, id, allow, tails[id])
 	}
 	results := parallel.Schedule(cmd.Context(), ids, limit, run, func(p parallel.Progress) {
 		say("running %d, waiting %d", p.Running, p.Waiting)
 	})
+	return results, tails
+}
 
-	// From here the launcher only reads: what a session did to its story is the
-	// session's, and a run never says a story is done.
-	rows := make([]parallel.Row, len(results))
-	failed := false
-	for i, r := range results {
-		rec, err := main.Record(r.Story)
-		if err != nil {
-			return err
-		}
-		rows[i] = parallel.Classify(r.Story, rec, r.Exit)
-		failed = failed || rows[i].State == parallel.StateFailed
+// runSession runs the headless session for one story and reports how it exited.
+func runSession(ctx context.Context, main *store.Store, id string, allow []string, tail *shellx.TailWriter) (int, error) {
+	session, err := parallel.Command(ctx, main.Root(), id, allow)
+	if err != nil {
+		return -1, err
 	}
-	if wantJSON(cmd) {
-		if err := emitJSON(cmd.OutOrStdout(), parallelPayload{OK: !failed, Stories: rows}); err != nil {
-			return err
-		}
-	} else {
-		printParallel(cmd.OutOrStdout(), main, backlog, rows, tails)
+	session.Stdout, session.Stderr = tail, tail
+	err = shellx.Run(session)
+	var exited *exec.ExitError
+	switch {
+	case err == nil:
+		return 0, nil
+	case errors.As(err, &exited):
+		return exited.ExitCode(), nil
 	}
-	if failed {
-		return quietExit{code: 1}
-	}
-	return nil
+	// It never started, or was never waited for: the person reads why
+	// beneath the story, with whatever else the session printed.
+	fmt.Fprintln(tail, err)
+	return -1, err
 }
 
 // parallelPreflight is what `sdlc start <ID>` would decide about a story, from

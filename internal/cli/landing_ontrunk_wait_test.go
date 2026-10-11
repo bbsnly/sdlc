@@ -77,13 +77,13 @@ type otWaitingStop struct {
 	done  chan result
 }
 
-func otStopBeside(dir, session string, args ...string) *otWaitingStop {
+func otStopBeside(dir string, args ...string) *otWaitingStop {
 	w := &otWaitingStop{heard: &otHeard{waiting: make(chan struct{})}, done: make(chan result, 1)}
 	go func() {
 		var out bytes.Buffer
 		getenv := func(name string) string {
 			if name == store.SessionEnv {
-				return session
+				return ldSession
 			}
 			return os.Getenv(name)
 		}
@@ -128,7 +128,7 @@ func TestAC13AStopWaitsForTheLandingInFrontOfItAndThenLands(t *testing.T) {
 	moved := ldMoveTrunk(t, main)
 	inFront := otLandingInFront(t, main)
 
-	stop := otStopBeside(wt, ldSession, "--json")
+	stop := otStopBeside(wt, "--json")
 	stop.waits(t)
 	said := stop.heard.said()
 	for _, want := range []string{"stop US-002", "landing", "run again"} {
@@ -177,7 +177,7 @@ func TestAC13AStopWhoseStoryLandedWhileItWaitedSaysSoAndLandsNothingTwice(t *tes
 			if json {
 				args = []string{"--json"}
 			}
-			stops := []*otWaitingStop{otStopBeside(wt, ldSession, args...), otStopBeside(wt, ldSession, args...)}
+			stops := []*otWaitingStop{otStopBeside(wt, args...), otStopBeside(wt, args...)}
 			for _, s := range stops {
 				s.waits(t)
 			}
@@ -223,7 +223,7 @@ func TestAC13AStorySentBackWhileItsStopWaitedIsNotLanded(t *testing.T) {
 	moved := ldMoveTrunk(t, main)
 	inFront := otLandingInFront(t, main)
 
-	stop := otStopBeside(wt, ldSession)
+	stop := otStopBeside(wt)
 	stop.waits(t)
 	wtMust(t, wt, ldSession, "", "gate", "implementation", "fail", "--story", "US-001", "--note", "found wanting while the stop waited")
 	inFront.Release()

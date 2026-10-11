@@ -85,18 +85,11 @@ func heldTests(ctx context.Context, s *store.Store, id string, lock *model.Lock,
 	if err != nil || at.cut == "" || !inItsWorktree(s, id) {
 		return h, err
 	}
+	at, judged, err := settleFreezeAt(ctx, s, at)
+	if err != nil || !judged {
+		return h, err
+	}
 	root := s.Root()
-	if at.tip == "" {
-		if at.tip, err = gitx.Head(ctx, root); err != nil {
-			return h, err
-		}
-	}
-	if at.on == "" {
-		at.on = sittingOn(ctx, s, at.tip)
-	}
-	if at.on == "" || at.on == at.cut || at.on == at.tip {
-		return h, nil
-	}
 	held, err := gitx.IsAncestor(ctx, root, at.cut, at.on)
 	trunkChanged, terr := gitx.ChangedBetween(ctx, root, at.cut, at.on)
 	storyChanged, serr := gitx.ChangedBetween(ctx, root, at.on, at.tip)
@@ -105,31 +98,13 @@ func heldTests(ctx context.Context, s *store.Store, id string, lock *model.Lock,
 		slog.Debug("no test file is judged as trunk's own", "story", id, "cut", at.cut, "on", at.on, "err", err)
 		return h, nil
 	}
-	j := judge{ctx: ctx, s: s, lock: lock, at: at}
-	onlyTrunk := func(path string) bool {
-		return slices.Contains(trunkChanged, path) && !slices.Contains(storyChanged, path)
+	c := trunkChange{
+		judge:        judge{s: s, lock: lock, at: at},
+		trunkChanged: trunkChanged, storyChanged: storyChanged,
 	}
 	accepted := &model.TrunkTests{Commit: at.on}
-	h.unheld = slices.DeleteFunc(h.unheld, func(path string) bool {
-		if !onlyTrunk(path) || !j.asTrunkHasIt(path) {
-			return false
-		}
-		accepted.Files = append(accepted.Files, path)
-		return true
-	})
-	h.broken = nil
-	for _, f := range differing {
-		switch {
-		case !onlyTrunk(f.path) || !j.frozenAsCut(f.path):
-			h.broken = append(h.broken, f.String())
-		case f.gone && j.goneOnTrunk(f.path):
-			accepted.Gone = append(accepted.Gone, f.path)
-		case !f.gone && j.asTrunkHasIt(f.path):
-			accepted.Files = append(accepted.Files, f.path)
-		default:
-			h.broken = append(h.broken, f.String())
-		}
-	}
+	h.unheld = slices.DeleteFunc(h.unheld, func(path string) bool { return c.acceptUnheld(ctx, accepted, path) })
+	h.broken = c.acceptDiffering(ctx, accepted, differing)
 	// A test file of trunk's that the story's commits took away is on neither
 	// list above: it is not on disk, and the freeze never held it.
 	for _, path := range testset.New(s.Config().Paths.Tests).Filter(storyChanged) {
@@ -142,6 +117,65 @@ func heldTests(ctx context.Context, s *store.Store, id string, lock *model.Lock,
 		h.accepted = accepted
 	}
 	return h, nil
+}
+
+// settleFreezeAt fills in the commits a judgement is made between: the story's
+// tip and the commit it sits on. judged is false where there is nothing between
+// them to judge.
+func settleFreezeAt(ctx context.Context, s *store.Store, at freezeAt) (freezeAt, bool, error) {
+	var err error
+	if at.tip == "" {
+		if at.tip, err = gitx.Head(ctx, s.Root()); err != nil {
+			return at, false, err
+		}
+	}
+	if at.on == "" {
+		at.on = sittingOn(ctx, s, at.tip)
+	}
+	if at.on == "" || at.on == at.cut || at.on == at.tip {
+		return at, false, nil
+	}
+	return at, true, nil
+}
+
+// trunkChange is what trunk and the story each changed since the cut, with the
+// judge that reads the files.
+type trunkChange struct {
+	judge
+	trunkChanged, storyChanged []string
+}
+
+// onlyTrunk reports whether trunk changed the path and the story did not.
+func (c trunkChange) onlyTrunk(path string) bool {
+	return slices.Contains(c.trunkChanged, path) && !slices.Contains(c.storyChanged, path)
+}
+
+// acceptUnheld takes a test file the freeze does not hold as trunk's, if it is.
+func (c trunkChange) acceptUnheld(ctx context.Context, accepted *model.TrunkTests, path string) bool {
+	if !c.onlyTrunk(path) || !c.asTrunkHasIt(ctx, path) {
+		return false
+	}
+	accepted.Files = append(accepted.Files, path)
+	return true
+}
+
+// acceptDiffering takes the frozen files that differ as trunk's where it is
+// trunk that changed them, and returns the ones that stay the refusal.
+func (c trunkChange) acceptDiffering(ctx context.Context, accepted *model.TrunkTests, differing []frozenFile) []string {
+	var broken []string
+	for _, f := range differing {
+		switch {
+		case !c.onlyTrunk(f.path) || !c.frozenAsCut(ctx, f.path):
+			broken = append(broken, f.String())
+		case f.gone && c.goneOnTrunk(ctx, f.path):
+			accepted.Gone = append(accepted.Gone, f.path)
+		case !f.gone && c.asTrunkHasIt(ctx, f.path):
+			accepted.Files = append(accepted.Files, f.path)
+		default:
+			broken = append(broken, f.String())
+		}
+	}
+	return broken
 }
 
 // frozenFile is a frozen file that is not what was frozen, and whether it is
@@ -169,15 +203,14 @@ func namesOf(files []frozenFile) []string {
 // judge answers for one path at a time what git's objects and the disk say.
 // Every answer that cannot be read is a no.
 type judge struct {
-	ctx  context.Context
 	s    *store.Store
 	lock *model.Lock
 	at   freezeAt
 }
 
 // blobSum is the hash the freeze would keep for path as commit has it.
-func (j judge) blobSum(commit, path string) (string, bool) {
-	raw, err := gitx.FileAt(j.ctx, j.s.Root(), commit, path)
+func (j judge) blobSum(ctx context.Context, commit, path string) (string, bool) {
+	raw, err := gitx.FileAt(ctx, j.s.Root(), commit, path)
 	if err != nil {
 		return "", false
 	}
@@ -187,15 +220,15 @@ func (j judge) blobSum(commit, path string) (string, bool) {
 
 // frozenAsCut reports whether the freeze holds path exactly as the cut commits
 // it: the story's own test author never changed it.
-func (j judge) frozenAsCut(path string) bool {
-	sum, ok := j.blobSum(j.at.cut, path)
+func (j judge) frozenAsCut(ctx context.Context, path string) bool {
+	sum, ok := j.blobSum(ctx, j.at.cut, path)
 	return ok && sum == j.lock.Files[path]
 }
 
 // goneOnTrunk reports whether the trunk commit the story sits on has nothing
 // at path.
-func (j judge) goneOnTrunk(path string) bool {
-	mode, err := gitx.ModeAt(j.ctx, j.s.Root(), j.at.on, path)
+func (j judge) goneOnTrunk(ctx context.Context, path string) bool {
+	mode, err := gitx.ModeAt(ctx, j.s.Root(), j.at.on, path)
 	return err == nil && mode == ""
 }
 
@@ -206,8 +239,8 @@ func (j judge) goneOnTrunk(path string) bool {
 // the configuration names, read as no change at all; and a checkout that
 // converts line endings is not byte for byte what trunk commits, so there the
 // answer is no.
-func (j judge) asTrunkHasIt(path string) bool {
-	mode, err := gitx.ModeAt(j.ctx, j.s.Root(), j.at.on, path)
+func (j judge) asTrunkHasIt(ctx context.Context, path string) bool {
+	mode, err := gitx.ModeAt(ctx, j.s.Root(), j.at.on, path)
 	if err != nil || mode != "100644" && mode != "100755" {
 		return false
 	}
@@ -216,10 +249,10 @@ func (j judge) asTrunkHasIt(path string) bool {
 		return false
 	}
 	// Windows keeps no executable bit on disk to compare.
-	if runtime.GOOS != "windows" && (info.Mode().Perm()&0o111 != 0) != (mode == "100755") {
+	if runtime.GOOS != goosWindows && (info.Mode().Perm()&0o111 != 0) != (mode == "100755") {
 		return false
 	}
-	want, ok := j.blobSum(j.at.on, path)
+	want, ok := j.blobSum(ctx, j.at.on, path)
 	got, err := j.s.HashFile(path)
 	return ok && err == nil && got == want
 }

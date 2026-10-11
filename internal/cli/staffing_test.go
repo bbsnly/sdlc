@@ -215,7 +215,7 @@ func stfRecord(t *testing.T, root string) string {
 
 // stfFixLine is what a refusal prints after "fix".
 func stfFixLine(stderr string) string {
-	for _, line := range strings.Split(stderr, "\n") {
+	for line := range strings.SplitSeq(stderr, "\n") {
 		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "fix "); ok {
 			return strings.TrimSpace(rest)
 		}
@@ -288,6 +288,9 @@ func stfWorked(t *testing.T, root string, gate model.Gate) {
 		mustRunWith(t, "# Retro\n", "artifact", "write", "retro")
 	case model.GateCommit:
 		commitEverything(t, root)
+	case model.GateDoR, model.GateAnalysis, model.GateDesignReview, model.GateImplementation, model.GateVerifierReview,
+		model.GateCodeReview:
+		// Left to the test.
 	}
 }
 
@@ -1625,7 +1628,7 @@ func TestAC9AReasonCannotControlTheTerminalOrPassForALineOfTheToolsOwn(t *testin
 		if strings.ContainsAny(out, "\x1b\x07\r") {
 			t.Errorf("sdlc %s printed a control character from a reason: %q", strings.Join(args, " "), out)
 		}
-		for _, line := range strings.Split(out, "\n") {
+		for line := range strings.SplitSeq(out, "\n") {
 			if line == forged {
 				t.Errorf("sdlc %s printed a line a reason made up as one of its own:\n%s", strings.Join(args, " "), out)
 			}
@@ -1757,7 +1760,7 @@ func TestAC1StatusSaysWhetherAStaffingIsRecordedSoTheRunbookKnowsWhenToDelegate(
 	}
 	line := func() string {
 		t.Helper()
-		for _, l := range strings.Split(mustRun(t, "status").stdout, "\n") {
+		for l := range strings.SplitSeq(mustRun(t, "status").stdout, "\n") {
 			if strings.Contains(l, "staffing") {
 				return l
 			}
@@ -1793,7 +1796,7 @@ func TestAC1StatusSaysWhetherAStaffingIsRecordedSoTheRunbookKnowsWhenToDelegate(
 func TestAC1AStaffingIsRecordedOnlyForTheStoryBeingWorkedOn(t *testing.T) {
 	t.Parallel()
 	root := stfProject(t)
-	addStory(t, root, "US-002")
+	addStory(t, root)
 	commitEverything(t, root)
 	mustRun(t, "start", "US-001")
 	mustRun(t, "gate", "dor", "pass")
@@ -1816,7 +1819,7 @@ func TestAC1AStaffingIsRecordedOnlyForTheStoryBeingWorkedOn(t *testing.T) {
 func TestAC8APersonAssignsToAStoryThatWaitsForThemByNamingIt(t *testing.T) {
 	t.Parallel()
 	root := stfProject(t)
-	addStory(t, root, "US-002")
+	addStory(t, root)
 	commitEverything(t, root)
 	mustRun(t, "start", "US-001")
 	mustRun(t, "gate", "dor", "pass")
@@ -1921,7 +1924,7 @@ func TestAC2ShowSaysInProseWhoWasBroughtBackAndWhoIsNeededWithNothingAskedFor(t 
 	line := func(agent string) string {
 		t.Helper()
 		found := ""
-		for _, l := range strings.Split(mustRun(t, "staffing", "show").stdout, "\n") {
+		for l := range strings.SplitSeq(mustRun(t, "staffing", "show").stdout, "\n") {
 			if strings.HasPrefix(strings.TrimSpace(l), agent+" ") {
 				found = l
 			}

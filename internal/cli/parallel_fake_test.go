@@ -109,7 +109,10 @@ func plChildMain() int {
 				"escalate", "pre_commit_approval", "--message", message)
 		}
 	}
-	raw, _ := json.Marshal(call)
+	raw, err := json.Marshal(call)
+	if err != nil {
+		panic(err)
+	}
 	name := fmt.Sprintf("%s-%d.json", strings.ReplaceAll(call.Story, "/", "_"), os.Getpid())
 	_ = os.MkdirAll(filepath.Join(dir, "calls"), 0o755)
 	_ = os.WriteFile(filepath.Join(dir, "calls", name), raw, 0o644)

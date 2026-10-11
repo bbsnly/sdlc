@@ -86,6 +86,7 @@ func setGitOnDisk(t *testing.T, root, key string, value any) {
 func frozenStory(t *testing.T) string {
 	t.Helper()
 	root := walkedCopy(t, "frozen story", func(t *testing.T, root string) {
+		t.Helper()
 		gitProjectInitialisedAt(t, root)
 		mustRun(t, "start")
 		reach(t, root, model.GateTestsFrozen)
@@ -603,7 +604,7 @@ func TestAnotherStorysFreezeIsNotThisStorysToLift(t *testing.T) {
 	t.Parallel()
 	root := frozenStory(t)
 	mustRun(t, "freeze")
-	addStory(t, root, "US-002")
+	addStory(t, root)
 	mustRun(t, "stop")
 	// Committed, or the second story would not start on top of the first
 	// one's work.
@@ -646,7 +647,7 @@ func TestAFreezeForAStoryRemovedFromTheBacklogIsNotALeftover(t *testing.T) {
 	root := frozenStory(t)
 	mustRun(t, "freeze")
 	mustRun(t, "gate", "tests_frozen", "pass", "--note", "frozen")
-	addStory(t, root, "US-002")
+	addStory(t, root)
 	mustRun(t, "stop")
 	commitEverything(t, root)
 	writeFile(t, root, "user_stories.json", `{"stories":[
