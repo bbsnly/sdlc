@@ -53,7 +53,7 @@ func rpRepo(t *testing.T) (root, fork string) {
 // rpBilling is billing.go with the story's two lines low in it, and trunk's
 // header line high in it where trunk is set.
 func rpBilling(story, trunk bool) string {
-	lines := lgLines(30)
+	lines := lgLines()
 	if story {
 		lines = lgInsert(lines, 26, "// story line A", "// story line B")
 	}
@@ -67,7 +67,7 @@ func rpBilling(story, trunk bool) string {
 // changed and invoice.go added, then a.txt changed.
 func rpStory(t *testing.T, root string) (wt, tip string) {
 	t.Helper()
-	wt = lgStory(t, root, "story/US-001")
+	wt = lgStory(t, root)
 	write(t, wt, "billing.go", rpBilling(true, false))
 	write(t, wt, "invoice.go", "package billing\n")
 	lgCommit(t, wt, "US-001: invoices")
@@ -97,7 +97,7 @@ func rpSnap(t *testing.T, wt string) string {
 	b.WriteString("status\n" + lgStatus(t, wt) + "\n")
 	b.WriteString("stashes\n" + wtGitOut(t, wt, "stash", "list", "--format=%H") + "\n")
 	b.WriteString("part-way " + rpPartWay(t, wt) + "\n")
-	for _, name := range strings.Split(wtGitOut(t, wt, "-c", "core.quotePath=false", "ls-files"), "\n") {
+	for name := range strings.SplitSeq(wtGitOut(t, wt, "-c", "core.quotePath=false", "ls-files"), "\n") {
 		b.WriteString("file " + name + "\n" + lgRead(t, wt, name) + "\n")
 	}
 	return b.String()
@@ -249,7 +249,7 @@ var rpConflicts = []struct {
 	{
 		name:  "both changed the same lines",
 		story: map[string]string{"billing.go": rpBilling(true, false)},
-		trunk: map[string]string{"billing.go": lgFile(lgInsert(lgLines(30), 26, "// trunk's own line"))},
+		trunk: map[string]string{"billing.go": lgFile(lgInsert(lgLines(), 26, "// trunk's own line"))},
 		want:  []string{"billing.go"},
 	},
 	{
@@ -309,7 +309,7 @@ func TestAReplayThatConflictsNamesThePathsAndIsAbandonedWithoutATrace(t *testing
 	for _, tc := range rpConflicts {
 		t.Run(tc.name, func(t *testing.T) {
 			root, fork := rpRepo(t)
-			wt := lgStory(t, root, "story/US-001")
+			wt := lgStory(t, root)
 			// A stash made before the story's work, and an untracked file: what a
 			// session may have beside its commits.
 			write(t, wt, "a.txt", "set aside\n")
@@ -428,7 +428,7 @@ func TestReplayNeverStashesAnUncommittedChange(t *testing.T) {
 // and takes a fork point from the reflog.
 func TestReplayUsesTheMergeBackendWhateverTheRepositoryConfigures(t *testing.T) {
 	root, fork := rpRepo(t)
-	wt := lgStory(t, root, "story/US-001")
+	wt := lgStory(t, root)
 	rpApply(t, wt, "US-001", rpConflicts[0].story)
 	trunk := rpApply(t, root, "another story lands", rpConflicts[0].trunk)
 	run(t, root, "config", "rebase.backend", "apply")
@@ -468,18 +468,22 @@ func TestTheRepositorysConfigurationDoesNotRunInOrShapeTheReplay(t *testing.T) {
 		set     func(t *testing.T, root, bin, marks string)
 	}{
 		{name: "merge.default names a driver", set: func(t *testing.T, root, bin, marks string) {
+			t.Helper()
 			run(t, root, "config", "merge.steer.driver", "'"+rpScript(t, bin, marks, "driver", steered)+"' %O %A %B")
 			run(t, root, "config", "merge.default", "steer")
 		}},
 		{name: "an attribute names a configured driver", mayStop: true, set: func(t *testing.T, root, bin, marks string) {
+			t.Helper()
 			run(t, root, "config", "merge.steer.driver", "'"+rpScript(t, bin, marks, "driver", steered)+"' %O %A %B")
 			write(t, root, ".git/info/attributes", "billing.go merge=steer\n")
 		}},
 		{name: "a driver whose name holds an equals sign", mayStop: true, set: func(t *testing.T, root, bin, marks string) {
+			t.Helper()
 			run(t, root, "config", "merge.st=eer.driver", "'"+rpScript(t, bin, marks, "driver", steered)+"' %O %A %B")
 			write(t, root, ".git/info/attributes", "billing.go merge=st=eer\n")
 		}},
 		{name: "an editor", set: func(t *testing.T, root, bin, marks string) {
+			t.Helper()
 			editor := "'" + rpScript(t, bin, marks, "editor", "exit 1") + "'"
 			run(t, root, "config", "core.editor", editor)
 			run(t, root, "config", "sequence.editor", editor)
@@ -487,16 +491,19 @@ func TestTheRepositorysConfigurationDoesNotRunInOrShapeTheReplay(t *testing.T) {
 			t.Setenv("GIT_SEQUENCE_EDITOR", editor)
 		}},
 		{name: "commit.gpgSign and a signing program", set: func(t *testing.T, root, bin, marks string) {
+			t.Helper()
 			run(t, root, "config", "commit.gpgSign", "true")
 			run(t, root, "config", "gpg.program", rpScript(t, bin, marks, "gpg", "exit 1"))
 		}},
 		{name: "the hooks", set: func(t *testing.T, root, bin, marks string) {
+			t.Helper()
 			for _, name := range []string{"pre-rebase", "post-rewrite", "post-checkout", "post-commit", "prepare-commit-msg", "commit-msg", "pre-commit", "reference-transaction"} {
 				rpScript(t, bin, marks, name, "exit 0")
 			}
 			run(t, root, "config", "core.hooksPath", filepath.ToSlash(bin))
 		}},
 		{name: "the rebase's own settings", set: func(t *testing.T, root, _, _ string) {
+			t.Helper()
 			for _, kv := range [][2]string{
 				{"rebase.updateRefs", "true"}, {"rebase.autoSquash", "true"}, {"rebase.rebaseMerges", "true"},
 				{"rebase.forkPoint", "true"}, {"rerere.enabled", "true"},
@@ -524,14 +531,7 @@ func TestTheRepositorysConfigurationDoesNotRunInOrShapeTheReplay(t *testing.T) {
 				if !tc.mayStop {
 					t.Fatalf("Replay: %v", err)
 				}
-				if rpPartWay(t, wt) != "" {
-					if got := rpUnmerged(t, wt); !slices.Equal(got, []string{"billing.go"}) {
-						t.Errorf("the replay stopped and Unmerged names %q, want billing.go", got)
-					}
-					if err := AbandonReplay(t.Context(), wt); err != nil {
-						t.Fatalf("AbandonReplay: %v", err)
-					}
-				}
+				rpAbandonIfPartWay(t, wt)
 				rpNoneRan(t, marks)
 				if got := rpSnap(t, wt); got != before {
 					t.Errorf("the replay that stopped left the checkout changed:\nbefore\n%s\nafter\n%s", before, got)
@@ -574,7 +574,7 @@ func rpCommitOn(t *testing.T, root, base, message string, files map[string]strin
 // context a patch carries, and not beside them, so that git still applies one
 // on the other.
 func rpNear(story, trunk bool) string {
-	lines := lgLines(30)
+	lines := lgLines()
 	if story {
 		lines = lgInsert(lines, 26, "// story line A", "// story line B")
 	}
@@ -616,7 +616,7 @@ func TestLinesFingerprintIsTheSameChangeAcrossAReplayBesideTrunksLines(t *testin
 func TestLinesFingerprintFromBothSidesSeesAChangeThatIsNotTheOneReplayed(t *testing.T) {
 	root, _ := rpRepo(t)
 	// A base whose billing.go holds one line twice, far apart.
-	twice := lgInsert(lgInsert(lgLines(30), 20, "// the same line"), 8, "// the same line")
+	twice := lgInsert(lgInsert(lgLines(), 20, "// the same line"), 8, "// the same line")
 	fork := rpCommitOn(t, root, lgRev(t, root, "main"), "a base with one line twice", map[string]string{"billing.go": lgFile(twice)})
 	without := func(lines []string, nth int) []string {
 		out, seen := []string{}, 0
@@ -730,5 +730,20 @@ func TestLinesFingerprintIsOfTheCommitsWhateverTheRepositoryConfigures(t *testin
 		if fp, err := LinesFingerprint(t.Context(), c.root, tc.base, tc.tip); err == nil {
 			t.Errorf("LinesFingerprint(%q, %q) gave %q and no error", tc.base, tc.tip, fp)
 		}
+	}
+}
+
+// rpAbandonIfPartWay abandons a replay that stopped part-way, after checking
+// it stopped on the one file that should conflict.
+func rpAbandonIfPartWay(t *testing.T, wt string) {
+	t.Helper()
+	if rpPartWay(t, wt) == "" {
+		return
+	}
+	if got := rpUnmerged(t, wt); !slices.Equal(got, []string{"billing.go"}) {
+		t.Errorf("the replay stopped and Unmerged names %q, want billing.go", got)
+	}
+	if err := AbandonReplay(t.Context(), wt); err != nil {
+		t.Fatalf("AbandonReplay: %v", err)
 	}
 }

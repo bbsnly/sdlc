@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -43,68 +44,38 @@ var (
 // git runs the repository's post-checkout hook as it checks the worktree out,
 // and nothing here undoes what that hook did.
 func AddWorktree(ctx context.Context, root, dir, branch, trunk string) error {
-	for _, name := range []string{branch, trunk} {
-		if name == "" || strings.HasPrefix(name, "-") {
-			return notMade(strconv.Quote(name)+" cannot name a branch",
-				"no branch is empty or starts with a dash, and git would read one that does as an option", ErrBranchName)
-		}
-	}
-	if !filepath.IsAbs(dir) {
-		return notMade(sdlcerr.QuotePath(dir)+" is not an absolute path",
-			"the worktree is made where it is named, and a relative path names somewhere different from each directory", nil)
-	}
-	if err := refuseLinks(root, dir); err != nil {
+	if err := checkAddRequest(root, dir, branch, trunk); err != nil {
 		return err
 	}
 	if _, err := git(ctx, root, nil, "check-ref-format", "--branch", branch); err != nil {
 		return notMade(strconv.Quote(branch)+" is not a name git takes for a branch",
 			failure(err, "a story's branch is named for it, and git refuses this name"), ErrBranchName)
 	}
-	out, err := git(ctx, root, nil, "rev-parse", "--verify", "--quiet", "refs/heads/"+trunk+"^{commit}")
+	out, err := git(ctx, root, nil, argRevParse, argVerify, argQuiet, headsPrefix+trunk+"^{commit}")
 	if err != nil {
 		return notMade("trunk, "+strconv.Quote(trunk)+", is not a branch with a commit in this repository",
 			"a story's branch is cut from the commit trunk's branch is on, and there is none to cut it from", ErrNoTrunk)
 	}
 	hash := firstLine(string(out))
 
-	listed, err := listWorktrees(ctx, root)
-	if err != nil {
+	if err := refuseTaken(ctx, root, dir, branch); err != nil {
 		return err
 	}
-	for _, w := range listed {
-		if samePath(w.path, dir) {
-			return notMade("a worktree at "+sdlcerr.QuotePath(dir)+" already exists",
-				"git lists it as a checkout of this repository, and a checkout that is already there may hold "+
-					"somebody's work, so start never reuses or removes it", ErrInTheWay)
-		}
-	}
-	if _, err := git(ctx, root, nil, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
-		return notMade("the branch "+strconv.Quote(branch)+" already exists",
-			"a story is begun on a new branch cut from trunk, and a branch that is already there may hold "+
-				"somebody's work, so start never reuses, resets or removes it", ErrInTheWay)
-	}
-	existed := false
-	if entries, err := os.ReadDir(dir); err == nil {
-		existed = true
-		if len(entries) > 0 {
-			return notMade(sdlcerr.QuotePath(dir)+" already exists and has something in it",
-				"start makes the worktree in a directory of its own, and never writes over or removes "+
-					"what it did not make", ErrInTheWay)
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return notMade(sdlcerr.QuotePath(dir)+" could not be read", err.Error(), ErrInTheWay)
+	existed, err := emptyDirExisted(dir)
+	if err != nil {
+		return err
 	}
 
 	// Created only where it is not there: a racing start that got here first
 	// has made it, and this one loses with nothing made.
 	message := "sdlc start: " + branch + " cut from " + trunk
-	if _, err := git(ctx, root, nil, "update-ref", "-m", message, "refs/heads/"+branch, hash, ""); err != nil {
-		return notMade("the branch "+strconv.Quote(branch)+" already exists",
+	if _, err := git(ctx, root, nil, argUpdateRef, "-m", message, headsPrefix+branch, hash, ""); err != nil {
+		return notMade(msgTheBranch+strconv.Quote(branch)+msgAlreadyExists,
 			failure(err, "another start made it a moment ago"), ErrInTheWay)
 	}
 	// The short name, and no -b: git checks the branch out rather than a tag
 	// that shares its name, and sets up no tracking for a branch cut from a hash.
-	if _, err := git(ctx, root, nil, "worktree", "add", "--quiet", "--", dir, branch); err != nil {
+	if _, err := git(ctx, root, nil, "worktree", "add", argQuiet, "--", dir, branch); err != nil {
 		left := undoAdd(ctx, root, dir, branch, hash, existed)
 		why := failure(err, "git could not check the branch out")
 		if len(left) > 0 {
@@ -115,19 +86,65 @@ func AddWorktree(ctx context.Context, root, dir, branch, trunk string) error {
 	return nil
 }
 
+// checkAddRequest refuses what AddWorktree is asked for that git is not needed
+// to refuse: names git would read as options, a relative path, and links.
+func checkAddRequest(root, dir, branch, trunk string) error {
+	for _, name := range []string{branch, trunk} {
+		if name == "" || strings.HasPrefix(name, "-") {
+			return notMade(strconv.Quote(name)+msgCannotNameBranch, msgBranchNotAnOption, ErrBranchName)
+		}
+	}
+	if !filepath.IsAbs(dir) {
+		return notMade(sdlcerr.QuotePath(dir)+" is not an absolute path",
+			"the worktree is made where it is named, and a relative path names somewhere different from each directory", nil)
+	}
+	return refuseLinks(root, dir)
+}
+
+// refuseTaken refuses a worktree at dir that git already lists, and a branch
+// that already exists.
+func refuseTaken(ctx context.Context, root, dir, branch string) error {
+	listed, err := listWorktrees(ctx, root)
+	if err != nil {
+		return err
+	}
+	for _, w := range listed {
+		if samePath(w.path, dir) {
+			return notMade("a worktree at "+sdlcerr.QuotePath(dir)+msgAlreadyExists,
+				"git lists it as a checkout of this repository, and a checkout that is already there may hold "+
+					"somebody's work, so start never reuses or removes it", ErrInTheWay)
+		}
+	}
+	if _, err := git(ctx, root, nil, "show-ref", argVerify, argQuiet, headsPrefix+branch); err == nil {
+		return notMade(msgTheBranch+strconv.Quote(branch)+msgAlreadyExists,
+			"a story is begun on a new branch cut from trunk, and a branch that is already there may hold "+
+				"somebody's work, so start never reuses, resets or removes it", ErrInTheWay)
+	}
+	return nil
+}
+
+// emptyDirExisted reports whether dir is already there as an empty directory,
+// and refuses one with something in it or one that cannot be read.
+func emptyDirExisted(dir string) (bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err == nil {
+		if len(entries) > 0 {
+			return true, notMade(sdlcerr.QuotePath(dir)+msgAlreadyExists+" and has something in it",
+				"start makes the worktree in a directory of its own, and never writes over or removes "+
+					"what it did not make", ErrInTheWay)
+		}
+		return true, nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return false, notMade(sdlcerr.QuotePath(dir)+msgCouldNotBeRead, err.Error(), ErrInTheWay)
+	}
+	return false, nil
+}
+
 // undoAdd takes away what AddWorktree made before git failed to make the
 // worktree, and names whatever is left.
 func undoAdd(ctx context.Context, root, dir, branch, hash string, existed bool) []string {
-	var left []string
-	if listed, err := listWorktrees(ctx, root); err == nil {
-		for _, w := range listed {
-			if samePath(w.path, dir) {
-				if _, err := git(ctx, root, nil, "worktree", "remove", "--force", "--", dir); err != nil {
-					left = append(left, "the worktree "+sdlcerr.QuotePath(dir)+" is still registered with git")
-				}
-			}
-		}
-	}
+	left := removeRegistered(ctx, root, dir)
 	switch _, err := os.Lstat(dir); {
 	case err == nil && !existed:
 		if err := os.RemoveAll(dir); err != nil {
@@ -135,11 +152,30 @@ func undoAdd(ctx context.Context, root, dir, branch, hash string, existed bool) 
 		}
 	case errors.Is(err, fs.ErrNotExist) && existed:
 		// It was an empty directory before, and it is one again.
-		_ = os.Mkdir(dir, 0o755)
+		_ = os.Mkdir(dir, 0o755) //nolint:gosec // G301: puts back the empty directory the user's checkout had, with the mode a checkout gives it
 	}
 	// Deleted only while it still points where this call put it.
-	if _, err := git(ctx, root, nil, "update-ref", "-d", "refs/heads/"+branch, hash); err != nil {
-		left = append(left, "the branch "+strconv.Quote(branch)+" is still there")
+	if _, err := git(ctx, root, nil, argUpdateRef, "-d", headsPrefix+branch, hash); err != nil {
+		left = append(left, msgTheBranch+strconv.Quote(branch)+" is still there")
+	}
+	return left
+}
+
+// removeRegistered takes the worktree at dir away from git's list, and names
+// it if git keeps it there.
+func removeRegistered(ctx context.Context, root, dir string) []string {
+	var left []string
+	listed, err := listWorktrees(ctx, root)
+	if err != nil {
+		return nil
+	}
+	for _, w := range listed {
+		if !samePath(w.path, dir) {
+			continue
+		}
+		if _, err := git(ctx, root, nil, "worktree", "remove", "--force", "--", dir); err != nil {
+			left = append(left, "the worktree "+sdlcerr.QuotePath(dir)+" is still registered with git")
+		}
 	}
 	return left
 }
@@ -151,8 +187,8 @@ func undoAdd(ctx context.Context, root, dir, branch, hash string, existed bool) 
 // cannot become a deletion.
 func RemoveWorktree(ctx context.Context, root, dir, branch string) error {
 	if branch == "" || strings.HasPrefix(branch, "-") {
-		return notRemoved(strconv.Quote(branch)+" cannot name a branch",
-			"no branch is empty or starts with a dash, and git would read one that does as an option")
+		return notRemoved(strconv.Quote(branch)+msgCannotNameBranch,
+			msgBranchNotAnOption)
 	}
 	listed, err := listWorktrees(ctx, root)
 	if err != nil {
@@ -172,7 +208,7 @@ func RemoveWorktree(ctx context.Context, root, dir, branch string) error {
 	case found == &listed[0]:
 		return notRemoved(sdlcerr.QuotePath(dir)+" is the main checkout",
 			"the main checkout is never taken away")
-	case found.branch != "refs/heads/"+branch:
+	case found.branch != headsPrefix+branch:
 		return notRemoved(sdlcerr.QuotePath(dir)+" does not have "+strconv.Quote(branch)+" checked out",
 			"a worktree is taken away only with the branch it was made on")
 	}
@@ -182,8 +218,8 @@ func RemoveWorktree(ctx context.Context, root, dir, branch string) error {
 			failure(err, "git could not remove it")+"; it and the branch "+strconv.Quote(branch)+
 				" are still there, and a file something has open in it keeps it there on Windows")
 	}
-	if _, err := git(ctx, root, nil, "update-ref", "-d", "refs/heads/"+branch, found.head); err != nil {
-		return notRemoved("the branch "+strconv.Quote(branch)+" could not be deleted",
+	if _, err := git(ctx, root, nil, argUpdateRef, "-d", headsPrefix+branch, found.head); err != nil {
+		return notRemoved(msgTheBranch+strconv.Quote(branch)+" could not be deleted",
 			failure(err, "git could not delete it")+"; the worktree was taken away, and the branch is still there")
 	}
 	return nil
@@ -195,7 +231,7 @@ func Ahead(ctx context.Context, root, branch, trunk string) (int, error) {
 	if err := branchNames(branch, trunk); err != nil {
 		return 0, err
 	}
-	return count(ctx, root, "refs/heads/"+trunk+"..refs/heads/"+branch)
+	return count(ctx, root, headsPrefix+trunk+"..refs/heads/"+branch)
 }
 
 // HeadAhead is how many commits the checkout at dir has on its HEAD that trunk
@@ -206,7 +242,7 @@ func HeadAhead(ctx context.Context, dir, trunk string) (int, error) {
 	if err := branchNames(trunk); err != nil {
 		return 0, err
 	}
-	return count(ctx, dir, "refs/heads/"+trunk+"..HEAD")
+	return count(ctx, dir, headsPrefix+trunk+"..HEAD")
 }
 
 // branchNames refuses a name git would read as an option, or no name at all.
@@ -214,8 +250,8 @@ func branchNames(names ...string) error {
 	for _, name := range names {
 		if name == "" || strings.HasPrefix(name, "-") {
 			return sdlcerr.New(sdlcerr.RepositoryUnreadable,
-				strconv.Quote(name)+" cannot name a branch",
-				"no branch is empty or starts with a dash, and git would read one that does as an option")
+				strconv.Quote(name)+msgCannotNameBranch,
+				msgBranchNotAnOption)
 		}
 	}
 	return nil
@@ -231,7 +267,7 @@ func count(ctx context.Context, root, commits string) (int, error) {
 	if err != nil {
 		return 0, sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			"git rev-list did not report a count",
-			"git said: "+firstLine(string(out))).WithCause(err)
+			msgGitSaid+firstLine(string(out))).WithCause(err)
 	}
 	return n, nil
 }
@@ -271,7 +307,7 @@ func Version(ctx context.Context) (major, minor int, err error) {
 	if m == nil {
 		return 0, 0, sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			"git did not say which version it is",
-			"git said: "+firstLine(string(out)))
+			msgGitSaid+firstLine(string(out)))
 	}
 	major, _ = strconv.Atoi(m[1])
 	minor, _ = strconv.Atoi(m[2])
@@ -301,7 +337,7 @@ func Worktrees(ctx context.Context, root string) ([]Worktree, error) {
 	}
 	out := make([]Worktree, len(listed))
 	for i, w := range listed {
-		branch, _ := strings.CutPrefix(w.branch, "refs/heads/")
+		branch, _ := strings.CutPrefix(w.branch, headsPrefix)
 		out[i] = Worktree{Path: w.path, Branch: branch, Gone: w.prunable, Locked: w.locked}
 	}
 	return out, nil
@@ -324,7 +360,7 @@ func listWorktrees(ctx context.Context, root string) ([]listedWorktree, error) {
 // parseWorktrees reads what `git worktree list --porcelain` printed.
 func parseWorktrees(out []byte) []listedWorktree {
 	var listed []listedWorktree
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		key, value, _ := strings.Cut(strings.TrimRight(line, "\r"), " ")
 		switch {
 		case key == "worktree":
@@ -356,19 +392,19 @@ func refuseLinks(root, dir string) error {
 			steps = append(steps, p)
 		}
 	}
-	for i := len(steps) - 1; i >= 0; i-- {
-		info, err := os.Lstat(steps[i])
+	for _, step := range slices.Backward(steps) {
+		info, err := os.Lstat(step)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			return nil
 		case err != nil:
-			return notMade(sdlcerr.QuotePath(steps[i])+" could not be read", err.Error(), ErrNotADirectory)
+			return notMade(sdlcerr.QuotePath(step)+msgCouldNotBeRead, err.Error(), ErrNotADirectory)
 		case info.Mode()&fs.ModeSymlink != 0:
-			return notMade(sdlcerr.QuotePath(steps[i])+" is a link",
+			return notMade(sdlcerr.QuotePath(step)+" is a link",
 				"the worktree is made in a directory of the main checkout itself, and never through a link to "+
 					"somewhere else", ErrNotADirectory)
 		case !info.IsDir():
-			return notMade(sdlcerr.QuotePath(steps[i])+" is a file, where a directory belongs",
+			return notMade(sdlcerr.QuotePath(step)+" is a file, where a directory belongs",
 				"the worktree is made in a directory of the main checkout, and start never writes over "+
 					"what it did not make", ErrNotADirectory)
 		}

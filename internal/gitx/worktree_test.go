@@ -103,7 +103,7 @@ func wtSnapshot(t *testing.T, root string) wtUntouched {
 func wtList(t *testing.T, root string) []string {
 	t.Helper()
 	var out []string
-	for _, line := range strings.Split(wtGitOut(t, root, "worktree", "list", "--porcelain"), "\n") {
+	for line := range strings.SplitSeq(wtGitOut(t, root, "worktree", "list", "--porcelain"), "\n") {
 		if p, ok := strings.CutPrefix(line, "worktree "); ok {
 			out = append(out, p)
 		}

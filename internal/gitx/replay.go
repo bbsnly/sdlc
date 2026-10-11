@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -69,7 +70,7 @@ func Replay(ctx context.Context, checkout, onto, upstream string) error {
 					"carry as it is, and a merge driver the repository configures is never run while a story's "+
 					"commits are put onto trunk")
 		}
-		settings = append(settings[:len(settings):len(settings)], key+"=exit 1")
+		settings = append(slices.Clip(settings), key+"=exit 1")
 	}
 	_, err = sealedCall(ctx, checkout, settings, nil, nil,
 		"rebase", "--merge", "--no-fork-point", "--onto", onto, upstream)
@@ -86,7 +87,7 @@ func AbandonReplay(ctx context.Context, checkout string) error {
 // Unmerged is every path in checkout that a merge left in conflict, as git
 // spells it, and none where nothing is in conflict.
 func Unmerged(ctx context.Context, checkout string) ([]string, error) {
-	out, err := sealed(ctx, checkout, "diff", "--name-only", "-z", "--no-renames", "--diff-filter=U")
+	out, err := sealed(ctx, checkout, "diff", "--name-only", "-z", argNoRenames, "--diff-filter=U")
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,7 @@ func configured(ctx context.Context, dir, pattern string) ([]string, error) {
 // nulSeparated is the names in what git wrote with -z.
 func nulSeparated(out []byte) []string {
 	var names []string
-	for _, name := range strings.Split(string(out), "\x00") {
+	for name := range strings.SplitSeq(string(out), "\x00") {
 		if name != "" {
 			names = append(names, name)
 		}

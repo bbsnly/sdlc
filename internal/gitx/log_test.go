@@ -51,7 +51,7 @@ func TestResolveNamesACommitInFullOrRefuses(t *testing.T) {
 	}
 }
 
-// notACommit wraps what git said, so a caller further up that wants the
+// notACommitError wraps what git said, so a caller further up that wants the
 // code and the fix -- to render a message, say -- can still reach it by
 // unwrapping past NamesNoCommit's own check.
 func TestAFailedResolveStillCarriesTheUnderlyingCode(t *testing.T) {

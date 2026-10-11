@@ -45,11 +45,11 @@ import (
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
-// lgLines is a Go file of n numbered lines, far enough apart that a change at
-// one end of it is out of reach of a diff's context at the other.
-func lgLines(n int) []string {
+// lgLines is a Go file of thirty numbered lines, far enough apart that a change
+// at one end of it is out of reach of a diff's context at the other.
+func lgLines() []string {
 	lines := []string{"package billing", ""}
-	for i := 1; i <= n; i++ {
+	for i := 1; i <= 30; i++ {
 		lines = append(lines, fmt.Sprintf("// line %02d", i))
 	}
 	return lines
@@ -70,7 +70,7 @@ func lgRepo(t *testing.T) (root, tip string) {
 	t.Helper()
 	root = repo(t)
 	run(t, root, "symbolic-ref", "HEAD", "refs/heads/main")
-	write(t, root, "billing.go", lgFile(lgLines(30)))
+	write(t, root, "billing.go", lgFile(lgLines()))
 	write(t, root, "a.txt", "a\n")
 	write(t, root, "notes.txt", "notes\n")
 	return root, lgCommit(t, root, "trunk")
@@ -101,12 +101,12 @@ func lgTempDir(t *testing.T) string {
 	return dir
 }
 
-// lgStory adds a linked worktree on a new branch cut from main's tip, outside
-// the main checkout, and returns it.
-func lgStory(t *testing.T, root, branch string) string {
+// lgStory adds a linked worktree on a new branch, story/US-001, cut from main's
+// tip, outside the main checkout, and returns it.
+func lgStory(t *testing.T, root string) string {
 	t.Helper()
 	dir := filepath.Join(lgTempDir(t), "story")
-	run(t, root, "worktree", "add", "--quiet", "-b", branch, dir, "main")
+	run(t, root, "worktree", "add", "--quiet", "-b", "story/US-001", dir, "main")
 	return dir
 }
 
@@ -156,8 +156,8 @@ func lgSays(t *testing.T, err error, want ...string) {
 // worktree and the story's tip.
 func lgStoryWork(t *testing.T, root string) (wt, tip string) {
 	t.Helper()
-	wt = lgStory(t, root, "story/US-001")
-	write(t, wt, "billing.go", lgFile(lgInsert(lgLines(30), 26, "// story line A", "// story line B")))
+	wt = lgStory(t, root)
+	write(t, wt, "billing.go", lgFile(lgInsert(lgLines(), 26, "// story line A", "// story line B")))
 	write(t, wt, "invoice.go", "package billing\n")
 	lgCommit(t, wt, "US-001: invoices")
 	write(t, wt, "a.txt", "a, changed by the story\n")
@@ -286,13 +286,16 @@ func TestAC6FastForwardRefusesOverUncommittedChangesToWhatItWritesAndNamesThem(t
 		named   string
 	}{
 		{"AC-6 a tracked file changed", func(t *testing.T, root string) {
+			t.Helper()
 			write(t, root, "a.txt", "a, a person's edit\n")
 		}, "a.txt"},
 		{"AC-6 a tracked file changed and staged", func(t *testing.T, root string) {
+			t.Helper()
 			write(t, root, "billing.go", "package billing // a person's edit\n")
 			run(t, root, "add", "billing.go")
 		}, "billing.go"},
 		{"T7 an untracked file where the story adds one", func(t *testing.T, root string) {
+			t.Helper()
 			write(t, root, "invoice.go", "package billing // a person's own invoice.go\n")
 		}, "invoice.go"},
 	} {
@@ -465,7 +468,7 @@ func lgChangesOn(t *testing.T) lgChanges {
 	write(t, root, "logo.bin", "\x00\x01\x02binary\x00")
 	t0 := lgCommit(t, root, "trunk with a binary file")
 	c := lgChanges{root: root, t0: t0}
-	lines := lgLines(30)
+	lines := lgLines()
 	variant := func(name string, billing []string, extra func()) string {
 		t.Helper()
 		run(t, root, "switch", "--quiet", "--detach", t0)
@@ -515,13 +518,13 @@ func lgFingerprint(t *testing.T, root, base, tip string, leaveOut ...string) str
 // the story's own, so every line number in the story's hunk moved.
 func TestAC4TheSameChangeRebasedOntoAMovedTrunkHasTheSameFingerprint(t *testing.T) {
 	root, t0 := lgRepo(t)
-	wt := lgStory(t, root, "story/US-001")
-	write(t, wt, "billing.go", lgFile(lgInsert(lgLines(30), 26, "// story line A", "// story line B")))
+	wt := lgStory(t, root)
+	write(t, wt, "billing.go", lgFile(lgInsert(lgLines(), 26, "// story line A", "// story line B")))
 	write(t, wt, "invoice.go", "package billing\n")
 	story := lgCommit(t, wt, "US-001")
 	reviewed := lgFingerprint(t, root, t0, story)
 
-	write(t, root, "billing.go", lgFile(lgInsert(lgLines(30), 2, "// a header trunk added")))
+	write(t, root, "billing.go", lgFile(lgInsert(lgLines(), 2, "// a header trunk added")))
 	write(t, root, "other.go", "package billing\n")
 	t1 := lgCommit(t, root, "another story lands")
 	run(t, wt, "-c", "user.email=t@example.com", "-c", "user.name=Test", "rebase", "--quiet", "main")

@@ -36,7 +36,7 @@ func Files(ctx context.Context, root string) ([]string, error) {
 
 	seen := map[string]bool{}
 	files := make([]string, 0, 64)
-	for _, p := range strings.Split(string(out), "\x00") {
+	for p := range strings.SplitSeq(string(out), "\x00") {
 		if p == "" || seen[p] {
 			continue
 		}
@@ -79,33 +79,7 @@ func TreeHash(ctx context.Context, root string, overrides ...Override) (string, 
 		return "", err
 	}
 	for _, o := range overrides {
-		staged, err := git(ctx, root, env, "ls-files", "--stage", "--", ":(literal)"+o.Path)
-		if err != nil {
-			return "", err
-		}
-		mode, _, inTree := strings.Cut(firstLine(string(staged)), " ")
-		if !inTree {
-			continue
-		}
-		if o.At != "" {
-			// A path holding files beneath it is a directory where the
-			// override stands in for one file. git refuses the entry then, and
-			// a caller that read that as a tree it could not measure let the
-			// shape through unchecked.
-			if holdsBeneath(string(staged), o.Path) {
-				return "", ErrOverrideNotAFile
-			}
-			if err := takeAt(ctx, root, env, o); err != nil {
-				return "", err
-			}
-			continue
-		}
-		blob, err := gitInput(ctx, root, env, o.Content, "hash-object", "-w", "--stdin", "--path="+o.Path)
-		if err != nil {
-			return "", err
-		}
-		if _, err := git(ctx, root, env, "update-index", "--cacheinfo",
-			mode+","+firstLine(string(blob))+","+o.Path); err != nil {
+		if err := applyOverride(ctx, root, env, o); err != nil {
 			return "", err
 		}
 	}
@@ -114,6 +88,34 @@ func TreeHash(ctx context.Context, root string, overrides ...Override) (string, 
 		return "", err
 	}
 	return firstLine(string(out)), nil
+}
+
+// applyOverride puts o into the index env names, where the tree has the file.
+func applyOverride(ctx context.Context, root string, env []string, o Override) error {
+	staged, err := git(ctx, root, env, "ls-files", "--stage", "--", ":(literal)"+o.Path)
+	if err != nil {
+		return err
+	}
+	mode, _, inTree := strings.Cut(firstLine(string(staged)), " ")
+	if !inTree {
+		return nil
+	}
+	if o.At != "" {
+		// A path holding files beneath it is a directory where the
+		// override stands in for one file. git refuses the entry then, and
+		// a caller that read that as a tree it could not measure let the
+		// shape through unchecked.
+		if holdsBeneath(string(staged), o.Path) {
+			return ErrOverrideNotAFile
+		}
+		return takeAt(ctx, root, env, o)
+	}
+	blob, err := gitInput(ctx, root, env, o.Content, "hash-object", "-w", "--stdin", "--path="+o.Path)
+	if err != nil {
+		return err
+	}
+	_, err = git(ctx, root, env, argUpdateIndex, "--cacheinfo", mode+","+firstLine(string(blob))+","+o.Path)
+	return err
 }
 
 // ErrOverrideNotAFile is an override taken from a commit whose path the tree
@@ -142,16 +144,16 @@ func takeAt(ctx context.Context, root string, env []string, o Override) error {
 	if err != nil {
 		return err
 	}
-	for _, entry := range strings.Split(string(out), "\x00") {
+	for entry := range strings.SplitSeq(string(out), "\x00") {
 		meta, name, ok := strings.Cut(entry, "\t")
 		fields := strings.Fields(meta)
 		if !ok || name != o.Path || len(fields) != 3 || fields[1] != "blob" {
 			continue
 		}
-		_, err := git(ctx, root, env, "update-index", "--cacheinfo", fields[0]+","+fields[2]+","+o.Path)
+		_, err := git(ctx, root, env, argUpdateIndex, "--cacheinfo", fields[0]+","+fields[2]+","+o.Path)
 		return err
 	}
-	_, err = git(ctx, root, env, "update-index", "--force-remove", "--", o.Path)
+	_, err = git(ctx, root, env, argUpdateIndex, "--force-remove", "--", o.Path)
 	return err
 }
 
@@ -173,7 +175,7 @@ const NoCommits = "0000000000000000000000000000000000000000"
 // yet. Read as "", which a record from before HEAD was kept also holds, the
 // first story of a new project was held to no HEAD at all.
 func Head(ctx context.Context, root string) (string, error) {
-	out, err := git(ctx, root, nil, "rev-parse", "--verify", "--quiet", "HEAD")
+	out, err := git(ctx, root, nil, argRevParse, argVerify, argQuiet, "HEAD")
 	if err != nil {
 		// A repository with no commits is still on a branch; a directory that
 		// is not a repository is on none.
@@ -193,32 +195,32 @@ func Head(ctx context.Context, root string) (string, error) {
 // NamesNoCommit tells a refusal from git failing to run at all.
 func Resolve(ctx context.Context, root, rev string) (string, error) {
 	if strings.HasPrefix(rev, "-") {
-		return "", notACommit{sdlcerr.New(sdlcerr.RepositoryUnreadable,
+		return "", notACommitError{sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			strconv.Quote(rev)+" is not a commit",
 			"no revision starts with a dash, and git would read one that does as an option")}
 	}
-	out, err := git(ctx, root, nil, "rev-parse", "--verify", rev+"^{commit}")
+	out, err := git(ctx, root, nil, argRevParse, argVerify, rev+"^{commit}")
 	var exit *exec.ExitError
 	switch {
 	case errors.As(err, &exit):
-		return "", notACommit{err}
+		return "", notACommitError{err}
 	case err != nil:
 		return "", err
 	}
 	return firstLine(string(out)), nil
 }
 
-// notACommit is Resolve's refusal: git ran, or would have, and the revision
+// notACommitError is Resolve's refusal: git ran, or would have, and the revision
 // names no commit.
-type notACommit struct{ error }
+type notACommitError struct{ error }
 
-func (e notACommit) Unwrap() error { return e.error }
+func (e notACommitError) Unwrap() error { return e.error }
 
 // NamesNoCommit reports whether err is Resolve saying a revision names no
 // commit, rather than git not running: missing from PATH, or stopped. Only the
 // first is reason to tell somebody the commit is not there.
 func NamesNoCommit(err error) bool {
-	var refused notACommit
+	var refused notACommitError
 	return errors.As(err, &refused)
 }
 
@@ -234,7 +236,7 @@ type Commit struct {
 // with anything uncommitted in it. A linked worktree has a git directory of its
 // own.
 func GitDir(ctx context.Context, root string) (string, error) {
-	out, err := git(ctx, root, nil, "rev-parse", "--absolute-git-dir")
+	out, err := git(ctx, root, nil, argRevParse, "--absolute-git-dir")
 	if err != nil {
 		return "", err
 	}
@@ -249,7 +251,7 @@ func GitDir(ctx context.Context, root string) (string, error) {
 func CommitsBetween(ctx context.Context, root, base, end string) ([]Commit, error) {
 	for _, rev := range []string{base, end} {
 		if strings.HasPrefix(rev, "-") || rev == "" {
-			return nil, notACommit{sdlcerr.New(sdlcerr.RepositoryUnreadable,
+			return nil, notACommitError{sdlcerr.New(sdlcerr.RepositoryUnreadable,
 				strconv.Quote(rev)+" is not a commit",
 				"no revision is empty or starts with a dash, and git would read one that does as an option")}
 		}
@@ -370,14 +372,14 @@ func Changes(ctx context.Context, root string) ([]string, error) {
 // shares to heads/<name>, so with a tag called main, HEAD on main read as a
 // branch called heads/main.
 func Branch(ctx context.Context, root string) (string, error) {
-	out, err := git(ctx, root, nil, "symbolic-ref", "--quiet", "HEAD")
+	out, err := git(ctx, root, nil, "symbolic-ref", argQuiet, "HEAD")
 	if err == nil {
-		if name, ok := strings.CutPrefix(firstLine(string(out)), "refs/heads/"); ok {
+		if name, ok := strings.CutPrefix(firstLine(string(out)), headsPrefix); ok {
 			return name, nil
 		}
 		return "", nil
 	}
-	if head, headErr := git(ctx, root, nil, "rev-parse", "--abbrev-ref", "HEAD"); headErr == nil &&
+	if head, headErr := git(ctx, root, nil, argRevParse, "--abbrev-ref", "HEAD"); headErr == nil &&
 		firstLine(string(head)) == "HEAD" {
 		return "", nil
 	}
@@ -390,13 +392,13 @@ func Branch(ctx context.Context, root string) (string, error) {
 // repository with no commits yet, is the one its first commit will be made on.
 // It is "" when none of those answers, and the caller has a default for that.
 func Trunk(ctx context.Context, root string) string {
-	if out, err := git(ctx, root, nil, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil {
+	if out, err := git(ctx, root, nil, "symbolic-ref", argQuiet, "--short", "refs/remotes/origin/HEAD"); err == nil {
 		if name, ok := strings.CutPrefix(firstLine(string(out)), "origin/"); ok && name != "" {
 			return name
 		}
 	}
 	for _, name := range []string{"main", "master"} {
-		if _, err := git(ctx, root, nil, "show-ref", "--verify", "--quiet", "refs/heads/"+name); err == nil {
+		if _, err := git(ctx, root, nil, "show-ref", argVerify, argQuiet, headsPrefix+name); err == nil {
 			return name
 		}
 	}
@@ -421,13 +423,13 @@ func Behind(ctx context.Context, root, remote, branch string) (int, error) {
 				"no remote or branch is empty or starts with a dash, and git would read one that does as an option")
 		}
 	}
-	local := "refs/heads/" + branch
-	if _, err := git(ctx, root, nil, "rev-parse", "--verify", "--quiet", local+"^{commit}"); err != nil {
+	local := headsPrefix + branch
+	if _, err := git(ctx, root, nil, argRevParse, argVerify, argQuiet, local+"^{commit}"); err != nil {
 		return 0, sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			strconv.Quote(branch)+" is not a branch with a commit in this repository",
 			"trunk is counted from the branch of that name here, and there is none to count from").WithCause(err)
 	}
-	if _, err := git(ctx, root, []string{"GIT_TERMINAL_PROMPT=0"}, "fetch", "--quiet", remote, branch); err != nil {
+	if _, err := git(ctx, root, []string{"GIT_TERMINAL_PROMPT=0"}, "fetch", argQuiet, remote, branch); err != nil {
 		return 0, err
 	}
 	out, err := git(ctx, root, nil, "rev-list", "--count", local+"..FETCH_HEAD")
@@ -438,7 +440,7 @@ func Behind(ctx context.Context, root, remote, branch string) (int, error) {
 	if err != nil {
 		return 0, sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			"git rev-list did not report a count",
-			"git said: "+firstLine(string(out))).WithCause(err)
+			msgGitSaid+firstLine(string(out))).WithCause(err)
 	}
 	return n, nil
 }
@@ -520,7 +522,7 @@ func Environ(extra ...string) []string {
 // freeze when a gate or an approval had failed.
 func describeGitFailure(sub, stderr string) string {
 	if line := firstLine(stderr); line != "" {
-		return "git said: " + line
+		return msgGitSaid + line
 	}
 	return "git " + sub + " gave no error message; git may not be installed or on " +
 		"PATH, this may not be a repository git can read, or git may have " +

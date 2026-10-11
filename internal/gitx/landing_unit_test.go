@@ -219,19 +219,23 @@ func TestSealedReadsAreOfTheObjectsNotAGraftOrAReplacement(t *testing.T) {
 		lie  func(t *testing.T, root string, c []string)
 	}{
 		{"a graft file", func(t *testing.T, root string, c []string) {
+			t.Helper()
 			write(t, filepath.Dir(luGitPath(t, root, "info/grafts")), "grafts", c[3]+" "+c[1]+" "+c[0]+"\n")
 		}},
 		{"a graft file the environment names", func(t *testing.T, _ string, c []string) {
+			t.Helper()
 			file := filepath.Join(lgTempDir(t), "grafts")
 			write(t, filepath.Dir(file), "grafts", c[3]+" "+c[1]+" "+c[0]+"\n")
 			t.Setenv("GIT_GRAFT_FILE", file)
 		}},
 		{"a replacement", func(t *testing.T, root string, c []string) {
+			t.Helper()
 			run(t, root, "replace", "--graft", c[3], c[1], c[0])
 		}},
 		{"a replacement where the environment moves them", func(t *testing.T, root string, c []string) {
+			t.Helper()
 			run(t, root, "replace", "--graft", c[3], c[1], c[0])
-			for _, line := range strings.Split(wtGitOut(t, root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/replace/"), "\n") {
+			for line := range strings.SplitSeq(wtGitOut(t, root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/replace/"), "\n") {
 				name, obj, _ := strings.Cut(line, " ")
 				run(t, root, "update-ref", "refs/elsewhere/"+strings.TrimPrefix(name, "refs/replace/"), obj)
 				run(t, root, "update-ref", "-d", name)
@@ -565,17 +569,20 @@ func TestInProgressSaysWhenAnOperationIsPartWay(t *testing.T) {
 		start func(t *testing.T, root, other string, c []string)
 		abort []string
 	}{
-		{"a rebase", func(t *testing.T, root, _ string, _ []string) { luRebasing(t, root) }, []string{"rebase", "--abort"}},
+		{"a rebase", func(t *testing.T, root, _ string, _ []string) { t.Helper(); luRebasing(t, root) }, []string{"rebase", "--abort"}},
 		{"a merge", func(t *testing.T, root, other string, _ []string) {
+			t.Helper()
 			luTry(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test", "merge", "--no-edit", other)
 		}, []string{"merge", "--abort"}},
 		{"a cherry-pick", func(t *testing.T, root, other string, _ []string) {
+			t.Helper()
 			luTry(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test", "cherry-pick", other)
 		}, []string{"cherry-pick", "--abort"}},
 		{"a revert", func(t *testing.T, root, _ string, c []string) {
+			t.Helper()
 			luTry(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test", "revert", "--no-edit", c[2])
 		}, []string{"revert", "--abort"}},
-		{"a bisect", func(t *testing.T, root, _ string, _ []string) { luBisecting(t, root) }, []string{"bisect", "reset"}},
+		{"a bisect", func(t *testing.T, root, _ string, _ []string) { t.Helper(); luBisecting(t, root) }, []string{"bisect", "reset"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, other, c := conflict(t)
@@ -668,7 +675,7 @@ func TestCheckedOutIsEveryCheckoutThatHoldsTheBranch(t *testing.T) {
 // T8: a locked worktree is said to be, so that the landing keeps it.
 func TestWorktreesSaysWhichAreLocked(t *testing.T) {
 	root, _ := lgRepo(t)
-	locked := lgStory(t, root, "story/US-001")
+	locked := lgStory(t, root)
 	run(t, root, "worktree", "lock", "--reason", "a person's", locked)
 	open := filepath.Join(lgTempDir(t), "open")
 	run(t, root, "worktree", "add", "--quiet", "-b", "story/US-002", open, "main")
@@ -767,23 +774,28 @@ func TestAC6FastForwardRefusesACheckoutPartWayThroughSomethingAndWritesNothing(t
 		spike bool
 	}{
 		{"a merge part-way", func(t *testing.T, root, trunk string) string {
+			t.Helper()
 			write(t, filepath.Dir(luGitPath(t, root, "MERGE_HEAD")), "MERGE_HEAD", trunk+"\n")
 			return filepath.Base(root)
 		}, false},
 		{"a cherry-pick part-way", func(t *testing.T, root, trunk string) string {
+			t.Helper()
 			write(t, filepath.Dir(luGitPath(t, root, "CHERRY_PICK_HEAD")), "CHERRY_PICK_HEAD", trunk+"\n")
 			return filepath.Base(root)
 		}, false},
 		{"the index locked", func(t *testing.T, root, _ string) string {
+			t.Helper()
 			write(t, filepath.Dir(luGitPath(t, root, "index.lock")), "index.lock", "")
 			return "index.lock"
 		}, false},
 		{"another checkout rebasing trunk", func(t *testing.T, root, _ string) string {
+			t.Helper()
 			dir := luForced(t, root, "main")
 			luRebasing(t, dir)
 			return filepath.Base(dir)
 		}, true},
 		{"another checkout bisecting trunk", func(t *testing.T, root, _ string) string {
+			t.Helper()
 			dir := luForced(t, root, "main")
 			luBisecting(t, dir)
 			return filepath.Base(dir)
@@ -851,7 +863,7 @@ func TestO2AFastForwardRefusedInALaterCheckoutPutsTheEarlierOnesBack(t *testing.
 // it does not.
 func TestAC6FastForwardFindsAnUntrackedNameThatDiffersOnlyInCase(t *testing.T) {
 	root, from := lgRepo(t)
-	wt := lgStory(t, root, "story/US-001")
+	wt := lgStory(t, root)
 	write(t, wt, "Invoice.go", "package billing\n")
 	to := lgCommit(t, wt, "US-001: Invoice.go")
 	write(t, root, "invoice.go", "package billing // a person's own\n")
@@ -883,7 +895,7 @@ func TestAC6FastForwardRefusesAnUntrackedLinkInPlaceOfADirectoryItAdds(t *testin
 		t.Skip("making a symbolic link needs a privilege Windows does not give by default")
 	}
 	root, from := lgRepo(t)
-	wt := lgStory(t, root, "story/US-001")
+	wt := lgStory(t, root)
 	write(t, wt, "docs/guide.md", "# Guide\n")
 	to := lgCommit(t, wt, "US-001: a guide")
 	outside := lgTempDir(t)

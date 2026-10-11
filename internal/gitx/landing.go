@@ -151,7 +151,7 @@ func fullHash(s string) bool {
 	if len(s) != 40 && len(s) != 64 {
 		return false
 	}
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if c := s[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
@@ -190,7 +190,7 @@ func branchName(ctx context.Context, root, branch string) error {
 	if err := notAnOption("a branch", branch); err != nil {
 		return err
 	}
-	if _, err := sealed(ctx, root, "check-ref-format", "refs/heads/"+branch); err != nil {
+	if _, err := sealed(ctx, root, "check-ref-format", headsPrefix+branch); err != nil {
 		return sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			strconv.Quote(branch)+" is not a name git takes for a branch",
 			failure(err, "git check-ref-format refused it")).WithCause(err)
@@ -205,7 +205,7 @@ func BranchTip(ctx context.Context, root, branch string) (string, error) {
 	if err := branchName(ctx, root, branch); err != nil {
 		return "", err
 	}
-	out, err := sealed(ctx, root, "show-ref", "--verify", "--hash", "refs/heads/"+branch)
+	out, err := sealed(ctx, root, "show-ref", argVerify, "--hash", headsPrefix+branch)
 	var exit *exec.ExitError
 	switch {
 	case errors.As(err, &exit):
@@ -219,7 +219,7 @@ func BranchTip(ctx context.Context, root, branch string) (string, error) {
 	if !fullHash(tip) {
 		return "", sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			"git did not say which commit "+strconv.Quote(branch)+" is on",
-			"git said: "+strconv.Quote(tip))
+			msgGitSaid+strconv.Quote(tip))
 	}
 	return tip, nil
 }
@@ -279,7 +279,7 @@ func HasMerges(ctx context.Context, root, base, tip string) (bool, error) {
 // .SDLC/notes.json is .sdlc/notes.json. The names are read whole, whatever
 // they hold.
 func ChangedUnder(ctx context.Context, root, base, tip, dir string) ([]string, error) {
-	if err := notAnOption("a path", dir); err != nil {
+	if err := notAnOption(msgAPath, dir); err != nil {
 		return nil, err
 	}
 	all, err := ChangedBetween(ctx, root, base, tip)
@@ -303,8 +303,8 @@ func ChangedBetween(ctx context.Context, root, base, tip string) ([]string, erro
 	if err := fullHashes(base, tip); err != nil {
 		return nil, err
 	}
-	out, err := sealed(ctx, root, "diff-tree", "-r", "-z", "--no-renames", "--name-only",
-		"--ignore-submodules=none", base, tip, "--")
+	out, err := sealed(ctx, root, "diff-tree", "-r", "-z", argNoRenames, "--name-only",
+		argIgnoreSubmodNone, base, tip, "--")
 	if err != nil {
 		return nil, err
 	}
@@ -334,14 +334,14 @@ func ModeAt(ctx context.Context, root, commit, path string) (string, error) {
 	if err := fullHashes(commit); err != nil {
 		return "", err
 	}
-	if err := notAnOption("a path", path); err != nil {
+	if err := notAnOption(msgAPath, path); err != nil {
 		return "", err
 	}
 	out, err := sealed(ctx, root, "ls-tree", "-z", "--full-tree", commit, "--", path)
 	if err != nil {
 		return "", err
 	}
-	for _, entry := range strings.Split(string(out), "\x00") {
+	for entry := range strings.SplitSeq(string(out), "\x00") {
 		meta, name, ok := strings.Cut(entry, "\t")
 		if fields := strings.Fields(meta); ok && name == path && len(fields) == 3 {
 			return fields[0], nil
@@ -357,7 +357,7 @@ func FileAt(ctx context.Context, root, commit, path string) ([]byte, error) {
 	if err := fullHashes(commit); err != nil {
 		return nil, err
 	}
-	if err := notAnOption("a path", path); err != nil {
+	if err := notAnOption(msgAPath, path); err != nil {
 		return nil, err
 	}
 	if strings.ContainsAny(path, "\n\x00") {
@@ -375,25 +375,10 @@ func FileAt(ctx context.Context, root, commit, path string) ([]byte, error) {
 	rest := out
 	var body []byte
 	for i, want := range []string{"commit", "blob"} {
-		header, after, ok := bytes.Cut(rest, []byte("\n"))
-		fields := strings.Fields(string(header))
-		if !ok || len(fields) != 3 || !fullHash(fields[0]) {
-			if i == 1 && bytes.HasSuffix(header, []byte(" missing")) {
-				return nil, sdlcerr.New(sdlcerr.RepositoryUnreadable,
-					strconv.Quote(path)+" is not in commit "+commit[:12],
-					"the commit has no file at that path").WithCause(fs.ErrNotExist)
-			}
-			return nil, sdlcerr.New(sdlcerr.RepositoryUnreadable,
-				strconv.Quote(path)+" could not be read from commit "+commit[:12],
-				"git said: "+strconv.Quote(string(header)))
+		var err error
+		if body, rest, err = batchObject(rest, want, i == 1, path, commit); err != nil {
+			return nil, err
 		}
-		size, err := strconv.Atoi(fields[2])
-		if err != nil || fields[1] != want || size+1 > len(after) {
-			return nil, sdlcerr.New(sdlcerr.RepositoryUnreadable,
-				strconv.Quote(path)+" could not be read from commit "+commit[:12],
-				"git said: "+strconv.Quote(string(header)))
-		}
-		body, rest = after[:size], after[size+1:]
 	}
 	return body, nil
 }
@@ -407,7 +392,7 @@ func Uncommitted(ctx context.Context, checkout string, untracked bool) ([]string
 	if untracked {
 		which = "--untracked-files=all"
 	}
-	out, err := sealed(ctx, checkout, "status", "--porcelain", "-z", which, "--ignore-submodules=none")
+	out, err := sealed(ctx, checkout, "status", "--porcelain", "-z", which, argIgnoreSubmodNone)
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +448,7 @@ func partWay(gitDir string) (string, error) {
 			return op.what, nil
 		case !errors.Is(err, fs.ErrNotExist):
 			return "", sdlcerr.New(sdlcerr.RepositoryUnreadable,
-				"git's own files in "+sdlcerr.QuotePath(gitDir)+" could not be read", err.Error()).WithCause(err)
+				"git's own files in "+sdlcerr.QuotePath(gitDir)+msgCouldNotBeRead, err.Error()).WithCause(err)
 		}
 	}
 	return "", nil
@@ -472,7 +457,7 @@ func partWay(gitDir string) (string, error) {
 // absoluteGitDir is the git directory of the checkout at dir: its own, for a
 // linked worktree.
 func absoluteGitDir(ctx context.Context, dir string) (string, error) {
-	out, err := sealed(ctx, dir, "rev-parse", "--absolute-git-dir")
+	out, err := sealed(ctx, dir, argRevParse, "--absolute-git-dir")
 	if err != nil {
 		return "", err
 	}
@@ -486,7 +471,7 @@ func ResolvesTo(ctx context.Context, checkout, name, ref string) (bool, error) {
 	if err := notAnOption("a ref", name); err != nil {
 		return false, err
 	}
-	out, err := sealed(ctx, checkout, "rev-parse", "--symbolic-full-name", "--verify", "--quiet", name)
+	out, err := sealed(ctx, checkout, argRevParse, "--symbolic-full-name", argVerify, argQuiet, name)
 	var exit *exec.ExitError
 	switch {
 	case errors.As(err, &exit):
@@ -528,7 +513,6 @@ func holders(ctx context.Context, root, branch string) ([]holder, error) {
 	if err != nil {
 		return nil, err
 	}
-	ref := "refs/heads/" + branch
 	var holding []holder
 	for _, w := range parseWorktrees(out) {
 		if w.bare || w.prunable {
@@ -537,24 +521,37 @@ func holders(ctx context.Context, root, branch string) ([]holder, error) {
 		if _, err := os.Stat(w.path); err != nil {
 			continue
 		}
-		switch w.branch {
-		case ref:
-			dir, err := absoluteGitDir(ctx, w.path)
-			if err != nil {
-				return nil, err
-			}
-			holding = append(holding, holder{path: w.path, gitDir: dir})
-		case "":
-			dir, err := absoluteGitDir(ctx, w.path)
-			if err != nil {
-				return nil, err
-			}
-			if rebasingOrBisecting(dir, branch) {
-				holding = append(holding, holder{path: w.path, gitDir: dir, detached: true})
-			}
+		h, held, err := holderOf(ctx, w, branch)
+		if err != nil {
+			return nil, err
+		}
+		if held {
+			holding = append(holding, h)
 		}
 	}
 	return holding, nil
+}
+
+// holderOf is the worktree w as a holder of branch, and false where it does
+// not hold it.
+func holderOf(ctx context.Context, w listedWorktree, branch string) (holder, bool, error) {
+	switch w.branch {
+	case headsPrefix + branch:
+		dir, err := absoluteGitDir(ctx, w.path)
+		if err != nil {
+			return holder{}, false, err
+		}
+		return holder{path: w.path, gitDir: dir}, true, nil
+	case "":
+		dir, err := absoluteGitDir(ctx, w.path)
+		if err != nil {
+			return holder{}, false, err
+		}
+		if rebasingOrBisecting(dir, branch) {
+			return holder{path: w.path, gitDir: dir, detached: true}, true, nil
+		}
+	}
+	return holder{}, false, nil
 }
 
 // rebasingOrBisecting reports whether the git directory gitDir is part-way
@@ -565,7 +562,7 @@ func rebasingOrBisecting(gitDir, branch string) bool {
 		if err != nil {
 			continue
 		}
-		if name := strings.TrimSpace(string(raw)); name == "refs/heads/"+branch || name == branch {
+		if name := strings.TrimSpace(string(raw)); name == headsPrefix+branch || name == branch {
 			return true
 		}
 	}
@@ -612,10 +609,10 @@ func fingerprint(ctx context.Context, root, unified, base, tip string, leaveOut 
 	for _, key := range drivers {
 		settings = append(settings, key+"=myers")
 	}
-	args := []string{"diff-tree", "-r", "-p", "--text", "--binary", "--full-index",
-		"--no-color", "--no-ext-diff", "--no-textconv", "--no-renames",
+	args := []string{"diff-tree", "-r", "-p", "--text", "--binary", argFullIndex,
+		"--no-color", "--no-ext-diff", "--no-textconv", argNoRenames,
 		unified, "--inter-hunk-context=0", "--diff-algorithm=myers", "--indent-heuristic",
-		"--src-prefix=a/", "--dst-prefix=b/", "--submodule=short", "--ignore-submodules=none",
+		"--src-prefix=a/", "--dst-prefix=b/", "--submodule=short", argIgnoreSubmodNone,
 		base + "^{commit}", tip + "^{commit}", "--"}
 	for _, p := range leaveOut {
 		args = append(args, ":(top,exclude,literal)"+p)
@@ -652,29 +649,69 @@ func hashPatch(r *bufio.Reader, w io.Writer) error {
 			}
 			return err
 		}
-		keep := true
-		switch {
-		case bytes.HasPrefix(head, []byte("@@")):
-			_, _ = w.Write([]byte("@@\n"))
-			keep = false
-		case bytes.HasPrefix(head, []byte("index ")):
-			keep = false
-		}
-		for {
-			chunk, err := r.ReadSlice('\n')
-			if keep {
-				_, _ = w.Write(chunk)
-			}
-			if errors.Is(err, bufio.ErrBufferFull) {
-				continue
-			}
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			break
+		if done, err := passLine(r, w, keepsLine(head, w)); done {
+			return err
 		}
 	}
+}
+
+// keepsLine reports whether the line starting with head is part of what is
+// hashed. A hunk header is not, and "@@" stands for it in w.
+func keepsLine(head []byte, w io.Writer) bool {
+	switch {
+	case bytes.HasPrefix(head, []byte("@@")):
+		_, _ = w.Write([]byte("@@\n"))
+		return false
+	case bytes.HasPrefix(head, []byte("index ")):
+		return false
+	}
+	return true
+}
+
+// passLine reads one line from r, however long, and writes it to w where keep
+// is set. It reports done with the error to return once r has ended or failed.
+func passLine(r *bufio.Reader, w io.Writer, keep bool) (done bool, err error) {
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if keep {
+			_, _ = w.Write(chunk)
+		}
+		switch {
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF):
+			return true, nil
+		case err != nil:
+			return true, err
+		}
+		return false, nil
+	}
+}
+
+// batchObject cuts the next object of cat-file --batch's answer off rest: its
+// body and what follows. An object of another type or size than wanted is a
+// failure, and so is a missing one, which is told apart for the path when last
+// is set, because the commit is read first.
+func batchObject(rest []byte, want string, last bool, path, commit string) (body, after []byte, err error) {
+	header, after, ok := bytes.Cut(rest, []byte("\n"))
+	fields := strings.Fields(string(header))
+	if !ok || len(fields) != 3 || !fullHash(fields[0]) {
+		if last && bytes.HasSuffix(header, []byte(" missing")) {
+			return nil, nil, sdlcerr.New(sdlcerr.RepositoryUnreadable,
+				strconv.Quote(path)+" is not in commit "+commit[:12],
+				"the commit has no file at that path").WithCause(fs.ErrNotExist)
+		}
+		return nil, nil, unreadableObject(path, commit, header)
+	}
+	size, err := strconv.Atoi(fields[2])
+	if err != nil || fields[1] != want || size+1 > len(after) {
+		return nil, nil, unreadableObject(path, commit, header)
+	}
+	return after[:size], after[size+1:], nil
+}
+
+func unreadableObject(path, commit string, header []byte) error {
+	return sdlcerr.New(sdlcerr.RepositoryUnreadable,
+		strconv.Quote(path)+" could not be read from commit "+commit[:12],
+		msgGitSaid+strconv.Quote(string(header)))
 }

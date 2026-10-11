@@ -126,6 +126,7 @@ func TestAC4AndT6AddWorktreeNeverMakesTheWorktreeThroughALinkOrOverAFile(t *test
 		says    string
 	}{
 		{"AC-4 .sdlc/worktrees is a link", func(t *testing.T, root string) string {
+			t.Helper()
 			elsewhere := t.TempDir()
 			write(t, root, ".sdlc/keep", "")
 			if err := os.Symlink(elsewhere, filepath.Join(root, ".sdlc", "worktrees")); err != nil {
@@ -134,6 +135,7 @@ func TestAC4AndT6AddWorktreeNeverMakesTheWorktreeThroughALinkOrOverAFile(t *test
 			return elsewhere
 		}, "is a link"},
 		{"AC-4 the story's directory is a link", func(t *testing.T, root string) string {
+			t.Helper()
 			elsewhere := t.TempDir()
 			write(t, root, ".sdlc/worktrees/keep", "")
 			if err := os.Symlink(elsewhere, wtStoryDir(root, "US-1")); err != nil {
@@ -142,10 +144,12 @@ func TestAC4AndT6AddWorktreeNeverMakesTheWorktreeThroughALinkOrOverAFile(t *test
 			return elsewhere
 		}, "is a link"},
 		{"AC-4 .sdlc is a file", func(t *testing.T, root string) string {
+			t.Helper()
 			write(t, root, ".sdlc", "not a directory\n")
 			return ""
 		}, "is a file"},
 		{"AC-4 .sdlc/worktrees is a file", func(t *testing.T, root string) string {
+			t.Helper()
 			write(t, root, ".sdlc/worktrees", "not a directory\n")
 			return ""
 		}, "is a file"},
