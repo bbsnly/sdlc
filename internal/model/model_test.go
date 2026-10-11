@@ -8,16 +8,14 @@ import (
 	"time"
 )
 
-func p(n int) *int { return &n }
-
 func story(id string, status Status, priority *int, deps ...string) Story {
 	return Story{ID: id, Title: id, Status: status, Priority: priority, DependsOn: deps}
 }
 
 func TestNextPrefersAStoryAlreadyUnderWay(t *testing.T) {
 	b := &Backlog{Stories: []Story{
-		story("A-1", StatusReady, p(1)),
-		story("B-2", StatusInProgress, p(9)),
+		story("A-1", StatusReady, new(1)),
+		story("B-2", StatusInProgress, new(9)),
 	}}
 
 	got, ok := b.Next()
@@ -34,8 +32,8 @@ func TestNextPrefersAStoryAlreadyUnderWay(t *testing.T) {
 
 func TestNextResumesAStoryWaitingOnAHuman(t *testing.T) {
 	b := &Backlog{Stories: []Story{
-		story("A-1", StatusReady, p(1)),
-		story("B-2", StatusAwaitingHuman, p(9)),
+		story("A-1", StatusReady, new(1)),
+		story("B-2", StatusAwaitingHuman, new(9)),
 	}}
 
 	got, _ := b.Next()
@@ -49,8 +47,8 @@ func TestNextResumesAStoryWaitingOnAHuman(t *testing.T) {
 func TestNextTreatsZeroAsUrgentAndAbsentAsLast(t *testing.T) {
 	b := &Backlog{Stories: []Story{
 		story("A-1", StatusReady, nil),
-		story("B-2", StatusReady, p(1)),
-		story("C-3", StatusReady, p(0)),
+		story("B-2", StatusReady, new(1)),
+		story("C-3", StatusReady, new(0)),
 	}}
 
 	got, _ := b.Next()
@@ -67,8 +65,8 @@ func TestNextTreatsZeroAsUrgentAndAbsentAsLast(t *testing.T) {
 
 func TestNextBreaksTiesByIDSoTheChoiceIsStable(t *testing.T) {
 	b := &Backlog{Stories: []Story{
-		story("Z-9", StatusReady, p(2)),
-		story("A-1", StatusReady, p(2)),
+		story("Z-9", StatusReady, new(2)),
+		story("A-1", StatusReady, new(2)),
 	}}
 
 	for range 5 {
@@ -83,8 +81,8 @@ func TestNextBreaksTiesByIDSoTheChoiceIsStable(t *testing.T) {
 // would start its tenth story ahead of its second.
 func TestNextReadsTheNumbersInAnIDAsNumbers(t *testing.T) {
 	b := &Backlog{Stories: []Story{
-		story("A-10", StatusReady, p(2)),
-		story("A-2", StatusReady, p(2)),
+		story("A-10", StatusReady, new(2)),
+		story("A-2", StatusReady, new(2)),
 	}}
 	if got, _ := b.Next(); got.Story.ID != "A-2" {
 		t.Errorf("Next = %s, want A-2 ahead of A-10", got.Story.ID)
@@ -113,8 +111,8 @@ func TestNextReadsTheNumbersInAnIDAsNumbers(t *testing.T) {
 
 func TestNextSkipsAStoryWithAnUnfinishedDependency(t *testing.T) {
 	b := &Backlog{Stories: []Story{
-		story("A-1", StatusReady, p(1), "B-2"),
-		story("B-2", StatusTodo, p(5)),
+		story("A-1", StatusReady, new(1), "B-2"),
+		story("B-2", StatusTodo, new(5)),
 	}}
 
 	got, _ := b.Next()
@@ -131,10 +129,10 @@ func TestNextSkipsAStoryWithAnUnfinishedDependency(t *testing.T) {
 
 func TestNextFindsNothingWhenEverythingIsHeldBack(t *testing.T) {
 	b := &Backlog{Stories: []Story{
-		story("A-1", StatusDone, p(1)),
-		story("B-2", StatusBlocked, p(2)),
-		story("C-3", StatusReady, p(3), "B-2"),
-		story("D-4", StatusDropped, p(4)),
+		story("A-1", StatusDone, new(1)),
+		story("B-2", StatusBlocked, new(2)),
+		story("C-3", StatusReady, new(3), "B-2"),
+		story("D-4", StatusDropped, new(4)),
 	}}
 
 	if _, ok := b.Next(); ok {
@@ -144,9 +142,9 @@ func TestNextFindsNothingWhenEverythingIsHeldBack(t *testing.T) {
 
 func TestBlockedByNamesTheUnfinishedDependencies(t *testing.T) {
 	b := &Backlog{Stories: []Story{
-		story("A-1", StatusReady, p(1), "B-2", "C-3"),
-		story("B-2", StatusDone, p(2)),
-		story("C-3", StatusTodo, p(3)),
+		story("A-1", StatusReady, new(1), "B-2", "C-3"),
+		story("B-2", StatusDone, new(2)),
+		story("C-3", StatusTodo, new(3)),
 	}}
 
 	got := b.BlockedBy(&b.Stories[0])
@@ -160,10 +158,10 @@ func TestBlockedByNamesTheUnfinishedDependencies(t *testing.T) {
 // behind it stayed blocked for good.
 func TestWaitingSaysWhyADependencyWillNeverBeDone(t *testing.T) {
 	b := &Backlog{Stories: []Story{
-		story("A-1", StatusReady, p(1), "B-2", "C-3", "Z-9", "D-4"),
-		story("B-2", StatusDropped, p(2)),
-		story("C-3", StatusTodo, p(3)),
-		story("D-4", StatusDone, p(4)),
+		story("A-1", StatusReady, new(1), "B-2", "C-3", "Z-9", "D-4"),
+		story("B-2", StatusDropped, new(2)),
+		story("C-3", StatusTodo, new(3)),
+		story("D-4", StatusDone, new(4)),
 	}}
 
 	got := b.Waiting(&b.Stories[0])
@@ -180,7 +178,7 @@ func TestWaitingSaysWhyADependencyWillNeverBeDone(t *testing.T) {
 }
 
 func TestFindAndIDs(t *testing.T) {
-	b := &Backlog{Stories: []Story{story("A-1", StatusReady, p(1)), story("B-2", StatusReady, p(2))}}
+	b := &Backlog{Stories: []Story{story("A-1", StatusReady, new(1)), story("B-2", StatusReady, new(2))}}
 
 	if s, ok := b.Find("B-2"); !ok || s.ID != "B-2" {
 		t.Errorf("Find(B-2) = %v, %v", s, ok)
@@ -196,7 +194,7 @@ func TestFindAndIDs(t *testing.T) {
 // Find returns a pointer into the backlog so that a caller can change a status
 // and save. A copy would drop the change silently.
 func TestFindReturnsAPointerIntoTheBacklog(t *testing.T) {
-	b := &Backlog{Stories: []Story{story("A-1", StatusReady, p(1))}}
+	b := &Backlog{Stories: []Story{story("A-1", StatusReady, new(1))}}
 	s, _ := b.Find("A-1")
 	s.Status = StatusDone
 	if b.Stories[0].Status != StatusDone {

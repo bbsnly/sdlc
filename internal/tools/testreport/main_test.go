@@ -45,7 +45,7 @@ func TestAC2TheReportOfThisRepositoryIsPrintedAndExitsZero(t *testing.T) {
 	}
 	classes := map[string]string{"test/e2e": "e2e", "internal/testscan": "unit", "npm/test": "other", "test/install": "other"}
 	seen := map[string]bool{}
-	for _, l := range strings.Split(strings.TrimSpace(stdout), "\n") {
+	for l := range strings.SplitSeq(strings.TrimSpace(stdout), "\n") {
 		f := strings.Fields(l)
 		switch {
 		case len(f) == 0:

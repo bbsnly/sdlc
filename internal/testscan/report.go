@@ -16,6 +16,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/spf13/cobra"
+
 	"github.com/bbsnly/sdlc/internal/model"
 )
 
@@ -56,90 +58,123 @@ func Report(root string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	commands := tree()
-	ran := map[string]bool{}
-	passed := map[model.Gate]bool{}
-	dirs := map[string]counts{}
-	var jsErr error
-
-	// note takes one list of literals: the command it names is the deepest one
-	// from the first word that starts one, so leading words (a role, a document)
-	// do not hide it, and the word after "gate" is a gate record key.
-	note := func(words []string) {
-		for i := range words {
-			if c, ok := resolve(commands, words[i:]); ok {
-				ran[c] = true
-				break
-			}
-		}
-		for i, word := range words[:max(len(words)-1, 0)] {
-			if word == "gate" {
-				passed[model.Gate(words[i+1])] = true
-			}
-		}
+	sc := &scan{
+		commands: tree(),
+		ran:      map[string]bool{},
+		passed:   map[model.Gate]bool{},
+		dirs:     map[string]counts{},
 	}
-
 	for _, rel := range names {
 		dir := path.Dir(rel)
-		c := dirs[dir]
+		c := sc.dirs[dir]
 		switch {
 		case strings.HasSuffix(rel, ".test.js"):
-			src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-			jsErr = cmp.Or(jsErr, err)
-			for _, line := range strings.Split(string(src), "\n") {
-				if strings.HasPrefix(line, "test(") {
-					c.tests++
-				}
-			}
-			c.js = true
+			c = sc.countJS(root, rel, c)
 		case isTestFile(rel):
 			f, err := parse(root, rel)
 			if err != nil {
 				return err
 			}
-			for _, decl := range f.Decls {
-				if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && isTest(fn.Name.Name) {
-					c.tests++
-				}
-			}
-			if dir == e2eDir {
-				ast.Inspect(f, func(n ast.Node) bool {
-					switch n := n.(type) {
-					case *ast.CallExpr:
-						if strings.HasPrefix(calleeName(n), "refus") {
-							return false
-						}
-						note(literals(n.Args))
-					case *ast.CompositeLit:
-						if isStringSlice(n.Type) {
-							note(literals(n.Elts))
-						}
-					}
-					return true
-				})
-			}
+			c = sc.countGo(f, dir, c)
 		default:
 			continue
 		}
-		dirs[dir] = c
+		sc.dirs[dir] = c
 	}
+	_, werr := io.WriteString(w, sc.render())
+	return cmp.Or(sc.jsErr, werr)
+}
 
+// scan is what Report has read so far: the commands and gate keys the
+// end-to-end tests run, and the tests counted per directory.
+type scan struct {
+	commands *cobra.Command
+	ran      map[string]bool
+	passed   map[model.Gate]bool
+	dirs     map[string]counts
+	jsErr    error
+}
+
+// note takes one list of literals: the command it names is the deepest one
+// from the first word that starts one, so leading words (a role, a document)
+// do not hide it, and the word after "gate" is a gate record key.
+func (sc *scan) note(words []string) {
+	for i := range words {
+		if c, ok := resolve(sc.commands, words[i:]); ok {
+			sc.ran[c] = true
+			break
+		}
+	}
+	for i, word := range words[:max(len(words)-1, 0)] {
+		if word == "gate" {
+			sc.passed[model.Gate(words[i+1])] = true
+		}
+	}
+}
+
+// countJS adds the tests of one JavaScript file to c.
+func (sc *scan) countJS(root, rel string, c counts) counts {
+	src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	sc.jsErr = cmp.Or(sc.jsErr, err)
+	for line := range strings.SplitSeq(string(src), "\n") {
+		if strings.HasPrefix(line, "test(") {
+			c.tests++
+		}
+	}
+	c.js = true
+	return c
+}
+
+// countGo adds the tests of one parsed Go test file to c, and, for the
+// end-to-end directory, notes the commands the file runs.
+func (sc *scan) countGo(f *ast.File, dir string, c counts) counts {
+	for _, decl := range f.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && isTest(fn.Name.Name) {
+			c.tests++
+		}
+	}
+	if dir == e2eDir {
+		sc.noteRuns(f)
+	}
+	return c
+}
+
+// noteRuns notes the commands one end-to-end test file runs.
+func (sc *scan) noteRuns(f *ast.File) {
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.CallExpr:
+			if strings.HasPrefix(calleeName(n), "refus") {
+				return false
+			}
+			sc.note(literals(n.Args))
+		case *ast.CompositeLit:
+			if isStringSlice(n.Type) {
+				sc.note(literals(n.Elts))
+			}
+		}
+		return true
+	})
+}
+
+// render is the report: the commands and gates no test runs, then the count
+// per directory.
+func (sc *scan) render() string {
 	var out strings.Builder
 	for _, c := range Commands() {
-		if !ran[c] {
+		if !sc.ran[c] {
 			fmt.Fprintf(&out, "command %s\n", c)
 		}
 	}
 	for _, g := range model.Gates {
-		if !passed[g] {
+		if !sc.passed[g] {
 			fmt.Fprintf(&out, "gate %s\n", g)
 		}
 	}
-	for _, dir := range slices.Sorted(maps.Keys(dirs)) {
-		fmt.Fprintf(&out, "%s %d %s\n", dirs[dir].class(dir), dirs[dir].tests, dir)
+	for _, dir := range slices.Sorted(maps.Keys(sc.dirs)) {
+		fmt.Fprintf(&out, "%s %d %s\n", sc.dirs[dir].class(dir), sc.dirs[dir].tests, dir)
 	}
-	_, werr := io.WriteString(w, out.String())
-	return cmp.Or(jsErr, werr)
+	return out.String()
 }
 
 // isTest reports whether a top-level function name is a Go test: Test followed

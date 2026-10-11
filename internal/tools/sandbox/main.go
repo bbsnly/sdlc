@@ -123,27 +123,59 @@ type step struct {
 	next  string
 }
 
-// create makes a sandbox with the sdlc built from the checkout at from, and
-// prints where it is. It ends with a whole sandbox or with nothing.
-func create(ctx context.Context, from string, stdout io.Writer) (err error) {
+// sandboxPlaces is the checkout at from and the temp directory, resolved, once
+// they are fit for a sandbox: the first is the root of an sdlc checkout and the
+// second is outside it.
+func sandboxPlaces(from string) (checkout, temp string, err error) {
 	places, err := resolved(from, os.TempDir())
 	if err != nil {
-		return fmt.Errorf("no sandbox was made: the checkout %q or the temp directory %q is not there (%w).\n"+
+		return "", "", fmt.Errorf("no sandbox was made: the checkout %q or the temp directory %q is not there (%w).\n"+
 			"Run ./task sandbox at the root of an sdlc checkout, with TMPDIR (TMP on Windows) naming a directory that exists",
 			from, os.TempDir(), err)
 	}
-	checkout, temp := places[0], places[1]
+	checkout, temp = places[0], places[1]
 	// The whole line, not a part of it: a module whose path only begins with
 	// this one is somebody else's code, and it would be built and run.
 	gomod, err := os.ReadFile(filepath.Join(checkout, "go.mod"))
 	if err != nil || !slices.Contains(strings.Split(strings.ReplaceAll(string(gomod), "\r\n", "\n"), "\n"), "module "+module) {
-		return fmt.Errorf("no sandbox was made: %s is not the root of an sdlc checkout.\nRun ./task sandbox at the root of one", checkout)
+		return "", "", fmt.Errorf("no sandbox was made: %s is not the root of an sdlc checkout.\nRun ./task sandbox at the root of one", checkout)
 	}
 	// A sandbox goes outside the checkout: made in it, it would be the
 	// checkout's untracked files, and removed with whatever cleans those.
 	if within(temp, checkout) {
-		return fmt.Errorf("no sandbox was made: the temp directory %s is not outside the checkout %s, and a sandbox goes outside it.\n"+
+		return "", "", fmt.Errorf("no sandbox was made: the temp directory %s is not outside the checkout %s, and a sandbox goes outside it.\n"+
 			"Point TMPDIR (TMP on Windows) at a directory outside the checkout, then run ./task sandbox again", temp, checkout)
+	}
+	return checkout, temp, nil
+}
+
+// sandboxEnv is the whole environment of what a sandbox runs: its own home and
+// temp directories, and from the caller's only what passed names.
+func sandboxEnv(home, tmp string) []string {
+	env := []string{
+		"HOME=" + home, "USERPROFILE=" + home,
+		"XDG_CACHE_HOME=" + filepath.Join(home, ".cache"), "XDG_CONFIG_HOME=" + filepath.Join(home, ".config"),
+		"LOCALAPPDATA=" + filepath.Join(home, "AppData", "Local"), "APPDATA=" + filepath.Join(home, "AppData", "Roaming"),
+		"TMPDIR=" + tmp, "TMP=" + tmp, "TEMP=" + tmp,
+		"GOFLAGS=", "GOWORK=off", "GOPROXY=off",
+		"GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0",
+		"GIT_AUTHOR_NAME=Sandbox", "GIT_AUTHOR_EMAIL=sandbox@example.com",
+		"GIT_COMMITTER_NAME=Sandbox", "GIT_COMMITTER_EMAIL=sandbox@example.com",
+	}
+	for _, name := range passed {
+		if v, ok := os.LookupEnv(name); ok {
+			env = append(env, name+"="+v)
+		}
+	}
+	return env
+}
+
+// create makes a sandbox with the sdlc built from the checkout at from, and
+// prints where it is. It ends with a whole sandbox or with nothing.
+func create(ctx context.Context, from string, stdout io.Writer) (err error) {
+	checkout, temp, err := sandboxPlaces(from)
+	if err != nil {
+		return err
 	}
 	// MkdirTemp makes it for this user alone, and it stays that way: on a
 	// shared temp directory that is what keeps another user's files out of it.
@@ -172,21 +204,7 @@ func create(ctx context.Context, from string, stdout io.Writer) (err error) {
 	// that is missing is an error, not a download. Git reads no configuration
 	// but the repository's own and does not refresh the checkout's index when
 	// go asks it for the revision to stamp.
-	env := []string{
-		"HOME=" + home, "USERPROFILE=" + home,
-		"XDG_CACHE_HOME=" + filepath.Join(home, ".cache"), "XDG_CONFIG_HOME=" + filepath.Join(home, ".config"),
-		"LOCALAPPDATA=" + filepath.Join(home, "AppData", "Local"), "APPDATA=" + filepath.Join(home, "AppData", "Roaming"),
-		"TMPDIR=" + tmp, "TMP=" + tmp, "TEMP=" + tmp,
-		"GOFLAGS=", "GOWORK=off", "GOPROXY=off",
-		"GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0",
-		"GIT_AUTHOR_NAME=Sandbox", "GIT_AUTHOR_EMAIL=sandbox@example.com",
-		"GIT_COMMITTER_NAME=Sandbox", "GIT_COMMITTER_EMAIL=sandbox@example.com",
-	}
-	for _, name := range passed {
-		if v, ok := os.LookupEnv(name); ok {
-			env = append(env, name+"="+v)
-		}
-	}
+	env := sandboxEnv(home, tmp)
 	// A fixed list of words and no shell: nothing here is a string a project
 	// configured, which is what internal/shellx is for.
 	child := func(in, name string, args ...string) func() error {
@@ -230,6 +248,23 @@ func create(ctx context.Context, from string, stdout io.Writer) (err error) {
 	return nil
 }
 
+// refuseHeld refuses a target that holds the working directory or the checkout.
+func refuseHeld(arg, target, cwd, checkout string) error {
+	// Windows will not delete the directory a process stands in, and elsewhere
+	// a shell left standing in a deleted directory fails in ways nobody
+	// connects to this.
+	for _, held := range []struct{ what, path, next string }{
+		{"your working directory", cwd, "Change to a directory outside it"},
+		{"the checkout this was run from", checkout, "Move the checkout out of it, or run this from another checkout"},
+	} {
+		if within(held.path, target) {
+			return fmt.Errorf("%q was not removed: %s is inside it.\n%s, then run ./task sandbox-remove -- %s again",
+				arg, held.what, held.next, target)
+		}
+	}
+	return nil
+}
+
 // remove takes away a sandbox create made, and nothing else.
 //
 // Whoever names the directory may be a model with nobody watching, so every
@@ -258,17 +293,8 @@ func remove(from, arg string) error {
 		return fmt.Errorf("%q was not removed: it is not a sandbox where ./task sandbox made it, which is a directory named %s* directly under the temp directory %s.\n%s",
 			arg, prefix, temp, whichDirectory)
 	}
-	// Windows will not delete the directory a process stands in, and elsewhere
-	// a shell left standing in a deleted directory fails in ways nobody
-	// connects to this.
-	for _, held := range []struct{ what, path, next string }{
-		{"your working directory", cwd, "Change to a directory outside it"},
-		{"the checkout this was run from", checkout, "Move the checkout out of it, or run this from another checkout"},
-	} {
-		if within(held.path, target) {
-			return fmt.Errorf("%q was not removed: %s is inside it.\n%s, then run ./task sandbox-remove -- %s again",
-				arg, held.what, held.next, target)
-		}
+	if err := refuseHeld(arg, target, cwd, checkout); err != nil {
+		return err
 	}
 	// Opened once, and everything after this is asked of what was opened, so a
 	// directory swapped in afterwards is neither judged nor deleted from.

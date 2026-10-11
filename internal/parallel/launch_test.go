@@ -106,7 +106,7 @@ func allowedIn(args []string) []string {
 
 func splitTools(v string) []string {
 	var out []string
-	for _, e := range strings.Split(v, ",") {
+	for e := range strings.SplitSeq(v, ",") {
 		if e = strings.TrimSpace(e); e != "" {
 			out = append(out, e)
 		}

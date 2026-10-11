@@ -108,5 +108,5 @@ func emit(path, text string, stdout io.Writer) error {
 		_, err := io.WriteString(stdout, text)
 		return err
 	}
-	return os.WriteFile(path, []byte(text), 0o644)
+	return os.WriteFile(path, []byte(text), 0o644) //nolint:gosec // G306: the release notes are a file for people and the release workflow to read
 }

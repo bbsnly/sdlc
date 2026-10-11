@@ -153,9 +153,9 @@ var (
 	SessionElsewhere = register("SDLC-E0048",
 		`a person takes the story over by typing /sdlc:next in this Claude Code session, or runs the command in their own terminal, outside Claude Code; an assistant stops and tells the person that the story is being worked on in another session and only they can move it here, and does not run "sdlc start"`)
 
-	// The three below quote a command that has quotes of its own in backticks,
-	// as a person would paste it: in double quotes, its own were printed with
-	// a backslash before each.
+	// NoteOutsideRange and the two after it quote a command that has quotes of
+	// its own in backticks, as a person would paste it: in double quotes, its
+	// own were printed with a backslash before each.
 	NoteOutsideRange = register("SDLC-E0049",
 		"re-run the gate with the sha corrected or dropped: `sdlc gate commit pass --note \"...\"`")
 
@@ -168,13 +168,15 @@ var (
 	NoMainCheckout = register("SDLC-E0052",
 		`work in a clone made without --bare, or in the main checkout of a repository made with "git init --separate-git-dir", where the backlog, the story records and the claims on stories can be kept`)
 
-	// Every cause sdlc start knows replaces this fix with one of its own. This
-	// one is fixed text and names no path, for a cause nothing else describes.
+	// WorktreeNotMade is the fix for a cause nothing else describes. Every cause
+	// sdlc start knows replaces it with one of its own; this one is fixed text
+	// and names no path.
 	WorktreeNotMade = register("SDLC-E0053",
 		`see the message above for what is in the way, then start again, or set git.worktrees to false in .sdlc/config.json; an assistant stops and tells the person`)
 
-	// The landing gives each state it refuses a fix of its own; these are the
-	// general ones, for a reader who arrives from the code alone.
+	// BranchBehindTrunk and LandingCheckFailed are the general fixes: the landing
+	// gives each state it refuses a fix of its own, and these are for a reader
+	// who arrives from the code alone.
 	BranchBehindTrunk = register("SDLC-E0054",
 		`"sdlc stop" puts a story onto a trunk that only moved on by itself, so this is a state it does not: where trunk was rewritten or went back, or story/<ID> holds a merge, a person rebases story/<ID> onto trunk in the story's worktree, .sdlc/worktrees/<ID> in the main checkout, as the message above says, then runs "sdlc stop" there again, which runs the configured commands on the rebased tree, and an assistant hands the story to a person with "sdlc escalate" and stops; where trunk moved while the landing ran, run "sdlc stop" there again`)
 

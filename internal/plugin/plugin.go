@@ -13,6 +13,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,7 +73,7 @@ func (c Component) List(key string) []string {
 		return items
 	}
 	var out []string
-	for _, item := range strings.Split(strings.Trim(c.Front[key], "[]"), ",") {
+	for item := range strings.SplitSeq(strings.Trim(c.Front[key], "[]"), ",") {
 		if item = unquote(item); item != "" {
 			out = append(out, item)
 		}
@@ -166,11 +167,11 @@ func components(dir, pattern string) ([]Component, error) {
 func splitFrontmatter(text string) (map[string]string, map[string][]string, string, error) {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	if !strings.HasPrefix(text, "---\n") {
-		return nil, nil, "", fmt.Errorf("no frontmatter: a component starts with a --- block")
+		return nil, nil, "", errors.New("no frontmatter: a component starts with a --- block")
 	}
 	end := strings.Index(text[4:], "\n---\n")
 	if end < 0 {
-		return nil, nil, "", fmt.Errorf("the frontmatter block is never closed")
+		return nil, nil, "", errors.New("the frontmatter block is never closed")
 	}
 	block := text[4 : 4+end]
 	body := text[4+end+5:]
@@ -178,33 +179,39 @@ func splitFrontmatter(text string) (map[string]string, map[string][]string, stri
 	front := map[string]string{}
 	lists := map[string][]string{}
 	last := ""
-	for _, line := range strings.Split(block, "\n") {
-		if item, isItem := strings.CutPrefix(strings.TrimSpace(line), "- "); isItem {
-			if last != "" && front[last] == "" {
-				lists[last] = append(lists[last], unquote(item))
-			}
-			continue
-		}
-		if trimmed := strings.TrimSpace(line); trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			// A comment between a list's items leaves the list going.
-			continue
-		}
-		if strings.HasPrefix(line, " ") {
-			// A nested key: the items after it are its, not the top-level key's.
-			last = ""
-			continue
-		}
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "-") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		last = strings.TrimSpace(key)
-		front[last] = strings.TrimSpace(value)
+	for line := range strings.SplitSeq(block, "\n") {
+		last = frontmatterLine(line, last, front, lists)
 	}
 	return front, lists, body, nil
+}
+
+// frontmatterLine reads one line of the block into front or lists, and returns
+// the top-level key that the lines after it belong to.
+func frontmatterLine(line, last string, front map[string]string, lists map[string][]string) string {
+	if item, isItem := strings.CutPrefix(strings.TrimSpace(line), "- "); isItem {
+		if last != "" && front[last] == "" {
+			lists[last] = append(lists[last], unquote(item))
+		}
+		return last
+	}
+	if trimmed := strings.TrimSpace(line); trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		// A comment between a list's items leaves the list going.
+		return last
+	}
+	if strings.HasPrefix(line, " ") {
+		// A nested key: the items after it are its, not the top-level key's.
+		return ""
+	}
+	if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "-") {
+		return last
+	}
+	key, value, ok := strings.Cut(line, ":")
+	if !ok {
+		return last
+	}
+	key = strings.TrimSpace(key)
+	front[key] = strings.TrimSpace(value)
+	return key
 }
 
 func unquote(s string) string {

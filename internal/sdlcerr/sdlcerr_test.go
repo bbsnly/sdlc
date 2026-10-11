@@ -105,7 +105,7 @@ func parseCodeSections(md string) map[string]string {
 		}
 		body.Reset()
 	}
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if h, ok := strings.CutPrefix(trimmed, "### "); ok {
 			flush()

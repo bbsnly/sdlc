@@ -90,17 +90,19 @@ func Setup(opts Options, stderr io.Writer) (closer func() error) {
 }
 
 func openLog(path string) (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: the log directory is for the user to read and other tools to tail
 		return nil, err
 	}
-	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644) //nolint:gosec // G302: the log file is for the user to read and other tools to tail
 }
 
 // Stage times a unit of work and logs it when SDLC_TRACE is on. The returned
 // function is meant to be deferred.
 func Stage(opts Options, name string) func() {
 	if !opts.Trace {
-		return func() {}
+		return func() {
+			// Tracing is off, and the caller defers whatever it is given.
+		}
 	}
 	start := time.Now()
 	return func() {

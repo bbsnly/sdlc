@@ -17,21 +17,25 @@ func TestWhatWindowsKeepsUnderLocalAppDataIsNotALeftover(t *testing.T) {
 		left  []string // relative to the cache directory
 	}{
 		{name: "Microsoft on Windows, with what is in it", goos: "windows",
-			leave: func(t *testing.T, c string) { put(t, filepath.Join(c, "Microsoft", "Windows", "a-cache"), false) }},
+			leave: func(t *testing.T, c string) {
+				t.Helper()
+				put(t, filepath.Join(c, "Microsoft", "Windows", "a-cache"), false)
+			}},
 		{name: "microsoft in another case on Windows", goos: "windows",
-			leave: func(t *testing.T, c string) { put(t, filepath.Join(c, "microsoft"), true) }},
+			leave: func(t *testing.T, c string) { t.Helper(); put(t, filepath.Join(c, "microsoft"), true) }},
 		{name: "Microsoft on Linux", goos: "linux", left: []string{"Microsoft"},
-			leave: func(t *testing.T, c string) { put(t, filepath.Join(c, "Microsoft"), true) }},
+			leave: func(t *testing.T, c string) { t.Helper(); put(t, filepath.Join(c, "Microsoft"), true) }},
 		{name: "Microsoft on macOS", goos: "darwin", left: []string{"Microsoft"},
-			leave: func(t *testing.T, c string) { put(t, filepath.Join(c, "Microsoft"), true) }},
+			leave: func(t *testing.T, c string) { t.Helper(); put(t, filepath.Join(c, "Microsoft"), true) }},
 		{name: "a file named Microsoft on Windows", goos: "windows", left: []string{"Microsoft"},
-			leave: func(t *testing.T, c string) { put(t, filepath.Join(c, "Microsoft"), false) }},
+			leave: func(t *testing.T, c string) { t.Helper(); put(t, filepath.Join(c, "Microsoft"), false) }},
 		{name: "Microsoft inside sdlc on Windows", goos: "windows", left: []string{filepath.Join("sdlc", "Microsoft")},
-			leave: func(t *testing.T, c string) { put(t, filepath.Join(c, "sdlc", "Microsoft"), true) }},
+			leave: func(t *testing.T, c string) { t.Helper(); put(t, filepath.Join(c, "sdlc", "Microsoft"), true) }},
 		{name: "another directory on Windows", goos: "windows", left: []string{"Vendor"},
-			leave: func(t *testing.T, c string) { put(t, filepath.Join(c, "Vendor"), true) }},
+			leave: func(t *testing.T, c string) { t.Helper(); put(t, filepath.Join(c, "Vendor"), true) }},
 		{name: "a stray file beside Microsoft on Windows", goos: "windows", left: []string{"stray"},
 			leave: func(t *testing.T, c string) {
+				t.Helper()
 				put(t, filepath.Join(c, "Microsoft", "a-cache"), false)
 				put(t, filepath.Join(c, "stray"), false)
 			}},

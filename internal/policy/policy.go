@@ -15,6 +15,10 @@ import (
 	"github.com/bbsnly/sdlc/internal/pathrules"
 )
 
+// codemapFile is the codebase map, which the agents that write beside a
+// story's directory may also write.
+const codemapFile = "CODEMAP.md"
+
 // Request is what is about to happen.
 type Request struct {
 	Tool    string // Write, Edit, MultiEdit, NotebookEdit
@@ -213,7 +217,7 @@ var Rules = []Rule{
 			if NormalizeAgent(r.Agent) != "sdet" || r.Tests.IsTest {
 				return ""
 			}
-			if pathrules.UnderAny(r.Path, storyDir(r.Story), "CODEMAP.md") {
+			if pathrules.UnderAny(r.Path, storyDir(r.Story), codemapFile) {
 				return ""
 			}
 			return "the agent that writes the acceptance tests does not write the code " +
@@ -230,7 +234,7 @@ var Rules = []Rule{
 			if NormalizeAgent(r.Agent) != "researcher" {
 				return ""
 			}
-			if pathrules.UnderAny(r.Path, storyDir(r.Story), "CODEMAP.md") {
+			if pathrules.UnderAny(r.Path, storyDir(r.Story), codemapFile) {
 				return ""
 			}
 			return "the analysis agent writes analysis, not code or tests"
@@ -266,7 +270,7 @@ var Rules = []Rule{
 			if NormalizeAgent(r.Agent) != "bookkeeper" {
 				return ""
 			}
-			if pathrules.UnderAny(r.Path, storyDir(r.Story), "CODEMAP.md") {
+			if pathrules.UnderAny(r.Path, storyDir(r.Story), codemapFile) {
 				return ""
 			}
 			return "the retro records what happened; it does not change it"
@@ -324,7 +328,7 @@ var Rules = []Rule{
 			if IsLoopRole(r.Agent) {
 				return ""
 			}
-			if pathrules.UnderAny(r.Path, ".sdlc", "CODEMAP.md") {
+			if pathrules.UnderAny(r.Path, ".sdlc", codemapFile) {
 				return ""
 			}
 			return "neither the main conversation nor an agent outside the loop writes " +

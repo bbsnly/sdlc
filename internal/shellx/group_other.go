@@ -64,4 +64,6 @@ func killGroup(pgid int) error {
 func joinGroup(*exec.Cmd) error { return nil }
 
 // leaveGroup has nothing to let go of here.
-func leaveGroup(*exec.Cmd) {}
+func leaveGroup(*exec.Cmd) {
+	// The group was made with the process, and ends with it.
+}

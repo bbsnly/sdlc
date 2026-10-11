@@ -146,13 +146,15 @@ func TestNewTailKeepsTheLastBytesAndSaysThemAsTailDoes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			w := NewTail(tc.limit)
 			all := ""
+			var allSb149 strings.Builder
 			for _, s := range tc.writes {
 				n, err := fmt.Fprint(w, s)
 				if n != len(s) || err != nil {
 					t.Fatalf("writing %d bytes gave %d, %v; a writer takes all of it", len(s), n, err)
 				}
-				all += s
+				allSb149.WriteString(s)
 			}
+			all += allSb149.String()
 			kept := all
 			if len(kept) > tc.limit {
 				kept = kept[len(kept)-tc.limit:]

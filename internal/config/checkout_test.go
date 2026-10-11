@@ -256,9 +256,11 @@ func TestT12ARewrittenCommondirIsNoMainCheckoutAndTheRealCommonDirectoryStaysACa
 		to   func(t *testing.T) string
 	}{
 		{"T12 commondir leading nowhere", func(t *testing.T) string {
+			t.Helper()
 			return filepath.Join(coTempDir(t), "nowhere")
 		}},
 		{"T12 commondir leading to another repository's .git", func(t *testing.T) string {
+			t.Helper()
 			fake := coTempDir(t)
 			coGit(t, fake, "init", "--quiet", "--initial-branch=main")
 			return filepath.Join(fake, ".git")

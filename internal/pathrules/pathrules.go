@@ -153,82 +153,34 @@ func (res Resolver) Rel(p string) (rel string, outside bool) {
 // readings came back name-first, while Git Bash, which runs the command,
 // follows the link first (R2-5, from US-029.2).
 func (res Resolver) Place(p string) (string, bool) {
-	var abs string
-	switch {
-	case p == "":
+	abs, ok := res.absolute(p)
+	if !ok {
 		return "", false
-	case filepath.IsAbs(p):
-		abs = p
-	case filepath.VolumeName(p) != "":
-		return "", false
-	case strings.HasPrefix(p, `\`) || strings.HasPrefix(p, "/"):
-		abs = filepath.VolumeName(res.project) + p
-	default:
-		abs = res.project + string(filepath.Separator) + p
 	}
 	volume := filepath.VolumeName(abs)
 	parts := strings.FieldsFunc(abs[len(volume):], func(r rune) bool { return r == '/' || r == filepath.Separator })
 	sep := string(filepath.Separator)
 
-	// Down from the root, as resolveExisting goes, and for the same reason. at
-	// is settled while no link has been crossed since known, the last place on
-	// the way known to be there and to hold no link, which at starts with.
-	// Only an unsettled at is followed, at a `..`, so a `..` after plain
-	// directories costs nothing. left is how many more links the word may
-	// follow.
-	at, known, settled, isDir, i, crossed, left := volume+sep, volume+sep, true, true, 0, 0, maxLinks
-	dotted, stopped := false, false
-walk:
-	for ; i < len(parts); i++ {
-		switch parts[i] {
+	// Down from the root, as resolveExisting goes, and for the same reason.
+	w := placeWalk{at: volume + sep, known: volume + sep, settled: true, isDir: true, left: maxLinks}
+	for ; w.i < len(parts); w.i++ {
+		var stop bool
+		switch parts[w.i] {
 		case ".":
-			dotted = true
+			w.dotted = true
 		case "..":
-			dotted = true
-			if filepath.Dir(at) == at {
-				continue // `..` at the top of a volume stays there, as every platform reads it
-			}
-			if !settled {
-				to, ok := res.follow(known, at, crossed, &left)
-				if !ok {
-					stopped = true // past the budget, or a link to nothing: the rest by name
-					break walk
-				}
-				at, known, settled, crossed, isDir = to, to, true, 0, res.lstat(to).dir
-			}
-			if !isDir {
-				break walk // the OS cannot go up from here either: the rest by name, as before
-			}
-			at, isDir = filepath.Dir(at), true
-			known = at
+			stop = res.stepParent(&w)
 		default:
-			next := joinName(at, parts[i])
-			e := res.lstat(next)
-			if !e.there {
-				break walk
-			}
-			if e.link {
-				crossed++
-			}
-			at, settled, isDir = next, settled && !e.link, e.dir
-			if settled {
-				known = at
-			}
+			stop = res.stepName(&w, parts[w.i])
+		}
+		if stop {
+			break
 		}
 	}
-	resolved := at
-	switch {
-	case filepath.Dir(at) == at, stopped:
-	case dotted:
-		if to, ok := res.follow(known, at, crossed, &left); ok {
-			resolved = to
-		}
-	default:
-		resolved = res.resolve(at)
-	}
+	resolved := res.settle(&w)
 	base := filepath.VolumeName(resolved)
 	kept := strings.FieldsFunc(resolved[len(base):], func(r rune) bool { return r == '/' || r == filepath.Separator })
-	for _, part := range parts[i:] {
+	for _, part := range parts[w.i:] {
 		switch part {
 		case ".":
 		case "..":
@@ -240,6 +192,92 @@ walk:
 		}
 	}
 	return base + sep + strings.Join(kept, sep), true
+}
+
+// absolute is p made absolute against the project, and false for a path whose
+// place cannot be known from here.
+func (res Resolver) absolute(p string) (string, bool) {
+	switch {
+	case p == "":
+		return "", false
+	case filepath.IsAbs(p):
+		return p, true
+	case filepath.VolumeName(p) != "":
+		return "", false
+	case strings.HasPrefix(p, `\`) || strings.HasPrefix(p, "/"):
+		return filepath.VolumeName(res.project) + p, true
+	default:
+		return res.project + string(filepath.Separator) + p, true
+	}
+}
+
+// placeWalk is where Place's walk has got to. at is settled while no link has
+// been crossed since known, the last place on the way known to be there and to
+// hold no link, which at starts with. Only an unsettled at is followed, at a
+// `..`, so a `..` after plain directories costs nothing. crossed is how many
+// links lie between known and at, and left how many more links the word may
+// follow. i is how many parts have been taken, and stopped says the walk
+// ended because a link could not be followed.
+type placeWalk struct {
+	at, known       string
+	settled, isDir  bool
+	i, crossed      int
+	left            int
+	dotted, stopped bool
+}
+
+// stepParent takes a `..` and says whether the walk is over.
+func (res Resolver) stepParent(w *placeWalk) bool {
+	w.dotted = true
+	if filepath.Dir(w.at) == w.at {
+		return false // `..` at the top of a volume stays there, as every platform reads it
+	}
+	if !w.settled {
+		to, ok := res.follow(w.known, w.at, w.crossed, &w.left)
+		if !ok {
+			w.stopped = true // past the budget, or a link to nothing: the rest by name
+			return true
+		}
+		w.at, w.known, w.settled, w.crossed, w.isDir = to, to, true, 0, res.lstat(to).dir
+	}
+	if !w.isDir {
+		return true // the OS cannot go up from here either: the rest by name, as before
+	}
+	w.at, w.isDir = filepath.Dir(w.at), true
+	w.known = w.at
+	return false
+}
+
+// stepName takes one name and says whether the walk is over, which it is where
+// the name is not there.
+func (res Resolver) stepName(w *placeWalk, name string) bool {
+	next := joinName(w.at, name)
+	e := res.lstat(next)
+	if !e.there {
+		return true
+	}
+	if e.link {
+		w.crossed++
+	}
+	w.at, w.settled, w.isDir = next, w.settled && !e.link, e.dir
+	if w.settled {
+		w.known = w.at
+	}
+	return false
+}
+
+// settle is where the walk's at leads, with the links on the way followed.
+func (res Resolver) settle(w *placeWalk) string {
+	switch {
+	case filepath.Dir(w.at) == w.at, w.stopped:
+	case w.dotted:
+		if to, ok := res.follow(w.known, w.at, w.crossed, &w.left); ok {
+			return to
+		}
+	default:
+		return res.resolve(w.at)
+	}
+	return w.at
 }
 
 // joinName is dir/name, with a separator between them unless dir ends in one
@@ -303,46 +341,64 @@ func (res Resolver) followFrom(known, at string, crossed, limit int) followed {
 // it back to the root, so one call on a word built for it cost half a second,
 // and one at every `..` of the word held the hook past its timeout.
 func (res Resolver) walkLinks(known, at string, limit int) followed {
-	separator := func(r rune) bool { return r == '/' || r == filepath.Separator }
-	dest, rest, links := known, at[len(known):], 0
-	for rest != "" {
-		rest = strings.TrimLeftFunc(rest, separator)
-		name, after := rest, ""
-		if j := strings.IndexFunc(rest, separator); j >= 0 {
-			name, after = rest[:j], rest[j:]
-		}
-		rest = after
-		switch name {
-		case "", ".", "..":
-			if name == ".." {
-				dest = filepath.Dir(dest) // dest holds no link, so its parent by name is its parent on disk
-			}
-			continue
-		}
-		dest = joinName(dest, name)
-		e := res.lstat(dest)
-		switch {
-		case !e.there, !e.symlink && !e.dir && rest != "":
-			return followed{links: links}
-		case !e.symlink:
-			continue
-		case links == limit:
-			return followed{links: limit + 1}
-		}
-		links++
-		target, err := os.Readlink(dest)
-		if err != nil {
-			return followed{links: links}
-		}
-		// A relative target replaces the link's own name; an absolute one
-		// starts again at the root it names.
-		v := rootLen(target)
-		dest, rest = filepath.Dir(dest), target[v:]+rest
-		if v > 0 {
-			dest = target[:v]
+	w := linkWalk{dest: known, rest: at[len(known):]}
+	for w.rest != "" {
+		if done, f := w.step(res, limit); done {
+			return f
 		}
 	}
-	return followed{to: normalise(filepath.Clean(dest)), links: links, ok: true}
+	return followed{to: normalise(filepath.Clean(w.dest)), links: w.links, ok: true}
+}
+
+// linkWalk is where walkLinks has got to: dest, which holds no link, the path
+// still to walk after it, and the symlinks followed so far.
+type linkWalk struct {
+	dest, rest string
+	links      int
+}
+
+// isSeparator reports whether r separates names in a path, on any platform.
+func isSeparator(r rune) bool { return r == '/' || r == filepath.Separator }
+
+// step walks one name of rest. It reports done with the answer where the walk
+// ends there, and otherwise leaves dest and rest for the next name.
+func (w *linkWalk) step(res Resolver, limit int) (bool, followed) {
+	w.rest = strings.TrimLeftFunc(w.rest, isSeparator)
+	name, after := w.rest, ""
+	if j := strings.IndexFunc(w.rest, isSeparator); j >= 0 {
+		name, after = w.rest[:j], w.rest[j:]
+	}
+	w.rest = after
+	switch name {
+	case "", ".", "..":
+		if name == ".." {
+			w.dest = filepath.Dir(w.dest) // dest holds no link, so its parent by name is its parent on disk
+		}
+		return false, followed{}
+	}
+	w.dest = joinName(w.dest, name)
+	e := res.lstat(w.dest)
+	switch {
+	case !e.there, !e.symlink && !e.dir && w.rest != "":
+		return true, followed{links: w.links}
+	case !e.symlink:
+		return false, followed{}
+	case w.links == limit:
+		return true, followed{links: limit + 1}
+	}
+	w.links++
+	target, err := os.Readlink(w.dest)
+	if err != nil {
+		return true, followed{links: w.links}
+	}
+	// A relative target replaces the link's own name; an absolute one
+	// starts again at the root it names.
+	v := rootLen(target)
+	w.dest, w.rest = filepath.Dir(w.dest), target[v:]+w.rest
+	if v > 0 {
+		w.dest = target[:v]
+	}
+	return false, followed{}
 }
 
 // rootLen is how much of p is the volume and the separator after it that an

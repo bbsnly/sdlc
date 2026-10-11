@@ -564,6 +564,7 @@ func TestInitReportsWhichFileCouldNotBeWritten(t *testing.T) {
 	}{
 		"the configuration itself": {
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				if err := os.MkdirAll(filepath.Join(root, ".sdlc"), 0o500); err != nil {
 					t.Fatal(err)
 				}
@@ -572,6 +573,7 @@ func TestInitReportsWhichFileCouldNotBeWritten(t *testing.T) {
 		},
 		"the story schema": {
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				if err := os.MkdirAll(filepath.Join(root, ".sdlc"), 0o755); err != nil {
 					t.Fatal(err)
 				}
@@ -583,6 +585,7 @@ func TestInitReportsWhichFileCouldNotBeWritten(t *testing.T) {
 		},
 		"the starter backlog": {
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				if _, err := Init(root, false); err != nil {
 					t.Fatal(err)
 				}
@@ -598,6 +601,7 @@ func TestInitReportsWhichFileCouldNotBeWritten(t *testing.T) {
 		},
 		"the contract in CLAUDE.md": {
 			setup: func(t *testing.T, root string) {
+				t.Helper()
 				if _, err := Init(root, false); err != nil {
 					t.Fatal(err)
 				}

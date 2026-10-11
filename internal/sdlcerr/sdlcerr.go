@@ -101,8 +101,7 @@ func QuotePath(p string) string { return strconv.Quote(filepath.ToSlash(p)) }
 // Render returns the rich form when err is or wraps an [Error], and a plain
 // line otherwise. Command surfaces call this rather than type-switching.
 func Render(err error) string {
-	var e *Error
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*Error](err); ok {
 		return e.Render()
 	}
 	return "sdlc: " + err.Error() + "\n"

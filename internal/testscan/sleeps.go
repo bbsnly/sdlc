@@ -28,24 +28,9 @@ func Sleeps(root string) ([]Sleep, error) {
 		if err != nil {
 			return nil, err
 		}
-		alias := ""
-		for _, imp := range f.Imports {
-			if imp.Path.Value == `"time"` {
-				alias = "time"
-				if imp.Name != nil {
-					alias = imp.Name.Name
-				}
-			}
-		}
+		alias := timeAlias(f)
 		for _, decl := range f.Decls {
-			name := "(package level)"
-			if fn, ok := decl.(*ast.FuncDecl); ok {
-				name = fn.Name.Name
-				if fn.Recv != nil {
-					recv, _, _ := strings.Cut(strings.TrimLeft(types.ExprString(fn.Recv.List[0].Type), "*"), "[")
-					name = recv + "." + name
-				}
-			}
+			name := declName(decl)
 			ast.Inspect(decl, func(n ast.Node) bool {
 				if call, ok := n.(*ast.CallExpr); ok && calls(call, alias, "Sleep") {
 					out = append(out, Sleep{File: rel, Func: name})
@@ -58,6 +43,34 @@ func Sleeps(root string) ([]Sleep, error) {
 		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Func, b.Func))
 	})
 	return slices.Compact(out), nil
+}
+
+// timeAlias is the name a file imports "time" by, "" where it does not.
+func timeAlias(f *ast.File) string {
+	alias := ""
+	for _, imp := range f.Imports {
+		if imp.Path.Value == `"time"` {
+			alias = "time"
+			if imp.Name != nil {
+				alias = imp.Name.Name
+			}
+		}
+	}
+	return alias
+}
+
+// declName is the function a declaration is, as Sleeps names it: Recv.Name for
+// a method, and "(package level)" for anything that is not a function.
+func declName(decl ast.Decl) string {
+	fn, ok := decl.(*ast.FuncDecl)
+	if !ok {
+		return "(package level)"
+	}
+	if fn.Recv == nil {
+		return fn.Name.Name
+	}
+	recv, _, _ := strings.Cut(strings.TrimLeft(types.ExprString(fn.Recv.List[0].Type), "*"), "[")
+	return recv + "." + fn.Name.Name
 }
 
 // calls reports whether call is pkg.name(...).

@@ -137,7 +137,10 @@ func TestLatestDecisionIsTheLastAnswerAPersonGave(t *testing.T) {
 	if _, ok := d.LatestDecision(); ok {
 		t.Error("a record nobody answered has a decision")
 	}
-	rec := r.(*Record)
+	rec, ok := r.(*Record)
+	if !ok {
+		t.Fatalf("the record is a %T, want *Record", r)
+	}
 	rec.Approvals = []Approval{
 		{At: Timestamp(lmAt), Decision: DecisionApproved, Type: "pre_commit_approval"},
 		{At: Timestamp(lmAt.Add(time.Hour)), Decision: DecisionRejected, Reason: "not this week"},

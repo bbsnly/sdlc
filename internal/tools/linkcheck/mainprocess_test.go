@@ -20,8 +20,7 @@ func runMain(t *testing.T, args []string) (stdout, stderr string, exitCode int) 
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
+	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 		exitCode = ee.ExitCode()
 	} else if err != nil {
 		t.Fatalf("running linkcheck: %v", err)
@@ -109,7 +108,7 @@ func TestMainSortsFindingsByFileThenByLine(t *testing.T) {
 		t.Fatalf("exit %d, stderr=%q", code, errb)
 	}
 	var findings []string
-	for _, l := range strings.Split(strings.TrimRight(errb, "\n"), "\n") {
+	for l := range strings.SplitSeq(strings.TrimRight(errb, "\n"), "\n") {
 		if strings.HasPrefix(l, "a.md:") || strings.HasPrefix(l, "z.md:") {
 			findings = append(findings, l)
 		}

@@ -528,45 +528,63 @@ func TestAC2WhatATestLeavesInTheCacheDirectoryFailsTheRunAndIsNamed(t *testing.T
 	}
 	cases := []leftover{
 		{name: "a file in the cache directory", fail: true, named: []string{"us087-stray-file"},
-			leave: func(t *testing.T, c string) { us087Put(t, filepath.Join(c, "us087-stray-file"), false) }},
+			leave: func(t *testing.T, c string) { t.Helper(); us087Put(t, filepath.Join(c, "us087-stray-file"), false) }},
 		{name: "a file in sdlc", fail: true, named: []string{"us087-stray-in-sdlc"},
-			leave: func(t *testing.T, c string) { us087Put(t, filepath.Join(c, "sdlc", "us087-stray-in-sdlc"), false) }},
+			leave: func(t *testing.T, c string) {
+				t.Helper()
+				us087Put(t, filepath.Join(c, "sdlc", "us087-stray-in-sdlc"), false)
+			}},
 		{name: "a file in sdlc/locks", fail: true, named: []string{"us087-stray-in-locks"},
 			leave: func(t *testing.T, c string) {
+				t.Helper()
 				us087Put(t, filepath.Join(c, "sdlc", "locks", "us087-stray-in-locks"), false)
 			}},
 		{name: "an empty directory beside sdlc", fail: true, named: []string{"us087-stray-dir"},
-			leave: func(t *testing.T, c string) { us087Put(t, filepath.Join(c, "us087-stray-dir"), true) }},
+			leave: func(t *testing.T, c string) { t.Helper(); us087Put(t, filepath.Join(c, "us087-stray-dir"), true) }},
 		{name: "an empty directory in sdlc", fail: true, named: []string{"us087-other-dir"},
-			leave: func(t *testing.T, c string) { us087Put(t, filepath.Join(c, "sdlc", "us087-other-dir"), true) }},
+			leave: func(t *testing.T, c string) {
+				t.Helper()
+				us087Put(t, filepath.Join(c, "sdlc", "us087-other-dir"), true)
+			}},
 		{name: "a lock left held", fail: true, named: []string{"us087-held-lock"},
 			leave: func(t *testing.T, c string) {
+				t.Helper()
 				us087Put(t, filepath.Join(c, "sdlc", "locks", "us087-held-lock", "owner.json"), false)
 			}},
 		{name: "a lock left held with nothing in it", fail: true, named: []string{"us087-bare-lock"},
-			leave: func(t *testing.T, c string) { us087Put(t, filepath.Join(c, "sdlc", "locks", "us087-bare-lock"), true) }},
+			leave: func(t *testing.T, c string) {
+				t.Helper()
+				us087Put(t, filepath.Join(c, "sdlc", "locks", "us087-bare-lock"), true)
+			}},
 		{name: "several leftovers, each of them", fail: true,
 			named: []string{"us087-first", "us087-second", "us087-third"},
 			leave: func(t *testing.T, c string) {
+				t.Helper()
 				us087Put(t, filepath.Join(c, "us087-first"), false)
 				us087Put(t, filepath.Join(c, "sdlc", "us087-second"), false)
 				us087Put(t, filepath.Join(c, "sdlc", "locks", "us087-third"), true)
 			}},
 		{name: "a file where the cache directory should be", fail: true,
 			leave: func(t *testing.T, c string) {
+				t.Helper()
 				if err := os.RemoveAll(c); err != nil {
 					t.Fatal(err)
 				}
 				us087Put(t, c, false)
 			}},
 		{name: "a leftover in a run whose tests failed", code: 1, fail: true, named: []string{"us087-stray-after-failure"},
-			leave: func(t *testing.T, c string) { us087Put(t, filepath.Join(c, "us087-stray-after-failure"), false) }},
+			leave: func(t *testing.T, c string) {
+				t.Helper()
+				us087Put(t, filepath.Join(c, "us087-stray-after-failure"), false)
+			}},
 		{name: "nothing at all", leave: func(*testing.T, string) {}},
 		{name: "the empty directories a lock is taken in", leave: func(t *testing.T, c string) {
+			t.Helper()
 			us087Put(t, filepath.Join(c, "sdlc", "locks"), true)
 		}},
-		{name: "an empty sdlc", leave: func(t *testing.T, c string) { us087Put(t, filepath.Join(c, "sdlc"), true) }},
+		{name: "an empty sdlc", leave: func(t *testing.T, c string) { t.Helper(); us087Put(t, filepath.Join(c, "sdlc"), true) }},
 		{name: "a lock taken and given back", leave: func(t *testing.T, c string) {
+			t.Helper()
 			us087Put(t, filepath.Join(c, "sdlc", "locks", "a-project", "owner.json"), false)
 			if err := os.RemoveAll(filepath.Join(c, "sdlc", "locks", "a-project")); err != nil {
 				t.Fatal(err)
@@ -647,8 +665,7 @@ func TestAC2ATestBinaryWhoseTestLeftAFileExitsNonZeroAndNamesIt(t *testing.T) {
 	}
 
 	out, err := us087Child(t, name, "file")
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) {
+	if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 		t.Errorf("the test binary exited cleanly (%v) with a file left in the cache directory:\n%s", err, out)
 	}
 	if !strings.Contains(out, "--- PASS: "+name) {

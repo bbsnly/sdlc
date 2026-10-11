@@ -24,7 +24,6 @@ type Progress struct{ Running, Waiting int }
 func Schedule(ctx context.Context, ids []string, limit int,
 	run func(ctx context.Context, id string) (exit int, err error),
 	progress func(Progress)) []Result {
-
 	results := make([]Result, len(ids))
 	for i, id := range ids {
 		results[i].Story = id

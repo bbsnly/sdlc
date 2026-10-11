@@ -100,7 +100,7 @@ type printedSandbox struct{ dir, repo, sdlc, printed string }
 func readPrinted(t *testing.T, stdout string) printedSandbox {
 	t.Helper()
 	paths := map[string]string{}
-	for _, line := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(stdout, "\n"), "\n") {
 		word, rest, ok := strings.Cut(strings.TrimRight(line, "\r"), " ")
 		if !ok {
 			continue

@@ -286,8 +286,7 @@ func flagProblems(agents, skills []Component, humanOnly map[string]bool) []strin
 		flag, flagged := s.Front["disable-model-invocation"]
 		switch {
 		case humanOnly[s.Name] && flag != "true":
-			problems = append(problems, fmt.Sprintf(
-				"%s: only a person starts this skill, and without disable-model-invocation: true the model can", s.Path))
+			problems = append(problems, s.Path+": only a person starts this skill, and without disable-model-invocation: true the model can")
 		case !humanOnly[s.Name] && flagged:
 			problems = append(problems, fmt.Sprintf(
 				"%s: disable-model-invocation: %s -- the model never starts this skill with it; "+
@@ -559,7 +558,7 @@ func TestTheHookRunsSomethingThatExists(t *testing.T) {
 	}
 
 	for _, entry := range entries {
-		for _, tool := range strings.Split(entry.Matcher, "|") {
+		for tool := range strings.SplitSeq(entry.Matcher, "|") {
 			if !governed(tool) {
 				t.Errorf("the hook matches %q, which the policy does not govern: "+
 					"every tool call it intercepts costs the user latency", tool)
@@ -671,7 +670,7 @@ func TestTheHookSeesEveryToolThatRunsACommand(t *testing.T) {
 	}
 	matched := map[string]bool{}
 	for _, entry := range cfg.Hooks["PreToolUse"] {
-		for _, tool := range strings.Split(entry.Matcher, "|") {
+		for tool := range strings.SplitSeq(entry.Matcher, "|") {
 			matched[tool] = true
 		}
 	}
@@ -780,14 +779,14 @@ func TestTheLauncherSaysNothingOutsideTheSessionWorkingAStory(t *testing.T) {
 	nowhere := mkdir("nowhere")
 	project := mkdir("project")
 	mkdir("project", ".git")
-	writeStory(t, project, me)
+	writeStory(t, project)
 	below := mkdir("project", "internal", "invoice")
 	idle := mkdir("idle")
 	mkdir("idle", ".git")
 	writeConfig(t, idle)
 	// A repository inside a directory that uses sdlc is a project of its own.
 	nested := mkdir("outer", "inner")
-	writeStory(t, filepath.Join(tmp, "outer"), me)
+	writeStory(t, filepath.Join(tmp, "outer"))
 	mkdir("outer", "inner", ".git")
 
 	cases := []struct {

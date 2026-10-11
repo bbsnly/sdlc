@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,6 +43,9 @@ const quietGit = "[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n"
 // with a home of its own would build every test binary from nothing and,
 // offline, not at all.
 var goVars = []string{"GOCACHE", "GOMODCACHE", "GOPATH", "GOENV"}
+
+// errPrefix names this package on the line it writes to stderr when it fails.
+const errPrefix = "testenv:"
 
 // goEnvTimeout bounds the one go that Run asks. The tests' own timeout starts
 // inside m.Run, so without it a go that never answers would hold the run.
@@ -72,7 +76,7 @@ func run(tests func() int) int {
 
 	dir, err := os.MkdirTemp("", "sdlc-testenv-")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "testenv:", err)
+		fmt.Fprintln(os.Stderr, errPrefix, err)
 		return 1
 	}
 	// A directory that cannot be removed is said, and does not change the exit
@@ -86,7 +90,7 @@ func run(tests func() int) int {
 	}()
 	cache, err := prepare(dir)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "testenv:", err)
+		fmt.Fprintln(os.Stderr, errPrefix, err)
 		return 1
 	}
 
@@ -131,9 +135,7 @@ func prepare(dir string) (string, error) {
 		"XDG_CACHE_HOME": cache,
 		"LocalAppData":   cache,
 	}
-	for name, value := range caches {
-		env[name] = value
-	}
+	maps.Copy(env, caches)
 	if npm != "" {
 		env["npm_config_cache"] = npm
 	}
@@ -161,7 +163,7 @@ func goCaches(dir string) (map[string]string, error) {
 		}
 	}
 	if len(unset) == 0 {
-		return nil, nil
+		return map[string]string{}, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), goEnvTimeout)
 	defer cancel()
@@ -179,8 +181,7 @@ func goCaches(dir string) (map[string]string, error) {
 		if ctx.Err() != nil {
 			reason = "go did not answer in " + goEnvTimeout.String()
 		}
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
+		if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 			reason = strings.TrimRight(reason+": "+strings.TrimSpace(string(exit.Stderr)), ": ")
 		}
 		names := strings.Join(unset, ", ")

@@ -8,12 +8,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// hookCommand is the one command main answers before the command tree is reached.
+const hookCommand = "hook"
+
 // Commands is every command a person can run, as typed after "sdlc": the tree
 // cli.New builds, groups included, without hidden commands, help or completion
 // (what internal/cli/docs_test.go walks), and hook, which main answers before
 // the tree is reached.
 func Commands() []string {
-	out := []string{"hook"}
+	out := []string{hookCommand}
 	var walk func(*cobra.Command)
 	walk = func(c *cobra.Command) {
 		for _, sub := range c.Commands() {
@@ -37,8 +40,8 @@ func Resolve(args []string) (string, bool) {
 }
 
 func resolve(root *cobra.Command, args []string) (string, bool) {
-	if len(args) > 0 && args[0] == "hook" {
-		return "hook", true
+	if len(args) > 0 && args[0] == hookCommand {
+		return hookCommand, true
 	}
 	found, _, err := root.Find(args)
 	if err != nil || found == root {

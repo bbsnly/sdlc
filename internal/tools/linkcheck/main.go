@@ -112,44 +112,47 @@ func checkLinks(root string) ([]finding, error) {
 	}
 	var findings []finding
 	for _, rel := range files {
-		abs := filepath.Join(root, rel)
-		body, err := os.ReadFile(abs)
+		body, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
 			return nil, err
 		}
 		for _, lt := range linkTargets(string(body)) {
-			target := lt.target
-			if isExternal(target) {
-				continue
-			}
-			// Strip any fragment; an anchor is not a file.
-			if i := strings.IndexByte(target, '#'); i >= 0 {
-				if i == 0 {
-					continue // pure in-page anchor
-				}
-				target = target[:i]
-			}
-			// Only an empty link reaches here: a bare "#" was skipped above.
-			if target == "" {
-				findings = append(findings, finding{rel, lt.line,
-					"link has no target; put a path inside the parentheses, or remove the link"})
-				continue
-			}
-			resolved := filepath.Join(root, filepath.FromSlash(path.Join(path.Dir(rel), target)))
-			if _, err := os.Stat(resolved); err != nil {
-				findings = append(findings, finding{rel, lt.line,
-					fmt.Sprintf("relative link %q does not resolve", lt.target)})
-				continue
-			}
-			if rel == "README.md" && strings.HasPrefix(path.Clean(path.Join(path.Dir(rel), target)), "docs/") {
-				findings = append(findings, finding{rel, lt.line,
-					fmt.Sprintf("README.md links into docs/ (%q); README.md ships inside the npm package "+
-						"and every release archive, where docs/ does not exist, so this is a dead link there. "+
-						"Either inline what the reader needs, or link to the canonical URL on the docs site", lt.target)})
-			}
+			findings = append(findings, checkLink(root, rel, lt)...)
 		}
 	}
 	return findings, nil
+}
+
+// checkLink is what is wrong with one link in the file rel, if anything.
+func checkLink(root, rel string, lt linkTarget) []finding {
+	target := lt.target
+	if isExternal(target) {
+		return nil
+	}
+	// Strip any fragment; an anchor is not a file.
+	if i := strings.IndexByte(target, '#'); i >= 0 {
+		if i == 0 {
+			return nil // pure in-page anchor
+		}
+		target = target[:i]
+	}
+	// Only an empty link reaches here: a bare "#" was skipped above.
+	if target == "" {
+		return []finding{{rel, lt.line,
+			"link has no target; put a path inside the parentheses, or remove the link"}}
+	}
+	resolved := filepath.Join(root, filepath.FromSlash(path.Join(path.Dir(rel), target)))
+	if _, err := os.Stat(resolved); err != nil {
+		return []finding{{rel, lt.line,
+			fmt.Sprintf("relative link %q does not resolve", lt.target)}}
+	}
+	if rel == "README.md" && strings.HasPrefix(path.Clean(path.Join(path.Dir(rel), target)), "docs/") {
+		return []finding{{rel, lt.line,
+			fmt.Sprintf("README.md links into docs/ (%q); README.md ships inside the npm package "+
+				"and every release archive, where docs/ does not exist, so this is a dead link there. "+
+				"Either inline what the reader needs, or link to the canonical URL on the docs site", lt.target)}}
+	}
+	return nil
 }
 
 // checkHygiene asserts nothing internal or personally identifying is tracked.
@@ -160,50 +163,66 @@ func checkHygiene(root string) ([]finding, error) {
 	}
 	var findings []finding
 	for _, rel := range tracked {
-		slash := filepath.ToSlash(rel)
-		switch {
-		case strings.HasPrefix(slash, "plan/"):
-			findings = append(findings, finding{slash, 0, "internal working document is tracked"})
-		case strings.HasPrefix(slash, "docs/adr/"), strings.HasPrefix(slash, "docs/parity/"):
-			findings = append(findings, finding{slash, 0,
-				"design record is tracked; this repository carries only what a user needs (see plan/adr/)"})
-		}
-		base := strings.ToLower(path.Base(slash))
-		if strings.Contains(base, "plan") && strings.HasSuffix(base, ".md") {
-			findings = append(findings, finding{slash, 0, "looks like a planning document; it belongs under plan/"})
-		}
-		if compiled(filepath.Join(root, rel)) {
-			findings = append(findings, finding{slash, 0,
-				"is a compiled binary; `go build ./internal/tools/x` leaves one in the working " +
-					"directory and `git add -A` sweeps it in. Delete it and add the name to .gitignore"})
-		}
+		findings = append(findings, trackedFindings(root, rel)...)
 	}
-
 	for _, rel := range tracked {
-		slash := filepath.ToSlash(rel)
-		abs := filepath.Join(root, rel)
-		info, err := os.Stat(abs)
-		if err != nil || info.IsDir() || info.Size() > 4<<20 {
-			continue
-		}
-		f, err := os.Open(abs)
-		if err != nil {
-			continue
-		}
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
-		for n := 1; scanner.Scan(); n++ {
-			for _, m := range homePath.FindAllStringSubmatch(scanner.Text(), -1) {
-				if account := m[1]; account != syntheticAccount {
-					findings = append(findings, finding{slash, n,
-						fmt.Sprintf("path carries an account name (%q); fixtures use %q and prose writes <user>",
-							account, syntheticAccount)})
-				}
-			}
-		}
-		_ = f.Close()
+		findings = append(findings, accountFindings(root, rel)...)
 	}
 	return findings, nil
+}
+
+// trackedFindings is what is wrong with the tracked file rel by its name and
+// its first bytes.
+func trackedFindings(root, rel string) []finding {
+	var findings []finding
+	slash := filepath.ToSlash(rel)
+	switch {
+	case strings.HasPrefix(slash, "plan/"):
+		findings = append(findings, finding{slash, 0, "internal working document is tracked"})
+	case strings.HasPrefix(slash, "docs/adr/"), strings.HasPrefix(slash, "docs/parity/"):
+		findings = append(findings, finding{slash, 0,
+			"design record is tracked; this repository carries only what a user needs (see plan/adr/)"})
+	}
+	base := strings.ToLower(path.Base(slash))
+	if strings.Contains(base, "plan") && strings.HasSuffix(base, ".md") {
+		findings = append(findings, finding{slash, 0, "looks like a planning document; it belongs under plan/"})
+	}
+	if compiled(filepath.Join(root, rel)) {
+		findings = append(findings, finding{slash, 0,
+			"is a compiled binary; `go build ./internal/tools/x` leaves one in the working " +
+				"directory and `git add -A` sweeps it in. Delete it and add the name to .gitignore"})
+	}
+	return findings
+}
+
+// accountFindings is every line of the tracked file rel that carries a
+// person's home directory. A file that cannot be read or is large is skipped.
+func accountFindings(root, rel string) []finding {
+	abs := filepath.Join(root, rel)
+	info, err := os.Stat(abs)
+	if err != nil || info.IsDir() || info.Size() > 4<<20 {
+		return nil
+	}
+	f, err := os.Open(abs)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = f.Close() }()
+
+	slash := filepath.ToSlash(rel)
+	var findings []finding
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	for n := 1; scanner.Scan(); n++ {
+		for _, m := range homePath.FindAllStringSubmatch(scanner.Text(), -1) {
+			if account := m[1]; account != syntheticAccount {
+				findings = append(findings, finding{slash, n,
+					fmt.Sprintf("path carries an account name (%q); fixtures use %q and prose writes <user>",
+						account, syntheticAccount)})
+			}
+		}
+	}
+	return findings
 }
 
 // compiled reports whether a file starts with an executable's magic number.
@@ -287,6 +306,23 @@ var skipped = map[string]bool{
 	"internal/scaffold/templates": true,
 }
 
+// skipDir reports whether the walk leaves the directory d at rel alone.
+// Installed packages are not ours wherever npm puts them, and the
+// markdownlint this repository runs is installed under .github/tools.
+func skipDir(rel string, d os.DirEntry) bool {
+	return rel != "." && (skipped[rel] || d.Name() == "node_modules" || strings.HasPrefix(d.Name(), ".") && rel != ".github")
+}
+
+// tolerateVanished is nil for a walk error that is a file gone. A tree that is
+// being written while this walks is not a broken link, and this tool runs from
+// the first commit onwards.
+func tolerateVanished(err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 // markdownFiles is every Markdown file in the tree, not only README.md and
 // docs/. CONTRIBUTING.md, SECURITY.md, the skill and the agents all carry
 // links, and until this walked the whole tree a broken one in any of them was
@@ -295,12 +331,7 @@ func markdownFiles(root string) ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
-			// A tree that is being written while this walks is not a broken
-			// link, and this tool runs from the first commit onwards.
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
+			return tolerateVanished(err)
 		}
 		rel, relErr := filepath.Rel(root, p)
 		if relErr != nil {
@@ -308,9 +339,7 @@ func markdownFiles(root string) ([]string, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			// Installed packages are not ours wherever npm puts them, and the
-			// markdownlint this repository runs is installed under .github/tools.
-			if rel != "." && (skipped[rel] || d.Name() == "node_modules" || strings.HasPrefix(d.Name(), ".") && rel != ".github") {
+			if skipDir(rel, d) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -335,7 +364,7 @@ func gitLsFiles(root string) ([]string, error) {
 		return nil, fmt.Errorf("git ls-files failed (is %s a git repository?): %w", root, err)
 	}
 	var files []string
-	for _, f := range strings.Split(string(out), "\x00") {
+	for f := range strings.SplitSeq(string(out), "\x00") {
 		if f != "" {
 			files = append(files, f)
 		}

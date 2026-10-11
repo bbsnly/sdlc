@@ -21,14 +21,12 @@ import (
 const me = "session-me"
 
 // writeStory puts story A-1 under way in dir, a project that uses sdlc, with
-// session recorded as the one working it, or no session when it is empty.
-func writeStory(t *testing.T, dir, session string) {
+// me recorded as the session working it.
+func writeStory(t *testing.T, dir string) {
 	t.Helper()
 	writeConfig(t, dir)
 	putFile(t, dir, ".sdlc/state/active", "A-1\n")
-	if session != "" {
-		putFile(t, dir, ".sdlc/state/session", session+"\n")
-	}
+	putFile(t, dir, ".sdlc/state/session", me+"\n")
 }
 
 func putFile(t *testing.T, dir, rel, body string) {
@@ -264,6 +262,7 @@ func TestOnlyTheSessionThatStartedAStoryHearsFromThePlugin(t *testing.T) {
 		uses bool
 	}{
 		{"a directory in no repository", func(t *testing.T, dir string) {
+			t.Helper()
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -271,15 +270,18 @@ func TestOnlyTheSessionThatStartedAStoryHearsFromThePlugin(t *testing.T) {
 		{"a repository that does not use sdlc", gitInit, false, false, false},
 		{"a repository that uses sdlc with no story under way", loopRepository, false, false, true},
 		{"a story another session started", func(t *testing.T, dir string) {
+			t.Helper()
 			loopRepository(t, dir)
 			writeStoryState(t, dir, "session-other")
 		}, false, true, true},
 		{"a story started from a terminal", func(t *testing.T, dir string) {
+			t.Helper()
 			loopRepository(t, dir)
 			writeStoryState(t, dir, "")
 		}, false, true, true},
 		{"a story waiting for a person", handedOver, false, true, true},
 		{"a story this session started", func(t *testing.T, dir string) {
+			t.Helper()
 			loopRepository(t, dir)
 			writeStoryState(t, dir, me)
 		}, true, true, true},
@@ -359,7 +361,11 @@ func TestOnlyTheSessionThatStartedAStoryHearsFromThePlugin(t *testing.T) {
 						if c.decision == "" {
 							continue
 						}
-						command := "cd project && " + c.input["command"].(string)
+						inputCommand, ok := c.input["command"].(string)
+						if !ok {
+							t.Fatalf("%s: the command input is a %T, want a string", c.name, c.input["command"])
+						}
+						command := "cd project && " + inputCommand
 						stdout, stderr := h.run(t, c.event, hookEvent(c.event, me, outside, c.tool, map[string]any{"command": command}))
 						switch {
 						case withBinary && (s.held || s.waits && c.decision == "story" || s.uses && c.decision == "project"):
@@ -484,7 +490,7 @@ func TestNothingIsHeardFromAWindowsDirectoryHoweverItIsWritten(t *testing.T) {
 	idle := filepath.Join(root, "idle")
 	writeConfig(t, idle)
 	mine := filepath.Join(root, "mine")
-	writeStory(t, mine, me)
+	writeStory(t, mine)
 	neutral := filepath.Join(root, "neutral")
 	if err := os.MkdirAll(neutral, 0o755); err != nil {
 		t.Fatal(err)
@@ -582,7 +588,7 @@ func copyFile(t *testing.T, from, to string) {
 func TestTheLauncherHearsTheSessionOnALargeEdit(t *testing.T) {
 	project := filepath.Join(t.TempDir(), "project")
 	gitInit(t, project)
-	writeStory(t, project, me)
+	writeStory(t, project)
 	content, err := json.Marshal(strings.Repeat("x", 20000))
 	if err != nil {
 		t.Fatal(err)

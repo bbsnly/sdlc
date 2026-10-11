@@ -165,6 +165,10 @@ type HumanGates struct {
 // DefaultRiskTier is the risk tier of a story that does not name one.
 const DefaultRiskTier = "low"
 
+// notARepoMessage is the summary of every SDLC-E code for a directory outside
+// a repository, whatever the cause.
+const notARepoMessage = "this is not a Git repository"
+
 // PausesBeforeCommit reports whether a story of this risk tier waits for a
 // person's approval before it is committed. Tiers are words a person typed into
 // two different files, so they compare without regard to case.
@@ -239,7 +243,7 @@ func FindRoot(start string) (string, error) {
 	dir, err := filepath.Abs(start)
 	if err != nil {
 		return "", sdlcerr.New(sdlcerr.NotAGitRepo,
-			"this is not a Git repository",
+			notARepoMessage,
 			"the current directory could not be resolved").WithCause(err)
 	}
 	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
@@ -253,14 +257,14 @@ func FindRoot(start string) (string, error) {
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			return "", sdlcerr.New(sdlcerr.NotAGitRepo,
-				"this is not a Git repository",
+				notARepoMessage,
 				"sdlc looked for .git in "+start+" and in every directory above it")
 		}
 		if i := slices.IndexFunc(ceilings, func(c ceiling) bool { return c.dir == parent }); i >= 0 {
 			// The fix names the entry as it is written in the variable, which
 			// is where it has to be taken out, not the directory it resolves to.
 			return "", sdlcerr.New(sdlcerr.NotAGitRepo,
-				"this is not a Git repository",
+				notARepoMessage,
 				"sdlc looked for .git in "+start+" and above it, as far as "+parent+
 					", which GIT_CEILING_DIRECTORIES says not to look in").
 				WithFix("take " + ceilings[i].written + " out of GIT_CEILING_DIRECTORIES, or unset it: this " +
@@ -403,6 +407,13 @@ func (c Config) validate() error {
 // mistyped list allowed anything, and a path that matches nothing was a
 // protection a person believed in that was not there.
 func (s Staffing) problems() []string {
+	problems := s.listProblems()
+	problems = append(problems, s.lowestProblems()...)
+	return append(problems, s.bringBackProblems()...)
+}
+
+// listProblems checks the two lists a staffing may ask from.
+func (s Staffing) listProblems() []string {
 	var problems []string
 	for _, l := range []struct {
 		name  string
@@ -419,6 +430,11 @@ func (s Staffing) problems() []string {
 			seen[n] = true
 		}
 	}
+	return problems
+}
+
+func (s Staffing) lowestProblems() []string {
+	var problems []string
 	for _, agent := range slices.Sorted(maps.Keys(s.Lowest)) {
 		low := s.Lowest[agent]
 		if low.Model != "" && !slices.Contains(s.Models, low.Model) {
@@ -428,18 +444,28 @@ func (s Staffing) problems() []string {
 			problems = append(problems, fmt.Sprintf("staffing.lowest has the effort %q for %s, which staffing.efforts does not list", low.Effort, agent))
 		}
 	}
+	return problems
+}
+
+func (s Staffing) bringBackProblems() []string {
+	var problems []string
 	for _, reviewer := range slices.Sorted(maps.Keys(s.BringBack)) {
 		for _, p := range s.BringBack[reviewer] {
 			// A path is matched segment by segment against what git reports, so
 			// one git never reports matches nothing, and an empty one everything.
-			if at := strings.TrimSuffix(p, "/"); at == "" || at == "." || path.Clean(at) != at || !filepath.IsLocal(filepath.FromSlash(at)) ||
-				strings.ContainsAny(p, `\*?[`) {
+			if !bringBackPathOK(p) {
 				problems = append(problems, fmt.Sprintf("staffing.bring_back has %q for %s: give a file or a directory "+
 					"relative to the repository root, with / between its parts and no pattern", p, reviewer))
 			}
 		}
 	}
 	return problems
+}
+
+func bringBackPathOK(p string) bool {
+	at := strings.TrimSuffix(p, "/")
+	return at != "" && at != "." && path.Clean(at) == at && filepath.IsLocal(filepath.FromSlash(at)) &&
+		!strings.ContainsAny(p, `\*?[`)
 }
 
 // UnknownKeys names every setting in root/.sdlc/config.json that the

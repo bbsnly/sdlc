@@ -303,8 +303,8 @@ func bare(common string) bool {
 	sc := bufio.NewScanner(bytes.NewReader(raw))
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		if strings.HasPrefix(line, "[") {
-			name, rest, _ := strings.Cut(strings.TrimPrefix(line, "["), "]")
+		if after, ok := strings.CutPrefix(line, "["); ok {
+			name, rest, _ := strings.Cut(after, "]")
 			section = strings.ToLower(strings.TrimSpace(name))
 			// Git takes a setting on the header's own line: "[core] bare = true".
 			line = strings.TrimSpace(rest)

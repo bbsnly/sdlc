@@ -216,8 +216,7 @@ func runBinary(t *testing.T, args []string) (stdout, stderr string, exitCode int
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
+	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 		exitCode = ee.ExitCode()
 	} else if err != nil {
 		t.Fatalf("running release: %v", err)

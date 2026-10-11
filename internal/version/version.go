@@ -45,28 +45,34 @@ func compute() Info {
 	info := Info{Version: version, Commit: commit, Date: date}
 
 	if bi, ok := debug.ReadBuildInfo(); ok {
-		for _, s := range bi.Settings {
-			switch s.Key {
-			case "vcs.revision":
-				if info.Commit == "" {
-					info.Commit = s.Value
-				}
-			case "vcs.time":
-				if info.Date == "" {
-					info.Date = s.Value
-				}
-			case "vcs.modified":
-				info.Dirty = s.Value == "true"
-			}
-		}
-		if info.Version == "" && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
-			info.Version = bi.Main.Version
-		}
+		info = fillFromBuild(info, bi)
 	}
 	if info.Version == "" {
 		info.Version = "0.0.0-dev"
 	}
 	return info
+}
+
+// fillFromBuild takes from the build what the linker did not set.
+func fillFromBuild(i Info, bi *debug.BuildInfo) Info {
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			if i.Commit == "" {
+				i.Commit = s.Value
+			}
+		case "vcs.time":
+			if i.Date == "" {
+				i.Date = s.Value
+			}
+		case "vcs.modified":
+			i.Dirty = s.Value == "true"
+		}
+	}
+	if i.Version == "" && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		i.Version = bi.Main.Version
+	}
+	return i
 }
 
 // String renders the one line `sdlc version` prints.

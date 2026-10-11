@@ -64,7 +64,7 @@ func put(t *testing.T, root, rel, body string) {
 // squeezed to one and the blank lines gone.
 func lines(text string) []string {
 	var out []string
-	for _, l := range strings.Split(text, "\n") {
+	for l := range strings.SplitSeq(text, "\n") {
 		if l = strings.Join(strings.Fields(l), " "); l != "" {
 			out = append(out, l)
 		}
@@ -159,7 +159,7 @@ func TestAC2TheReportListsNothingWhenEveryCommandAndGateIsRunAndIsAnErrorWhereTh
 	b.WriteString("package e2e\n\nfunc TestEverything(t *testing.T) {\n")
 	for _, c := range Commands() {
 		b.WriteString("\trunTool(t, binary, dir")
-		for _, word := range strings.Fields(c) {
+		for word := range strings.FieldsSeq(c) {
 			b.WriteString(", \"" + word + "\"")
 		}
 		b.WriteString(")\n")

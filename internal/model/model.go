@@ -138,6 +138,22 @@ func (b *Backlog) Next() (Selection, bool) {
 		}
 	}
 
+	runnable := b.runnable()
+	if len(runnable) == 0 {
+		return Selection{}, false
+	}
+	sort.SliceStable(runnable, func(i, j int) bool {
+		pi, pj := priorityOf(runnable[i]), priorityOf(runnable[j])
+		if pi != pj {
+			return pi < pj
+		}
+		return compareIDs(runnable[i].ID, runnable[j].ID) < 0
+	})
+	return Selection{Story: runnable[0]}, true
+}
+
+// runnable is the stories that are waiting to start and have every dependency done.
+func (b *Backlog) runnable() []*Story {
 	done := map[string]bool{}
 	for i := range b.Stories {
 		if b.Stories[i].Status == StatusDone {
@@ -156,17 +172,7 @@ func (b *Backlog) Next() (Selection, bool) {
 		}
 		runnable = append(runnable, s)
 	}
-	if len(runnable) == 0 {
-		return Selection{}, false
-	}
-	sort.SliceStable(runnable, func(i, j int) bool {
-		pi, pj := priorityOf(runnable[i]), priorityOf(runnable[j])
-		if pi != pj {
-			return pi < pj
-		}
-		return compareIDs(runnable[i].ID, runnable[j].ID) < 0
-	})
-	return Selection{Story: runnable[0]}, true
+	return runnable
 }
 
 // compareIDs orders story ids the way a person reads them: the numbers in them
@@ -343,12 +349,12 @@ const RecordFile = "gate-record.json"
 
 // Artifacts is every document the loop knows how to store.
 var Artifacts = []Artifact{
-	{Name: "analysis", File: "ANALYSIS.md", Gate: GateAnalysis, Role: "researcher"},
-	{Name: "threats", File: "THREATS.md", Gate: GateAnalysis, Role: "researcher"},
-	{Name: "test_plan", File: "TEST-PLAN.md", Gate: GateTestsFrozen, Role: "sdet"},
-	{Name: "plan", File: "PLAN.md", Gate: GatePlan, Role: "implementer"},
-	{Name: "verification", File: "VERIFICATION.md", Gate: GateVerification, Role: "verifier"},
-	{Name: "retro", File: "RETRO.md", Gate: GateRetro, Role: "bookkeeper"},
+	{Name: "analysis", File: "ANALYSIS.md", Gate: GateAnalysis, Role: roleResearcher},
+	{Name: "threats", File: "THREATS.md", Gate: GateAnalysis, Role: roleResearcher},
+	{Name: "test_plan", File: "TEST-PLAN.md", Gate: GateTestsFrozen, Role: roleSDET},
+	{Name: "plan", File: "PLAN.md", Gate: GatePlan, Role: roleImplementer},
+	{Name: "verification", File: "VERIFICATION.md", Gate: GateVerification, Role: roleVerifier},
+	{Name: "retro", File: "RETRO.md", Gate: GateRetro, Role: roleBookkeeper},
 }
 
 // ArtifactsFor lists the documents a gate is expected to produce.
@@ -540,22 +546,36 @@ func (r Reviewer) Stops(p ReviewPolicy, v Verdict) bool {
 	return v == VerdictBlock && (r.Blocks(p) || r.BlocksOnBreach)
 }
 
+// The agent names that the roster, the agent list and the staffing rules each
+// spell.
+const (
+	roleHumanAdvocate = "human-advocate"
+	roleCodeReviewer  = "code-reviewer"
+	roleResearcher    = "researcher"
+	roleSDET          = "sdet"
+	roleImplementer   = "implementer"
+	roleVerifier      = "verifier"
+	roleBookkeeper    = "bookkeeper"
+	roleSecurity      = "security"
+	rolePerf          = "perf"
+)
+
 // Reviewers is every review the loop expects, by gate.
 var Reviewers = []Reviewer{
-	{Role: "human-advocate", Gate: GateDoR, WhenDoRAdvocate: true},
+	{Role: roleHumanAdvocate, Gate: GateDoR, WhenDoRAdvocate: true},
 
 	{Role: "architect", Gate: GateDesignReview, Blocking: true},
 	{Role: "red-team", Gate: GateDesignReview},
-	{Role: "security", Gate: GateDesignReview, WhenSecuritySensitive: true},
-	{Role: "perf", Gate: GateDesignReview, BlocksOnBreach: true},
-	{Role: "human-advocate", Gate: GateDesignReview},
+	{Role: roleSecurity, Gate: GateDesignReview, WhenSecuritySensitive: true},
+	{Role: rolePerf, Gate: GateDesignReview, BlocksOnBreach: true},
+	{Role: roleHumanAdvocate, Gate: GateDesignReview},
 
-	{Role: "verifier", Gate: GateVerifierReview, Blocking: true},
+	{Role: roleVerifier, Gate: GateVerifierReview, Blocking: true},
 
-	{Role: "code-reviewer", Gate: GateCodeReview, Blocking: true, Advisable: true},
-	{Role: "security", Gate: GateCodeReview, WhenSecuritySensitive: true},
-	{Role: "perf", Gate: GateCodeReview, BlocksOnBreach: true},
-	{Role: "human-advocate", Gate: GateCodeReview},
+	{Role: roleCodeReviewer, Gate: GateCodeReview, Blocking: true, Advisable: true},
+	{Role: roleSecurity, Gate: GateCodeReview, WhenSecuritySensitive: true},
+	{Role: rolePerf, Gate: GateCodeReview, BlocksOnBreach: true},
+	{Role: roleHumanAdvocate, Gate: GateCodeReview},
 }
 
 // IsReviewRole reports whether a role is one of the reviewers. Taken from the
@@ -812,8 +832,8 @@ const (
 
 // Agents is every agent the plugin ships, by the name a staffing gives it.
 var Agents = []string{
-	"project-manager", "researcher", "sdet", "implementer", "verifier", "bookkeeper",
-	"architect", "security", "red-team", "perf", "human-advocate", "code-reviewer",
+	"project-manager", roleResearcher, roleSDET, roleImplementer, roleVerifier, roleBookkeeper,
+	"architect", roleSecurity, "red-team", rolePerf, roleHumanAdvocate, roleCodeReviewer,
 }
 
 // Doers pairs each gate that has work with the agent that does it. The gates
@@ -822,19 +842,19 @@ var Doers = []struct {
 	Gate  Gate
 	Agent string
 }{
-	{GateAnalysis, "researcher"},
-	{GateTestsFrozen, "sdet"},
-	{GatePlan, "implementer"},
-	{GateImplementation, "implementer"},
-	{GateVerification, "verifier"},
-	{GateRetro, "bookkeeper"},
+	{GateAnalysis, roleResearcher},
+	{GateTestsFrozen, roleSDET},
+	{GatePlan, roleImplementer},
+	{GateImplementation, roleImplementer},
+	{GateVerification, roleVerifier},
+	{GateRetro, roleBookkeeper},
 }
 
 // NeverLeftOut reports whether a staffing may not leave the agent out: every
 // agent that is not a reviewer, the verifier, the code reviewer, and security
 // on a story that is security-sensitive.
 func NeverLeftOut(agent string, sensitive bool) bool {
-	return !IsReviewRole(agent) || agent == "verifier" || agent == "code-reviewer" || agent == "security" && sensitive
+	return !IsReviewRole(agent) || agent == roleVerifier || agent == roleCodeReviewer || agent == roleSecurity && sensitive
 }
 
 // LeftOut reports whether the staffing leaves the agent out of the story. It
@@ -935,9 +955,9 @@ func (r *Record) Round(g Gate, role string) int {
 
 // LatestReview is the most recent review of a gate by a role.
 func (r *Record) LatestReview(g Gate, role string) (Review, bool) {
-	for i := len(r.Reviews) - 1; i >= 0; i-- {
-		if r.Reviews[i].Gate == g && r.Reviews[i].Role == role {
-			return r.Reviews[i], true
+	for _, v := range slices.Backward(r.Reviews) {
+		if v.Gate == g && v.Role == role {
+			return v, true
 		}
 	}
 	return Review{}, false
@@ -999,9 +1019,9 @@ func (r *Record) Escalate(kind, message, tree string, at time.Time) Escalation {
 
 // PendingEscalation is the latest escalation nobody has answered.
 func (r *Record) PendingEscalation() (Escalation, bool) {
-	for i := len(r.Escalations) - 1; i >= 0; i-- {
-		if !r.Escalations[i].Resolved {
-			return r.Escalations[i], true
+	for _, v := range slices.Backward(r.Escalations) {
+		if !v.Resolved {
+			return v, true
 		}
 	}
 	return Escalation{}, false
@@ -1038,9 +1058,9 @@ func (r *Record) LatestDecision() (Approval, bool) {
 // DecisionFor is the latest decision a person gave on the work as tree has it.
 // The latest one counts, so work approved and then sent back is sent back.
 func (r *Record) DecisionFor(tree string) (Approval, bool) {
-	for i := len(r.Approvals) - 1; i >= 0; i-- {
-		if r.Approvals[i].TreeHash == tree {
-			return r.Approvals[i], true
+	for _, v := range slices.Backward(r.Approvals) {
+		if v.TreeHash == tree {
+			return v, true
 		}
 	}
 	return Approval{}, false
@@ -1186,12 +1206,12 @@ func (r *Record) Append(kind, message string, at time.Time) {
 // StandingFreeze reports when this story's tests were last frozen, if nothing
 // has lifted that freeze since.
 func (r *Record) StandingFreeze() (string, bool) {
-	for i := len(r.Events) - 1; i >= 0; i-- {
-		switch r.Events[i].Type {
+	for _, v := range slices.Backward(r.Events) {
+		switch v.Type {
 		case "unfreeze":
 			return "", false
 		case "freeze":
-			return r.Events[i].At, true
+			return v.At, true
 		}
 	}
 	return "", false

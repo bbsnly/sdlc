@@ -101,15 +101,7 @@ func matchGlob(pattern, rel string) bool {
 func matchSegments(pattern, name []string) bool {
 	for len(pattern) > 0 {
 		if pattern[0] == "**" {
-			if len(pattern) == 1 {
-				return len(name) > 0
-			}
-			for i := 0; i <= len(name); i++ {
-				if matchSegments(pattern[1:], name[i:]) {
-					return true
-				}
-			}
-			return false
+			return matchAnyDepth(pattern[1:], name)
 		}
 		if len(name) == 0 {
 			return false
@@ -120,6 +112,20 @@ func matchSegments(pattern, name []string) bool {
 		pattern, name = pattern[1:], name[1:]
 	}
 	return len(name) == 0
+}
+
+// matchAnyDepth is a "**" segment followed by rest: rest has to match what is
+// left of name after however many directories the "**" took.
+func matchAnyDepth(rest, name []string) bool {
+	if len(rest) == 0 {
+		return len(name) > 0
+	}
+	for i := 0; i <= len(name); i++ {
+		if matchSegments(rest, name[i:]) {
+			return true
+		}
+	}
+	return false
 }
 
 // underAnyNamedDirectory reports whether any segment of rel is one of the

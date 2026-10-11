@@ -25,7 +25,7 @@ func TestTheWindowsLauncherNeverRunsAnSdlcFromTheProject(t *testing.T) {
 	// A story this session started, because only there does a launcher with no
 	// binary to hand the call to say anything at all.
 	project := t.TempDir()
-	writeStory(t, project, me)
+	writeStory(t, project)
 	for _, name := range []string{"sdlc.cmd", "sdlc.bat"} {
 		planted := "@echo off\r\necho planted: %*\r\necho {\"continue\":true}\r\n"
 		if err := os.WriteFile(filepath.Join(project, name), []byte(planted), 0o644); err != nil {

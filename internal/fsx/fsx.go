@@ -21,7 +21,7 @@ import (
 // atomic. Missing parent directories are created.
 func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // G301: an ordinary directory other tools and the user read, as MkdirAll's callers expect
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
 

@@ -6,6 +6,23 @@ import (
 	"path/filepath"
 )
 
+// The command keys the configuration names, spelt the same for every stack.
+const (
+	cmdTest     = "test"
+	cmdLint     = "lint"
+	cmdFmt      = "fmt"
+	cmdFmtCheck = "fmt_check"
+)
+
+// Directories that more than one stack keeps sources, tests or test inputs in.
+const (
+	srcDir      = "src/"
+	testDir     = "test/"
+	testdataDir = "testdata/"
+	fixturesDir = "fixtures/"
+	testsDir    = "tests/"
+)
+
 // Stack is a guess at what kind of project this is, and the commands that go
 // with it. The guess is written into the configuration and then checked by
 // sdlc doctor, rather than being asked about up front: a question a tool can
@@ -71,10 +88,10 @@ func detectGo(root string) (Stack, bool) {
 			// compiles a package that so far has only tests.
 			"smoke":     `test -z "$(go list ./...)" || go vet ./...`,
 			"build":     "go build ./...",
-			"test":      "go test ./... -count=1",
-			"lint":      "golangci-lint run",
-			"fmt":       "gofmt -w .",
-			"fmt_check": `test -z "$(gofmt -l .)"`,
+			cmdTest:     "go test ./... -count=1",
+			cmdLint:     "golangci-lint run",
+			cmdFmt:      "gofmt -w .",
+			cmdFmtCheck: `test -z "$(gofmt -l .)"`,
 			"fmt_file":  `case "$FILE" in *.go) gofmt -w "$FILE" ;; esac`,
 			// The profile goes to the OS temp directory and is removed when the
 			// shell exits, even if a step fails. .sdlc/state/ is where the loop
@@ -88,7 +105,7 @@ func detectGo(root string) (Stack, bool) {
 		},
 		// testdata as well as the test files: a frozen test that reads a
 		// golden file is only frozen if the golden file is too.
-		TestDirs:  []string{"testdata/"},
+		TestDirs:  []string{testdataDir},
 		TestGlobs: []string{"*_test.go"},
 		SrcDirs:   []string{"cmd/", "internal/", "pkg/"},
 	}, true
@@ -103,14 +120,14 @@ func detectRust(root string) (Stack, bool) {
 		Commands: map[string]string{
 			"smoke":     "cargo check --all-targets",
 			"build":     "cargo build",
-			"test":      "cargo test",
-			"lint":      "cargo clippy --all-targets -- -D warnings",
-			"fmt":       "cargo fmt",
-			"fmt_check": "cargo fmt --check",
+			cmdTest:     "cargo test",
+			cmdLint:     "cargo clippy --all-targets -- -D warnings",
+			cmdFmt:      "cargo fmt",
+			cmdFmtCheck: "cargo fmt --check",
 		},
-		TestDirs:  []string{"tests/", "testdata/", "fixtures/"},
+		TestDirs:  []string{testsDir, testdataDir, fixturesDir},
 		TestGlobs: []string{"*_test.rs"},
-		SrcDirs:   []string{"src/"},
+		SrcDirs:   []string{srcDir},
 	}, true
 }
 
@@ -145,23 +162,23 @@ func detectNode(root string) (Stack, bool) {
 		cmds["build"] = "npm run build --silent"
 	}
 	if hasScript("test") {
-		cmds["test"] = "npm test --silent"
+		cmds[cmdTest] = "npm test --silent"
 	}
 	if hasScript("lint") {
-		cmds["lint"] = "npm run lint --silent"
+		cmds[cmdLint] = "npm run lint --silent"
 	}
 	switch {
 	case hasScript("format"):
-		cmds["fmt"] = "npm run format --silent"
+		cmds[cmdFmt] = "npm run format --silent"
 	case hasDep("prettier"):
-		cmds["fmt"] = "npx prettier --write ."
+		cmds[cmdFmt] = "npx prettier --write ."
 		cmds["fmt_file"] = `npx prettier --write --ignore-unknown "$FILE"`
 	}
 	switch {
 	case hasScript("format:check"):
-		cmds["fmt_check"] = "npm run format:check --silent"
+		cmds[cmdFmtCheck] = "npm run format:check --silent"
 	case hasDep("prettier"):
-		cmds["fmt_check"] = "npx prettier --check ."
+		cmds[cmdFmtCheck] = "npx prettier --check ."
 	}
 	if cmds["build"] != "" {
 		cmds["smoke"] = cmds["build"]
@@ -173,9 +190,9 @@ func detectNode(root string) (Stack, bool) {
 		// Snapshots and mocks decide whether a test passes as much as the
 		// test does, and `jest -u` rewrites a snapshot without being asked
 		// twice.
-		TestDirs:  []string{"tests/", "test/", "__tests__/", "__snapshots__/", "__mocks__/", "__fixtures__/"},
+		TestDirs:  []string{testsDir, testDir, "__tests__/", "__snapshots__/", "__mocks__/", "__fixtures__/"},
 		TestGlobs: []string{"*.test.ts", "*.test.js", "*.spec.ts", "*.spec.js", "*.snap"},
-		SrcDirs:   []string{"src/", "lib/"},
+		SrcDirs:   []string{srcDir, "lib/"},
 	}, true
 }
 
@@ -186,10 +203,10 @@ func detectPython(root string) (Stack, bool) {
 	return Stack{
 		Name: "Python",
 		Commands: map[string]string{
-			"test":      "pytest -q",
-			"lint":      "ruff check .",
-			"fmt":       "ruff format .",
-			"fmt_check": "ruff format --check .",
+			cmdTest:     "pytest -q",
+			cmdLint:     "ruff check .",
+			cmdFmt:      "ruff format .",
+			cmdFmtCheck: "ruff format --check .",
 			"fmt_file":  `case "$FILE" in *.py) ruff format "$FILE" ;; esac`,
 			// pytest-cov writes .coverage in the working directory unless
 			// COVERAGE_FILE says where; the same temp file as Go's profile.
@@ -199,9 +216,9 @@ func detectPython(root string) (Stack, bool) {
 		},
 		// conftest.py is where pytest fixtures live, so a test's outcome can
 		// be changed there without touching a test file.
-		TestDirs:  []string{"tests/", "test/", "fixtures/", "testdata/"},
+		TestDirs:  []string{testsDir, testDir, fixturesDir, testdataDir},
 		TestGlobs: []string{"test_*.py", "*_test.py", "conftest.py"},
-		SrcDirs:   []string{"src/"},
+		SrcDirs:   []string{srcDir},
 	}, true
 }
 
@@ -209,9 +226,9 @@ func unknownStack() Stack {
 	return Stack{
 		Name:      "",
 		Commands:  map[string]string{},
-		TestDirs:  []string{"tests/", "test/", "testdata/", "fixtures/"},
+		TestDirs:  []string{testsDir, testDir, testdataDir, fixturesDir},
 		TestGlobs: []string{},
-		SrcDirs:   []string{"src/"},
+		SrcDirs:   []string{srcDir},
 	}
 }
 

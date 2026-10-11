@@ -241,10 +241,10 @@ func TestAC8AnInterruptEndsWhatRunsAndStartsNothingThatWaited(t *testing.T) {
 
 // ------------------------------------------------------------ what a story reads as
 
-func recordAt(t *testing.T, id string, passed ...model.Gate) *model.Record {
+func recordAt(t *testing.T, passed ...model.Gate) *model.Record {
 	t.Helper()
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	r := model.NewRecord(id, at)
+	r := model.NewRecord("US-1", at)
 	for _, g := range passed {
 		r.SetGate(g, model.GatePass, "", at)
 	}
@@ -254,7 +254,7 @@ func recordAt(t *testing.T, id string, passed ...model.Gate) *model.Record {
 func passedAll() []model.Gate { return model.Gates }
 
 func TestAC6ASessionThatEndedWithTheStoryUnfinishedAndNothingPendingIsStoppedNotFailed(t *testing.T) {
-	row := Classify("US-1", recordAt(t, "US-1", model.GateDoR), 0)
+	row := Classify("US-1", recordAt(t, model.GateDoR), 0)
 	if row.Story != "US-1" || row.State != StateStopped || row.Gate != string(model.GateAnalysis) || row.Command != "" {
 		t.Errorf("row = %+v, want US-1 stopped at the analysis gate with nothing for a person to run", row)
 	}
@@ -265,7 +265,7 @@ func TestAC6ASessionThatEndedWithTheStoryUnfinishedAndNothingPendingIsStoppedNot
 }
 
 func TestAC6AStoryNobodyHasStartedReadsFromTheFirstGate(t *testing.T) {
-	for name, rec := range map[string]*model.Record{"no record": nil, "an empty one": recordAt(t, "US-1")} {
+	for name, rec := range map[string]*model.Record{"no record": nil, "an empty one": recordAt(t)} {
 		row := Classify("US-1", rec, 3)
 		if row.State != StateFailed || row.Exit != 3 || row.Gate != string(model.GateDoR) {
 			t.Errorf("%s: row = %+v, want failed with exit 3 at the first gate", name, row)
@@ -274,7 +274,7 @@ func TestAC6AStoryNobodyHasStartedReadsFromTheFirstGate(t *testing.T) {
 }
 
 func TestAC6ANonZeroExitWithNothingPendingIsFailedAndCarriesTheStatus(t *testing.T) {
-	row := Classify("US-1", recordAt(t, "US-1", model.GateDoR, model.GateAnalysis), 137)
+	row := Classify("US-1", recordAt(t, model.GateDoR, model.GateAnalysis), 137)
 	if row.State != StateFailed || row.Exit != 137 || row.Gate != string(model.GateTestsFrozen) || row.Command != "" {
 		t.Errorf("row = %+v", row)
 	}
@@ -285,7 +285,7 @@ func TestAC6ANonZeroExitWithNothingPendingIsFailedAndCarriesTheStatus(t *testing
 // exit status says nothing about that.
 func TestAC6AStoryWaitingOnAPersonIsWaitingWhateverTheExitStatusWas(t *testing.T) {
 	for _, exit := range []int{0, 1, 137} {
-		rec := recordAt(t, "US-1", model.GateDoR)
+		rec := recordAt(t, model.GateDoR)
 		rec.Escalate("pre_commit_approval", "the migration has no down step", "", time.Now())
 		row := Classify("US-1", rec, exit)
 		if row.State != StateWaiting {
@@ -298,7 +298,7 @@ func TestAC6AStoryWaitingOnAPersonIsWaitingWhateverTheExitStatusWas(t *testing.T
 }
 
 func TestAC6AnEscalationAPersonHasAnsweredIsNotWaiting(t *testing.T) {
-	rec := recordAt(t, "US-1", model.GateDoR)
+	rec := recordAt(t, model.GateDoR)
 	rec.Escalate("loop_stalled", "stuck", "", time.Now())
 	rec.Decide(true, "carry on", "", time.Now())
 	if row := Classify("US-1", rec, 0); row.State != StateStopped || row.Command != "" {
@@ -307,7 +307,7 @@ func TestAC6AnEscalationAPersonHasAnsweredIsNotWaiting(t *testing.T) {
 }
 
 func TestAC6ABrokenFreezeNamesTheUnfreezeAsWellAsTheApproval(t *testing.T) {
-	rec := recordAt(t, "US-1", model.GateDoR, model.GateAnalysis)
+	rec := recordAt(t, model.GateDoR, model.GateAnalysis)
 	rec.Escalate("freeze_broken", "TestAdd asserts 0; AC-1 says 3", "", time.Now())
 	row := Classify("US-1", rec, 0)
 	if row.State != StateWaiting || !strings.Contains(row.Command, "sdlc approve US-1") || !strings.Contains(row.Command, "sdlc unfreeze --reason") {
@@ -317,7 +317,7 @@ func TestAC6ABrokenFreezeNamesTheUnfreezeAsWellAsTheApproval(t *testing.T) {
 
 func TestAC6AStoryWithEveryGatePassedWaitsToBeLandedByAPerson(t *testing.T) {
 	for _, exit := range []int{0, 2} {
-		row := Classify("US-1", recordAt(t, "US-1", passedAll()...), exit)
+		row := Classify("US-1", recordAt(t, passedAll()...), exit)
 		if row.State != StateWaiting || !strings.Contains(row.Command, "sdlc stop") || row.Gate != "" {
 			t.Errorf("exit %d: row = %+v, want waiting to land with sdlc stop and no gate left", exit, row)
 		}
