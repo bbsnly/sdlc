@@ -20,8 +20,8 @@ test('the Windows PATH line keeps the entries that name a variable', () => {
 })
 
 test('the Windows PATH line survives an apostrophe in the directory', () => {
-  const hint = pathHint('win32', String.raw`C:\Users\O'Brien\bin`).join('\n')
-  assert.match(hint, /'C:\\Users\\O''Brien\\bin;'/)
+  const hint = pathHint('win32', String.raw`D:\Tools\O'Brien\bin`).join('\n')
+  assert.match(hint, /'D:\\Tools\\O''Brien\\bin;'/)
 })
 
 test('elsewhere the PATH line is an export', () => {
