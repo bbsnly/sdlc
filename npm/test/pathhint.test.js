@@ -10,7 +10,7 @@ const { pathHint } = require('../lib/install.js')
 // entry back frozen at today's value -- which install.ps1 goes out of its way
 // not to do.
 test('the Windows PATH line keeps the entries that name a variable', () => {
-  const hint = pathHint('win32', 'C:\\Users\\dev\\AppData\\Local\\Programs\\sdlc\\bin').join('\n')
+  const hint = pathHint('win32', String.raw`C:\Users\dev\AppData\Local\Programs\sdlc\bin`).join('\n')
   assert.match(hint, /DoNotExpandEnvironmentNames/)
   assert.match(hint, /'ExpandString'/)
   assert.doesNotMatch(hint, /GetEnvironmentVariable/)
@@ -20,7 +20,7 @@ test('the Windows PATH line keeps the entries that name a variable', () => {
 })
 
 test('the Windows PATH line survives an apostrophe in the directory', () => {
-  const hint = pathHint('win32', "C:\\Users\\O'Brien\\bin").join('\n')
+  const hint = pathHint('win32', String.raw`C:\Users\O'Brien\bin`).join('\n')
   assert.match(hint, /'C:\\Users\\O''Brien\\bin;'/)
 })
 

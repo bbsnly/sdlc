@@ -36,14 +36,14 @@ test('a platform with no build says so, and says what to do instead', () => {
 
 test('the install directory follows the environment first', () => {
   assert.strictEqual(defaultDir('linux', { SDLC_INSTALL_DIR: '/opt/bin' }), '/opt/bin')
-  assert.strictEqual(defaultDir('win32', { SDLC_INSTALL_DIR: 'C:\\bin' }), 'C:\\bin')
+  assert.strictEqual(defaultDir('win32', { SDLC_INSTALL_DIR: String.raw`C:\bin` }), String.raw`C:\bin`)
 })
 
 test('the install directory is the same one the shell installers use', () => {
   assert.ok(defaultDir('linux', {}).endsWith(path.join('.local', 'bin')))
   assert.strictEqual(
-    defaultDir('win32', { LOCALAPPDATA: 'C:\\Users\\dev\\AppData\\Local' }),
-    path.join('C:\\Users\\dev\\AppData\\Local', 'Programs', 'sdlc', 'bin'),
+    defaultDir('win32', { LOCALAPPDATA: String.raw`C:\Users\dev\AppData\Local` }),
+    path.join(String.raw`C:\Users\dev\AppData\Local`, 'Programs', 'sdlc', 'bin'),
   )
 })
 
