@@ -315,6 +315,9 @@ func (sb sandbox) outcome(t *testing.T, session, dir, stdin string, args ...stri
 	default:
 		t.Fatalf("sdlc %s could not be run: %v", strings.Join(args, " "), err)
 	}
+	if code == 0 {
+		noteRun(args...)
+	}
 	return out.String(), errOut.String(), code
 }
 
@@ -381,6 +384,9 @@ func (sb sandbox) hookRaw(t *testing.T, event, payload string, throughLauncher b
 		code = exit.ExitCode()
 	default:
 		t.Fatalf("the hook could not be run: %v", runErr)
+	}
+	if code == 0 && out.Len() > 0 {
+		noteHook()
 	}
 	return out.String(), errOut.String(), code
 }

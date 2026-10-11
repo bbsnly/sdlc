@@ -162,6 +162,9 @@ func TestAC8AnInterruptEndsEverySessionTheRunStartedAndLeavesTheRecordsAsTheyWer
 			t.Errorf("%s was recorded done by an interrupted run", id)
 		}
 	}
+	// An interrupt that ends every session is the result this case expects of
+	// the run, so it is the run the guard in zcommands_test.go counts.
+	noteRun("parallel", "--max", "2", "US-001", "US-002")
 }
 
 // storyStatuses is each story's status in the main checkout's backlog.

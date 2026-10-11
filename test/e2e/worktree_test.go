@@ -86,6 +86,9 @@ func (c checkout) outcome(t *testing.T, stdin string, args ...string) (stdout, s
 	default:
 		t.Fatalf("sdlc %s could not be run: %v", strings.Join(args, " "), err)
 	}
+	if code == 0 {
+		noteRun(args...)
+	}
 	return out.String(), errOut.String(), code
 }
 
@@ -572,6 +575,7 @@ func launch(t *testing.T, binary, dir, event string, payload map[string]any) str
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("the launcher failed: %v\n%s", err, stderr.String())
 	}
+	noteHook()
 	return stdout.String()
 }
 

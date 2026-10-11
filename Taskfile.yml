@@ -337,6 +337,14 @@ tasks:
         }
         printf '%s\n' "$out"
 
+  test-report:
+    desc: Print the commands and gate record keys no test through the built binary runs, and the tests in each package
+    silent: true
+    # A report, not a leg of check: it exits 0 however long the list is. The
+    # guard in test/e2e is what fails.
+    cmds:
+      - go run ./internal/tools/testreport
+
   npm-test:
     desc: Test the npm installer package
     silent: true

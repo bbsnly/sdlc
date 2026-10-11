@@ -86,6 +86,7 @@ func runTool(t *testing.T, binary, dir string, args ...string) string {
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("sdlc %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
+	noteRun(args...)
 	return stdout.String()
 }
 
@@ -99,6 +100,9 @@ func tool(t *testing.T, binary, dir string, args ...string) (string, error) {
 	var both bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &both, &both
 	err := cmd.Run()
+	if err == nil {
+		noteRun(args...)
+	}
 	return both.String(), err
 }
 
@@ -115,6 +119,7 @@ func runToolWithInput(t *testing.T, binary, dir, stdin string, args ...string) s
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("sdlc %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
+	noteRun(args...)
 	return stdout.String()
 }
 
@@ -144,6 +149,7 @@ func launcher(t *testing.T, binary, root, payload string) string {
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("the launcher failed: %v\n%s", err, stderr.String())
 	}
+	noteHook()
 	return stdout.String()
 }
 

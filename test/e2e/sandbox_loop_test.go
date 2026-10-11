@@ -44,6 +44,10 @@ func (sb sandbox) holds(t *testing.T, steps ...ran) {
 		if stdout != s.stdout || stderr != s.stderr || r.code != s.code {
 			t.Errorf("sdlc %s:\ngot  exit %d\nstdout %q\nstderr %q\nwant exit %d\nstdout %q\nstderr %q",
 				strings.Join(s.args, " "), r.code, stdout, stderr, s.code, s.stdout, s.stderr)
+		} else if s.code != 0 && s.stderr == "" {
+			// `sdlc doctor` ends 1 when it finds a problem and says so on stdout:
+			// a result, not a refusal, which always says why on stderr.
+			noteRun(s.args...)
 		}
 	}
 }
@@ -851,6 +855,7 @@ func (sb sandbox) stops(t *testing.T, list string) stopped {
 	var exit *exec.ExitError
 	switch err := cmd.Run(); {
 	case err == nil:
+		noteHook()
 	case errors.As(err, &exit):
 		s.code = exit.ExitCode()
 	default:

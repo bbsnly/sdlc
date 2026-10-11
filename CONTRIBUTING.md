@@ -35,6 +35,23 @@ Two things Go cannot fetch for you, because they are not Go programs:
 reports success for work it did not do, so every leg either runs or fails with
 an install line.
 
+Tests that drive the built binary are worth more than tests that agree with
+their own parts, so two checks keep a gap in them visible. A test in `test/e2e`
+fails, naming the command, when a command has no case that ran it to the result
+the case expected; a new command needs such a case, or an entry with its reason
+in the list of known gaps in `test/e2e/zcommands_test.go`. And a test fails when
+a function calls `time.Sleep` that is not on the list in
+`internal/testscan/sleeps_test.go`; each entry there needs a reason, and an
+entry that matches nothing fails too. Only `time.Sleep` is found: other waits,
+such as `time.After`, are not.
+
+`./task test-report` prints the same picture from the sources, without running
+anything. A `command` line is a command that no case in `test/e2e` runs, and a
+`gate` line is a gate record key that none passes; neither is an instruction.
+The lines `e2e`, `unit` and `other` give the number of tests in each package.
+The exit is always 0, and the task is not part of `./task check`. It reads the
+test files, so it can differ from the check above, which records real runs.
+
 A leg that fails on a file it read also says whether git tracks that file,
 so you can tell whether the same failure would happen on a fresh clone.
 
