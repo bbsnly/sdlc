@@ -119,6 +119,21 @@ which of the causes below it is.
   landed. A stop that was killed leaves the lock, which breaks open once it is two minutes old
   and nothing holds it. Another story's landing, and every other command, go on meanwhile.
 
+**At a limit.** `sdlc gate ... fail` and `sdlc review add ... block` hand the story to a person
+when the failure or the block reaches its limit, and the hand-over writes the backlog, the claim
+on the story and `.sdlc/state` as well as the record. Where one of them cannot be written the
+command is refused and what it had written is put back, so the reason ends "Nothing was
+recorded: the gate failure was not recorded" (or "the block"), and the fix ends "then run the
+same command again, which is safe". Put right what the message names and run the same command
+again: the failure is counted once. The Stop hook hands a story over in the same way, and where
+it cannot, it lets the stop through, says so, and tries again at the next stop.
+
+**"is only partly handed over to a person".** A hand-over stopped part-way, and something it had
+written could not be put back; the reason names which. Do not run the command again yet. Run
+`sdlc status` to see where the story is. The story's record may hold a question that the backlog
+or the iteration does not show, and `sdlc approve` answers it; then check that `.sdlc/` and the
+backlog's directory can be written.
+
 ### SDLC-E0007
 
 The backlog file named by `backlog.path` in `.sdlc/config.json` does not exist.
@@ -275,6 +290,12 @@ says that git gave no message. `sdlc freeze` is one example: it asks git which f
 the working tree, so that build output and vendored code cannot be mistaken for acceptance
 tests. Check that git is installed and on your `PATH`, and that this directory is a repository
 git can read. `sdlc doctor` checks both.
+
+A gate failure or a block that reaches its limit hands the story to a person, and the hand-over
+measures the working tree. Where git cannot, the command is refused before anything is written,
+so the reason ends "Nothing was recorded: the gate failure was not recorded" (or "the block"),
+and the fix ends "then run the same command again, which is safe". Once git works, run the same
+command again: the failure is counted once, and the story is handed over.
 
 ### SDLC-E0022
 

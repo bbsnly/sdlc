@@ -910,6 +910,7 @@ answered for the story hands the story to that person, as
 [`sdlc escalate`](#sdlc-escalate) `gate_failing` would, and says so —
 `handed_over` in `--json`.
 
+<<<<<<< HEAD
 When recording a gate reopens the gates after it, the command names them in gate
 order on a `reopened:` line beneath the note, and `--json` lists them under
 `reopened`. Each of those gates is back to `pending` and has to be passed again
@@ -922,6 +923,31 @@ US-001  plan  fail
   the plan misses the migration
   reopened: design_review, implementation, verification
 ```
+||||||| parent of b2ac680 (fix(cli)!: count a failure at the limit once, or not at all)
+=======
+That failure and the hand-over are recorded together or not at all. Where the
+story cannot be handed over — git cannot measure the tree, or the backlog, the
+claim or `.sdlc/state` cannot be written — the command is refused with the code
+of whatever stopped it, exits non-zero, and leaves the record, the backlog and
+the iteration as they were. The refusal says so, after its own reason and fix.
+With git missing:
+
+```text
+sdlc: git add did not finish
+
+  why  git add gave no error message; git may not be installed or on PATH, this may not be a repository git can read, or git may have stopped without saying why. Nothing was recorded: the gate failure was not recorded, because recording it would reach the limit at which the story is handed to a person, and the story could not be handed over
+  fix  check that git is installed and that this directory is a repository git can read; then run the same command again, which is safe: the gate failure is counted once
+
+  SDLC-E0021  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0021
+```
+
+Put the cause right and run the same command again: the failure is counted
+once, and the story is handed over. A failure below the limit asks for none of
+this and is recorded as it always was. The promise is for a command that is
+refused; one that is killed part-way can leave the failure and the question on
+the record with the backlog not yet showing it, which
+[`sdlc approve`](#sdlc-approve) answers.
+>>>>>>> b2ac680 (fix(cli)!: count a failure at the limit once, or not at all)
 
 ### How the commit range is recorded
 
@@ -1098,6 +1124,13 @@ itself, and the tree leaves out `.sdlc/`; see
 A block that stops the gate, recorded `loop.max_review_rounds` times by the same
 reviewer since a person last answered for the story, hands the story to that
 person as `review_not_converging`, and says so — `handed_over` in `--json`.
+
+That block and the hand-over are recorded together or not at all, as a
+[gate failure at its limit](#sdlc-gate-gate-status) is. Where the story cannot
+be handed over the command is refused, nothing is recorded and no review
+document is left, and the refusal says that the block was not recorded and that
+running the same command again is safe. The round that was refused is not a
+round: run again, the block is the round it would have been.
 
 > [!NOTE]
 > Rounds are kept rather than overwritten, so "what did the architect say last
@@ -1306,6 +1339,10 @@ story's record, bound to the work as it stands. The story becomes
 `awaiting_human`, and the iteration ends, so the session stops rather than
 carrying on past the question. `sdlc start` refuses the story until somebody
 answers, and `sdlc status` lists it as waiting.
+
+An escalation that is refused — git cannot measure the tree, or something it
+writes cannot be written — leaves the record, the backlog and the iteration as
+they were: no question is asked, and the command can be run again.
 
 Nothing else starts in that checkout in the meantime either: `sdlc start` picks
 up a story already under way before a new one, so it picks the waiting story and

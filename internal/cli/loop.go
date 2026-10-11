@@ -843,13 +843,8 @@ func newGateCmd() *cobra.Command {
 				}
 			}
 			record.Append(model.EventGate, model.GateEvent(gate, status), s.Now())
-			if err := s.SaveRecord(record); err != nil {
-				return err
-			}
-			done, err := settleStory(s, id, record)
-			if err != nil {
-				return err
-			}
+			// A failure is counted on the record before it is saved: one that
+			// reaches the limit is saved with the hand-over, or not at all.
 			handedOver, message := "", ""
 			if status == model.GateFail {
 				limit := s.Config().Loop.MaxReworkRounds
@@ -857,7 +852,18 @@ func newGateCmd() *cobra.Command {
 				message = fmt.Sprintf("%s has failed %d times, and loop.max_rework_rounds is %d, "+
 					"so another attempt would meet the same wall. The last note: %s",
 					gate, failures, limit, lastNote(note))
-				if handedOver, err = handOverAt(cmd, s, id, failures, limit, "gate_failing", message); err != nil {
+				if handedOver, err = handOverAt(cmd, s, record, nil, failures, limit, "gate_failing", message, "the gate failure"); err != nil {
+					return err
+				}
+			} else if err := s.SaveRecord(record); err != nil {
+				return err
+			}
+			// A story handed over is the backlog's awaiting_human, written with
+			// the hand-over; there is nothing left to settle, and nothing left
+			// that could fail once a person has been asked.
+			done := false
+			if handedOver == "" {
+				if done, err = settleStory(s, id, record); err != nil {
 					return err
 				}
 			}

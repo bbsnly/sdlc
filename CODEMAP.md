@@ -742,8 +742,10 @@ and only its `type` is looked up.
 
 `internal/store/stop.go` holds the count file `.sdlc/state/stop-blocks.json`
 (`story`, `blocks`, `progress`, and the optional `waiting_since`), with
-`RecordProgress` and `Escalate`. `waiting_since` is kept as the text it was
-written as; the hook decides what an unreadable one means.
+`RecordProgress`, and `Escalate` with `HandOver`, the unit it is a call of: a
+story handed to a person with what the command was recording, or nothing
+written. `waiting_since` is kept as the text it was written as; the hook decides
+what an unreadable one means.
 
 Four test files send Stop events to the built binary:
 `test/e2e/sandbox_loop_test.go`, `test/e2e/worktree_test.go`,

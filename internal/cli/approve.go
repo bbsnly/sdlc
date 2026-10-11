@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -176,15 +177,60 @@ func newApproveCmd() *cobra.Command {
 // the count again. It returns the kind of hand-over, or "" when the limit has
 // not been reached. A limit of zero is no limit.
 //
+// The record is the one the command has counted on and not yet saved, and this
+// is the one place it is saved: below the limit as it always was, and at the
+// limit together with the hand-over or not at all. Saved first, a failure whose
+// hand-over git then refused was counted with nobody asked, and counted again
+// each time the command was run. what names the thing being recorded, for the
+// refusal.
+//
 // The caller holds the project's lock.
-func handOverAt(cmd *cobra.Command, s *store.Store, id string, count, limit int, kind, message string) (string, error) {
+func handOverAt(cmd *cobra.Command, s *store.Store, record *model.Record, review *store.ReviewDocument,
+	count, limit int, kind, message, what string,
+) (string, error) {
 	if limit <= 0 || count < limit {
-		return "", nil
+		return "", saveRecorded(s, record, review)
 	}
-	if _, err := s.Escalate(cmd.Context(), id, kind, message); err != nil {
-		return "", err
+	_, err := s.HandOver(cmd.Context(), store.HandOver{
+		Story: record.Story, Kind: kind, Message: message, Record: record, Review: review,
+	})
+	if err != nil {
+		return "", notRecorded(err, what)
 	}
 	return kind, nil
+}
+
+// saveRecorded saves a record, after the reviewer's document it lists where
+// there is one.
+func saveRecorded(s *store.Store, record *model.Record, review *store.ReviewDocument) error {
+	if review != nil {
+		if _, err := s.WriteReview(record.Story, review.Gate, review.Role, review.Round, review.Content); err != nil {
+			return err
+		}
+	}
+	return s.SaveRecord(record)
+}
+
+// notRecorded ends the refusal of a hand-over at a limit by saying what the
+// refusal means for the command: the failure it was recording is not on the
+// record, so the command is run again and counts it once. It is said here and
+// not in the store or the catalogue, where it would be said of refusals it is
+// not true of, and not of a hand-over that could not be taken back.
+func notRecorded(err error, what string) error {
+	var e *sdlcerr.Error
+	if !errors.As(err, &e) || store.PartlyHandedOver(err) {
+		return err
+	}
+	out := *e
+	why := strings.TrimSuffix(strings.TrimSpace(out.Why), ".")
+	if why != "" {
+		why += ". "
+	}
+	out.Why = why + "Nothing was recorded: " + what + " was not recorded, because recording it would reach the limit " +
+		"at which the story is handed to a person, and the story could not be handed over"
+	out.Fix = strings.TrimSuffix(strings.TrimSpace(out.Fix), ".") +
+		"; then run the same command again, which is safe: " + what + " is counted once"
+	return &out
 }
 
 // sayHandedOver is what a command prints after handOverAt handed a story over.

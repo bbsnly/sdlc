@@ -388,7 +388,9 @@ Rework does not go round for ever. A gate recorded as failed
 [`loop.max_rework_rounds`](configuration.md#loop) times, or a reviewer that
 blocks `loop.max_review_rounds` times, hands the story to a person: the rework
 is not converging, and another round would meet the same wall. The count starts
-again once the person has answered.
+again once the person has answered. The failure that reaches the limit is
+recorded together with the hand-over, or the command is refused and records
+neither.
 
 Recording a gate again, pass or fail, reopens every gate after it: each goes
 back to `pending`, with a note saying why, and has to be passed again. A new

@@ -597,23 +597,31 @@ func hashFile(path, rel, openWhy string) (string, error) {
 
 // Record reads a story's gate record, starting a fresh one if there is none.
 func (s *Store) Record(id string) (*model.Record, error) {
+	record, _, err := s.readRecord(id)
+	return record, err
+}
+
+// readRecord is Record with the bytes the record was read from, nil where there
+// is no file: a write that has to be taken back puts the file back as it was,
+// not as it would be encoded a second time.
+func (s *Store) readRecord(id string) (*model.Record, []byte, error) {
 	dir, err := s.StoryDir(id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, recordFile))
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return model.NewRecord(id, s.now()), nil
+		return model.NewRecord(id, s.now()), nil, nil
 	case err != nil:
-		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
+		return nil, nil, sdlcerr.New(sdlcerr.StateUnreadable,
 			"the record for "+quote(id)+" could not be read",
 			storiesDir+"/"+id+"/"+recordFile+" exists but could not be opened").WithCause(err)
 	}
 
 	var r model.Record
 	if err := json.Unmarshal(raw, &r); err != nil {
-		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
+		return nil, nil, sdlcerr.New(sdlcerr.StateUnreadable,
 			"the record for "+quote(id)+" is not valid JSON",
 			storiesDir+"/"+id+"/"+recordFile+" does not parse, and sdlc writes it whole or not "+
 				"at all, so it was edited or merged by hand; git has the last committed copy").WithCause(err)
@@ -622,7 +630,7 @@ func (s *Store) Record(id string) (*model.Record, error) {
 		r.Gates = map[model.Gate]model.GateResult{}
 	}
 	r.Story = id
-	return &r, nil
+	return &r, raw, nil
 }
 
 // StoriesOnDisk lists the stories that have a directory under .sdlc/stories,

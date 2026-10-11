@@ -145,19 +145,18 @@ func newReviewAddCmd() *cobra.Command {
 				return err
 			}
 
-			round := record.Round(gate, reviewer.Role) + 1
-			path, err := s.WriteReview(id, gate, reviewer.Role, round, content)
-			if err != nil {
-				return err
+			// The document is written with the record and not before it: a
+			// block whose hand-over is refused leaves no file the record does
+			// not list, and the round it would have been is still to come.
+			doc := &store.ReviewDocument{
+				Gate: gate, Role: reviewer.Role, Round: record.Round(gate, reviewer.Role) + 1, Content: content,
 			}
+			path := store.ReviewPath(id, gate, reviewer.Role, doc.Round)
 			rev := record.AddReview(model.Review{
 				Gate: gate, Role: reviewer.Role, Verdict: verdict,
 				Subject: subject, File: path, Note: note,
 			}, s.Now())
 			record.Append(model.EventReview, model.ReviewEvent(gate, reviewer.Role, verdict), s.Now())
-			if err := s.SaveRecord(record); err != nil {
-				return err
-			}
 			// A block that cannot stop the gate is a finding, not a round
 			// the rework lost, so only a block that stops it counts.
 			handedOver, message := "", ""
@@ -168,9 +167,11 @@ func newReviewAddCmd() *cobra.Command {
 				message = fmt.Sprintf("%s has blocked %s %d times, and loop.max_review_rounds is %d, "+
 					"so the rework is not converging on what it asks for. The last note: %s",
 					reviewer.Role, gate, blocks, limit, lastNote(note))
-				if handedOver, err = handOverAt(cmd, s, id, blocks, limit, "review_not_converging", message); err != nil {
+				if handedOver, err = handOverAt(cmd, s, record, doc, blocks, limit, "review_not_converging", message, "the block"); err != nil {
 					return err
 				}
+			} else if err := saveRecorded(s, record, doc); err != nil {
+				return err
 			}
 
 			if wantJSON(cmd) {
