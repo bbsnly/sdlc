@@ -3,19 +3,81 @@ version: "2"
 linters:
   default: standard
   enable:
+    - asasalint
+    - asciicheck
+    - bidichk
     - bodyclose
+    - containedctx
+    - contextcheck
     - copyloopvar
+    - dupl
+    - durationcheck
+    - errchkjson
+    - errname
     - errorlint
+    - exhaustive
+    - exptostd
+    - fatcontext
     - forbidigo
+    - forcetypeassert
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gocognit
+    - goconst
     - gocritic
+    - godoclint
+    - gomoddirectives
+    - goprintffuncname
+    - gosec
+    - iface
+    - interfacebloat
+    - intrange
+    - makezero
+    - mirror
     - misspell
+    - modernize
+    - musttag
+    - nakedret
+    - nestif
     - nilerr
+    - nilnesserr
+    - nilnil
     - noctx
+    - nolintlint
+    - nosprintfhostport
+    - perfsprint
+    - predeclared
+    - reassign
+    - recvcheck
     - revive
+    - testableexamples
+    - thelper
     - unconvert
+    - unparam
     - usestdlibvars
+    - usetesting
     - wastedassign
+    - whitespace
   settings:
+    exhaustive:
+      # A default case is a decision about every value not named.
+      default-signifies-exhaustive: true
+    gocognit:
+      # The limit SonarCloud holds the same code to (go:S3776).
+      min-complexity: 15
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gosec:
+      excludes:
+        # This tool exists to read the files and run the git of whoever is at
+        # the keyboard: a path or a command built from a variable is the job,
+        # and internal/pathrules and internal/shellx are where it is checked.
+        - G204
+        - G304
+    nolintlint:
+      require-explanation: true
+      require-specific: true
     forbidigo:
       analyze-types: true
       forbid:
@@ -37,6 +99,18 @@ linters:
         linters:
           - errcheck
           - forbidigo
+          # A test repeats a literal so that it reads on its own, is long
+          # where its table is long, and writes loose files into a directory
+          # it throws away.
+          - gocognit
+          - goconst
+          - gosec
+      # The classifier's literals are the shell words it matches: git, find,
+      # --file. A constant for each would hide the spelling a reader has to
+      # check against the evasion it was written for.
+      - path: ^internal/shellpolicy/
+        linters:
+          - goconst
       # forbidigo guards the packages whose errors reach a person. Everything
       # else returns ordinary errors and is wrapped on the way out; the list
       # grows as those surfaces are built.
