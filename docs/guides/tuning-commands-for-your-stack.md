@@ -70,8 +70,9 @@ $ sdlc doctor
 ```
 
 It looks for the programs your commands name, so a typo such as `mak test`, or a
-tool that is not installed, shows up before a story trips over it. [What
-`doctor` checks](#what-doctor-checks) says how it reads a command.
+tool that is not installed, shows up before a story trips over it, and it says
+when the hook would refuse a command. [What `doctor` checks](#what-doctor-checks)
+says how it reads a command.
 
 Don't worry about getting every key right the first time. The commands you
 change are the ones the agents run, so you will see quickly if one is wrong.
@@ -122,7 +123,19 @@ A few rules follow from the table above:
 `doctor` checks that the first word of each part of a command is on your
 `PATH`. It splits the command at `&&`, `||`, `|`, `;` and command
 substitutions, looks past a `case` pattern to the program it runs, and skips
-shell builtins such as `test`. It does not run anything.
+shell builtins such as `test`. It does not run anything. The check is
+best-effort: a part that starts with `VAR=value` is skipped, so the program after
+it is not looked up.
+
+`doctor` also asks the hook's classifier whether each command would be refused,
+and names the command by its key and the rule, without printing the command. A
+quiet `doctor` is not a promise that the hook will allow every command: it judges
+each one as the main conversation would run it from the project root, with no
+story under way, so it does not judge the agent's role, the freeze, the other
+checkouts or whether the story's gates have passed, and it does not judge
+`fmt_file`, which the hook runs itself. It can also report a `git commit` under
+[`commit-gate`](../enforcement.md#commit-gate) that the hook allows once the gates
+have passed.
 
 ## `thresholds`
 
@@ -225,7 +238,7 @@ detector to `test` and keeps end-to-end tests in `test/e2e`:
   "fmt": "gofmt -w .",
   "fmt_check": "test -z \"$(gofmt -l .)\"",
   "fmt_file": "case \"$FILE\" in *.go) gofmt -w \"$FILE\" ;; esac",
-  "coverage": "go test ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'"
+  "coverage": "p=$(mktemp) && trap 'rm -f \"$p\"' EXIT && go test ./... -count=1 -coverprofile=\"$p\" >/dev/null && go tool cover -func=\"$p\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'"
 },
 "paths": {
   "tests": { "dirs": ["testdata/", "test/e2e"], "file_globs": ["*_test.go"] },
@@ -236,8 +249,12 @@ detector to `test` and keeps end-to-end tests in `test/e2e`:
 `init` writes `&&` as `\u0026\u0026` and `>` as `\u003e`. Both
 spellings are the same JSON string. `testdata/` covers every package's golden
 files, and `test/e2e` covers that one directory. The coverage command writes
-its profile into the working tree, which the commit gate sees; see
-[`commands`](../configuration.md#commands).
+its profile to a temporary file outside the project and removes it when it
+exits, so the commit gate has nothing to see. If your shell has no `mktemp` or
+`trap`, write the profile to a path of your own outside the project and remove
+it in the same command; a file `mktemp` named that is left in the temporary
+directory after a killed run is safe to delete. See
+[the coverage profile](../configuration.md#the-coverage-profile).
 
 ## A Node/TypeScript project
 
@@ -292,7 +309,7 @@ interpreter:
   "fmt": "ruff format .",
   "fmt_check": "ruff format --check .",
   "fmt_file": "case \"$FILE\" in *.py) ruff format \"$FILE\" ;; esac",
-  "coverage": "python -m pytest -q --cov=src --cov-report=term | grep -E '^TOTAL' | grep -Eo '[0-9]+%' | tr -d %"
+  "coverage": "p=$(mktemp) && trap 'rm -f \"$p\"' EXIT && COVERAGE_FILE=\"$p\" python -m pytest -q --cov=src --cov-report=term | grep -E '^TOTAL' | grep -Eo '[0-9]+%' | tr -d %"
 },
 "paths": {
   "tests": {
@@ -306,6 +323,10 @@ interpreter:
 `conftest.py` is a pattern, so it matches at the root and in every test
 package. Fixtures defined there can change a test's outcome without touching
 the test file.
+
+The coverage command points `COVERAGE_FILE` at a temporary file, because
+pytest-cov writes `.coverage` in the working directory unless told where, and a
+file there is uncommitted work the commit gate refuses.
 
 ## Where to go next
 

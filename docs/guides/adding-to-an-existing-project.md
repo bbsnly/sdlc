@@ -175,6 +175,14 @@ It takes the first word of each part of a command and looks it up on your
 `PATH`, so `test -z "$(gofmt -l .)"` is checked for `gofmt`. To skip a step
 you have no tool for, set that command to `""`.
 
+It also asks the hook's classifier whether each command would be refused, and
+names the command by its key and the rule, without printing the command. A quiet
+`doctor` is not a promise that the hook will allow every command: it judges each
+one as the main conversation would run it from the project root, with no story
+under way, so it does not judge the agent's role, the freeze, the other
+checkouts or whether the story's gates have passed, and it does not judge
+`fmt_file`, which the hook runs itself.
+
 The last check asks what the hooks will run. With `SDLC_BIN` set, that is the
 program it names, and `doctor` reports a problem when it names nothing
 runnable, because the hooks then pass over it and run whatever `sdlc` they
@@ -266,7 +274,6 @@ layout:
     session                     sdlc start writes it in Claude Code; removed with active
     tests.lock                  sdlc freeze writes it
     stop-blocks.json            the Stop hook's count of stops it sent back, and when it began waiting for a subagent
-    cover.out                   only if the Go coverage command has run
   stories/<ID>/
     gate-record.json            sdlc start creates it; every gate, event and review
     ANALYSIS.md ... RETRO.md    sdlc artifact write

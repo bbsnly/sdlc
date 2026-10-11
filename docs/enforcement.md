@@ -483,6 +483,15 @@ If a refusal sent you here, go straight to the rule it named. The next section
 says how a command is read before any rule judges it, and you may skip it until
 you need to know why a particular spelling was, or was not, read.
 
+If [`sdlc doctor`](commands.md#sdlc-doctor) sent you here for a command in
+`.sdlc/config.json`, it asked the same classifier about that command as the main
+conversation would run it from the project root, with no story under way. It
+does not know the agent's role or a story's state, so a rule that turns on them
+can be named for a command the hook allows (a `git commit` under
+[`commit-gate`](#commit-gate) is allowed once the gates have passed) and missed
+for one it refuses. Change the command so that it does not do what the rule
+refuses, by hand, in your own terminal.
+
 ### How a command is read
 
 #### Wrappers the rules read through

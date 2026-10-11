@@ -80,7 +80,7 @@ empty for Go:
     "fmt": "gofmt -w .",
     "fmt_check": "test -z \"$(gofmt -l .)\"",
     "fmt_file": "case \"$FILE\" in *.go) gofmt -w \"$FILE\" ;; esac",
-    "coverage": "go test ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'"
+    "coverage": "p=$(mktemp) && trap 'rm -f \"$p\"' EXIT && go test ./... -count=1 -coverprofile=\"$p\" >/dev/null && go tool cover -func=\"$p\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'"
   },
   "thresholds": { "coverage_min": 80, "mutation_min": 70 },
   "paths": {
@@ -174,18 +174,21 @@ Installing in `smoke` gives the worktree a `node_modules` of its own.
 
 ### The coverage profile
 
-One thing worth knowing about the `coverage` command `init` guesses for Go: it
-writes a coverage profile to `.sdlc/state/cover.out`. That is a build artefact
-rather than loop state, and Gate 8 commits the whole story with `git add -A`, so if
-you would rather it did not land in your history, either send the profile
-somewhere you already ignore or add the one line:
+The `coverage` command `init` guesses for Go writes its profile to a temporary file made by
+`mktemp`, in the operating system's temporary directory, and removes it when the shell exits,
+whether the run passed or a step failed. The Python command does the same with pytest-cov's
+data file, through `COVERAGE_FILE`. Neither leaves anything in the project, so Gate 8's
+`git add -A` has nothing to pick up and `sdlc init` has no `.gitignore` line to write; what a
+project commits stays the project's decision.
 
-```gitignore
-.sdlc/state/cover.out
-```
-
-Nothing decides that for you. `sdlc init` writes no `.gitignore`, because what
-a project commits is the project's decision.
+A command of your own should do the same. `.sdlc/state/` is where the loop keeps its records, and
+a profile left in the project is uncommitted work that the commit gate refuses. A command that
+writes or deletes under `.sdlc/` is refused too
+([`loop-state-through-the-tool`](enforcement.md#loop-state-through-the-tool)), and
+[`sdlc doctor`](commands.md#sdlc-doctor) reports a configured command that may be. If your shell
+has no `mktemp` or `trap`, write the profile to a path of your own outside the project and remove
+it in the same command; a file `mktemp` named that is left in the temporary directory after a
+killed run is safe to delete.
 
 ### Which configuration a checkout reads
 

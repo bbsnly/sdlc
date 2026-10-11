@@ -198,7 +198,24 @@ else to trunk unreviewed. Builds the landing-specific `WithFix` text for
 landing. Imports `config`, `gitx`, `model`, `sdlcerr`, `shellx`, `store`. The
 `landingCommands` list (`coverage`, `mutation` among them) is
 the only caller of `commands.coverage`/`commands.mutation` from
-`.sdlc/config.json`; `./task check` in `Taskfile.yml` does not run either.
+`.sdlc/config.json` (`sdlc doctor` reads each command's text and runs none);
+`./task check` in `Taskfile.yml` does not run either.
+
+## internal/cli/doctor.go: configured commands
+
+Package `cli`. `commandChecks(root, cfg)` reads every non-empty command in
+`commands` twice and runs none. `programsIn` is the best-effort PATH reader: the
+first word of each part, skipping builtins (`trap` among them) and any part that
+starts with `VAR=value`, which hides the program after it (US-003). Then each
+command goes through `shellpolicy.Inspect` with `State{Backlog}` only, and a
+refusal is a `commands and hook` problem naming the key and `Finding.Rule`, never
+the command or the reason. That state leaves out the agent's role, the directory,
+the freeze, `Resolve`, `Shared`, `Checkouts` and `CommitReady`, so a rule that
+turns on them can be reported for a command the hook allows (`commit-gate` on a
+`git commit`) and missed for one it refuses. `fmt_file` is skipped there: the
+hook runs it itself, outside the classifier. The profile that init's coverage
+commands write goes to `mktemp` and an `EXIT` trap removes it; a run killed by a
+signal leaves the file in the OS temp directory.
 
 ## internal/gitx/landing.go and internal/gitx/fastforward.go
 

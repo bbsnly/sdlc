@@ -23,6 +23,7 @@ import (
 	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/scaffold"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
+	"github.com/bbsnly/sdlc/internal/shellpolicy"
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
@@ -196,7 +197,7 @@ func runChecks(ctx context.Context) []check {
 		add(c)
 	}
 	add(contractCheck(root))
-	out = append(out, commandChecks(cfg)...)
+	out = append(out, commandChecks(root, cfg)...)
 	add(binaryCheck(env))
 	return out
 }
@@ -630,7 +631,7 @@ func contractCheck(root string) check {
 // commandChecks looks for the programs the configured commands would run. It
 // does not run them: a test suite can take minutes, and doctor is meant to be
 // the fast answer to "why is this not working".
-func commandChecks(cfg config.Config) []check {
+func commandChecks(root string, cfg config.Config) []check {
 	names := make([]string, 0, len(cfg.Commands))
 	for name, command := range cfg.Commands {
 		if strings.TrimSpace(command) != "" {
@@ -663,6 +664,28 @@ func commandChecks(cfg config.Config) []check {
 				" in " + config.File,
 		})
 	}
+
+	// The hook judges a command with a story's state, the agent's role and the
+	// directory it runs from. None of that is known here, so this is the answer
+	// for the main conversation at the project root with no story under way:
+	// a rule that turns on the rest can be reported for a command the hook
+	// allows (commit-gate on a `git commit`) and missed for one it refuses.
+	// Only the key and the rule are printed, never the command or the
+	// classifier's reason, which can quote the command and a command can hold
+	// a token. fmt_file is run by the hook itself and never reaches the
+	// classifier, so it is not judged.
+	state := shellpolicy.State{Backlog: relativeTo(root, cfg.BacklogPath(root))}
+	for _, name := range names {
+		if f, refused := shellpolicy.Inspect(cfg.Commands[name], state); refused && name != "fmt_file" {
+			out = append(out, check{
+				Name:   "commands and hook",
+				State:  stateProblem,
+				Detail: "commands." + name + " may be refused by the hook under " + f.Rule + " (judged without a story or a role)",
+				Fix: "edit commands." + name + " in " + config.File + " by hand, so that it no longer does what " +
+					f.Rule + " refuses; see docs/enforcement.md, under " + f.Rule,
+			})
+		}
+	}
 	return out
 }
 
@@ -670,7 +693,7 @@ func commandChecks(cfg config.Config) []check {
 var shellBuiltins = map[string]bool{
 	"test": true, "[": true, "echo": true, "printf": true, "true": true,
 	"false": true, "cd": true, ":": true, "exit": true, "read": true,
-	"esac": true,
+	"esac": true, "trap": true,
 }
 
 // programsIn pulls the program names out of a shell command. It splits on the
@@ -693,7 +716,8 @@ func programsIn(command string) []string {
 		if len(fields) == 0 {
 			continue
 		}
-		program := strings.TrimLeft(fields[0], "$(<>\"'")
+		// The ) closes the $( that started the segment: `p=$(mktemp) && ...`.
+		program := strings.Trim(fields[0], "$(<>\"')")
 		if program == "" || shellBuiltins[program] || strings.Contains(program, "=") {
 			continue
 		}

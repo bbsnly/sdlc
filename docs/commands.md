@@ -139,9 +139,16 @@ $ sdlc doctor --json
 including a setting it does not know, such as a misspelled one — the backlog,
 the loop's state files the hook reads on every tool call and the commit
 [`sdlc ack`](#sdlc-ack) recorded, the contract in `CLAUDE.md`, the programs your
-configured commands would run, and whether `sdlc` is on your `PATH`. Every
-problem comes with what to do about it. Exits non-zero when something is
-wrong, so it works in a script.
+configured commands would run, whether the hook would refuse any of them, and
+whether `sdlc` is on your `PATH`. Every problem comes with what to do about it.
+Exits non-zero when something is wrong, so it works in a script.
+
+A quiet `doctor` is not a promise that the hook will allow every command: it
+judges each command as the main conversation would run it from the project root,
+with no story under way, so it does not judge the agent's role, the freeze, the
+other checkouts or whether the story's gates have passed, and it does not judge
+`fmt_file`, which the hook runs itself. It names a refused command by its key
+and the rule, never prints the command, and never runs it.
 
 In a repository with linked worktrees it names the checkout holding each story
 under "loop state", in whichever checkout you run it. In a linked worktree it

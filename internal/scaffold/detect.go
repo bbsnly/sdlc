@@ -76,8 +76,15 @@ func detectGo(root string) (Stack, bool) {
 			"fmt":       "gofmt -w .",
 			"fmt_check": `test -z "$(gofmt -l .)"`,
 			"fmt_file":  `case "$FILE" in *.go) gofmt -w "$FILE" ;; esac`,
-			"coverage": "go test ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && " +
-				`go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\.[0-9]+'`,
+			// The profile goes to the OS temp directory and is removed when the
+			// shell exits, even if a step fails. .sdlc/state/ is where the loop
+			// keeps its records, and a command that writes or deletes there by
+			// hand is refused; a profile left elsewhere in the project is
+			// uncommitted work the commit gate refuses (SDLC-E0032), except in
+			// a story's worktree, which ignores .sdlc/state.
+			"coverage": `p=$(mktemp) && trap 'rm -f "$p"' EXIT && ` +
+				`go test ./... -count=1 -coverprofile="$p" >/dev/null && ` +
+				`go tool cover -func="$p" | tail -1 | grep -Eo '[0-9]+\.[0-9]+'`,
 		},
 		// testdata as well as the test files: a frozen test that reads a
 		// golden file is only frozen if the golden file is too.
@@ -184,8 +191,11 @@ func detectPython(root string) (Stack, bool) {
 			"fmt":       "ruff format .",
 			"fmt_check": "ruff format --check .",
 			"fmt_file":  `case "$FILE" in *.py) ruff format "$FILE" ;; esac`,
-			"coverage": "pytest -q --cov --cov-report=term | grep -E '^TOTAL' | " +
-				"grep -Eo '[0-9]+%' | tr -d %",
+			// pytest-cov writes .coverage in the working directory unless
+			// COVERAGE_FILE says where; the same temp file as Go's profile.
+			"coverage": `p=$(mktemp) && trap 'rm -f "$p"' EXIT && ` +
+				`COVERAGE_FILE="$p" pytest -q --cov --cov-report=term | grep -E '^TOTAL' | ` +
+				`grep -Eo '[0-9]+%' | tr -d %`,
 		},
 		// conftest.py is where pytest fixtures live, so a test's outcome can
 		// be changed there without touching a test file.
