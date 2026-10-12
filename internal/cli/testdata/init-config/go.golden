@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "backlog": { "path": "user_stories.json" },
+  "git": { "trunk_branch": "main", "remote": false },
+  "commands": {
+    "smoke":     "test -z \"$(go list ./...)\" || go vet ./...",
+    "build":     "go build ./...",
+    "test":      "go test ./... -count=1",
+    "lint":      "golangci-lint run",
+    "fmt":       "gofmt -w .",
+    "fmt_check": "test -z \"$(gofmt -l .)\"",
+    "fmt_file":  "case \"$FILE\" in *.go) gofmt -w \"$FILE\" ;; esac",
+    "coverage":  "p=$(mktemp) \u0026\u0026 trap 'rm -f \"$p\"' EXIT \u0026\u0026 go test ./... -count=1 -coverprofile=\"$p\" \u003e/dev/null \u0026\u0026 go tool cover -func=\"$p\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'",
+    "mutation":  ""
+  },
+  "thresholds": {
+    "coverage_min": 80,
+    "mutation_min": 70
+  },
+  "paths": {
+    "tests": {
+      "dirs": ["testdata/"],
+      "file_globs": ["*_test.go"]
+    },
+    "src": ["cmd/","internal/","pkg/"]
+  },
+  "spec": { "paths": ["docs/", "spec/", "README.md"] },
+  "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
+  "reviews": { "gate7_advisory": false },
+  "freeze": { "allow_new_test_files": false },
+  "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
+  "budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] }
+}

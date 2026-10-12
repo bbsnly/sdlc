@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "backlog": { "path": "user_stories.json" },
+  "git": { "trunk_branch": "main", "remote": false },
+  "commands": {
+    "smoke":     "cargo check --all-targets",
+    "build":     "cargo build",
+    "test":      "cargo test",
+    "lint":      "cargo clippy --all-targets -- -D warnings",
+    "fmt":       "cargo fmt",
+    "fmt_check": "cargo fmt --check",
+    "fmt_file":  "",
+    "coverage":  "",
+    "mutation":  ""
+  },
+  "thresholds": {
+    "coverage_min": 80,
+    "mutation_min": 70
+  },
+  "paths": {
+    "tests": {
+      "dirs": ["tests/","testdata/","fixtures/"],
+      "file_globs": ["*_test.rs"]
+    },
+    "src": ["src/"]
+  },
+  "spec": { "paths": ["docs/", "spec/", "README.md"] },
+  "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
+  "reviews": { "gate7_advisory": false },
+  "freeze": { "allow_new_test_files": false },
+  "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
+  "budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] }
+}

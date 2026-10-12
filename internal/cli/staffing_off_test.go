@@ -13,6 +13,13 @@ package cli
 // after what differs between two runs is replaced: where the project is, the
 // time, and the names of commits and trees.
 //
+// US-002: the configuration `sdlc init` writes, which the walk prints, now has
+// a comment block above each setting, and the files still hold it as the tree
+// before US-026 wrote it. Their wording is not what AC-10 is about, so both the
+// golden and the walk are compared with the top-level `_` keys of that one file
+// cut out (stfWithoutConfigComments, in configcomments_test.go). The files are
+// untouched, and every other byte of both transcripts is still compared as it is.
+//
 // test/e2e's TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox holds
 // the prose of the built binary the same way, with story worktrees on, and was
 // written before this story too.
@@ -222,11 +229,12 @@ func TestAC10WithNoStaffingSectionEveryCommandPrintsWhatItPrintedBeforeTheStory(
 			if err != nil {
 				t.Fatalf("the output the tool printed before the story is not there to compare with: %v", err)
 			}
-			got := stfOffWalk(t, form.json)
-			if got == string(want) {
+			got := stfWithoutConfigComments(t, stfOffWalk(t, form.json))
+			wanted := stfWithoutConfigComments(t, string(want))
+			if got == wanted {
 				return
 			}
-			gotLines, wantLines := strings.Split(got, "\n"), strings.Split(string(want), "\n")
+			gotLines, wantLines := strings.Split(got, "\n"), strings.Split(wanted, "\n")
 			for i := 0; i < len(gotLines) || i < len(wantLines); i++ {
 				var g, w string
 				if i < len(gotLines) {

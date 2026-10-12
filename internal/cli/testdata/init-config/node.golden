@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "backlog": { "path": "user_stories.json" },
+  "git": { "trunk_branch": "main", "remote": false },
+  "commands": {
+    "smoke":     "npm run build --silent",
+    "build":     "npm run build --silent",
+    "test":      "npm test --silent",
+    "lint":      "npm run lint --silent",
+    "fmt":       "",
+    "fmt_check": "",
+    "fmt_file":  "",
+    "coverage":  "",
+    "mutation":  ""
+  },
+  "thresholds": {
+    "coverage_min": 80,
+    "mutation_min": 70
+  },
+  "paths": {
+    "tests": {
+      "dirs": ["tests/","test/","__tests__/","__snapshots__/","__mocks__/","__fixtures__/"],
+      "file_globs": ["*.test.ts","*.test.js","*.spec.ts","*.spec.js","*.snap"]
+    },
+    "src": ["src/","lib/"]
+  },
+  "spec": { "paths": ["docs/", "spec/", "README.md"] },
+  "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
+  "reviews": { "gate7_advisory": false },
+  "freeze": { "allow_new_test_files": false },
+  "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
+  "budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] }
+}

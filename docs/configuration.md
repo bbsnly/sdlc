@@ -10,18 +10,23 @@
   - [Which configuration a checkout reads](#which-configuration-a-checkout-reads)
   - [At landing](#at-landing)
 - [`thresholds`](#thresholds)
-- [`paths.tests`](#pathstests)
+- [`paths`](#paths)
+  - [`paths.tests`](#pathstests)
+  - [`paths.src`](#pathssrc)
 - [`git`](#git)
   - [How worktrees work](#how-worktrees-work)
   - [What start writes into the repository](#what-start-writes-into-the-repository)
   - [Turning worktrees off](#turning-worktrees-off)
-- [`backlog.path`](#backlogpath)
-- [`paths.src`](#pathssrc)
-- [`spec.paths`](#specpaths)
+- [`backlog`](#backlog)
+  - [`backlog.path`](#backlogpath)
+- [`spec`](#spec)
+  - [`spec.paths`](#specpaths)
 - [`version`](#version)
 - [`loop`](#loop)
-- [`reviews.gate7_advisory`](#reviewsgate7_advisory)
-- [`freeze.allow_new_test_files`](#freezeallow_new_test_files)
+- [`reviews`](#reviews)
+  - [`reviews.gate7_advisory`](#reviewsgate7_advisory)
+- [`freeze`](#freeze)
+  - [`freeze.allow_new_test_files`](#freezeallow_new_test_files)
 - [`human_gates`](#human_gates)
 - [`budget`](#budget)
 - [`parallel`](#parallel)
@@ -54,8 +59,9 @@ a new field arrives.
 
 A key `sdlc` does not know changes nothing, because the setting it was meant to
 be keeps its default. `sdlc doctor` names such a key as a problem, so run it
-after editing the file. A key that starts with `_` is a comment and is not
-reported, and `commands` takes any name.
+after editing the file. A top-level key that starts with `_` is a comment and is
+never read as a setting, so `doctor` does not report it. `commands` takes any
+name, so a key there is read as a command, whatever it is called.
 
 A few settings are not in the file at all. They are read from the environment
 the session starts with, and are listed under
@@ -64,8 +70,8 @@ the session starts with, and are listed under
 ## What `init` writes for a Go project
 
 Let's take a look at the file `sdlc init` writes for a Go project. It leaves
-out the notes `init` writes under `_` keys, and `mutation`, which `init` leaves
-empty for Go:
+out the comment blocks `init` writes, and `mutation`, which `init` leaves empty
+for Go:
 
 ```json
 {
@@ -98,6 +104,25 @@ empty for Go:
 
 The file `init` writes has `\u0026\u0026` where the example shows `&&`, and
 `\u003e` where it shows `>`. Both spellings are the same JSON string.
+
+`sdlc init` writes a comment block above each setting. The block is a list of
+lines under a key made of `_` and the setting's name, such as `_thresholds`: a
+title, what the setting controls and what changing it costs, and the address of
+that setting's heading on this page. The loop skips these keys, so the blocks
+change nothing. This is the block above `thresholds`, as `init` writes it:
+
+```json
+  "_thresholds": [
+    "The numbers a change is held to",
+    "coverage_min and mutation_min are the percentages the verifier compares a change with.",
+    "Lowering one lets weaker work through; 0 turns it off, and a negative number is refused.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#thresholds"
+  ],
+  "thresholds": { "coverage_min": 80, "mutation_min": 70 },
+```
+
+A comment block belongs at the top level only. A list under a `_` key inside
+`commands` is refused, because every key there is read as a command.
 
 The sections below follow the order of the settings you are most likely to
 change, starting with `commands`.
@@ -268,7 +293,13 @@ writes are usually a fine place to start.
 
 A threshold of `0` is not enforced, and a negative one is refused.
 
-## `paths.tests`
+## `paths`
+
+`paths` tells the loop which files are tests and which are source. Its two keys
+have a section each: [`paths.tests`](#pathstests) decides what the freeze
+covers, and [`paths.src`](#pathssrc) is where production code lives.
+
+### `paths.tests`
 
 This is the one setting worth reading carefully. It decides what the freeze
 covers, and therefore what the implementer cannot touch. `sdlc init` fills it in
@@ -294,6 +325,16 @@ add it here.
 
 The test author is refused when it writes outside what this describes, and the
 refusal says so.
+
+### `paths.src`
+
+This is where production code lives. The researcher looks there first at Gate 2,
+the implementer puts new code there, and the code reviewer reads it with
+`paths.tests` to tell a change's code apart from its tests.
+
+Nothing refuses a write outside it. A build file, a migration or a
+configuration change can be part of a story, and a rule that refused them would
+be worked around rather than followed.
 
 ## `git`
 
@@ -346,7 +387,11 @@ it runs in, which has to be on trunk with nothing uncommitted, as
 [SDLC-E0038](troubleshooting.md#sdlc-e0038) to
 [SDLC-E0041](troubleshooting.md#sdlc-e0041) say.
 
-## `backlog.path`
+## `backlog`
+
+`backlog` names the file your stories live in. It has one key, `path`.
+
+### `backlog.path`
 
 This is where your stories live, relative to the repository root. The default is
 `user_stories.json`, and most projects keep it.
@@ -355,17 +400,12 @@ It has to be inside the repository, because the backlog is committed with the
 work and protected while a story runs. An absolute path, or one that climbs out
 with `..`, is refused.
 
-## `paths.src`
+## `spec`
 
-This is where production code lives. The researcher looks there first at Gate 2,
-the implementer puts new code there, and the code reviewer reads it with
-`paths.tests` to tell a change's code apart from its tests.
+`spec` names where the project's own specifications live. It has one key,
+`paths`.
 
-Nothing refuses a write outside it. A build file, a migration or a
-configuration change can be part of a story, and a rule that refused them would
-be worked around rather than followed.
-
-## `spec.paths`
+### `spec.paths`
 
 This is where the project's own specifications live. The analysis gate reads
 these before it writes anything.
@@ -392,7 +432,12 @@ The defaults of 2, 3 and 3 are rarely worth changing.
 A limit of `0` turns that limit off, for all three, and a negative one is
 refused.
 
-## `reviews.gate7_advisory`
+## `reviews`
+
+`reviews` changes how much a reviewer's word counts. It has one key,
+`gate7_advisory`.
+
+### `reviews.gate7_advisory`
 
 This makes the code reviewer advisory rather than blocking. It is off by
 default, and turning it on is a real loosening: Gate 7 is the last thing between
@@ -404,7 +449,12 @@ it always does), but a `block` from it no longer stops the gate.
 `sdlc review list` shows it as advisory. The verifier stays blocking, and so
 does security on a story Gate 2 called security-sensitive.
 
-## `freeze.allow_new_test_files`
+## `freeze`
+
+`freeze` changes what the test freeze allows. It has one key,
+`allow_new_test_files`.
+
+### `freeze.allow_new_test_files`
 
 This lets the test author add a test file after the freeze has been taken. It is
 off by default.

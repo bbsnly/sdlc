@@ -13,13 +13,39 @@
     "Reference: https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md"
   ],
 
+  "_version": [
+    "Version of this file's format",
+    "A release that meets a newer number refuses the file rather than misread it.",
+    "A version of 0 or less is refused too.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#version"
+  ],
   "version": 1,
 
+  "_backlog": [
+    "Where your stories live",
+    "path is the backlog file, relative to the repository root.",
+    "It must sit inside the repository, since it is committed with the work.",
+    "An absolute path, or one that climbs out with .., is refused.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#backlog"
+  ],
   "backlog": { "path": {{q .BacklogPath}} },
 
+  "_git": [
+    "Which branch is trunk, and where stories are worked",
+    "trunk_branch is where stories start and land; init guessed it from your repository.",
+    "remote: true makes sdlc start fetch from origin and refuse new work while trunk is behind.",
+    "worktrees: false works stories in this checkout, one at a time, not in a worktree each.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#git"
+  ],
   "git": { "trunk_branch": {{q .TrunkBranch}}, "remote": false },
 
-  "_commands_doc": {{q .StackNote}},
+  "_commands": [
+    "The commands the loop runs",
+    "These build, test and check your project; the loop runs them rather than guessing.",
+    "An empty one is skipped, and a wrong one fails the step that runs it.",
+    {{q .StackNote}},
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#commands"
+  ],
   "commands": {
     "smoke":     {{q (cmd .Commands "smoke")}},
     "build":     {{q (cmd .Commands "build")}},
@@ -32,11 +58,24 @@
     "mutation":  {{q (cmd .Commands "mutation")}}
   },
 
+  "_thresholds": [
+    "The numbers a change is held to",
+    "coverage_min and mutation_min are the percentages the verifier compares a change with.",
+    "Lowering one lets weaker work through; 0 turns it off, and a negative number is refused.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#thresholds"
+  ],
   "thresholds": {
     "coverage_min": 80,
     "mutation_min": 70
   },
 
+  "_paths": [
+    "Which files are tests, and which are source",
+    "tests decides what the freeze covers, and so what the implementer cannot touch.",
+    "What tests read, such as fixtures, is a way round the freeze if tests leaves it out.",
+    "src is where the researcher looks first and the implementer puts new code.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#paths"
+  ],
   "paths": {
     "tests": {
       "dirs": {{jsonList .TestDirs}},
@@ -45,15 +84,54 @@
     "src": {{jsonList .SrcDirs}}
   },
 
+  "_spec": [
+    "Where your specifications live",
+    "paths lists what the analysis gate reads before it writes anything.",
+    "A folder of specifications that is not listed is not given to that gate.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#spec"
+  ],
   "spec": { "paths": ["docs/", "spec/", "README.md"] },
 
+  "_loop": [
+    "How long the loop tries before it asks a person",
+    "max_review_rounds, max_rework_rounds and max_stop_blocks cap how often a review blocks, a gate fails and a stop is sent back.",
+    "Past a cap the story goes to a person; 0 turns that cap off, so the loop never stops to ask for that reason.",
+    "A negative number is refused.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#loop"
+  ],
   "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
 
+  "_reviews": [
+    "Whether the code review can block",
+    "gate7_advisory: true lets the code reviewer report without being able to block.",
+    "Its report is still required, but a block no longer stops Gate 7, the last review before the commit.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#reviews"
+  ],
   "reviews": { "gate7_advisory": false },
 
+  "_freeze": [
+    "Whether tests may be added after the freeze",
+    "allow_new_test_files: true lets the test author add a test file once the freeze is taken.",
+    "A test written after the code can be written to pass, which is why it is false by default.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#freeze"
+  ],
   "freeze": { "allow_new_test_files": false },
 
+  "_human_gates": [
+    "Where the loop waits for a person",
+    "pre_commit_pause_tiers lists the risk tiers that wait for a person's approval before commit.",
+    "An empty list turns that pause off, so no story waits for approval.",
+    "dor_advocate_check: true has the human advocate read each story at Gate 1 as well.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#human_gates"
+  ],
   "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
 
+  "_budget": [
+    "What one story is expected to cost",
+    "per_story_usd is the amount, in US dollars, one story is expected to cost.",
+    "alert_fractions are the shares of that amount at which sdlc warns you.",
+    "Nothing blocks at the budget. 0 turns it off, and a negative number is refused.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#budget"
+  ],
   "budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] }
 }
