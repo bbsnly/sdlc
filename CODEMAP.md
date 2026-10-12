@@ -240,7 +240,7 @@ still refusing a write to a test file, and the pages a person reads.
 Package `cli`. `commandChecks(root, cfg)` reads every non-empty command in
 `commands` twice and runs none. `programsIn` is the best-effort PATH reader: the
 first word of each part, skipping builtins (`trap` among them) and any part that
-starts with `VAR=value`, which hides the program after it (US-003). Then each
+starts with `VAR=value`, which hides the program after it (US-003). The command is split only outside quotes, by `splitCommand` in `internal/cli/doctor.go`. Then each
 command goes through `shellpolicy.Inspect` with `State{Backlog}` only, and a
 refusal is a `commands and hook` problem naming the key and `Finding.Rule`, never
 the command or the reason. That state leaves out the agent's role, the directory,
