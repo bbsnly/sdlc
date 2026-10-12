@@ -31,6 +31,20 @@ vars:
   # latency path of the user's whole session. Budget in milliseconds.
   INIT_BUDGET_MS: 3
 
+  # The classifier has a budget too, which init cannot see: init has run before
+  # a command is read. The hook gives itself 25 seconds and refuses a call it
+  # has not decided by then, so a classifier that gets slower refuses, for
+  # time, long commands it used to answer. One ceiling for each of three
+  # commands that are slow by construction, at 8 KB, in milliseconds: about 2.7
+  # times what the tree took when they were set, so that a change which halves
+  # the input needed to reach the deadline, four times the time, fails. One
+  # figure for all three would let the two cheaper ones get eight times slower
+  # unseen. A person raises one, and the same figure in
+  # test/checklegs/hooktime_test.go with it, only as CONTRIBUTING.md says.
+  HOOK_PERL_BUDGET_MS: 3000
+  HOOK_HERESTRING_BUDGET_MS: 1000
+  HOOK_DOTGLOB_BUDGET_MS: 1000
+
   GOLICENSES: go run github.com/google/go-licenses/v2@v{{.GOLICENSES_VERSION}}
   GOLANGCI: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v{{.GOLANGCI_VERSION}}
   ACTIONLINT: go run github.com/rhysd/actionlint/cmd/actionlint@v{{.ACTIONLINT_VERSION}}
@@ -107,6 +121,10 @@ tasks:
       - task: licenses
       - task: secrets
       - task: no-internal-docs
+      # Last, because it is the one leg that a busy machine can fail on a tree
+      # that has not changed, and task stops at the first leg that fails:
+      # anywhere earlier it would hide the legs after it, secrets among them.
+      - task: hook-time
 
   tools:
     desc: Assert the toolchain this repository requires is present at the pinned versions
@@ -607,6 +625,20 @@ tasks:
           exit 1
         fi
         echo "init: ${total} ms (budget {{.INIT_BUDGET_MS}} ms)"
+
+  hook-time:
+    desc: Assert the classifier answers three slow commands inside their budgets
+    silent: true
+    cmds:
+      # One command with nothing around it, so the program's exit is the leg's.
+      # init-time measures through the shell and passed on every Windows run
+      # for it: the binary never started, and what awk did not find compared
+      # as 0 ms. Here the timing, the comparison and the temporary directory
+      # are all the program's, and a budget it cannot read is refused.
+      # GOFLAGS is emptied as it is for the sandbox: with -n in a caller's
+      # shell this `go run` ran nothing and exited 0, and with -race the
+      # commands take twenty times as long.
+      - GOFLAGS= go run ./internal/tools/hooktime -perl={{.HOOK_PERL_BUDGET_MS}} -here-string={{.HOOK_HERESTRING_BUDGET_MS}} -dot-glob={{.HOOK_DOTGLOB_BUDGET_MS}}
 
   licenses:
     desc: Assert every dependency that ships in the binary has a licence we can ship

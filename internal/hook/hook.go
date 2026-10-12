@@ -455,6 +455,8 @@ func backlogPath(project string) string {
 // through a link, and on Windows through a short name such as SDLC~1. Empty
 // when it is outside the repository, where the shell rules have nothing to
 // protect.
+//
+// internal/tools/hooktime times a copy of this; see inspectShell's State.
 func onDisk(resolver pathrules.Resolver, word string) string {
 	word, ok := expandHome(word)
 	if !ok {
@@ -538,6 +540,11 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 		return is
 	}
 	fresh := sync.OnceValues(func() (bool, string) { return reviewsFresh(pl, story, warn, budget) }) //nolint:contextcheck // reviewsFresh takes the command's lazily started budget, not ctx: the deadline must begin at the first git call
+	// internal/tools/hooktime builds this State a second time, to hold Inspect
+	// to a time (`./task hook-time`): nothing here can be called from outside
+	// the package. A field set here, or work added to Resolve, NewTest or
+	// ImplementerTest that every word of a command pays for, goes there too,
+	// or the leg times a classifier the hook does not run.
 	state := shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
@@ -679,6 +686,7 @@ func frozenTestsIn(pl place, story string, warn func(string)) (frozen []string, 
 	if !cfg.Freeze.AllowNewTestFiles {
 		// Folded once: Lock.Holds folds the whole freeze for each path it is
 		// not holding exactly, and the shell rules ask about every word.
+		// internal/tools/hooktime times a copy of this; see inspectShell's State.
 		m := testset.New(cfg.Paths.Tests)
 		held := make(map[string]bool, len(lock.Files))
 		for path := range lock.Files {

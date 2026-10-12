@@ -78,6 +78,63 @@ gitignored files, as a fresh clone would not have them, and `./task secrets`
 scans a snapshot of what git tracks or would accept with `git add`, not the
 working tree itself.
 
+`./task hook-time` holds the hook's classifier to a time. The hook gives itself
+25 seconds and refuses a call it has not decided by then, so a classifier that
+gets slower refuses, for time, long commands it used to answer. The leg times
+`shellpolicy.Inspect` in process, with the test matchers and the path resolver
+wired as the hook wires them for an implementer whose story has frozen tests,
+on three commands that are slow by construction. Each is the longest whole
+command of its shape that fits in 8,192 bytes, and the leg prints them by these
+names:
+
+- `perl`: `perl -` followed by 8,181 of the letter `a`, a space and `file`:
+  8,192 bytes.
+- `here-string`: 630 here-string blocks, each the opener `$s = @'`, the
+  one-line body `x` and the closer `'@`, read as PowerShell: 8,190 bytes.
+- `dot-glob`: `rm` of one path, 4,093 `a/` segments and then `.*`: 8,191
+  bytes. The leg classifies it and never runs it.
+
+The three are timed in turn, five times each, and a shape's fastest run counts.
+A line for each shape gives that time, the time of its first run and its
+budget. The first run is there because the hook is a new process for every
+command and pays for the first; it is not compared with anything. The budgets
+are `HOOK_PERL_BUDGET_MS`, `HOOK_HERESTRING_BUDGET_MS` and
+`HOOK_DOTGLOB_BUDGET_MS`, beside `INIT_BUDGET_MS` in the vars of
+`Taskfile.yml`.
+
+The leg fails when a shape's fastest run is over its budget. It also fails,
+however fast the shape was, when `Inspect` allows the `dot-glob` shape or
+refuses either of the other two. If that happened on every run, running the leg
+again changes nothing, and the place to look is `internal/shellpolicy`. If it
+happened on only some of the runs, the answer depends on something besides the
+command (state, time or ordering), and that is what to look for. If a story
+meant to change the answer, the answer the leg expects changes with it, in
+`internal/tools/hooktime`.
+
+A time over budget is not always a slower classifier. A busy machine goes over
+on a tree that has not changed, and not evenly: the `dot-glob` shape rises
+first, then `here-string`, and `perl` least; under heavy load all three go
+over. So when the leg fails on a time:
+
+- On your own machine, run `./task hook-time` again when the machine is quiet,
+  which means nothing else on it is building or running tests. When it passes,
+  run `./task check`, which is what gates a commit.
+- To tell a busy machine from a change of yours, run `./task hook-time` on
+  trunk without the change, in a second checkout or after `git stash`. Slow
+  there too means the machine; fast there means the change.
+- On a CI runner, run the job again.
+- If it fails twice on a tree that did not change, the runner is slower than
+  the figure allows for, and a person raises the figure in `Taskfile.yml`. The
+  same figure is in `hookBudgets` in `test/checklegs/hooktime_test.go` and
+  changes in the same commit, whose message says why: it is kept twice so that
+  a raise is never one line nobody notices. A raise is not for a failure that
+  arrived with a change to `internal/shellpolicy` or `internal/hook`. That is
+  the leg doing its work, and every raise widens what a real slowdown can hide
+  behind.
+
+The leg is the last in `./task check` and adds about ten seconds to it on a
+quiet laptop.
+
 ## Testing in a sandbox
 
 A sandbox, here, is a throwaway directory to try a change to sdlc in: a new git
