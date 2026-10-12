@@ -765,25 +765,31 @@ var shellBuiltins = map[string]bool{
 // programsIn pulls the program names out of a shell command. It splits on the
 // operators that start a new command and takes the first word of each, which is
 // enough for the commands people actually configure and never guesses at more.
+// Text inside quotes is never a command: `awk '/^t/{print $2; exit}' go.mod`
+// has no second program to look up. A program named through a variable or a
+// substitution cannot be known without running the command, so it is skipped.
 func programsIn(command string) []string {
-	// $( ) and backticks start a command of their own, and the interesting
-	// program is often inside one: `test -z "$(gofmt -l .)"` runs gofmt.
-	replacer := strings.NewReplacer(
-		"&&", "\n", "||", "\n", "|", "\n", ";", "\n", "$(", "\n", "`", "\n")
 	seen := map[string]bool{}
 	var out []string
-	for segment := range strings.SplitSeq(replacer.Replace(command), "\n") {
-		fields := strings.Fields(segment)
+	for _, segment := range splitCommand(command) {
+		// What follows a closed $( ) up to the next operator is its
+		// arguments or the rest of a word: `"$(go env GOPATH)"/bin/lint`.
+		if segment.argument {
+			continue
+		}
+		fields := strings.Fields(segment.text)
 		// `case "$FILE" in *.go) gofmt -w "$FILE" ;; esac` runs gofmt, not
 		// case: the program is the word after the pattern.
 		if len(fields) > 0 && fields[0] == "case" {
 			fields = afterCasePattern(fields)
 		}
-		if len(fields) == 0 {
+		// A quote left in the first word is a quoted span the scanner could not
+		// read as a plain name: "$TOOL" build, or a quote never closed.
+		if len(fields) == 0 || strings.ContainsAny(fields[0], `"'`) {
 			continue
 		}
 		// The ) closes the $( that started the segment: `p=$(mktemp) && ...`.
-		program := strings.Trim(fields[0], "$(<>\"')")
+		program := strings.Trim(fields[0], "$(<>)")
 		if program == "" || shellBuiltins[program] || strings.Contains(program, "=") {
 			continue
 		}
@@ -793,6 +799,179 @@ func programsIn(command string) []string {
 		}
 	}
 	return out
+}
+
+// commandSegment is one command's text with the inside of its quotes removed.
+type commandSegment struct {
+	text     string
+	argument bool // follows a closed $( ) or backtick pair, so starts no command
+}
+
+// scanFrame is a $( ) or backtick pair that is open, and the quote it
+// interrupted, which the closing restores.
+type scanFrame struct {
+	backtick bool
+	quote    byte
+}
+
+// commandScanner splits a command at its operators the way a shell reads
+// them, as far as this check needs. Unquoted, it cuts at && || | ; and a
+// newline. Inside '...' nothing means anything, and inside "..." only a
+// backslash, $( and a backtick do. $( ) and backticks start a command of their
+// own, in double quotes too: `test -z "$(gofmt -l .)"` runs gofmt. The inside
+// of a quote is dropped and the quote characters are kept. A quote never
+// closed drops the rest of its command; the commands before it are still read.
+//
+// Not read: (...) grouping and $(( )) arithmetic, a `case` pattern inside
+// $( ), $'...', here-documents and # comments. They can make part of a command
+// be read as the wrong kind of text, never fail.
+type commandScanner struct {
+	src      string
+	i        int
+	segments []commandSegment
+	cur      strings.Builder
+	argument bool
+	frames   []scanFrame
+	quote    byte // 0, ' or " : the quote open in the innermost frame
+}
+
+func splitCommand(command string) []commandSegment {
+	s := &commandScanner{src: command}
+	for s.i < len(s.src) {
+		c := s.src[s.i]
+		s.i++
+		switch s.quote {
+		case '\'':
+			s.single(c)
+		case '"':
+			s.double(c)
+		default:
+			s.bare(c)
+		}
+	}
+	s.cut()
+	return s.segments
+}
+
+// single: only the closing quote means anything, a backslash included.
+func (s *commandScanner) single(c byte) {
+	if c == '\'' {
+		s.cur.WriteByte(c)
+		s.quote = 0
+	}
+}
+
+func (s *commandScanner) double(c byte) {
+	switch {
+	case s.substitution(c):
+	case c == '"':
+		s.cur.WriteByte(c)
+		s.quote = 0
+	case c == '\\':
+		s.skip()
+	}
+}
+
+func (s *commandScanner) bare(c byte) {
+	switch {
+	case c == '`' && s.inFrame(true), c == ')' && s.inFrame(false):
+		s.close()
+	case s.substitution(c), s.operator(c):
+	case c == '\\':
+		s.cur.WriteString(s.src[s.i-1 : min(s.i+1, len(s.src))])
+		s.skip()
+	case c == '\'' || c == '"':
+		s.openQuote(c)
+	default:
+		s.cur.WriteByte(c)
+	}
+}
+
+// substitution opens a frame at $( or a backtick, which both quote states
+// and the unquoted text let start a command.
+func (s *commandScanner) substitution(c byte) bool {
+	switch {
+	case c == '$' && strings.HasPrefix(s.src[s.i:], "("):
+		s.i++
+		s.open(false)
+	case c == '`':
+		s.open(true)
+	default:
+		return false
+	}
+	return true
+}
+
+// operator cuts at && | ; and a newline. || is two |.
+func (s *commandScanner) operator(c byte) bool {
+	switch c {
+	case ';', '|', '\n':
+	case '&':
+		if !strings.HasPrefix(s.src[s.i:], "&") {
+			return false
+		}
+		s.i++
+	default:
+		return false
+	}
+	s.cut()
+	return true
+}
+
+// openQuote starts a quoted span, unless it is a whole plain word at the start
+// of a command: `'go' build` still runs go, so the word is kept as it is.
+func (s *commandScanner) openQuote(q byte) {
+	if word, ok := s.plainWord(q); ok {
+		s.cur.WriteString(word)
+		return
+	}
+	s.cur.WriteByte(q)
+	s.quote = q
+}
+
+// plainWord reads a quoted span that is the first word of a command and has
+// nothing in it for the shell to expand or split. A word that goes on after
+// the quote (`"$(go env GOPATH)"/bin/lint`) is not a name to look up.
+func (s *commandScanner) plainWord(q byte) (string, bool) {
+	if strings.TrimSpace(s.cur.String()) != "" {
+		return "", false
+	}
+	end := strings.IndexByte(s.src[s.i:], q)
+	if end <= 0 {
+		return "", false
+	}
+	word := s.src[s.i : s.i+end]
+	rest := s.src[s.i+end+1:]
+	if strings.ContainsAny(word, " \t\n$`\\") || (rest != "" && !strings.ContainsRune(" \t\n;|&)<>", rune(rest[0]))) {
+		return "", false
+	}
+	s.i += end + 1
+	return word, true
+}
+
+func (s *commandScanner) skip() { s.i = min(s.i+1, len(s.src)) }
+
+func (s *commandScanner) inFrame(backtick bool) bool {
+	return len(s.frames) > 0 && s.frames[len(s.frames)-1].backtick == backtick
+}
+
+func (s *commandScanner) open(backtick bool) {
+	s.cut()
+	s.frames = append(s.frames, scanFrame{backtick: backtick, quote: s.quote})
+	s.quote = 0
+}
+
+func (s *commandScanner) close() {
+	s.cut()
+	s.quote = s.frames[len(s.frames)-1].quote
+	s.frames = s.frames[:len(s.frames)-1]
+	s.argument = true
+}
+
+func (s *commandScanner) cut() {
+	s.segments = append(s.segments, commandSegment{text: s.cur.String(), argument: s.argument})
+	s.cur.Reset()
+	s.argument = false
 }
 
 // afterCasePattern is what follows the first pattern of a case command, which

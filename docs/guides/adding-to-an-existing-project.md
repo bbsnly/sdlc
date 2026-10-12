@@ -172,8 +172,9 @@ exits non-zero when anything is a problem.
 
 `doctor` does not run your commands, because a test suite can take minutes.
 It takes the first word of each part of a command and looks it up on your
-`PATH`, so `test -z "$(gofmt -l .)"` is checked for `gofmt`. To skip a step
-you have no tool for, set that command to `""`.
+`PATH`, so `test -z "$(gofmt -l .)"` is checked for `gofmt`. A `;` or `|`
+inside quotes does not start a new part, so `awk '{a; b}' file` is checked for
+`awk` alone. To skip a step you have no tool for, set that command to `""`.
 
 It also asks the hook's classifier whether each command would be refused, and
 names the command by its key and the rule, without printing the command. A quiet

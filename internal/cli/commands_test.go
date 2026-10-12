@@ -1567,3 +1567,168 @@ func TestProgramsInFindsWhatWouldActuallyRun(t *testing.T) {
 		}
 	}
 }
+
+// programsInCases runs programsIn over a table and compares the programs in
+// order, so a case states both which are found and which are not.
+func programsInCases(t *testing.T, cases map[string][]string) {
+	t.Helper()
+	for command, want := range cases {
+		got := programsIn(command)
+		if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+			t.Errorf("programsIn(%q) = %q, want %q", command, got, want)
+		}
+	}
+}
+
+// US-003 AC-1: what sits inside single quotes is text, whatever it holds. The
+// quoted words vary (a script, a pattern, a message) and so does the operator,
+// so a fix that knows only the story's own awk script does not pass.
+func TestAC1ProgramsInLeavesTheInsideOfSingleQuotesAlone(t *testing.T) {
+	t.Parallel()
+	programsInCases(t, map[string][]string{
+		`awk '{a;b}' f`:                              {"awk"},
+		`sed 's/a|b/c/' f`:                           {"sed"},
+		`grep 'x && y' f`:                            {"grep"},
+		`grep 'x||y' f | sort`:                       {"grep", "sort"},
+		`grep 'say "a; b"' f`:                        {"grep"},
+		`grep 'one;two;three' f; sort`:               {"grep", "sort"},
+		`awk '/^toolchain /{print $2; exit}' go.mod`: {"awk"},
+		// $( and a backtick are text in single quotes too.
+		`echo 'a $(nothere) b'; ls`: {"ls"},
+		"echo 'a `nothere` b'; ls":  {"ls"},
+		// A backslash is literal in single quotes, so this one closes at the
+		// second quote and the ls after it is a program.
+		`grep 'a\' ; ls`: {"grep", "ls"},
+	})
+}
+
+// US-003 AC-2: the story's own command, which today yields "exit}" as a
+// program. go is not in the answer: a part that starts with VAR=value is
+// skipped, and that is out of scope here.
+func TestAC2ProgramsInFindsOnlyAwkInTheAwkAndGoFmtCommand(t *testing.T) {
+	t.Parallel()
+	programsInCases(t, map[string][]string{
+		`case "$FILE" in *.go) t=$(awk '/^toolchain /{print $2; exit}' go.mod); GOTOOLCHAIN="${t:-local}" go fmt "$FILE" >/dev/null ;; esac`: {"awk"},
+		// The same shape with other words, so the story's string is not the test.
+		`case "$F" in *.py) v=$(sed -n '/^x /{p; q}' c.toml); black "$F" ;; esac`: {"sed", "black"},
+	})
+}
+
+// US-003 AC-3: the same inside double quotes, where no substitution is.
+func TestAC3ProgramsInLeavesTheInsideOfDoubleQuotesAlone(t *testing.T) {
+	t.Parallel()
+	programsInCases(t, map[string][]string{
+		`grep -E "a|b" f`:         {"grep"},
+		`grep "a && b" f`:         {"grep"},
+		`grep "a || b" f; sort x`: {"grep", "sort"},
+		`awk "{a;b}" f`:           {"awk"},
+		`grep "one;two" f | sort`: {"grep", "sort"},
+		// A single quote inside double quotes is a character, not a quote.
+		`echo "it's; b"; ls`: {"ls"},
+		// So is an escaped double quote: the string runs on past it.
+		`grep "a\"; b" f`:        {"grep"},
+		`grep "x\" | y" f && ls`: {"grep", "ls"},
+		// An escaped quote outside quotes opens nothing, so ls is still seen.
+		`echo \"; ls`: {"ls"},
+	})
+}
+
+// US-003 AC-4: a substitution in double quotes still runs a program, and the
+// quotes inside it are its own.
+func TestAC4ProgramsInStillFindsTheProgramOfASubstitutionInDoubleQuotes(t *testing.T) {
+	t.Parallel()
+	programsInCases(t, map[string][]string{
+		`test -z "$(gofmt -l .)"`:                {"gofmt"},
+		`test -z "$(awk '{a;b}' f)"`:             {"awk"},
+		`echo "$(gofmt -l . | sort)"`:            {"gofmt", "sort"},
+		`echo "x $(gofmt -l .; golint ./...) y"`: {"gofmt", "golint"},
+		`echo "$(grep "a;b" f)"`:                 {"grep"},
+		// Back in the double quotes after the substitution: the next string is
+		// still quoted text, and the one after the semicolon is not.
+		`echo "$(gofmt -l .)" "a; b"; ls`: {"gofmt", "ls"},
+		// Backticks are searched inside double quotes as $( ) is (the person's
+		// answer 1), and the quotes inside them are their own.
+		"test -z \"`gofmt -l .`\"":       {"gofmt"},
+		"test -z \"`awk '{a;b}' f`\"":    {"awk"},
+		"echo \"`gofmt -l .` a; b\"; ls": {"gofmt", "ls"},
+	})
+}
+
+// US-003 AC-5: what is outside every quote is still split and still checked,
+// including right after a quoted argument and with no space before the
+// operator. A fix that skips any command holding a quote fails here.
+func TestAC5ProgramsInStillFindsProgramsOutsideTheQuotes(t *testing.T) {
+	t.Parallel()
+	programsInCases(t, map[string][]string{
+		`go build ./... && nosuchprog --x`:       {"go", "nosuchprog"},
+		`echo "a; b" && nosuchprog`:              {"nosuchprog"},
+		`grep 'x;y' f | missingtool`:             {"grep", "missingtool"},
+		`awk '{a;b}' f; missing`:                 {"awk", "missing"},
+		`echo "a" ; missing "b|c"`:               {"missing"},
+		`grep 'a'|missing`:                       {"grep", "missing"},
+		`echo 'a' && missing`:                    {"missing"},
+		`cmd1 "x"; cmd2 'y'; cmd3`:               {"cmd1", "cmd2", "cmd3"},
+		`cmd1 'a b' || cmd2 "c d" && cmd3 'e|f'`: {"cmd1", "cmd2", "cmd3"},
+		// What programsIn already skips stays skipped.
+		`p=$(mktemp) && cmd1 "$p"`: {"mktemp", "cmd1"},
+		`X=1 cmd1 'a;b'`:           nil,
+	})
+}
+
+// US-003 AC-5, the report: the program and every command that runs it, in the
+// words doctor uses today, with the quoted text of those commands left out.
+func TestAC5CommandChecksNamesTheProgramAndEveryCommandThatRunsIt(t *testing.T) {
+	t.Parallel()
+	cfg := config.Config{Commands: map[string]string{
+		"test": `zz-us003-missing-a 'p;q' && echo "r|s"`,
+		"lint": `zz-us003-missing-a "t;u" | zz-us003-missing-b 'v'`,
+	}}
+	var got []check
+	for _, c := range commandChecks(t.TempDir(), cfg) {
+		if c.Name == "commands on PATH" {
+			got = append(got, c)
+		}
+	}
+	want := []check{
+		{Name: "commands on PATH", State: stateProblem,
+			Detail: "zz-us003-missing-a is not installed, so lint and test would fail",
+			Fix:    "install zz-us003-missing-a, or clear commands.lint in " + config.File},
+		{Name: "commands on PATH", State: stateProblem,
+			Detail: "zz-us003-missing-b is not installed, so lint would fail",
+			Fix:    "install zz-us003-missing-b, or clear commands.lint in " + config.File},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("commands on PATH problems = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("problem %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// US-003 AC-6: a quote never closed does not crash, and nothing after it is a
+// program. What came before it is still checked (the person's answer 3).
+func TestAC6ProgramsInReportsNothingFromAnUnclosedQuote(t *testing.T) {
+	t.Parallel()
+	programsInCases(t, map[string][]string{
+		`echo 'unclosed ; foo`:        nil,
+		`echo "unclosed | foo`:        nil,
+		`foo; bar 'x; baz`:            {"foo", "bar"},
+		`foo; bar "x | baz && qux`:    {"foo", "bar"},
+		`foo; echo 'x`:                {"foo"},
+		`foo && bar 'a;b' ; baz 'x;y`: {"foo", "bar", "baz"},
+		`'`:                           nil,
+		`"`:                           nil,
+		`foo \`:                       {"foo"},
+		`foo 'a\`:                     {"foo"},
+	})
+	// Unbalanced substitutions and backticks must finish too; what they find
+	// is not specified, only that the first command is still there.
+	for _, command := range []string{`foo "$(bar`, `foo "$(`, "foo \"`bar", "foo `", `foo $(`, `foo "$(bar 'x`} {
+		got := programsIn(command)
+		if len(got) == 0 || got[0] != "foo" {
+			t.Errorf("programsIn(%q) = %q, want foo first", command, got)
+		}
+	}
+}

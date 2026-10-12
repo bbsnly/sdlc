@@ -122,10 +122,13 @@ A few rules follow from the table above:
 
 `doctor` checks that the first word of each part of a command is on your
 `PATH`. It splits the command at `&&`, `||`, `|`, `;` and command
-substitutions, looks past a `case` pattern to the program it runs, and skips
-shell builtins such as `test`. It does not run anything. The check is
-best-effort: a part that starts with `VAR=value` is skipped, so the program after
-it is not looked up.
+substitutions, leaves anything inside quotes alone (apart from a command
+substitution inside double quotes, which it still reads), looks past a `case`
+pattern to the program it runs, and skips shell builtins such as `test`. It
+does not run anything. The check is best-effort, and some programs are not
+looked up: one in a part that starts with `VAR=value`, one named through a
+variable or a substitution (`"$TOOL" build`), and one in a command whose quote
+is never closed, after that quote.
 
 `doctor` also asks the hook's classifier whether each command would be refused,
 and names the command by its key and the rule, without printing the command. A
