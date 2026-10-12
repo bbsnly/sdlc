@@ -67,12 +67,13 @@ security defect rather than a bug:
   in a project that takes part.
 
 What the commit gate checks is that its range holds exactly the commits it was
-told about, never that it holds every commit the story made. The known limits,
-so that a report can say which one it goes past:
+told about, except in the case the last limit below describes, never that it
+holds every commit the story made. The known limits, so that a report can say
+which one it goes past:
 
-- A commit the hook did not watch is missing from the range and leaves no sign;
-  and one made straight on a HEAD the hook wrote down joins it with no sign
-  either, when it is the last commit before the gate.
+- A commit the hook did not watch is missing from the range and leaves no sign,
+  except in the last limit below; and one made straight on a HEAD the hook wrote
+  down joins it with no sign either, when it is the last commit before the gate.
 - Some commands are written down though they commit nothing, because nothing in
   their words tells them from a commit: one git refuses, `git merge` of an
   ancestor, `git rebase` onto a branch it is already up to date with, `git am`
@@ -106,6 +107,19 @@ so that a report can say which one it goes past:
   no range.
 - Anyone who can write into the git directory can plant a HEAD, and what that
   buys is an unrelated commit already on trunk read as the story's.
+- A story in its own worktree that is put onto a later trunk commit than the one
+  it was cut from, by a person's rebase, by the one rebase the hook allows a
+  session or by the stop's own replay, has its range start at that trunk commit,
+  and the commits from there up to the first one the hook watched being made are
+  the story's with nothing naming them: the rebase made them again, on commits
+  that did not exist before. A person's commit made right on that trunk commit,
+  or on the rebased story before the session's next commit, is read as the
+  story's, and a story whose range was "no range recorded" because a person's
+  commit sat among its own can read as a clean range once it has been put onto a
+  later trunk commit. The change the reviewers saw and the warning of the loop's
+  own files do not depend on it: they cover everything from that trunk commit to
+  HEAD, and where trunk has been pointed at one of the story's own commits, that
+  commit and those before it are outside both.
 
 The deadline has a known limit of its own. The hook refuses only a call it has
 learnt it checks, so a hook that Claude Code kills before it has learnt whether

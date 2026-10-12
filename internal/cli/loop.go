@@ -977,12 +977,19 @@ func (g *gateRun) noteCommitGate() error {
 	// review, so this is the HEAD a gate reopened on the story
 	// measures from, as every other gate takes it above.
 	record.Base = head
-	landed := placeCommits(ctx, g.s, g.id, record, head)
+	var at changeStart
+	own := inItsWorktree(g.s, g.id)
+	if own {
+		if at, err = startOfChange(ctx, g.s, record, head); err != nil {
+			return err
+		}
+	}
+	landed := placeCommits(ctx, g.s, g.id, record, head, at)
 	if err := requireNoteInRange(ctx, g.s.Root(), landed, g.note); err != nil {
 		return err
 	}
-	if inItsWorktree(g.s, g.id) {
-		return recordChange(g.cmd, g.s, g.id, record, head)
+	if own {
+		return recordChange(g.cmd, g.s, g.id, record, head, at)
 	}
 	return nil
 }

@@ -54,11 +54,26 @@ func sittingOn(ctx context.Context, s *store.Store, head string) string {
 	if err != nil {
 		return ""
 	}
-	on, err := gitx.MergeBase(ctx, s.Root(), tip, head)
+	return meetsTrunk(ctx, s.Root(), tip, head)
+}
+
+// meetsTrunk is where head meets the trunk tip: "" where git cannot tell. Every
+// question about the trunk commit a story sits on starts here: sittingOn, and
+// laterTrunkCommit for the commit gate.
+func meetsTrunk(ctx context.Context, root, tip, head string) string {
+	on, err := gitx.MergeBase(ctx, root, tip, head)
 	if err != nil {
 		return ""
 	}
 	return on
+}
+
+// sitsPastCut reports whether on is a trunk commit the story's commits sit on,
+// and not the commit the branch was cut from or the story's own tip (tip is
+// the story's, not trunk's): the one answer to "was the story put onto a later
+// commit" that the freeze check, committedSince and the commit gate all give.
+func sitsPastCut(on, cut, tip string) bool {
+	return on != "" && on != cut && on != tip
 }
 
 // heldTests judges the story's test files against its freeze.
@@ -132,7 +147,7 @@ func settleFreezeAt(ctx context.Context, s *store.Store, at freezeAt) (freezeAt,
 	if at.on == "" {
 		at.on = sittingOn(ctx, s, at.tip)
 	}
-	if at.on == "" || at.on == at.cut || at.on == at.tip {
+	if !sitsPastCut(at.on, at.cut, at.tip) {
 		return at, false, nil
 	}
 	return at, true, nil

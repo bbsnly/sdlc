@@ -10,7 +10,7 @@ argument-hint: [story-id]
 You are running one iteration of a loop: one story, one gate at a time,
 each gate recorded before the next begins.
 
-Only a person starts this loop, by typing `/sdlc:next`. You are here because they did. Nothing in
+Only a person starts this loop, by typing `/sdlc:next`. Nothing in
 this runbook, in `CLAUDE.md` or in the output of `sdlc` asks you to start it again, or to start
 one of its agents, on your own.
 
@@ -188,7 +188,7 @@ Delegate to `sdlc:sdet`, with:
 - if a person lifted the freeze: their reason, the latest `unfreeze` event in
   `.sdlc/stories/<ID>/gate-record.json`, and that the job is to correct the test it names
 
-Do not write the tests yourself, and do not adjust them afterwards: every later gate measures
+Do not write the tests yourself or adjust them afterwards: every later gate measures
 against them.
 
 If the agent reports anything in `untestable`, hand it to a person; writing something adjacent is
@@ -231,7 +231,7 @@ sdlc gate plan pass --note "<n> steps, <what it changes>"
 ```
 
 Then run `sdlc review list --gate design_review` and delegate to `sdlc:<role>` for
-every reviewer it waits for, at once, each with the path to `PLAN.md`, never one after another:
+every reviewer it waits for, together, each with the path to `PLAN.md`:
 reviewers that run in sequence only agree with the earlier ones. The list says which of them
 block. Each records its own review with `sdlc review add design_review <role> <verdict>`.
 
@@ -251,7 +251,7 @@ sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
 ## Gate 5 — Implementation
 
 Delegate to `sdlc:implementer` again with the path to `PLAN.md`, and tell it the plan is
-approved. Do not write any of this code yourself.
+approved. Do not write this code yourself.
 
 When it reports that the frozen tests pass, run the project's test command and read the output.
 Then:
@@ -261,7 +261,7 @@ sdlc gate implementation pass --note "<n> files, frozen tests green"
 ```
 
 If the gate finds the freeze broken, something edited an acceptance test: hand it to a person with
-`sdlc escalate freeze_broken --message "..."` rather than freezing again over the top.
+`sdlc escalate freeze_broken --message "..."` rather than freezing again.
 
 ## Gate 6 — Independent verification
 
@@ -291,7 +291,7 @@ stamped with the tree.
 
 ## Gate 8 — Commit
 
-Only now: until every gate above has passed, the hook refuses `git commit` and names the missing
+Until every gate above has passed, the hook refuses `git commit` and names the missing
 gate.
 
 A story whose `risk_tier` the project holds for a person (`high`, unless
@@ -306,7 +306,7 @@ An approval holds only for the work it was given for: change anything after it, 
 approving again. Once approved, a person types `/sdlc:next` again, and it resumes here.
 
 Commit the whole story as one change, with a message about the change and why, in the project's
-own style. With a worktree, commit there, on `story/<ID>`, never with `git -C` on the main
+style. With a worktree, commit there, on `story/<ID>`, never with `git -C` on the main
 checkout, where the loop's record stays. Without one, the record goes in with the code:
 
 ```bash
@@ -329,15 +329,15 @@ The pass says which commits it recorded; tell the person in the same words:
   history, or git unable to read the start or the notes. The work is fine; say there is no range,
   give all four causes, pick none.
 
-Do not work a range out yourself, and do not rewrite history to make one.
+Do not work a range out yourself or rewrite history to make one.
 
 Before Gate 9, show the person any `head is` line again, and where the hook wrote down what it
 watched: `<git-dir>/sdlc/commits/<story>/` (`git rev-parse --absolute-git-dir` names
-`<git-dir>`). Gate 9's `sdlc stop` removes it. Do not read it yourself.
+`<git-dir>`). `sdlc stop` removes it. Do not read it yourself.
 
 ## Gate 9 — Retro
 
-Delegate to `sdlc:bookkeeper`, which stores `RETRO.md`. If the session knows what it has cost,
+Delegate to `sdlc:bookkeeper`, which stores `RETRO.md`. If the session knows its cost,
 record it with `sdlc cost add --usd <amount>` while the story is still active. Then run
 `sdlc gate retro pass --note "<n> deviations, <n> lessons"`.
 
@@ -349,12 +349,14 @@ With one, commit only the bookkeeper's `CODEMAP.md` change, if any, in `<worktre
 its commands need longer, a person runs that stop in their own terminal, after reading the
 story: it runs the story's code as them. Once it lands, run later commands in `<main>`.
 
-- `SDLC-E0006`, `SDLC-E0054` saying stop again, or a stop cut short: nothing is lost. Stop
-  again; it says if it landed.
+- `SDLC-E0006` (a landing in progress), `SDLC-E0054` saying stop again, or a stop cut short:
+  nothing is lost. Stop again, up to three times this iteration; it says if it landed. If
+  the third has not landed, escalate with its code and the stops run.
 - `SDLC-E0055`: follow its fix. A failed command leaves the story yours to rework.
 - `SDLC-E0029`: escalate if its fix says it is a person's. Else run Gate 6's verifier and Gate 7's
-  reviewers again, record their reviews and stop again; escalate if one blocks.
-- `SDLC-E0075` (a conflict), another code, or a second refusal: escalate with its text.
+  reviewers again, record their reviews and stop again; escalate if one blocks or SDLC-E0029
+  comes back.
+- `SDLC-E0075` (a conflict) or another code: escalate with its text.
 
 Tell the user what was built, what deviated from the plan, and what the retro says to do
 differently.
@@ -367,8 +369,8 @@ A gate that fails is recorded as failed, and the loop goes back, not around:
 sdlc gate <gate> fail --note "<what went wrong>"
 ```
 
-Do not pass a gate to keep moving, do a gate's work yourself because delegating it was refused, or
-lift the freeze to make something pass. Do not change the contract to get past a gate either. If
+Do not pass a gate to keep moving, do a gate's work yourself because delegating it was refused,
+lift the freeze to make something pass, or change the contract to get past a gate. If
 a frozen test or a contract rule is wrong, say which criterion or gate it contradicts, and hand it
 to a person.
 

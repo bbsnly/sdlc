@@ -36,7 +36,17 @@ type landing struct {
 // missing from either end of the range and leaves no sign, an observation
 // somebody forged is believed, and history rewritten under the loop can hand a
 // person's commit to the story. The docs say each of those in so many words.
-func placeCommits(ctx context.Context, s *store.Store, id string, record *model.Record, head string) landing {
+//
+// A story in its own worktree that sits on a later trunk commit than its cut
+// (at.later) starts at that commit, whether a person rebased it or the stop's
+// own replay put it there and then refused: what other stories landed in
+// between was counted as the story's, in the range and in the warning of the
+// loop's files. The commits the rebase made again are on heads the hook never
+// saw, so the run of them above that commit is the story's without an
+// observation (replayedRun). The decision is worked out again on every pass
+// from git, and is not read off the record, whose start is that commit from
+// the first pass on.
+func placeCommits(ctx context.Context, s *store.Store, id string, record *model.Record, head string, at changeStart) landing {
 	record.RangeUnknown, record.HeadPastCommit = false, ""
 	observed, err := s.ObservedCommits(ctx, id)
 	if record.CommitBase == "" || err == nil && len(observed) == 0 {
@@ -52,11 +62,16 @@ func placeCommits(ctx context.Context, s *store.Store, id string, record *model.
 			// commit at all beside the one the record names (AC-4).
 			return landing{held: []gitx.Commit{{Hash: head}}}
 		}
-		base, window, _ := windowOf(ctx, s.Root(), record.CommitBase, head)
+		start, _ := rangeStart(ctx, s.Root(), record.CommitBase, at)
+		base, window, _ := windowOf(ctx, s.Root(), start, head)
+		if start != record.CommitBase && base != "" {
+			record.CommitBase = base
+		}
 		return landing{base: base, held: window}
 	}
 	if err == nil {
-		if start, story, ok := watchedRange(ctx, s.Root(), record.CommitBase, head, observed); ok {
+		from, putOn := rangeStart(ctx, s.Root(), record.CommitBase, at)
+		if start, story, ok := watchedRange(ctx, s.Root(), from, head, observed, putOn); ok {
 			record.CommitBase, record.Commit = start, story[0].Hash
 			if record.Commit != head {
 				record.HeadPastCommit = head
@@ -69,6 +84,26 @@ func placeCommits(ctx context.Context, s *store.Store, id string, record *model.
 	// pass works out the story's commits from there.
 	record.Commit, record.RangeUnknown = "", true
 	return landing{}
+}
+
+// rangeStart is where the window of the story's commits begins, and whether
+// the commits above it were made again there: the story is on a trunk commit
+// later than its cut (at.later), and the base the record names is that commit
+// or one trunk holds before it. Asked on every pass, and not only the one that
+// moves the start: the base is that trunk commit from the first pass on, and a
+// pass that took it for a base of the story's own would drop the commits made
+// again, silently, where the pass before it named them.
+//
+// Only sealed calls decide it. The base is text in the record, so a base git
+// cannot read as a full hash leaves the start where it was.
+func rangeStart(ctx context.Context, root, commitBase string, at changeStart) (string, bool) {
+	if !at.later || commitBase == "" {
+		return commitBase, false
+	}
+	if held, err := gitx.IsAncestor(ctx, root, commitBase, at.base); err != nil || !held {
+		return commitBase, false
+	}
+	return at.base, true
 }
 
 // noSingleRange is what a record with no range says about it, wherever it is
@@ -93,7 +128,7 @@ func windowOf(ctx context.Context, root, commitBase, end string) (string, []gitx
 // loop watched the session land, and those commits, newest first; or not ok
 // where no pair does.
 func watchedRange(ctx context.Context, root, commitBase, head string,
-	observed []string) (start string, story []gitx.Commit, ok bool) {
+	observed []string, putOn bool) (start string, story []gitx.Commit, ok bool) {
 	_, window, ok := windowOf(ctx, root, commitBase, head)
 	if !ok {
 		return "", nil, false
@@ -113,8 +148,12 @@ func watchedRange(ctx context.Context, root, commitBase, head string,
 	for _, h := range observed {
 		watched[h] = true
 	}
+	var madeAgain map[string]bool
+	if putOn {
+		madeAgain = replayedRun(window, commitBase, watched)
+	}
 	for _, c := range window {
-		if watched[c.Parent] {
+		if watched[c.Parent] || madeAgain[c.Hash] {
 			story = append(story, c)
 		}
 	}
@@ -145,6 +184,30 @@ func watchedRange(ctx context.Context, root, commitBase, head string,
 		}
 	}
 	return start, story, true
+}
+
+// replayedRun is the commits above start that no observation could have named:
+// the ones made again when the story was put onto start, a run that follows
+// the first parents from start up to where the session's own watched commits
+// begin, or to the tip where it made none since.
+//
+// It makes no git call, and it walks a window read by the calls that honour
+// replacement objects, so what it returns is not evidence: it can move only
+// what the range records and prints. Of the readers of the recorded start only
+// committedSince decides anything (the paths that bring a reviewer back), and
+// for a story that sits past its cut it replaces the recorded start with
+// sittingOn's, which is sealed; the recorded one is used there only where
+// trunk cannot be read. The landing recomputes its own range.
+func replayedRun(window []gitx.Commit, start string, watched map[string]bool) map[string]bool {
+	children := map[string][]string{}
+	for _, c := range window {
+		children[c.Parent] = append(children[c.Parent], c.Hash)
+	}
+	run := map[string]bool{}
+	for cur := start; !watched[cur] && len(children[cur]) == 1; cur = children[cur][0] {
+		run[children[cur][0]] = true
+	}
+	return run
 }
 
 // hexRun is what might be a commit in a note: seven to forty hexadecimal

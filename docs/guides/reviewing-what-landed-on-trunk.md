@@ -161,7 +161,10 @@ Read the last commit of every range as one that may not be the story's.
 
 #### History rewritten under the loop
 
-It can hand a person's commit to the story. A rebase that replays the story's
+It can hand a person's commit to the story. A story in its own worktree that is
+put onto a later trunk commit, by a rebase or by the stop's own replay, is the
+exception: its range starts at the trunk commit it sits on, and the commits made
+again are taken as its own. Elsewhere, a rebase that replays the story's
 commit on top of one a person made on trunk leaves the person's commit in the
 range and the story's own rewritten commit out of it. The same follows from
 anybody rewriting trunk while a story is under way, such as a force-push, a
@@ -170,7 +173,10 @@ fires in that case, because HEAD is the rewritten commit and the range ends
 before it.
 
 Read a range whose story saw a rebase or a force-push against its commits by
-hand.
+hand. And read the first commits of a range that starts at the trunk commit a
+story sits on: nothing watched them, so a person's commit made right on that
+trunk commit, or on the rebased story before the session's next commit, reads as
+the story's.
 
 #### What the hook writes down is believed
 
@@ -200,8 +206,9 @@ switched off, or the story was already under way when the version that watches
 arrived — the range is the older, wider one: from HEAD when code review first
 passed to HEAD when the commit gate last passed, which can hold commits somebody
 else made in that window. A story reopened after it was committed spans
-everything that landed in between. A range is a list to read, not a list to
-revert, and the skill never reverts, resets or rewrites a commit.
+everything that landed in between, unless it was put onto a later trunk commit.
+A range is a list to read, not a list to revert, and the skill never reverts,
+resets or rewrites a commit.
 
 ### Stories worked in their own worktree
 

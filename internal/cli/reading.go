@@ -106,7 +106,7 @@ func (r *reading) committedSince(ctx context.Context, record *model.Record, head
 		// than the one HEAD was at then, and what trunk gained in between is
 		// not the story's.
 		if _, ok := r.s.StoryWorktreeOf(); ok && record.Cut != "" {
-			if on := sittingOn(ctx, r.s, head); on != "" && on != record.Cut && on != head {
+			if on := sittingOn(ctx, r.s, head); sitsPastCut(on, record.Cut, head) {
 				from = on
 			}
 		}

@@ -120,8 +120,9 @@ below it is.
   most often on a configured command that never ends, is a person's to end: Ctrl+C in its
   terminal, or end the process the message names; it gives the lock back as it goes. One killed
   outright leaves the lock, which breaks open once it is two minutes old with its holder gone, or
-  you can delete the directory the message names. An assistant runs `sdlc stop` once more and,
-  refused the same way again, hands the story to a person with `sdlc escalate`.
+  you can delete the directory the message names. An assistant runs `sdlc stop` again up to
+  three times and, where the third is refused too, hands the story to a person with
+  `sdlc escalate`.
 - **At landing**, another `sdlc stop` is landing the same story. A story is landed by one stop
   at a time, and the second is refused at once rather than waiting, since it would only check
   again what the first is changing. The message names the lock's path, quoted. Wait for that
@@ -1172,8 +1173,8 @@ message says which of these it met instead:
 - **Trunk moved while the landing ran**: a person committed to it, a command moved it, or a stop
   by an older `sdlc`, which does not wait its turn, landed another story. Run `sdlc stop` in the
   story's worktree again; it puts the story onto trunk as it is then and runs the configured
-  commands on that tree. Refused the same way a second time, an assistant hands the story to a
-  person.
+  commands on that tree. An assistant stops again up to three times and, where the third is refused
+  too, hands the story to a person with `sdlc escalate`.
 
 ### SDLC-E0055
 

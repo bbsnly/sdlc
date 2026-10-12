@@ -686,6 +686,13 @@ func TestAFinishedStoryInItsWorktreeIsSaidToWaitToLand(t *testing.T) {
 // from the commit gate. Only where a person's rebase took the cut out of HEAD
 // is it measured from trunk's merge base with HEAD. A single checkout records
 // none of it (AC-11).
+//
+// US-059 (AC-3, the person's first answer of 2026-10-12) changes the second
+// case: a story rebased onto a trunk that only moved on still holds the cut,
+// and trunk's commits lie between the cut and the story's own. Measured from
+// the cut, the change took those in, and the commit gate warned that the story
+// changes the loop's files where only trunk had. It is measured from the trunk
+// commit the story sits on, which leaves none of the story's commits out.
 func TestTheChangeIsRecordedAtTheCommitGateFromTheRightBase(t *testing.T) {
 	t.Parallel()
 	t.Run("D4 as cut", func(t *testing.T) {
@@ -706,12 +713,17 @@ func TestTheChangeIsRecordedAtTheCommitGateFromTheRightBase(t *testing.T) {
 		ldWork(t, wt)
 		swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
 		commitEverything(t, wt)
-		ldMoveTrunk(t, main)
+		moved := ldMoveTrunk(t, main)
 		ldRebase(t, wt)
 		ldReviewAgain(t, wt)
 		wtMust(t, wt, ldSession, "", "gate", "commit", "pass", "--note", "committed after a rebase")
-		if got := lxRecord(t, main)["change_base"]; got != cut {
-			t.Errorf("change_base is %v, want the cut HEAD still holds, %s", got, cut)
+		r := lxRecord(t, main)
+		if r["cut"] != cut {
+			t.Errorf("cut is %v, want the commit the branch was cut from, %s", r["cut"], cut)
+		}
+		if got := r["change_base"]; got != moved {
+			t.Errorf("change_base is %v, want the trunk commit the story sits on, %s, and not the cut HEAD still holds, %s",
+				got, moved, cut)
 		}
 	})
 	t.Run("D4 rebased where HEAD no longer holds the cut", func(t *testing.T) {

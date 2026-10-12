@@ -714,9 +714,11 @@ type Record struct {
 	// the story's commits until then, so it is trunk before any of them. Where
 	// the commit gate records a watched range, it moves CommitBase to that
 	// range's start, the parent of the oldest commit the loop watched, so after
-	// that pass it no longer says where code review started. Otherwise it stays
-	// through rework, and on a finished story reopened later, whose range then
-	// spans everything that landed on trunk in between. It is empty when that
+	// that pass it no longer says where code review started. A story in its own
+	// worktree that sits on a later trunk commit than its cut starts at that
+	// commit instead. Otherwise it stays through rework, and on a finished story
+	// reopened later, whose range then spans everything that landed on trunk in
+	// between. It is empty when that
 	// first pass had no commit to name, or was recorded by an sdlc that did not
 	// keep it. It is not Base, which follows HEAD once code review has passed.
 	CommitBase string `json:"commit_base,omitempty"`

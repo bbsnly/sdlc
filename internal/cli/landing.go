@@ -99,10 +99,13 @@ func waitingToLand(id, trunk string, running bool) *sdlcerr.Error {
 }
 
 // changeBase is where a story's change is measured from: the commit its branch
-// was cut from wherever head still holds it, so that none of the story's own
-// commits is ever outside the change, even where trunk came to hold some of
-// them first. Only where a person's rebase took the cut out of head is it
-// trunk's merge base with head.
+// was cut from wherever head still holds it, unless the story sits on a later
+// trunk commit, which head then holds with the cut behind it (laterTrunkCommit).
+// Anything reachable from that commit is reachable from trunk, so none of the
+// story's own commits is ever outside the change, even where trunk came to hold
+// some of them first; what is left out is what trunk holds, and the landing
+// leaves out the same. Only where a person's rebase took the cut out of head is
+// it trunk's merge base with head.
 func changeBase(ctx context.Context, root, cut, head, trunkTip string) (string, error) {
 	if cut != "" {
 		held, err := gitx.IsAncestor(ctx, root, cut, head)
@@ -110,6 +113,9 @@ func changeBase(ctx context.Context, root, cut, head, trunkTip string) (string, 
 			return "", err
 		}
 		if held {
+			if on := laterTrunkCommit(ctx, root, cut, head, trunkTip); on != "" {
+				return on, nil
+			}
 			return cut, nil
 		}
 	}
@@ -125,27 +131,62 @@ func changeBase(ctx context.Context, root, cut, head, trunkTip string) (string, 
 	return base, nil
 }
 
-// recordChange writes onto the record, at the commit gate's pass, the change
-// the reviewers saw and where it is measured from, for a story in its own
-// worktree: the landing lands that change, or one reviewed again. It says on
-// stderr what the landing will refuse in the range.
-func recordChange(cmd *cobra.Command, s *store.Store, id string, record *model.Record, head string) error {
-	ctx := cmd.Context()
+// laterTrunkCommit is the trunk commit head sits on where it is a later commit
+// than the cut, which head holds; "" otherwise, and wherever it cannot be told.
+// It asks of the commit gate what sittingOn asks of the freeze (meetsTrunk and
+// sitsPastCut) and one thing more, that the cut is an ancestor of it, so that a
+// trunk gone back behind the cut leaves the start where it was. Only sealed
+// calls answer it: ancestry a replacement object could forge would start the
+// change and the range too late, and hide commits of the story's own.
+func laterTrunkCommit(ctx context.Context, root, cut, head, trunkTip string) string {
+	on := meetsTrunk(ctx, root, trunkTip, head)
+	if !sitsPastCut(on, cut, head) {
+		return ""
+	}
+	if later, err := gitx.IsAncestor(ctx, root, cut, on); err != nil || !later {
+		return ""
+	}
+	return on
+}
+
+// changeStart is where the commit gate measures a story in its own worktree
+// from, with the main checkout's settings it was worked out under.
+type changeStart struct {
+	m    mainSettings
+	base string
+	// later is set where base is a trunk commit later than the cut, which head
+	// still holds.
+	later bool
+}
+
+// startOfChange works out changeStart.
+func startOfChange(ctx context.Context, s *store.Store, record *model.Record, head string) (changeStart, error) {
 	m, err := mainSettingsOf(s)
 	if err != nil {
-		return err
+		return changeStart{}, err
 	}
-	// Trunk is read only where the cut is not held, and its refusal is the
-	// one said where it is needed.
 	tip, tipErr := gitx.BranchTip(ctx, s.Root(), m.trunk)
 	base, err := changeBase(ctx, s.Root(), record.Cut, head, tip)
 	if err != nil {
 		if tipErr != nil {
-			return tipErr
+			return changeStart{}, tipErr
 		}
-		return err
+		return changeStart{}, err
 	}
+	at := changeStart{m: m, base: base}
 	if record.Cut != "" && base != record.Cut {
+		at.later, _ = gitx.IsAncestor(ctx, s.Root(), record.Cut, base)
+	}
+	return at, nil
+}
+
+// recordChange writes onto the record, at the commit gate's pass, the change
+// the reviewers saw and where it is measured from, for a story in its own
+// worktree: the landing lands that change, or one reviewed again. It says on
+// stderr what the landing will refuse in the range.
+func recordChange(cmd *cobra.Command, s *store.Store, id string, record *model.Record, head string, at changeStart) error {
+	ctx, m, base := cmd.Context(), at.m, at.base
+	if record.Cut != "" && base != record.Cut && !at.later {
 		fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: HEAD no longer holds %s, where %s was cut, so the change is "+
 			"measured from %s, where it meets %s; at the landing it counts as rebased.\n",
 			record.Cut[:12], store.StoryBranch(id), base[:12], m.trunk)
@@ -966,7 +1007,11 @@ func (l *lander) changeChecks(ctx context.Context, st *landState) error {
 		return err
 	}
 	st.change = change
-	st.rebased = st.from != st.base
+	reference, err := l.measuredFrom(ctx, st)
+	if err != nil {
+		return err
+	}
+	st.rebased = st.from != reference
 	// A tip the stop made itself was held, as it was made, to the change the
 	// check before it had just passed. Every other tip is held to the change
 	// the commit gate recorded.
@@ -980,6 +1025,28 @@ func (l *lander) changeChecks(ctx context.Context, st *landState) error {
 		return l.requireApprovalAgain(ctx, *st)
 	}
 	return nil
+}
+
+// measuredFrom is the commit the story counts as rebased from: the cut where the
+// commit gate stored a later trunk commit that has the cut as an ancestor, and
+// the stored base otherwise. Two writers set ChangeBase, the commit gate and
+// finish, and this cannot tell them apart. It need not: SetGate and Reopen clear
+// ChangeBase (Record.forgetCommit) whenever the commit gate stops standing
+// passed, and what finish stores belongs to a story that has landed, which no
+// stop reads again. Only a sealed call decides it.
+func (l *lander) measuredFrom(ctx context.Context, st *landState) (string, error) {
+	cut := st.record.Cut
+	if cut == "" || cut == st.base {
+		return st.base, nil
+	}
+	later, err := gitx.IsAncestor(ctx, l.s.Root(), cut, st.base)
+	if err != nil {
+		return "", err
+	}
+	if later {
+		return cut, nil
+	}
+	return st.base, nil
 }
 
 // requireReviewsAgain is L7 where the change is not the one reviewed: it has to
@@ -1151,8 +1218,8 @@ func reopenRoute(id string, g model.Gate) string {
 // next stop finds trunk where it is then.
 func (l *lander) stopAgainFix() string {
 	return `run "sdlc stop" in ` + shellPath(l.s.Root()) + ` again: it puts ` + store.StoryBranch(l.id) + ` onto ` +
-		l.m.trunk + ` as it is then and runs the configured commands on that tree; refused the same way again, hand ` +
-		`the story to a person with "sdlc escalate" and stop`
+		l.m.trunk + ` as it is then and runs the configured commands on that tree. An assistant stops there again up to ` +
+		`three times and, where the third is refused too, hands the story to a person with "sdlc escalate" and stops`
 }
 
 // rebaseFix is SDLC-E0054's fix against trunk at trunkTip, for a state the

@@ -292,8 +292,12 @@ then is it done and its worktree taken away
 ([`sdlc stop`](../commands.md#landing-a-story-from-its-worktree) shows the
 output, and [the loop](../the-loop.md#done-when-it-lands) what it checks).
 A refused landing leaves trunk where it was, and the story finished and waiting
-in its worktree; the refusal says what to do. To keep a finished story off trunk
-for now, escalate it, as [above](#stop-the-iteration).
+in its worktree; the refusal says what to do. Where it says to stop again, as it
+does when another story is still landing or trunk moved while the landing ran,
+and after a stop that was cut short, nothing is lost: stop again, up to three
+times, and if the third does not land either, hand the story to a person with
+`sdlc escalate`, naming the last code and how many stops you ran. To keep a
+finished story off trunk for now, escalate it, as [above](#stop-the-iteration).
 
 ## Getting out of a broken state
 

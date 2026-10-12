@@ -776,7 +776,8 @@ in `--json`.
 > whole window, which can hold anybody's commits.
 > [Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md#ranges-to-read-with-care)
 > says what to read with care. A story reopened after it was committed spans
-> everything that landed in between. It is a list to read, not a list to revert.
+> everything that landed in between, unless it was put onto a later trunk commit.
+> It is a list to read, not a list to revert.
 
 To go through the log with the assistant, run `/sdlc:trunk-review`: see
 [Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md).
@@ -1032,12 +1033,26 @@ names is the range the note is held to. The note needs no hash. The check is
 skipped when no range is recorded, so it is a consistency check between the
 note and the record, not evidence of which commits are the story's.
 
+A story in its own worktree that has been put onto a later trunk commit than the
+one it was cut from, by a rebase or by the stop's own replay, has its range start
+at the trunk commit it sits on, on every pass of the commit gate, so that what
+other stories landed in between is not counted as its commits. The same holds for
+a finished story started again in a new worktree and put onto a later trunk
+commit than its new cut: its commits from the earlier landing are trunk's by
+then. The commits the rebase or the replay made again were never watched,
+because the hook writes down the HEAD a commit is made on and these were made on
+commits that did not exist before: the commits from that trunk commit up to the
+first one the hook watched being made are taken as the story's without it. Where
+the trunk commit cannot be worked out, because trunk or the main checkout's
+configuration cannot be read, the range starts where it did before.
+
 The end is forgotten when the commit gate stops standing, and every pass records
 its answer over the last one's. A pass that records a watched range moves the
 start to that range's start as well, so `commit_base` is then no longer where
 code review began. When the hook watched nothing the start stays, even when a
 finished story is reopened later, so that story's range can also span
-everything that landed on trunk in between.
+everything that landed on trunk in between, unless it was put onto a later trunk
+commit, as above.
 
 ## `sdlc artifact list`
 

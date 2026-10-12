@@ -339,7 +339,8 @@ A hash the note names has to be inside the range
 ([`SDLC-E0049`](troubleshooting.md#sdlc-e0049)). The end goes when the commit
 gate stops standing, and the next pass records its answer again. The start
 stays: a finished story reopened later keeps it, so its range can also span
-everything that landed on trunk in between.
+everything that landed on trunk in between, unless the story was put onto a
+later trunk commit, where the range starts at that commit.
 
 **Refused without it:** a pass while anything is uncommitted, with a broken
 freeze, with code that has changed since the reviewers saw it, or, in a paused
@@ -628,6 +629,18 @@ not yet saying so. Nothing is lost in either case: stop again, and the stop
 says what it found ([`SDLC-E0055`](troubleshooting.md#sdlc-e0055)) or records
 the story as landed.
 
+A session stops again up to three times before it hands the story to a person
+with `sdlc escalate`, naming the last code and how many stops it ran, where the
+stop is refused because another story is still landing
+([`SDLC-E0006`](troubleshooting.md#sdlc-e0006)), because trunk moved while the
+landing ran and the refusal says to stop again
+([`SDLC-E0054`](troubleshooting.md#sdlc-e0054)), or where the stop was cut
+short. Reviews gone stale ([`SDLC-E0029`](troubleshooting.md#sdlc-e0029)) are
+run again, and a command that failed ([`SDLC-E0055`](troubleshooting.md#sdlc-e0055))
+is the story's to rework. A conflict
+([`SDLC-E0075`](troubleshooting.md#sdlc-e0075)) and any other code go to a
+person at once.
+
 ### Parallel stories and `CODEMAP.md`
 
 Both stories' bookkeepers usually edit the root `CODEMAP.md`, so the second
@@ -696,3 +709,12 @@ bare clone, or of one made with `git init --separate-git-dir`) is refused
 `sdlc` on your `PATH`, so every one of them runs the same release.
 [Enforcement](enforcement.md#a-repository-with-more-than-one-checkout) says how
 the hook holds a session to its own checkout.
+
+A story's commit gate and the stop that lands it have to be run by the same
+release. A commit gate from this release records a story rebased onto a later
+trunk commit as measured from that commit, which a stop from an earlier release
+reads as a story that was never rebased: it lands it without running the
+configured commands on the tree that lands. `sdlc version` names the release a
+command runs. Where two releases meet on one story, as when `sdlc` is updated
+between the commit gate and the stop, or two machines share the repository, run
+the commit gate again with the release that will stop the story.

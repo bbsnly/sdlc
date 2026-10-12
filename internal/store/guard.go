@@ -174,8 +174,8 @@ func (s *Store) LockLandings(id string, wait time.Duration) (*Guard, error) {
 			WithFix("nothing has changed, so run \"sdlc stop\" again once that landing has finished. Where it is hung, " +
 				"a person ends it -- Ctrl+C in its terminal, or by ending the process named above -- and it gives the " +
 				"lock back as it goes; one killed outright leaves the lock, which breaks open once it is " +
-				strconv.Itoa(int(guardStale/time.Minute)) + " minutes" + " old with its holder gone. An assistant runs \"sdlc stop\" once more and, " +
-				"refused again, hands the story to a person with \"sdlc escalate\" and stops").
+				strconv.Itoa(int(guardStale/time.Minute)) + " minutes" + " old with its holder gone. An assistant runs \"sdlc stop\" again up to three times and, " +
+				"where the third is refused too, hands the story to a person with \"sdlc escalate\" and stops").
 			WithCause(ErrLandingHeld)
 	})
 }

@@ -250,9 +250,11 @@ land one at a time, and each of the others is put onto the new trunk by its own
 `sdlc stop` and has its commands run once before it lands. A stop waits eight
 minutes for the landing in front of it, and that wait and its own commands have
 to fit in the 600 seconds a session's stop has. A session refused with
-[SDLC-E0006](troubleshooting.md#sdlc-e0006) stops once more, and refused again
-hands its story to a person, so commands that take longer than a few minutes
-send the waiting stories to a person; one more reason to keep them fast.
+[SDLC-E0006](troubleshooting.md#sdlc-e0006) stops again up to three times, and
+where the third is refused too hands its story to a person: four stops of up to
+eight minutes each, so landings that keep a story waiting for about half an hour
+send it to a person, and commands that take longer than a few minutes make that
+likely; one more reason to keep them fast.
 
 ## `thresholds`
 
