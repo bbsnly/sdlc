@@ -240,8 +240,9 @@ still refusing a write to a test file, and the pages a person reads.
 Package `cli`. `commandChecks(root, cfg)` reads every non-empty command in
 `commands` twice and runs none. `programsIn` is the best-effort PATH reader: the
 first word of each part, skipping builtins (`trap` among them) and any part that
-starts with `VAR=value`, which hides the program after it (US-003). The command is split only outside quotes, by `splitCommand` in `internal/cli/doctor.go`. Then each
-command goes through `shellpolicy.Inspect` with `State{Backlog}` only, and a
+starts with `VAR=value`, which hides the program after it (US-003). The command
+is split only outside quotes, by `splitCommand` in `internal/cli/doctor.go`.
+Then each command goes through `shellpolicy.Inspect` with `State{Backlog}` only, and a
 refusal is a `commands and hook` problem naming the key and `Finding.Rule`, never
 the command or the reason. That state leaves out the agent's role, the directory,
 the freeze, `Resolve`, `Shared`, `Checkouts` and `CommitReady`, so a rule that
@@ -488,7 +489,7 @@ beginning `refus`.
 
 ## Taskfile.yml's `check` legs: what each reads, and whether `.gitignore` applies
 
-`check` runs seventeen tasks in sequence. What a leg reads decides whether it can
+`check` runs eighteen tasks in sequence, `hook-time` last. What a leg reads decides whether it can
 fail on a file a clean clone would not have, so each is listed by how it finds
 its files.
 
@@ -728,6 +729,34 @@ person to delete. The place and the marker guard against a
 slip; the temp directory is the caller's variable and anyone can write the
 marker. Imports `config`. No `SDLC-E` code: `internal/tools/` is outside the
 packages the linter holds to `sdlcerr`.
+
+## internal/tools/hooktime
+
+Package `main`, run by `./task hook-time` through `GOFLAGS= go run`; `check`
+runs that task as its last leg, so a failure it gives on a busy machine hides no
+other leg. Like `sandbox`, goreleaser does not build it and nothing
+`cmd/sdlc` links imports it. It times `shellpolicy.Inspect` in process on three
+commands of at most 8,192 bytes (`shapes`): a `perl` call with one long
+single-dash word, a here-string, and a removal through a deep dot-glob. `state`
+copies the `shellpolicy.State` wiring that `internal/hook` builds for a session
+holding a story with frozen tests, over an empty temporary directory the
+program makes; the copy can drift from the hook's, and three comments in
+`internal/hook/hook.go` point at it. `timeShapes` takes the three in turn for
+five rounds and keeps each shape's fastest run. `readBudgets` refuses a missing
+or unparseable `-perl`, `-here-string` or `-dot-glob` before the directory is
+made. The leg fails when a fastest run is over its budget, and when a shape's
+answer (`answer`) differs from the one expected. Its tests sit beside it and in
+`test/checklegs`. Imports `config`, `pathrules`, `shellpolicy` and `testset`.
+No `SDLC-E` code.
+
+## Taskfile.yml `hook-time`
+
+The three budgets are `HOOK_PERL_BUDGET_MS` (3000), `HOOK_HERESTRING_BUDGET_MS`
+(1000) and `HOOK_DOTGLOB_BUDGET_MS` (1000) in `vars`, passed as flags to the
+program. `CONTRIBUTING.md` says how to tell a busy machine from a slower
+classifier, and that a person raises a figure only after two failures on a quiet
+one. `init-time` is the other timing leg; it measures package init through the
+shell, and this one cannot see init.
 
 ## Taskfile.yml `sandbox` and `sandbox-remove`
 
