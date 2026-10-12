@@ -378,18 +378,66 @@ func addDecodedReadings(out []pair, shell string) []pair {
 // exceptions are only wrong because of who is asking: the implementer creating
 // a test file, as the file-writing rules have it, and a review recorded by
 // anyone but the reviewer it names.
+//
+// A path that is only named is not refused: the quoted text of an sdlc flag
+// that takes text, the path a git pathspec leaves out, and a command that only
+// asks sdlc for help. nameOnly says where it is sure of one, and the command is
+// let through when the rules allow it read with those taken out. Every refusal
+// is the one the rules give the command as it was written, so a command that
+// stays refused is refused under the rule that always named it, and a command
+// the rules allow as written is never refused here: the reading with the
+// mentions taken out can only let a command through.
 func Inspect(command string, s State) (Finding, bool) {
+	n := nameOnly(command, s)
+	if n.rewritten(command) {
+		if _, refused := inspectAs(n.asked, n.named, s); !refused {
+			return Finding{}, false
+		}
+	}
+	f, refused := inspectAs(command, command, s)
+	if !refused {
+		return Finding{}, false
+	}
+	return n.told(f, command, s), true
+}
+
+// inspectAs applies the rules to a command. The rules for what a command runs
+// read asked and the rules for the paths it names read named: they are the
+// same line except where nameOnly took a mention out, and the text of an sdlc
+// flag is taken out of named alone, so a decision written inside a note is
+// still read as it always was.
+func inspectAs(asked, named string, s State) (Finding, bool) {
 	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}, landed: map[string][]Landing{},
 		disk: &diskAnswers{}}
 	s.hold = &branchHold{}
-	for _, r := range readings(command, s.PowerShell) {
+	var f Finding
+	var ok bool
+	if asked == named {
+		f, ok = inspectEach(asked, s, m, inspectReading)
+	} else if f, ok = inspectEach(asked, s, m, inspectPrograms); !ok {
+		f, ok = inspectEach(named, s, m, inspectPaths)
+	}
+	if ok {
+		return f, true
+	}
+	// The branch rule answers last, where nothing else refused the command.
+	if s.hold.found {
+		return s.hold.finding, true
+	}
+	return Finding{}, false
+}
+
+// inspectEach puts every reading of a line to one set of rules, in the order
+// readings gives them.
+func inspectEach(line string, s State, m *memo, rules func(pair, State, *memo) (Finding, bool)) (Finding, bool) {
+	for _, r := range readings(line, s.PowerShell) {
 		// With a branch move found, a reading is started only within the
 		// bound, and its text is charged to it before it is parsed.
 		if s.hold.charge(len(r.text)) {
 			return s.hold.finding, true
 		}
 		s.undecoded = r.undecoded
-		if f, ok := inspectReading(r, s, m); ok {
+		if f, ok := rules(r, s, m); ok {
 			return f, true
 		}
 		// What Resolve said of a word, and the folded freeze, are functions of
@@ -402,21 +450,27 @@ func Inspect(command string, s State) (Finding, bool) {
 		// guarantee above.
 		m = &memo{checked: map[string]bool{}, resolved: m.resolved, landed: m.landed, folded: m.folded, disk: m.disk}
 	}
-	// The branch rule answers last, where nothing else refused the command.
-	if s.hold.found {
-		return s.hold.finding, true
-	}
 	return Finding{}, false
 }
 
 func inspectReading(r pair, s State, m *memo) (Finding, bool) {
+	if f, ok := inspectPrograms(r, s, m); ok {
+		return f, true
+	}
+	return inspectPaths(r, s, m)
+}
+
+// inspectPrograms applies the rules for what a reading runs.
+func inspectPrograms(r pair, s State, _ *memo) (Finding, bool) {
+	if f, ok := checkAssignedEnforcement(r.text); ok {
+		return f, true
+	}
+	return checkPrograms(r.text, s)
+}
+
+// inspectPaths applies the rules for the paths a reading names.
+func inspectPaths(r pair, s State, m *memo) (Finding, bool) {
 	text, command := r.text, r.command
-	if f, ok := checkAssignedEnforcement(text); ok {
-		return f, true
-	}
-	if f, ok := checkPrograms(text, s); ok {
-		return f, true
-	}
 	w := &pathWalk{command: command, text: text, s: s, m: m, dir: s.Dir, lost: false}
 	w.unsure = movesInAScript(text, s.PowerShell)
 	w.old = unknownDir
@@ -752,7 +806,7 @@ func (w *programWalk) run(r ran) (Finding, bool) {
 	if len(words) == 0 {
 		return Finding{}, false
 	}
-	if f, ok := checkSdlcCommands(words, r.piped, w.s); ok {
+	if f, ok := checkSdlcCommands(words, r.piped, r.substituted, w.s); ok {
 		return f, true
 	}
 	// Asked before the commit gate and answered after it, so that a commit
@@ -793,9 +847,10 @@ func (w *programWalk) place(group int) (dir string, unplaced bool) {
 }
 
 // checkSdlcCommands applies the rules for what a command hands sdlc, each
-// under its own name and in this order.
-func checkSdlcCommands(words []string, piped bool, s State) (Finding, bool) {
-	if f, ok := checkAssign(words, piped); ok {
+// under its own name and in this order. cut is set for a command a word of
+// which held a substitution, where a help flag is not believed.
+func checkSdlcCommands(words []string, piped, cut bool, s State) (Finding, bool) {
+	if f, ok := checkAssign(words, piped, cut); ok {
 		return f, true
 	}
 	if f, ok := checkRecorder(words, s); ok {
@@ -826,9 +881,29 @@ func checkSdlcCommands(words []string, piped bool, s State) (Finding, bool) {
 	// not the project manager's are refused under their own names; and the
 	// subcommand that cannot be read last, so that one from the project
 	// manager is refused as everything else it may not run is.
-	if f, ok := checkManager(words, s); ok {
-		return f, true
+	return checkManagerAndLast(words, piped, cut, s)
+}
+
+// checkManagerAndLast applies the project manager's rule and the two after
+// it.
+func checkManagerAndLast(words []string, piped, cut bool, s State) (Finding, bool) {
+	f, ok := checkManager(words, s, func(args []string) bool { return !cut && asksForHelp(args) })
+	if !ok {
+		return checkLast(words, piped)
 	}
+	// A command with a help flag that sdlc would not read as help alone was
+	// let past this rule before, and some were then refused by one after it.
+	// Those keep the name they were refused under.
+	if _, before := checkManager(words, s, namesHelp); !before {
+		if later, ok := checkLast(words, piped); ok {
+			return later, true
+		}
+	}
+	return f, true
+}
+
+// checkLast applies the two rules that come after the project manager's.
+func checkLast(words []string, piped bool) (Finding, bool) {
 	if f, ok := checkUnread(words, piped); ok {
 		return f, true
 	}
@@ -938,7 +1013,21 @@ func mayName(text, name string) bool {
 // because it could be anywhere. A decision on a story that is let through does
 // not end the reading: `sdlc approve A-1; sdlc ack --through HEAD` is still an
 // acknowledgement.
+//
+// A command that only asks sdlc for help decides nothing, and is not reported:
+// the command is read with each of those taken out, as Inspect reads it, and
+// what is reported is what the command as written is reported for.
 func HumanDecisions(command string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
+	n := nameOnly(command, State{PowerShell: powerShell})
+	if n.asked != command {
+		if _, reported := humanDecisionsAs(n.asked, powerShell, storyWaits); !reported {
+			return Finding{}, false
+		}
+	}
+	return humanDecisionsAs(command, powerShell, storyWaits)
+}
+
+func humanDecisionsAs(command string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
 	// Both readings, as Inspect asks them and in the same order. This is the
 	// entry point the hook uses when no story is being worked on (hook.go:229),
 	// so it is where an approval, an unfreeze or an ack is reported at all: a
@@ -1002,7 +1091,7 @@ func humanDecisionBy(r ran, here decisionPlace, storyWaits func(dir string) bool
 	// An assignment is refused whatever the project holds, as an
 	// acknowledgement is: a person can assign to a story at any point after
 	// it is started, so whether one waits is never asked.
-	if f, ok := checkAssign(r.words, r.piped); ok {
+	if f, ok := checkAssign(r.words, r.piped, r.substituted); ok {
 		return f, true
 	}
 	if f, ok := checkAck(r.words); ok {
@@ -1298,7 +1387,8 @@ func runsSubcommand(words []string, sub string) bool {
 func staffingValueFlag(word string) bool { return word == "--model" || word == "--effort" }
 
 // ValueFlags are the flags of sdlc that take the next word as their value. The
-// command's own tests hold this to the flags it has.
+// command's own tests hold this to the flags it has. The help reader and
+// named.go go by it too, to tell a flag's value from a flag.
 var ValueFlags = map[string]bool{
 	"--file": true, "--gate": true, "--message": true, "--note": true,
 	"--reason": true, "--reject": true, "--since": true, "--story": true, "--through": true,
@@ -1992,7 +2082,14 @@ func runsAWriter(args []string) bool {
 	return false
 }
 
-// readers are the programs find runs that only read what they are given.
+// readers are the programs that only read what they are given. Two rules go
+// by it: what find may run on the files it finds, and, in named.go, what the
+// output of a command may be piped to while a path in its text is still only
+// named. A program added for the first is trusted by the second, so one goes
+// in only if it cannot run what arrives on its standard input, whatever its
+// options. ripgrep's `--pre` runs a program on a file named as an argument
+// and not on what is piped in (seen with ripgrep 14.1.1), and a file named
+// there is read by the rules as it always was.
 var readers = map[string]bool{
 	"cat": true, "head": true, "tail": true, "wc": true, "grep": true, "rg": true,
 	"ls": true, "stat": true, "file": true, "du": true, "cksum": true,

@@ -318,8 +318,19 @@ var Rules = []Rule{
 		ID: "orchestrator-delegates",
 		// Not `sdlc stop`: ending the iteration turns every rule off, and
 		// naming it here was the way round them all.
-		Route: "delegate the work to the agent whose gate it is; if none of them " +
-			"fits, say what the work is and stop",
+		//
+		// A file that is not the story's work, a commit message or a note
+		// for the person, is no agent's gate. Told only to delegate, the
+		// conversation wrote it through the shell, which writes code as
+		// readily; so the route names the one place such a file was always
+		// allowed. Route is what is said where no story is named.
+		Route: delegatesRoute(storiesDir + "/<ID>"),
+		routeFor: func(r Request) string {
+			if strings.TrimSpace(r.Story) == "" {
+				return ""
+			}
+			return delegatesRoute(storyDir(r.Story))
+		},
 		check: func(r Request) string {
 			// An agent that is not one of the loop's own is the main conversation
 			// by other means. Keyed on the empty name alone, this rule sent the
@@ -436,6 +447,19 @@ func inReviews(path string) bool {
 }
 
 const storiesDir = ".sdlc/stories"
+
+// delegatesRoute is the route of orchestrator-delegates, with the story's
+// directory as it is written from the checkout the session works in. Written
+// from there it is the worktree's copy for a story that has one, which is the
+// only copy a session in the worktree may write.
+func delegatesRoute(dir string) string {
+	return "delegate the story's work to the agent whose gate it is. A file that is not the story's work, " +
+		"such as a note for the person or a commit message, goes under " + dir + "/ in the checkout this " +
+		"session works in (the story's worktree where it has one, not the main checkout), where the file " +
+		"tools may write it. Keep it out of the commit and remove it before the commit gate is recorded: " +
+		"where the project does not ignore that directory, a file left there is committed with the story. " +
+		"If neither fits, say what the work is and stop"
+}
 
 func storyDir(story string) string {
 	if story == "" {

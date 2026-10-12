@@ -932,3 +932,108 @@ be read. `sdlcUses` finds each use of `sdlc` among a command's words.
 `plugin/agents/project-manager.md` is the twelfth agent. It is not a reviewer
 and not a loop role to the file rules. `parallel.Allowlist` names `set`,
 `amend` and `show` one by one, never `sdlc staffing` as a whole.
+
+## internal/shellpolicy: two ways one command is read
+
+`Inspect` reads a command twice, with different rules about quotes.
+
+- The program rules (`checkPrograms`, and `HumanDecisions` through
+  `humanDecisionBy`) take their commands from `programsAt` in `commands.go`,
+  whose lexer follows quotes: a `;` or a subcommand's name inside a quoted
+  word is text.
+- The path rules (`pathWalk.segment`, then `checkLoopState`,
+  `checkFrozenTests` and `checkTakesACheckout`) do not follow quotes.
+  `splitSegments` cuts at `;`, `|`, `&`, `&&`, `||` and a newline wherever
+  they stand, `spacedFields` makes every `>` a redirect, and `gluedIn` takes
+  any backtick pair or `$( )` as a substitution. `escapedSeparators` covers
+  only a separator quoted or escaped on its own, as find's are.
+
+Three callers hand a rule every path-shaped word of the whole line
+(`memo.words`, from `wordsIn`) and not only a command's own arguments: an
+interpreter given inline code (`runsInlineCode`), a writer fed by `xargs` or
+GNU `parallel` (`addWritten`, `addFrozenWritten`), and, for the freeze alone,
+`awk`, `gawk` and `sed` (`addProgramWords`). `wordsIn` keeps letters, digits,
+`./_-` and anything beyond ASCII, so `':(exclude).sdlc'` is the word `.sdlc`.
+
+`HumanDecisions` never asks a path rule, and of the program rules it asks
+only `checkAssign`, `checkAck`, `checkRelease`, `checkParallel`,
+`checkUnfreeze`, `checkApprove` and `checkUnread`.
+
+`asksForHelp` in `staffing.go` decides whether an `sdlc` command asks for
+help (`gitcalls.go` reads git's). It reads the words as the flag parser does:
+the last help flag counts, `--help=false` is not help, and a word the shell
+fills in is not known. `checkAssign`, `managerMay` and `helpOnly` in `named.go`
+call it; the first two do not believe it for a command a word of which held a
+substitution (`ran.substituted`). `namesHelp` beside it is the reading
+`asksForHelp` replaced, any `--help` or `-h` among the words. It allows
+nothing: `checkManagerAndLast` asks it one question, whether a command the
+project manager is refused was let past before, so that the refusal keeps the
+rule name it had. The rules for `approve`, `unfreeze`, `ack`,
+`release`, `parallel` and `stop` do not call it, and go by `subcommand` in
+`commands.go` alone: help for those is let through by `named.go`.
+
+Apart from test files, no rule in `policy.Rules` asks what kind of file is written:
+`orchestrator-delegates`, the last of them, turns only on the agent
+(`IsLoopRole`) and on whether the path is under `.sdlc` or is `CODEMAP.md`.
+Its route is `delegatesRoute`, which names the story's directory as written
+from the checkout the session works in; `Route` is that sentence with no story
+named.
+The only `shellpolicy` rule that asks who writes a file is the implementer's,
+for a test file (`State.ImplementerTest`).
+
+The tables of commands in `internal/shellpolicy/*_test.go` are the only
+evasion shapes the repository keeps; no test compares the classifier with
+an earlier release of itself.
+
+## internal/shellpolicy/named.go
+
+Package `shellpolicy`. Says where a command only names a path, so that the
+quote-blind path rules do not refuse it. Standard library only.
+
+- `scanLine` is a third reader of shell text, beside the lexer and the
+  quote-blind fields. It keeps where each piece of a word sits in the line. It
+  follows words, both kinds of quote, the operators between commands and
+  redirects, and gives up at anything else, with the reason.
+- `nameOnly` returns three lines. `asked` has each command that only asks for
+  help swapped for `sdlc help`. `named` also has each sure mention taken out:
+  the one quoted string a flag in `TextFlags` is given, swapped for its own
+  path-shaped words (`wordsOnly`), and the path of a pathspec that leaves it
+  out (`excludeAt`), swapped for `=`. `lenient` has every mention, sure or
+  not, swapped for `=` whole (`takenOut`); nothing is allowed by it, and it is
+  read only to ask whether a refusal is for a mention.
+- `Inspect` allows a command when the rules allow `asked` (program rules) and
+  `named` (path rules). Every refusal it returns is the one `inspectAs` gives
+  the command as written. `HumanDecisions` does the same with `asked`.
+- `told` adds "the hook cannot tell" to a refusal under a path rule: where
+  `lenient` would be allowed, or where the scanner gave up and
+  `candidateHeld` finds a text flag or an exclude on the line.
+
+Lists it goes by, each a security decision to widen:
+
+- `TextFlags`, a subset of `ValueFlags`; no test holds it to the command tree.
+- `readers` in `shellpolicy.go`, shared with the find rules: what a command's
+  output may be piped to (`onlyReaders`, at most `maxReaders`).
+- `gitReads`: the git commands under which a pathspec that leaves a path out
+  is a mention, asked of every git command (`gitDoubt`). Each takes what
+  follows `--` as pathspecs, only reads, and does not print the words it was
+  handed. Under any other, and with `--no-index` or a `..` in the path
+  (`oddPath`), the word is read as written.
+- The scanner's PowerShell give-ups: a backtick, a character outside ASCII,
+  a doubled quote (two quoted pieces side by side), and `%`, `@` or `,` outside
+  quotes. None was checked against a running PowerShell. A lone `&` before
+  the bare word `sdlc` or `git` is followed, as the call operator.
+- `shellWords` and `runsHere`: with one on the line, nothing is sure
+  (`rereadsText`, which also says which of the two it found).
+- `carries`: a later command that could be given the words of an earlier one,
+  because it has a word the shell fills in (`filledIn`, by `writtenOut`) or
+  runs a program written on the line (`runsCode`, by `runsInlineCode` and
+  `runsAProgramOfItsOwn`, the two the path rules read the whole line for).
+  A text flag and a request for help are sure with none after them; an
+  exclude with none outside git's own pipeline.
+- `writtenOut` and `ValueFlags`, through the help reader.
+
+A text read as a mention is swapped for its own path-shaped words
+(`wordsOnly`, by `wordsIn`), so a rule that reads `memo.words` of the whole
+line still finds them.
+
+Past `maxSwaps` mentions on a line, the line is read as written.

@@ -176,6 +176,18 @@ refusals of `sdlc ack`, `sdlc release`, `sdlc parallel`,
 when an assistant runs that command itself. A command nested too deep to read
 is refused in any of those projects, whatever else it does.
 
+Asking one of these commands for its help decides nothing and is not refused:
+`sdlc approve --help`, on a line of its own or after a `cd`, alone or piped to
+`head`, `tail`, `cat` or `grep`. The flags are read as `sdlc` reads them, so
+the last of several help flags counts, `--help=false` is not help, and neither
+is `--help` after `--` or as the value of another flag. Any other form is
+refused as the command would be: after another command, with a trailing
+comment, with a file redirect, piped to a pager or any other program, in the
+background, through `env` or another program, or with a variable or a
+substitution among its words, since the hook cannot be sure the command would
+not run. `sdlc help approve` prints the same help and is not refused in any of
+those forms, since it names no command that decides anything.
+
 ### When the hook fails open
 
 The hook also **fails open**: an unreadable payload, a missing configuration, a path it cannot
@@ -461,9 +473,26 @@ to prevent, and it is reached without breaking a single stated rule unless
 something refuses it. Handing the work to a subagent the loop does not know is
 the same failure one step removed.
 
-*Instead:* delegate to the agent whose gate it is. If none of them fits, say what
-the work is and stop: ending the iteration to do the work outside the loop is
-the person's decision.
+*Instead:* delegate the story's work to the agent whose gate it is. A file that
+is not the story's work, such as a note for the person or a commit message,
+goes under the story's own directory, `.sdlc/stories/<ID>/`, where the file tools
+may write it; the loop's own records there are still written only by `sdlc`.
+If neither fits, say what the work is and stop: ending the iteration to do the
+work outside the loop is the person's decision.
+
+The directory is the one in the checkout the session works in. A story with a
+worktree has two: the one in the main checkout holds the gate documents, and a
+session in the worktree may not write there
+([`write-outside-repository`](#write-outside-repository)); the one in the
+worktree is the one the route means.
+
+Keep such a file out of the commit and remove it before the commit gate is
+recorded. `sdlc init` does not ignore `.sdlc/stories/`, so in a project that has
+not chosen to, a file left there is committed with the story, and one left
+uncommitted counts as uncommitted work at the commit gate
+([SDLC-E0032](troubleshooting.md#sdlc-e0032)). A commit message is read by the
+commit itself: leave it out of what is staged, commit with it, and remove it
+before the gate is recorded.
 
 ## Rules on shell commands
 
@@ -563,6 +592,92 @@ escapes decoded, a backslash before an ordinary character dropped, so
 `g\it com\mit` and `git $'commit'` are `git commit`, and an escaped quote, as
 in `'it'\''s'`, a quote inside the word rather than the start of a string.
 
+#### A path that is only named
+
+The rules that protect a path look for it as a word of the command, in quotes
+or out of them, so that a path hidden in a string is still found. Three things
+are read as naming a path and not acting on it, each only where the hook is
+sure of it:
+
+- **The text of an sdlc flag.** The value of `--message`, `--note`, `--reason`
+  or `--reject`, when all of this holds: `sdlc` is run as `sdlc`, as a command
+  of its own; nothing but `cd` and `sdlc` runs before it on the line; the flag
+  is written in full, before any `--`; the text is one pair of quotes straight
+  after it, with no variable, substitution or backslash inside; and what the
+  command prints stays on the terminal or is piped only to programs that only
+  read (`cat`, `head`, `tail`, `grep`, `rg`, `wc`, `ls`, `stat`, `file`, `du`,
+  `diff`, `cmp`, `basename`, `dirname`, `realpath`, `cksum`, `md5sum`,
+  `sha1sum`, `sha256sum` and `shasum`), up to eight of them, none writing to a
+  file. `sdlc`
+  prints the text it is given, and nothing tells a program that prints what it
+  reads from one that runs it, so a text piped to anything else, `jq`, `tee`,
+  `awk` and `python3` included, is not read this way.
+- **A path a git pathspec leaves out.** The path in `':(exclude)PATH'`,
+  `':!PATH'` or `':^PATH'`, with `top`, `icase` or `glob` beside `exclude` if
+  they are there, when all of this holds: `git` is run as `git` with its
+  subcommand as the next word; the subcommand is `diff`, `log`, `show`,
+  `status`, `ls-files`, `grep`, `diff-tree`, `diff-index` or `diff-files`,
+  without `--no-index`; nothing but `cd` and `sdlc` runs before it; the
+  pathspec comes after `--`; the path is made of letters, digits and
+  `._/*?-` and holds no `..`; and `GIT_LITERAL_PATHSPECS` is not set for the
+  session. Those nine are the git commands the hook knows to take what
+  follows `--` as pathspecs, to do nothing with them but read, and to print
+  what they find and not the words they were given. Piped to a program that
+  is not one of the readers above, the pipe must be a plain `|` with no
+  redirect, so that an error that quotes the pathspec does not reach that
+  program. Under every other git command the word is read as it always was:
+  `git mv` and `git rm` take it as a file's name, and
+  `git mv -f -- other ':!a/../PATH'` moves `other` over `PATH`.
+- **A request for help.** `sdlc <command> --help` or `-h`, read as `sdlc`
+  itself reads it, when `sdlc` would print help and do nothing else; see
+  [a person's decisions](#a-persons-decisions-refused-in-every-session).
+
+No mention is read on a line that also hands text to something that runs it
+(a shell, `eval`, `xargs`, `source`), or that holds a loop, a condition or a
+program named by a variable. Nor on a line written with a backslash, `$'…'`, a
+comment, a here-document, a brace or a parenthesis outside quotes: the hook
+reads those lines as it always did. So it does in PowerShell a line that holds
+a backtick, a character outside ASCII, a doubled quote inside a string, or a
+`%`, `@` or `,` outside quotes, which covers the stop-parsing token `--%`,
+after which PowerShell no longer reads a quote as a quote. What PowerShell
+makes of a line was taken from its documentation and not checked against a
+running PowerShell.
+
+Nor is one read where a later command on the line could be given it. The text
+stays on the line, and a shell hands the words of one command to the next: in
+`sdlc escalate x --message 'rm PATH'; perl -e 'system(@ARGV)' "$_"` the `$_`
+is that text. So a mention is read only when no command after it has a word
+the shell fills in when the command runs (a variable, a history word such as
+`!$`, a pattern, `~`), none runs an earlier line again (`fc`, `history`), and
+none runs a program written on the line (`python3 -c`, `perl -e`, `node -e`,
+`awk`, `sed` and their like). For a pathspec, the programs git's own listing
+is piped to may run a program of their own, since reading the listing is what
+the pathspec is for; they may not hold a word the shell fills in, and no other
+command on the line may do either. The words of a text that is read as a
+mention stay where a rule that reads the whole line finds them; what goes is
+only the `;`, `>` and `|` inside the quotes, which the shell never saw.
+
+Reading a path as only named can let a command through and never refuses one.
+A command that is still refused is refused under the rule that always named
+it. Where the refusal is for a path, and the path may only have been named in
+one of the ways above, the reason ends by saying that the hook cannot tell
+whether the command acts on it or only names it, and why: for example
+
+```text
+... is the loop's own record, and a shell command is the one way around every
+rule that protects it; the hook cannot tell whether the command acts on it or
+only names it, because what the command prints is piped to a program the hook
+does not know to be one that only reads, which could run it
+```
+
+and the way on starts with how to write the command so that the hook can tell,
+before the rule's own.
+
+One thing this leaves open is for you to weigh: `git diff -- . ':(exclude)PATH'`
+piped to a program that runs what it reads is allowed, as the same line is with
+any other path left out or with none. What reaches that program is the diff, so
+the act would have to be in a file's changes already.
+
 #### A command inside a string
 
 A string handed to `bash -c`, `cmd /c`, PowerShell's `-Command` or `eval`, and
@@ -623,6 +738,11 @@ A scratch file inside a story's directory is not loop state. Reading the loop's
 files with `cat`, `grep`, `head` or the file tools is never refused; `sed`,
 `awk`, `perl` and interpreters are refused on them whatever they are asked to
 do, because each can write through its own program.
+
+A path that is only named, in the text of an sdlc flag, in a pathspec that
+leaves it out, or beside a request for help, is not refused where the hook is
+sure of it; [a path that is only named](#a-path-that-is-only-named) says when
+that is.
 
 #### How `find` globs are read
 
@@ -898,6 +1018,11 @@ for in any word starting with `-`, wherever it stands and program text
 included, so
 `awk '$1 == "-f" {print $2}' internal/x_test.go` is refused as well.
 
+A frozen test named in the quoted text of `--message`, `--note`, `--reason` or
+`--reject`, or left out by a git pathspec, is not refused where the hook is
+sure that is all it is: see
+[a path that is only named](#a-path-that-is-only-named).
+
 #### How `find` globs and operators are read
 
 The globs `find` is given are read as under
@@ -1092,7 +1217,9 @@ commands that only read (`sdlc status`, `sdlc review list`, `sdlc story list`,
 `sdlc artifact list`, `sdlc log`, `sdlc cost`, `sdlc doctor`, `sdlc version`),
 and any command asked for its help. It is a list of what it may run, so a
 command this version does not have, and a subcommand that cannot be read, are
-refused too.
+refused too. Help is read as `sdlc` reads it: a help flag turned off by a later
+`--help=false`, or beside a variable or a substitution that could turn it off,
+is not a request for help.
 
 The project manager decides who takes part. An agent that could also record a
 gate or a review, or hand the story to a person, would be deciding the story.

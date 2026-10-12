@@ -86,6 +86,17 @@ file is refused from the implementer, under the same
 project manager, which is refused most other `sdlc` commands in turn
 ([`project-manager-only-staffs`](../enforcement.md#project-manager-only-staffs)).
 
+### The command only named the path
+
+A rule that protects a path finds it anywhere in a command, in quotes or out
+of them. If the reason says "the hook cannot tell whether the command acts on
+it or only names it", the path was in the text of an `sdlc` flag or in a git
+pathspec that leaves it out, and something else on the line kept the hook from
+being sure. The reason says what, and the way on starts with how to write the
+command so that it can tell.
+[A path that is only named](../enforcement.md#a-path-that-is-only-named) lists
+what is read as a mention and what is not.
+
 ## Refusals in a session with no story
 
 Unless enforcement is switched off, one thing is refused in every session, in

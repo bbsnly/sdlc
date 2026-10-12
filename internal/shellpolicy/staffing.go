@@ -2,6 +2,7 @@ package shellpolicy
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -155,12 +156,47 @@ func writtenOut(word string) bool {
 	return word != "" && !strings.ContainsAny(word, "$`%(){}*?[~!") && !strings.HasPrefix(word, "=")
 }
 
-// asksForHelp reports whether sdlc would read a help flag in these words, as
-// nextWord reads the subcommand: the word after a flag that takes a value is
-// that flag's value whatever it looks like, and nothing after `--` is a flag.
-// Found anywhere among the words, a help flag written as a note or a message
-// let the project manager run the command the note belonged to.
+// asksForHelp reports whether sdlc would print help for these words and do
+// nothing else, read as its flag parser reads them: the word after a flag that
+// takes a value is that flag's value whatever it looks like, nothing after
+// `--` is a flag, and the last help flag is the one that counts. Found anywhere
+// among the words, a help flag written as a note or a message let the project
+// manager run the command the note belonged to; and `--help --help=false`
+// read as help while sdlc ran the command.
+//
+// A word the shell makes when the command runs could be `--help=false`, so
+// with one among them nothing is known. The caller answers for a substitution
+// the lexer took out of a word.
 func asksForHelp(args []string) bool {
+	help := false
+	for i := 0; i < len(args) && args[i] != "--"; i++ {
+		a := args[i]
+		if !writtenOut(a) {
+			return false
+		}
+		name, value, valued := strings.Cut(a, "=")
+		switch {
+		case a == "--help" || a == "-h":
+			help = true
+		case valued && (name == "--help" || name == "-h"):
+			// What the parser cannot read as true or false is an error to
+			// it, and neither help nor the command.
+			on, err := strconv.ParseBool(value)
+			if err != nil {
+				return false
+			}
+			help = on
+		case ValueFlags[a]:
+			i++
+		}
+	}
+	return help
+}
+
+// namesHelp reports a help flag among these words, as this read one before it
+// read them as sdlc does. It is kept for one question: whether a command the
+// project manager is now refused was let past that rule before.
+func namesHelp(args []string) bool {
 	for i := 0; i < len(args) && args[i] != "--"; i++ {
 		switch {
 		case args[i] == "--help" || args[i] == "-h":
@@ -182,7 +218,12 @@ const assignmentRule = "assignment-is-a-human-decision"
 // What `sdlc staffing assign` records says a person chose it, and the project
 // manager cannot change it afterwards, so a session that could run it could
 // pin every agent where it liked in a person's name.
-func checkAssign(words []string, piped bool) (Finding, bool) {
+//
+// cut is set for a command a word of which held a substitution. The lexer
+// takes the substitution out of the word, so `--help"$(...)"` is read here as
+// `--help` while sdlc may be handed `--help=false` and run the command; a help
+// flag is not believed there.
+func checkAssign(words []string, piped, cut bool) (Finding, bool) {
 	for _, u := range sdlcUses(words) {
 		first, rest, _ := nextWord(u.args)
 		if first != "staffing" {
@@ -190,7 +231,7 @@ func checkAssign(words []string, piped bool) (Finding, bool) {
 		}
 		verb, _, found := nextWord(rest)
 		if found && verb != "show" && verb != "set" && verb != "amend" ||
-			!found && u.way == ranSdlc && !asksForHelp(u.args) {
+			!found && u.way == ranSdlc && (cut || !asksForHelp(u.args)) {
 			return Finding{
 				Rule: assignmentRule,
 				Reason: "the word after `sdlc staffing` is not `show`, `set` or `amend`, so this may be " +
@@ -280,15 +321,16 @@ var sdlcCommands = []string{
 
 // checkManager holds the project manager to the staffing and to what only
 // reads. It decides who takes part in a story; an agent that could also record
-// a gate or a review would be deciding the story.
-func checkManager(words []string, s State) (Finding, bool) {
+// a gate or a review would be deciding the story. help says whether the words
+// handed to sdlc ask it for help alone.
+func checkManager(words []string, s State, help func(args []string) bool) (Finding, bool) {
 	if s.Agent != "project-manager" {
 		return Finding{}, false
 	}
 	for _, u := range sdlcUses(words) {
 		first, rest, found := nextWord(u.args)
 		if u.way == afterFlag || u.way == laterWord && !slices.Contains(sdlcCommands, first) ||
-			managerMay(first, rest, found, u.args) {
+			managerMay(first, rest, found, help(u.args)) {
 			continue
 		}
 		return Finding{
@@ -309,10 +351,10 @@ func checkManager(words []string, s State) (Finding, bool) {
 // managerMay is the list of what the project manager may run: a list of what
 // it may, so a command this version does not have, or a subcommand that
 // cannot be read, is not one of them.
-func managerMay(first string, rest []string, found bool, args []string) bool {
+func managerMay(first string, rest []string, found, help bool) bool {
 	next, _, more := nextWord(rest)
 	switch {
-	case asksForHelp(args):
+	case help:
 		return true
 	case !found:
 		return false
