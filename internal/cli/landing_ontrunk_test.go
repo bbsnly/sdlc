@@ -585,10 +585,10 @@ func TestAC11ACommandThatFailsOnTheNewTreeLandsNothingAndLeavesTheStoryWithItsSe
 // AC-12: the story's commits do not apply onto the new trunk. The stop leaves
 // the worktree and its branch exactly as they were before it tried -- every
 // branch, HEAD, the files, nothing part-way and nothing stashed -- lands
-// nothing, names the files in conflict, and hands the story to a person: it is
-// theirs on the backlog, or the fix sends it to them, and nothing tells the
-// session to resolve the conflict. A second stop finds the same and leaves the
-// same.
+// nothing, names the files in conflict, and hands the story to a person: the
+// fix sends it to them, in the one wording it has, the stop does not escalate
+// it itself, and nothing tells the session to resolve the conflict. A second
+// stop finds the same and leaves the same.
 func TestAC12AConflictLeavesTheWorktreeAndBranchAsTheyWereAndHandsTheStoryToAPerson(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -634,10 +634,13 @@ func TestAC12AConflictLeavesTheWorktreeAndBranchAsTheyWereAndHandsTheStoryToAPer
 			if strings.Contains(out, "rebase --continue") || strings.Contains(out, "rebase --skip") {
 				t.Errorf("the refusal tells its reader to carry a rebase on, and resolving a conflict is a person's:\n%s", out)
 			}
-			theirs := wtStatuses(t, main)["US-001"] == string(model.StatusAwaitingHuman)
-			if !theirs && !strings.Contains(out, "sdlc escalate") {
-				t.Errorf("the story is not handed to a person: the backlog has it %q, and the refusal does not send it to one:\n%s",
-					wtStatuses(t, main)["US-001"], out)
+			// US-090 AC-8: the one wording the stop gives. It does not escalate
+			// the story itself; its fix tells the assistant to.
+			if got := wtStatuses(t, main)["US-001"]; got == string(model.StatusAwaitingHuman) {
+				t.Errorf("the stop handed the story to a person itself: the backlog has it %q, and its fix is what sends it to one", got)
+			}
+			if !strings.Contains(hcFlat(out), hcOneWording) {
+				t.Errorf("the refusal does not say %q:\n%s", hcOneWording, out)
 			}
 			if got := wtStatuses(t, main)["US-001"]; got == string(model.StatusDone) {
 				t.Error("a story that did not land is done")
