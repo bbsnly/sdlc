@@ -359,6 +359,7 @@ func TestAC1TheStateIsTheOneTheHookBuildsForAnImplementerUnderAFreeze(t *testing
 		set := []string{
 			"Frozen", "NewTest", "ImplementerTest", "Agent", "Resolve", "Backlog",
 			"Trunk", "IsTrunk", "Fresh", "Commits", "Nested", "Carried", "Checkouts",
+			"Root", "Outside",
 		}
 		// IsTest stands in only for a freeze that cannot be read, Shared is set
 		// only where the repository has other checkouts, and Dir is empty for a
