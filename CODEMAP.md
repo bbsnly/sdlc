@@ -235,6 +235,16 @@ stop waiting for another landing, and a replay that is not the reviewed change.
 launcher: three stories landing one after another, two stops at once, the hook
 still refusing a write to a test file, and the pages a person reads.
 
+US-090 adds `internal/cli/landing_conditions_test.go`, which holds the stop's
+conditions that the tests above did not: the replay mark, both line-for-line
+comparisons, reviews and approval recorded again after the commit gate, a
+failed command, a worktree gone before the story landed, and the conflicts git
+reports as a directory against a file or a rename against a delete.
+`internal/gitx/replay_conditions_test.go` holds the replay's attribute and
+merge-driver cases, and `test/e2e/landing_conditions_test.go` runs the failed
+command's route through the built binary. One test in
+`internal/cli/landing_ontrunk_test.go` was tightened to one wording.
+
 ## internal/cli/doctor.go: configured commands
 
 Package `cli`. `commandChecks(root, cfg)` reads every non-empty command in
