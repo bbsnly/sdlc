@@ -934,6 +934,10 @@ be read. `sdlcUses` finds each use of `sdlc` among a command's words.
 and not a loop role to the file rules. `parallel.Allowlist` names `set`,
 `amend` and `show` one by one, never `sdlc staffing` as a whole.
 
+## internal/scaffold/templates/config.json.tmpl
+
+`sdlc init` writes a `_<setting>` comment block above each top-level setting in its config.json.
+
 ## internal/shellpolicy: two ways one command is read
 
 `Inspect` reads a command twice, with different rules about quotes.
