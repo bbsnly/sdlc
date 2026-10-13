@@ -207,17 +207,36 @@ Package `cli`. Decides which of a story's test files are trunk's own, so that
 trunk's tests a story has picked up by landing on a moved trunk do not count
 against its freeze. `sittingOn` is the merge base of trunk's tip and the story's
 head, with trunk named by the main checkout's configuration; it is `""` where
-that cannot be told. `heldTests` returns the frozen files still broken, the test
-files the freeze does not hold, trunk's files the story changed or took away, and
-the `model.TrunkTests` it accepted. A path is accepted only where trunk changed it
-between the cut and `sittingOn`, the story's commits did not, trunk's mode for it
-is `100644` or `100755`, and the SHA-256 of the file on disk equals that of trunk's
-blob (`judge.asTrunkHasIt`); `git status` is not asked. A frozen file is accepted
-only where the lock's hash for it is the cut's blob. Outside a story's own
-worktree, and wherever there is no cut or `sittingOn` is the cut or the tip, the
-result is the same two lists as before. `acceptedLine` builds the line a gate
-prints; `recordAccepted` sets the record's field. Imports `gitx`, `model`,
-`store`, `testset`.
+that cannot be told. `settleFreezeAt` lowers it to the trunk commit that the
+story's list of its own commits names (`forks.go`, through `trunkPart`), so
+trunk's branch pointed at one of the story's commits does not make that commit
+trunk's. `heldTests` returns the frozen files still broken, the test files the
+freeze does not hold, trunk's files the story changed or took away, and the
+`model.TrunkTests` it accepted. A path is accepted only where trunk changed it
+between the cut and the commit the story is judged to sit on, the story's
+commits did not, trunk's mode for it is `100644` or `100755`, and the SHA-256 of
+the file on disk equals that of trunk's blob (`judge.asTrunkHasIt`); `git
+status` is not asked. A story whose record has no usable list accepts no path.
+A frozen file is accepted only where the lock's hash for it is the cut's blob.
+`acceptedLine` builds the line a gate prints; `recordAccepted` sets the record's
+field. Imports `gitx`, `model`, `store`, `testset`.
+
+## internal/cli/forks.go
+
+Package `cli`. The story's list of its own commits, the record's top-level
+`forks` key (`model.Record.Forks`, a list of `model.Fork{From, First}`). `From`
+is a trunk commit the story has sat on; `First` is the lowest commit above it on
+the story's first-parent line (`gitx.FirstAbove`), and is empty in the entry
+`sdlc start` seeds at the cut (`storyworktree.go`). Written by `noteForks` at
+every `sdlc gate` run in a story worktree, refused runs too (`loop.go`), by
+`saveNoted` at the stop's replay (`ontoTrunk` in `landing.go`), and by
+`restartForks` at a freeze after a person's unfreeze (`freeze.go`).
+`liftedByTheStop` tells the stop's own unfreeze from a person's, by its event
+sentence. `forksOf` reads the list whole or returns nil. `under` asks
+`gitx.HasCommit` first: a commit git no longer has is a no, and a failed call is
+returned. `trunkPart` takes the entry noted on the lowest trunk commit whose
+`First` the commit the story sits on holds, and `settleFreezeAt` in
+`trunktests.go` is its only caller.
 
 ## Tests of the landing on trunk
 
@@ -270,10 +289,11 @@ read the repository: `sealed`/`sealedCall` run each one in its own
 commit-graph and filesystem monitor off, and the variables in `unsealed`
 stripped from the environment. `BranchTip`, `IsAncestor`, `MergeBase`,
 `HasMerges`, `ChangedUnder`, `ModeAt`, `FileAt`, `Uncommitted`, `InProgress`,
-`ResolvesTo` and `CheckedOut` are sealed reads; `Fingerprint` hashes the patch
-between two commits with `leaveOut` turned into literal exclude pathspecs
-(`.sdlc`, the root `CODEMAP.md`) and every diff-shaping git option fixed on
-the command line. `fastforward.go` defines `FastForward(ctx, root, trunk,
+`ResolvesTo`, `CheckedOut`, `FirstAbove` and `HasCommit` are sealed reads;
+`Fingerprint` hashes the patch between two commits with `leaveOut` turned into
+literal exclude pathspecs (`.sdlc`, the root `CODEMAP.md`) and every
+diff-shaping git option fixed on the command line.
+`fastforward.go` defines `FastForward(ctx, root, trunk,
 from, to)`, the package's only function that moves a branch: `checkCheckout`
 inspects every checkout that has trunk checked out for anything in the way
 before any write; the write phase takes in paths already holding the target
