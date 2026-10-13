@@ -730,7 +730,7 @@ func releaseFreeze(s *store.Store, id string) error {
 	if err := s.ClearLock(); err != nil {
 		return err
 	}
-	return appendEvent(s, id, "unfreeze", finishedUnfreeze)
+	return appendEvent(s, id, unfreezeEvent, finishedUnfreeze)
 }
 
 // forgetWatched clears what the hook wrote down about a finished story's
@@ -758,6 +758,10 @@ func forgetWatched(ctx context.Context, s *store.Store, id string) {
 // record. It is the loop tidying up rather than somebody changing the tests,
 // and `sdlc log` leaves it out of what it flags.
 const finishedUnfreeze = "the story is finished, so its freeze is lifted"
+
+// unfreezeEvent is the type of the event that records a freeze lifted, by a
+// person or by the stop.
+const unfreezeEvent = "unfreeze"
 
 func newGateCmd() *cobra.Command {
 	var note, storyID string
@@ -838,6 +842,12 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) error {
 	// What this gate asks git about the tree and HEAD, up to saving the
 	// record, which writes nothing either of them measures.
 	g := &gateRun{cmd: cmd, s: s, rd: readingOf(s), id: id, gate: gate, status: status, note: flags.note, record: record}
+	// The one thing a gate writes whether or not it is then refused, and before
+	// checkAndStaff has put anything else on the record: which commits are the
+	// story's own.
+	if err := noteForks(cmd.Context(), s, g.rd, id, record); err != nil {
+		return err
+	}
 	if err := g.checkAndStaff(flags); err != nil {
 		return err
 	}
@@ -1245,7 +1255,7 @@ func (r *reading) requireIntactFreeze(ctx context.Context, id string, record *mo
 // command has asked for already or asks for once here, and only where a test
 // file could be trunk's own.
 func (r *reading) freezeAt(ctx context.Context, id string, record *model.Record) freezeAt {
-	at := freezeAt{cut: record.Cut}
+	at := freezeAt{cut: record.Cut, forks: forksOf(record)}
 	if at.cut != "" && inItsWorktree(r.s, id) {
 		at.tip, _ = r.headOf(ctx)
 	}
@@ -1280,19 +1290,25 @@ func requireIntactFreeze(ctx context.Context, s *store.Store, id string, at free
 // In a story's own worktree a test file that only trunk changed since the
 // story was cut is neither: heldTests says which those are, and they come back
 // for the caller to say and record.
+//
+// Where the story's list of its own commits is why a file is refused, the
+// refusal says so and sorts the files by what a person does about each
+// (listed.explain), with the way to freeze again that a gate has.
 func requireHeldTests(ctx context.Context, s *store.Store, id string, lock *model.Lock, at freezeAt) (heldState, error) {
 	h, err := heldTests(ctx, s, id, lock, at)
+	const route = `"sdlc unfreeze --reason ..." in their own terminal, which sends the story back to Gate 3, where ` +
+		`"sdlc freeze" takes the test files as they are then`
 	switch {
 	case len(h.broken) > 0:
-		return h, brokenFreeze(h.broken)
+		return h, h.list.explain(s, id, brokenFreeze(h.list.here(h.broken)), route)
 	case err != nil:
 		return h, err
 	case len(h.unheld)+len(h.taken) == 0:
 		return h, nil
 	}
 	var why []string
-	if len(h.unheld) > 0 {
-		why = append(why, strings.Join(h.unheld, ", ")+" appeared after the freeze was taken, so nothing says "+
+	if unheld := h.list.here(h.unheld); len(unheld) > 0 {
+		why = append(why, strings.Join(unheld, ", ")+" appeared after the freeze was taken, so nothing says "+
 			"it was written before the code")
 	}
 	if len(h.taken) > 0 {
@@ -1301,6 +1317,8 @@ func requireHeldTests(ctx context.Context, s *store.Store, id string, lock *mode
 	refusal := sdlcerr.New(sdlcerr.UnfrozenTests,
 		"there are test files the freeze does not hold", strings.Join(why, "; "))
 	switch {
+	case h.list.is():
+		return h, h.list.explain(s, id, refusal, route)
 	case len(h.taken) > 0:
 		return h, refusal.WithFix(takenFix(s, id, h.taken[0]) + `; or they reopen the story to change the tests: ` +
 			`"sdlc unfreeze --reason ..." is theirs alone`)

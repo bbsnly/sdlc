@@ -653,7 +653,14 @@ func (l *lander) check(ctx context.Context) (landState, error) {
 	}
 	// The freeze as it is, across a rebase too: nothing is frozen again.
 	// A test file that only trunk changed since the story was cut is trunk's.
-	held, err := requireIntactFreeze(ctx, l.s, l.id, freezeAt{cut: st.record.Cut, on: st.from, tip: st.tip})
+	// Where the stop is about to put the story onto a later trunk commit, the
+	// freeze is told which, for a story whose list would refuse there what
+	// that commit brings.
+	at := freezeAt{cut: st.record.Cut, on: st.from, tip: st.tip, forks: forksOf(st.record)}
+	if st.fork != "" {
+		at.ahead = st.trunkTip
+	}
+	held, err := requireIntactFreeze(ctx, l.s, l.id, at)
 	if err != nil {
 		l.held = held
 		return st, l.freezeFix(err)
@@ -1255,6 +1262,12 @@ func (l *lander) freezeFix(err error) error {
 		return err
 	}
 	trunk, branch, in := l.m.trunk, store.StoryBranch(l.id), worktreeIn(l.id)
+	if l.held.list.is() && (e.Code == sdlcerr.FreezeBroken || e.Code == sdlcerr.UnfrozenTests) {
+		// The same sorting of the files as at a gate, with the way to freeze
+		// again that a finished story has.
+		route := strings.TrimSuffix(unfreezeRoute(l.id), "; "+assistantEscalates)
+		return e.WithFix(l.held.list.fix(l.s, l.id, route))
+	}
 	switch e.Code {
 	case sdlcerr.FreezeBroken:
 		// Restoring is right only where the branch alone changed the test:
@@ -1767,6 +1780,15 @@ func (l *lander) ontoTrunk(ctx context.Context, st landState) (landState, error)
 		trunk, T[:12], branch, worktreeIn(l.id))
 	if err := gitx.Replay(ctx, root, T, F); err != nil {
 		return st, l.notReplayed(ctx, st, err)
+	}
+	// The commits the replay made are the story's own, and are noted as that
+	// here, before anything that can end this stop with the branch left on
+	// them: noted only where the replay's mark is saved, a stop refused for a
+	// change that is not line for line the reviewed one left them unnoted, and
+	// its fix runs no gate before the next stop.
+	head, _ := gitx.Head(ctx, root)
+	if err := saveNoted(ctx, l.s, st.record, head); err != nil {
+		return st, err
 	}
 	after, err := l.worktreeReady(ctx)
 	if err != nil {

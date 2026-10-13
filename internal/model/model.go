@@ -8,6 +8,7 @@ package model
 
 import (
 	"cmp"
+	"encoding/json"
 	"slices"
 	"sort"
 	"strconv"
@@ -745,6 +746,16 @@ type Record struct {
 	// Cut is the commit a story's own branch was cut from, where the story
 	// began in a worktree of its own. It stays however the story is reworked.
 	Cut string `json:"cut,omitempty"`
+	// Forks is the story's list of its own commits, for a story in a worktree
+	// of its own: a list of Fork, written while those commits can still be told
+	// from trunk's. Trunk's branch pointed at one of them made every test file
+	// at or under it read as trunk's, and nothing in the commits themselves
+	// says whose they were. It is kept as it was read, and whoever judges by it
+	// decodes it: as a typed list, a value of another kind made the whole
+	// record unreadable, and the hook refuses every commit while it is. It is
+	// not among what forgetCommit drops, so a gate reopened does not forget
+	// whose the commits are.
+	Forks json.RawMessage `json:"forks,omitempty"`
 	// Change is the fingerprint of the change the reviewers saw, taken at the
 	// commit gate from ChangeBase to HEAD, for a story in its own worktree. A
 	// landing lands that change, or one reviewed again. Both go when the
@@ -889,6 +900,16 @@ type Replay struct {
 	From string `json:"from"`
 	To   string `json:"to"`
 	Onto string `json:"onto"`
+}
+
+// Fork is one entry in a story's list of its own commits: From is the trunk
+// commit its branch sat on when the entry was noted, and First the lowest
+// commit on the branch's own line above that, so that First and everything
+// that descends from it was the story's then, whoever made it. An entry with
+// no First starts a list and names no commit of the story's.
+type Fork struct {
+	From  string `json:"from"`
+	First string `json:"first,omitempty"`
 }
 
 // TrunkTests is what a story accepted as trunk's own among its test files:

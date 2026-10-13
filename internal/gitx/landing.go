@@ -78,7 +78,11 @@ func sealedEnviron(private string) []string {
 // writes the index; with no replacement objects; and with the file system
 // monitor, the commit-graph and automatic maintenance off, each of which is a
 // program or a file that would answer in the objects' place. A shallow file is
-// read as git reads it: it can only hide ancestry, and hidden ancestry refuses.
+// read as git reads it: it can only hide ancestry, and hidden ancestry refuses
+// wherever ancestry is what was asked. The one question it answers otherwise is
+// HasCommit's: a commit it hides is a commit git does not have, and whoever
+// passes such a commit over has to refuse on something else the file hides
+// with it.
 func sealed(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	return sealedCall(ctx, dir, nil, nil, nil, args...)
 }
@@ -271,6 +275,37 @@ func HasMerges(ctx context.Context, root, base, tip string) (bool, error) {
 		return false, err
 	}
 	return strings.TrimSpace(string(out)) != "", nil
+}
+
+// FirstAbove is the lowest commit on tip's own line, its first parents, that
+// base does not have in its history, and "" where there is none: the first
+// commit of a branch above where it left another.
+func FirstAbove(ctx context.Context, root, base, tip string) (string, error) {
+	if err := fullHashes(base, tip); err != nil {
+		return "", err
+	}
+	out, err := sealed(ctx, root, "rev-list", "--first-parent", "--reverse", base+".."+tip, "--")
+	return firstLine(string(out)), err
+}
+
+// HasCommit reports whether git has the commit among its objects here. One it
+// does not have is a no and not a failure: git prunes a commit no branch
+// reaches any longer, and a caller that asked IsAncestor instead could not
+// tell that from a call that failed, which answers nothing.
+func HasCommit(ctx context.Context, root, commit string) (bool, error) {
+	if err := fullHashes(commit); err != nil {
+		return false, err
+	}
+	out, err := sealedCall(ctx, root, nil, []byte(commit+"\n"), nil, "cat-file", "--batch-check")
+	said := firstLine(string(out))
+	if err != nil || said == commit+" missing" {
+		return false, err
+	}
+	if !strings.HasPrefix(said, commit+" commit ") {
+		return false, sdlcerr.New(sdlcerr.RepositoryUnreadable,
+			"git did not say whether it has commit "+commit[:12], msgGitSaid+strconv.Quote(said))
+	}
+	return true, nil
 }
 
 // ChangedUnder is the paths that differ between base and tip at dir or under

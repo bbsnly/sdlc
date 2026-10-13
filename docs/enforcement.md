@@ -1951,12 +1951,48 @@ how you would notice.
   and takes trunk's change to that test away. The reviewers see the test in the
   diff when the change is reviewed again; the stop's own replay cannot make such
   a commit.
+- **A commit of the story's own that no `sdlc gate` run has noted, once trunk's
+  branch points at it.** A test file that only trunk changed is trunk's, and
+  the story's commits are told from trunk's by a list in the story's record
+  (`forks`). `sdlc start` begins the list; every `sdlc gate` run in the story's
+  worktree adds to it, passed or refused, and so do a stop that puts the story
+  onto trunk and a freeze that follows a person's unfreeze. A commit made on
+  the story's branch since the last of those is on no list: one a person made by
+  hand, one the session made, or one made again by an amend or a rebase. If
+  trunk's branch then comes to point at it, by a fast-forward or any other
+  move, before any `sdlc gate` run, the test files that commit added or changed
+  read as trunk's and are accepted as trunk's at the next gate and at the stop.
+  The plainest case leaves nothing to tell it by at all: a test file committed
+  by hand directly on the trunk commit the story sits on, and trunk
+  fast-forwarded to it before any sdlc command ran, is the same commits and
+  branches as a story put onto a commit trunk gained. Three more things are
+  not on the list: a commit that reaches the branch only through a merge's
+  other parent, because an entry covers the commits that descend from the
+  lowest one on the branch's own line; an entry a person edits out of the
+  record; and an entry whose commit git no longer has, which is passed over.
+  You would notice by the line the accepting command prints, `accepted as
+  <trunk>'s`, and by `trunk_tests` in the story's record, which names the files
+  and the trunk commit: a file there that the story wrote is this. Take it out
+  of the branch, or have a person unfreeze so that it is frozen in their sight.
+  The list also refuses in three states where the files really are trunk's,
+  each with [SDLC-E0043](troubleshooting.md#sdlc-e0043) or SDLC-E0025 naming
+  the commit: a gate ran while the local trunk was behind a commit the branch
+  already held, trunk was moved back and then forward again, or commits the
+  branch held reached trunk by another story's landing. One unfreeze by a
+  person and a freeze is the way out of each. A freeze taken after the stop
+  itself lifted the last one, on a landed story reopened in a worktree that was
+  kept, leaves the list as it was: a session can take that freeze alone, and it
+  neither resets a list nor gives one to a record that had none.
 - **A rebase a person runs is not sealed.** [SDLC-E0075](troubleshooting.md#sdlc-e0075)
   sends a person to rebase a story by hand. That rebase runs the hooks, merge
   drivers, editor and filters the configuration names, with that person's
   privileges; read the configuration first, as above.
 - **A shallow repository** can only hide ancestry, and the landing then refuses
-  with [SDLC-E0054](troubleshooting.md#sdlc-e0054).
+  with [SDLC-E0054](troubleshooting.md#sdlc-e0054). A commit it hides is one git
+  does not have, so an entry of a story's list of its own commits that names it
+  is passed over; the freeze still takes nothing as trunk's there while the
+  commit the story was cut from is hidden too, as it is in a history that is
+  one line.
 - **Ignored files go with a landed story's worktree.** They are removed with it,
   and the stop's last line says so.
 

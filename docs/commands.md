@@ -915,6 +915,11 @@ requires. A `fail` is always recordable, because a gate can fail precisely
 because its work could not be done, and the loop has to have somewhere to put
 that.
 
+In a story's own worktree a gate writes one thing to the record whether it then
+passes or is refused: which commits on the branch are the story's own (`forks`),
+so that trunk's branch pointed at one of them later does not make its test files
+trunk's ([the loop](the-loop.md#done-when-it-lands)).
+
 Recording the last gate is also what finishes the story: when no gate is left
 unpassed, the story's status in the backlog becomes `done`, except for a story in
 its own worktree, which is done when
@@ -932,7 +937,8 @@ That failure and the hand-over are recorded together or not at all. Where the
 story cannot be handed over — git cannot measure the tree, or the backlog, the
 claim or `.sdlc/state` cannot be written — the command is refused with the code
 of whatever stopped it, exits non-zero, and leaves the record, the backlog and
-the iteration as they were. The refusal says so, after its own reason and fix.
+the iteration as they were, but for the commits noted as the story's own. The
+refusal says so, after its own reason and fix.
 With git missing:
 
 ```text

@@ -583,10 +583,17 @@ again at once. The landing checks, in order:
   trunk removed. The command that accepts one says how many and names them, and
   the record keeps the trunk commit they were compared with. A test file the
   story's own commits added, changed or took away is refused as it always was,
+  whether or not trunk's branch has since come to point at one of those commits,
   and so is a frozen test that the story and trunk both changed, even in
   different places
   ([`SDLC-E0043`](troubleshooting.md#sdlc-e0043),
-  [`SDLC-E0025`](troubleshooting.md#sdlc-e0025)). In a checkout that converts
+  [`SDLC-E0025`](troubleshooting.md#sdlc-e0025)). The story's own commits are
+  every commit on its branch that trunk did not hold from before: those a
+  person made by hand and those a rebase made again, as well as those the loop
+  watched. The story's record keeps a list of them (`forks`), which every
+  `sdlc gate` run adds to, and a record with no list has no test file taken as
+  trunk's; what the list does not reach is under
+  [Not held](enforcement.md#not-held). In a checkout that converts
   line endings (`core.autocrlf`) the file on disk is not byte for byte what
   trunk commits, so there a test file trunk gained is still refused;
 - the change is the one the reviewers saw. Where the stop itself put the story

@@ -349,7 +349,7 @@ func describeFreeze(ctx context.Context, s *store.Store, story string, record *m
 	}
 	changed := verifyFreeze(s, lock)
 	if len(changed) > 0 && record.Cut != "" && inItsWorktree(s, story) {
-		if h, err := heldTests(ctx, s, story, lock, freezeAt{cut: record.Cut}); err == nil {
+		if h, err := heldTests(ctx, s, story, lock, freezeAt{cut: record.Cut, forks: forksOf(record)}); err == nil {
 			changed = h.broken
 		}
 	}

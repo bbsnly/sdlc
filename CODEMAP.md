@@ -1148,3 +1148,23 @@ each root of a find, what `walk` found below it, `maxBelow` entries at most,
 following no link. `inspectShell` in `hook.go` makes one `outsider` for a
 command and hands shellpolicy `out.outside` and `Root`, the project as the
 session opened it.
+
+## What a gate asks before the freeze, and the hook's commit observations
+
+`requireEvidence` in `internal/cli/loop.go` asks `requireUnmoved` for every gate
+before `commit`, ahead of the freeze check: a HEAD other than `Record.Base` is
+SDLC-E0046. So `heldTests` (`internal/cli/trunktests.go`) is reached with a
+commit of the story's own on its branch only at the `commit` gate, at
+`sdlc stop`, and at an earlier gate once a person has answered that refusal.
+`sdlc start <ID>` resuming a story in its own worktree does not move `Base`.
+
+`internal/store/commits.go` holds the hook's observations: one file per head,
+at `sdlc/commits/<ID>/<head>` under the checkout's git directory, written by
+`observe` in `internal/hook/observe.go` for the head a commit the hook allowed
+is about to be made on. `placeCommits` in `internal/cli/commitrange.go` is
+their only reader, for the range the commit gate records. `forgetWatched` in
+`loop.go` clears them at a stop that lifts the freeze and at a landing. No file
+names a commit a person made or one a rebase made again; `replayedRun` infers
+the ones made again from the window, and its comment says what it returns is
+not evidence, because the window is read by calls that honour replacement
+objects.

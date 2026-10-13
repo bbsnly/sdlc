@@ -408,6 +408,14 @@ right in one of two ways:
   the story back to have its tests frozen again: `sdlc unfreeze` needs an iteration running, and
   it reopens Gate 3 and every gate after it.
 
+**In a story's own worktree**, a frozen test that trunk changed or removed is refused with this
+code, at a gate and at landing, in two states that the refusal's reason names: the story's
+record predates the list of its own commits that sdlc keeps there (`forks`), or an older sdlc
+saved the record without one, so that nothing is taken as trunk's; or trunk holds a commit that
+list names. [SDLC-E0043](#sdlc-e0043), "Whose commits are the story's", says what each means
+and what the fix's parts are. Where the file is trunk's, one `sdlc unfreeze --reason "..."` by a
+person and a freeze again is the way out of both.
+
 An assistant hands the story to a person with `sdlc escalate` and stops.
 
 ### SDLC-E0026
@@ -800,6 +808,44 @@ changed or took away one of trunk's. A person decides:
   `.sdlc/worktrees/<ID>`, record `sdlc gate code_review fail --story <ID> --note "..."` there,
   type `/sdlc:next`, and once the iteration is running, run `sdlc unfreeze --reason "..."` there
   in their own terminal, which sends the story back to have its tests frozen again with them.
+
+**Whose commits are the story's.** A test file is trunk's only below the story's own commits,
+and sdlc tells those by a list in the story's record (`forks`). `sdlc start` begins it; every
+`sdlc gate` run in the story's worktree adds to it, whether the gate passes or is refused, and
+so do a stop that puts the story onto trunk and a freeze that follows a person's unfreeze. Two
+refusals come from the list, with this code for a test file the freeze does not hold and with
+[SDLC-E0025](#sdlc-e0025) for a frozen one:
+
+- **The record has no list.** The reason says that the record predates the list, or that an
+  older sdlc saved it without one: the story was started before sdlc kept the list, or a release
+  from before it has saved the record since. sdlc cannot tell trunk's test files from the
+  story's then and takes none as trunk's, so every test file trunk added, changed or removed
+  since the story was cut is refused. `sdlc stop` refuses before it puts the story onto trunk,
+  and names the files trunk would bring. A story whose trunk gained no test file is not refused.
+- **Trunk holds a commit the list names.** The reason names the commit. sdlc noted it as the
+  story's own, so no test file from that commit up is taken as trunk's. Where trunk's branch
+  came to point at a commit of the story's, that is the answer the story had before: the
+  commit's test files are still the story's. It is also what is said where the files really are
+  trunk's: a gate ran while the local trunk was behind a commit the story's branch already held,
+  trunk was moved back and then forward again, or commits the branch held reached trunk by
+  another story's landing.
+
+The fix sorts the files it names. One that is not in the worktree as trunk has it is the story's
+own: take it out of `story/<ID>`, or restore it as it was frozen. One that is there exactly as
+trunk has it, or that is trunk's and not in the worktree yet, sdlc cannot take as trunk's: a
+person who has checked that it is trunk's, and is to stay, runs `sdlc unfreeze --reason "..."`
+in their own terminal, and the tests are frozen again. That freeze holds every test file in the
+worktree and starts the list again, so one unfreeze and one freeze are enough, however many
+files are named. It is not a short way round: `sdlc unfreeze` reopens Gate 3 and every gate
+after it, and on a finished story it needs the escalation answered and the story reopened
+first, as under SDLC-E0025. Putting the story onto trunk by hand does not lift the refusal by
+itself: the files are then in the worktree and still refused, at a gate and at the stop. Where
+HEAD is past the commit the commit gate recorded, as it is after a rebase by hand or the
+bookkeeper's commit, the first gate after the freeze is refused with [SDLC-E0046](#sdlc-e0046),
+which is answered as it says.
+
+With `SDLC_DEBUG=1` in the environment, or `SDLC_DEBUG_FILE` naming a file, a gate says when it
+meets a record with no list and when it notes commits as the story's own.
 
 An assistant hands the story to a person with `sdlc escalate` and stops.
 

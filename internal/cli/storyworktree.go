@@ -258,10 +258,12 @@ func recordInWorktree(cmd *cobra.Command, asked string, plan startPlan, wt strin
 	released := releasedSinceStart(record)
 	// The commit the branch was cut from, which the story is measured from,
 	// and which its change is measured from at the commit gate however the
-	// branch is reworked.
+	// branch is reworked. The story's list of its own commits starts there too,
+	// over any list a story started again had: that one is of another branch.
 	if head, err := gitx.Head(cmd.Context(), wt); err == nil {
 		record.Base = head
 		record.Cut = head
+		setForks(record, []model.Fork{{From: head}})
 	}
 	record.Append("loop_start", "iteration started", s.Now())
 	if err := s.SaveRecord(record); err != nil {

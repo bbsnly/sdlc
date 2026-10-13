@@ -155,7 +155,19 @@ func sayFrozen(cmd *cobra.Command, s *store.Store, id string, files, added []str
 	if len(added) > 0 {
 		message, listed = countFiles(len(added))+" added to the freeze", added
 	}
-	if err := appendEvent(s, id, "freeze", message); err != nil {
+	record, err := s.Record(id)
+	if err == nil {
+		record.Append("freeze", message, s.Now())
+		// A freeze taken, and not one added to: it holds every test file
+		// there is, so the story's list of its own commits starts again, in
+		// the save that says so, unless it was the stop that lifted the last
+		// one (restartForks).
+		if len(added) == 0 {
+			restartForks(cmd.Context(), s, id, record)
+		}
+		err = s.SaveRecord(record)
+	}
+	if err != nil {
 		return err
 	}
 	if wantJSON(cmd) {
@@ -309,7 +321,7 @@ func runUnfreeze(cmd *cobra.Command, reason string) error {
 	if err != nil {
 		return err
 	}
-	record.Append("unfreeze", reason, s.Now())
+	record.Append(unfreezeEvent, reason, s.Now())
 	reopened := record.Reopen(model.GateTestsFrozen, "the freeze was lifted: "+reason, s.Now())
 	if err := s.SaveRecord(record); err != nil {
 		return err
@@ -414,10 +426,13 @@ func differingFrozen(s *store.Store, lock *model.Lock) []frozenFile {
 }
 
 // brokenFreeze is the refusal for frozen files that are not what was frozen.
-func brokenFreeze(changed []string) error {
-	return sdlcerr.New(sdlcerr.FreezeBroken,
-		"the frozen tests are not what was frozen",
-		oneLine(strings.Join(changed, ", "))+" changed after the freeze was taken")
+// It says why of the ones changed in the checkout, where there are any.
+func brokenFreeze(changed []string) *sdlcerr.Error {
+	why := ""
+	if len(changed) > 0 {
+		why = oneLine(strings.Join(changed, ", ")) + " changed after the freeze was taken"
+	}
+	return sdlcerr.New(sdlcerr.FreezeBroken, "the frozen tests are not what was frozen", why)
 }
 
 // unfrozenTests lists the project's test files that the freeze does not hold,

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
 	"github.com/bbsnly/sdlc/internal/testset"
 )
@@ -28,7 +30,20 @@ import (
 // freezeAt is where a story's test files are judged: the commit its branch was
 // cut from, the trunk commit it sits on, and the commit judged. on and tip are
 // read here where they are not given.
-type freezeAt struct{ cut, on, tip string }
+type freezeAt struct {
+	cut, on, tip string
+	// forks is the story's list of its own commits, nil where its record has
+	// none that reads.
+	forks []model.Fork
+	// ahead is the trunk commit a stop is about to put the story onto, where
+	// trunk has moved on since the story left it.
+	ahead string
+	// sat is the trunk commit the story sits on, which on is too until the
+	// list lowers it, and own the entry that lowered it. Both are worked out
+	// here.
+	sat string
+	own model.Fork
+}
 
 // heldState is the freeze as it stands for a story: the frozen files that are
 // not what was frozen, as verifyFreeze names them; the test files the freeze
@@ -37,6 +52,94 @@ type freezeAt struct{ cut, on, tip string }
 type heldState struct {
 	broken, unheld, taken []string
 	accepted              *model.TrunkTests
+	// list is what the story's list of its own commits has to do with what is
+	// refused.
+	list listed
+}
+
+// listed is set where it is the story's list of its own commits, and not the
+// tree alone, that a test file is refused by: the record has no list, so no
+// test file is taken as trunk's, or the list names a commit trunk holds, so
+// none from that commit up is. It sorts the files a refusal names by what a
+// person does about each.
+type listed struct {
+	// none is a record with no list, and noted the commit a list names that
+	// trunk holds.
+	none  bool
+	noted string
+	// own are the files named that trunk does not hold as the worktree has
+	// them, and same the ones it does. coming are trunk's, changed between the
+	// commit the story sits on and ahead, the trunk commit a stop was about to
+	// put it onto: they are not in the worktree yet, and are refused before
+	// the stop rewrites the branch and not after.
+	own, same, coming []string
+	ahead             string
+}
+
+// is reports whether the list is why.
+func (l listed) is() bool { return l.none || l.noted != "" }
+
+// here is the names among those given that are in the worktree.
+func (l listed) here(names []string) []string {
+	return slices.DeleteFunc(slices.Clone(names), func(name string) bool { return slices.Contains(l.coming, name) })
+}
+
+// explain adds to a refusal of the freeze what the list has to do with it, and
+// gives it the fix that goes with that. route is how a person has the tests
+// frozen again from where the refusal is given.
+func (l listed) explain(s *store.Store, id string, e *sdlcerr.Error, route string) *sdlcerr.Error {
+	if !l.is() {
+		return e
+	}
+	trunk := trunkName(s)
+	why := []string{e.Why}
+	if len(l.coming) > 0 {
+		why = append(why, quoteAll(l.coming)+" is "+trunk+"'s at "+l.ahead[:12]+" and not in this worktree yet: the stop would "+
+			"bring it here, and it could not then be taken as "+trunk+"'s")
+	}
+	if l.none {
+		why = append(why, `this story's record has no list of its own commits ("forks"): the record predates the list, or an `+
+			`older sdlc saved it without one. sdlc cannot tell `+trunk+`'s test files from the story's then, so it takes none as `+
+			trunk+`'s`)
+	} else {
+		why = append(why, trunk+` holds `+l.noted[:min(len(l.noted), 12)]+`, which sdlc noted as one of this story's own commits `+
+			`("forks" in its record) at an earlier gate, freeze or stop, so it takes no test file from that commit up as `+trunk+
+			`'s. If `+trunk+` came to hold that commit some other way than from this story, the files are `+trunk+
+			`'s, and sdlc cannot tell`)
+	}
+	out := *e
+	out.Why = strings.Join(slices.DeleteFunc(why, func(part string) bool { return part == "" }), "; ")
+	return out.WithFix(l.fix(s, id, route))
+}
+
+// fix is what a person does about the files a refusal names where the list is
+// why: each kind of file under the sentence that is true of it, the kinds
+// there are none of left out, and then the acts in the one order that works.
+func (l listed) fix(s *store.Store, id, route string) string {
+	trunk, branch := trunkName(s), store.StoryBranch(id)
+	var groups, acts []string
+	if len(l.own) > 0 {
+		groups = append(groups, quoteAll(l.own)+" is not here as "+trunk+" has it, so it is the story's own")
+	}
+	if len(l.same) > 0 {
+		groups = append(groups, quoteAll(l.same)+" is here exactly as "+trunk+" has it, and sdlc cannot tell whether "+trunk+
+			" has it from this story")
+	}
+	if len(l.coming) > 0 {
+		groups = append(groups, quoteAll(l.coming)+" is "+trunk+"'s and not in this worktree yet")
+	}
+	if len(l.own)+len(l.same) > 0 {
+		acts = append(acts, "a person takes each file that is the story's own out of "+branch+", or restores it as it was frozen")
+	}
+	if len(l.coming) > 0 {
+		acts = append(acts, "a person puts "+branch+" onto "+trunk+" in their own terminal, so that the files are there to "+
+			"freeze: cd -- "+shellPath(s.Root())+"; git rebase "+shellWord(trunk))
+	}
+	if len(l.same)+len(l.coming) > 0 {
+		acts = append(acts, "a person who has checked that each file left is "+trunk+"'s, and is to stay, has it frozen with "+
+			"the rest: "+route+". That is needed once, because a freeze taken after an unfreeze starts the story's list again")
+	}
+	return strings.Join(groups, ". ") + ". In this order: " + strings.Join(acts, "; then ") + "; " + assistantEscalates
 }
 
 // sittingOn is the trunk commit the story's commits sit on in this checkout:
@@ -72,6 +175,9 @@ func meetsTrunk(ctx context.Context, root, tip, head string) string {
 // and not the commit the branch was cut from or the story's own tip (tip is
 // the story's, not trunk's): the one answer to "was the story put onto a later
 // commit" that the freeze check, committedSince and the commit gate all give.
+// The freeze check asks it of the commit the story's list of its own commits
+// leaves it with (settleFreezeAt), which is lower than the one the other two
+// ask it of wherever trunk holds a commit the list names.
 func sitsPastCut(on, cut, tip string) bool {
 	return on != "" && on != cut && on != tip
 }
@@ -93,6 +199,10 @@ func sitsPastCut(on, cut, tip string) bool {
 // one thing more: the freeze holds it as the cut commits it, so the story never
 // changed it. Where the story and trunk both changed a test, it stays the
 // refusal it was, and a person's.
+//
+// The commit the story sits on is not taken as trunk's on git's word alone:
+// the story's list of its own commits says how far down trunk's part goes
+// (settleFreezeAt), and a record with no list has nothing judged as trunk's.
 func heldTests(ctx context.Context, s *store.Store, id string, lock *model.Lock, at freezeAt) (heldState, error) {
 	differing := differingFrozen(s, lock)
 	unheld, err := unfrozenTests(ctx, s, lock)
@@ -101,9 +211,18 @@ func heldTests(ctx context.Context, s *store.Store, id string, lock *model.Lock,
 		return h, err
 	}
 	at, judged, err := settleFreezeAt(ctx, s, at)
-	if err != nil || !judged {
-		return h, err
+	if judged {
+		h.takeTrunks(ctx, s, id, lock, at, differing)
 	}
+	if err == nil {
+		err = h.readList(ctx, s, lock, at)
+	}
+	return h, err
+}
+
+// takeTrunks takes out of what is refused the test files that are trunk's own,
+// between the commits at names.
+func (h *heldState) takeTrunks(ctx context.Context, s *store.Store, id string, lock *model.Lock, at freezeAt, differing []frozenFile) {
 	root := s.Root()
 	held, err := gitx.IsAncestor(ctx, root, at.cut, at.on)
 	trunkChanged, terr := gitx.ChangedBetween(ctx, root, at.cut, at.on)
@@ -111,7 +230,7 @@ func heldTests(ctx context.Context, s *store.Store, id string, lock *model.Lock,
 	if err := errors.Join(err, terr, serr); err != nil || !held {
 		// What cannot be read accepts nothing, which is the refusing side.
 		slog.Debug("no test file is judged as trunk's own", "story", id, "cut", at.cut, "on", at.on, "err", err)
-		return h, nil
+		return
 	}
 	c := trunkChange{
 		judge:        judge{s: s, lock: lock, at: at},
@@ -131,12 +250,66 @@ func heldTests(ctx context.Context, s *store.Store, id string, lock *model.Lock,
 		slices.Sort(accepted.Files)
 		h.accepted = accepted
 	}
-	return h, nil
+}
+
+// readList works out what the story's list of its own commits has to do with
+// what is refused, once the tree has been judged: nothing, unless the record
+// has no list where one would have been used, or the list lowered the commit
+// trunk's part ends at. Where it has, the files refused are sorted by whether
+// trunk holds each as the worktree has it.
+func (h *heldState) readList(ctx context.Context, s *store.Store, lock *model.Lock, at freezeAt) error {
+	switch {
+	case len(at.forks) == 0 && (at.ahead != "" || sitsPastCut(at.sat, at.cut, at.tip)):
+		h.list.none = true
+	case at.own.From != "":
+		h.list.noted = at.own.First
+	default:
+		return nil
+	}
+	sat := judge{s: s, lock: lock, at: freezeAt{on: at.sat}}
+	for _, name := range slices.Concat(h.unheld, h.taken, h.broken) {
+		path, gone := strings.CutSuffix(name, goneSuffix)
+		if gone && sat.goneOnTrunk(ctx, path) || !gone && sat.asTrunkHasIt(ctx, path) {
+			h.list.same = append(h.list.same, name)
+		} else {
+			h.list.own = append(h.list.own, name)
+		}
+	}
+	if at.ahead == "" {
+		return nil
+	}
+	return h.refuseComing(ctx, s, lock, at)
+}
+
+// refuseComing refuses, where the list is why and a stop is about to put the
+// story onto a later trunk commit, the test files trunk changed up to that
+// commit. The stop would bring them into the worktree, nothing would take them
+// as trunk's there, and the refusal would come after the branch had been
+// rewritten.
+func (h *heldState) refuseComing(ctx context.Context, s *store.Store, lock *model.Lock, at freezeAt) error {
+	h.list.ahead = at.ahead
+	changed, err := gitx.ChangedBetween(ctx, s.Root(), at.sat, at.ahead)
+	for _, path := range testset.New(s.Config().Paths.Tests).Filter(changed) {
+		refused := &h.unheld
+		if lock.Holds(path) {
+			refused = &h.broken
+		}
+		if !slices.Contains(*refused, path) && !slices.Contains(*refused, path+goneSuffix) {
+			*refused = append(*refused, path)
+			h.list.coming = append(h.list.coming, path)
+		}
+	}
+	return err
 }
 
 // settleFreezeAt fills in the commits a judgement is made between: the story's
-// tip and the commit it sits on. judged is false where there is nothing between
-// them to judge.
+// tip and the commit it sits on, lowered to where the story's list of its own
+// commits says trunk's part ends. Trunk's branch pointed at a commit of the
+// story's own makes that commit the one the story sits on, and everything
+// under it then read as trunk's; the entry noted for it before says it was the
+// story's, and the judgement is made from the trunk commit that entry was
+// noted on. judged is false where there is nothing between the commits to
+// judge, and for a record with no list, which says of no commit whose it is.
 func settleFreezeAt(ctx context.Context, s *store.Store, at freezeAt) (freezeAt, bool, error) {
 	var err error
 	if at.tip == "" {
@@ -147,10 +320,20 @@ func settleFreezeAt(ctx context.Context, s *store.Store, at freezeAt) (freezeAt,
 	if at.on == "" {
 		at.on = sittingOn(ctx, s, at.tip)
 	}
-	if !sitsPastCut(at.on, at.cut, at.tip) {
-		return at, false, nil
+	at.sat = at.on
+	if at.on != "" && len(at.forks) > 0 {
+		// Asked of the trunk commit a stop is about to put the story onto,
+		// where there is one: an entry whose commit only that one holds lowers
+		// nothing until the story is on it, and the refusal then came after
+		// the stop had rewritten the branch. What cannot be read accepts
+		// nothing: a list git could not be asked about is an error, and never
+		// a list that names nothing.
+		at.own, err = trunkPart(ctx, s.Root(), at.forks, cmp.Or(at.ahead, at.on))
 	}
-	return at, true, nil
+	if at.own.From != "" {
+		at.on = at.own.From
+	}
+	return at, err == nil && len(at.forks) > 0 && sitsPastCut(at.on, at.cut, at.tip), err
 }
 
 // trunkChange is what trunk and the story each changed since the cut, with the
@@ -200,9 +383,12 @@ type frozenFile struct {
 	gone bool
 }
 
+// goneSuffix is what the name of a frozen file that is gone ends with.
+const goneSuffix = " (gone)"
+
 func (f frozenFile) String() string {
 	if f.gone {
-		return f.path + " (gone)"
+		return f.path + goneSuffix
 	}
 	return f.path
 }
