@@ -21,6 +21,7 @@
   - [`orchestrator-delegates`](#orchestrator-delegates)
 - [Rules on shell commands](#rules-on-shell-commands)
   - [How a command is read](#how-a-command-is-read)
+  - [A path outside the repository](#a-path-outside-the-repository)
   - [`loop-state-through-the-tool`](#loop-state-through-the-tool)
   - [`protected-path-through-the-tool`](#protected-path-through-the-tool)
   - [`frozen-test-through-the-tool`](#frozen-test-through-the-tool)
@@ -379,14 +380,26 @@ Refuses a new test file once the tests are frozen, unless
 so the case cannot go into one of them either: the person running the session
 can unfreeze and freeze again so the new test is covered. With the setting on,
 run `sdlc freeze` after adding the file, or `tests_frozen`, `plan`,
-`implementation`, `verification` and `commit` refuse with `SDLC-E0043`.
+`implementation`, `verification` and `commit` refuse with `SDLC-E0043`. If the
+file is a scratch file outside the repository, write its path out in full in a
+plain command.
 
 A shell command that would create a new test file — a redirect, `touch`, `cp` —
 is refused
 by the same rule, and so is naming one in a command that runs `sed`, `awk`,
 `perl` or another interpreter other than plainly as the file it is given to
 read. Removing a test file the freeze does not hold is not: that is what
-`SDLC-E0043` asks for.
+`SDLC-E0043` asks for. Nor is a path the hook places outside the repository,
+which is no test of this project's, whatever its name: a scratch copy is
+changed with a plain command, as
+[A path outside the repository](#a-path-outside-the-repository) sets out. Where
+the rule refuses a path written out in full outside the repository that the
+hook did not place there, the refusal says so: it names the word, the
+repository it was measured against, and what stopped the hook placing it. Where
+it refuses a word the hook could not read as a path, such as one that starts
+with a variable, the refusal says that the hook could not tell where the word
+leads. A relative word read in the repository gets neither, and nor does a glob
+that is the pattern a `find` looks for.
 
 "New" is what the freeze does not hold, not what was written recently, so a
 test file that has been there for years reports here too. A frozen test can be
@@ -404,11 +417,25 @@ Reading one is not: `sed -n 1,5p internal/x_test.go` names it plainly as the
 file `sed` reads. `cat internal/x_test.go | sed -n 1,5p` names it somewhere
 else, and is refused.
 
+Through the shell, a path the hook places outside the repository is no test of
+this project's and is not refused: the implementer changes a scratch copy with
+a plain command, as
+[A path outside the repository](#a-path-outside-the-repository) sets out. The
+file tools refuse the same path, for being outside. Where the rule refuses,
+through the shell, a path written out in full outside the repository that the
+hook did not place there, the refusal says so: it names the word, the
+repository it was measured against, and what stopped the hook placing it. Where
+it refuses a word the hook could not read as a path, such as one that starts
+with a variable, the refusal says that the hook could not tell where the word
+leads. A relative word read in the repository gets neither, and nor does a glob
+that is the pattern a `find` looks for.
+
 This is not a setting: `freeze.allow_new_test_files` lets the test author add
 one, never the implementer.
 
 *Instead:* make the existing tests pass; if they are wrong, say so rather than
-changing them.
+changing them. If the file is a scratch file outside the repository, write its
+path out in full in a plain command.
 
 After the freeze, the rules above answer first: a frozen file is refused as
 `frozen-test-is-not-edited` and a new one as `no-new-test-after-the-freeze`, so
@@ -695,6 +722,125 @@ in a repository inside the project, such as a submodule; where `GIT_DIR` names
 another checkout of this repository, it is refused as a commit there
 ([`commit-in-another-checkout`](#commit-in-another-checkout)).
 
+### A path outside the repository
+
+The loop governs the repository and nothing else. Outside the repository means
+outside the checkout the session is held in and outside every other checkout of
+the same repository. The file tools refuse a path there, under
+[`write-outside-repository`](#write-outside-repository), because a file the
+loop cannot review is not one it lets a tool write. A shell command is yours to
+run, so a path the hook can place outside the repository is not governed by
+the shell rules, whatever its name: a copy of a frozen test in a scratch
+directory is not a frozen test.
+
+Placing a path is the exception, and the hook does it only on grounds a
+spelling cannot fake. All three have to hold: the command is plain, the
+directory it runs in is known, and the disk agrees.
+
+#### A plain command
+
+A command is plain, on this page and in a refusal, when the hook reads the
+whole of it and knows what every word is for. It is made of the commands in
+this table and no others, each with the options shown and no others, alone or
+joined by `&&` and nothing else:
+
+| Command | Plain as |
+| --- | --- |
+| `rm` | `rm FILE...` or `rm -f FILE...` |
+| `cp` | `cp FILE... TO`, `cp -p FILE... TO` or `cp -t DIRECTORY FILE...` |
+| `mv` | `mv FILE... TO`, and only as the whole command, joined to no other |
+| `touch` | `touch FILE...` |
+| `tee` | `tee FILE...` |
+| `sed` | `sed -i s/x/y/ FILE...`: one substitution ending in `/` or `/g`, and no `w` or `W` in the first file's path |
+| `echo`, `printf` | any words |
+| `find` | `find DIRECTORY... -name GLOB -delete`, or with `-path` for `-name` |
+| `cd` | `cd DIRECTORY`: one directory, with no option, glob or `..` |
+
+The output of any of them may go to a file with `>` or `>>`, set apart by a
+space from the word before it. A word may be in single or double quotes. The
+command holds nothing the shell would fill in or act on: no variable, `$(...)`,
+backtick, `~`, brace list or `!`; no `;`, pipe, `||`, single `&`, `<`,
+here-document or subshell; and no character outside printable ASCII. It holds
+no backslash, in quotes or out of them: the rules that judge by name read one
+as a separator, and the shell reads one in single quotes as a letter of the
+name. Inside quotes it holds no space, none of `;`, `&`, `|`, `<`, `>`, `)` or
+a backtick, and no quote of the other kind: the rules that judge by name read
+each of those as if it were not quoted, and where the two readings of a command
+differ the hook places nothing. A `PowerShell` command is never plain.
+
+Anything else in the command — another program, another option, `rm -r`,
+`cp -a` — could make a link or move the shell, and the hook does not guess
+which. One such word anywhere in a command stops the hook placing any path in
+it, and the whole command is judged by name, as every command was before the
+hook placed any path.
+
+#### A known directory
+
+The directory is the one Claude Code says the session is in, moved only by a
+plain `cd`. A relative `cd` is followed only where the session carries no
+`CDPATH`.
+
+#### The disk agrees
+
+There is no link on the way to the path, no directory on the way that is a
+checkout of the repository under another name, and no second name for the file,
+which a hard link gives it. For `find`, no checkout is below where it starts
+either.
+
+#### A word the hook cannot place
+
+A word the hook cannot place is judged by its name, as that file in the
+repository: `rm "$S/internal/x_test.go"` is refused as the frozen test
+`internal/x_test.go` wherever `$S` leads, because the hook does not run the
+shell. That is what "judged by name" means on this page. The way on is to write
+the path out in full, with no variable, glob, brace list or `..` in it, in a
+plain command.
+
+Judged by name is not the same as
+[a path that is only named](#a-path-that-is-only-named), which is a path a
+command mentions and does not act on: in the text of an sdlc flag, in a
+pathspec that leaves it out, or beside a request for help. Neither `sdlc` nor
+`git` is in the table above, so a command with such a mention in it is not
+plain, and every other path in it is judged by name. Where the hook is not
+sure of the mention, a refusal can say both things of one path: what stopped
+the hook placing it, and then that the hook cannot tell whether the command
+acts on it or only names it.
+
+For the three rules that protect tests, a glob in the last name of what `rm`
+removes is placed by the directory before it, as in
+`rm -f /private/tmp/scratch/*_test.go`. A glob anywhere else, or with a `/`
+after it, is judged by name.
+
+A plain `cp` or `mv` is read by where each file lands. A file copied or moved
+into the repository from outside is the file it becomes there, whatever the
+destination is called, for the rules on tests, on loop state and on protected
+paths. For the three rules that protect tests, a `cp` of a test to a path
+placed outside the repository only reads the test, and is not refused. Where
+the destination is not written out in full, as in `cp x_test.go ../scratch/`,
+the hook cannot tell where a file lands, and each file is judged by name.
+
+#### Known limits
+
+Each of these errs towards refusing:
+
+- A path through a link is not placed, even where the link stays outside the
+  repository. On macOS `/tmp` and `/var` are links, so `/tmp/...` and anything
+  under `$TMPDIR` is not placed: write `/private/tmp/...`.
+- A file with a hard link is not placed.
+- A `find` over more than 10,000 files and directories is not placed, and
+  neither is one that starts at a directory that is not there.
+- On Windows only a path on a lettered drive is placed, and none with a name
+  that ends in a dot or a space; no `PowerShell` command is plain.
+- A command with a space inside quotes is not plain, so a path with a space in
+  it is never placed, and `echo "two words" > /private/tmp/scratch/x_test.go`
+  is judged by name: `printf two-words > /private/tmp/scratch/x_test.go` is
+  plain.
+- A command with a backslash in it is not plain, so
+  `printf 'a\nb\n' > /private/tmp/scratch/x_test.go` is judged by name: write
+  each line with an `echo` of its own, joined by `&&`.
+- On macOS, `sed -i` wants a suffix after it, `sed -i '' s/x/y/ FILE`, and that
+  spelling is not plain.
+
 ### `loop-state-through-the-tool`
 
 Refuses a command that would write or delete the loop's own files: `.sdlc/state`,
@@ -704,6 +850,15 @@ Refuses a command that would write or delete the loop's own files: `.sdlc/state`
 `rm`, `mv`, `cp`, `tee`, `dd`, `sed -i`, `find -delete`, `git rm`,
 `git checkout` and their like; or from
 inside a program handed to an interpreter.
+
+A relative name is read from the directory the session is in. Where the hook
+places that directory outside the repository, `.sdlc/state/active` there is
+that directory's file and is not refused. Neither is a `find` that starts only
+in directories placed outside the repository, whatever name it looks for:
+`find /private/tmp/scratch -name active -delete` removes no file of the loop's.
+Written through a variable, a glob or a link, or in a command that is not
+plain, the path is judged by name; see
+[A path outside the repository](#a-path-outside-the-repository).
 
 It also refuses taking away a checkout of this repository, or a directory that
 holds one: the session's own, the main checkout, or another story's worktree,
@@ -971,9 +1126,18 @@ by redirection; through `rm`, `mv`, `cp`, `tee`, `sed -i`, `find -delete`,
 
 Before the freeze this rule does nothing at all.
 
+A path the hook places outside the repository is not a frozen test, whatever
+its name, and neither is what a `find` comes to that starts only in directories
+placed outside it;
+[A path outside the repository](#a-path-outside-the-repository) says when a
+path is placed. Where the rule refuses a path it did not place, the refusal
+names the word, or where the `find` starts, the repository it was measured
+against, and what stopped the hook placing it.
+
 *Instead:* leave it alone. If it genuinely has to change, say which test and
 why; the person running the session lifts the freeze with
-`sdlc unfreeze --reason "..."`.
+`sdlc unfreeze --reason "..."`. If the file is a copy outside the repository,
+write its path out in full in a plain command.
 
 A refused `find` has a way on of its own:
 

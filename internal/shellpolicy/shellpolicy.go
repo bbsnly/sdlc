@@ -149,6 +149,21 @@ type State struct {
 	// state in letters no rule matches, and only the filesystem knows it.
 	Resolve func(word string) string
 
+	// Root is the checkout the session is held in, absolute and slash-separated
+	// as the session opened it, for the refusals that say what a word was
+	// measured against. Empty where the caller does not know it.
+	Root string
+
+	// Outside, when set, is the disk's own answer to whether a path Resolve
+	// puts outside the repository is outside it: absolute and slash-separated,
+	// with no link on the way to it and no other name that could be the
+	// repository's, and, with below set, with no checkout of the repository
+	// under it. Resolve answers "" for a path it could not look up as much as
+	// for one it placed, which is no ground for letting a word go. Nil where
+	// the caller has no disk to ask: Resolve's answer then stands for a path,
+	// and nothing is known of what is below one.
+	Outside func(path string, below bool) bool
+
 	// PowerShell is whether the command is PowerShell's, where a backtick is an
 	// escape rather than a command substitution: `Remove-Item CLAUDE`.md`
 	// removes CLAUDE.md.
@@ -184,6 +199,10 @@ type State struct {
 
 	// hold is the branch rule's finding for this call of Inspect, set by it.
 	hold *branchHold
+
+	// whole is the command as it was written, as the plain reader read it, or
+	// nil; set by Inspect, and see plainCommand.
+	whole []plainRun
 }
 
 // A Landing is where a word of a command lands in another checkout of the
@@ -387,7 +406,15 @@ func addDecodedReadings(out []pair, shell string) []pair {
 // stays refused is refused under the rule that always named it, and a command
 // the rules allow as written is never refused here: the reading with the
 // mentions taken out can only let a command through.
+//
+// A word is placed outside the repository only in the command as it was
+// written. The plain reader reads that once, here, and every reading the rules
+// are asked about is compared with it: one with a mention taken out is not the
+// command the shell runs, and with the plain reader given that line to read,
+// taking out a quoted text with a space in it made a command plain that was
+// not, and the refusal of a path it writes said the path might only be named.
 func Inspect(command string, s State) (Finding, bool) {
+	s.whole = plainCommand(command, s)
 	n := nameOnly(command, s)
 	if n.rewritten(command) {
 		if _, refused := inspectAs(n.asked, n.named, s); !refused {
@@ -408,7 +435,7 @@ func Inspect(command string, s State) (Finding, bool) {
 // still read as it always was.
 func inspectAs(asked, named string, s State) (Finding, bool) {
 	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}, landed: map[string][]Landing{},
-		disk: &diskAnswers{}}
+		disk: &diskAnswers{}, whole: s.whole}
 	s.hold = &branchHold{}
 	var f Finding
 	var ok bool
@@ -448,7 +475,8 @@ func inspectEach(line string, s State, m *memo, rules func(pair, State, *memo) (
 		// differently. wordsIn over a 50 KB command is 262 us, so a later reader
 		// will see duplicated work here; sharing it is what would break the
 		// guarantee above.
-		m = &memo{checked: map[string]bool{}, resolved: m.resolved, landed: m.landed, folded: m.folded, disk: m.disk}
+		m = &memo{checked: map[string]bool{}, resolved: m.resolved, landed: m.landed, folded: m.folded, disk: m.disk,
+			whole: m.whole}
 	}
 	return Finding{}, false
 }
@@ -478,6 +506,7 @@ func inspectPaths(r pair, s State, m *memo) (Finding, bool) {
 	// separators the shell hid from find left as markers. It is made once, the
 	// first time a segment runs find; a command with no find pays nothing for it.
 	w.plain = markedSegments(pathText(text, s.PowerShell))
+	w.alike = m.readAlike(w.plain)
 	for idx, marked := range w.plain {
 		if s.hold.charge(1) {
 			return s.hold.finding, true
@@ -546,6 +575,9 @@ type pathWalk struct {
 	// the finds among them, made the first time a segment runs find.
 	plain []string
 	scan  *findScan
+	// alike is whether the plain reader read every one of those segments as
+	// they are read here: see pathQuestion.certain.
+	alike bool
 }
 
 // segment applies the path rules to one segment of the command, and then
@@ -575,7 +607,8 @@ func (w *pathWalk) segment(idx int, marked string) (Finding, bool) {
 	j := segmentRules{
 		command: w.command, exp: &found.exp, redirects: redirects, dir: at, lost: atLost, unsure: w.unsure,
 		s: s, m: w.m,
-		away: takeAway{s: s, m: w.m, dir: at, lost: atLost, pwd: w.dir, pwdLost: w.lost, old: w.old, exp: &found.exp},
+		certain: w.alike && evals == 0 && !atLost && len(run.words) == len(words) && w.m.readFrom(idx, at),
+		away:    takeAway{s: s, m: w.m, dir: at, lost: atLost, pwd: w.dir, pwdLost: w.lost, old: w.old, exp: &found.exp},
 	}
 	if f, ok := j.judge(segment, run); ok {
 		return f, true
@@ -595,6 +628,8 @@ func (w *pathWalk) segment(idx int, marked string) (Finding, bool) {
 		// as it is.
 		whole := run
 		whole.words = found.words
+		// These are not the words the plain reader was compared with.
+		j.certain = false
 		if f, ok := j.judge(found.segment, whole); ok {
 			if found.toEnd && !changesFiles(run.words) {
 				f = laterAction(f)
@@ -670,9 +705,12 @@ type segmentRules struct {
 	// whether a script moves and then writes, which the freeze counts as
 	// lost.
 	lost, unsure bool
-	s            State
-	m            *memo
-	away         takeAway
+	// certain is whether the plain reader read the command as it is read
+	// here, and this segment from this directory: see pathQuestion.
+	certain bool
+	s       State
+	m       *memo
+	away    takeAway
 }
 
 // judge asks the path rules about a command of the segment, spelled segment.
@@ -688,7 +726,7 @@ func (j segmentRules) judge(segment string, run invocation) (Finding, bool) {
 	}
 	q := pathQuestion{
 		line: j.command, segment: segment, exp: j.exp, run: run, redirects: j.redirects,
-		dir: j.dir, lost: j.lost, s: j.s, m: j.m,
+		dir: j.dir, lost: j.lost, certain: j.certain, s: j.s, m: j.m,
 	}
 	if f, ok := checkLoopState(q); ok {
 		return f, true
@@ -1463,8 +1501,18 @@ type pathQuestion struct {
 	redirects     []string
 	dir           string
 	lost          bool
-	s             State
-	m             *memo
+	// certain is whether the command is one the hook reads whole and the
+	// plain reader read all of it as it was read here: the same segments, with
+	// the same words sent to the same places, and this one from the same
+	// directory. Only then is a word of it placed outside the repository. The
+	// two readers split a command differently at a separator inside quotes,
+	// and with the directory taken from this one, `echo 'a && cd /elsewhere'
+	// && rm -f a_test.go` was read as a removal from /elsewhere, and let go.
+	certain bool
+	s       State
+	m       *memo
+	// reached are the frozen tests a find's names or operators pick.
+	reached []string
 }
 
 // findChanges reports whether the words run a find that deletes what it
@@ -1476,6 +1524,11 @@ func findChanges(words []string) bool {
 // checkLoopState stops the shell being the way around every other rule.
 func checkLoopState(q pathQuestion) (Finding, bool) {
 	line, segment, run, m := q.line, q.segment, q.run, q.m
+	if q.findsOutside() {
+		// find does not leave where it starts: only where its output is sent
+		// is left to ask about.
+		return q.namesLoopFiles(q.kept(q.redirects, false, eachWord), nil)
+	}
 	candidates := append([]string{}, q.redirects...)
 	candidates = q.addWritten(candidates)
 	if runsInlineCode(run.words, segment) {
@@ -1483,13 +1536,16 @@ func checkLoopState(q pathQuestion) (Finding, bool) {
 		// freeze below.
 		candidates = append(candidates, m.words(line)...)
 	}
+	// A word placed outside the repository names none of the loop's files: from
+	// a directory outside it, `.sdlc/state/active` is that directory's.
+	candidates = q.kept(candidates, false, byLanding)
 	// What a find's expression picks once its operators are read, kept apart
 	// from what the flat reading finds so that the refusal can say so.
 	found, picked := q.loopFilesFound()
 	candidates = append(candidates, found...)
 	// What a command takes away is gone as much as what it writes: `git clean
 	// -fdx .sdlc` writes nothing, and empties the loop's record.
-	candidates = append(candidates, takenAway(run.words)...)
+	candidates = append(candidates, q.kept(takenAway(run.words), false, eachWord)...)
 	if f, ok := q.takesTheRecord(); ok {
 		return f, true
 	}
@@ -1745,15 +1801,24 @@ func checkFrozenTests(q pathQuestion) (Finding, bool) {
 	inline := runsInlineCode(run.words, q.segment)
 	own := runsAProgramOfItsOwn(run.words)
 	byName := q.frozenByName(inline)
+	if q.findsOutside() {
+		// Only where its output is sent is left to ask about.
+		return q.namesFrozenTests(q.kept(q.redirects, false, eachWord), nil, nil, byName)
+	}
 	candidates := append([]string{}, q.redirects...)
 	if inline || own {
 		candidates = q.addProgramWords(candidates)
 	}
 	candidates, removed := q.addFrozenWritten(candidates)
+	// A word placed outside the repository is no test of its freeze, whatever
+	// its name: the Write tool refuses it for being outside, and the shell has
+	// nothing there to protect.
+	candidates, removed = q.kept(candidates, false, byLandingOrRead), q.kept(removed, true, eachWord)
 	// The frozen tests a find's expression picks once its operators are read,
 	// kept apart from what the flat reading finds.
 	found, picked := q.frozenTestsFound()
 	candidates = append(candidates, found...)
+	q.reached = append(append([]string{}, found...), picked...)
 	if f, ok := q.takesFrozenTests(); ok {
 		return f, true
 	}
@@ -1959,26 +2024,26 @@ func (q pathQuestion) frozenWord(c string, byName, taken, left bool) (Finding, b
 		frozen, ok = w, true
 	}
 	if !ok && w != "" && !taken && s.NewTest != nil && s.NewTest(w) {
-		return Finding{
+		return q.unplacedWord(Finding{
 			Rule: "no-new-test-after-the-freeze",
 			Reason: w + " would be a new test file added after the freeze, which is the " +
 				"freeze with extra steps: a test written now can be written to pass",
 			Route: "say which case is missing and stop: the frozen files are frozen too, " +
 				"and the person running the session can unfreeze and freeze again so the " +
 				"new test is covered",
-		}, true
+		}, c), true
 	}
 	if ok {
-		return leftIn(frozenFinding(frozen), left), true
+		return leftIn(q.explained(frozenFinding(frozen), c, frozen), left), true
 	}
 	if w != "" && s.ImplementerTest != nil && s.ImplementerTest(w) {
-		return Finding{
+		return q.unplacedWord(Finding{
 			Rule: "implementer-does-not-write-tests",
 			Reason: w + " is a test file, and the implementer does not write tests -- through " +
 				"the shell any more than through the file tools",
 			Route: "make the existing tests pass; if they are wrong, say so rather than " +
 				"changing them",
-		}, true
+		}, c), true
 	}
 	return Finding{}, false
 }
@@ -2655,6 +2720,7 @@ type memo struct {
 	line     []string             // the words of the whole command
 	split    bool
 	disk     *diskAnswers // what the hook said of the checkouts, for every reading
+	whole    []plainRun   // the command as the plain reader read it, or nil; see plainCommand
 }
 
 // diskAnswers is what State.Checkouts said, asked once for a command, and where

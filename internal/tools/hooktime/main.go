@@ -93,12 +93,15 @@ func shapes() []shape {
 // stands for the project.
 //
 // It is a second copy, because the hook builds its own from the freeze, the
-// story's record and git, none of which an empty directory has. Two things the
-// hook does are left out. Its Resolve reads `~` and a drive letter first, and
-// no word of the three commands begins with either. And its Checkouts lists
+// story's record and git, none of which an empty directory has. Three things
+// the hook does are left out. Its Resolve reads `~` and a drive letter first,
+// and no word of the three commands begins with either. Its Checkouts lists
 // the repository's checkouts, which none of the three commands asks for; nor
 // does any of them ask the questions only a git command asks, which are
-// answered here without git.
+// answered here without git. And its Outside asks the disk about a path Resolve
+// puts outside the project, in a command the hook reads whole, which no word of
+// the three commands is: it is never called, and answers as the hook's does
+// where it is in doubt.
 func state(dir string, powerShell bool) shellpolicy.State {
 	cfg := config.Default()
 	frozen := []string{"internal/alpha/alpha_test.go", "internal/beta/beta_test.go", "test/e2e/gamma_test.go"}
@@ -127,6 +130,8 @@ func state(dir string, powerShell bool) shellpolicy.State {
 			}
 			return rel
 		},
+		Root:      filepath.ToSlash(dir),
+		Outside:   func(string, bool) bool { return false },
 		Trunk:     func() string { return cfg.Git.TrunkBranch },
 		IsTrunk:   func(string) bool { return false },
 		Fresh:     func() (bool, string) { return false, "" },

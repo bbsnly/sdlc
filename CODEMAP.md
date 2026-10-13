@@ -741,13 +741,14 @@ single-dash word, a here-string, and a removal through a deep dot-glob. `state`
 copies the `shellpolicy.State` wiring that `internal/hook` builds for a session
 holding a story with frozen tests, over an empty temporary directory the
 program makes; the copy can drift from the hook's, and three comments in
-`internal/hook/hook.go` point at it. `timeShapes` takes the three in turn for
-five rounds and keeps each shape's fastest run. `readBudgets` refuses a missing
-or unparseable `-perl`, `-here-string` or `-dot-glob` before the directory is
-made. The leg fails when a fastest run is over its budget, and when a shape's
-answer (`answer`) differs from the one expected. Its tests sit beside it and in
-`test/checklegs`. Imports `config`, `pathrules`, `shellpolicy` and `testset`.
-No `SDLC-E` code.
+`internal/hook/hook.go` point at it. Its `Outside` answers no without asking
+the disk, and none of the three commands calls it. `timeShapes` takes the
+three in turn for five rounds and keeps each shape's fastest run.
+`readBudgets` refuses a missing or unparseable `-perl`, `-here-string` or
+`-dot-glob` before the directory is made. The leg fails when a fastest run is
+over its budget, and when a shape's answer (`answer`) differs from the one
+expected. Its tests sit beside it and in `test/checklegs`. Imports `config`,
+`pathrules`, `shellpolicy` and `testset`. No `SDLC-E` code.
 
 ## Taskfile.yml `hook-time`
 
@@ -1037,3 +1038,99 @@ A text read as a mention is swapped for its own path-shaped words
 line still finds them.
 
 Past `maxSwaps` mentions on a line, the line is read as written.
+
+## Where a path is judged inside or outside the project
+
+There is no one place. The file tools ask once: `hook.go`'s `decide` calls
+`pathrules.Rel(project, path)` and hands `policy.Request.Outside` to the
+`write-outside-repository` rule, first in `policy.Rules`. The shell rules ask
+in two layers. The older is `State.Resolve`, which is `onDisk` in `hook.go` and
+answers "" for a path outside the project and for one it could not look up;
+`State.Dir` is repository-relative, or absolute where the session's directory
+is outside. In `internal/shellpolicy`, `memo.outside` (shellpolicy.go) answers
+by `Resolve` alone, only for a word that is absolute or starts with `~`, and is
+asked by `loopFileFinding` and `takesFrozenTests`; `reaches` (find.go) asks the
+same of a find's root, and counts outside as above. `frozenWord` and
+`memo.frozen` (a word under the freeze, matched as equal to or ending in a
+frozen path), the flat `-name` reading in `frozenTestsFound` (`foundBy` never
+reads the roots for a name), and the `NewTest` and `ImplementerTest` checks in
+`frozenWord` do not ask. `holding` (directory.go) matches an absolute directory
+by its end. A word in another checkout of the repository is `State.Shared`'s,
+read by `sharedState`. The newer layer is `pathQuestion.outside` (outside.go):
+`checkLoopState` and `checkFrozenTests` take the words it places off their
+candidates, through `kept`, before any of the above reads them. Unifying the
+two is not done: it would change what the older layer answers for loop state.
+
+## internal/shellpolicy/outside.go
+
+Package `shellpolicy`. When a word of a command is let go for being outside the
+repository: in a command read whole, from a directory the command is certainly
+in, where the disk agrees, and never otherwise. `plainCommand` reads the raw
+command with a scanner of its own that follows quotes (`plainScan`: `read`,
+`quote`, `join`, `send`) and answers its simple commands as `plainRun`s (words,
+redirect targets, the directory each is read from), or nil. `plainProgram` is
+the closed list of programs and options, with `plainCopy`, `plainSed`,
+`plainFind` and, for `cd`, `certainMove`.
+
+`plainScan` is a fourth reader of shell text, beside the lexer, the
+quote-blind fields and `scanLine` in `named.go`. It and `scanLine` both follow
+quotes and give up at what they do not follow, and neither reads what the
+other found. `scanLine` says where a command only names a path, so that the
+mention is taken out of the line the rules are asked about; `plainCommand`
+says whether the use of every word of the command is known, so that a word of
+it can be placed. `Inspect` has the plain reader read the command as written,
+once, into `State.whole`, and `inspectAs` hands that to the `memo` of every
+line it is asked about: the command as written, and `nameOnly`'s `asked`,
+`named` and `lenient`. A line with a mention taken out is compared with the
+command as written as any other reading is, so no word of it is placed unless
+it is that command word for word. A command whose `asked` or `named` differs
+from it has `sdlc` or `git` as a program, which `plainProgram` does not know;
+`lenient` can differ in a command of plain programs alone.
+
+For each reading `memo.readAlike` compares `memo.whole` with the walk's
+segments, word for word and redirect for redirect (`pathWalk.alike`), and
+`readFrom` compares one segment's directory; `pathWalk.segment` sets
+`segmentRules.certain` from both, and `judge` copies it to
+`pathQuestion.certain`. Where the two readers differ anywhere in a command,
+nothing in it is placed. `pathQuestion.outside` places one word: certain,
+`literal` as the command spells it, before `clean` (no `$`, `..`, glob, brace
+or backslash), joined to an absolute `dir` with no `..` in it, then
+`memo.placed` (`Resolve` says outside, `Shared` finds it in no other checkout,
+`State.Outside` agrees; a nil `Outside` is a unit test's lookup standing for
+the hook's, and places nothing below a path). `kept` takes placed words off a
+rule's candidates. For a plain `cp` or `mv` it reads a source placed outside by
+where it `lands` (`landsOutside`; `copyRead`: `byLanding` for loop state and
+protected paths, `byLandingOrRead` for the freeze, where a `cp` that lands
+outside only reads its sources); where the destination is not literal the
+source keeps its name, and `blindCopy` is how a refusal knows that.
+`findsOutside` is a find whose every root is placed with no checkout below it.
+`explained` adds to a frozen-test refusal the word or find root that was read
+as the repository's, `State.Root`, and `unplaced`, the cause. For a word that
+is `unplacedWord`, which `frozenWord` (shellpolicy.go) calls as well for the
+`no-new-test-after-the-freeze` and `implementer-does-not-write-tests` refusals,
+so the three say it in the same sentences: `untold` for a word the hook cannot
+read as a path, the cause for one written out in full. A word in the
+repository, or relative from it, gets nothing added. Each route ends with
+`seePage`, and `macLinks` goes with a link given as the cause. `quoted` and
+`bounded` print the word as written, up to `maxShown` bytes. Imports nothing of
+this module.
+
+## internal/hook/outside.go
+
+Package `hook`. `outsider` is `State.Outside`: the disk's answer to whether a
+path is outside every checkout of the repository, where every doubt and every
+error but "not there yet" answers no. `newOutsider` is the only way one is
+made. `outside` takes an absolute path on a lettered drive with no `..` in it
+and nothing else, and on Windows no name ending in a dot or a space
+(`namedAsLooked`, beside `oneName` in the platform files). `cleared` remembers
+`decide` for each path of one command. `decide` asks the parent in turn: a path
+not there yet is decided by its parent; a link or an irregular file, which a
+Windows junction is, is no; a file needs its directory to be there and one name
+only (`oneName`: `outside_other.go` reads `Stat_t.Nlink`, `outside_windows.go`
+`GetFileInformationByHandle`); a directory must not be a checkout
+(`isCheckout`, by `os.SameFile` against `checkoutSet`'s list, read once) and
+its own `..` must be the parent its name says. `holdsNoCheckout` remembers, for
+each root of a find, what `walk` found below it, `maxBelow` entries at most,
+following no link. `inspectShell` in `hook.go` makes one `outsider` for a
+command and hands shellpolicy `out.outside` and `Root`, the project as the
+session opened it.

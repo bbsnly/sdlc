@@ -539,6 +539,9 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 		resolved[name] = is
 		return is
 	}
+	// The disk is asked about a path only where a rule would let a word go for
+	// being outside the repository, and about each directory once.
+	out := newOutsider(func() []string { return checkoutSet(pl, resolver).Checkouts })
 	fresh := sync.OnceValues(func() (bool, string) { return reviewsFresh(pl, story, warn, budget) }) //nolint:contextcheck // reviewsFresh takes the command's lazily started budget, not ctx: the deadline must begin at the first git call
 	// internal/tools/hooktime builds this State a second time, to hold Inspect
 	// to a time (`./task hook-time`): nothing here can be called from outside
@@ -554,6 +557,8 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 		Trunk:         trunk,
 		IsTrunk:       isTrunk,
 		Resolve:       func(word string) string { return onDisk(resolver, word) },
+		Root:          filepath.ToSlash(project),
+		Outside:       out.outside,
 		Fresh:         fresh,
 		Commits:       func() { commits = true },
 		Nested:        func(dir string) bool { return nestedRepository(project, dir) },
