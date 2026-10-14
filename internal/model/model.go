@@ -693,6 +693,14 @@ type Approval struct {
 	Reason   string `json:"reason,omitempty"`
 	Type     string `json:"type,omitempty"`
 	TreeHash string `json:"tree_hash,omitempty"`
+	// Commit is the tip of the story's branch when the answer was given, in
+	// full, for an answer given in the story's own worktree once the commit
+	// gate has passed. The tree says which files a person approved and nothing
+	// of the commits that hold them: a message or an author amended after the
+	// gate left the tree as it was, and landed on the approval it had. Empty
+	// on the answer given before the story was first committed, when there is
+	// no commit of the story to name, and on one an older sdlc recorded.
+	Commit string `json:"commit,omitempty"`
 }
 
 // Record is everything known about one story's iteration.

@@ -7,6 +7,7 @@
   - [Reviews after an answer](#reviews-after-an-answer)
 - [The pause before the commit](#the-pause-before-the-commit)
   - [Turning the pause on or off](#turning-the-pause-on-or-off)
+  - [What your approval covers](#what-your-approval-covers)
   - [Checking the story at Gate 1](#checking-the-story-at-gate-1)
 - [Record your decision](#record-your-decision)
 - [Where the loop hands a story over](#where-the-loop-hands-a-story-over)
@@ -169,8 +170,59 @@ story onto the new trunk and asks for the approval once more.
 An approval is bound to the work it was given for. Change anything after it and
 it needs approving again. Work you sent back stays sent back until it changes,
 and once it has changed it has to be handed over again. That is what makes the
-approval worth something: it answers for the commit, not for a version of the
-story that no longer exists.
+approval worth something: it answers for the files that are committed, not for
+a version of the story that no longer exists.
+
+### What your approval covers
+
+Your approval covers the files you were shown. You give it before the story is
+committed, when there is no commit to read, so the messages and authors of the
+story's commits are fixed afterwards, when the commit gate passes. Nobody asks
+you to read the commits' messages and authors: they land as the session wrote
+them unless they change.
+
+For a story in its own worktree, in a tier that pauses, they cannot change
+unseen. A commit amended, reworded, squashed, reordered or added after the
+commit gate is approved again before the story lands: `sdlc stop` refuses it,
+and so does `sdlc gate commit pass` run again
+([SDLC-E0037](../troubleshooting.md#sdlc-e0037), which says how to read the
+commits and what each refusal means). When `sdlc stop` itself puts the story
+onto a trunk that moved, it keeps every commit's author and message, and asks
+you nothing.
+
+Once the story has been committed, your answer also names a commit: the one the
+story's branch is at when you give it. `sdlc approve` prints it:
+
+```text
+This answer is also for the story's commits as they stand: story/US-001 is at 3f2a9c1d7e5b.
+```
+
+Where a second sentence follows, saying they are not the commits the story was
+held to, a commit was changed or added since the commit gate and your answer
+has just approved it. Read the commits with the command it prints. If that is
+not what you meant, and git still has the commit the gate recorded, the
+`git reset --hard` it prints puts the story back on that commit before anyone
+runs `sdlc stop`; the reset drops every commit above it and any uncommitted
+change. Answer in the story's worktree with its branch checked out: with
+another branch there, or none, the answer names no commit and says so.
+
+What is not covered:
+
+- the first message and author a session gives a commit;
+- commits a session puts on top of the commit your answer names: the one commit
+  gate pass after your answer fixes them with their words unread, as a rework
+  round does;
+- commits above the recorded one that change the root `CODEMAP.md` alone, any
+  number of them, with any author and message;
+- a story without a worktree ([`git.worktrees`](../configuration.md#git) set
+  to false);
+- a story whose first commit gate pass recorded no range, which a session can
+  bring about. The pass then prints `no range recorded`: read that story's
+  commits yourself before the stop;
+- a tier that pauses only in the main checkout's configuration or trunk's, and
+  not in the worktree's own: the stop holds the story to its commits, and the
+  commit gate run again does not;
+- a commit gate recorded by an older `sdlc`.
 
 ### Checking the story at Gate 1
 

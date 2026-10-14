@@ -392,6 +392,33 @@ func HasCommit(ctx context.Context, root, commit string) (bool, error) {
 	return true, nil
 }
 
+// Written is what the commits of base..tip say of themselves, oldest first:
+// for each, its hash, its author's name, its author's email and its whole
+// message, every field ended by a NUL, which none of them can hold. A range
+// with no commit is the empty string. The caller takes it apart: what git
+// wrote is returned as it wrote it, so that nothing here decides what a
+// message is.
+//
+// The author is the commit's own (%an, %ae) and never the one a .mailmap in
+// the repository says the person is, and the message is %B, the bytes after
+// the headers with nothing taken off either end: an approval holds a story to
+// these, and a name nobody committed as, or a final newline git added, would
+// make two different commits read the same or the same commit read as two. A
+// signature is not checked, because checking one runs a program the
+// repository's configuration names. The message is asked for as UTF-8, so that
+// a commit made again under another i18n.commitEncoding is compared as text.
+func Written(ctx context.Context, root, base, tip string) (string, error) {
+	if err := fullHashes(base, tip); err != nil {
+		return "", err
+	}
+	out, err := sealed(ctx, root, "log", "-z", "--reverse", "--topo-order", "--no-show-signature",
+		"--encoding=UTF-8", "--format=%H%x00%an%x00%ae%x00%B", base+".."+tip, "--")
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
 // ChangedUnder is the paths that differ between base and tip at dir or under
 // it, a slash path from the root, compared without regard to case: a trunk
 // landed from Linux is checked out on macOS and Windows as well, where

@@ -1035,9 +1035,13 @@ func (l *lander) changeChecks(ctx context.Context, st *landState) error {
 		}
 	}
 	if st.rebased || st.changed {
-		return l.requireApprovalAgain(ctx, *st)
+		if err := l.requireApprovalAgain(ctx, *st); err != nil {
+			return err
+		}
 	}
-	return nil
+	// Asked whether or not L8 was: an amended message or author leaves the
+	// change, and so everything above, exactly as it was.
+	return l.requireCommitsApproved(ctx, st)
 }
 
 // diffDriversOverridable refuses where the configuration, as the story's
@@ -1186,16 +1190,9 @@ func (l *lander) requireReviewsAgain(ctx context.Context, st *landState) error {
 // and a story rebased or changed in a tier that pauses is not that work. A
 // tier pauses where the main checkout's configuration or trunk's says so.
 func (l *lander) requireApprovalAgain(ctx context.Context, st landState) error {
-	story, _, err := l.s.Story(l.id)
-	if err != nil {
+	tier, pauses, err := l.pausedTier(st)
+	if err != nil || !pauses {
 		return err
-	}
-	tier := strings.TrimSpace(story.RiskTier)
-	if tier == "" {
-		tier = config.DefaultRiskTier
-	}
-	if !st.trunkCfg.HumanGates.PausesBeforeCommit(tier) && !l.m.cfg.HumanGates.PausesBeforeCommit(tier) {
-		return nil
 	}
 	tree, err := l.s.ReviewSubject(ctx)
 	if err != nil {
@@ -1220,10 +1217,29 @@ func (l *lander) requireApprovalAgain(ctx context.Context, st landState) error {
 	case !st.rebased:
 		since = " since its change changed"
 	}
-	return sdlcerr.New(sdlcerr.ApprovalRequired, quote(l.id)+" has not been approved by a person"+since, why).
-		WithFix(`hand it to a person with "sdlc escalate pre_commit_approval --message ..." and stop; once they have ` +
-			`run "sdlc approve ` + l.id + `" in ` + worktreeIn(l.id) + ` on the work as it now is, "sdlc stop" there ` +
-			`lands it`)
+	fix := `hand it to a person with "sdlc escalate pre_commit_approval --message ..." and stop; once they have ` +
+		`run "sdlc approve ` + l.id + `" in ` + worktreeIn(l.id) + ` on the work as it now is, "sdlc stop" there ` +
+		`lands it`
+	if !l.running {
+		// A stop run on a story handed over and answered before: followed as
+		// written, the fix above ended at `sdlc escalate` refusing.
+		fix += `. Where ` + noIterationToHandOver(l.id) + `, and it is handed over there`
+	}
+	return sdlcerr.New(sdlcerr.ApprovalRequired, quote(l.id)+" has not been approved by a person"+since, why).WithFix(fix)
+}
+
+// pausedTier is the story's risk tier, and whether the stop waits for a person
+// in it: where the main checkout's configuration or trunk's says so.
+func (l *lander) pausedTier(st landState) (string, bool, error) {
+	story, _, err := l.s.Story(l.id)
+	if err != nil {
+		return "", false, err
+	}
+	tier := strings.TrimSpace(story.RiskTier)
+	if tier == "" {
+		tier = config.DefaultRiskTier
+	}
+	return tier, st.trunkCfg.HumanGates.PausesBeforeCommit(tier) || l.m.cfg.HumanGates.PausesBeforeCommit(tier), nil
 }
 
 // ownReplay reports whether S is the commit the stop itself made when it put
@@ -1945,6 +1961,11 @@ func (l *lander) sameLines(ctx context.Context, a, b [2]string) (bool, error) {
 
 // replayedLine says what a replay did: the commit the story was at, the trunk
 // commit it was put onto and the commit it became, in full for the record.
+//
+// The full line is read back: replays (commitcover.go) takes the three commits
+// out of a "replayed" event by their place in this text, and the stop walks
+// them to say whether a story replayed more than once still has the commits
+// its approval was given on. A change to the words here is a change there.
 func replayedLine(id, trunk string, r model.Replay, full bool) string {
 	short := func(h string) string {
 		if full {

@@ -316,7 +316,10 @@ place that would otherwise not be checked.
 A story whose risk tier the project pauses (`high`, by default) waits here for
 a person as well. The conversation hands it over with `sdlc escalate` and stops,
 and the commit is refused until somebody has approved the work as it stands. See
-[`human_gates`](configuration.md#human_gates).
+[`human_gates`](configuration.md#human_gates). In such a tier the pass also
+fixes the commits of a story in its own worktree: the gate passed again with
+other commits, and a landing with other commits, each need a person's answer
+([what your approval covers](guides/human-approval-gates.md#what-your-approval-covers)).
 
 Passing the gate records the commits the story landed in, as a range: the ones
 since code review first passed that the loop watched the session land, as far as
@@ -606,6 +609,11 @@ again at once. The landing checks, in order:
   ([`SDLC-E0037`](troubleshooting.md#sdlc-e0037)). A story rebased any other way
   is measured as it always was, with the lines around its change, and in a tier
   that waits for a person it is approved again;
+- in a tier that waits for a person, the story's commits are the ones the
+  commit gate recorded, with at most the bookkeeper's `CODEMAP.md` commits on
+  top, or the stop's own replay of them with every author and message kept. A
+  commit amended or added since is approved again
+  ([`SDLC-E0037`](troubleshooting.md#sdlc-e0037));
 - where the story was put onto a trunk that moved, or changed since the commit
   gate, the configured commands pass on the tree that is about to be trunk, as
   trunk's committed configuration has them

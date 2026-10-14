@@ -107,6 +107,14 @@ which one it goes past:
   no range.
 - Anyone who can write into the git directory can plant a HEAD, and what that
   buys is an unrelated commit already on trunk read as the story's.
+- In a tier that waits for a person, a story in its own worktree is held at the
+  stop to the commit its range ends at: a commit amended or added after the
+  commit gate is refused until a person approves it. A story with no range is
+  not held at all, which a commit the hook did not write down can bring about
+  on the first pass; a range that stops short of HEAD is refused at the stop
+  unless only commits that change the root `CODEMAP.md` alone follow it, and any
+  number of those pass, with any author and message. The first message and
+  author a session gives a commit are read by nobody.
 - A story in its own worktree that is put onto a later trunk commit than the one
   it was cut from, by a person's rebase, by the one rebase the hook allows a
   session or by the stop's own replay, has its range start at that trunk commit,

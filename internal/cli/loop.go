@@ -851,6 +851,12 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) error {
 	if err := g.checkAndStaff(flags); err != nil {
 		return err
 	}
+	// Before SetGate, which drops the commit a failed or reopened commit gate
+	// recorded: a record an older sdlc wrote has that commit and no event
+	// that keeps it. After checkAndStaff, so a gate refused leaves nothing.
+	if inItsWorktree(s, id) {
+		rememberCommit(record, s.Now(), true)
+	}
 	reopened := record.SetGate(gate, status, flags.note, s.Now())
 	g.noteAccepted()
 	if err := g.noteCommits(); err != nil {
@@ -1008,13 +1014,22 @@ func (g *gateRun) noteCommitGate() error {
 			return err
 		}
 	}
+	// Read before placeCommits, which records this pass's commit over it.
+	known := recordedAtGate(record)
 	landed := placeCommits(ctx, g.s, g.id, record, head, at)
 	if err := requireNoteInRange(ctx, g.s.Root(), landed, g.note); err != nil {
 		return err
 	}
-	if own {
-		return recordChange(g.cmd, g.s, g.id, record, head, at)
+	if !own {
+		return nil
 	}
+	if err := requireAnAnchorLeft(g.s, g.id, record, known); err != nil {
+		return err
+	}
+	if err := recordChange(g.cmd, g.s, g.id, record, head, at); err != nil {
+		return err
+	}
+	rememberCommit(record, g.s.Now(), false)
 	return nil
 }
 
@@ -1250,7 +1265,7 @@ func requireApproval(ctx context.Context, rd *reading, id string, record *model.
 	}
 	why := record.WaitsForApproval(tier, tree)
 	if why == "" {
-		return nil
+		return requireSameCommits(ctx, rd, id, record)
 	}
 	return sdlcerr.New(sdlcerr.ApprovalRequired,
 		quote(id)+" has not been approved by a person for committing", why)

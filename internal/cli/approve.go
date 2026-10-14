@@ -28,6 +28,9 @@ type approvePayload struct {
 	Type     string `json:"type"`
 	Reason   string `json:"reason,omitempty"`
 	Tree     string `json:"tree,omitempty"`
+	// Commit is the commit of the story the answer names, once it has been
+	// committed in its own worktree.
+	Commit string `json:"commit,omitempty"`
 }
 
 func newEscalateCmd() *cobra.Command {
@@ -130,7 +133,15 @@ func runApprove(cmd *cobra.Command, args []string, reject string) error {
 	if err != nil {
 		return err
 	}
+	// Read before the record is touched: a tip that cannot be read fails the
+	// command with nothing answered.
+	commit, forCommits, err := answerForCommits(cmd.Context(), s, id, record)
+	if err != nil {
+		return err
+	}
 	approval, _ := record.Decide(!rejected, reject, tree, s.Now())
+	// On the stored answer: Decide returns a copy.
+	record.Approvals[len(record.Approvals)-1].Commit = commit
 	event := approval.Decision + " (" + approval.Type + ")"
 	if rejected {
 		event += ": " + reject
@@ -149,10 +160,13 @@ func runApprove(cmd *cobra.Command, args []string, reject string) error {
 	if wantJSON(cmd) {
 		return emitJSON(cmd.OutOrStdout(), approvePayload{
 			OK: true, Story: id, Decision: approval.Decision, Type: approval.Type,
-			Reason: approval.Reason, Tree: tree,
+			Reason: approval.Reason, Tree: tree, Commit: commit,
 		})
 	}
 	sayApproved(cmd.OutOrStdout(), s, record, id, event, rejected)
+	if !rejected && forCommits != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", forCommits)
+	}
 	return nil
 }
 

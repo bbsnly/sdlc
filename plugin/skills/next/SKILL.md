@@ -291,8 +291,7 @@ stamped with the tree.
 
 ## Gate 8 — Commit
 
-Until every gate above has passed, the hook refuses `git commit` and names the missing
-gate.
+Until every gate above has passed, the hook refuses `git commit`, naming the missing gate.
 
 A story whose `risk_tier` the project holds for a person (`high`, unless
 `human_gates.pre_commit_pause_tiers` says otherwise) waits for their approval. If nobody has
@@ -302,8 +301,9 @@ approved the work as it stands, hand it over and stop:
 sdlc escalate pre_commit_approval --message "<what changed, what to look at, and why it is ready>"
 ```
 
-An approval holds only for the work it was given for: change anything after it, and it needs
-approving again. Once approved, a person types `/sdlc:next` again, and it resumes here.
+An approval holds only for the work it was given for: change anything after it, even amend a
+commit after the pass (SDLC-E0037), and it needs approving again. Once approved, a person
+types `/sdlc:next` again, and it resumes here.
 
 Commit the whole story as one change, with a message about the change and why, in the project's
 style. With a worktree, commit there, on `story/<ID>`, never with `git -C` on the main
@@ -315,23 +315,22 @@ git commit -m "<type>: <what changed and why>"
 sdlc gate commit pass --note "<what reached trunk, in one line>"
 ```
 
-The gate refuses while anything is uncommitted, or if an acceptance test changed since the freeze.
-The note needs no hash; one it names must be in the range this pass records (SDLC-E0049).
+The gate refuses while anything is uncommitted, or an acceptance test changed since the freeze.
+The note needs no hash; one it names must be in this pass's range (SDLC-E0049).
 
-The pass says which commits it recorded; tell the person in the same words:
+The pass says which commits it recorded; tell the person in its words:
 
 - `landed in <start>..<end>` (with a worktree, `committed on story/<ID> in ...`, which trunk
   lacks until Gate 9): the commits the loop watched this session make.
-- `head is <head>, past <end>: ...`, under it: HEAD moved
-  past the range, usually a person's commit after yours; say so, and name both commits.
-- `no range recorded: ...`, in its place: no single range holds only the watched
-  commits, for a cause it does not name: another's commit among the story's, a merge, rewritten
-  history, or git unable to read the start or the notes. The work is fine; say there is no range,
-  give all four causes, pick none.
+- `head is <head>, past <end>: ...`, under it: HEAD is past the range, usually a person's
+  commit after yours; say so, naming both commits.
+- `no range recorded: ...`, in its place: no one range holds only the watched commits. It names
+  no cause: another's commit among the story's, a merge, rewritten history, or git unable to
+  read the start or the notes. The work is fine; say there is none, give all four causes, pick none.
 
 Do not work a range out yourself or rewrite history to make one.
 
-Before Gate 9, show the person any `head is` line again, and where the hook wrote down what it
+Before Gate 9, show the person any `head is` line again, and where the hook wrote what it
 watched: `<git-dir>/sdlc/commits/<story>/` (`git rev-parse --absolute-git-dir` names
 `<git-dir>`). `sdlc stop` removes it. Do not read it yourself.
 

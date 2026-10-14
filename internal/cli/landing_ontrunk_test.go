@@ -497,7 +497,15 @@ func TestAC10TheGate8ApprovalIsStaleWhenTheChangeDiffersFromTheOneApproved(t *te
 	lxChangeAfterTheReviews(t, wt)
 	moved := ldMoveTrunk(t, main)
 
-	swRefused(t, ldStale, wt, ldSession, "stop")
+	// US-092: a commit above the range the commit gate recorded, in a tier that
+	// waits for a person, is refused with SDLC-E0037 as well, and the stop may
+	// say so before it asks for the reviews again. Either way nothing lands.
+	first := wtRun(t, wt, ldSession, "", "stop")
+	said := first.stdout + first.stderr
+	refusedForEither := strings.Contains(said, ldStale) || strings.Contains(said, ldNotApproved)
+	if first.code == 0 || !refusedForEither {
+		t.Fatalf("sdlc stop exited %d where it should have been refused with %s or %s:\n%s", first.code, ldStale, ldNotApproved, said)
+	}
 	ldReviewAgain(t, wt)
 	out := swRefused(t, ldNotApproved, wt, ldSession, "stop")
 	_, fix := ldRefusal(t, out, ldNotApproved)

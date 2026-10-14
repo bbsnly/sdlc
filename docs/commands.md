@@ -515,6 +515,22 @@ and it is refused with [SDLC-E0011](troubleshooting.md#sdlc-e0011). The answer
 goes on the record with the tree it was given for, the story goes back to
 `in_progress`, and `sdlc start` picks it up again.
 
+Once a story has been committed in its own worktree (the commit gate has passed
+on it at least once), the answer also records the commit the story's branch is
+at, as `commit` on the approval and in the `--json` output. In a tier that
+pauses, an approving answer prints it:
+
+```text
+This answer is also for the story's commits as they stand: story/US-001 is at 3f2a9c1d7e5b.
+```
+
+It goes on to say so where they are not the commits the story was held to, with
+the command that shows them and, where there is one, the `git reset --hard`
+that puts the story back on the commit the gate recorded. With the worktree on
+another branch, or on none, the answer names no commit and says that instead.
+[What your approval covers](guides/human-approval-gates.md#what-your-approval-covers)
+has the rest.
+
 > [!WARNING]
 > Run it in your own terminal. The hook refuses it from a tool call in any
 > session while a story waits for an answer or is under way, because an agent

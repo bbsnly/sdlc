@@ -1407,6 +1407,11 @@ A story whose risk tier is in `human_gates.pre_commit_pause_tiers` is also
 refused until a person has approved that same tree with `sdlc approve`. A story
 missing from the backlog is refused too, because its tier cannot be known.
 
+The hook still lets through a commit amended once the commit gate has passed:
+the tree is the approved one. For a story in its own worktree in such a tier
+the landing is what holds it to the commits the gate recorded, and `sdlc stop`
+refuses another ([`SDLC-E0037`](troubleshooting.md#sdlc-e0037)).
+
 *Instead:* finish the gates — `sdlc status` shows where the story stands.
 Committing without them is for the person running the session to decide:
 `sdlc stop`, which turns this rule off along with the iteration, is refused from

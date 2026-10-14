@@ -634,14 +634,93 @@ recorded again after the commit gate, or one with a code review on its record fr
 staffing has since left out, where that review is of another tree than the others. Hand the
 story to a person with `sdlc escalate pre_commit_approval --message "..."` and stop; once they
 have run
-`sdlc approve <ID>` in `.sdlc/worktrees/<ID>`, `sdlc stop` there lands it. A tier pauses where
-the main checkout's configuration or trunk's committed one says it does.
+`sdlc approve <ID>` in `.sdlc/worktrees/<ID>`, `sdlc stop` there lands it. With no iteration
+running on the story, it cannot be handed over from there: `sdlc gate commit fail --story <ID>
+--note "..."` in `.sdlc/worktrees/<ID>` and `/sdlc:next` take it up again at the commit gate
+first. A tier pauses where the main checkout's configuration or trunk's committed one says it
+does.
 
 A person reads the work and runs `sdlc approve` in their own terminal. An
 approval is bound to the work as it stands, so a change made after it needs
 approving again, and work that was sent back stays sent back until it changes.
 The same refusal comes from the hook, before `git commit`, as
 [`commit-gate`](enforcement.md#commit-gate).
+
+**At landing or at the commit gate, the commits.** In a tier that pauses, a story in its own
+worktree is also held to its commits, and the refusal then begins `"<ID>" has not been approved
+by a person as its commits now stand`, or, at the commit gate, `"<ID>" would no longer be held to
+its commits`. What it says next tells the cases apart:
+
+- "is not in the history of": a commit of the story was made again after the commit gate passed:
+  amended, reworded, squashed, split, reordered or rebased, by a session or by a person, a person
+  fixing a typo in a message included. It is refused even where only the committer or a date
+  differs, because the commit is then another commit.
+- "which is above": a commit was added after the commit gate. The ordinary case is a person's own
+  commit on the story after the session's, which the pass reported as `head is ..., past ...`: it
+  landed before this version, and is now approved first. The one commit a story gains after the
+  gate without a person is the bookkeeper's, which changes the root `CODEMAP.md` alone.
+- "made `story/<ID>`'s commits again": `sdlc stop` put the story onto a trunk that moved, and the
+  commits it made are not, one for one, the ones the story had, by author name, author email and
+  whole message. Trunk has not moved. Check `commit.cleanup` and the `i18n.` settings in the
+  repository's git configuration, and whether anything committed on the branch while the stop ran.
+- "no longer reads": the stop put the story onto trunk before, and a commit it replaced then has
+  since been pruned by git, so the commits cannot be compared. Nothing says they were changed.
+- "The commit gate has not passed again": `sdlc gate commit pass` was run again on other commits
+  than it recorded, or would record no range where it had recorded one, and nothing was recorded.
+  A rework round after a pass that recorded no range costs one more answer at the stop, with
+  nobody having tampered: the story is then held to the commit the last answer named, and the
+  rework's commits are above it.
+
+The fix is a person's answer. With an iteration running, the session hands the story over with
+`sdlc escalate pre_commit_approval --message "..."` and stops. With none, which is the state of a
+finished story that was handed over and answered before, a person or the session first runs
+`sdlc gate commit fail --story <ID> --note "..."` in `.sdlc/worktrees/<ID>` and types
+`/sdlc:next`, which takes the story up again at the commit gate, where it is handed over. A
+person then reads the story's commits in their own terminal, in `.sdlc/worktrees/<ID>`, with
+`<trunk>` standing for the trunk branch's name:
+
+```console
+$ git --no-replace-objects log --no-mailmap --format=fuller <trunk>..story/<ID>
+$ git --no-replace-objects show --no-mailmap --no-patch --format=fuller <recorded>
+```
+
+The first shows each commit's author and message as they would land; the second shows the last
+commit the gate recorded, the hash the refusal names, if git still has it. Both read the commits
+themselves: a plain `git log` shows a replaced commit's words, and an author as a `.mailmap`
+renames them. Then `sdlc approve <ID>` there approves the commits as they stand, and `sdlc stop`
+there, run by the person or by the session, lands them. Where the commits were changed by mistake
+and git still has the recorded commit, `git reset --hard <recorded>` in `.sdlc/worktrees/<ID>`
+puts the story back on it instead, and `sdlc stop` there lands it with nobody asked. The reset
+drops every commit above `<recorded>` and any uncommitted change; the bookkeeper's `CODEMAP.md`
+commit is then made again. An answer given by an older `sdlc` names no commit and clears none of
+these refusals: answer with the version that refused.
+
+**What an approval covers.** A person's approval covers the files they were shown. It is given
+before the story is committed, when there is no commit to read, so the messages and authors of the
+story's commits are fixed afterwards, when the commit gate passes. Nobody is asked to read them:
+they land as the session wrote them unless they change. A commit changed or added after the commit
+gate is approved again before the story lands, and `sdlc gate commit pass` run again with other
+commits needs a person's answer given after the pass before it. That answer names the commit the
+story's branch was at when it was given, and `sdlc approve` prints it; an answer given with the
+worktree on another branch, or on no branch, names none. The stop's own replay onto a trunk that
+moved keeps every commit's author and message, any number of times, and asks nobody.
+
+**What is not covered:**
+
+- the first message and author a session gives a commit;
+- commits a session puts on top of the commit an answer names: the one commit gate pass after
+  that answer fixes them with their words unread, as a rework round does;
+- commits above the recorded one that change the root `CODEMAP.md` alone: any number of them,
+  with any author and message;
+- a story without a worktree ([`git.worktrees`](configuration.md#git) set to false);
+- a story whose first commit gate pass recorded no range. A session can bring this about, with a
+  commit the hook did not write down among its own. The pass then prints `no range recorded` and
+  the record holds `range_unknown`: where a story in a tier that pauses shows either, its commits
+  are not held, and a person reads them before the stop;
+- a tier that pauses only in the main checkout's configuration or trunk's committed one, and not
+  in the worktree's own: the stop holds the story to its commits, and the commit gate run again
+  does not;
+- a commit gate recorded by an older `sdlc`, which has no rule for a second pass.
 
 ### SDLC-E0038
 

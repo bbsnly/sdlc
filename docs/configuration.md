@@ -485,6 +485,8 @@ with `sdlc escalate pre_commit_approval`, and both `git commit` and
 `sdlc gate commit pass` refuse until a person has run
 [`sdlc approve`](commands.md#sdlc-approve) in their own terminal. An approval is
 bound to the work as it stands, so a change made after it needs approving again.
+[What your approval covers](guides/human-approval-gates.md#what-your-approval-covers)
+says what that is, and what it is not.
 
 ## `budget`
 
