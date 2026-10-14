@@ -205,6 +205,23 @@ the only caller of `commands.coverage`/`commands.mutation` from
 `.sdlc/config.json` (`sdlc doctor` reads each command's text and runs none);
 `./task check` in `Taskfile.yml` does not run either.
 
+## internal/cli/commitcover.go
+
+Package `cli`. Added by US-092. Holds a story to the commits the commit gate
+recorded, in a tier that waits for a person and a story in its own worktree.
+The stop's `check` and `sdlc gate commit pass` refuse with `SDLC-E0037` when
+the tip is not held to the recorded commit (`commit` in `gate-record.json`) or
+to the commit on the person's latest approving answer; a tip is held when the
+commits between it and that commit are a line of commits changing only the root
+`CODEMAP.md` (judged per commit with `gitx.ModeAt`). The stop's own replays are
+accepted by walking the record's `replayed` events back to a held tip, and
+`sameWords` compares each replayed commit's author name, author email and whole
+message (`parseWritten`, over `gitx.Written` in `internal/gitx/landing.go`).
+`sdlc approve` (`approve.go`) records the story branch's tip on the answer and
+prints it; the record gains an optional `commit` on an approval and a
+`commit_recorded` event (`internal/model/model.go`). Imports `gitx`, `model`,
+`sdlcerr`, `store`.
+
 ## internal/cli/trunktests.go
 
 Package `cli`. Decides which of a story's test files are trunk's own, so that
