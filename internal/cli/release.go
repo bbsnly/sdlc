@@ -85,6 +85,9 @@ func runRelease(cmd *cobra.Command, id, reason string) error {
 	// The reason and nothing else: the record is committed, and the
 	// path of somebody's checkout is nobody else's business.
 	record.Append("release", reason, s.Now())
+	// What the checkout that held it stored for the map goes with the claim:
+	// whoever picks the story up stores its own.
+	withdrawMap(s, record, id, "the story was released")
 	if err := s.SaveRecord(record); err != nil {
 		return err
 	}

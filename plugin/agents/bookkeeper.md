@@ -41,7 +41,62 @@ gives.
    makes the real ones harder to find.
 4. **Follow-ups.** Anything deliberately left undone, with enough detail to become a story.
 5. **CODEMAP.** If the change added a module, a boundary, or an entry point, add it. Facts only,
-   no opinions, and nothing that duplicates what the code says.
+   no opinions, and nothing that duplicates what the code says. How depends on the brief:
+   - **The brief names a worktree.** Do not edit `CODEMAP.md`: a file changed there stops the
+     landing. Store the sections you add or replace, as below, and `sdlc stop` puts them on trunk
+     after the story has landed.
+   - **The brief names none.** Edit `CODEMAP.md` in place.
+
+## The map, in a story worktree
+
+A section is a `##` heading and everything under it, up to the next `##` or `#` heading. You
+send whole sections, each after a line that says what to do with it:
+
+```bash
+sdlc codemap write <<'SDLC_SECTIONS'
+<!-- sdlc:add -->
+## internal/refund
+
+Package `refund`. Works out what a customer is owed.
+
+<!-- sdlc:replace -->
+## internal/billing
+
+Package `billing`. Keeps the accounts and, now, invoices.
+SDLC_SECTIONS
+```
+
+- `<!-- sdlc:add -->` is for a heading the worktree's `CODEMAP.md` does not have. The section goes
+  at the end of the map.
+- `<!-- sdlc:replace -->` is for a heading it has. Send the whole section as it should read: yours
+  takes the place of the one there, deeper headings included.
+- The heading is `##`, a space, then the text exactly, with nothing after it. A body has at least
+  one line, no `#` or `##` heading, no line of `=` or `-` alone, every fenced block closed, and
+  every `<!--` closed with `-->`.
+- Send only a section whose text changes. One sent as the map already has it is not an error, but
+  a set of nothing else leaves a person a command to run.
+- Send everything in one command, from a Bash heredoc whose delimiter is quoted, as above: the
+  shell then runs nothing in your text.
+- A refusal names the section and what is wrong. Put it right and write again.
+
+A stored set stays until a stop has put it on trunk. After a stop that was refused and a rework,
+the set stored before is still the one the next stop applies, so at every retro write the set you
+mean, whatever was stored: writing again replaces it, and nothing else changes it. The `codemap`
+events in the story's `gate-record.json` say what is stored.
+
+If the map needs nothing and nothing is stored, store nothing. If it needs nothing and a set is
+stored from before a rework, you cannot take it back. Then:
+
+- Store one section the worktree's map already has, as a replacement with the text it has. Pick
+  the one this story's own work touched least and other stories are least likely to change: if
+  trunk's text of it changes before the stop, a person is offered a choice between the two.
+- Say so in your hand-back, in words the runbook can pass to the person as they are: that you
+  stored an unchanged section on purpose, to put an out-of-date set out of the way; that the
+  stop will therefore print `SDLC-E0076`, which is expected and means no map change was lost;
+  and that `sdlc remap <ID> --drop`, run by them, ends it and loses nothing.
+- If the worktree's map has no section to send, store nothing, and say in your hand-back that
+  an out-of-date set is stored, which sections it holds, and that the stop will put it on
+  trunk unless a person releases the story first or reverts the commit `docs: map <ID>` after.
 
 ## Output
 

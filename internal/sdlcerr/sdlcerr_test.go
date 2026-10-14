@@ -305,6 +305,18 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	if c := registered("SDLC-E0075"); c != (Code{}) {
 		released = append(released, pin{c, "SDLC-E0075"})
 	}
+	// US-089: a story's map change that did not reach trunk has a code of its
+	// own, and the plan may give the repair's refusals theirs. Other stories
+	// are under way beside it and may land first with the next number, so the
+	// next five are pinned ahead of their codes, as SDLC-E0075 was: each is
+	// counted once it is registered and stands for nothing until then.
+	// TestAC6TheMapChangeThatDidNotReachTrunkHasACodeThatSaysWhatAPersonRuns
+	// holds that the code is there, under whichever of them it has.
+	for _, id := range []string{"SDLC-E0076", "SDLC-E0077", "SDLC-E0078", "SDLC-E0079", "SDLC-E0080"} {
+		if c := registered(id); c != (Code{}) {
+			released = append(released, pin{c, id})
+		}
+	}
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
 			t.Errorf("%s now renders as %s: a released code was renumbered", r.id, got)

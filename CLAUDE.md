@@ -95,8 +95,8 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
 - blocking / advisory — whether a reviewer's `block` stops the gate; an advisory review is still
   required, never skipped.
 - contract — this section; the configuration is its other half, not part of it.
-- a person — whoever is at the keyboard. `approve`, `unfreeze` and `ack` are theirs alone; a
-  model-driven session that can reach one is a security bug.
+- a person — whoever is at the keyboard. `approve`, `unfreeze`, `ack` and `remap` are theirs alone;
+  a model-driven session that can reach one is a security bug.
 
 ### Performance budgets (optional; sdlc:perf blocks only when one is breached)
 

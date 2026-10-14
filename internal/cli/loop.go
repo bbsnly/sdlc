@@ -185,6 +185,10 @@ func beginIteration(cmd *cobra.Command, s, target *store.Store, plan startPlan, 
 	if head, err := gitx.Head(cmd.Context(), target.Root()); err == nil {
 		record.Base = head
 	}
+	// Not on a resume: what the story's bookkeeper stored is still its own.
+	if plan.fresh {
+		withdrawMap(s, record, id, "the story was begun afresh")
+	}
 	record.Append("loop_start", "iteration started", s.Now())
 	if err := s.SaveRecord(record); err != nil {
 		return err
@@ -450,6 +454,12 @@ type stopPayload struct {
 	// Done distinguishes putting a story down from finishing it, which is the
 	// difference between `sdlc start` picking it up again and moving on.
 	Done bool `json:"done"`
+	// CodemapCommit is the commit a landing made for the story's sections of
+	// CODEMAP.md. CodemapKept is set where the story landed and that change did
+	// not reach trunk: the stop exited 0 all the same, and the warning on
+	// standard error says what a person runs.
+	CodemapCommit string `json:"codemap_commit,omitempty"`
+	CodemapKept   bool   `json:"codemap_kept,omitempty"`
 }
 
 func newStopCmd() *cobra.Command {

@@ -242,6 +242,15 @@ var (
 
 	StoryConflictsWithTrunk = register("SDLC-E0075",
 		`a person, in their own terminal, in the story's worktree, .sdlc/worktrees/<ID> in the main checkout: "git rebase <trunk>"; they resolve the files it stops on, "git add" them and carry the rebase on as git says until it finishes; then "sdlc stop" there, which runs the configured commands on the result. Where an assistant handed the story over, "sdlc approve <ID>" comes before that stop and after the resolving, so that the approval is of the work as it now is; in a tier that waits for a person the rebased work is approved again, and where no question is open that stop says so with SDLC-E0037. That rebase is git's own and not sdlc's: it runs the hooks, merge drivers, editor and filters the repository's configuration names, with that person's privileges, so read "git config --show-origin --list" and .gitattributes there first. An assistant does not resolve the conflict: it hands the story to a person with "sdlc escalate" and stops`)
+
+	MapChangeNotOnTrunk = register("SDLC-E0076",
+		`the story has landed and stays landed; only its change to CODEMAP.md is waiting, kept in the repository's git directory. A person, in their own terminal, in the main checkout, puts right what is named above and runs "sdlc remap <ID>", which makes the change where it still applies; "sdlc remap <ID> --replace" puts the kept sections over what trunk's map holds under their headings, and "sdlc remap <ID> --drop" discards the kept change. An assistant says so and runs none of them`)
+
+	NoMapChangeToRepair = register("SDLC-E0077",
+		`there is nothing to do for that story: "sdlc status" names each landed story whose change to CODEMAP.md is still waiting, and the command a person runs for it`)
+
+	MapSectionsRefused = register("SDLC-E0078",
+		`send the whole set again on standard input, from a Bash heredoc so that every line ends with a line feed alone, its delimiter quoted so that the shell runs nothing in the text: each section is a line that is exactly "<!-- sdlc:add -->" or "<!-- sdlc:replace -->", then its heading as two hash marks, a space and the text, then at least one line under it, with no heading at that level or above, no fenced block left open and no conflict marker; storing again replaces what was stored`)
 )
 
 // entry is one row of the catalogue.

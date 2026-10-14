@@ -67,6 +67,8 @@ func New(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newStopCmd(),
 		newGateCmd(),
 		newArtifactCmd(),
+		newCodemapCmd(),
+		newRemapCmd(),
 		newReviewCmd(),
 		newStaffingCmd(),
 		newFreezeCmd(),
@@ -196,6 +198,11 @@ func executeAt(env commandEnv, args []string, stdin io.Reader, stdout, stderr io
 	stdout, stderr = out, errs
 	root := New(stdin, stdout, stderr)
 	root.SetArgs(args)
+	// Here and not in a hook of the command tree: a subcommand that set a hook
+	// of its own would take the notice away with nothing failing.
+	if noticeBefore(root, args) {
+		mapsWaiting(env, stderr)
+	}
 
 	err := root.ExecuteContext(context.WithValue(context.Background(), commandEnvKey{}, env))
 	if err == nil {
@@ -363,10 +370,14 @@ func refuseAnotherSession(s *store.Store) error {
 	return nil
 }
 
+// versionCommand is named where a command is told from the ones that read a
+// repository.
+const versionCommand = "version"
+
 func newVersionCmd() *cobra.Command {
 	var short bool
 	cmd := &cobra.Command{
-		Use:     "version",
+		Use:     versionCommand,
 		Short:   "Print the version of sdlc you are running",
 		Example: "  sdlc version\n  sdlc version --short\n  sdlc version --json",
 		Args:    cobra.NoArgs,

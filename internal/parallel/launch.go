@@ -47,6 +47,10 @@ func Allowlist() []string {
 		"Bash(sdlc status:*)",
 		"Bash(sdlc gate:*)",
 		"Bash(sdlc artifact:*)",
+		// The bookkeeper stores the story's sections of CODEMAP.md, or every
+		// unattended story would stall at its retro. The group has that one
+		// subcommand: another added to it is pre-approved by this entry.
+		"Bash(sdlc codemap:*)",
 		"Bash(sdlc review:*)",
 		// One by one: `sdlc staffing:*` would pre-approve assign, a person's.
 		"Bash(sdlc staffing set:*)",

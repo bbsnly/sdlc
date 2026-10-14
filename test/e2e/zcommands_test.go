@@ -62,6 +62,7 @@ func knownGaps() map[string]string {
 		"artifact": "prints its help only; its work is done by artifact list and artifact write",
 		"review":   "prints its help only; its work is done by review add and review list",
 		"staffing": "prints its help only; its work is done by staffing show, set, amend and assign",
+		"codemap":  "prints its help only; its work is done by codemap write",
 	}
 	if runtime.GOOS == "windows" {
 		gaps["parallel"] = "its one real run starts sessions through a fake claude that waits on FIFOs, which need a POSIX shell and mkfifo"

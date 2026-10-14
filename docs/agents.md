@@ -52,7 +52,7 @@ stop the gate, and what it writes.
 | `sdlc:human-advocate` | 4, 7, and 1 with [`human_gates.dor_advocate_check`](configuration.md#human_gates) | — | its review |
 | `sdlc:verifier` | 6 | **Yes** | `VERIFICATION.md`, its verdict |
 | `sdlc:code-reviewer` | 7 | **Yes**, unless [`reviews.gate7_advisory`](configuration.md#reviewsgate7_advisory) is on | its review |
-| `sdlc:bookkeeper` | 9 | — | `RETRO.md`, `CODEMAP.md` |
+| `sdlc:bookkeeper` | 9 | — | `RETRO.md`, and the story's sections of `CODEMAP.md` |
 
 Don't worry if a reviewer is marked as unable to block. Advisory does not mean
 optional. A gate will not pass until every reviewer it expects has reported,

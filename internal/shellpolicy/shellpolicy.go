@@ -903,6 +903,9 @@ func checkSdlcCommands(words []string, piped, cut bool, s State) (Finding, bool)
 	if f, ok := checkAck(words); ok {
 		return f, true
 	}
+	if f, ok := checkRemap(words); ok {
+		return f, true
+	}
 	if f, ok := checkRelease(words); ok {
 		return f, true
 	}
@@ -1135,6 +1138,11 @@ func humanDecisionBy(r ran, here decisionPlace, storyWaits func(dir string) bool
 	if f, ok := checkAck(r.words); ok {
 		return f, true
 	}
+	// The repair of a landed story's map likewise: a landed story is not one
+	// that waits, so asking whether one does would let every repair through.
+	if f, ok := checkRemap(r.words); ok {
+		return f, true
+	}
 	if f, ok := checkRelease(r.words); ok {
 		return f, true
 	}
@@ -1356,6 +1364,32 @@ func checkAck(words []string) (Finding, bool) {
 			"gave it would be deciding which stories nobody needs to look at",
 		Route: "say what `sdlc log` lists and stop; the person reads it and runs " +
 			"`sdlc ack --through <commit>` in their own terminal",
+	}, true
+}
+
+// runsRemap reports a command that runs `sdlc remap`, whatever follows the
+// word. The rule and the help reading both ask this and nothing narrower, so
+// that the two cannot disagree about a spelling.
+func runsRemap(words []string) bool { return runsSubcommand(words, "remap") }
+
+// checkRemap keeps the repair of a landed story's CODEMAP.md a person's.
+//
+// The repair commits text no reviewer read to trunk, and its two flags choose
+// between a story's section and what trunk holds, or throw the story's change
+// away. It keys on the subcommand alone: no flag, story id or state of the
+// project makes it a session's, and a request for its help is refused with
+// it, since nothing holds that spelling to doing nothing.
+func checkRemap(words []string) (Finding, bool) {
+	if !runsRemap(words) {
+		return Finding{}, false
+	}
+	return Finding{
+		Rule: "remap-is-a-human-decision",
+		Reason: "putting a landed story's change into trunk's CODEMAP.md, over what trunk holds or not at all, " +
+			"is a choice between two texts that nobody reviewed, and an agent that made it would be " +
+			"deciding what trunk's map says",
+		Route: "say what the stop or `sdlc status` printed and stop; the person runs `sdlc remap <story>` " +
+			"in their own terminal. To read what it does, run `sdlc help remap`",
 	}, true
 }
 

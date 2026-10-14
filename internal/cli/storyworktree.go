@@ -265,6 +265,9 @@ func recordInWorktree(cmd *cobra.Command, asked string, plan startPlan, wt strin
 		record.Cut = head
 		setForks(record, []model.Fork{{From: head}})
 	}
+	// A new cut is a new attempt: sections stored under the last one were
+	// held to a map this worktree never had.
+	withdrawMap(s, record, id, "the story was begun afresh, in a new worktree")
 	record.Append("loop_start", "iteration started", s.Now())
 	if err := s.SaveRecord(record); err != nil {
 		return false, leftBegun(err, id, true)

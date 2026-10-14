@@ -499,8 +499,8 @@ is compared with the lines around its change, as before. The fix says which of t
   escalation is answered, the story waits for a person and the loop does not carry it on
   (SDLC-E0036). An assistant hands the story to a person with `sdlc escalate` and stops.
 
-The root `CODEMAP.md` is left out of the comparison, so the bookkeeper's commit after the retro
-never causes this.
+The root `CODEMAP.md` is left out of the comparison, so a commit of it after the retro never
+causes this.
 
 ### SDLC-E0030
 
@@ -1653,10 +1653,11 @@ and the story waits in `.sdlc/worktrees/<ID>`.
 The stop tried to put the story's commits onto trunk as it is now, and git stopped on the files
 the message names. The stop then abandoned that: the branch is at the commit it was at, with
 nothing part-way and nothing stashed, and the tracked files and the index are as they were. An
-ignored file at a path trunk has come to track is the one thing it does not bring back. Two
-stories that both changed the root `CODEMAP.md` meet this most often
-([the loop](the-loop.md#parallel-stories-and-codemapmd), which also says how to stop it
-happening).
+ignored file at a path trunk has come to track is the one thing it does not bring back. The
+root `CODEMAP.md` is no longer the usual cause: a story's sections of it are stored and put on
+trunk by the stop, after the landing, and do not conflict
+([the loop](the-loop.md#parallel-stories-and-codemapmd)). Two stories that each committed a
+change to that file on their own branches still do.
 
 Resolving a conflict is a person's. In their own terminal, with `<trunk>` the branch
 `git.trunk_branch` names:
@@ -1693,6 +1694,98 @@ changed within three lines of the story's change can.
 
 An assistant hands the story to a person with `sdlc escalate` and stops. It does not resolve the
 conflict, and it does not abandon a rebase it finds part-way: that may be the person's.
+
+### SDLC-E0076
+
+A story landed, and its change to the root `CODEMAP.md` is not on trunk. `sdlc stop` prints this
+as a warning and still exits 0: the story's commits are on trunk, the story is done, and its
+worktree is gone. Nothing about the landing is undone or needs doing again. `sdlc remap` prints
+it as a refusal where it could not make the change either.
+
+What is waiting is the sections the story's bookkeeper stored with `sdlc codemap write`. The stop
+puts them into trunk's `CODEMAP.md` in a commit of their own after the story has landed, and
+where it cannot, it keeps them where they were stored, at `.git/sdlc/codemap/<ID>.md` in the
+main checkout's git directory; the message prints the file's full path. Read that file before
+you run the repair: the commit is made from it, no reviewer read it, and a session that holds no
+story can write it. Until a person has dealt with them, every `sdlc` command run in
+the repository begins with a line on standard error that names the story and `sdlc remap <ID>`.
+That line is also the only word of a stop that was killed between the landing and the map's
+commit. It stops once the change is applied or dropped.
+
+The message says what was in the way, and its fix is for that cause:
+
+- **A section is no longer what the bookkeeper read.** The message names it: a section to add
+  whose heading trunk's map now has, or one to replace whose text on trunk changed since the story
+  began, because another story or a person got there first. Nothing is merged. A person chooses,
+  in their own terminal, in the main checkout: `sdlc remap <ID> --replace` puts the kept sections
+  over what trunk holds under those headings (what was there stays in history);
+  `sdlc remap <ID> --drop` discards the kept change and commits nothing, for after they have
+  edited `CODEMAP.md` by hand; and plain `sdlc remap <ID>` makes the change once trunk's sections
+  are again what the bookkeeper read. A message that says trunk's map already holds one section
+  exactly as it was stored, among others it names, is of this kind: that section is on trunk and
+  the others are not, so `--drop` would throw the others away.
+- **Trunk's map already holds every kept section exactly as it was stored.** There is nothing to
+  commit, and no form of the command has anything to put on trunk. It is what a stop cut short
+  just after its commit leaves, and what a set is whose sections were all sent unchanged. The fix
+  names `sdlc remap <ID> --drop`, which removes the kept copy and loses nothing.
+- **A section of trunk's map cannot be told where it ends.** It holds a heading written by
+  underlining, or a comment that is opened and not closed, so text put over it could take a
+  person's lines away. `--replace` is refused there too. Edit `CODEMAP.md` by hand, commit it,
+  and use `--drop`.
+- **Something else is in the way.** The checkout that has trunk checked out holds changes to
+  `CODEMAP.md` nobody committed; the repository has no committer configured; trunk has a
+  directory, a link or a submodule where the file goes, or a `codemap.md` in another case, and
+  the commit would change a path other than `CODEMAP.md`. Put that right, then run plain
+  `sdlc remap <ID>`. `--replace` does not help here, and `--drop` would throw the change away.
+- **The kept file is no longer a set of sections.** It was changed after it was stored. Put it
+  right, or discard it with `sdlc remap <ID> --drop`.
+
+`sdlc remap` is a person's command and the hook refuses it to every session
+([`remap-is-a-human-decision`](enforcement.md#remap-is-a-human-decision)). An assistant says
+what the stop printed, and runs none of the three forms. It does not stop again and does not
+escalate: the story is done.
+
+### SDLC-E0077
+
+`sdlc remap` was asked to repair a story that has nothing to repair: it has not landed, no
+change to `CODEMAP.md` is kept for it, or its record already names the commit that put the change
+on trunk. Nothing was changed.
+
+Sections stored for a story that is still being worked on are the stop's to apply, and the repair
+leaves them. `sdlc status` begins with a line for each story that has landed with its change
+still waiting; where it prints none, there is nothing to repair with `--replace` or `--drop`
+either. For a story that has not landed there is nothing to run: the stop that lands it applies
+its sections. Where the message says a kept file is left over from a commit already made, its
+fix names `sdlc remap <ID> --drop`, which removes the file and commits nothing.
+
+### SDLC-E0078
+
+A set of sections for the root `CODEMAP.md` was refused. `sdlc codemap write` stored nothing, and
+whatever was stored before is still there.
+
+The set reaches trunk with no reviewer, so it is held to one form and never repaired. The message
+names the section and what is wrong with it. Each section is a line that is exactly
+`<!-- sdlc:add -->` or `<!-- sdlc:replace -->`, then the heading as `##`, one space and the text,
+then at least one line under it. A body holds no heading at that level or above (a `#` or `##`
+line, or a line of `=` or `-` alone), no fenced block left open, no comment opened with `<!--`
+and not closed (a body that only speaks of the marks writes both, or neither) and no conflict
+marker; no heading
+is in the set twice or longer than 200 bytes; and the whole is plain UTF-8 whose lines end with a
+line feed, with no character that does not show, at most 64 sections and 256 KiB. Send it from a
+Bash heredoc whose delimiter is quoted (`<<'MD'`), so that the shell runs nothing in the text: a
+PowerShell here-string sends carriage returns.
+
+That form is as `sdlc` reads the map. A renderer reads a fenced block inside a list item or an
+HTML block otherwise; `sdlc codemap write` in
+[the commands page](commands.md#sdlc-codemap-write) says what follows from that.
+
+For a story that has no worktree of its own the command is refused under this code whatever the
+set: no stop lands that story, so its bookkeeper edits `CODEMAP.md` in place.
+
+The same code is what `sdlc remap` prints where the file kept for a landed story, at
+`.git/sdlc/codemap/<ID>.md`, was changed after it was stored and is no longer a set. Nothing is
+committed. A person puts the file right and runs `sdlc remap <ID>` again, or discards it with
+`sdlc remap <ID> --drop`; `--replace` reads the same file and is refused the same way.
 
 ## Warnings the hook prints
 

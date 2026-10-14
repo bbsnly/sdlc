@@ -755,7 +755,10 @@ func helpOnly(c namedCommand) bool {
 			return false
 		}
 	}
-	return asksForHelp(c.texts()[1:])
+	// The repair's help is not believed: it is the one person-only command
+	// whose help no test holds to the command tree, so the spelling is read
+	// as the command it names. `sdlc help remap` prints the same text.
+	return asksForHelp(c.texts()[1:]) && !runsRemap(c.texts())
 }
 
 // descriptorsOnly reports a command whose redirects only move one descriptor

@@ -399,11 +399,40 @@ const landingWait = 8 * time.Minute
 // or sent the story back, while it waited. It reports true where the story
 // landed meanwhile.
 func (l *lander) waitItsTurn() (*store.Guard, bool, error) {
+	turn, waited, err := landingTurn(l.cmd, l.s, l.id, l.unlock, turnWords{
+		command:   "stop",
+		meanwhile: "a stop cut short while it waits can be run again at once",
+	})
+	if err != nil || !waited {
+		return turn, false, err
+	}
+	landed, err := l.landedWhileWaiting()
+	return turn, landed, err
+}
+
+// turnWords are what a command that waits its turn says in its own name: a
+// stop and a person's repair of the map wait for the same lock, and neither
+// is told to run the other.
+type turnWords struct {
+	// command is the command, as the project's lock names its holder.
+	command string
+	// meanwhile is what the reader is told while it waits.
+	meanwhile string
+	// fix, where it is set, is what to do where the wait runs out, in place
+	// of the stop's.
+	fix string
+}
+
+// landingTurn takes the lock every landing holds, for id. Where another
+// command holds it, it says which, lets the project's lock go so that every
+// other command goes on, waits, and takes the project's lock again. It reports
+// whether it waited: what the caller read before it has to be read again.
+func landingTurn(cmd *cobra.Command, s *store.Store, id string, unlock *func(), w turnWords) (*store.Guard, bool, error) {
 	// Tried at once, with the project's lock held. On Windows a lock its
 	// holder is letting go of reads as a denial, which the store waits out for
 	// up to its guardWait before it says so: the same wait any command gives
 	// the project's lock, and only while a holder is on its way out.
-	turn, err := l.s.LockLandings(l.id, 0)
+	turn, err := s.LockLandings(id, 0)
 	if err == nil {
 		return turn, false, nil
 	}
@@ -415,25 +444,27 @@ func (l *lander) waitItsTurn() (*store.Guard, bool, error) {
 	}
 	// The landing lock is never waited for with the project's lock held: the
 	// stop in front takes that one back once its commands have run.
-	(*l.unlock)()
-	*l.unlock = noUnlock
-	fmt.Fprintf(l.cmd.ErrOrStderr(), "sdlc: %s; this waits up to %s for it. Nothing has changed: a stop cut short "+
-		"while it waits can be run again at once\n", busy.Why, minutes(landingWait))
-	if turn, err = l.s.LockLandings(l.id, landingWait); err != nil {
+	(*unlock)()
+	*unlock = noUnlock
+	fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s; this waits up to %s for it. Nothing has changed: %s\n",
+		busy.Why, minutes(landingWait), w.meanwhile)
+	if turn, err = s.LockLandings(id, landingWait); err != nil {
 		if errors.As(err, &busy) {
 			still := *busy
 			still.What = "another story was still landing after " + minutes(landingWait)
+			if w.fix != "" {
+				still.Fix = w.fix
+			}
 			return nil, false, &still
 		}
 		return nil, false, err
 	}
-	g, err := store.Lock(l.s.LockRoot(), "stop")
+	g, err := store.Lock(s.LockRoot(), w.command)
 	if err != nil {
-		return turn, false, err
+		return turn, true, err
 	}
-	*l.unlock = g.Release
-	landed, err := l.landedWhileWaiting()
-	return turn, landed, err
+	*unlock = g.Release
+	return turn, true, nil
 }
 
 // landedWhileWaiting asks L0 again once the stop has both locks, and reports
@@ -583,7 +614,29 @@ func (l *lander) land() error {
 	if err := l.finish(ctx, st); err != nil {
 		return err
 	}
-	return l.reportLanded(ctx, st, holding)
+	// Still inside the landing lock, so that the map is changed as this
+	// landing left it; and before the worktree goes, which git runs in.
+	step := mapStep{s: l.s, root: l.s.Root(), trunk: l.m.trunk, id: l.id, by: "sdlc stop", kept: keptAt(l.s, l.id)}
+	mapped, what, failed := step.run(ctx)
+	if failed != nil {
+		// On the record as well as on standard error, for a reader who comes
+		// after the stop's words have scrolled away.
+		if err := appendEvent(l.s, l.id, eventCodemap, "not put on "+l.m.trunk+" by sdlc stop ("+
+			sdlcerr.MapChangeNotOnTrunk.String()+"): "+failed.forRecord(l.id)); err != nil {
+			slog.Debug("the record could not be told why the map step failed", "story", l.id, "err", err)
+		}
+	}
+	return l.reportLanded(ctx, st, holding, mapOutcome{step: step, commit: mapped, what: what, failed: failed})
+}
+
+// mapOutcome is what the map step did after a landing: nothing, where the
+// story stored no sections; a commit; or a failure that leaves the landing
+// standing.
+type mapOutcome struct {
+	step   mapStep
+	commit string
+	what   string
+	failed *mapFailure
 }
 
 // readyToMove is L1 to L10, up to the move itself: the checks, the story put
@@ -617,7 +670,7 @@ func (l *lander) readyToMove(ctx context.Context) (landState, error) {
 }
 
 // reportLanded says what landed, on stderr where stdout is the JSON.
-func (l *lander) reportLanded(ctx context.Context, st landState, holding []string) error {
+func (l *lander) reportLanded(ctx context.Context, st landState, holding []string, m mapOutcome) error {
 	notes := l.cmd.OutOrStdout()
 	if wantJSON(l.cmd) {
 		notes = l.cmd.ErrOrStderr()
@@ -625,11 +678,27 @@ func (l *lander) reportLanded(ctx context.Context, st landState, holding []strin
 	for _, line := range landedLines(l.id, l.m.trunk, st, holding, l.running) {
 		fmt.Fprintln(notes, line)
 	}
+	if m.commit != "" {
+		fmt.Fprintln(notes, mappedLine(l.m.trunk, m.commit, m.what))
+	}
 	fmt.Fprintln(notes, l.cleanUp(ctx, st))
+	if m.failed != nil {
+		// A warning and not a refusal: the story is on trunk and done, so the
+		// stop still exits 0, and the code is on standard error whatever
+		// standard output carries.
+		fmt.Fprint(l.cmd.ErrOrStderr(), m.step.notOnTrunk(m.failed).Render())
+	}
 	if wantJSON(l.cmd) {
-		return emitJSON(l.cmd.OutOrStdout(), stopPayload{OK: true, Story: l.id, WasA: l.running, Done: true})
+		return emitJSON(l.cmd.OutOrStdout(), stopPayload{OK: true, Story: l.id, WasA: l.running, Done: true,
+			CodemapCommit: m.commit, CodemapKept: m.failed != nil})
 	}
 	return nil
+}
+
+// mappedLine says that the story's sections reached trunk, in which commit.
+func mappedLine(trunk, commit, what string) string {
+	return fmt.Sprintf("%s on %s is up to date at %s, in a commit of its own after the story's (%s).",
+		codemap, trunk, commit[:12], what)
 }
 
 // check is L1 to L8, every one of them a read.
@@ -1641,6 +1710,10 @@ func (l *lander) finish(ctx context.Context, st landState) error {
 	r.CommitBase, r.Commit, r.Base = st.from, st.tip, st.tip
 	r.HeadPastCommit, r.RangeUnknown = "", false
 	r.ChangeBase, r.Change, r.Landing = st.from, st.change, nil
+	// A story reopened after it landed lands again with sections of its own:
+	// the commit an earlier landing's map made is not this one's, and left
+	// here it would read as "already on trunk" to the notice and the repair.
+	r.CodemapCommit = ""
 	recordAccepted(l.s, l.id, r, st.accepted)
 	r.Append("landed", landedEvent(l.m.trunk, st), now)
 	if l.running {

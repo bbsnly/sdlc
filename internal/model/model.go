@@ -764,6 +764,12 @@ type Record struct {
 	// not among what forgetCommit drops, so a gate reopened does not forget
 	// whose the commits are.
 	Forks json.RawMessage `json:"forks,omitempty"`
+	// CodemapCommit is the commit that put the story's sections of the root
+	// CODEMAP.md on trunk, after the story's own commits and outside their
+	// range: `sdlc stop` made it once the story had landed, or a person's
+	// `sdlc remap` did later. It is empty where the story stored no sections,
+	// where they are still kept, and where a person dropped them.
+	CodemapCommit string `json:"codemap_commit,omitempty"`
 	// Change is the fingerprint of the change the reviewers saw, taken at the
 	// commit gate from ChangeBase to HEAD, for a story in its own worktree. A
 	// landing lands that change, or one reviewed again. Both go when the

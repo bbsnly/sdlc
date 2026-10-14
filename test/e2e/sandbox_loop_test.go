@@ -426,6 +426,11 @@ var personsDecisions = []struct{ command, rule string }{
 	// US-026 AC-8: what a person assigns to a story, in a project that has the
 	// staffing on or off.
 	{`sdlc staffing assign security --model opus --effort high --reason "mine"`, "assignment-is-a-human-decision"},
+	// US-089: what is done with a landed story's map change that did not
+	// reach trunk, in each form of the command.
+	{"sdlc remap US-001", "remap-is-a-human-decision"},
+	{"sdlc remap US-001 --replace", "remap-is-a-human-decision"},
+	{"sdlc remap US-001 --drop", "remap-is-a-human-decision"},
 }
 
 // A whole story with every step that needs a person in it, and nobody there:

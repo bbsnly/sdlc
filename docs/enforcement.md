@@ -28,6 +28,7 @@
   - [`unfreeze-is-a-human-decision`](#unfreeze-is-a-human-decision)
   - [`approval-is-a-human-decision`](#approval-is-a-human-decision)
   - [`acknowledgement-is-a-human-decision`](#acknowledgement-is-a-human-decision)
+  - [`remap-is-a-human-decision`](#remap-is-a-human-decision)
   - [`release-is-a-human-decision`](#release-is-a-human-decision)
   - [`parallel-is-a-human-decision`](#parallel-is-a-human-decision)
   - [`stop-is-a-human-decision`](#stop-is-a-human-decision)
@@ -150,6 +151,9 @@ refused at all, a person's decisions included.
 
 - `sdlc ack` is refused there always. The log of what landed on trunk is always
   there for a person to read.
+- `sdlc remap` is refused there always, its help included
+  ([`remap-is-a-human-decision`](#remap-is-a-human-decision)). A landed story
+  is not one that waits, so whether a story waits is never asked for it.
 - `sdlc release` is refused there always. It takes a story from the checkout
   holding it ([`release-is-a-human-decision`](#release-is-a-human-decision)).
 - `sdlc parallel` is refused there always
@@ -657,7 +661,9 @@ sure of it:
   `git mv -f -- other ':!a/../PATH'` moves `other` over `PATH`.
 - **A request for help.** `sdlc <command> --help` or `-h`, read as `sdlc`
   itself reads it, when `sdlc` would print help and do nothing else; see
-  [a person's decisions](#a-persons-decisions-refused-in-every-session).
+  [a person's decisions](#a-persons-decisions-refused-in-every-session). The
+  one exception is `sdlc remap --help`, which is refused as the command is;
+  `sdlc help remap` prints the same text and is not.
 
 No mention is read on a line that also hands text to something that runs it
 (a shell, `eval`, `xargs`, `source`), or that holds a loop, a condition or a
@@ -1262,6 +1268,43 @@ started one as much as during a story.
 *Instead:* say what `sdlc log` lists, and stop. The person reads it and runs
 `sdlc ack --through <commit>` in their own terminal.
 
+### `remap-is-a-human-decision`
+
+Refuses `sdlc remap` run from a tool call, where `sdlc` is written out as the
+program (by name on `PATH`, by path, or through `npx` or `go run`), in any
+session, in any project with `.sdlc/config.json` the call reaches, whether or
+not a story is being worked on. The rule reads the subcommand and nothing
+after it: no story id, no flag and no state of the project makes the command a
+session's.
+
+`sdlc remap` puts a landed story's kept change into trunk's `CODEMAP.md`
+([the loop](the-loop.md#parallel-stories-and-codemapmd)). The text is a
+bookkeeper's and no reviewer read it; `--replace` puts it over what trunk
+holds, which may be another story's or a person's, and `--drop` throws it
+away. An agent that could run it would be deciding what trunk's map says.
+
+Its help is refused with it. For every other command a person keeps,
+`sdlc <command> --help` is let through because a test holds that spelling to
+printing help and doing nothing; none holds it for this one, so the spelling is
+read as the command it names. `sdlc help remap` is not refused, and
+[the commands page](commands.md#sdlc-remap-story) has the same text.
+
+The hook refuses a command only where it can read it, and [Not held](#not-held)
+lists the spellings it cannot: each is as open for this command as for
+`sdlc ack`. The change itself
+is kept in the repository's git directory, at `.git/sdlc/codemap/<ID>.md`,
+which the file and shell rules protect only from a session that holds a story,
+and then only where they can place the path: one built by a substitution, such
+as `$(git rev-parse --git-common-dir)/sdlc/codemap/<ID>.md`, is not placed, so
+a session that holds a story can remove or rewrite another story's kept file
+that way. It is the limit every protected path has.
+A session that holds none can remove or rewrite that file, as it can commit to
+trunk; the story's `gate-record.json` has a `codemap` event for every change
+`sdlc` itself stored, applied or dropped, and none for one made that way.
+
+*Instead:* say what the stop or `sdlc status` printed, and stop. The person runs
+`sdlc remap <story>` in their own terminal.
+
 ### `release-is-a-human-decision`
 
 Refuses `sdlc release` run from a tool call, where `sdlc` is written out as the
@@ -1812,7 +1855,10 @@ Two moves of the story's own branch are the session's.
   rebased that way is judged at the landing as one rebased by hand
   ([SDLC-E0029](troubleshooting.md#sdlc-e0029),
   [SDLC-E0037](troubleshooting.md#sdlc-e0037)).
-- After the retro, one commit of the root `CODEMAP.md` alone, the bookkeeper's.
+- After the retro, one commit of the root `CODEMAP.md` alone. Nothing asks for
+  it any longer, since the bookkeeper stores its sections with
+  `sdlc codemap write` and `sdlc stop` puts them on trunk; the hook still admits
+  it, and a story that makes one lands with it.
 
 The landing checks what either did before trunk moves, and it holds the purpose
 whatever the spelling: nothing lands that is not the story's reviewed change on
@@ -1881,15 +1927,20 @@ how you would notice.
   lands only the change that was reviewed, or one whose reviews are recorded
   again and whose commands pass, so a person sees
   [SDLC-E0029](troubleshooting.md#sdlc-e0029) at `sdlc stop`.
-- **The root `CODEMAP.md` reaches trunk with no reviewer.** The bookkeeper's
-  commit after the retro changes the one path in the landed range outside the
-  reviewed change. The landing takes it only as a plain file by exactly that
-  name, and refuses a directory, link or submodule there, or a name that
-  differs from it only in case
-  ([SDLC-E0055](troubleshooting.md#sdlc-e0055)); the hook's check of that
-  commit answers not fresh for files beneath it, and wherever the tree cannot
-  be measured with `CODEMAP.md` as that commit has it. Read its diff in the range
-  `sdlc log` prints.
+- **The root `CODEMAP.md` reaches trunk with no reviewer.** The sections the
+  bookkeeper stores are put on trunk by `sdlc stop`, after the story's own
+  commits and outside the range `sdlc log` prints, in a commit named
+  `docs: map <ID>` that the story's record names as `codemap_commit`. `sdlc`
+  makes that commit itself: it is not signed, no hook of the repository runs
+  for it, and it changes that one path as a plain file or is not made
+  ([SDLC-E0076](troubleshooting.md#sdlc-e0076)). Any agent of the story can
+  store sections, at any gate, and the last set stored is the one applied; the
+  record has a `codemap` event for each storing. A commit of `CODEMAP.md` on
+  the story's own branch after the retro is still taken too, only as a plain
+  file by exactly that name ([SDLC-E0055](troubleshooting.md#sdlc-e0055)); the
+  hook's check of that commit answers not fresh for files beneath it, and
+  wherever the tree cannot be measured with `CODEMAP.md` as that commit has it.
+  Read both with `git show`.
 - **Git settings that name a program.** The session can write settings such as
   `core.hooksPath`, `core.fsmonitor` or a filter in `.gitattributes`, and git
   runs the program they name during commands the rules allow, the bookkeeper's
@@ -2223,6 +2274,7 @@ Bash(sdlc start:*)
 Bash(sdlc status:*)
 Bash(sdlc gate:*)
 Bash(sdlc artifact:*)
+Bash(sdlc codemap:*)
 Bash(sdlc review:*)
 Bash(sdlc staffing set:*)
 Bash(sdlc staffing amend:*)
@@ -2250,7 +2302,7 @@ whole. It has:
 - no network tool,
 - no `git push`,
 - no `claude`,
-- no `sdlc approve`, `unfreeze`, `ack`, `release`, `parallel` or `stop`,
+- no `sdlc approve`, `unfreeze`, `ack`, `remap`, `release`, `parallel` or `stop`,
 - no `git commit`,
 - no interpreter or runner (`go run`, `sh`, `python3`, `env`, `xargs`,
   `npm run`),
@@ -2259,7 +2311,8 @@ whole. It has:
 
 The staffing's commands are named one by one for the same reason:
 `sdlc staffing` as a whole would pre-approve `sdlc staffing assign`, which is a
-person's.
+person's. `sdlc codemap` is on the list as a whole, for the bookkeeper's
+`sdlc codemap write`, which is its only subcommand.
 
 ### What the list does hand over
 

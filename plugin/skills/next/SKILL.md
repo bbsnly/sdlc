@@ -343,14 +343,15 @@ record it with `sdlc cost add --usd <amount>` while the story is still active. T
 Without a worktree, run `sdlc stop`, then commit the retro if the project keeps it, with the
 backlog file.
 
-With one, commit only the bookkeeper's `CODEMAP.md` change, if any, in `<worktree>` as its own
-`docs:` commit, then run `sdlc stop` there with the Bash tool's longest timeout, 600000 ms. If
+With one, run `sdlc stop` in `<worktree>` with the Bash tool's longest timeout, 600000 ms. If
 its commands need longer, a person runs that stop in their own terminal, after reading the
 story: it runs the story's code as them. Once it lands, run later commands in `<main>`.
 
+- `SDLC-E0076` and exit 0: it landed, `CODEMAP.md` did not. Tell the user; `sdlc remap` is
+  theirs alone.
 - `SDLC-E0006` (a landing in progress), `SDLC-E0054` saying stop again, or a stop cut short:
-  nothing is lost. Stop again, up to three times this iteration; it says if it landed. If
-  the third has not landed, escalate with its code and the stops run.
+  stop again, up to three times this iteration; it says if it landed. If the third has not
+  landed, escalate with its code and the stops run.
 - `SDLC-E0055`: follow its fix. A failed command leaves the story yours to rework.
 - `SDLC-E0029`: escalate if its fix says it is a person's. Else run Gate 6's verifier and Gate 7's
   reviewers again, record their reviews and stop again; escalate if one blocks or SDLC-E0029

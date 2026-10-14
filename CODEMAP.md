@@ -872,14 +872,16 @@ directory in `sdlc/locks`. On Windows the `Microsoft` directory at the top of
 under `LocalAppData`; `leftoversOn` takes the system's name so the tests reach
 that on any machine. `run` is `Run` with the tests handed in, which is
 how the tests reach what happens after `m.Run`. In `internal/cli` only
-`parallel.go` reads the session variable to refuse. `approve`, `unfreeze` and
-`ack` are refused to a session by the hook alone.
+`parallel.go` reads the session variable to refuse. `approve`, `unfreeze`,
+`ack` and `remap` are refused to a session by the hook alone.
 
 The landing takes one more, `LockLandings` (`internal/store/guard.go`), at the
 project lock's path with `-landing` added. A stop takes it before it reads trunk
 and holds it through the replay, the commands and the fast-forward. Where it is
 held, the stop lets the project's lock go before it waits, up to `landingWait`
-(eight minutes, `internal/cli/landing.go`).
+(eight minutes, `internal/cli/landing.go`). `sdlc remap` takes the same lock
+through the same function, `landingTurn`, with words of its own; the lock's
+holder is still labelled `stop <ID>` for either.
 
 ## internal/hook/deadline.go
 
@@ -1028,8 +1030,10 @@ GNU `parallel` (`addWritten`, `addFrozenWritten`), and, for the freeze alone,
 `./_-` and anything beyond ASCII, so `':(exclude).sdlc'` is the word `.sdlc`.
 
 `HumanDecisions` never asks a path rule, and of the program rules it asks
-only `checkAssign`, `checkAck`, `checkRelease`, `checkParallel`,
-`checkUnfreeze`, `checkApprove` and `checkUnread`.
+only `checkAssign`, `checkAck`, `checkRemap`, `checkRelease`, `checkParallel`,
+`checkUnfreeze`, `checkApprove` and `checkUnread`. `checkRemap` and the one
+exception in `helpOnly` (`named.go`) both ask `runsRemap`, so `sdlc remap
+--help` is refused wherever `sdlc remap` is.
 
 `asksForHelp` in `staffing.go` decides whether an `sdlc` command asks for
 help (`gitcalls.go` reads git's). It reads the words as the flag parser does:
@@ -1257,3 +1261,91 @@ landing's `finish`. The field has three: `recordAccepted`, which replaces or
 empties it, `forgetCommit`, and `runUnfreeze`, which empties it at a person's
 `sdlc unfreeze` whatever the gates say. No command, hook or skill reads the
 field but `recordAccepted`, to tell whether to add the event.
+
+## internal/codemap
+
+Package `codemap`. The format of a story's change to the root `CODEMAP.md`,
+and nothing else: it reads no file, runs no git and knows no story. Only
+`internal/cli` imports it, and it imports nothing of ours.
+
+`Parse` reads a stored set as `[]Section` and refuses anything that is not a
+directive line (`AddLine`, `ReplaceLine`), a `##` heading line and a body.
+`Apply(trunk, cut, sections, replace)` gives trunk's map with the sections in
+it, whole or not at all; its error wraps `ErrDoesNotApply` where the set is
+well formed and trunk's map changed under a section, which is the one refusal
+a person's `--replace` answers, and `ErrAlreadyThere` where the map holds
+every section exactly as stored (`holds`), so that nothing would change.
+`place` decides one section: a replace applies where trunk's section is what
+the bookkeeper read, whatever the stored text; `unsure` refuses, under
+`--replace` too, a section on trunk that holds an underlined heading or a
+comment left open, which is `ErrCannotTell`; `checkBody` asks the same of a
+stored body. `SectionText` is one section of a map as
+`Apply` compares it. `checkSet` is what both `Parse` and `Apply` hold a set
+to, so a `Section` built by hand is refused as a stored one would be.
+
+One reading of a heading (`heading`) and of a fenced block (`fenced`) serves
+the stored set and trunk's file. `read` splits a map into `span`s: a section
+is its `##` line and every line up to the next `#` or `##` heading outside a
+fence. Headings are matched lower-cased, and one is at most `maxHeading`
+bytes. A line of `=` or `-` alone is refused in a stored body and is not read
+as a heading on trunk. A body refuses the characters a heading does that do
+not show (`lineRefused`: controls, and the classes Cf, Zl and Zp).
+
+## internal/gitx/commitfile.go
+
+`CommitFile(ctx, root, parent, path, content, message)` is the one call in
+`gitx` that makes a commit which is not a replay. It builds the commit from
+`parent`'s root tree by plumbing (`cat-file`, `ls-tree`, `hash-object
+--no-filters`, `mktree`, `commit-tree`), every call sealed, and moves no ref:
+the caller moves trunk with `FastForward`. `path` is one name at the root.
+
+`treeWith` gives the listing's entries and which one is the path's, which the
+caller writes once the blob exists; it refuses a link or a submodule at the
+path, and a name beside it that differs only by case. The built tree is compared with the parent's by
+`ChangedBetween` before `commit-tree`: any other path changed, or none, is no
+commit, and the error names the paths. `plumbing` keeps the first failure of
+the calls.
+
+## internal/store/mapsections.go
+
+`WriteMapSections`, `MapSections`, `DropMapSections` and
+`StoriesWithMapSections` keep a story's stored sections at
+`<common git dir>/sdlc/codemap/<ID>.md` (`MapSectionsRel`), the directory taken from
+`s.checkout().Common` as the claims' is. The id passes `CheckID` first.
+`MapSections` reads only a plain file (`Lstat`) and at most `mapSectionsMost`
+bytes. The store keeps bytes; the caller parses them every time.
+
+## internal/cli/codemap.go and internal/cli/remap.go
+
+`sdlc codemap write` (`newCodemapWriteCmd`) parses standard input, refuses a
+story that is not in its own worktree, and stores the set.
+
+`mapStep.run` is the step both `sdlc stop` and `sdlc remap` make, inside the
+landing lock: read the kept set, `Parse` it, read trunk's map at its tip from
+git's objects (`mapAt`), `Apply`, `gitx.CommitFile`, `gitx.FastForward`, then
+`codemap_commit` and a `codemap` event on the record, then
+`DropMapSections`. It returns a `mapFailure` whose kind (`mapStale`,
+`mapDamaged`, `mapBlocked`, `mapThere` for `ErrAlreadyThere`, whose fix is
+`--drop`, and `mapUntold` for `ErrCannotTell`, whose fix is a person's own
+edit) chooses the fix `notOnTrunk` gives SDLC-E0076. `keptAt` is the kept
+file's path as a message prints it. `mapFailure.forRecord` is what the
+record's event says of a failure: `internal/codemap`'s sentence, or a fixed
+one, and never text from an error that can hold a path.
+`seen` works out what the bookkeeper read, section by section, from the
+record's `cut`, `commit_base` and `commit`.
+
+`lander.land` (`landing.go`) runs the step after `finish` and before
+`reportLanded`; a failure is printed as a warning, the stop exits 0, and the
+record gets a `codemap` event saying why. `finish` clears `codemap_commit`, so
+a story that lands a second time is not read as already mapped.
+
+`mapsWaiting` is the notice `executeAt` (`root.go`) prints on standard error
+before every command but `remap`, `help` and `version`: one line for each
+story that is done, has a kept set and has no `codemap_commit`; it reads the
+backlog once, and only where something is kept. `runRemap` is the person's
+repair; nothing in it asks who runs it.
+
+`withdrawMap` drops a kept set whose attempt is over, with a `codemap` event:
+`runRelease` calls it, and so do `recordInWorktree` (`storyworktree.go`) and,
+for a story begun afresh in place, `beginIteration` (`loop.go`). A resume
+does not.

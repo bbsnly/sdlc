@@ -366,12 +366,13 @@ story's status becomes `done` in the backlog. End the iteration with
 reopening this one, because it refuses to start a finished story at all. You
 commit the backlog change along with the retro.
 
-In a story's worktree the story is done when it lands. The session commits the
-bookkeeper's change to `CODEMAP.md`, if it made one, on `story/<ID>` as a
-`docs:` commit of its own (the one commit the hook allows after the retro, and
-only of that file) and then runs `sdlc stop` in the worktree, which lands both
-commits on trunk ([more than one checkout](#more-than-one-checkout)). Until it
-does, `sdlc start` there says the story waits to land, and `sdlc status` says
+In a story's worktree the story is done when it lands. The bookkeeper does not
+edit `CODEMAP.md` there: it stores the sections it adds or replaces with
+`sdlc codemap write`, and the session runs `sdlc stop` in the worktree, which
+lands the story's commits on trunk and then puts the sections there in a
+commit of their own
+([parallel stories and `CODEMAP.md`](#parallel-stories-and-codemapmd)). Until
+it does, `sdlc start` there says the story waits to land, and `sdlc status` says
 so too. The record and the backlog change wait in the main checkout for a person
 to commit them.
 
@@ -658,23 +659,63 @@ person at once.
 
 ### Parallel stories and `CODEMAP.md`
 
-Both stories' bookkeepers usually edit the root `CODEMAP.md`, so the second
-story's commits usually do not apply onto trunk at its bookkeeper's commit.
-This is the common case, and it still ends with a person: the stop names
-`CODEMAP.md` and refuses with [`SDLC-E0075`](troubleshooting.md#sdlc-e0075), the
-runbook hands the story over, and a person rebases it in their own terminal,
-resolves `CODEMAP.md`, answers with `sdlc approve <ID>` in the story's worktree
-and runs `sdlc stop` there. A conflict in `CODEMAP.md` alone asks for no review
-again, because the change the reviewers saw leaves `CODEMAP.md` out; a review is
-asked for again only where trunk also changed lines within three of the story's
-own. The commands run, because the story was rebased; in a tier that waits for
-a person, the approval they have just given is the one the stop reads.
+Every story's bookkeeper has something for the root `CODEMAP.md`, and two
+stories that each edited the file in their own branch met at the same lines:
+the second to land stopped on a conflict only a person could resolve. So a
+story worked in its own worktree does not edit the file. The order is:
 
-A project that wants fewer of these can mark `CODEMAP.md` in `.gitattributes`
-with git's built-in union merge, `CODEMAP.md merge=union`, which keeps both
-sides' lines. The stop's own replay honours it, so with it two stories'
-`CODEMAP.md` lines join and nobody is asked. That is the project's choice, and
-`sdlc` does not write it.
+1. **The bookkeeper stores sections.** At the retro it runs
+   `sdlc codemap write` with the sections the story adds or replaces, each a
+   directive line, a `##` heading and the lines under it
+   ([commands](commands.md#sdlc-codemap-write)). A section is whole, and is
+   named by its heading. The set is kept in the repository's git directory;
+   nothing in the worktree changes, and storing again replaces it.
+2. **`sdlc stop` lands the story.** Its own commits reach trunk as they always
+   did, and the story is done.
+3. **The stop then changes the map on trunk.** Still holding the lock every
+   landing holds, it reads trunk's `CODEMAP.md` as the landing left it, puts
+   each added section at the end and each replaced one in the place of the
+   section by that heading, and makes one commit of its own, `docs: map <ID>`,
+   that changes no other path. Trunk moves to it and the story's record names
+   it as `codemap_commit`. The second of two stories is applied to the map the
+   first one left, so both land with nobody asked.
+
+The sections are text a model wrote, and they reach trunk with no reviewer: the
+commit's message says so, the commit is not signed, and no hook of the
+repository runs for it. They are held to a narrow form when they are stored and
+again when they are applied, and applied whole or not at all. A section that is
+not what the bookkeeper read is refused by name, never merged: an added one
+whose heading trunk's map already has, or a replaced one whose text on trunk
+changed since the story began. Two stories that replace the same section are
+that case: the first one's text reaches trunk, and the second one's does not.
+
+Where the step cannot be made, **the landing stands**. The stop exits 0, prints
+[`SDLC-E0076`](troubleshooting.md#sdlc-e0076) as a warning with what was in the
+way, and keeps the sections: the kept change the messages speak of is the
+stored set, the same file. Every `sdlc` command then says the story's map
+change is waiting, until a person runs `sdlc remap <ID>` in their own terminal.
+The plain form makes the change where it still applies. `--replace` puts the
+kept sections over what trunk holds under their headings, and `--drop` discards
+them with no commit. The command is a person's because it chooses between two
+texts nobody reviewed, and the hook refuses it to every session
+([`remap-is-a-human-decision`](enforcement.md#remap-is-a-human-decision)). An
+assistant reports the warning and runs nothing more: the story is done.
+
+A stored set belongs to the attempt that stored it. `sdlc release` drops it,
+and so does an `sdlc start` that begins the story afresh; a stop that is
+refused leaves it, so a reworked story lands with the set stored before unless
+its bookkeeper stores again ([commands](commands.md#sdlc-codemap-write)).
+
+A story with nothing stored lands with no commit added. A story worked in the
+checkout that started it has no landing, so its bookkeeper edits `CODEMAP.md`
+in place, as before.
+
+A change to `CODEMAP.md` committed on a story's own branch is still carried to
+trunk with the story, and two of those still conflict as any file does
+([`SDLC-E0075`](troubleshooting.md#sdlc-e0075)). A project that keeps such
+commits can mark `CODEMAP.md` in `.gitattributes` with git's built-in union
+merge, `CODEMAP.md merge=union`, which the stop's replay honours. That is the
+project's choice, and `sdlc` does not write it.
 
 ### Removing a worktree
 

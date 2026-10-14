@@ -16,8 +16,10 @@ Commands you type:
   - [What start checks first](#what-start-checks-first)
 - [`sdlc stop`](#sdlc-stop)
   - [Landing a story from its worktree](#landing-a-story-from-its-worktree)
+  - [The story's sections of `CODEMAP.md`](#the-storys-sections-of-codemapmd)
 - [`sdlc approve`](#sdlc-approve)
 - [`sdlc unfreeze`](#sdlc-unfreeze)
+- [`sdlc remap STORY`](#sdlc-remap-story)
 - [`sdlc release`](#sdlc-release)
 - [`sdlc parallel ID...`](#sdlc-parallel-id)
 - [`sdlc log`](#sdlc-log)
@@ -33,6 +35,7 @@ Commands the loop's agents run:
   - [How the commit range is recorded](#how-the-commit-range-is-recorded)
 - [`sdlc artifact list`](#sdlc-artifact-list)
 - [`sdlc artifact write NAME`](#sdlc-artifact-write-name)
+- [`sdlc codemap write`](#sdlc-codemap-write)
 - [`sdlc review list`](#sdlc-review-list)
 - [`sdlc review add GATE ROLE VERDICT`](#sdlc-review-add-gate-role-verdict)
 - [`sdlc staffing`](#sdlc-staffing)
@@ -63,7 +66,8 @@ to you.
 
 A few more are yours alone, because the hook refuses them to an agent:
 [`sdlc unfreeze`](#sdlc-unfreeze) when a frozen test is wrong,
-[`sdlc release`](#sdlc-release), [`sdlc parallel`](#sdlc-parallel-id),
+[`sdlc remap`](#sdlc-remap-story) when a landed story's change to `CODEMAP.md`
+did not reach trunk, [`sdlc release`](#sdlc-release), [`sdlc parallel`](#sdlc-parallel-id),
 [`sdlc ack`](#sdlc-ack) to mark what you have read of what landed (its
 companion [`sdlc log`](#sdlc-log) is open to everyone), and
 [`sdlc staffing assign`](#sdlc-staffing-assign-agent), which the hook refuses
@@ -324,6 +328,11 @@ is `dropped`, `blocked` or marked `done`, or that waits on a `depends_on` story
 that is not done, is refused as it would be passed over
 ([SDLC-E0010](troubleshooting.md#sdlc-e0010)).
 
+A start that begins a story afresh drops any sections of `CODEMAP.md` stored
+for it in an earlier attempt ([`sdlc codemap write`](#sdlc-codemap-write)). It
+prints nothing about that: a `codemap` event in the story's `gate-record.json`
+is where it shows. A start that picks a story up again drops nothing.
+
 `start` also refuses a story whose gates have all passed, rather than putting
 finished work back in progress. The way back into a finished story is to record
 the gate that failed — see [SDLC-E0033](troubleshooting.md#sdlc-e0033).
@@ -475,6 +484,56 @@ Kept .sdlc/worktrees/US-001 and story/US-001: it holds changes nobody committed,
 With `--json` these lines go to standard error, and standard output has `ok`,
 `story`, `was_active` and `done`, which is `true`.
 
+### The story's sections of `CODEMAP.md`
+
+Where the story's bookkeeper stored sections with
+[`sdlc codemap write`](#sdlc-codemap-write), the stop puts them into trunk's
+`CODEMAP.md` once the story's own commits are there, in one commit that changes
+no other path, and a line says so before the worktree is removed:
+
+```text
+CODEMAP.md on main is up to date at 9e4b7d2c6a1f, in a commit of its own after the story's (adds "internal/refund").
+```
+
+The commit is `docs: map <ID>`, the story's record names it as `codemap_commit`,
+and with `--json` standard output has `codemap_commit` too. It is outside the
+range the record keeps as the story's own. Where trunk has no `CODEMAP.md` the
+commit makes one. A story that stored nothing lands as it always did, with no
+commit added and nothing said.
+
+A replaced section is applied where trunk still holds it as the bookkeeper read
+it, whatever text was stored, so a section sent unchanged beside one that
+changes does not stand in the other's way. Where trunk's map already holds
+every stored section exactly, there is nothing to commit: the stop says so
+under SDLC-E0076, and `sdlc remap <ID> --drop` removes the kept copy.
+
+Where the change cannot be made or committed, **the story has still landed**
+and the stop still exits 0. It prints
+[SDLC-E0076](troubleshooting.md#sdlc-e0076) on standard error as a warning,
+naming the section or the path in the way and what a person runs:
+
+```text
+sdlc: US-001 has landed, and its change to CODEMAP.md is not on main
+
+  why  the sections do not apply to the map as it is: the section "internal/billing" in the map is no longer what the bookkeeper read. The landing stands, and the change is kept at "/home/dev/project/.git/sdlc/codemap/US-001.md"
+  fix  a person, in their own terminal, in the main checkout, chooses: "sdlc remap US-001 --replace" puts the kept sections over what main holds under those headings; "sdlc remap US-001 --drop" discards the kept change, for after they have edited CODEMAP.md themselves; and "sdlc remap US-001" makes the change once main's sections are again what the bookkeeper read; an assistant says so and runs none of these
+
+  SDLC-E0076  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0076
+```
+
+With `--json`, standard output is still the one document, with `codemap_kept`
+set to `true`. Until a person has run [`sdlc remap`](#sdlc-remap-story), every
+`sdlc` command run in the repository except that one, `sdlc help` and
+`sdlc version` begins with a line on standard error that names the story and
+the command:
+
+```text
+sdlc: US-001 has landed, and its change to CODEMAP.md is not on main: a person runs `sdlc remap US-001` in their own terminal (the change is kept at "/home/dev/project/.git/sdlc/codemap/US-001.md"; `sdlc help remap` says what the command does)
+```
+
+The same line is what tells you of a stop that was killed between landing the
+story and committing its sections.
+
 Every refusal leaves trunk where it was, and ends with `Nothing landed: main is
 unchanged, and the iteration on US-001 is still running`, or, with no iteration
 running, `... and US-001 waits in .sdlc/worktrees/US-001`. The story's commits
@@ -577,6 +636,73 @@ Unfreezing also sends the story back to Gate 3. The tests are about to change, s
 `tests_frozen`, and every gate passed after it, go back to `pending` with the
 reason as their note. They are listed under `reopened`, in `--json` as well.
 
+## `sdlc remap STORY`
+
+Put a landed story's kept change to `CODEMAP.md` on trunk, or drop it. You need
+it only after a stop has said
+[SDLC-E0076](troubleshooting.md#sdlc-e0076), or after a command has begun with
+the line that names this one: the story has landed, and the sections its
+bookkeeper stored are still kept at `.git/sdlc/codemap/<ID>.md`. The kept
+change is that stored set, byte for byte, and both lines print the file's full
+path. Read the file before you run this: the commit is made from it, nobody
+reviewed it, and a session that holds no story can write it.
+
+```console
+$ sdlc remap US-001
+CODEMAP.md on main is up to date at 9e4b7d2c6a1f, in a commit of its own after the story's (adds "internal/refund").
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--replace` | put the kept sections over whatever trunk's map holds under their headings |
+| `--drop` | discard the kept change and commit nothing |
+
+With no flag it makes the change the stop would have made, by the same checks:
+one commit of `CODEMAP.md` alone on trunk's tip, named on the story's record.
+It applies only where every section still applies, and otherwise refuses with
+SDLC-E0076 and names each section that does not: an added one whose heading
+trunk's map now has, or a replaced one whose text on trunk is no longer what
+the bookkeeper read. It refuses under `--replace` as well a section of trunk's
+map whose end cannot be told, because it holds a heading written by
+underlining or a comment left open: edit the map yourself and use `--drop`.
+Nothing is committed and the change stays kept, however often you run it.
+
+Where trunk's map already holds every kept section exactly as it was stored,
+which is what a stop killed just after its commit leaves, neither form has
+anything to commit. Both say so, and `--drop` ends it and loses nothing.
+
+Then the choice is yours. `--replace` puts each kept section in the place of
+the one trunk has by that heading, whoever wrote that one, and applies the rest
+as the plain form does; what trunk held stays in history. `--drop` removes the
+kept change with no commit, for when you have edited `CODEMAP.md` yourself or
+the change is no longer wanted. Each prints the headings it applied or dropped,
+and the record's `codemap` event says which form was used.
+
+Where something else was in the way (changes nobody committed to `CODEMAP.md`
+in the checkout that has trunk checked out, no committer configured, a
+directory or a link where the file goes), put that right and run the plain
+form. `--replace` does not help there, and `--drop` would throw the change
+away.
+
+> [!WARNING]
+> Run it in your own terminal. The hook refuses it from a tool call in every
+> session, whatever follows the word, and refuses `sdlc remap --help` with it;
+> `sdlc help remap` prints the help.
+
+The commit is made by `sdlc` from the kept text. It is not signed, no hook of
+the repository runs for it, and no reviewer has read it, which its message
+says. It moves trunk, as any commit does, so a story held in a checkout of
+trunk has to take it in before it lands
+([SDLC-E0046](troubleshooting.md#sdlc-e0046)).
+
+It waits for a landing in progress, as a stop does, and says whose. A story
+that has not landed, one with nothing kept, and one whose change is already on
+trunk are refused with [SDLC-E0077](troubleshooting.md#sdlc-e0077). A kept
+file that is no longer a set of sections is refused with
+[SDLC-E0078](troubleshooting.md#sdlc-e0078) by the forms that commit, and
+`--drop` still removes it. With `--json`, standard output has `ok`, `story`,
+and `codemap_commit` or `dropped`.
+
 ## `sdlc release`
 
 Let a story go from the checkout holding it, so that any checkout can start it.
@@ -610,7 +736,11 @@ iteration is running on the story ([SDLC-E0012](troubleshooting.md#sdlc-e0012)):
 error: it says `Nothing to release` and changes nothing.
 
 Nothing is moved. Anything the checkout that held the story has not committed
-stays there, and the output says so while that checkout exists. The reason goes
+stays there, and the output says so while that checkout exists. One thing is
+dropped: sections of `CODEMAP.md` stored for the story with
+[`sdlc codemap write`](#sdlc-codemap-write), which belonged to the attempt that
+is over. The output does not say so; a `codemap` event in the story's
+`gate-record.json` does, and no copy is kept. The reason goes
 on the story's record; the checkout's path does not. `sdlc start` and
 `sdlc approve` then say that work the old checkout had not committed stayed
 with it, and that if this checkout is that one, moved here, the work is here. A
@@ -1117,6 +1247,78 @@ something that stops mid-sentence.
 > This is the only way these files are written. The hook refuses anyone who
 > edits them in place, including the agent whose gate it is. See
 > [enforcement](enforcement.md).
+
+## `sdlc codemap write`
+
+Store the sections a story adds to the root `CODEMAP.md`, or replaces in it. The
+bookkeeper runs this at the retro, in the story's own worktree, instead of
+editing the file; [`sdlc stop`](#the-storys-sections-of-codemapmd) puts the
+sections on trunk once the story has landed. `sdlc codemap` alone prints help.
+
+```console
+$ sdlc codemap write <<'MD'
+<!-- sdlc:add -->
+## internal/refund
+
+Package `refund`. Works out what a customer is owed.
+
+<!-- sdlc:replace -->
+## internal/billing
+
+Package `billing`. Keeps the accounts and, now, invoices.
+MD
+Stored 2 sections for US-001: adds "internal/refund", replaces "internal/billing". `sdlc stop` puts them into CODEMAP.md on main once the story has landed.
+```
+
+A set is one or more sections. Each begins with a line that is exactly
+`<!-- sdlc:add -->` or `<!-- sdlc:replace -->`; the next line is the heading,
+`##`, one space and the text; everything up to the next such line is the
+section. A section is whole: a replaced one takes the place of the section by
+that heading, deeper headings and all, and an added one goes at the end of the
+map. Headings are matched without regard to case.
+
+The set is text a model wrote that reaches trunk with no reviewer, so it is
+held to a narrow form and refused, never repaired
+([SDLC-E0078](troubleshooting.md#sdlc-e0078)): nothing before the first
+directive; no heading at the section's level or above in a body, written with
+hash marks or as an underline; no fenced block left open, and no comment
+opened with `<!--` and not closed; no conflict marker; no section with nothing
+under its heading; no heading twice, and none over 200 bytes; plain UTF-8 with
+line feeds, so not a PowerShell here-string, which sends carriage returns; no
+character that does not show, such as a zero-width space or a mark that turns
+the text round; and no more than 64 sections or 256 KiB. A refused set stores
+nothing and leaves what was stored.
+
+That form is held as `sdlc` reads the map, which is not in every case as
+Markdown reads it. A fenced block inside a list item or an HTML block is read
+by a renderer otherwise: the page can then show a heading the body held inside
+a fence, or show what follows as code. `sdlc`'s own reading still finds each
+section once, and no byte of another section changes.
+
+Writing again replaces what was stored, and that is the only way a session
+changes it: a bookkeeper that finds a set already stored writes the set it
+means. There is no way to store nothing. So where a stop was refused and the
+story reworked, the set stored before is still the one the next stop applies,
+until the bookkeeper writes again at the retro; the `codemap` events on the
+story's record say what is stored. Where the reworked story's map needs
+nothing, the bookkeeper stores, in place of the old set, one section the
+worktree's map already has, sent as a replacement with the text it has. Nothing
+new reaches trunk: the stop finds the section there, says so under SDLC-E0076,
+and a person's `sdlc remap <ID> --drop` ends it.
+
+A stored set does not outlive the attempt it was stored in: `sdlc release`
+drops it, and so does an `sdlc start` that begins the story afresh, each with
+a `codemap` event on the record. A start that picks a story up again leaves
+it.
+
+The set is kept at `.git/sdlc/codemap/<ID>.md`, in the git directory every
+checkout shares, so nothing in the working tree changes. With `--json`, standard output
+has `ok`, `story` and `sections`, a count.
+
+With no story being worked on it is refused with
+[SDLC-E0011](troubleshooting.md#sdlc-e0011). For a story that has no worktree
+of its own it is refused with SDLC-E0078: no stop lands such a story, so the
+bookkeeper edits `CODEMAP.md` in place there, as before.
 
 ## `sdlc review list`
 

@@ -46,6 +46,23 @@ security defect rather than a bug:
   classification that protects `.git/hooks`. A way for a session to write or
   remove one, or to make the gate record a commit the session did not land
   without one of the limits below, is in scope.
+- **What a landing puts into `CODEMAP.md`.** A story's bookkeeper stores
+  sections of the root `CODEMAP.md`, kept in the repository's git directory at
+  `<git-dir>/sdlc/codemap/<ID>.md`, and `sdlc stop` commits them to trunk after
+  the story has landed, with no reviewer. `sdlc` makes that commit itself: it
+  is not signed and runs no hook of the repository. The text is a model's, so
+  what is in scope is anything that lets it be more than text in that one
+  file: a way to make the commit change another path, to get a heading or a
+  body past the form `sdlc codemap write` holds it to, or for a session to run
+  `sdlc remap`, which is a person's. That form is held as `sdlc` reads the
+  map, not as every Markdown renderer does: a fenced block inside a list item
+  or an HTML block is a known difference, and a report says how it goes past
+  `sdlc`'s own reading. The kept file is
+  protected from a session only while that session holds a story, by the
+  classification that protects `.git/hooks`, and then not where the path is
+  built by a substitution, which is not placed; a session that holds none can
+  already commit to trunk, and the limits `docs/enforcement.md` lists under
+  "Not held" are known.
 - **Which checkout holds a story.** In a repository with linked worktrees, the
   checkout that starts a story holds it, and a claim at
   `<git-dir>/sdlc/claims/<ID>.json`, in the git directory every checkout

@@ -223,8 +223,12 @@ configured commands passing where it was put onto a trunk that moved
 was put onto and the commit it became. Two things
 are still worth a look:
 
-- **`CODEMAP.md`.** The bookkeeper's commit after the retro is the one change in
-  the range no reviewer saw. Read its diff.
+- **`CODEMAP.md`.** The story's sections of it reach trunk in a commit no
+  reviewer saw, made by `sdlc stop` straight after the story's own commits and
+  outside the range the log prints. It is the commit `docs: map <ID>`, and the
+  story's record names it as `codemap_commit`: read it with `git show`. A
+  commit of `CODEMAP.md` inside the range, from a story that made one on its
+  own branch, was not reviewed either.
 - **Where the reviewed change began.** Where some of the story's commits reached
   trunk before the landing, the landed event on its record names the commit its
   reviewed change began at, and the range starts later. The commits between are
