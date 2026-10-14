@@ -1356,3 +1356,11 @@ repair; nothing in it asks who runs it.
 `runRelease` calls it, and so do `recordInWorktree` (`storyworktree.go`) and,
 for a story begun afresh in place, `beginIteration` (`loop.go`). A resume
 does not.
+
+The refusals of the map step and of `remap` are held by three more files:
+`internal/cli/codemap_edges_test.go`, `internal/codemap/edges_test.go` and
+`internal/gitx/commitfile_edges_test.go`. The `cli` ones go through the
+helpers of `codemap_test.go` (`cmStopped`, `cmRefusedRepair`, `cmUnchanged`)
+or call `mapStep.run`, `mapAt` and `keptAt` from inside the package. The ones
+that make a directory read-only (`cxReadOnly`) skip on Windows and where the
+user can write in it all the same, as root can.
