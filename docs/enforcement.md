@@ -1897,14 +1897,26 @@ how you would notice.
   `git config --show-origin --list` and its `.gitattributes`; `sdlc` does not
   report it. While `sdlc stop` puts a story's commits onto trunk, every merge
   driver the configuration named when the stop read it, one with an empty name
-  included, is replaced by one that stops as a conflict, and a driver whose name
-  holds an equals sign or the text `{sdlc-private}` makes the stop refuse before
-  git runs, commits are not signed, no editor runs, and no
+  included, is replaced by one that stops as a conflict, and a merge driver whose
+  name holds an equals sign, the text `{sdlc-private}` or a byte that is not
+  UTF-8 makes a stop that has to put the story onto a trunk that moved refuse
+  before git runs (`SDLC-E0055`, naming the key), commits are not signed, no
+  editor runs, and no
   attributes file outside the repository is read; a filter the configuration
   names does run, as it does on any checkout, and an attribute in the
   repository's own `info/attributes` counts as one committed in
   `.gitattributes` does, `merge=union` among them. So does an attributes file
   in the worktree that `git status` does not show.
+  Wherever the landing measures a story's change it sets every
+  `diff.<name>.algorithm` the configuration holds to `myers`, one with an empty
+  name included, and a diff driver whose name holds any of those three makes
+  every stop refuse before the change is first measured, in the same words,
+  whether or not trunk moved. A stop with trunk where the story left it replays
+  nothing, so it does not refuse a merge driver. `sdlc` asks git for every key
+  and chooses the drivers' itself, so the locale git runs in does not decide
+  which are found. The commit gate measures the change the same way and does
+  not apply the rule: it passes where git takes the setting, and fails with
+  `SDLC-E0021` in git's words for a name git's own command line will not take.
 - **Repository configuration that changes what the allowed rebase does to other
   refs.** The landing refuses a range that is not the story's alone. A person
   sees other refs move in `git reflog` for them.

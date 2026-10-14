@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
@@ -54,6 +55,89 @@ var unsealed = []string{
 // privateDir stands, in a setting handed to sealedCall, for the call's private
 // directory, which exists only while the call runs.
 const privateDir = "{sdlc-private}"
+
+// DriverKind is one of the two kinds of driver whose setting the landing
+// overrides on git's command line, by the name of its section.
+type DriverKind string
+
+const (
+	// MergeDrivers are overridden while a story's commits are put onto trunk.
+	MergeDrivers DriverKind = "merge"
+	// DiffDrivers are overridden wherever a change is measured.
+	DiffDrivers DriverKind = "diff"
+)
+
+// variable is the setting of a driver of the kind that the landing overrides.
+func (k DriverKind) variable() string {
+	if k == MergeDrivers {
+		return "driver"
+	}
+	return "algorithm"
+}
+
+// Keys is the key of every driver of the kind that the configuration holds, as
+// dir reads it and as git spells it, the one with an empty name among them,
+// each once and in the order git first lists it.
+//
+// Git is asked for every key and the choice is made here. It was once asked
+// for the keys that match a pattern, which it matches in the locale of the
+// process: in a UTF-8 locale a name with a byte that is not UTF-8 was left out,
+// so its driver was neither refused nor overridden, and ran. Only names are
+// asked for, so no value of the configuration is read; git has had --name-only
+// since 2.6.0 (its release notes say so), which is older than the oldest git
+// this package works with. A listing that fails is an error, never "none".
+func (k DriverKind) Keys(ctx context.Context, dir string) ([]string, error) {
+	out, err := sealed(ctx, dir, "config", "-z", "--list", "--name-only")
+	if err != nil {
+		return nil, err
+	}
+	prefix, suffix := string(k)+".", "."+k.variable()
+	var keys []string
+	seen := map[string]bool{}
+	for _, key := range nulSeparated(out) {
+		if len(key) >= len(prefix)+len(suffix) && strings.HasPrefix(key, prefix) && strings.HasSuffix(key, suffix) && !seen[key] {
+			seen[key] = true
+			keys = append(keys, key)
+		}
+	}
+	return keys, nil
+}
+
+// PrivateDirText is the text a driver's name cannot hold, for the words of a
+// refusal that names it.
+const PrivateDirText = privateDir
+
+// Unoverridable is those of keys that cannot be handed to git on its command
+// line as they are, in the order given. git -c ends a key at its first "=",
+// and sealedCall writes the private directory wherever its placeholder stands,
+// so a setting for a name that holds either lands on another key and the
+// driver's own stays. A byte that is not UTF-8 is not counted on to reach git
+// unchanged where a command line is converted on its way, as Windows converts
+// one, and is held to the rule on every system so that a repository is refused
+// alike on all of them.
+func Unoverridable(keys []string) []string {
+	var bad []string
+	for _, key := range keys {
+		if strings.Contains(key, "=") || strings.Contains(key, privateDir) || !utf8.ValidString(key) {
+			bad = append(bad, key)
+		}
+	}
+	return bad
+}
+
+// DriverNamesError is the cause of a refusal made for the drivers of one kind
+// whose keys are Unoverridable. It carries what the refusal is about to the
+// caller that words it, which nothing can read out of prose.
+type DriverNamesError struct {
+	Kind DriverKind
+	Keys []string
+}
+
+// Error names the kind and how many keys, and no key: a key is repository
+// text, and this may be logged.
+func (e *DriverNamesError) Error() string {
+	return strconv.Itoa(len(e.Keys)) + " " + string(e.Kind) + " driver keys cannot be handed to git's command line"
+}
 
 // sealedEnviron is the environment of a sealed call whose private directory
 // is private.
@@ -637,7 +721,7 @@ func fingerprint(ctx context.Context, root, unified, base, tip string, leaveOut 
 	// configuration and chosen by its attributes, outranked the one on the
 	// command line.
 	settings := []string{"core.quotePath=true", "diff.suppressBlankEmpty=false", "diff.relative=false"}
-	drivers, err := configured(ctx, root, `^diff\..+\.algorithm$`)
+	drivers, err := DiffDrivers.Keys(ctx, root)
 	if err != nil {
 		return "", err
 	}

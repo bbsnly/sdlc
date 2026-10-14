@@ -2,8 +2,6 @@ package gitx
 
 import (
 	"context"
-	"errors"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -44,33 +42,34 @@ var replaySettings = []string{
 //
 // Every merge driver the configuration names, the one with an empty name
 // among them, is replaced by one that fails, so that a path whose attribute
-// names it stops as a conflict. A name the command line cannot carry
-// unchanged is refused before git runs: one that holds an equals sign, and
-// one that holds the text this package puts its private directory in place
-// of. The names are read from checkout, where the rebase runs, so that both
-// read one configuration.
+// names it stops as a conflict. A name the command line cannot be handed
+// unchanged is refused before git runs: one that holds an equals sign, one
+// that holds the text this package puts its private directory in place of,
+// and one that is not UTF-8 (Unoverridable says why each). That refusal's
+// cause is a *DriverNamesError, which tells it from a failure of git's own.
+// The names are read from checkout, where the rebase runs, so that both read
+// one configuration.
 func Replay(ctx context.Context, checkout, onto, upstream string) error {
 	if err := fullHashes(onto, upstream); err != nil {
 		return err
 	}
-	drivers, err := configured(ctx, checkout, `^merge\..*\.driver$`)
+	drivers, err := MergeDrivers.Keys(ctx, checkout)
 	if err != nil {
 		return err
 	}
-	settings := replaySettings
+	// One listing serves the refusal and the overrides, so no driver can be
+	// added between the two.
+	if bad := Unoverridable(drivers); len(bad) > 0 {
+		return sdlcerr.New(sdlcerr.RepositoryUnreadable,
+			"the merge driver "+strconv.Quote(bad[0])+" cannot be kept out of a rebase",
+			"its name holds an equals sign, "+strconv.Quote(privateDir)+" or a byte that is not UTF-8, so git's "+
+				"command line cannot be handed its key as it is, and a merge driver the repository configures is "+
+				"never run while a story's commits are put onto trunk").
+			WithCause(&DriverNamesError{Kind: MergeDrivers, Keys: bad})
+	}
+	settings := slices.Clip(replaySettings)
 	for _, key := range drivers {
-		// git -c ends the key at the first "=", and sealedCall writes the
-		// private directory wherever its placeholder stands, so a name that
-		// holds either would be overridden under another key, and the driver
-		// would run.
-		if strings.Contains(key, "=") || strings.Contains(key, privateDir) {
-			return sdlcerr.New(sdlcerr.RepositoryUnreadable,
-				"the merge driver "+strconv.Quote(key)+" cannot be kept out of a rebase",
-				"its name holds an equals sign or "+strconv.Quote(privateDir)+", which git's command line cannot "+
-					"carry as it is, and a merge driver the repository configures is never run while a story's "+
-					"commits are put onto trunk")
-		}
-		settings = append(slices.Clip(settings), key+"=exit 1")
+		settings = append(settings, key+"=exit 1")
 	}
 	_, err = sealedCall(ctx, checkout, settings, nil, nil,
 		"rebase", "--merge", "--no-fork-point", "--onto", onto, upstream)
@@ -92,25 +91,6 @@ func Unmerged(ctx context.Context, checkout string) ([]string, error) {
 		return nil, err
 	}
 	return nulSeparated(out), nil
-}
-
-// configured is the keys of the repository's configuration, as dir reads it,
-// that match pattern. None is no error.
-func configured(ctx context.Context, dir, pattern string) ([]string, error) {
-	out, err := sealed(ctx, dir, "config", "-z", "--get-regexp", pattern)
-	var exit *exec.ExitError
-	switch {
-	case errors.As(err, &exit) && exit.ExitCode() == 1:
-		return nil, nil
-	case err != nil:
-		return nil, err
-	}
-	var keys []string
-	for _, entry := range nulSeparated(out) {
-		key, _, _ := strings.Cut(entry, "\n")
-		keys = append(keys, key)
-	}
-	return keys, nil
 }
 
 // nulSeparated is the names in what git wrote with -z.

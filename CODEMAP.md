@@ -195,7 +195,11 @@ under the root `CODEMAP.md` other than a plain or executable file there, so
 the fingerprint's exclusion of that path (`leftOut`) cannot carry anything
 else to trunk unreviewed. Builds the landing-specific `WithFix` text for
 `SDLC-E0054`, `SDLC-E0055` and `SDLC-E0056`, and for reused codes reopened at
-landing. Imports `config`, `gitx`, `model`, `sdlcerr`, `shellx`, `store`. The
+landing. `diffDriversOverridable`, the first statement of `changeChecks`,
+refuses a diff driver whose key `gitx.Unoverridable` picks, on every `check`;
+`notReplayed` begins by recognising `Replay`'s `*gitx.DriverNamesError`; and
+`driverNamesRefusal` builds the words for both, showing at most five keys of 64
+characters each. Imports `config`, `gitx`, `model`, `sdlcerr`, `shellx`, `store`. The
 `landingCommands` list (`coverage`, `mutation` among them) is
 the only caller of `commands.coverage`/`commands.mutation` from
 `.sdlc/config.json` (`sdlc doctor` reads each command's text and runs none);
@@ -264,6 +268,15 @@ merge-driver cases, and `test/e2e/landing_conditions_test.go` runs the failed
 command's route through the built binary. One test in
 `internal/cli/landing_ontrunk_test.go` was tightened to one wording.
 
+US-093 adds the tests of the refusal for a driver's name:
+`internal/cli/landing_driverkeys_test.go` and
+`internal/cli/landing_driverkeys_review_test.go` (the words, the bound, the
+order, the page, the locale and the cases its design review found),
+`internal/gitx/driver_names_test.go` and
+`internal/gitx/driver_names_locale_test.go` (which keys the measures and the
+replay find, in the C locale and a UTF-8 one), and
+`test/e2e/landing_driverkeys_test.go` through the built binary.
+
 ## internal/cli/doctor.go: configured commands
 
 Package `cli`. `commandChecks(root, cfg)` reads every non-empty command in
@@ -293,7 +306,12 @@ stripped from the environment. `BranchTip`, `IsAncestor`, `MergeBase`,
 `Fingerprint` hashes the patch between two commits with `leaveOut` turned into
 literal exclude pathspecs (`.sdlc`, the root `CODEMAP.md`) and every
 diff-shaping git option fixed on the command line.
-`fastforward.go` defines `FastForward(ctx, root, trunk,
+`DriverKind` (`MergeDrivers`, `DiffDrivers`) and its `Keys`
+list the `merge.<name>.driver` or `diff.<name>.algorithm` keys the
+configuration holds, from `git config -z --list --name-only` with the choice
+made in Go, each key once, the empty name included; `Replay` and `fingerprint`
+both build their overrides from it. `Unoverridable` picks the keys a `-c`
+setting cannot name. `fastforward.go` defines `FastForward(ctx, root, trunk,
 from, to)`, the package's only function that moves a branch: `checkCheckout`
 inspects every checkout that has trunk checked out for anything in the way
 before any write; the write phase takes in paths already holding the target
@@ -315,7 +333,9 @@ settings: the rebase's and rerere's own options off, `merge.default=text`,
 `core.attributesFile` pointed at a file the call's private directory does not
 create. Every `merge.<name>.driver` the repository configures is overridden to
 `exit 1`, so a configured driver ends as a conflict and runs nothing; a name
-holding `=` or the private directory's placeholder is refused before git runs.
+holding `=`, the private directory's placeholder or a byte that is not UTF-8 is
+refused before git runs, with a `*DriverNamesError` (the kind and the keys) as
+the refusal's cause. The keys come from `DriverKind.Keys` in `landing.go`.
 The repository's filter drivers and committer are left to it. `AbandonReplay` is
 `rebase --abort`. `Unmerged` lists the conflicted paths with `diff --name-only -z
 --no-renames --diff-filter=U`. `nulSeparated` is the NUL-splitting helper both

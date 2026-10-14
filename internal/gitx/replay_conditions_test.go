@@ -184,11 +184,14 @@ func TestAC11AMergeDriverWhoseNameTheCommandLineCannotCarryIsRefusedBeforeGitRun
 			if !errors.As(err, &refusal) {
 				t.Fatalf("Replay returned %v, want a refusal a person can read, naming the driver", err)
 			}
-			if refusal.Code != sdlcerr.RepositoryUnreadable {
-				t.Errorf("the refusal's code is %s, want SDLC-E0021: %s / %s", refusal.Code, refusal.What, refusal.Why)
+			// US-093: the stop says this refusal under SDLC-E0055 and in words of its own, so what
+			// Replay returns for it may carry either code, and the key may sit in the what or in the
+			// why. What is held is that it is a refusal sdlc made, before git ran, that names the key.
+			if refusal.Code != sdlcerr.RepositoryUnreadable && refusal.Code != sdlcerr.LandingCheckFailed {
+				t.Errorf("the refusal's code is %s, want SDLC-E0021 or SDLC-E0055: %s / %s", refusal.Code, refusal.What, refusal.Why)
 			}
-			if !strings.Contains(refusal.What, strconv.Quote(key)) {
-				t.Errorf("the refusal says %q, and does not name the driver's key %s", refusal.What, strconv.Quote(key))
+			if !strings.Contains(refusal.What+" "+refusal.Why, strconv.Quote(key)) {
+				t.Errorf("the refusal says %q / %q, and does not name the driver's key %s", refusal.What, refusal.Why, strconv.Quote(key))
 			}
 			if got := rpPartWay(t, wt); got != "" {
 				t.Errorf("%s is part-way after a replay that was refused before git ran", got)

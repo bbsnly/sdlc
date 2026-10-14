@@ -1008,6 +1008,12 @@ func atOrUnderFold(name, dir string) bool {
 // reviewed again, and one rebased or changed in a tier that pauses is
 // approved again.
 func (l *lander) changeChecks(ctx context.Context, st *landState) error {
+	// Before anything is measured, and on every check: the measure overrides
+	// each diff driver by its key, and does not refuse one it cannot, because
+	// the commit gate measures with it too.
+	if err := l.diffDriversOverridable(ctx); err != nil {
+		return err
+	}
 	root := l.s.Root()
 	change, err := gitx.Fingerprint(ctx, root, st.from, st.tip, leftOut...)
 	if err != nil {
@@ -1032,6 +1038,80 @@ func (l *lander) changeChecks(ctx context.Context, st *landState) error {
 		return l.requireApprovalAgain(ctx, *st)
 	}
 	return nil
+}
+
+// diffDriversOverridable refuses where the configuration, as the story's
+// worktree reads it, holds a diff driver whose key the measure cannot hand to
+// git as it is.
+func (l *lander) diffDriversOverridable(ctx context.Context) error {
+	keys, err := gitx.DiffDrivers.Keys(ctx, l.s.Root())
+	if err != nil {
+		return err
+	}
+	if bad := gitx.Unoverridable(keys); len(bad) > 0 {
+		return driverNamesRefusal(gitx.DiffDrivers, bad)
+	}
+	return nil
+}
+
+// A key is repository text with no limit to its length or number, and a
+// session writes the repository's configuration, so the refusal shows this
+// many keys and this many characters of each.
+const (
+	driverKeysShown = 5
+	driverKeyShown  = 64
+)
+
+// driverNamesRefusal is the refusal for drivers of kind whose keys the landing
+// cannot override, in one place for a merge driver and a diff driver. The keys
+// are in the what alone: the fix is where an instruction stands, and a name
+// beside it could be read as part of it. The log line has the kind and how
+// many, and no key.
+func driverNamesRefusal(kind gitx.DriverKind, keys []string) *sdlcerr.Error {
+	slog.Debug("landing refused drivers for their names", "kind", string(kind), "keys", len(keys))
+	private := quote(gitx.PrivateDirText)
+	return sdlcerr.New(sdlcerr.LandingCheckFailed,
+		"the story cannot land while "+string(kind)+" drivers are configured under names that hold an equals sign, "+
+			private+" or a byte that is not UTF-8: "+shownDriverKeys(keys),
+		"sdlc stops a repository's merge and diff drivers from deciding what lands by overriding their settings on "+
+			"git's command line. That command line ends a setting's name at its first equals sign, sdlc replaces "+
+			private+" there with a path of its own, and a byte that is not UTF-8 is not sure to reach git unchanged "+
+			"on every system. For a name that holds any of them sdlc cannot be sure to override the setting it means "+
+			"to, so the driver's own could stay in force and change what lands, and sdlc refuses such a name on "+
+			"every system alike. Git accepts such a name; the limit is sdlc's rule, not something git reported").
+		WithFix(`a person, in the story's worktree, finds the file that holds each such driver with "git config ` +
+			`--show-origin --list" (it may be one that other repositories read too), renames the driver to a name ` +
+			`with no equals sign, no ` + private + ` and no byte that is not UTF-8, or removes it, then runs ` +
+			`"sdlc stop" again; the attributes line that names the driver can wait until the story has landed; ` +
+			assistantEscalates)
+}
+
+// shownDriverKeys is the first few of keys as a refusal shows them, and how
+// many more there are.
+func shownDriverKeys(keys []string) string {
+	shown := make([]string, 0, driverKeysShown)
+	for _, key := range keys[:min(len(keys), driverKeysShown)] {
+		shown = append(shown, shownDriverKey(key))
+	}
+	list := strings.Join(shown, ", ")
+	if more := len(keys) - len(shown); more > 0 {
+		return fmt.Sprintf("%s, and %d more", list, more)
+	}
+	return list
+}
+
+// shownDriverKey is key quoted, so that no character of it can end the
+// quotation or start a line, and cut after its first characters where it is
+// long, which is said outside the quotation.
+func shownDriverKey(key string) string {
+	n := 0
+	for i := range key {
+		if n == driverKeyShown {
+			return quote(key[:i]) + " (cut short)"
+		}
+		n++
+	}
+	return quote(key)
 }
 
 // measuredFrom is the commit the story counts as rebased from: the cut where the
@@ -1881,6 +1961,11 @@ func replayedLine(id, trunk string, r model.Replay, full bool) string {
 // resolving a conflict is a person's, and a rebase left part-way would be read
 // by the next command as somebody's work in progress.
 func (l *lander) notReplayed(ctx context.Context, st landState, cause error) error {
+	// The replay refused the drivers' names before git ran, so nothing is
+	// part-way and nothing is to be put back.
+	if names, ok := errors.AsType[*gitx.DriverNamesError](cause); ok {
+		return driverNamesRefusal(names.Kind, names.Keys).WithCause(cause)
+	}
 	root, trunk, branch, in := l.s.Root(), l.m.trunk, store.StoryBranch(l.id), worktreeIn(l.id)
 	wt, T, S := shellPath(root), st.trunkTip[:12], st.tip
 	files, _ := gitx.Unmerged(ctx, root)

@@ -1248,6 +1248,74 @@ The message says which check, and the fix is for that state:
 - **The story's commits could not be put onto trunk, for a reason git names no file for.** Most
   often git has no committer to make them again with: set `user.name` and `user.email`. The
   branch is where it was.
+- **The message begins `the story cannot land while merge drivers are configured under names`, or
+  `while diff drivers`.** While `sdlc stop` puts a story's commits onto a trunk that moved, it
+  replaces every `merge.<name>.driver` the configuration holds with one that fails, and wherever
+  it measures the story's change it sets every `diff.<name>.algorithm` to `myers`. It does both
+  by handing git a setting on its command line, and it cannot do that for a name that holds an
+  equals sign, the text `{sdlc-private}` or a byte that is not UTF-8, so it refuses instead. Git
+  accepts such a name; the rule is `sdlc`'s, and it is the same on every system and with every
+  git. The message reads, with the run's own keys, trunk and story in angle brackets:
+
+  ```text
+  the story cannot land while <merge or diff> drivers are configured under names that hold an
+  equals sign, "{sdlc-private}" or a byte that is not UTF-8: "<key>"
+
+  sdlc stops a repository's merge and diff drivers from deciding what lands by overriding their
+  settings on git's command line. That command line ends a setting's name at its first equals
+  sign, sdlc replaces "{sdlc-private}" there with a path of its own, and a byte that is not
+  UTF-8 is not sure to reach git unchanged on every system. For a name that holds any of them
+  sdlc cannot be sure to override the setting it means to, so the driver's own could stay in
+  force and change what lands, and sdlc refuses such a name on every system alike. Git accepts
+  such a name; the limit is sdlc's rule, not something git reported. Nothing landed: <trunk> is
+  unchanged, and the iteration on <ID> is still running
+
+  a person, in the story's worktree, finds the file that holds each such driver with "git
+  config --show-origin --list" (it may be one that other repositories read too), renames the
+  driver to a name with no equals sign, no "{sdlc-private}" and no byte that is not UTF-8, or
+  removes it, then runs "sdlc stop" again; the attributes line that names the driver can wait
+  until the story has landed; an assistant hands the story to a person with "sdlc escalate" and
+  stops
+  ```
+
+  The keys are as git spells them, each quoted. The first five are shown and the rest counted
+  (`, and 7 more`), and a key longer than 64 characters is cut there and followed by
+  `(cut short)`. A byte that is not UTF-8 is shown as an escape such as `\xff`, and so is a
+  character that does not print, such as `\u202e`. `git config --show-origin --list` prints the
+  byte or the character itself, so search its output for the part of the key before it. Run that
+  in `.sdlc/worktrees/<ID>`: the stop reads the configuration as the story's worktree reads it,
+  its own `config.worktree` and any included file among them, and the main checkout does not
+  show all of that. The file may be your own `~/.gitconfig`. The rule also catches a name saved
+  in an older encoding such as Latin-1, where `é` is one byte that UTF-8 does not allow: save
+  the configuration file as UTF-8, or rename the driver. The byte is refused because
+  Windows converts a command line on its way to git and `sdlc` does not rely on such a byte
+  surviving that; it is refused everywhere so that a repository gets one answer on every system.
+
+  A driver applies to the paths whose `merge=<name>` or `diff=<name>` attribute names it. With
+  the driver renamed or removed and that line left alone, git uses its built-in merge and diff
+  for those paths, and the stop needs no more than that to land. Change the line to the new name
+  at once only where it is in `.git/info/attributes`, which git does not track. A line in a
+  tracked `.gitattributes` is a change to the repository like any other: made in the story's
+  worktree it is an uncommitted change or a commit no reviewer saw, which a stop can refuse,
+  so make it as work of its own once the story has landed.
+
+  When each kind is refused differs. A diff driver of such a name is refused by every stop,
+  whether or not trunk moved. A merge driver of such a name is refused only by a stop that has
+  to put the story onto a trunk that moved: with trunk where the story left it nothing is
+  replayed, no merge driver can run, and the stop lands the story. One stop names one kind, so a
+  repository with both can meet this refusal twice, first for its diff drivers and then for its
+  merge drivers. `sdlc gate commit pass` is not changed by this rule and does not apply it, so a
+  story can pass every gate and be refused at the stop. For a name that git's own command line
+  will not take at all, such as `=x`, the commit gate itself fails, with
+  [`SDLC-E0021`](#sdlc-e0021) and git's own words; the same rename or removal puts it right.
+
+  A stop that refuses before it has put the story onto trunk changes nothing. If the setting was
+  written while the stop ran, after the story had been put onto trunk, the branch stays there
+  with that recorded on the story, trunk is unchanged, and the next stop goes on from there.
+  Where `sdlc stop` is run by a person and not by the iteration, the why ends by saying that the
+  story waits in its worktree. An assistant points the person at the refusal as the stop printed
+  it: it does not retype a key into a command, and does not edit the configuration to make a
+  stop pass.
 - **The worktree could not be put back** after the story's commits did not apply. The message
   gives the commit the branch belongs at; `git rebase --abort`, then `git status`, then
   `git reset --hard <that commit>` if the branch is elsewhere. The story's commits are in that
