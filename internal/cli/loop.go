@@ -852,6 +852,7 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) error {
 		return err
 	}
 	reopened := record.SetGate(gate, status, flags.note, s.Now())
+	g.noteAccepted()
 	if err := g.noteCommits(); err != nil {
 		return err
 	}
@@ -917,14 +918,27 @@ func (g *gateRun) checkAndStaff(flags gateFlags) error {
 		noteSensitivity(g.s, record, flags.securitySensitive)
 		record.SetSecuritySensitive(flags.securitySensitive)
 	}
-	// Only a gate that judged the freeze says what it accepted: a pass
-	// of any other would wipe what the last one that did had recorded.
-	if g.status == model.GatePass && rd.judged {
-		if recordAccepted(g.s, g.id, record, rd.trunkTests) != nil {
-			fmt.Fprintln(g.cmd.ErrOrStderr(), "sdlc: "+acceptedLine(g.id, trunkName(g.s), rd.trunkTests, false)+".")
-		}
-	}
 	return nil
+}
+
+// noteAccepted puts the test files this gate accepted as trunk's own on the
+// record, and says so. Only a gate that judged the freeze says what it
+// accepted: a pass of any other would wipe what the last one that did had
+// recorded.
+//
+// It comes straight after SetGate, which has by then dropped what a commit
+// gate this gate reopened had recorded. Compared before it, a gate passed again
+// on a finished story found its own files already named by the commit gate and
+// wrote no event, and SetGate then emptied the field: the record said nothing
+// of what the gate had just printed. Nothing that can fail or save stands
+// between the two, so the gate is never saved without what it accepted.
+func (g *gateRun) noteAccepted() {
+	if g.status != model.GatePass || !g.rd.judged {
+		return
+	}
+	if recordAccepted(g.s, g.id, g.record, g.rd.trunkTests) != nil {
+		fmt.Fprintln(g.cmd.ErrOrStderr(), "sdlc: "+acceptedLine(g.id, trunkName(g.s), g.rd.trunkTests, false)+".")
+	}
 }
 
 // moveBase measures the story from HEAD as it is now, where HEAD can be read.

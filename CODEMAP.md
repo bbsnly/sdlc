@@ -1188,3 +1188,35 @@ names a commit a person made or one a rebase made again; `replayedRun` infers
 the ones made again from the window, and its comment says what it returns is
 not evidence, because the window is read by calls that honour replacement
 objects.
+
+## What a recorded gate forgets, and the order `sdlc gate` works in
+
+`Record.SetGate` and `Record.Reopen` in `internal/model/model.go` both end in
+`forgetCommit`, and each tells it whether the commit gate stood passed before
+the call changed any gate. Whenever the commit gate is not recorded as passed
+after the call, it clears `commit`, `range_unknown`, `head_past_commit`,
+`change`, `change_base`, `landing` and `replay`; it clears `trunk_tests` only
+where the commit gate stood before. It keeps `cut`, `commit_base`, `base` and
+`forks`. `Reopen` has one caller, `sdlc unfreeze` (`internal/cli/freeze.go`),
+with `tests_frozen`.
+
+`runGate` in `internal/cli/loop.go` runs, in this order: `noteForks`, which may
+save the record as it was read with the list grown; `checkAndStaff`, which
+checks the gate's evidence; `SetGate`; `noteAccepted`, which for a passed gate
+whose freeze check ran (`reading.judged`) calls `recordAccepted` and prints
+the accepted line; `noteCommits`; and the one save of the gate. A refusal from
+`checkAndStaff` or `noteCommits` returns before that save. The gates whose pass
+checks the freeze are `tests_frozen`, `plan`, `implementation`, `verification`
+and `commit` (`requireEvidence`); a gate recorded as `fail` or `pending` checks
+nothing.
+
+`checkAndStaff` moves `Record.Base` to HEAD at any gate but a passing `commit`
+once `code_review` stands passed, so a story reworked after its commits were
+put onto a later trunk commit reaches `heldTests` at `implementation` and
+`verification` too, with commits of its own on its branch. The record's
+`trunk_tests` events have one writer, `recordAccepted`
+(`internal/cli/trunktests.go`), called from `noteAccepted` and from the
+landing's `finish`. The field has three: `recordAccepted`, which replaces or
+empties it, `forgetCommit`, and `runUnfreeze`, which empties it at a person's
+`sdlc unfreeze` whatever the gates say. No command, hook or skill reads the
+field but `recordAccepted`, to tell whether to add the event.

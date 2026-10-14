@@ -323,6 +323,12 @@ func runUnfreeze(cmd *cobra.Command, reason string) error {
 	}
 	record.Append(unfreezeEvent, reason, s.Now())
 	reopened := record.Reopen(model.GateTestsFrozen, "the freeze was lifted: "+reason, s.Now())
+	// What a gate accepted as trunk's under the freeze being lifted says
+	// nothing of the tests as they are about to be. Reopen drops it only
+	// where the commit gate stood, and does nothing at all where Gate 3 had
+	// not passed, so a gate that had accepted files before the commit gate
+	// left them named on a record whose freeze was gone.
+	record.TrunkTests = nil
 	if err := s.SaveRecord(record); err != nil {
 		return err
 	}

@@ -1972,8 +1972,19 @@ how you would notice.
   record; and an entry whose commit git no longer has, which is passed over.
   You would notice by the line the accepting command prints, `accepted as
   <trunk>'s`, and by `trunk_tests` in the story's record, which names the files
-  and the trunk commit: a file there that the story wrote is this. Take it out
-  of the branch, or have a person unfreeze so that it is frozen in their sight.
+  and the trunk commit: a file there that the story wrote is this. The record
+  names what was accepted by the latest gate that checked the freeze and was
+  recorded as passed (`tests_frozen`, `plan`, `implementation`, `verification`
+  or `commit`), or by the stop that landed the story. It is the tree as that
+  gate saw it: the record keeps it through later gates that do not check the
+  freeze, a gate that is refused changes nothing, and it is not checked again
+  until the next gate that does. `trunk_tests` is empty if no such gate has accepted
+  anything, if the latest one accepted nothing, if the commit gate was reopened
+  by a command that accepted nothing itself, or if a person ran `sdlc unfreeze`.
+  Emptying it writes no event, so an empty field with earlier `trunk_tests`
+  events means one of these happened, not that nothing was ever accepted. Take
+  the file out of the branch, or have a person unfreeze so that it is frozen in
+  their sight.
   The list also refuses in three states where the files really are trunk's,
   each with [SDLC-E0043](troubleshooting.md#sdlc-e0043) or SDLC-E0025 naming
   the commit: a gate ran while the local trunk was behind a commit the branch

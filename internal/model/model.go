@@ -773,7 +773,13 @@ type Record struct {
 	Replay *Replay `json:"replay,omitempty"`
 	// TrunkTests is the trunk commit the story's test files were last compared
 	// with, and the ones accepted as trunk's own there: a story is not held to
-	// a test file that only trunk changed since the story was cut.
+	// a test file that only trunk changed since the story was cut. It says what
+	// the last gate that checked the freeze and passed accepted, from that gate
+	// on: a gate that judges again replaces it, with nothing where it accepted
+	// none, and it goes when the commit gate is reopened and when a person lifts
+	// the freeze. No decision reads it: the freeze is judged from git and the
+	// disk each time, and a field a refusal depended on would be one a stale
+	// value could open.
 	TrunkTests  *TrunkTests         `json:"trunk_tests,omitempty"`
 	Gates       map[Gate]GateResult `json:"gates"`
 	Events      []Event             `json:"events"`
@@ -1155,6 +1161,7 @@ func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) [
 	if r.Gates == nil {
 		r.Gates = map[Gate]GateResult{}
 	}
+	stood := r.Pass(GateCommit)
 	prev := r.Gates[g]
 	prev.Status = status
 	prev.At = Timestamp(at)
@@ -1166,7 +1173,7 @@ func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) [
 		r.Append("gates_reopened", strings.Join(reopened, ", ")+" reopened: "+
 			string(g)+" was recorded "+string(status), at)
 	}
-	r.forgetCommit()
+	r.forgetCommit(stood)
 	return reopened
 }
 
@@ -1178,11 +1185,12 @@ func (r *Record) Reopen(g Gate, why string, at time.Time) []string {
 	if !r.Pass(g) {
 		return nil
 	}
+	stood := r.Pass(GateCommit)
 	note := "reopened: " + why
 	r.Gates[g] = GateResult{Status: GatePending, At: Timestamp(at), Note: note}
 	reopened := append([]string{string(g)}, r.reopenAfter(g, note, at)...)
 	r.Append("gates_reopened", strings.Join(reopened, ", ")+" reopened: "+why, at)
-	r.forgetCommit()
+	r.forgetCommit(stood)
 	return reopened
 }
 
@@ -1190,15 +1198,28 @@ func (r *Record) Reopen(g Gate, why string, at time.Time) []string {
 // longer stands passed, whether it was recorded again as failed or reopened by
 // a gate before it. A new pass records the end it is then given. Where they
 // start stays: the story's first commits are still where they were.
-func (r *Record) forgetCommit() {
-	if !r.Pass(GateCommit) {
-		r.Commit = ""
-		r.RangeUnknown = false
-		r.HeadPastCommit = ""
-		r.Change = ""
-		r.ChangeBase = ""
-		r.Landing = nil
-		r.Replay = nil
+//
+// stood is whether the commit gate stood passed before the caller changed any
+// gate, so the caller reads it first: read afterwards it is always false here,
+// and TrunkTests is then never dropped. Only TrunkTests waits on it. The rest
+// goes whenever the commit gate does not stand, because a landing takes a
+// record that holds a change or a replay mark to have a passed commit gate
+// behind it. TrunkTests is written by the gates before the commit gate as
+// well, so it goes only where this call reopened the commit gate: dropped with
+// the rest, it was empty after every gate before the commit gate, each of
+// which had said what it accepted and then wrote the same event again.
+func (r *Record) forgetCommit(stood bool) {
+	if r.Pass(GateCommit) {
+		return
+	}
+	r.Commit = ""
+	r.RangeUnknown = false
+	r.HeadPastCommit = ""
+	r.Change = ""
+	r.ChangeBase = ""
+	r.Landing = nil
+	r.Replay = nil
+	if stood {
 		r.TrunkTests = nil
 	}
 }

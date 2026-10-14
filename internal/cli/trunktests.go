@@ -485,7 +485,10 @@ func acceptedLine(id, trunk string, t *model.TrunkTests, all bool) string {
 
 // recordAccepted puts what was accepted as trunk's own on the record, with an
 // event where it is not what the record already says, and returns it. Where
-// nothing was accepted the record says nothing of any.
+// nothing was accepted the record says nothing of any. The same is the same
+// trunk commit and the same two lists, name for name: takeTrunks writes both in
+// path order with no path twice, so one acceptance is always one value, and a
+// record that names anything else gains the event.
 func recordAccepted(s *store.Store, id string, record *model.Record, t *model.TrunkTests) *model.TrunkTests {
 	was := record.TrunkTests
 	record.TrunkTests = t
