@@ -851,12 +851,7 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) error {
 	if err := g.checkAndStaff(flags); err != nil {
 		return err
 	}
-	// Before SetGate, which drops the commit a failed or reopened commit gate
-	// recorded: a record an older sdlc wrote has that commit and no event
-	// that keeps it. After checkAndStaff, so a gate refused leaves nothing.
-	if inItsWorktree(s, id) {
-		rememberCommit(record, s.Now(), true)
-	}
+	g.keepCommit()
 	reopened := record.SetGate(gate, status, flags.note, s.Now())
 	g.noteAccepted()
 	if err := g.noteCommits(); err != nil {
@@ -925,6 +920,18 @@ func (g *gateRun) checkAndStaff(flags gateFlags) error {
 		record.SetSecuritySensitive(flags.securitySensitive)
 	}
 	return nil
+}
+
+// keepCommit writes the commit the record names into its history, for a story
+// in its own worktree.
+//
+// It comes before SetGate, which drops the commit a failed or reopened commit
+// gate recorded: a record an older sdlc wrote has that commit and no event that
+// keeps it. And after checkAndStaff, so a gate refused leaves nothing.
+func (g *gateRun) keepCommit() {
+	if inItsWorktree(g.s, g.id) {
+		rememberCommit(g.record, g.s.Now(), true)
+	}
 }
 
 // noteAccepted puts the test files this gate accepted as trunk's own on the

@@ -504,7 +504,7 @@ func ccCutShort(t *testing.T, firstAuthor string) (s ccStory, moved, marker stri
 	marker = filepath.Join(wtTempDir(t), "trunk-is-put-right")
 	main := lxRepository(t, map[string]string{"test": "test ! -f CHANGES.md || test -f " + suSh(marker)}, nil)
 	otIdentity(t, main)
-	ldTier(t, main, "US-001", "high")
+	ldTier(t, main, "high")
 	wt := ldStarted(t, main)
 	cut := ldTrunk(t, main)
 	ldWork(t, wt)

@@ -179,7 +179,7 @@ func ldWalkedFrom(t *testing.T, w ldWalk) (main, wt, cut string) {
 		t.Helper()
 		configure := func(root string) {
 			if w.tier != "" {
-				ldTier(t, root, "US-001", w.tier)
+				ldTier(t, root, w.tier)
 			}
 			if w.taxTest {
 				writeFile(t, root, "internal/tax_test.go", "package internal\n")
@@ -289,8 +289,8 @@ func ldNext(t *testing.T, main string) string {
 	return ""
 }
 
-// ldTier gives the story a risk tier in the backlog.
-func ldTier(t *testing.T, root, id, tier string) {
+// ldTier gives the landing fixture's one story, US-001, a risk tier in the backlog.
+func ldTier(t *testing.T, root, tier string) {
 	t.Helper()
 	path := filepath.Join(root, "user_stories.json")
 	var backlog map[string]any
@@ -304,7 +304,7 @@ func ldTier(t *testing.T, root, id, tier string) {
 		if !ok {
 			t.Fatalf("%s has a story that is not an object: %v", path, s)
 		}
-		if story["id"] == id {
+		if story["id"] == "US-001" {
 			story["risk_tier"] = tier
 		}
 	}

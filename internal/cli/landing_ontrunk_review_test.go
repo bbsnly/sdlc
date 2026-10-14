@@ -511,7 +511,7 @@ func TestAC10AnApprovalThatAnsweredAnEarlierQuestionDoesNotStandForTheOneBeforeT
 			if got := len(swRecord(t, main, "US-001").Approvals); got != 1 {
 				t.Fatalf("precondition: the record has %d approvals, want the one that answered the question", got)
 			}
-			ldTier(t, main, "US-001", "high")
+			ldTier(t, main, "high")
 			moved := ldMoveTrunk(t, main)
 			if byHand {
 				ldRebase(t, wt)

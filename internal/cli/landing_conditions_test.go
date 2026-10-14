@@ -168,7 +168,7 @@ func hcApprovedAndReplayed(t *testing.T) (main, wt, moved string, open func()) {
 	commands := ldPassing()
 	commands["test"] = command
 	main = ldRepository(t, func(root string) {
-		ldTier(t, root, "US-001", "high")
+		ldTier(t, root, "high")
 		setConfigOnDisk(t, root, "commands", commands)
 		ldThresholds(t, root)
 	})
