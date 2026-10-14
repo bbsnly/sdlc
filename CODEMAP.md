@@ -479,6 +479,10 @@ test code, and no task or program performs them. Before these files no test
 here ran `sdlc ack`, or held the hook's refusal of `approve`, `unfreeze` or
 `ack` end to end.
 
+`codemap_test.go` is a sandbox test of the same kind: stories in three
+worktrees each store sections with `sdlc codemap write` and land with `sdlc
+stop`, and a person's `sdlc remap` ends a map step that was refused.
+
 ## test/e2e/zcommands_test.go: the command guard
 
 Package `e2e`. `TestAC1EveryCommandAndTheHookHaveACaseThatRanItToTheResultItExpected`
@@ -957,13 +961,16 @@ all together:
   that makes a rule need a heading in `docs/enforcement.md`;
 - `parallel.Allowlist` (`internal/parallel/launch.go`), which names the `sdlc`
   subcommands an unattended session may run;
+- `sdlcCommands` in `internal/shellpolicy/staffing.go`, which `codemap` and
+  `remap` joined;
 - `personsDecisions` in `test/e2e/sandbox_loop_test.go`;
 - the agent count in `TestEveryAgentWorksOnlyAStoryAPersonStarted`
   (`internal/plugin/plugin_test.go`), and in prose in `README.md`,
   `docs/agents.md`, `docs/the-loop.md` and `docs/installation.md`.
 
 `plugin/skills/next/SKILL.md` is capped at 17,500 bytes by
-`TestTheRunbookFitsWhatCompactionKeeps`, and was 17,492 at c7bb9d8.
+`TestTheRunbookFitsWhatCompactionKeeps`, and was 17,492 at c7bb9d8 and 17,493
+once Gate 9 stopped committing the map.
 
 Inside a story's directory the shell rules protect `gate-record.json`,
 `reviews/` and the files `model.Artifacts` names, and nothing else
@@ -1301,10 +1308,10 @@ the caller moves trunk with `FastForward`. `path` is one name at the root.
 
 `treeWith` gives the listing's entries and which one is the path's, which the
 caller writes once the blob exists; it refuses a link or a submodule at the
-path, and a name beside it that differs only by case. The built tree is compared with the parent's by
-`ChangedBetween` before `commit-tree`: any other path changed, or none, is no
-commit, and the error names the paths. `plumbing` keeps the first failure of
-the calls.
+path, and a name beside it that differs only by case. The built tree is
+compared with the parent's by `ChangedBetween` before `commit-tree`: any other
+path changed, or none, is no commit, and the error names the paths. `plumbing`
+keeps the first failure of the calls.
 
 ## internal/store/mapsections.go
 
