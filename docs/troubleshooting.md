@@ -657,8 +657,10 @@ its commits`. What it says next tells the cases apart:
   differs, because the commit is then another commit.
 - "which is above": a commit was added after the commit gate. The ordinary case is a person's own
   commit on the story after the session's, which the pass reported as `head is ..., past ...`: it
-  landed before this version, and is now approved first. The one commit a story gains after the
-  gate without a person is the bookkeeper's, which changes the root `CODEMAP.md` alone.
+  landed before this version, and is now approved first. The one commit let through after the
+  gate without a person is one that changes the root `CODEMAP.md` alone and leaves it a plain
+  file. In a story's own worktree the bookkeeper no longer makes one: it stores its sections, and
+  `sdlc stop` puts them on trunk after the landing.
 - "made `story/<ID>`'s commits again": `sdlc stop` put the story onto a trunk that moved, and the
   commits it made are not, one for one, the ones the story had, by author name, author email and
   whole message. Trunk has not moved. Check `commit.cleanup` and the `i18n.` settings in the
@@ -691,8 +693,11 @@ renames them. Then `sdlc approve <ID>` there approves the commits as they stand,
 there, run by the person or by the session, lands them. Where the commits were changed by mistake
 and git still has the recorded commit, `git reset --hard <recorded>` in `.sdlc/worktrees/<ID>`
 puts the story back on it instead, and `sdlc stop` there lands it with nobody asked. The reset
-drops every commit above `<recorded>` and any uncommitted change; the bookkeeper's `CODEMAP.md`
-commit is then made again. An answer given by an older `sdlc` names no commit and clears none of
+drops every commit above `<recorded>` and any uncommitted change. The sections of `CODEMAP.md` the
+bookkeeper stored are kept apart from the commits, so the reset leaves them, and the stop still
+puts them on trunk after the landing; nothing is committed on the branch in their place, since a
+change to `CODEMAP.md` there can conflict with another story's at the stop
+([SDLC-E0075](#sdlc-e0075)). An answer given by an older `sdlc` names no commit and clears none of
 these refusals: answer with the version that refused.
 
 **What an approval covers.** A person's approval covers the files they were shown. It is given
@@ -919,8 +924,8 @@ files are named. It is not a short way round: `sdlc unfreeze` reopens Gate 3 and
 after it, and on a finished story it needs the escalation answered and the story reopened
 first, as under SDLC-E0025. Putting the story onto trunk by hand does not lift the refusal by
 itself: the files are then in the worktree and still refused, at a gate and at the stop. Where
-HEAD is past the commit the commit gate recorded, as it is after a rebase by hand or the
-bookkeeper's commit, the first gate after the freeze is refused with [SDLC-E0046](#sdlc-e0046),
+HEAD is past the commit the commit gate recorded, as it is after a rebase by hand or a commit
+made on the story after the gate, the first gate after the freeze is refused with [SDLC-E0046](#sdlc-e0046),
 which is answered as it says.
 
 With `SDLC_DEBUG=1` in the environment, or `SDLC_DEBUG_FILE` naming a file, a gate says when it

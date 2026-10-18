@@ -611,7 +611,7 @@ again at once. The landing checks, in order:
   is measured as it always was, with the lines around its change, and in a tier
   that waits for a person it is approved again;
 - in a tier that waits for a person, the story's commits are the ones the
-  commit gate recorded, with at most the bookkeeper's `CODEMAP.md` commits on
+  commit gate recorded, with at most commits of the root `CODEMAP.md` alone on
   top, or the stop's own replay of them with every author and message kept. A
   commit amended or added since is approved again
   ([`SDLC-E0037`](troubleshooting.md#sdlc-e0037));

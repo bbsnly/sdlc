@@ -26,9 +26,12 @@ import (
 // tree, the change and every review as they were, and landed on the approval
 // the story had.
 //
-// Anything the loop itself comes to commit above the recorded commit in a tier
-// that waits needs its own rule in heldTo: today that is the bookkeeper's
-// CODEMAP.md commit and nothing else.
+// A commit above the recorded commit in a tier that waits passes with no person
+// asked only by its own rule in heldTo, and there is one: a commit that changes
+// the root CODEMAP.md alone. The bookkeeper made that commit on the story's
+// branch until US-089; in the story's own worktree it now stores its sections,
+// and the stop puts them on trunk after the landing, so the loop makes no such
+// commit there. The rule stands until a person decides to close it.
 
 // eventCommitRecorded is the event that keeps the commit the commit gate
 // recorded once Record.forgetCommit has dropped it: its message is that
@@ -183,7 +186,8 @@ func inHistory(ctx context.Context, root, commit, tip string) bool {
 }
 
 // loose says why a tip is not held to an anchor: the anchor is not in its
-// history (gone), or commit, above the anchor, is not a bookkeeper's.
+// history (gone), or commit, above the anchor, is not a commit of the root
+// CODEMAP.md alone.
 type loose struct {
 	gone   bool
 	commit string
@@ -197,7 +201,7 @@ type loose struct {
 // heldTo says why tip is not held to anchor, or nil where it is: anchor is tip
 // or in its history, the commits between them are a line, and each of them
 // changes the root CODEMAP.md alone and leaves it a plain file, as the
-// bookkeeper's commit does.
+// bookkeeper's commit did before it stored its sections instead.
 //
 // Each commit is judged against its own parent, never the range's net change
 // or the tip alone: a file added in one commit and taken away in the next is
@@ -266,8 +270,8 @@ func requireSameCommits(ctx context.Context, rd *reading, id string, record *mod
 	}
 	return sdlcerr.New(sdlcerr.ApprovalRequired, notApprovedAsCommitted(id),
 		"the commit gate last recorded the story's commits as the range ending at "+shortCommit(recorded)+
-			", and HEAD, "+shortCommit(head)+", is not that commit with at most the bookkeeper's "+codemap+
-			" commits on top of it: a commit of the story was changed or added since. In a tier that waits for a "+
+			", and HEAD, "+shortCommit(head)+", is not that commit with at most commits of the root "+codemap+
+			" alone on top of it: a commit of the story was changed or added since. In a tier that waits for a "+
 			"person the story's commits are fixed when the commit gate passes, and passing it again with other "+
 			"commits needs a person's answer given after that pass. "+gateNotPassed).
 		WithFix(gateCommitsFix(rd.s, id))
@@ -599,8 +603,9 @@ func (l *lander) commitsRefusal(recorded string, f *fault) error {
 		rec := shortCommit(recorded)
 		fix = `where the commits were changed by mistake and git still has ` + rec + `, a person puts the story back ` +
 			`on it, in ` + in + `, with "git reset --hard ` + rec + `" (this drops every commit above ` + rec +
-			` and any uncommitted change; the bookkeeper's ` + codemap + ` commit is then made again), and "sdlc ` +
-			`stop" there lands it. Otherwise ` + fix
+			` and any uncommitted change; the sections of ` + codemap + ` the bookkeeper stored are kept apart from ` +
+			`the commits, so the reset leaves them, the stop still puts them on ` + trunk + ` after the landing, and ` +
+			`nothing is committed on the branch in their place), and "sdlc stop" there lands it. Otherwise ` + fix
 	}
 	return sdlcerr.New(sdlcerr.ApprovalRequired, notApprovedAsCommitted(l.id), why+". "+approvalCovers).WithFix(fix)
 }
@@ -638,9 +643,9 @@ func looseWhy(branch, trunk, recorded string, f *fault) string {
 		does = "changes one path that is not the root " + codemap
 	}
 	return shortCommit(f.loose.commit) + ", which is above " + shortCommit(f.anchor) + ", " + named + ", " + does +
-		"; the only commit a story gains after the gate without a person is the bookkeeper's, which changes the " +
-		"root " + codemap + " alone and leaves it a plain file. This is also what a person's own commit made on " +
-		"the story after the gate is"
+		"; the only commit let through after the gate without a person is one that changes the root " + codemap +
+		" alone and leaves it a plain file, and in the story's own worktree the bookkeeper no longer makes one. " +
+		"This is also what a person's own commit made on the story after the gate is"
 }
 
 // answerForCommits is the commit a person's answer names, and what an
