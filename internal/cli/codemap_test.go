@@ -144,8 +144,8 @@ func cmText(r map[string]any, key string) string {
 	return s
 }
 
-// cmEvents is the message of every codemap event on a story's record.
-func cmEvents(t *testing.T, main, id string) []string {
+// cmMapEvents is the message of every codemap event on a story's record.
+func cmMapEvents(t *testing.T, main, id string) []string {
 	t.Helper()
 	var out []string
 	for _, e := range swRecord(t, main, id).Events {
@@ -233,7 +233,7 @@ func cmLandedWithMap(t *testing.T, main, id string, r result) string {
 	if !strings.Contains(said, cmFile) || !strings.Contains(said, mapped[:12]) {
 		t.Errorf("the stop does not say CODEMAP.md was brought up to date at %s:\n%s", mapped[:12], said)
 	}
-	if len(cmEvents(t, main, id)) == 0 {
+	if len(cmMapEvents(t, main, id)) == 0 {
 		t.Errorf("%s's record has no codemap event for the commit", id)
 	}
 	if swListed(t, main, swWorktreeOf(main, id)) || swHasBranch(t, main, swBranchOf(id)) {
@@ -612,7 +612,7 @@ func TestAC7AStoryWithNoMapChangeLandsAsBeforeWithNoAddedCommit(t *testing.T) {
 	if _, has := rec["codemap_commit"]; has {
 		t.Errorf("the record has a codemap_commit, %v, for a story that changed nothing in the map", rec["codemap_commit"])
 	}
-	if got := cmEvents(t, main, "US-001"); len(got) != 0 {
+	if got := cmMapEvents(t, main, "US-001"); len(got) != 0 {
 		t.Errorf("the record has codemap events for a story with no map change: %q", got)
 	}
 	if got, _ := cmTrunkMap(t, main); got != cmMap {
@@ -1133,7 +1133,7 @@ func TestAC6ThePlainRepairAppliesTheKeptChangeWhereItStillApplies(t *testing.T) 
 	if rec := swRecord(t, main, "US-001"); rec.Commit != landed {
 		t.Errorf("the repair changed the story's own range to end at %s, want %s", rec.Commit, landed)
 	}
-	if events := cmEvents(t, main, "US-001"); len(events) == 0 || !strings.Contains(events[len(events)-1], "remap") {
+	if events := cmMapEvents(t, main, "US-001"); len(events) == 0 || !strings.Contains(events[len(events)-1], "remap") {
 		t.Errorf("the record's codemap events are %q, want the last to say a person's remap made the commit", events)
 	}
 	if said := cmSaid(cmPerson(t, main, "status")); strings.Contains(said, "sdlc remap") {
@@ -1212,7 +1212,7 @@ func TestAC6RepairWithReplacePutsTheKeptSectionOverTrunks(t *testing.T) {
 	if wtExists(cmSectionsFile(main, "US-002")) {
 		t.Error("the kept change is still under the git directory after --replace")
 	}
-	if events := cmEvents(t, main, "US-002"); len(events) == 0 || !strings.Contains(events[len(events)-1], "--replace") {
+	if events := cmMapEvents(t, main, "US-002"); len(events) == 0 || !strings.Contains(events[len(events)-1], "--replace") {
 		t.Errorf("the record's codemap events are %q, want the last to say --replace was used", events)
 	}
 	if said := cmSaid(cmPerson(t, main, "status")); strings.Contains(said, "sdlc remap") {
@@ -1269,7 +1269,7 @@ func TestAC6RepairWithDropDiscardsTheKeptChangeWithNoCommit(t *testing.T) {
 			if got := cmText(cmRecord(t, main, id), "codemap_commit"); got != "" {
 				t.Errorf("the record names %s as the map's commit after a drop", got)
 			}
-			if events := cmEvents(t, main, id); len(events) == 0 || !strings.Contains(events[len(events)-1], "--drop") {
+			if events := cmMapEvents(t, main, id); len(events) == 0 || !strings.Contains(events[len(events)-1], "--drop") {
 				t.Errorf("the record's codemap events are %q, want the last to say the change was dropped with --drop", events)
 			}
 			for _, args := range [][]string{{"status"}, {"story", "list"}, {"log"}} {

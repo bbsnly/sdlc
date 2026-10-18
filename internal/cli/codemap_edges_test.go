@@ -105,7 +105,7 @@ func TestAC1SectionsThatCannotBeReadFromStandardInputAreRefusedAndNothingIsStore
 	if wtExists(cmSectionsFile(main, "US-001")) {
 		t.Error("sections were kept from input that could not be read")
 	}
-	if events := cmEvents(t, main, "US-001"); len(events) != 0 {
+	if events := cmMapEvents(t, main, "US-001"); len(events) != 0 {
 		t.Errorf("the record has codemap events %q, and nothing was stored", events)
 	}
 }
@@ -128,7 +128,7 @@ func TestAC1SectionsThatCannotBeKeptAreRefusedAndStoringAgainKeepsThem(t *testin
 	if wtExists(cmSectionsFile(main, "US-001")) {
 		t.Error("a set was kept where the directory would take none")
 	}
-	if events := cmEvents(t, main, "US-001"); len(events) != 0 {
+	if events := cmMapEvents(t, main, "US-001"); len(events) != 0 {
 		t.Errorf("the record has codemap events %q, and nothing was stored", events)
 	}
 	if got := swGit(t, wt, "status", "--porcelain"); got != status {
@@ -229,7 +229,7 @@ func TestReleasingAStoryDropsItsKeptSectionsAndTheRecordSaysSo(t *testing.T) {
 			if !strings.Contains(r.stdout, "Released US-001") {
 				t.Errorf("release does not say it released US-001:\n%s", cmSaid(r))
 			}
-			events := cmEvents(t, main, "US-001")
+			events := cmMapEvents(t, main, "US-001")
 			if removable {
 				if wtExists(cmSectionsFile(main, "US-001")) {
 					t.Error("the sections kept for the released story are still there")
@@ -272,7 +272,7 @@ func TestAC6AStopWhoseSectionsTrunkHoldsAlreadyLandsAndOffersOnlyTheDrop(t *test
 	if !strings.Contains(said, "refund.go") {
 		t.Errorf("the stop does not name the section trunk holds already:\n%s", said)
 	}
-	if events := cmEvents(t, main, "US-001"); len(events) == 0 || !strings.Contains(events[len(events)-1], "exactly as it was stored") {
+	if events := cmMapEvents(t, main, "US-001"); len(events) == 0 || !strings.Contains(events[len(events)-1], "exactly as it was stored") {
 		t.Errorf("the record's codemap events are %q, want the last to say trunk holds the sections exactly as stored", events)
 	}
 
@@ -466,7 +466,7 @@ func TestAC6ADropWhoseRecordCannotBeWrittenIsRefusedAndKeepsTheChange(t *testing
 	if r := cmPerson(t, main, "remap", "US-001", "--drop"); r.code != 0 || wtExists(cmSectionsFile(main, "US-001")) {
 		t.Errorf("the drop, once the record can be written, exited %d and the kept change is there: %v\n%s", r.code, wtExists(cmSectionsFile(main, "US-001")), cmSaid(r))
 	}
-	if events := cmEvents(t, main, "US-001"); len(events) == 0 || !strings.Contains(events[len(events)-1], "--drop") {
+	if events := cmMapEvents(t, main, "US-001"); len(events) == 0 || !strings.Contains(events[len(events)-1], "--drop") {
 		t.Errorf("the record's codemap events are %q, want the last to be the drop", events)
 	}
 }
