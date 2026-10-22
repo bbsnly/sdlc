@@ -896,11 +896,15 @@ func runStaffingAssign(cmd *cobra.Command, args []string, f assignFlags) error {
 	// The hook refuses this to every session. This is the second barrier,
 	// for a spelling the hook cannot read, and it comes before anything is
 	// read, so the error answers no question. It holds only while the
-	// session leaves its own environment alone.
+	// session leaves its own environment alone, and SDLC-E0079 follows it for
+	// every other variable Claude Code sets.
 	if envOf(cmd).getenv(store.SessionEnv) != "" {
 		return sdlcerr.New(sdlcerr.StaffingAssignInSession,
 			"sdlc staffing assign was run from inside a Claude Code session",
 			"choosing a model or an effort for an agent in a person's name is a person's decision")
+	}
+	if err := refuseInsideClaudeCode(cmd, "/sdlc:assign"); err != nil {
+		return err
 	}
 	if err := requireReason(f.reason, "an assignment"); err != nil {
 		return err

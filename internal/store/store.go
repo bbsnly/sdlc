@@ -438,6 +438,21 @@ func (s *Store) SetActive(id string) error {
 // session_id.
 const SessionEnv = "CLAUDE_CODE_SESSION_ID"
 
+// AgentEnv is the variable Claude Code 2.1.302 sets for a model's tools alone:
+// a model's Bash or PowerShell and everything they start, a session started
+// from one among them, and never a hook Claude Code runs itself (US-108).
+const AgentEnv = "AI_AGENT"
+
+// claudeCodeMarkers are the variables Claude Code 2.1.302 sets for the
+// processes it starts: a model's Bash or PowerShell, anything they start, a `!`
+// command, and a hook, which has all but AgentEnv.
+var claudeCodeMarkers = [...]string{"CLAUDECODE", SessionEnv, "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_PID", AgentEnv}
+
+// ClaudeCodeMarkers returns claudeCodeMarkers. The CLI refuses a person's
+// command where any is set and the hook hands a typed one none of them, so
+// the list is a copy no importer can write to, a test among them.
+func ClaudeCodeMarkers() [len(claudeCodeMarkers)]string { return claudeCodeMarkers }
+
 // safeSession is what a session id may contain. Claude Code's are UUIDs; this
 // is wider than that, and still nothing that could be a path.
 var safeSession = regexp.MustCompile(`^[A-Za-z0-9._-]{1,200}$`)

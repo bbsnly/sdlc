@@ -3,6 +3,11 @@
 /bin/sdlc
 /bin/sdlc.exe
 
+# Where the plugin's launcher stages the download it fetches on the first
+# session, when a developer loads the plugin from this checkout without
+# SDLC_BIN. The binary it fetches is ignored further down.
+/plugin/bin/.sdlc-fetch.*
+
 # `go build ./internal/tools/<name>` drops the executable in the working
 # directory under that name. Ignored here, and the hygiene check refuses to
 # track a compiled binary under any name, because this is easy to sweep into a
@@ -44,9 +49,9 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# The binary the plugin launcher finds if it is there. Never committed: the
-# plugin ships from a release archive, not from the repository, and `./task
-# build` puts the binary in dist/ instead.
+# The binary the plugin launcher finds if it is there, and fetches if it is
+# not. Never committed: the plugin ships from a release archive, not from the
+# repository, and `./task build` puts the binary in dist/ instead.
 /plugin/bin/sdlc
 /plugin/bin/sdlc.exe
 

@@ -19,6 +19,9 @@ To find yours, follow the link the error printed, or search this page for the co
 stable. Once published, a code keeps its meaning forever, so a code you find in an old issue or
 a log still points at the same condition.
 
+In these pages, "their own terminal" and "your own terminal" mean a terminal outside Claude Code,
+a window the person opened themselves, as [SDLC-E0079](#sdlc-e0079) describes.
+
 > [!NOTE]
 > If you were refused by the hook while working on a story, and no `SDLC-E` code came with it,
 > read [Why was I refused?](guides/why-was-i-refused.md). Messages the hook prints in your
@@ -196,11 +199,12 @@ which is how a runner records what a session cost after its iteration ended.
 `sdlc approve` with no story named carries this code after an escalation, because
 `sdlc escalate` ended the iteration. Starting is not the way on there: `sdlc start` refuses a
 story that waits for a person ([SDLC-E0036](#sdlc-e0036)). A person names the story instead, in
-their own terminal, as `sdlc approve <ID>`.
+Claude Code or in their own terminal, as `/sdlc:approve <ID>`, or `sdlc approve <ID>`, with the
+story's id after either.
 
 `sdlc unfreeze` and `sdlc freeze` carry it too with no iteration running. After an escalation a
-person answers with `sdlc approve <ID>` and runs `sdlc start <ID>` first, and then lifts the
-freeze, in their own terminal.
+person first answers with `/sdlc:approve <ID>`, or `sdlc approve <ID>`, then runs `sdlc start <ID>`
+and lifts the freeze in their own terminal.
 
 ### SDLC-E0012
 
@@ -318,7 +322,8 @@ The tests are already frozen.
 
 A freeze covers one story's acceptance tests, and taking a second one over the top would quietly
 bless whatever changed in between. If the tests genuinely have to change, a person runs
-`sdlc unfreeze --reason "..."` in their own terminal first, and then freezes again. The reason
+`/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."` in their own terminal first, and then freezes
+again. The reason
 goes on the record, and the hook refuses the command from an agent.
 
 With `freeze.allow_new_test_files` on, `sdlc freeze` on the story's own freeze adds the test
@@ -376,19 +381,19 @@ freeze exists to make visible: an agent that can edit its own acceptance tests w
 edit them, and every gate after that is theatre.
 
 Restore them. If a test really did encode the wrong behaviour, have a person run
-`sdlc unfreeze --reason "..."` in their own terminal and freeze again, so that the change is a
-decision somebody can review rather than something that happened quietly.
+`/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."` in their own terminal and freeze again, so that
+the change is a decision somebody can review rather than something that happened quietly.
 
 `sdlc freeze` refuses with this code too, when the story's tests were frozen and
 `.sdlc/state/tests.lock` is gone without the freeze ever being lifted. Freezing again would
 lock the tests as they are now, whatever happened to them since. If the file was removed on
-purpose, a person lifts the freeze on the record first, with `sdlc unfreeze --reason "..."` in
-their own terminal, and `sdlc freeze` then works again.
+purpose, a person lifts the freeze on the record first, with `/sdlc:unfreeze`, or
+`sdlc unfreeze --reason "..."` in their own terminal, and `sdlc freeze` then works again.
 
 `sdlc unfreeze` needs an iteration running. Where an assistant handed the story over with
 `sdlc escalate`, the iteration has ended, and `sdlc unfreeze` is refused with
-[SDLC-E0011](#sdlc-e0011) until a person has answered with `sdlc approve <ID>` and picked the
-story up again with `sdlc start <ID>`, both in their own terminal.
+[SDLC-E0011](#sdlc-e0011) until a person has answered with `/sdlc:approve <ID>`, or `sdlc approve <ID>`,
+and then picked the story up again with `sdlc start <ID>` in their own terminal.
 
 **At landing**, it means a frozen test on the story's branch is not what was frozen. A frozen
 test that only trunk changed or removed since the story was cut is accepted as trunk has it and
@@ -402,8 +407,9 @@ right in one of two ways:
   run `sdlc stop` in the story's worktree again.
 - **Where the change is to stay**, or where trunk changed the test too, so that restoring the
   frozen copy would take trunk's change away, reopen the story instead. Answer the escalation first,
-  with `sdlc approve <ID>` or `sdlc approve <ID> --reject "..."` in `.sdlc/worktrees/<ID>`, then
-  run `sdlc gate code_review fail --story <ID> --note "..."` there and type `/sdlc:next`. Once
+  in `.sdlc/worktrees/<ID>`, with `/sdlc:approve <ID>`, or `sdlc approve <ID>`, or send it back
+  with `/sdlc:approve <ID> --reject "..."`, or `sdlc approve <ID> --reject "..."`, then run
+  `sdlc gate code_review fail --story <ID> --note "..."` there and type `/sdlc:next`. Once
   the iteration is running, `sdlc unfreeze --reason "..."` there, in their own terminal, sends
   the story back to have its tests frozen again: `sdlc unfreeze` needs an iteration running, and
   it reopens Gate 3 and every gate after it.
@@ -493,8 +499,9 @@ is compared with the lines around its change, as before. The fix says which of t
   person reads the branch against trunk and decides. Where the story's own commits are still the
   change that was reviewed and trunk does not hold them yet, they replay only those onto trunk in
   the worktree and run `sdlc stop` there again. Otherwise, to have it reviewed and committed
-  again, they reopen it: they answer the escalation first, with `sdlc approve <ID>` or
-  `sdlc approve <ID> --reject "..."` in `.sdlc/worktrees/<ID>`, then run
+  again, they reopen it: they answer the escalation first, in `.sdlc/worktrees/<ID>`, with
+  `/sdlc:approve <ID>`, or `sdlc approve <ID>`, or send it back with
+  `/sdlc:approve <ID> --reject "..."`, or `sdlc approve <ID> --reject "..."`, then run
   `sdlc gate code_review fail --story <ID> --note "..."` there and type `/sdlc:next`. Until the
   escalation is answered, the story waits for a person and the loop does not carry it on
   (SDLC-E0036). An assistant hands the story to a person with `sdlc escalate` and stops.
@@ -597,7 +604,8 @@ question is one nobody asked for. `sdlc status` lists the stories that are waiti
 The story was handed to a person with `sdlc escalate`, and nobody has decided yet.
 
 Starting it again would carry on past the question it stopped to ask. The person reads what
-the escalation says (`sdlc status` shows it) and answers in their own terminal:
+the escalation says (`sdlc status` shows it) and answers with `/sdlc:approve <ID>` in Claude Code,
+or in their own terminal:
 
 ```console
 $ sdlc approve US-001
@@ -607,8 +615,10 @@ $ sdlc approve US-001 --reject "the migration has no way back"
 Either answer lets the story start again, and both go on its record.
 
 **At landing**, `sdlc stop` in a finished story's worktree refuses with this code while an
-escalation waits, and lands nothing. A person answers first, in their own terminal, in
-`.sdlc/worktrees/<ID>`, the checkout that holds the story: `sdlc approve <ID>`, after which
+escalation waits, and lands nothing. A person answers first, in Claude Code or in their own
+terminal, in
+`.sdlc/worktrees/<ID>`, the checkout that holds the story: `/sdlc:approve <ID>`, or `sdlc approve <ID>`,
+after which
 `sdlc stop` there lands it, or `sdlc approve <ID> --reject "..."`, to send the work back. An
 assistant stops and tells the person.
 
@@ -633,14 +643,14 @@ line for line. A story rebased by hand is approved again, and so is one whose re
 recorded again after the commit gate, or one with a code review on its record from a reviewer the
 staffing has since left out, where that review is of another tree than the others. Hand the
 story to a person with `sdlc escalate pre_commit_approval --message "..."` and stop; once they
-have run
-`sdlc approve <ID>` in `.sdlc/worktrees/<ID>`, `sdlc stop` there lands it. With no iteration
+have run `/sdlc:approve <ID>`, or `sdlc approve <ID>` in `.sdlc/worktrees/<ID>`, `sdlc stop`
+there lands it. With no iteration
 running on the story, it cannot be handed over from there: `sdlc gate commit fail --story <ID>
 --note "..."` in `.sdlc/worktrees/<ID>` and `/sdlc:next` take it up again at the commit gate
 first. A tier pauses where the main checkout's configuration or trunk's committed one says it
 does.
 
-A person reads the work and runs `sdlc approve` in their own terminal. An
+A person reads the work and runs `/sdlc:approve`, or `sdlc approve` in their own terminal. An
 approval is bound to the work as it stands, so a change made after it needs
 approving again, and work that was sent back stays sent back until it changes.
 The same refusal comes from the hook, before `git commit`, as
@@ -870,10 +880,11 @@ written to pass, so every gate the freeze guards (`tests_frozen`, `plan`, `imple
 
 If the project has `freeze.allow_new_test_files` on, run `sdlc freeze` again: it adds them to the
 freeze, and from then on they are held like the rest. Otherwise remove them. If the story
-really needs them, have a person run `sdlc unfreeze --reason "..."` in their own terminal and
-freeze again. `sdlc unfreeze` needs an iteration running: where an assistant handed the story
-over with `sdlc escalate`, the person answers with `sdlc approve <ID>` and runs
-`sdlc start <ID>` first, or `sdlc unfreeze` is refused with [SDLC-E0011](#sdlc-e0011).
+really needs them, have a person run `/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."` in their
+own terminal and freeze again. `sdlc unfreeze` needs an iteration running: where an assistant
+handed the story over with `sdlc escalate`, the person first answers with `/sdlc:approve <ID>`, or
+`sdlc approve <ID>`, and then runs `sdlc start <ID>`; until then `sdlc unfreeze` is refused with
+[SDLC-E0011](#sdlc-e0011).
 
 **In a story's own worktree**, once the story sits on a later trunk commit than the one it was
 cut from, a test file that only trunk changed in between is not held against the story, at a
@@ -890,7 +901,8 @@ changed or took away one of trunk's. A person decides:
   again.
 - **To keep them**, reopen the story, as under SDLC-E0025. Answer the escalation first in
   `.sdlc/worktrees/<ID>`, record `sdlc gate code_review fail --story <ID> --note "..."` there,
-  type `/sdlc:next`, and once the iteration is running, run `sdlc unfreeze --reason "..."` there
+  type `/sdlc:next`, and once the iteration is running, run `/sdlc:unfreeze`, or `sdlc unfreeze
+  --reason "..."` there
   in their own terminal, which sends the story back to have its tests frozen again with them.
 
 **Whose commits are the story's.** A test file is trunk's only below the story's own commits,
@@ -917,7 +929,8 @@ refusals come from the list, with this code for a test file the freeze does not 
 The fix sorts the files it names. One that is not in the worktree as trunk has it is the story's
 own: take it out of `story/<ID>`, or restore it as it was frozen. One that is there exactly as
 trunk has it, or that is trunk's and not in the worktree yet, sdlc cannot take as trunk's: a
-person who has checked that it is trunk's, and is to stay, runs `sdlc unfreeze --reason "..."`
+person who has checked that it is trunk's, and is to stay, runs `/sdlc:unfreeze`, or `sdlc unfreeze
+--reason "..."`
 in their own terminal, and the tests are frozen again. That freeze holds every test file in the
 worktree and starts the list again, so one unfreeze and one freeze are enough, however many
 files are named. It is not a short way round: `sdlc unfreeze` reopens Gate 3 and every gate
@@ -925,7 +938,8 @@ after it, and on a finished story it needs the escalation answered and the story
 first, as under SDLC-E0025. Putting the story onto trunk by hand does not lift the refusal by
 itself: the files are then in the worktree and still refused, at a gate and at the stop. Where
 HEAD is past the commit the commit gate recorded, as it is after a rebase by hand or a commit
-made on the story after the gate, the first gate after the freeze is refused with [SDLC-E0046](#sdlc-e0046),
+made on the story after the gate, the first gate after the freeze is refused with
+[SDLC-E0046](#sdlc-e0046),
 which is answered as it says.
 
 With `SDLC_DEBUG=1` in the environment, or `SDLC_DEBUG_FILE` naming a file, a gate says when it
@@ -1010,7 +1024,8 @@ something git cannot read as a commit: history was rewritten, this clone does no
 commit, or the file was edited. The log refuses rather than list every story again, which would
 bury the new ones under everything already read.
 
-Run `sdlc ack --through <commit>` in your own terminal to acknowledge a commit git has, or remove
+Run `/sdlc:ack`, or `sdlc ack --through <commit>` in your own terminal to acknowledge a commit git
+has, or remove
 the file to list every story again. Until then, `sdlc log --since` starts after a commit you name,
 and `sdlc log --all` lists every committed story.
 
@@ -1026,8 +1041,9 @@ round it.
 
 If you are the person running the session, type `/sdlc:next` in it to take the story over. It picks
 the story up and records this session as the one working it, and from then on the session it came
-from is refused instead. To answer for the story yourself, with `sdlc approve`, `sdlc unfreeze` or
-`sdlc stop`, run the command in your own terminal, outside Claude Code.
+from is refused instead. To answer for the story yourself, type `/sdlc:approve` or `/sdlc:unfreeze`
+in Claude Code, or run `sdlc approve`, `sdlc unfreeze` or
+`sdlc stop` in your own terminal, outside Claude Code.
 
 If you are an assistant, stop and tell the person that the story is being worked on in another
 Claude Code session and that only they can move it here. Do not run `sdlc start`.
@@ -1129,17 +1145,20 @@ Then:
 - `sdlc start <ID>` and `sdlc approve <ID>` are refused with this code.
 
 If that checkout is gone for good, or this is the same checkout moved, a person runs
-`sdlc release <ID> --reason "..."` in their own terminal, after which `sdlc start <ID>` works in
+`/sdlc:release <ID> --reason "..."`, or `sdlc release <ID> --reason "..."` in their own terminal,
+after which `sdlc start <ID>` works in
 any checkout; until then no checkout can record anything for the story. For example:
 
 ```console
 $ sdlc release US-001 --reason "the worktree was deleted with its disk"
 ```
 
-Then they run the refused command again: `sdlc approve US-001` for a story waiting for a person,
+Then they run the refused command again: `/sdlc:approve US-001`, or `sdlc approve US-001` for a story
+waiting for a person,
 `sdlc start US-001` otherwise, in any checkout. If the story's tests were frozen and the checkout
 that holds the story's work is a new one, the freeze is on the story's record and not in that
-checkout's `.sdlc/state/tests.lock`: until a person runs `sdlc unfreeze --reason "..."` and then
+checkout's `.sdlc/state/tests.lock`: until a person runs `/sdlc:unfreeze`, or `sdlc unfreeze
+--reason "..."` and then
 `sdlc freeze` there, every test file is treated as frozen. A checkout that was moved took its
 `tests.lock` with it, and its freeze stands.
 
@@ -1443,8 +1462,9 @@ The message says which check, and the fix is for that state:
 
 For every state but a failed command, a person puts it right as the fix says and runs
 `sdlc stop` in `.sdlc/worktrees/<ID>` again, or reopens the story: answer
-the escalation first, with `sdlc approve <ID>` or `sdlc approve <ID> --reject "..."` in
-`.sdlc/worktrees/<ID>`, then record the gate as failed there, and type `/sdlc:next`:
+the escalation first, in `.sdlc/worktrees/<ID>`, with `/sdlc:approve <ID>`, or `sdlc approve <ID>`,
+or send it back with `/sdlc:approve <ID> --reject "..."`, or `sdlc approve <ID> --reject "..."`,
+then record the gate as failed there, and type `/sdlc:next`:
 
 ```console
 $ sdlc gate implementation fail --story US-001 --note "the tests fail on trunk's new API"
@@ -1556,7 +1576,8 @@ Run the command again with a value in that range.
 `sdlc parallel` was given a story that is waiting for a person's answer to an escalation. Running
 it again would act as that answer, so it is refused. Nothing was started.
 
-Run `sdlc approve <ID>` (or its `--reject`) in `.sdlc/worktrees/<ID>`, then name the story again.
+Run `/sdlc:approve <ID>`, or `sdlc approve <ID>` (or its `--reject`) in `.sdlc/worktrees/<ID>`,
+then name the story again.
 If you are an assistant, stop and tell the person.
 
 ### SDLC-E0065
@@ -1629,7 +1650,7 @@ A staffing or an amendment would change what a person assigned to an agent with
 `sdlc staffing assign`. What a person chose stays as it is. Nothing was recorded.
 
 Leave that agent's model, effort or place in the story out of the change. Only a person changes
-it, by running `sdlc staffing assign` again in their own terminal.
+it, by running `/sdlc:assign`, or `sdlc staffing assign` again in their own terminal.
 
 ### SDLC-E0073
 
@@ -1646,8 +1667,8 @@ failed.
 `sdlc staffing assign` was run where a Claude Code session id is set. Assigning a model or an
 effort to an agent is a person's decision. Nothing was recorded.
 
-A person runs it in their own terminal, outside Claude Code. An assistant stops here and says what
-it would have asked for.
+A person types `/sdlc:assign` in Claude Code, or runs `sdlc staffing assign` in their own
+terminal, outside Claude Code. An assistant stops here and says what it would have asked for.
 
 ### SDLC-E0075
 
@@ -1721,12 +1742,14 @@ The message says what was in the way, and its fix is for that cause:
 
 - **A section is no longer what the bookkeeper read.** The message names it: a section to add
   whose heading trunk's map now has, or one to replace whose text on trunk changed since the story
-  began, because another story or a person got there first. Nothing is merged. A person chooses,
-  in their own terminal, in the main checkout: `sdlc remap <ID> --replace` puts the kept sections
-  over what trunk holds under those headings (what was there stays in history);
-  `sdlc remap <ID> --drop` discards the kept change and commits nothing, for after they have
-  edited `CODEMAP.md` by hand; and plain `sdlc remap <ID>` makes the change once trunk's sections
-  are again what the bookkeeper read. A message that says trunk's map already holds one section
+  began, because another story or a person got there first. Nothing is merged. A person in the
+  main checkout chooses, typing the slash command in Claude Code or the terminal command in their
+  own terminal, each with the same arguments: `/sdlc:remap <ID> --replace`, or
+  `sdlc remap <ID> --replace` puts the kept sections over what trunk holds under those headings
+  (what was there stays in history); `/sdlc:remap <ID> --drop`, or `sdlc remap <ID> --drop`
+  discards the kept change and commits nothing, for after they have edited `CODEMAP.md` by hand;
+  and plain `/sdlc:remap <ID>`, or `sdlc remap <ID>` makes the change once trunk's sections are
+  again what the bookkeeper read. A message that says trunk's map already holds one section
   exactly as it was stored, among others it names, is of this kind: that section is on trunk and
   the others are not, so `--drop` would throw the others away.
 - **Trunk's map already holds every kept section exactly as it was stored.** There is nothing to
@@ -1741,9 +1764,11 @@ The message says what was in the way, and its fix is for that cause:
   `CODEMAP.md` nobody committed; the repository has no committer configured; trunk has a
   directory, a link or a submodule where the file goes, or a `codemap.md` in another case, and
   the commit would change a path other than `CODEMAP.md`. Put that right, then run plain
-  `sdlc remap <ID>`. `--replace` does not help here, and `--drop` would throw the change away.
+  `/sdlc:remap <ID>`, or `sdlc remap <ID>`. `--replace` does not help here, and `--drop` would
+  throw the change away.
 - **The kept file is no longer a set of sections.** It was changed after it was stored. Put it
-  right, or discard it with `sdlc remap <ID> --drop`.
+  right and run the step again with `/sdlc:remap <ID>`, or `sdlc remap <ID>`; or discard it with
+  `/sdlc:remap <ID> --drop`, or `sdlc remap <ID> --drop`.
 
 `sdlc remap` is a person's command and the hook refuses it to every session
 ([`remap-is-a-human-decision`](enforcement.md#remap-is-a-human-decision)). An assistant says
@@ -1789,8 +1814,52 @@ set: no stop lands that story, so its bookkeeper edits `CODEMAP.md` in place.
 
 The same code is what `sdlc remap` prints where the file kept for a landed story, at
 `.git/sdlc/codemap/<ID>.md`, was changed after it was stored and is no longer a set. Nothing is
-committed. A person puts the file right and runs `sdlc remap <ID>` again, or discards it with
+committed. A person puts the file right and runs `/sdlc:remap <ID>`, or `sdlc remap <ID>` again, or
+discards it with
 `sdlc remap <ID> --drop`; `--replace` reads the same file and is refused the same way.
+
+### SDLC-E0079
+
+One of a person's commands, `sdlc approve`, `sdlc unfreeze`, `sdlc ack`, `sdlc remap`,
+`sdlc release`, `sdlc staffing assign` or `sdlc parallel`, ran in a process that Claude Code
+started. Nothing was read or changed.
+
+Claude Code sets environment variables in the processes it starts: `CLAUDECODE`,
+`CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_CHILD_SESSION` and `CLAUDE_PID`, and `AI_AGENT` for a
+model's tools. A model's Bash or PowerShell has them, and so does any script, shell or
+interpreter it starts, a `!` line typed in a session, and a terminal app or a `tmux` server that
+Claude Code started. The refusal's why names the first one it found, by its name only. A person's
+decision comes from a slash command they type in Claude Code, or from a terminal outside Claude
+Code: a terminal window you opened yourself, such as Terminal on macOS or PowerShell from the
+Start menu. A terminal inside Claude Code or Claude Desktop is not one, and neither is a `tmux`
+session that Claude Code started.
+
+To go on:
+
+- Type the slash command, with the story where the command names one: `/sdlc:approve <ID>`, or
+  `sdlc approve <ID>` in a terminal outside Claude Code. The others are alike:
+  `/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."`; `/sdlc:ack`, or
+  `sdlc ack --through <commit>`; `/sdlc:remap <ID>`, or `sdlc remap <ID>`, for a landed story
+  whose change to `CODEMAP.md` is waiting, with `--replace` or `--drop` where the fix it printed
+  says so;
+  `/sdlc:release <ID> --reason "..."`, or `sdlc release <ID> --reason "..."`; and
+  `/sdlc:assign`, or `sdlc staffing assign <agent> --model <model> --reason "..."`. The refusal's
+  fix names the story when the command was given one.
+- `sdlc parallel` has no slash command, and runs only in a terminal outside Claude Code.
+- A terminal of your own has no `sdlc` unless you installed one, with `npx @bbsnly/sdlc install`:
+  the plugin's copy is on Claude Code's `PATH` only. Install it before you need `sdlc parallel`;
+  the slash commands need nothing installed.
+- If you met this in a terminal window you opened yourself, the why names the variable it found
+  there. A terminal app started from inside Claude Code, for example by a model's `open`, has the
+  variables in every window it opens, and so does each window of a `tmux` server a model's Bash
+  started. Quit the app fully and open it again from the Dock, Finder or the Start menu, or end
+  that `tmux` server, then check that `printenv` no longer lists the variable named.
+- If you are an assistant, stop here and say what you would have run. Do not try another way of
+  running it.
+
+For `sdlc parallel` and `sdlc staffing assign`, [SDLC-E0061](#sdlc-e0061) and
+[SDLC-E0074](#sdlc-e0074) answer first where `CLAUDE_CODE_SESSION_ID` is set, as before, and this
+code covers every other case. `SDLC_ENFORCE=0` does not turn this check off, nor those two.
 
 ## Warnings the hook prints
 
@@ -1807,7 +1876,8 @@ Running out of time is not a warning, and the call does not go through. A comman
 cannot finish reading in time, or a change it cannot check in time, is refused with the rule
 name [`not-checked-in-time`](enforcement.md#not-checked-in-time): for
 [the calls the hook checks](enforcement.md#not-checked-in-time), it gives itself 25 seconds
-from when it starts, inside the 30 seconds Claude Code gives it. The refusal says to run a command in
+from when it starts, inside the 30 seconds Claude Code gives it. The refusal says to run a command
+in
 shorter parts, or to try a change again, and to tell the person running the session if that is
 refused as well.
 
@@ -1835,7 +1905,7 @@ The plugin is installed and the binary it hands every tool call to was not
 found: not at `SDLC_BIN`, in the plugin's own `bin` directory, on `PATH`, or
 where the installers put it (`~/.local/bin`, or `%LOCALAPPDATA%\Programs\sdlc\bin`
 on Windows). Nothing is refused until it is. Install the binary, or run
-`/sdlc:next`, which offers to. Only the session working a story shows this: the
+`/sdlc:next`, which offers to. On a tool call, only the session working a story shows this: the
 one `sdlc start` recorded in `.sdlc/state/session`, in a project its own
 directory is in. Every other session says nothing, including one started in a
 directory above that project.
@@ -1844,7 +1914,54 @@ A desktop app such as Claude Desktop keeps the `PATH` it was started with, so a
 binary a new terminal finds, and `sdlc doctor` passes for, can still be missing
 here. Installed to the default directory, it is found without `PATH`. Installed
 anywhere else, quit the app fully (from the tray or the menu bar too) and reopen
-it after changing `PATH`, or set `SDLC_BIN` to the full path of the binary.
+it after changing `PATH`, or set `SDLC_BIN` to the full path of the binary. In
+Claude Desktop, `SDLC_BIN` is set in the local environment editor.
+
+When the plugin's `bin` directory holds no binary and `SDLC_BIN` is not set, the
+first `SessionStart` fetches the release that matches the plugin's version into
+that directory. It checks the archive against the plugin's own `checksums.txt`
+before unpacking anything, and never against a checksums file served beside the
+archive. When the fetch fails and no other binary is found, a session started in
+a project that takes part in the loop is told why, and each reason comes with
+its own fix:
+
+- `could not fetch sdlc <version> (<archive>) from the release`: the machine is
+  offline, or the release has no archive for this platform. Check that the
+  machine can reach the release, and open a new session, which tries again.
+- `the plugin's checksums.txt holds no checksum for sdlc <version> on <platform>`,
+  `the plugin carries no checksums.txt, so no download can be checked against a
+  pinned checksum`, or `the version of the plugin could not be read from its
+  plugin.json`: the plugin is not one a release published. Update it from the
+  plugin browser and open a new session, or report it. Do not set `SDLC_BIN` to
+  a binary you did not install yourself.
+- `the download does not match the checksum the plugin pins for it, so it was
+  neither installed nor run`: what was served is not the release the plugin
+  pins. Open a new session to try once more; if it fails the same way, do not
+  run it, and report it.
+- `no release of sdlc is built for this operating system and processor`: the
+  installers fetch the same releases, so they do not help. Build `sdlc` for the
+  machine from its source, or ask the sdlc project for a release for it, and set
+  `SDLC_BIN` to the one you built in the local environment editor.
+- `nothing here can check a download against its pinned checksum`,
+  `the download could not be unpacked`, or `the bin directory of the plugin
+  could not be written to`: install the binary yourself, and set `SDLC_BIN` to
+  it in the local environment editor, or put it on `PATH` and reopen the app.
+
+Every fix also names `SDLC_BIN` in Claude Desktop's local environment editor,
+which works from inside the app with no terminal, and `/sdlc:doctor`, which
+checks the result. Offline, the fetch can take up to about two minutes to give
+up, on every session start until a binary is found; setting `SDLC_BIN` turns the
+fetch off. On a link too slow to bring the archive in 50 seconds, the fetch never
+finishes, and getting a binary another way needs a terminal
+([installation](installation.md#the-plugin-fetches-its-own-binary)).
+With `SDLC_DEBUG_FILE` set, the launcher writes one `sdlc-hook` line saying what
+it ran, what it fetched or why the fetch stopped, including when another binary
+was then found and run.
+
+A command of the plugin's typed while no binary can be found, such as
+`/sdlc:approve`, does not run, and says so first: `the command you typed did not
+run, because the sdlc binary was not found`. This is said in any project,
+including one not set up yet, where the command typed may be `/sdlc:init`.
 
 On Windows, `npx @bbsnly/sdlc install` does not change `PATH`; it prints the
 lines that do. The hook does not need them for the default directory. They are

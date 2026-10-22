@@ -23,6 +23,14 @@ var fixtures = map[string]fixture{
 		denies:  Request{Tool: "Write", Path: "/etc/hosts", Outside: true, Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc-sdet", Path: "internal/x_test.go", Story: "A-1", Tests: Tests{IsTest: true}},
 	},
+	// US-108 AC-7: a write to the person's Claude Code configuration under
+	// ~/.claude. The caller has resolved the path and set ClaudeConfig; the
+	// path is outside the repository, so this rule runs ahead of
+	// write-outside-repository to name it for what it is.
+	"claude-config-is-the-persons": {
+		denies:  Request{Tool: "Write", Path: "home/.claude/settings.json", Outside: true, ClaudeConfig: true, Story: "A-1"},
+		permits: Request{Tool: "Write", Agent: "sdlc:implementer", Path: "internal/x.go", Story: "A-1"},
+	},
 	"write-protected-path": {
 		denies:  Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/state/active", Story: "A-1"},
 		permits: Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
@@ -103,6 +111,49 @@ func TestTheBacklogIsNotEditedByAnyone(t *testing.T) {
 		if got := Evaluate(r); !got.Allowed {
 			t.Errorf("%s with the backlog at %q was refused by %s", r.Path, r.Backlog, got.Rule)
 		}
+	}
+}
+
+// US-108 AC-7: a write to the person's Claude Code configuration under
+// ~/.claude is refused, through any writing tool, for each of the kinds the
+// criterion names: the settings files, and the skills, agents, commands,
+// hooks and plugins. The caller resolves ~ and sets ClaudeConfig; the rule
+// reads that flag, not the path, so it is blind to where the home is.
+//
+// The rule is ahead of write-outside-repository so that the person reads why
+// this outside path in particular is refused. A write to any other outside
+// path, with ClaudeConfig unset, is write-outside-repository as before; a
+// write inside the repository is untouched.
+func TestAC7AWriteToThePersonsClaudeConfigIsRefused(t *testing.T) {
+	const rule = "claude-config-is-the-persons"
+	for _, under := range []string{
+		"home/.claude/settings.json",
+		"home/.claude/settings.local.json",
+		"home/.claude/skills/x/SKILL.md",
+		"home/.claude/agents/reviewer.md",
+		"home/.claude/commands/approve.md",
+		"home/.claude/hooks/hooks.json",
+		"home/.claude/plugins/sdlc/bin/sdlc-hook",
+	} {
+		for _, tool := range []string{"Write", "Edit", "MultiEdit", "NotebookEdit"} {
+			got := Evaluate(Request{Tool: tool, Path: under, Outside: true, ClaudeConfig: true, Story: "A-1"})
+			if got.Allowed || got.Rule != rule {
+				t.Errorf("%s to %s: rule %q, allowed %v; want %s", tool, under, got.Rule, got.Allowed, rule)
+			}
+			if got.Route == "" {
+				t.Errorf("%s to %s: the refusal says nothing to do next", tool, under)
+			}
+		}
+	}
+	// Any other outside write stays write-outside-repository, so the new rule
+	// has not started refusing every outside path.
+	other := Evaluate(Request{Tool: "Write", Path: "/etc/hosts", Outside: true, Story: "A-1"})
+	if other.Rule != "write-outside-repository" {
+		t.Errorf("an outside write that is not the claude config was refused by %q, want write-outside-repository", other.Rule)
+	}
+	// Reading it is nobody's rule to make here.
+	if r := Evaluate(Request{Tool: "Read", Path: "home/.claude/settings.json", Outside: true, ClaudeConfig: true, Story: "A-1"}); !r.Allowed {
+		t.Errorf("reading the claude config was refused by %s", r.Rule)
 	}
 }
 

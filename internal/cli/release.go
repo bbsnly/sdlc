@@ -42,6 +42,9 @@ func newReleaseCmd() *cobra.Command {
 }
 
 func runRelease(cmd *cobra.Command, id, reason string) error {
+	if err := refuseInsideClaudeCode(cmd, "/sdlc:release"); err != nil {
+		return err
+	}
 	if strings.TrimSpace(reason) == "" {
 		return sdlcerr.New(sdlcerr.ReasonRequired,
 			"releasing a story needs a reason",
@@ -111,7 +114,7 @@ func sayReleased(w io.Writer, s *store.Store, record *model.Record, id string, h
 	// story was released from, moved here, and the freeze is here with it.
 	if _, frozen := record.StandingFreeze(); frozen && !frozenHere(s, id) {
 		fmt.Fprintln(w, "Its tests were frozen in that checkout, and the freeze does not move with it: "+
-			`in the checkout that picks it up, a person lifts it with "sdlc unfreeze --reason ..." `+
+			`in the checkout that picks it up, a person lifts it with "/sdlc:unfreeze", or "sdlc unfreeze --reason ..." `+
 			`in their own terminal, and the tests are frozen again with "sdlc freeze".`)
 	}
 }

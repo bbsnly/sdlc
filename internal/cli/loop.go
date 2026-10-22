@@ -643,7 +643,7 @@ func onTheRecord(cmd *cobra.Command, s *store.Store, active string) (onRecord bo
 		fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s is held by a checkout that no longer exists, "+
 			"so this stop puts down this checkout's copy and writes nothing to its record.\n", active)
 		return false, stoppedIterationOn + active + notRecordedHere +
-			"the checkout that holds it is gone: a person runs `sdlc release " + active + " --reason \"...\"` " +
+			"the checkout that holds it is gone: a person runs `/sdlc:release " + active + " --reason \"...\"`, or `sdlc release " + active + " --reason \"...\"` " +
 			"in their own terminal, then `sdlc start " + active + "`.\n"
 	default:
 		fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s is held by another checkout of this repository, "+
@@ -1342,7 +1342,7 @@ func requireIntactFreeze(ctx context.Context, s *store.Store, id string, at free
 // (listed.explain), with the way to freeze again that a gate has.
 func requireHeldTests(ctx context.Context, s *store.Store, id string, lock *model.Lock, at freezeAt) (heldState, error) {
 	h, err := heldTests(ctx, s, id, lock, at)
-	const route = `"sdlc unfreeze --reason ..." in their own terminal, which sends the story back to Gate 3, where ` +
+	const route = `"/sdlc:unfreeze", or "sdlc unfreeze --reason ..." in their own terminal, which sends the story back to Gate 3, where ` +
 		`"sdlc freeze" takes the test files as they are then`
 	switch {
 	case len(h.broken) > 0:
@@ -1366,8 +1366,8 @@ func requireHeldTests(ctx context.Context, s *store.Store, id string, lock *mode
 	case h.list.is():
 		return h, h.list.explain(s, id, refusal, route)
 	case len(h.taken) > 0:
-		return h, refusal.WithFix(takenFix(s, id, h.taken[0]) + `; or they reopen the story to change the tests: ` +
-			`"sdlc unfreeze --reason ..." is theirs alone`)
+		return h, refusal.WithFix(takenFix(s, id, h.taken[0]) + `; or, to change the tests, they reopen the story in Claude Code or in their own terminal: ` +
+			`"/sdlc:unfreeze", or "sdlc unfreeze --reason ...", which is theirs alone`)
 	case s.Config().Freeze.AllowNewTestFiles:
 		return h, refusal.WithFix(`run "sdlc freeze" again -- freeze.allow_new_test_files is on, ` +
 			"so it adds them to the freeze")

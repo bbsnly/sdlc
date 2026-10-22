@@ -307,7 +307,7 @@ func (s *Store) takenBack(id string, failed error, done []written) error {
 					"so the story's record may hold a question for a person that the backlog or the "+
 					"iteration does not show").
 				WithFix(`do not run the command again yet: a person runs "sdlc status" to see where the story is, ` +
-					`and answers a question the record holds with "sdlc approve"`).
+					`and answers a question the record holds with "/sdlc:approve ` + id + `", or "sdlc approve ` + id + `"`).
 				WithCause(errors.Join(failed, err))}
 		}
 	}

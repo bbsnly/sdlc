@@ -232,7 +232,7 @@ func refuseALostFreeze(s *store.Store, id string) error {
 		"it was taken at "+at+" and never lifted, and a freeze taken now would hold the "+
 			"tests as they are today, whatever happened to them since").
 		WithFix(`if a person removed it on purpose, they lift it on the record with ` +
-			`"sdlc unfreeze --reason ..." in their own terminal, and then run "sdlc freeze"; ` +
+			`"/sdlc:unfreeze", or "sdlc unfreeze --reason ..." in their own terminal, and then run "sdlc freeze"; ` +
 			`otherwise hand it over with "sdlc escalate freeze_broken --message ..."`)
 }
 
@@ -287,6 +287,9 @@ func newUnfreezeCmd() *cobra.Command {
 }
 
 func runUnfreeze(cmd *cobra.Command, reason string) error {
+	if err := refuseInsideClaudeCode(cmd, "/sdlc:unfreeze"); err != nil {
+		return err
+	}
 	if strings.TrimSpace(reason) == "" {
 		return sdlcerr.New(sdlcerr.ReasonRequired,
 			"lifting the freeze needs a reason",

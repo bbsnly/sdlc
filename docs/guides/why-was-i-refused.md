@@ -221,16 +221,26 @@ them has it, every call goes through, and the session working a story (the one
 ```text
 sdlc: the sdlc binary was not found, so nothing is being enforced. why: it is
 not at SDLC_BIN, in the bin directory of the plugin, on the PATH this app
-started with, or where the installers put it. fix: install it with npx
-@bbsnly/sdlc install. A desktop app such as Claude Desktop keeps the PATH it
-started with, so quit it fully and reopen it after installing or changing PATH,
-or set SDLC_BIN to the full path of the binary. Then run sdlc doctor in your
-terminal.
+started with, or where the installers put it. fix: in Claude Desktop, open the
+local environment editor and set SDLC_BIN to the full path of an sdlc you
+installed; in a terminal, install it with npx @bbsnly/sdlc install, then quit
+the app fully and reopen it so that it sees the new PATH. Then type
+/sdlc:doctor, or run sdlc doctor in a terminal.
 ```
 
 Nothing is refused until the binary is found. Install it by any route in
 [installation](../installation.md#1-the-binary), or run `/sdlc:next`, which
 offers to install it.
+
+The first time a session starts, the launcher also fetches the plugin's own
+release into the plugin's `bin` directory, and checks it against the checksums
+the plugin carries. When that fails, the session that starts in a project
+taking part in the loop is told why, in the same shape, with a fix for that
+reason. A command of the plugin's that you type, such as `/sdlc:approve`, while
+no binary can be found does not run, and says so first: "the command you typed
+did not run, because the sdlc binary was not found". Each reason and its fix is
+listed under
+[troubleshooting](../troubleshooting.md#the-sdlc-binary-was-not-found-so-nothing-is-being-enforced).
 
 A terminal and a desktop app can disagree: `sdlc doctor` passes in a new
 terminal while the app, started before the binary was installed, still does not

@@ -360,6 +360,9 @@ func TestAC1TheStateIsTheOneTheHookBuildsForAnImplementerUnderAFreeze(t *testing
 			"Frozen", "NewTest", "ImplementerTest", "Agent", "Resolve", "Backlog",
 			"Trunk", "IsTrunk", "Fresh", "Commits", "Nested", "Carried", "Checkouts",
 			"Root", "Outside",
+			// US-108 AC-7: the person's Claude Code configuration, asked in
+			// every session in a participating project.
+			"ClaudeConfig", "ClaudeConfigHeld",
 		}
 		// IsTest stands in only for a freeze that cannot be read, Shared is set
 		// only where the repository has other checkouts, and Dir is empty for a

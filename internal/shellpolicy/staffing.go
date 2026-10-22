@@ -236,7 +236,7 @@ func checkAssign(words []string, piped, cut bool) (Finding, bool) {
 				Rule: assignmentRule,
 				Reason: "the word after `sdlc staffing` is not `show`, `set` or `amend`, so this may be " +
 					"`sdlc staffing assign`, which records that a person chose a model or an effort for an agent",
-				Route: "say what you would have asked for and stop; a person runs `sdlc staffing assign` " +
+				Route: "say what you would have asked for and stop; a person runs `/sdlc:assign`, or `sdlc staffing assign` " +
 					"in their own terminal, outside Claude Code; `sdlc staffing --help` lists the commands",
 			}, true
 		}

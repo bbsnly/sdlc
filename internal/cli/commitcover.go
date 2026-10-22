@@ -343,7 +343,7 @@ func personReads(id, trunk, shown string) string {
 	}
 	return `A person then, in their own terminal, in ` + worktreeIn(id) + `, reads the story's commits as they now ` +
 		`are with ` + readCommits(id, trunk) + `, which shows each one's author and message` + also +
-		`, and answers with "sdlc approve ` + id + `"`
+		`, and answers with "/sdlc:approve ` + id + `", or "sdlc approve ` + id + `"`
 }
 
 // gateCommitsFix is the fix of a commit gate refused for the story's commits.

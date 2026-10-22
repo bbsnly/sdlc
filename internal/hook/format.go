@@ -87,6 +87,6 @@ func formatWritten(raw []byte, getenv func(string) string, warn func(string)) tu
 	if said != "" {
 		reason += "\n\n" + said
 	}
-	reply.Decision, reply.Reason = "block", reason
+	reply.Decision, reply.Reason = blocked, reason
 	return reply
 }

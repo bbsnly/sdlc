@@ -68,8 +68,9 @@ func TestAStoryIsChangedOnlyFromTheSessionWorkingIt(t *testing.T) {
 		{"escalate", "", []string{"escalate", "question", "--message", "which way?"}},
 		{"cost add", "", []string{"cost", "add", "--usd", "1.00"}},
 		{"freeze", "", []string{"freeze"}},
-		{"unfreeze", "", []string{"unfreeze", "--reason", "the test was wrong"}},
-		{"approve", "", []string{"approve"}},
+		// unfreeze and approve were here. A person's commands are refused in
+		// every session before this check is reached (US-108 AC-15), which
+		// inclaudecode_test.go holds.
 		{"stop", "", []string{"stop"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -167,11 +168,13 @@ func TestTheSessionCheckKeepsOnlyAStoryUnderWay(t *testing.T) {
 			t.Errorf("refused with no story under way:\n%s", r.stderr)
 		}
 	})
+	// A session's ack is refused as a person's command (US-108 AC-15), never
+	// as a change to the story.
 	t.Run("sdlc ack while a story is under way", func(t *testing.T) {
 		storyUnderWay(t)
 		setenv(t, store.SessionEnv, other)
-		if r := run(t, "ack", "--through", "HEAD"); r.code != 0 {
-			t.Errorf("sdlc ack from another session: exit %d\n%s", r.code, r.stderr)
+		if r := run(t, "ack", "--through", "HEAD"); sessionRefused(r) {
+			t.Errorf("sdlc ack from another session was refused as a change to the story:\n%s", r.stderr)
 		}
 	})
 	t.Run("a session record that names no session", func(t *testing.T) {

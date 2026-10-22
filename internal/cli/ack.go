@@ -44,6 +44,9 @@ func newAckCmd() *cobra.Command {
 }
 
 func runAck(cmd *cobra.Command, through string) error {
+	if err := refuseInsideClaudeCode(cmd, "/sdlc:ack"); err != nil {
+		return err
+	}
 	if strings.TrimSpace(through) == "" {
 		return usage(cmd, "ack needs --through: the commit you have read the log up to")
 	}

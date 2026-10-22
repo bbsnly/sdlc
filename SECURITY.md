@@ -37,6 +37,25 @@ security defect rather than a bug:
   shipped in the package.
 - **Privilege of the model caller.** Anything that lets a model-driven session
   perform an action reserved for a human in a terminal.
+- **The person's slash commands.** `/sdlc:approve` and the others run a
+  person's decision from inside Claude Code. Anything that lets a model start
+  one, or have one run as if a person typed it: a payload the hook takes for a
+  person's that is not, a second Claude Code session started to type one, or a
+  write to the person's Claude Code configuration (`~/.claude`,
+  `~/.claude.json`) from a session in a project that takes part. A session in a
+  project that does not take part is held to nothing, and can write that
+  configuration, this plugin's launcher, binary and checksums included; that
+  residual is accepted, and [enforcement](docs/enforcement.md#claude-config-is-the-persons)
+  says so.
+- **The plugin's own fetch.** `plugin/checksums.txt` and the launcher's
+  fetch, verify and run path: anything that gets a binary run that does not
+  match the checksum the plugin pins, or that has the launcher trust a checksums
+  file served beside the archive. The pins are committed by a person, after the
+  release is published, and reviewed against the release's attested checksums.
+- **What `release.yml` builds.** It accepts a tag whose commit is on trunk, or
+  exactly one commit on top of trunk on `release/<tag>`, counted, so a merge
+  that brings other commits is refused. Anything that gets it to build
+  a commit with more than that release commit outside trunk.
 - **What the hook writes down about commits.** Each commit the hook allows, it
   writes down the HEAD the commit is made on, in the repository's git directory
   at `<git-dir>/sdlc/commits/<story>/`, and the commit gate works out the

@@ -201,7 +201,7 @@ func (f *mapFailure) forRecord(id string) string {
 		return f.err.Error()
 	}
 	return "something other than the sections was in the way; what the stop printed on standard error said what, and " +
-		`a person's "sdlc remap ` + id + `" says it again`
+		`a person's "/sdlc:remap ` + id + `", or "sdlc remap ` + id + `" says it again`
 }
 
 // firstError keeps the first error of several calls, so that reads which have
@@ -398,32 +398,40 @@ func withdrawMap(s *store.Store, r *model.Record, id, why string) {
 // they answer what went wrong.
 func (m mapStep) notOnTrunk(f *mapFailure) *sdlcerr.Error {
 	const (
-		person    = "a person, in their own terminal, in the main checkout"
+		person    = "a person, in the main checkout"
 		assistant = "; an assistant says so and runs none of these"
+		typed     = ", typing the first in Claude Code or running the second in their own terminal"
 	)
-	plain := `"sdlc remap ` + m.id + `"`
-	replace := `"sdlc remap ` + m.id + ` --replace"`
-	drop := `"sdlc remap ` + m.id + ` --drop"`
+	// Each form as its slash command and its terminal command, with the same
+	// arguments. The slash command is typed in Claude Code and the terminal
+	// command run in a terminal: a person told to type /sdlc:remap in their own
+	// terminal was told something no terminal does. And a bare /sdlc:remap
+	// beside "sdlc remap <ID> --drop" was a different command.
+	pair := func(form string) string {
+		return `"/sdlc:remap ` + m.id + form + `", or "sdlc remap ` + m.id + form + `"`
+	}
+	plain, replace, drop := pair(""), pair(" --replace"), pair(" --drop")
 	e := sdlcerr.New(sdlcerr.MapChangeNotOnTrunk,
 		m.id+" has landed, and its change to "+codemap+" is not on "+m.trunk,
 		causeOf(f.err)+". The landing stands, and the change is kept "+m.kept)
 	switch f.kind {
 	case mapUntold:
-		return e.WithFix(person + ", edits " + codemap + " on " + m.trunk + " by hand, with what the kept sections say, commits it, and then runs " +
-			drop + " to discard the kept copy; the --replace form is refused for the same reason, so it is not for this" + assistant)
+		return e.WithFix(person + ", edits " + codemap + " on " + m.trunk + " by hand, with what the kept sections say, commits it, and then uses " +
+			drop + typed + ", to discard the kept copy; the --replace form is refused for the same reason, so it is not for this" + assistant)
 	case mapThere:
-		return e.WithFix(person + ", runs " + drop + ", which removes the kept copy and commits nothing: " + m.trunk +
+		return e.WithFix(person + ", uses " + drop + typed + ", which removes the kept copy and commits nothing: " + m.trunk +
 			" holds the text already, so nothing is lost, and no other form of the command has anything to commit" + assistant)
 	case mapStale:
-		return e.WithFix(person + ", chooses: " + replace + " puts the kept sections over what " + m.trunk +
+		return e.WithFix(person + ", chooses, typing the slash command in Claude Code or the terminal command in their own terminal: " +
+			replace + " puts the kept sections over what " + m.trunk +
 			" holds under those headings; " + drop + " discards the kept change, for after they have edited " +
 			codemap + " themselves; and " + plain + " makes the change once " + m.trunk + "'s sections are again " +
 			"what the bookkeeper read" + assistant)
 	case mapDamaged:
-		return e.WithFix(person + ", puts the file named above right and runs " + plain + ", or discards it with " +
+		return e.WithFix(person + ", puts the file named above right and uses " + plain + typed + ", or discards it with " +
 			drop + assistant)
 	}
-	return e.WithFix(person + ", puts right what is named above and then runs " + plain +
+	return e.WithFix(person + ", puts right what is named above and then uses " + plain + typed +
 		", which makes the change; nothing is lost meanwhile, and the --drop form would discard the change, so it is not for this" + assistant)
 }
 
@@ -465,9 +473,9 @@ func mapsWaiting(env commandEnv, stderr io.Writer) {
 		if r, err := s.Record(id); err != nil || r.CodemapCommit != "" {
 			continue
 		}
-		fmt.Fprintf(stderr, "sdlc: %s has landed, and its change to %s is not on %s: a person runs `sdlc remap %s` "+
+		fmt.Fprintf(stderr, "sdlc: %s has landed, and its change to %s is not on %s: a person runs `/sdlc:remap %s`, or `sdlc remap %s` "+
 			"in their own terminal (the change is kept %s; `sdlc help remap` says what the command does)\n",
-			id, codemap, trunkName(s), id, keptAt(s, id))
+			id, codemap, trunkName(s), id, id, keptAt(s, id))
 	}
 }
 

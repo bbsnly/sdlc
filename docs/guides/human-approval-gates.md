@@ -36,8 +36,8 @@ $ sdlc escalate spec_unclear --message "AC-2 contradicts AC-3: which one holds?"
 US-001  waiting for a person: spec_unclear
   AC-2 contradicts AC-3: which one holds?
 
-The iteration has ended. A person reads the work and answers in their own terminal:
-  sdlc approve US-001
+The iteration has ended. A person reads the work and answers in Claude Code or in their own terminal:
+  /sdlc:approve US-001, or sdlc approve US-001
   sdlc approve US-001 --reject "why"
 ```
 
@@ -55,7 +55,7 @@ No iteration running.
   backlog  1 awaiting human
   waiting  US-001  spec_unclear: AC-2 contradicts AC-3: which one holds?
 
-A person answers first, in their own terminal: `sdlc approve US-001`, or `sdlc approve US-001 --reject "why"`.
+A person answers first, in Claude Code or in their own terminal: `/sdlc:approve US-001`, or `sdlc approve US-001`, or `sdlc approve US-001 --reject "why"`.
 ```
 
 Until somebody answers, `sdlc start` refuses the story with
@@ -233,6 +233,13 @@ would, and `sdlc gate dor pass` waits until that review is in.
 it does not stop the gate, and it goes stale if the story changes after it.
 
 ## Record your decision
+
+Your own terminal, wherever this page says so, is one outside Claude Code: a
+window you opened yourself. A `!` line typed in a session, a terminal or `tmux`
+that Claude Code started, and anything a model's tool runs have Claude Code's
+environment variables, and the commands below refuse themselves there with
+[SDLC-E0079](../troubleshooting.md#sdlc-e0079); in Claude Code, type the slash
+command.
 
 Put the decision where the next agent will read it, not only in the chat. Every
 gate is done by an agent starting from a fresh context, and that agent never

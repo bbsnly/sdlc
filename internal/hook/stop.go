@@ -11,6 +11,11 @@ import (
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
+// blocked is the decision that stops what Claude Code was about to do: on Stop
+// and PostToolUse it sends the session back to work, and on UserPromptExpansion
+// it keeps the command's text from the model.
+const blocked = "block"
+
 // turnReply is what Claude Code reads from a Stop or PostToolUse hook. Decision
 // "block" sends the session back to work, and Reason is what it is told.
 type turnReply struct {
@@ -122,7 +127,7 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string), now f
 		slog.Debug("stop guard could not keep its count", "err", err)
 		return allow
 	}
-	return turnReply{Continue: true, Decision: "block", Reason: stopReason(pl, story, count.Blocks, limit)}
+	return turnReply{Continue: true, Decision: blocked, Reason: stopReason(pl, story, count.Blocks, limit)}
 }
 
 // stopStory is the story a Stop event could send back to, and whether there is
@@ -298,7 +303,7 @@ func handOver(s *store.Store, story string, blocks int) turnReply {
 	}
 	question := fmt.Sprintf("the session stopped %d times in a row without recording anything on "+
 		"the story. Read .sdlc/stories/%s/gate-record.json%s for where it got to, and answer with "+
-		"`sdlc approve %s` to let the loop carry on.", blocks+1, story, where, story)
+		"`/sdlc:approve %s`, or `sdlc approve %s` to let the loop carry on.", blocks+1, story, where, story, story)
 	if _, err := s.Escalate(ctx, story, "loop_stalled", question); err != nil {
 		slog.Debug("stop guard could not escalate", "err", err)
 		reply.SystemMessage = failed
@@ -309,6 +314,6 @@ func handOver(s *store.Store, story string, blocks int) turnReply {
 	}
 	reply.SystemMessage = fmt.Sprintf("sdlc: %s stopped %d times in a row with nothing recorded, so "+
 		"it has been handed to a person and the iteration has ended. `sdlc status` shows the question; "+
-		"answer it with `sdlc approve %s`.", story, blocks+1, story)
+		"answer it with `/sdlc:approve %s`, or `sdlc approve %s`.", story, blocks+1, story, story)
 	return reply
 }

@@ -132,11 +132,15 @@ func parallelLimit(cmd *cobra.Command, ids []string, maxFlag string) (int, error
 	// The hook is the first barrier, and refuses the command in any session.
 	// This is the second, for a spelling it cannot read. It comes before
 	// anything is read, so the error cannot be used to ask the backlog a
-	// question. A session id is all it looks at, as refuseAnotherSession does.
+	// question. A session id is all it looks at, as refuseAnotherSession does,
+	// and SDLC-E0079 follows it for every other variable Claude Code sets.
 	if envOf(cmd).getenv(store.SessionEnv) != "" {
 		return 0, sdlcerr.New(sdlcerr.ParallelFromASession,
 			"sdlc parallel was run from inside a Claude Code session",
 			"starting model sessions is a person's decision")
+	}
+	if err := refuseInsideClaudeCode(cmd, ""); err != nil {
+		return 0, err
 	}
 	limit, err := strconv.Atoi(maxFlag)
 	if err != nil || limit < 1 {
@@ -275,7 +279,7 @@ func parallelPreflight(s *store.Store, b *model.Backlog, id string) error {
 	// A run again would carry on past the question the loop stopped to ask, and
 	// so act as the person's answer.
 	if err := recode(refuseIfWaiting(s, id), sdlcerr.ParallelAwaitingPerson,
-		`run "sdlc approve `+id+`" in `+worktreeIn(id)+` (or its --reject), then name the story again; `+
+		`run "/sdlc:approve `+id+`", or "sdlc approve `+id+`" in `+worktreeIn(id)+` (or its --reject), then name the story again; `+
 			"an assistant stops and tells the person"); err != nil {
 		return err
 	}

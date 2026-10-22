@@ -159,8 +159,8 @@ US-001  design_review  architect  block (round 2)
 
 US-001 is handed to a person: architect has blocked design_review 2 times, and loop.max_review_rounds is 2, so the rework is not converging on what it asks for. The last note: AC-2 still has no step
 
-A person reads the work and answers in their own terminal:
-  sdlc approve US-001
+A person reads the work and answers in Claude Code or in their own terminal:
+  /sdlc:approve US-001, or sdlc approve US-001
   sdlc approve US-001 --reject "why"
 ```
 

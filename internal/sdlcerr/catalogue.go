@@ -58,10 +58,10 @@ var (
 		`only a story handed to a person with "sdlc escalate" waits for a decision — "sdlc status" shows which stories are waiting`)
 
 	AwaitingPerson = register("SDLC-E0036",
-		`a person decides first, in their own terminal: "sdlc approve <ID>", or "sdlc approve <ID> --reject ..." to send the work back`)
+		`a person decides first, in Claude Code or in their own terminal: "/sdlc:approve <ID>", or "sdlc approve <ID>", or "sdlc approve <ID> --reject ..." to send the work back`)
 
 	ApprovalRequired = register("SDLC-E0037",
-		`hand it to a person with "sdlc escalate pre_commit_approval --message ..." and stop; once they have run "sdlc approve", commit the work they approved`)
+		`hand it to a person with "sdlc escalate pre_commit_approval --message ..." and stop; once they have run "/sdlc:approve <ID>", or "sdlc approve <ID>", commit the work they approved`)
 
 	NotOnTrunk = register("SDLC-E0038",
 		`switch to the branch named by git.trunk_branch in .sdlc/config.json, then start again`)
@@ -76,7 +76,7 @@ var (
 		`fix trunk, or revert what broke it, then start again — commands.smoke in .sdlc/config.json is the check that failed`)
 
 	UnfrozenTests = register("SDLC-E0043",
-		`remove the test files the freeze does not hold, or have a person run "sdlc unfreeze --reason ..." in their own terminal and freeze again, so they are frozen with the rest; in a story's own worktree a test file that only trunk changed since the story was cut is not held against the story, and one of trunk's that the story changed or took away is put back as trunk has it`)
+		`remove the test files the freeze does not hold, or have a person run "/sdlc:unfreeze", or "sdlc unfreeze --reason ..." in their own terminal and freeze again, so they are frozen with the rest; in a story's own worktree a test file that only trunk changed since the story was cut is not held against the story, and one of trunk's that the story changed or took away is put back as trunk has it`)
 
 	NoAcceptanceCriteria = register("SDLC-E0044",
 		`write the story's acceptance_criteria in the backlog, each an observable behaviour — or record "sdlc gate dor fail" and hand the question to a person with "sdlc escalate spec_unclear --message ..."`)
@@ -97,7 +97,7 @@ var (
 		`check the path given to --file, or pipe the document in instead`)
 
 	AlreadyFrozen = register("SDLC-E0022",
-		`if the tests really have to change, run "sdlc unfreeze --reason ..." in your own terminal first`)
+		`if the tests really have to change, run "/sdlc:unfreeze", or "sdlc unfreeze --reason ..." in your own terminal first`)
 
 	NotFrozen = register("SDLC-E0023",
 		`run "sdlc freeze" once the acceptance tests are written and failing`)
@@ -106,7 +106,7 @@ var (
 		`write the acceptance tests first, or widen paths.tests in .sdlc/config.json so it finds them`)
 
 	FreezeBroken = register("SDLC-E0025",
-		`restore the frozen tests, or have a person run "sdlc unfreeze --reason ..." in their own terminal and freeze again, so the change is on the record`)
+		`restore the frozen tests, or have a person run "/sdlc:unfreeze", or "sdlc unfreeze --reason ..." in their own terminal and freeze again, so the change is on the record`)
 
 	ReasonRequired = register("SDLC-E0026",
 		`pass --reason with the one line that explains why the tests have to change`)
@@ -145,10 +145,10 @@ var (
 		`change the settings the message names in .sdlc/config.json — docs/configuration.md says what each one takes; for a newer version, upgrade sdlc`)
 
 	TrunkMoved = register("SDLC-E0046",
-		`record the gate as failed, hand the story to a person with "sdlc escalate", and stop; a person keeps the commits or reverts them, and answers with "sdlc approve", after which "sdlc start" picks the story up from where trunk is then`)
+		`record the gate as failed, hand the story to a person with "sdlc escalate", and stop; a person keeps the commits or reverts them, and answers with "/sdlc:approve <ID>", or "sdlc approve <ID>", after which "sdlc start" picks the story up from where trunk is then`)
 
 	AcknowledgedUnknown = register("SDLC-E0047",
-		`run "sdlc ack --through <commit>" in your own terminal to acknowledge a commit git has, or remove .sdlc/state/acknowledged to list every story; meanwhile "sdlc log --since <commit>" starts after a commit you name, and "sdlc log --all" lists every story`)
+		`run "/sdlc:ack", or "sdlc ack --through <commit>" in your own terminal to acknowledge a commit git has, or remove .sdlc/state/acknowledged to list every story; meanwhile "sdlc log --since <commit>" starts after a commit you name, and "sdlc log --all" lists every story`)
 
 	SessionElsewhere = register("SDLC-E0048",
 		`a person takes the story over by typing /sdlc:next in this Claude Code session, or runs the command in their own terminal, outside Claude Code; an assistant stops and tells the person that the story is being worked on in another session and only they can move it here, and does not run "sdlc start"`)
@@ -160,10 +160,10 @@ var (
 		"re-run the gate with the sha corrected or dropped: `sdlc gate commit pass --note \"...\"`")
 
 	StoryHeldElsewhere = register("SDLC-E0050",
-		"a person runs the command in the checkout that holds the story, named above, or moves the story here with `sdlc release <ID> --reason \"...\"` in their own terminal, then `sdlc start <ID>` in this checkout; an assistant stops and tells the person which checkout holds the story, and runs neither \"sdlc start\" nor \"sdlc release\"")
+		"a person runs the command in the checkout that holds the story, named above, or moves the story here with `/sdlc:release <ID> --reason \"...\"`, or `sdlc release <ID> --reason \"...\"` in their own terminal, then `sdlc start <ID>` in this checkout; an assistant stops and tells the person which checkout holds the story, and runs neither \"sdlc start\" nor \"sdlc release\"")
 
 	HoldingCheckoutMissing = register("SDLC-E0051",
-		"if that checkout is gone for good, a person runs `sdlc release <ID> --reason \"...\"` in their own terminal, after which `sdlc start <ID>` works in any checkout; until then no checkout can record anything for the story; an assistant stops and tells the person, and does not run it")
+		"if that checkout is gone for good, a person runs `/sdlc:release <ID> --reason \"...\"`, or `sdlc release <ID> --reason \"...\"` in their own terminal, after which `sdlc start <ID>` works in any checkout; until then no checkout can record anything for the story; an assistant stops and tells the person, and does not run it")
 
 	NoMainCheckout = register("SDLC-E0052",
 		`work in a clone made without --bare, or in the main checkout of a repository made with "git init --separate-git-dir", where the backlog, the story records and the claims on stories can be kept`)
@@ -181,7 +181,7 @@ var (
 		`"sdlc stop" puts a story onto a trunk that only moved on by itself, so this is a state it does not: where trunk was rewritten or went back, or story/<ID> holds a merge, a person rebases story/<ID> onto trunk in the story's worktree, .sdlc/worktrees/<ID> in the main checkout, as the message above says, then runs "sdlc stop" there again, which runs the configured commands on the rebased tree, and an assistant hands the story to a person with "sdlc escalate" and stops; where trunk moved while the landing ran, run "sdlc stop" there again: an assistant does so up to three times and, where the third is refused too, hands the story to a person with "sdlc escalate" and stops`)
 
 	LandingCheckFailed = register("SDLC-E0055",
-		"read what the message above says the check or the configured commands found. Where a configured command failed, the story stays with its session: run the command in a checkout that has trunk checked out with nothing uncommitted, which the main checkout usually is, and where it passes there, record `sdlc gate implementation fail --story <ID> --note \"...\"` in .sdlc/worktrees/<ID>, rework the story through its gates and run \"sdlc stop\" there again; where it fails there too the failure is trunk's own, and \"sdlc stop\" lands the story once a person has put trunk right. Any other check is a person's to put right: they do what the message says and run \"sdlc stop\" in .sdlc/worktrees/<ID> again, or reopen the story: answer the escalation first with \"sdlc approve <ID>\" or its --reject in .sdlc/worktrees/<ID>, then run `sdlc gate implementation fail --story <ID> --note \"...\"` there, then /sdlc:next; \"sdlc stop\" run by a person runs the story's code and the repository's git settings with that person's own privileges, so read the story's changes first; for those checks an assistant hands the story to a person with \"sdlc escalate\" and stops")
+		"read what the message above says the check or the configured commands found. Where a configured command failed, the story stays with its session: run the command in a checkout that has trunk checked out with nothing uncommitted, which the main checkout usually is, and where it passes there, record `sdlc gate implementation fail --story <ID> --note \"...\"` in .sdlc/worktrees/<ID>, rework the story through its gates and run \"sdlc stop\" there again; where it fails there too the failure is trunk's own, and \"sdlc stop\" lands the story once a person has put trunk right. Any other check is a person's to put right: they do what the message says and run \"sdlc stop\" in .sdlc/worktrees/<ID> again, or reopen the story: answer the escalation first with \"/sdlc:approve <ID>\", or \"sdlc approve <ID>\" or its --reject in .sdlc/worktrees/<ID>, then run `sdlc gate implementation fail --story <ID> --note \"...\"` there, then /sdlc:next; \"sdlc stop\" run by a person runs the story's code and the repository's git settings with that person's own privileges, so read the story's changes first; for those checks an assistant hands the story to a person with \"sdlc escalate\" and stops")
 
 	UncommittedOnTrunk = register("SDLC-E0056",
 		`in the checkout named above, stash the changes it names, or commit them (a commit moves trunk, so the next stop puts the story onto it before it lands), then run "sdlc stop" in the story's worktree again; they are a person's changes, so an assistant hands the story to a person with "sdlc escalate" and stops`)
@@ -193,7 +193,7 @@ var (
 		"the story has to be ready, or every story it waits on has to be finished: take it off the command line, or finish what it waits on first; `sdlc story list` shows each story's status")
 
 	ParallelHeldElsewhere = register("SDLC-E0059",
-		`the story is being worked in another checkout: finish it there, or a person runs "release" in that checkout, or "sdlc release <ID> --reason ..." here; an assistant stops and tells the person`)
+		`the story is being worked in another checkout: finish it there, or a person runs "release" in that checkout, or "/sdlc:release <ID> --reason ...", or "sdlc release <ID> --reason ..." here; an assistant stops and tells the person`)
 
 	ParallelListedTwice = register("SDLC-E0060",
 		"name each story once: take the repeated id off the command line")
@@ -208,7 +208,7 @@ var (
 		"give --max a whole number, 1 or more: the most stories to run at the same time (the default is 2)")
 
 	ParallelAwaitingPerson = register("SDLC-E0064",
-		`the story is waiting for a person's answer, and a run again would act as that answer: run "sdlc approve <ID>" (or its --reject) in .sdlc/worktrees/<ID>, then name the story again; an assistant stops and tells the person`)
+		`the story is waiting for a person's answer, and a run again would act as that answer: run "/sdlc:approve <ID>", or "sdlc approve <ID>" (or its --reject) in .sdlc/worktrees/<ID>, then name the story again; an assistant stops and tells the person`)
 
 	ParallelFinished = register("SDLC-E0065",
 		`the story's gates are done and it is waiting to land: run "sdlc stop" in .sdlc/worktrees/<ID> to land it; to rework it, a person has to reopen it by recording a gate as failed, then name it again`)
@@ -232,25 +232,31 @@ var (
 		`ask for a model from "staffing.models" and an effort from "staffing.efforts", neither below what "staffing.lowest" has for the agent; a person changes those lists in the project's configuration`)
 
 	StaffingAssigned = register("SDLC-E0072",
-		`a person chose this for the agent, so it stays as it is: leave it out of the change; only a person changes it, with "sdlc staffing assign" in their own terminal`)
+		`a person chose this for the agent, so it stays as it is: leave it out of the change; only a person changes it, with "/sdlc:assign", or "sdlc staffing assign" in their own terminal`)
 
 	StaffingReviewBlocks = register("SDLC-E0073",
 		`the reviewer's latest review is a block, and leaving it out would pass the gate over it: take its findings through rework and have it review again, then amend once its latest review is no longer a block; where the block itself is wrong, hand the story to a person with "sdlc escalate <type> --message ...", who answers the reviewer or records the gate as failed`)
 
 	StaffingAssignInSession = register("SDLC-E0074",
-		`"sdlc staffing assign" is a person's: a person runs it in their own terminal, outside Claude Code; an assistant stops here and says what it would have asked for`)
+		`"/sdlc:assign", or "sdlc staffing assign", is a person's: a person types the first in Claude Code, or runs the second in their own terminal, outside Claude Code; an assistant stops here and says what it would have asked for`)
 
 	StoryConflictsWithTrunk = register("SDLC-E0075",
-		`a person, in their own terminal, in the story's worktree, .sdlc/worktrees/<ID> in the main checkout: "git rebase <trunk>"; they resolve the files it stops on, "git add" them and carry the rebase on as git says until it finishes; then "sdlc stop" there, which runs the configured commands on the result. Where an assistant handed the story over, "sdlc approve <ID>" comes before that stop and after the resolving, so that the approval is of the work as it now is; in a tier that waits for a person the rebased work is approved again, and where no question is open that stop says so with SDLC-E0037. That rebase is git's own and not sdlc's: it runs the hooks, merge drivers, editor and filters the repository's configuration names, with that person's privileges, so read "git config --show-origin --list" and .gitattributes there first. An assistant does not resolve the conflict: it hands the story to a person with "sdlc escalate" and stops`)
+		`a person, in their own terminal, in the story's worktree, .sdlc/worktrees/<ID> in the main checkout: "git rebase <trunk>"; they resolve the files it stops on, "git add" them and carry the rebase on as git says until it finishes; then "sdlc stop" there, which runs the configured commands on the result. Where an assistant handed the story over, "/sdlc:approve <ID>", or "sdlc approve <ID>", comes before that stop and after the resolving, so that the approval is of the work as it now is; in a tier that waits for a person the rebased work is approved again, and where no question is open that stop says so with SDLC-E0037. That rebase is git's own and not sdlc's: it runs the hooks, merge drivers, editor and filters the repository's configuration names, with that person's privileges, so read "git config --show-origin --list" and .gitattributes there first. An assistant does not resolve the conflict: it hands the story to a person with "sdlc escalate" and stops`)
 
 	MapChangeNotOnTrunk = register("SDLC-E0076",
-		`the story has landed and stays landed; only its change to CODEMAP.md is waiting, kept in the repository's git directory. A person, in their own terminal, in the main checkout, puts right what is named above and runs "sdlc remap <ID>", which makes the change where it still applies; "sdlc remap <ID> --replace" puts the kept sections over what trunk's map holds under their headings, and "sdlc remap <ID> --drop" discards the kept change. An assistant says so and runs none of them`)
+		`the story has landed and stays landed; only its change to CODEMAP.md is waiting, kept in the repository's git directory. A person, in the main checkout, puts right what is named above and then uses "/sdlc:remap <ID>", or "sdlc remap <ID>", typing the first in Claude Code or running the second in their own terminal; either makes the change where it still applies, "/sdlc:remap <ID> --replace", or "sdlc remap <ID> --replace", puts the kept sections over what trunk's map holds under their headings, and "/sdlc:remap <ID> --drop", or "sdlc remap <ID> --drop", discards the kept change. An assistant says so and runs none of them`)
 
 	NoMapChangeToRepair = register("SDLC-E0077",
 		`there is nothing to do for that story: "sdlc status" names each landed story whose change to CODEMAP.md is still waiting, and the command a person runs for it`)
 
 	MapSectionsRefused = register("SDLC-E0078",
 		`send the whole set again on standard input, from a Bash heredoc so that every line ends with a line feed alone, its delimiter quoted so that the shell runs nothing in the text: each section is a line that is exactly "<!-- sdlc:add -->" or "<!-- sdlc:replace -->", then its heading as two hash marks, a space and the text, then at least one line under it, with no heading at that level or above, no fenced block left open and no conflict marker; storing again replaces what was stored`)
+
+	// PersonsCommandInClaudeCode has the general fix, which `sdlc help` and
+	// the docs read; the CLI gives each command a fix of its own, with its
+	// slash command and the story it names.
+	PersonsCommandInClaudeCode = register("SDLC-E0079",
+		`a person types the command's slash command in Claude Code with the same arguments, "/sdlc:approve" for "sdlc approve" and likewise "/sdlc:unfreeze", "/sdlc:ack", "/sdlc:remap", "/sdlc:release", and "/sdlc:assign" for "sdlc staffing assign", or runs the command in a terminal outside Claude Code, in a window they opened themselves; "sdlc parallel" has no slash command and runs only there; an assistant stops here and says what it would have run, and tries no other way of running it`)
 )
 
 // entry is one row of the catalogue.

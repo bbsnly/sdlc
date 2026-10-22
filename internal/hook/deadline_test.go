@@ -1061,13 +1061,13 @@ func TestAC8ACallDecidedInsideTheDeadlineIsAnsweredByteForByteAsItWasBefore(t *t
 		{"an approval", command(root, "", "sdlc approve A-1"),
 			refusal("an approval is a person's answer to a question the loop stopped to ask them, and an agent that " +
 				"gave it would be approving its own work. Instead: hand the question over with `sdlc escalate <type> " +
-				"--message \"...\"` and stop; the person reads the work and runs `sdlc approve` in their own terminal " +
+				"--message \"...\"` and stop; the person reads the work and runs `/sdlc:approve`, or `sdlc approve` in their own terminal " +
 				"[approval-is-a-human-decision]"), ""},
 		{"an acknowledgement from a session that holds no story",
 			inSession(command(root, "", "sdlc ack --through HEAD"), "session-b"),
 			refusal("acknowledging says a person has read what landed on trunk, and an agent that gave it would be " +
 				"deciding which stories nobody needs to look at. Instead: say what `sdlc log` lists and stop; the " +
-				"person reads it and runs `sdlc ack --through <commit>` in their own terminal " +
+				"person reads it and runs `/sdlc:ack`, or `sdlc ack --through <commit>` in their own terminal " +
 				"[acknowledgement-is-a-human-decision]"), ""},
 		{"a file written where the configuration will not read", event(brokenConfig, "Write", "sdlc:implementer", "internal/x.go"),
 			warned(configWarning), "sdlc: " + configWarning + "\n"},

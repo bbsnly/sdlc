@@ -5,6 +5,7 @@
 - [When any of it applies](#when-any-of-it-applies)
   - [`not-checked-in-time`](#not-checked-in-time)
 - [Rules on writing files](#rules-on-writing-files)
+  - [`claude-config-is-the-persons`](#claude-config-is-the-persons)
   - [`write-outside-repository`](#write-outside-repository)
   - [`write-protected-path`](#write-protected-path)
   - [`backlog-is-not-edited`](#backlog-is-not-edited)
@@ -34,6 +35,7 @@
   - [`stop-is-a-human-decision`](#stop-is-a-human-decision)
   - [`review-is-recorded-by-its-reviewer`](#review-is-recorded-by-its-reviewer)
   - [`assignment-is-a-human-decision`](#assignment-is-a-human-decision)
+  - [`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)
   - [`staffing-is-recorded-by-the-project-manager`](#staffing-is-recorded-by-the-project-manager)
   - [`project-manager-only-staffs`](#project-manager-only-staffs)
   - [`commit-gate`](#commit-gate)
@@ -44,6 +46,7 @@
   - [`git-command-cannot-be-read`](#git-command-cannot-be-read)
   - [`enforcement-stays-on`](#enforcement-stays-on)
   - [`story-stays-in-its-session`](#story-stays-in-its-session)
+  - [Claude config through the shell](#claude-config-through-the-shell)
   - [`command-too-deep-to-read`](#command-too-deep-to-read)
 - [A repository with more than one checkout](#a-repository-with-more-than-one-checkout)
   - [Not held: the known gaps](#not-held)
@@ -146,8 +149,9 @@ Where no story is being worked on, or the call comes from another session, the
 hook allows everything and says nothing, with one exception: a person's
 decisions, refused from a tool call in any session, in any project with
 `.sdlc/config.json` the call reaches (the session's, the working directory's,
-or one a path in the command names). With `SDLC_ENFORCE` set to `0`, nothing is
-refused at all, a person's decisions included.
+or one a path in the command names). With `SDLC_ENFORCE` set to `0`, the hook
+refuses nothing at all, a person's decisions included; the commands' own
+refusals below stay, [SDLC-E0079](troubleshooting.md#sdlc-e0079) among them.
 
 - `sdlc ack` is refused there always. The log of what landed on trunk is always
   there for a person to read.
@@ -171,6 +175,15 @@ refused at all, a person's decisions included.
 - A command nested too deep to read
   ([`command-too-deep-to-read`](#command-too-deep-to-read)) is refused whatever
   it runs, since any of these could be inside it.
+- A write to the person's Claude Code configuration, by a file tool or a
+  command, is refused there always
+  ([`claude-config-is-the-persons`](#claude-config-is-the-persons)).
+- Starting a Claude Code session that could expand one of the person's slash
+  commands is refused there always
+  ([`story-stays-in-its-session`](#story-stays-in-its-session)).
+- Running the sdlc hook by hand on `UserPromptExpansion`, the event on which it
+  runs a person's slash command, is refused there always
+  ([`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)).
 
 A command is read to its end, so `sdlc approve A-1; sdlc ack --through HEAD` is
 refused for the `sdlc ack` in it. `sdlc escalate` ends the iteration, so the
@@ -180,6 +193,39 @@ refusals of `sdlc ack`, `sdlc release`, `sdlc parallel`,
 `sdlc staffing assign`, `sdlc approve` and `sdlc unfreeze`: each is refused only
 when an assistant runs that command itself. A command nested too deep to read
 is refused in any of those projects, whatever else it does.
+
+Behind those rules, the commands refuse themselves. `sdlc approve`,
+`sdlc unfreeze`, `sdlc ack`, `sdlc remap`, `sdlc release`, `sdlc parallel` and
+`sdlc staffing assign` each refuse to run, before anything is read, with
+[SDLC-E0079](troubleshooting.md#sdlc-e0079), in a process whose environment has
+any of `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_CHILD_SESSION`,
+`CLAUDE_PID` or `AI_AGENT`, the environment variables Claude Code sets in the
+processes it starts. [SDLC-E0061](troubleshooting.md#sdlc-e0061) and
+[SDLC-E0074](troubleshooting.md#sdlc-e0074) answer first for `sdlc parallel`
+and `sdlc staffing assign` where the session id is set. A model's Bash or
+PowerShell has those variables, and so does every program it starts that keeps
+its environment, so the seven commands are refused even where the shell rules
+cannot read them: behind `arch`, `osascript -e`, `su -c`, `vim -c`, awk's
+`system()`, `git -c core.pager` or `GIT_EDITOR`, through `Invoke-Expression`
+or a PowerShell argument in parentheses, behind a wrapper the rules do not read
+through that keeps the environment, and in a shell or an interpreter fed its
+program on standard input. `sudo`, `doas`, `env -i` and `env -u` start a
+command without them; written out, the shell rules read the command after them
+and refuse it there. A `!` line typed in a session has the variables too, so
+there a person types the slash command instead.
+
+A slash command a person types reaches the hook, which hands the command none
+of those variables, so it records. A hook run from a model's tool call has
+`AI_AGENT`, and so has the hook of a session started from one: there a typed
+person's command answers that it did not run, and records nothing. What neither
+catches is listed in [Not held](#not-held): a program that starts with a clean
+environment or removes those variables; a part-way `sdlc stop`, which is not
+one of the seven; a program Claude Code starts itself from a project's
+configuration, such as an MCP server named in `.mcp.json` or a hook in
+`.claude/settings.json`, which may not have `AI_AGENT`; and a slash command a
+program types into the person's own prompt, as `tmux send-keys` can, which
+reaches Claude Code's own hook as the person's typing would.
+`SDLC_ENFORCE=0` turns none of this off.
 
 Asking one of these commands for its help decides nothing and is not refused:
 `sdlc approve --help`, on a line of its own or after a `cd`, alone or piped to
@@ -210,6 +256,22 @@ Running out of time is not one of those errors either. A call the hook checks
 and cannot decide in time is refused, with the rule name
 [`not-checked-in-time`](#not-checked-in-time). That section also says what is
 still left open.
+
+Nor is a slash command a person typed, such as `/sdlc:approve`. The hook runs
+the command it stands for and shows the person what it printed, and the
+command's text never reaches the model. Carrying on there would hand that text
+to the model, which is told only to say the command did not run. So a command
+the hook could not run, because its arguments did not read, because the
+session has no project folder, or because the command itself gave way, is
+answered with a block that says it did not run and what to do. Nothing is
+decided either way: the block stops only the model reading the command.
+
+A slash command acts on the directory the session is in, as a terminal there
+would, so that a person can type one in a story's worktree. The model can move
+a session's directory between calls, into another checkout that takes part, and
+the person's next command then acts there. What it printed, which the person is
+shown, names the story and the checkout, and a story that checkout does not
+have is refused.
 
 ### `not-checked-in-time`
 
@@ -292,6 +354,34 @@ time once the hook knows what it is looking at.
 These apply to `Write`, `Edit`, `MultiEdit` and `NotebookEdit`. Reading,
 searching and running things are nobody's business here.
 
+### `claude-config-is-the-persons`
+
+Refuses writing the person's Claude Code configuration, from any session, in a
+project that takes part in the loop: `~/.claude` and everything under it,
+`~/.claude.json`, and the directories `CLAUDE_CONFIG_DIR` and
+`CLAUDE_CODE_PLUGIN_CACHE_DIR` name. Links are followed both ways, so a link in
+the repository that leads there is refused, and so is a write through
+`~/.claude` to wherever it leads. The file tools are refused by this rule, and
+so is a shell command that writes there, as
+[the shell's reading of it](#claude-config-through-the-shell) says.
+
+That configuration decides the hooks, plugins, skills, agents and permissions
+every session runs under, this plugin's own launcher, binary and checksums
+included. A session that could write it could take the hook away, give itself
+the permissions a person withholds, or change what a person's slash command
+runs, and then type it. `~/.claude.json` is refused whole, on purpose: it holds
+the person's MCP servers and the settings of every project, and no part of it
+is the model's to change. A project kept under `~/.claude` is refused with it.
+
+*Instead:* say what you would change there and why, and stop. The person
+changes their own Claude Code configuration, in Claude Code's settings or by
+hand.
+
+It holds only in a project that takes part. A session in a project that does
+not is held to nothing, so it can still write all of this, and every project on
+the machine then runs what it wrote. That is the residual a person accepted
+for this rule; [SECURITY.md](../SECURITY.md) says more.
+
 ### `write-outside-repository`
 
 Refuses a write that resolves outside the repository, symlinks followed.
@@ -372,7 +462,7 @@ Refuses any edit of a file in the freeze, from any role.
 
 *Instead:* change the code until the test passes. If the test itself is wrong,
 say which acceptance criterion it got wrong and stop. The person running the
-session lifts the freeze with `sdlc unfreeze --reason "..."`, which puts the
+session lifts the freeze with `/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."`, which puts the
 change on the record.
 
 ### `no-new-test-after-the-freeze`
@@ -1142,7 +1232,7 @@ against, and what stopped the hook placing it.
 
 *Instead:* leave it alone. If it genuinely has to change, say which test and
 why; the person running the session lifts the freeze with
-`sdlc unfreeze --reason "..."`. If the file is a copy outside the repository,
+`/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."`. If the file is a copy outside the repository,
 write its path out in full in a plain command.
 
 A refused `find` has a way on of its own:
@@ -1230,7 +1320,8 @@ own terminal, where the hook is not asked. A note that only mentions the word,
 such as `--note "no need to unfreeze"`, is not refused.
 
 *Instead:* say which frozen test is wrong and which acceptance criterion it gets
-wrong, and stop there.
+wrong, and stop there. The person running the session lifts the freeze with `/sdlc:unfreeze`, or
+`sdlc unfreeze --reason "..."` in their own terminal.
 
 ### `approval-is-a-human-decision`
 
@@ -1247,7 +1338,7 @@ give the answer would be approving its own work. A reviewer's `approve` verdict,
 given with `sdlc review add`, is a different command and is not refused.
 
 *Instead:* `sdlc escalate <type> --message "..."`, and stop. The person reads the
-work and runs `sdlc approve` in their own terminal.
+work and runs `/sdlc:approve`, or `sdlc approve` in their own terminal.
 
 ### `acknowledgement-is-a-human-decision`
 
@@ -1266,7 +1357,7 @@ is always a decision here to keep, between stories and in a session that never
 started one as much as during a story.
 
 *Instead:* say what `sdlc log` lists, and stop. The person reads it and runs
-`sdlc ack --through <commit>` in their own terminal.
+`/sdlc:ack`, or `sdlc ack --through <commit>` in their own terminal.
 
 ### `remap-is-a-human-decision`
 
@@ -1303,7 +1394,7 @@ trunk; the story's `gate-record.json` has a `codemap` event for every change
 `sdlc` itself stored, applied or dropped, and none for one made that way.
 
 *Instead:* say what the stop or `sdlc status` printed, and stop. The person runs
-`sdlc remap <story>` in their own terminal.
+`/sdlc:remap <story>`, or `sdlc remap <story>` in their own terminal.
 
 ### `release-is-a-human-decision`
 
@@ -1318,7 +1409,8 @@ story another checkout is working, or let go of the one it is held to and with
 it every rule holding it.
 
 *Instead:* say which checkout holds the story and stop. A person runs
-`sdlc release <ID> --reason "..."` in their own terminal if it is to move.
+`/sdlc:release <ID> --reason "..."`, or `sdlc release <ID> --reason "..."` in their own terminal
+if it is to move.
 
 ### `parallel-is-a-human-decision`
 
@@ -1373,8 +1465,9 @@ What `sdlc staffing assign` records says a person chose a model or an effort for
 an agent, and the project manager cannot change it afterwards. A session that
 could run it could pin every agent where it liked, in a person's name.
 
-*Instead:* say what you would have asked for, and stop. A person runs
-`sdlc staffing assign` in their own terminal, outside Claude Code.
+*Instead:* say what you would have asked for, and stop. A person types
+`/sdlc:assign` in Claude Code, or runs `sdlc staffing assign` in their own terminal, outside
+Claude Code.
 `sdlc staffing --help` lists the commands.
 
 #### How the word after `sdlc staffing` is read
@@ -1401,6 +1494,96 @@ copy of a built binary or a `cd` into a directory of that name, none of this
 applies: only a written-out `staffing` followed by a verb other than the three
 is refused there, and so is a `staffing` command handed its words on standard
 input.
+
+### `slash-command-is-a-human-decision`
+
+Refuses running the sdlc hook by hand on Claude Code's `UserPromptExpansion`
+event, or on an event the hook cannot read, from a tool call: in any session,
+in any project with `.sdlc/config.json` the call reaches, whether or not a
+story is being worked on.
+
+On that event the hook is being run as if a person had typed a slash command.
+It runs the command the payload on its standard input names, such as
+`/sdlc:approve`, as that person's decision. The hook cannot tell a run Claude
+Code made from one a model made with a payload it wrote, so a session that
+could run it could approve its own work, lift the freeze or acknowledge the log
+in a person's name.
+
+It refuses four kinds of command:
+
+- `sdlc` itself running `hook`, by name, by path, through `npx` or `go run`,
+  or behind a wrapper the rules read through, on the event written out or on
+  one it cannot read: `sdlc hook UserPromptExpansion < p.json`. Through
+  `Start-Process`, its argument list is read as PowerShell passes it, a list
+  or one string alike, so
+  `Start-Process sdlc -ArgumentList 'hook UserPromptExpansion'` is refused.
+- The plugin's launcher, `sdlc-hook` or `sdlc-hook.cmd`, by name or by any
+  path, run as the program, as a script under `sh` or `bash`, or through
+  `cmd /c` or `Start-Process`, on the same events:
+  `"$CLAUDE_PLUGIN_ROOT/bin/sdlc-hook" UserPromptExpansion < p.json`.
+- A program whose name cannot be read, because it comes from a variable, a
+  substitution or a pattern, given `hook` and then one of those events:
+  `"$(which sdlc)" hook "$E" < p.json`.
+- Any program handed the event written out, as its first word or after a word
+  `hook`, which is how a copy of `sdlc` under another name is run:
+  `/tmp/x hook UserPromptExpansion < p.json`.
+
+The event's name is read in any case. An event cannot be read when the shell
+makes it as the command runs, from a variable, a substitution (PowerShell's
+`$( )` included, and one a script run under `sh` is given, as in
+`sh plugin/bin/sdlc-hook "$(echo UserPromptExpansion)"`), a pattern or a `%`,
+or when `xargs` or GNU `parallel` hands it
+over on standard input. Every event Claude Code has is named in letters alone, so
+any other word is read that way. The refusal says which of the two it met: the
+event written out, or one it cannot read.
+
+Where `sdlc` or the launcher is only a later word of a command, behind a
+program the hook does not know, only the event written out is refused. So
+`git add plugin/bin/sdlc-hook`, `chmod +x plugin/bin/sdlc-hook` and
+`cp plugin/bin/sdlc-hook "$D/"` are not refused.
+
+A command that an older rule refuses first keeps that rule's name. So
+`echo UserPromptExpansion | xargs sdlc hook` is refused under
+[`assignment-is-a-human-decision`](#assignment-is-a-human-decision), and a
+project manager's or a reviewer's run of the hook may be refused under
+[`project-manager-only-staffs`](#project-manager-only-staffs) or
+[`review-is-recorded-by-its-reviewer`](#review-is-recorded-by-its-reviewer).
+
+*Instead:* say what you wanted decided and stop; a person types
+`/sdlc:approve <ID>`, or `sdlc approve <ID>` in their own terminal, and likewise
+`/sdlc:unfreeze`, `/sdlc:ack`, `/sdlc:remap`, `/sdlc:release` and
+`/sdlc:assign`; to try the hook yourself, run it on another event written out
+as a literal word, such as `sdlc hook PreToolUse`.
+
+Not refused: the hook run by hand on any other event, as in
+`sdlc hook PreToolUse < p.json`, which is how a reviewer drives it; and a line
+that only names the event, such as `grep -n UserPromptExpansion
+plugin/hooks/hooks.json`, a commit message or a document's text.
+
+Not caught by this rule, and caught after it, each in [Not held](#not-held).
+Code handed to an interpreter that runs the hook itself, as `python3 -c` with
+`subprocess.run` does, or a script file that runs it, reaches the hook, which
+answers that the command did not run and records nothing, since the process
+has `AI_AGENT`. PowerShell's `Invoke-Expression` or `iex`, given the hook's
+command line as a string, reaches the hook with `AI_AGENT` too, and the hook
+answers that the command did not run. A copy of `sdlc` or of the launcher
+under another name, given an event this rule cannot read, as in
+`/tmp/x hook "$E"`, reaches the hook with `AI_AGENT`, and the hook answers that
+the command did not run. An event given in PowerShell as an expression in
+parentheses, as in `sdlc hook ('User'+'PromptExpansion')`, which is read as a
+command of its own, reaches the hook with `AI_AGENT`, and the hook answers that
+the command did not run. A session in a project that does not take part,
+running the hook on a payload whose `cwd` names one that does, runs it with
+`AI_AGENT`, and the hook answers that the command did not run. The launcher
+sourced with `.` or `source`, given an event this rule cannot read, gets past
+this rule too. Run that way, as in `. plugin/bin/sdlc-hook "$E" < p.json`, it
+reaches the hook with `AI_AGENT`, and the hook's check of that variable is
+what stops it: the hook answers that the command did not run. A program Claude
+Code starts itself, such as an MCP server or a hook named in the project's
+settings, has an environment of its own that may not have `AI_AGENT`, and a
+payload it feeds the hook is not caught (the project MCP server or hook in Not
+held). A slash command another program types into the person's own prompt
+reaches Claude Code's own hook as the person's typing would (in Not held too).
 
 ### `staffing-is-recorded-by-the-project-manager`
 
@@ -1736,11 +1919,146 @@ working the story. Installing the package is not refused.
 
 A Claude Code session started from a shell is a session of its own, and the
 story holds only the session working it, so none of these rules would hold
-what the new one did. A script file that runs `claude`, or sets
-`CLAUDE_CODE_SESSION_ID`, is not read, like any other script file.
+what the new one did. The shell rules do not read a script file, so they
+cannot tell what one runs. A script file that runs `claude` starts a session
+whose hook has `AI_AGENT`, so a person's slash command expanded there answers
+that it did not run, and records nothing. One that sets
+`CLAUDE_CODE_SESSION_ID` and runs a person's command is refused by the command
+itself, with SDLC-E0079.
 
 *Instead:* hand the work to this session's agents. A person who wants another
 session opens one in their own terminal.
+
+In every session in a project that takes part, the rule also refuses starting a
+Claude Code session that could expand one of the person's slash commands, such
+as `/sdlc:approve`: a slash command typed by a model in a session of its own is
+not a person's. It refuses:
+
+- `claude`, or the package through a runner, given a prompt that names
+  `/sdlc:approve`, `/sdlc:unfreeze`, `/sdlc:ack`, `/sdlc:remap`,
+  `/sdlc:release` or `/sdlc:assign`, with or without the plugin's name in front;
+- `claude` given a prompt the hook cannot read: one substituted with `$( )`,
+  piped or redirected in, or written with a variable;
+- `claude` run through a program that gives it a terminal to type into, such as
+  `tmux`, `screen`, `zellij`, `expect`, `unbuffer` or `script`;
+- a program that could be `claude` (a variable, a glob, the versioned binary
+  under `~/.local/share/claude/versions/`, `Start-Process`) given a prompt that
+  names one of those commands;
+- inline code, such as `python3 -c` or `node -e`, whose words run `claude`, or
+  that reads its program from standard input in a command that does: with
+  `python3 -`, or with a bare `python3` or `node` given its program through a
+  pipe, a here-document or a here-string;
+- a line that copies or links a program, names `claude`, or its package, by
+  name, and names one of those commands, such as
+  `ln -s "$(which claude)" /tmp/x && /tmp/x -p "/sdlc:approve US-001"`: the
+  copy starts under a name no rule knows, in the same call. That line is
+  refused with the copy's own reason: "this line copies or links a program and
+  names both Claude Code and a person's slash command, ...". The same line with
+  `"$(command -v claude)"` is refused too, under the same rule, earlier and with
+  the session's reason, "a Claude Code session started from here could expand a
+  person's slash command, ...", because `command -v claude` is read as a run of
+  `claude`.
+
+The rule's name says "story", and in another session there may be none: it is
+the same rule, about a session started from this one, and a later rename is the
+clean fix. A session started with a prompt the hook can read and that names
+none of those commands is not refused there.
+
+Not caught by this rule, and caught after it. Each of these starts a Claude Code
+session that keeps the environment of the model's tool that started it, and the
+hook of a session started that way has `AI_AGENT`, so a person's slash command
+expanded there answers that it did not run, and records nothing:
+
+- A script file that starts `claude` starts a session whose hook has
+  `AI_AGENT`.
+- A prompt built inside a program by a means the hook does not read, such as
+  one decoded from base64 by a program it does not recognise as inline code, or
+  a program name built inside code (`"cl" + "aude"`), reaches a session whose
+  hook has `AI_AGENT`.
+- An alias, whether the person's shell profile defines it or the same line
+  does, is not something this rule reads, and a shell run by a tool expands
+  none unless `expand_aliases` is set. A session an alias starts has `AI_AGENT`
+  in its hook all the same.
+- An interpreter is read as taking its program from standard input only where
+  no word after its options could be its script: an option that takes a value
+  in the next word, other than the few the hook knows (`-W` and `-X` for
+  Python, `-r`, `--require`, `--import` and `-C` for Node, `-I` for Perl, and
+  the like), makes its value look like the script, as with
+  `python3 --check-hash-based-pycs default`, `ruby --disable gems` or
+  `node --title x`. A session such a program starts with `claude` has
+  `AI_AGENT` in its hook.
+- A link the copy above does not read as `claude`, one made from the versioned
+  binary's path or from a glob such as `cla*`, and a copy made in one call and
+  run in the next, each start a session whose hook has `AI_AGENT`.
+- `arch -arm64 claude -p /sdlc:approve` and `su me -c` start a session whose
+  hook has `AI_AGENT`.
+- An editor or a pager that runs a shell, as in
+  `vim -c '!claude -p /sdlc:approve' -c q`, starts a session whose hook has
+  `AI_AGENT`.
+- An interpreter's own call to the system, as in
+  `awk 'BEGIN{system("claude -p /sdlc:approve")}'`, and AppleScript's
+  `do shell script`, as in
+  `osascript -e 'do shell script "claude -p /sdlc:approve"'`, start a session
+  whose hook has `AI_AGENT`.
+- A program a git setting runs, as in
+  `git -c core.pager='claude -p /sdlc:approve' log`, and `GIT_EDITOR` set in
+  front of `git commit` in a session that holds no story, start a session whose
+  hook has `AI_AGENT`.
+- Code handed to an interpreter that runs `sdlc` itself, as `python3 -c` does
+  with `subprocess.run(["sdlc", "approve", ...])`, is refused by the command
+  itself, with SDLC-E0079, and the hook run that way answers that the command
+  did not run, since the process has `AI_AGENT`.
+
+`launchctl submit -l x -- claude -p /sdlc:approve` starts `claude` with a
+clean environment, with no `AI_AGENT`, and is not caught (in
+[Not held](#not-held), with the other programs that start clean).
+
+### Claude config through the shell
+
+A command is refused under
+[`claude-config-is-the-persons`](#claude-config-is-the-persons) when it writes
+the person's Claude Code configuration:
+
+- a redirect into it, or a command that changes a file there, such as `cp`,
+  `mv`, `tee`, `sed -i`, `touch` or PowerShell's `Set-Content`;
+- a recursive copy or move, or a removal, of a directory that holds it, such as
+  `rm -rf ~` or `cp -r dotfiles ~`;
+- a command that writes into a directory it is given, such as `tar -x -C`,
+  `unzip -d`, `make -C` or a `git -C` that writes, and a `find` rooted there
+  that changes what it finds;
+- inline code, such as `python3 -c` or `node -e`, or a program an interpreter
+  reads from standard input, that names it by name, since where a program
+  writes is the program's to work out: `expanduser("~/.claude")` and
+  `HOME + "/.claude.json"` are never a path the shell sees. Code that only
+  reads it is refused too; `cat` reads it. A regular expression in the code,
+  such as `.*`, is not a name;
+- a copy, link or install into a directory that holds it, by the name it lands
+  under: `cp x/.claude.json ~`, and an `ln -s` of it into the home spelled out
+  in full, both write `~/.claude.json`, even where the home's name holds a dot;
+- `xargs` fed from a pipe whose words name it;
+- Claude Code's own commands that change it: `claude config set`, `add` and
+  `remove` (or `rm`); `claude mcp add`, `add-json`, `add-from-claude-desktop`
+  and `remove`; `claude plugin` (or `plugins`) `install` (or `i`), `uninstall`,
+  `remove`, `enable`, `disable` and `update`; and `claude plugin marketplace
+  add`, `remove` (or `rm`) and `update`. Their `--help` is not refused, nor is
+  any other `claude` command: `claude install`, `update`, `setup-token` and
+  `migrate-installer` change the program, not the configuration.
+
+A path is placed as the shell would place it: `~`, `$HOME`, `${HOME}`,
+`$env:HOME`, `$env:USERPROFILE`, `%USERPROFILE%` and `%HOMEDRIVE%%HOMEPATH%`,
+`CLAUDE_CONFIG_DIR` in each of those forms, and a relative path from the
+directory the command runs in. A word written to that cannot be placed, such as
+a variable or a glob, is refused where the command names the configuration by
+name, `.claude` or `.claude.json`, or by one of the two variables, or where the
+word is itself a glob the shell expands, such as `.*`, that could match them. So
+`cd ~ && rm -rf .*` and `rm -rf "$HOME"/.cla*` are refused, and `sed -i
+'s/.*//' "$FILE"` is not: its `.*` is in quotes, a script for sed and not a
+name. A glob elsewhere on the line, such as one kept in a variable and used
+later, is not read as a name. A script file that writes there is not read, like
+any other.
+
+A project that is itself inside `~/.claude` has every write refused, since every
+file in it is part of the configuration.
 
 ### `command-too-deep-to-read`
 
@@ -1887,6 +2205,12 @@ A worktree nested inside the project, as a story's worktree under
 what it holds, to the shell and to the file tools. A linked worktree moved by
 hand to somewhere outside the project is still a checkout of this repository,
 even where git's own record of it names its old place.
+
+On macOS a path spelled through `/System/Volumes/Data`, in any case, is the
+path it names, where both spellings are the same file: a file tool's write to
+the project spelled that way is a write to the project. Where they are not the
+same file, as with the data volume's own root or a directory of the system
+volume spelled through it, the path is read as written.
 
 ### Failing closed
 
@@ -2082,8 +2406,9 @@ how you would notice.
   one it checks
   ([`not-checked-in-time`](#not-checked-in-time)). A command that keeps the
   hook finding the project for the whole of Claude Code's 30 seconds runs with
-  no rule applied and nothing said in the session. With `SDLC_DEBUG_FILE` set,
-  the log has no `hook decision` line for that call.
+  no rule applied and nothing said in the session. A person's decision run in
+  such a call is refused by the command itself, with SDLC-E0079. With
+  `SDLC_DEBUG_FILE` set, the log has no `hook decision` line for that call.
 - **A commit in the next call.** Each call is read on its own. A call that
   stages another checkout's work into the session's index, with
   `git --work-tree=<main> add` or `GIT_INDEX_FILE`, followed by a plain
@@ -2099,20 +2424,27 @@ how you would notice.
   or set by a file run with `source` or `.`, is not seen, so a later
   `git commit` can land on the branch another checkout has checked out, trunk
   included. `git log` there shows a commit no gate passed, and `git reflog`
-  when it came. A variable kept that way can also change which story a
-  person's decision acts on, and the rules judge the decision only by what
-  the command itself names. The story's `gate-record.json` lists every
-  approval and unfreeze with when it was made.
+  when it came. A person's decision run from that shell is refused by the
+  command itself, with SDLC-E0079, whatever an earlier call exported, while
+  Claude Code's markers are still set; a person's decision run after an
+  earlier call unset or blanked those markers is not caught (the last entry
+  of this list). The story's `gate-record.json` lists every approval and
+  unfreeze with when it was made.
 - **A program the rules do not read through.** The rules read past the
   wrappers [the shell rules](#wrappers-the-rules-read-through) list, and no others. A
   command that any other program runs, or that code handed to an interpreter
   runs as a command of its own, is not read for what it runs. A commit and the
   removal of a worktree or a checkout get past the rules that way, as in
-  `strace git commit -m x`. A person's decisions get past only where `sdlc` is
-  inside a string, code or a script file that program is handed, as in
-  `fish -c 'sdlc approve A-1'`, `tmux new-session 'sdlc approve A-1'` or
-  `make approve`: written out as a word of the command, as in
-  `strace sdlc approve A-1`, it is refused. `git log` and `git reflog` show a commit no gate passed,
+  `strace git commit -m x`. A person's decision inside a string, code or a
+  script that such a program runs, as in `fish -c 'sdlc approve A-1'` or
+  `make approve`, is refused by the command itself, with SDLC-E0079.
+  `strace sdlc approve A-1`, with `sdlc` written out as a word of the command,
+  is refused by the shell rules before it runs, and by SDLC-E0079 had it run.
+  `tmux new-session 'sdlc approve A-1'` is refused with SDLC-E0079 where it
+  starts the `tmux` server, which then has the session's environment; where a
+  server a person started is already running, it runs the command with an
+  environment of its own, and a person's decision run that way is not caught
+  (the last entry of this list). `git log` and `git reflog` show a commit no gate passed,
   `git worktree list` a worktree gone or prunable, and the story's
   `gate-record.json` every approval and unfreeze with when it was made.
 - **A command line for another kind of shell.** A string handed to a shell of
@@ -2126,7 +2458,9 @@ how you would notice.
   [`commit-gate`](#commit-gate) holds. Where that shell's quoting and escapes
   make a word into something other than the tool's would, the word is read as
   the tool's would make it, by every rule that turns on which program a
-  command runs. `git log` and `git reflog` in the other checkout show a commit
+  command runs. A person's decision in such a string, as in
+  `pwsh -Command 'sdlc approve A-1'` from `Bash`, is refused by the command
+  itself, with SDLC-E0079. `git log` and `git reflog` in the other checkout show a commit
   no gate passed, and when it came; `git worktree list` shows a worktree gone,
   or marks it prunable; and the story's `gate-record.json` lists every
   approval and unfreeze with when it was made.
@@ -2188,7 +2522,18 @@ how you would notice.
   `echo 'git worktree prune' | sh`, `echo commit -m x | xargs git -C <main>`,
   and a script run from a file, such as `sh tidy.sh`. Such a command can remove
   or prune a worktree, or commit in another checkout, and the same holds for
-  every rule that turns on which program a command runs. `git worktree list`
+  every rule that turns on which program a command runs. A person's decision
+  run this way, as in `echo 'sdlc approve US-001' | sh`,
+  `bash <<< 'sdlc approve US-001'`, `echo 'sdlc unfreeze --reason x' | sh` or
+  a script run from a file, is refused by the command itself, with
+  SDLC-E0079, in every session, the one holding the story included. Run after
+  a command has removed Claude Code's markers, a person's decision is not
+  caught this way, and a model working a story could lift its own freeze
+  (the last entry of this list). Ending the iteration part-way with
+  `sdlc stop`, which turns every rule off, still gets through this way:
+  [`stop-is-a-human-decision`](#stop-is-a-human-decision) reads it only
+  written out, and `sdlc stop` does not refuse itself inside Claude Code,
+  since the runbook's last step runs it there. `git worktree list`
   shows a worktree gone, or marks it prunable; `git log` and `git reflog` in
   the other checkout show a commit no gate passed, and when it came; and the
   story's `gate-record.json` lists every approval and unfreeze with when it was
@@ -2205,19 +2550,109 @@ how you would notice.
   file a rule protects is refused too, as in
   `git -c alias.x='!echo y > CLAUDE.md' x`. No other rule reads it: a file it
   writes or deletes with a program, as in
-  `git -c alias.x='!rm -rf .sdlc/state' x`, is not refused, nor is a person's
-  decision, as in `git -c alias.x='!sdlc approve A-1' x`, nor anything else
-  only the other rules would refuse. `git status` shows a file it changed, and the
+  `git -c alias.x='!rm -rf .sdlc/state' x`, is not refused, nor is anything
+  else only the other rules would refuse. A person's decision run this way, as
+  in `git -c alias.x='!sdlc approve A-1' x`, is refused by the command itself,
+  with SDLC-E0079. `git status` shows a file it changed, and the
   story's `gate-record.json` lists every approval and unfreeze with when it
   was made, so one nobody remembers making shows there.
-- **`sdlc` reached under another name.** The rules that keep a person's
-  decisions find `sdlc` where the word is written out. Reached through a
-  variable, as in `"$SDLC_BIN" approve A-1` or `s=sdlc; $s approve A-1`,
-  through a shell alias, as in `alias s=sdlc; s approve A-1`, through a command
-  substitution, as in `$(command -v sdlc) approve A-1`, or as a copy under
-  another name, as in `cp bin/sdlc /tmp/s && /tmp/s approve A-1`, it is not
-  refused. The story's `gate-record.json` lists every approval and unfreeze
-  with when it was made.
+- **`sdlc` reached under another name.** The shell rules find `sdlc` only
+  where the word is written out. Reached through a variable, as in
+  `"$SDLC_BIN" approve A-1` or `s=sdlc; $s approve A-1`, through a shell alias,
+  as in `alias s=sdlc; s approve A-1`, through a command substitution, as in
+  `$(command -v sdlc) approve A-1`, or as a copy under another name, as in
+  `cp bin/sdlc /tmp/s && /tmp/s approve A-1`, a person's command is refused by
+  the command itself, with SDLC-E0079. The story's `gate-record.json` lists
+  every approval and unfreeze with when it was made.
+- **Code or a string that runs `sdlc`.** Code handed to an interpreter that
+  runs `sdlc` itself, as `python3 -c` does with
+  `subprocess.run(["sdlc", "approve", "A-1"])`, runs it where the shell rules
+  cannot read it, and the command itself refuses it with SDLC-E0079. Given
+  `["sdlc", "hook", "UserPromptExpansion"]` and a payload it wrote, the hook
+  answers that the command did not run, and records nothing, since the
+  process has `AI_AGENT`. PowerShell's `Invoke-Expression` or `iex` runs a
+  command it is given as a string, which the shell rules do not read;
+  `Invoke-Expression 'sdlc approve A-1'` is refused by the command itself,
+  with SDLC-E0079. The story's `gate-record.json` lists every approval and
+  unfreeze with when it was made.
+- **The hook under another name, on an event it cannot read.** A copy of
+  `sdlc` or of the plugin's launcher under another name, given an event the
+  shell rules cannot read, as in `/tmp/x hook "$E"`, reaches the hook, which
+  answers that the command did not run and records nothing, since the process
+  has `AI_AGENT`
+  ([`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)
+  refuses that copy before it runs only with the event written out). The
+  story's `gate-record.json` lists every approval and unfreeze with when it
+  was made.
+- **A PowerShell expression in parentheses.** In a `PowerShell` command, a word
+  given as an expression in parentheses is read as a command of its own, not
+  as a word of the command it is given to, so the shell rules read neither the
+  subcommand nor the event given that way. `sdlc ('ap'+'prove') US-1` is
+  refused by the command itself, with SDLC-E0079, and
+  `sdlc hook ('User'+'PromptExpansion')` reaches the hook, which answers that
+  the command did not run, since the process has `AI_AGENT`. The story's
+  `gate-record.json` lists every approval and unfreeze with when it was made.
+- **A session in a project that does not take part.** Its calls are not read.
+  A plain `sdlc approve` run there that reaches a project that does take part,
+  through a directory the command does not spell, such as
+  `cd "$(cat /tmp/d)"`, is refused by the command itself, with SDLC-E0079.
+  Running the hook there on a payload whose `cwd` names a project that does
+  take part answers that the command did not run, and records nothing, since
+  the process has `AI_AGENT`. That project's `gate-record.json` lists every
+  approval and unfreeze with when it was made.
+- **A project MCP server, or a project hook.** Any session can write
+  `.mcp.json`, which no rule protects, and Claude Code starts a server named
+  there once the person approves it, or with no question where
+  `enableAllProjectMcpServers` is set. A session that holds no story can write
+  the project's `.claude/settings.json` or `.claude/settings.local.json`,
+  which are protected only in the session that holds the story, and Claude
+  Code runs a hook named there when its event comes. Claude Code starts either
+  with an environment of its own, which has `CLAUDECODE`, so a person's
+  command it runs is refused with SDLC-E0079. That environment of its own may
+  not have `AI_AGENT`, and a person's slash command it feeds the hook on a
+  payload it wrote, with `sdlc hook UserPromptExpansion`, is then not caught.
+  You would notice Claude Code asking you to approve a server you did not add,
+  `git status` showing `.mcp.json` or a file under `.claude` changed, and the
+  story's `gate-record.json` listing a decision nobody remembers making.
+- **A slash command a program types into your own prompt.** Where you run
+  Claude Code inside `tmux` or `screen`, or on macOS, a command the model runs
+  can type into your session's prompt: `tmux send-keys` into the session's
+  pane, `screen -X stuff`, or a keystroke sent with `osascript` through System
+  Events. Claude Code takes what was typed as your typing, and its own hook,
+  which starts with an environment of its own and no `AI_AGENT`, records a
+  person's decision typed that way: it is not caught. This is not new: in
+  0.4.0 the same keystrokes typed a `!sdlc approve` line, which SDLC-E0079 now
+  refuses. You would notice a command in your session's prompt or transcript
+  that you did not type, and the story's `gate-record.json` listing a decision
+  nobody remembers making.
+- **A path no rule can tell is the same file.** On macOS,
+  `/.vol/<device>/<inode>` names a file by its volume and inode, and a hard
+  link is a second name for the same file. Neither resolves to the path a rule
+  protects, so a write through one is placed where it is spelled. `ls -i`
+  shows the same inode for both names, and `git status` in the checkout shows
+  the protected file changed.
+- **A program that starts clean, or removes Claude Code's markers.** The
+  routes above are caught only while the process keeps the environment of the
+  model's tool that started it. A person's decision run by a program that
+  starts it with a clean environment is not caught: `launchctl submit`, a
+  launchd agent, `cron`, Claude Code's own daemon, Terminal told by
+  AppleEvents to run it, a `tmux` server a person started that is already
+  running, `su -`, `sudo -i`, plain `sudo` and `doas` as they are set up by
+  default, `ssh`, `schtasks`, WMI's `Win32_Process` and `Start-Process
+  -UseNewEnvironment` each start it with none of the markers. `at` keeps the
+  environment it is given, and so does an app `open` starts. A person's
+  decision in an `at` job submitted after a command removed Claude Code's
+  markers is not caught, and neither is one `open` hands to an app that was
+  already running, which has an environment of its own. A person's decision
+  run after a command has removed or blanked Claude Code's markers, in the
+  same call or an earlier one of the persistent shell, or by a program that
+  clears its own environment, is not caught either. Removing `AI_AGENT` alone
+  is enough for the hook: a person's slash command fed to it on a payload a
+  model wrote is not caught once that is unset, since the hook hands the
+  command none of the other markers. Run after removing Claude Code's markers,
+  `sdlc unfreeze --reason x` lifts a story's freeze, and so a model working a
+  story could lift its own. The story's `gate-record.json` lists every
+  approval and unfreeze with when it was made.
 
 #### Other checkouts and claims
 

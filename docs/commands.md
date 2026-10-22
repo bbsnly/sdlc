@@ -71,7 +71,12 @@ did not reach trunk, [`sdlc release`](#sdlc-release), [`sdlc parallel`](#sdlc-pa
 [`sdlc ack`](#sdlc-ack) to mark what you have read of what landed (its
 companion [`sdlc log`](#sdlc-log) is open to everyone), and
 [`sdlc staffing assign`](#sdlc-staffing-assign-agent), which the hook refuses
-to every session. In the session working a story, the hook also refuses
+to every session. Each of these, and `sdlc approve`, also refuses itself where
+it runs with Claude Code's environment variables, in the model's Bash or from a
+`!` line typed in a session
+([SDLC-E0079](troubleshooting.md#sdlc-e0079)): type its slash command in Claude
+Code, or run it in a terminal outside Claude Code, a window you opened yourself.
+In the session working a story, the hook also refuses
 [`sdlc stop`](#sdlc-stop) to the main conversation and to every agent while the
 story still has a gate to pass; once every gate has passed it does not. In any
 other Claude Code session the hook does not refuse `sdlc stop`, and the command
@@ -97,6 +102,8 @@ refuses. Two rules run through all of them:
 ## `sdlc init`
 
 Run `init` once, at the start, to set the repository up for the loop.
+
+In Claude Code: `/sdlc:init`, which the hook runs as this command and shows you what it printed.
 
 ```console
 $ sdlc init
@@ -133,6 +140,8 @@ common test directories, for you to fill in.
 
 Check this project and say how to fix what is wrong. Run it first whenever
 something is not working; it is the fast check.
+
+In Claude Code: `/sdlc:doctor`, which the hook runs as this command and shows you what it printed.
 
 ```console
 $ sdlc doctor
@@ -288,7 +297,7 @@ it is held, and `held_by` in `--json` names that checkout:
 | --- | --- |
 | `(held in "<checkout>")` | another checkout holds it |
 | `(held in "<checkout>", this checkout)` | the checkout you ran it in holds it |
-| `(held in "<checkout>", gone: see sdlc release <ID> --reason "...")` | the checkout that holds it no longer exists ([SDLC-E0051](troubleshooting.md#sdlc-e0051)) |
+| `(held in "<checkout>", gone: see /sdlc:release <ID> --reason "...", or sdlc release <ID> --reason "...")` | the checkout that holds it no longer exists ([SDLC-E0051](troubleshooting.md#sdlc-e0051)) |
 | `(held by none: more than one checkout names it ("<checkout>", "<checkout>"))` | several checkouts name it and none holds it until a person runs `sdlc stop` in all but one |
 
 The mark is what `sdlc start` would pick in the checkout you run it in, which is
@@ -516,7 +525,7 @@ naming the section or the path in the way and what a person runs:
 sdlc: US-001 has landed, and its change to CODEMAP.md is not on main
 
   why  the sections do not apply to the map as it is: the section "internal/billing" in the map is no longer what the bookkeeper read. The landing stands, and the change is kept at "/home/dev/project/.git/sdlc/codemap/US-001.md"
-  fix  a person, in their own terminal, in the main checkout, chooses: "sdlc remap US-001 --replace" puts the kept sections over what main holds under those headings; "sdlc remap US-001 --drop" discards the kept change, for after they have edited CODEMAP.md themselves; and "sdlc remap US-001" makes the change once main's sections are again what the bookkeeper read; an assistant says so and runs none of these
+  fix  a person, in the main checkout, chooses, typing the slash command in Claude Code or the terminal command in their own terminal: "/sdlc:remap US-001 --replace", or "sdlc remap US-001 --replace" puts the kept sections over what main holds under those headings; "/sdlc:remap US-001 --drop", or "sdlc remap US-001 --drop" discards the kept change, for after they have edited CODEMAP.md themselves; and "/sdlc:remap US-001", or "sdlc remap US-001" makes the change once main's sections are again what the bookkeeper read; an assistant says so and runs none of these
 
   SDLC-E0076  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0076
 ```
@@ -528,7 +537,7 @@ set to `true`. Until a person has run [`sdlc remap`](#sdlc-remap-story), every
 the command:
 
 ```text
-sdlc: US-001 has landed, and its change to CODEMAP.md is not on main: a person runs `sdlc remap US-001` in their own terminal (the change is kept at "/home/dev/project/.git/sdlc/codemap/US-001.md"; `sdlc help remap` says what the command does)
+sdlc: US-001 has landed, and its change to CODEMAP.md is not on main: a person runs `/sdlc:remap US-001`, or `sdlc remap US-001` in their own terminal (the change is kept at "/home/dev/project/.git/sdlc/codemap/US-001.md"; `sdlc help remap` says what the command does)
 ```
 
 The same line is what tells you of a stop that was killed between landing the
@@ -558,6 +567,8 @@ without landing it, hand it to a person with
 
 A person's answer to an escalation. When `sdlc status` says a story is waiting
 for you, this is the command that lets it carry on.
+
+In Claude Code: `/sdlc:approve`, with the same arguments. You type it; the model cannot.
 
 ```console
 $ sdlc approve US-001
@@ -605,6 +616,8 @@ reason is [SDLC-E0034](troubleshooting.md#sdlc-e0034).
 Lift the test freeze, on the record. Only a person does this, and only when a
 frozen test is wrong.
 
+In Claude Code: `/sdlc:unfreeze`, with the same arguments. You type it; the model cannot.
+
 ```console
 $ sdlc unfreeze --reason "AC-2's test asserted the old error message"
 ```
@@ -646,6 +659,8 @@ bookkeeper stored are still kept at `.git/sdlc/codemap/<ID>.md`. The kept
 change is that stored set, byte for byte, and both lines print the file's full
 path. Read the file before you run this: the commit is made from it, nobody
 reviewed it, and a session that holds no story can write it.
+
+In Claude Code: `/sdlc:remap`, with the same arguments. You type it; the model cannot.
 
 ```console
 $ sdlc remap US-001
@@ -708,6 +723,8 @@ and `codemap_commit` or `dropped`.
 Let a story go from the checkout holding it, so that any checkout can start it.
 You will want this when a worktree was deleted or a story should move somewhere
 else.
+
+In Claude Code: `/sdlc:release`, with the same arguments. You type it; the model cannot.
 
 ```console
 $ sdlc release US-001 --reason "the worktree it was started in was deleted"
@@ -813,7 +830,9 @@ of 1 or more is [SDLC-E0063](troubleshooting.md#sdlc-e0063), a project with
 > It is a person's command: the hook refuses it from a tool call in any session,
 > and the command itself refuses to run when the session variable is set
 > ([SDLC-E0061](troubleshooting.md#sdlc-e0061)), because starting model sessions
-> with tools pre-approved is work nobody asked for.
+> with tools pre-approved is work nobody asked for. Where any other of Claude
+> Code's environment variables is set, it refuses with
+> [SDLC-E0079](troubleshooting.md#sdlc-e0079) and starts nothing.
 
 When the sessions have ended the output says what became of each story, read from
 its record and not from what the session said, in the order named:
@@ -932,6 +951,8 @@ To go through the log with the assistant, run `/sdlc:trunk-review`: see
 
 Once you have read the log, tell `sdlc` how far you got, and the next
 `sdlc log` starts after that point.
+
+In Claude Code: `/sdlc:ack`, with the same arguments. You type it; the model cannot.
 
 ```console
 $ sdlc ack --through HEAD
@@ -1518,9 +1539,11 @@ or by a person.
 ## `sdlc staffing assign AGENT`
 
 Pin the model or the effort an agent is asked for on a story. This is how a
-person says so: they run it in their own terminal, outside Claude Code.
+person says so: they type it in Claude Code, or run it in their own terminal.
 Reach for it when you know better than the project manager which model a story
 deserves.
+
+In Claude Code: `/sdlc:assign`, with the same arguments. You type it; the model cannot.
 
 ```console
 $ sdlc staffing assign security --model opus --effort high --reason "this one touches the installer"
@@ -1541,7 +1564,9 @@ and it cannot take an agent off a story.
 
 > [!WARNING]
 > It is refused wherever a Claude Code session id is set
-> ([SDLC-E0074](troubleshooting.md#sdlc-e0074)), and the hook refuses it to every
+> ([SDLC-E0074](troubleshooting.md#sdlc-e0074)), and with
+> [SDLC-E0079](troubleshooting.md#sdlc-e0079) wherever any other of Claude
+> Code's environment variables is, and the hook refuses it to every
 > session ([enforcement](enforcement.md#assignment-is-a-human-decision)). What
 > `set_by: person` records is that this command wrote the row.
 
@@ -1610,6 +1635,11 @@ and begins the next story in a worktree of its own.
 You will not run this one. It is what the plugin's hook script calls, reading
 the event on standard input. It is documented so that a line in a log makes
 sense when you meet it.
+
+An assistant's tool call that runs it on `UserPromptExpansion`, the event on
+which it runs a person's slash command, is refused
+([`slash-command-is-a-human-decision`](enforcement.md#slash-command-is-a-human-decision));
+run on any other event, it is not.
 
 ## Where to go next
 

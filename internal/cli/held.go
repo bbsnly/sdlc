@@ -347,7 +347,7 @@ func heldIn(id string, h store.Holder) string {
 		}
 		return "held by none: more than one checkout names it (" + strings.Join(named, ", ") + ")"
 	case !h.Live:
-		return heldInPrefix + sdlcerr.QuotePath(h.Checkout) + `, gone: see sdlc release ` + id + ` --reason "..."`
+		return heldInPrefix + sdlcerr.QuotePath(h.Checkout) + `, gone: see /sdlc:release ` + id + ` --reason "...", or sdlc release ` + id + ` --reason "..."`
 	case h.Here:
 		return heldInPrefix + sdlcerr.QuotePath(h.Checkout) + ", this checkout"
 	}
@@ -412,15 +412,15 @@ func notePassedOver(w io.Writer, said *startSaid) {
 		if said.went != "" {
 			on = " and went on to " + said.went
 		}
-		last := "sdlc start " + g.id
+		last := "`sdlc start " + g.id + "`"
 		if g.waiting {
-			last = "sdlc approve " + g.id
+			last = "`/sdlc:approve " + g.id + "`, or `sdlc approve " + g.id + "`"
 		}
 		fmt.Fprintf(w, "sdlc: %s is held by a checkout that no longer exists, %s, so start passed it over%s. "+
 			"If this checkout was moved from there, the work this checkout has not committed is %s's own and is kept; "+
-			"an assistant stops and tells the person, who carries %s on here with `sdlc release %s --reason \"...\"` "+
-			"and then `%s`.\n",
-			g.id, sdlcerr.QuotePath(g.checkout), on, g.id, g.id, g.id, last)
+			"an assistant stops and tells the person, who carries %s on here with `/sdlc:release %s --reason \"...\"`, or `sdlc release %s --reason \"...\"` "+
+			"and then %s.\n",
+			g.id, sdlcerr.QuotePath(g.checkout), on, g.id, g.id, g.id, g.id, last)
 	}
 }
 

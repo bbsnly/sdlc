@@ -485,8 +485,8 @@ func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunSt
 	t.Run("AC-3 approve", func(t *testing.T) {
 		sb.holds(t, ran{dir: tree, args: []string{"escalate", "spec_unclear", "--message", "is a zero total refused too?"},
 			stdout: "US-001  waiting for a person: spec_unclear\n  is a zero total refused too?\n\n" +
-				"The iteration has ended. A person reads the work and answers in their own terminal:\n" +
-				"  sdlc approve US-001\n  sdlc approve US-001 --reject \"why\"\n"})
+				"The iteration has ended. A person reads the work and answers in Claude Code or in their own terminal:\n" +
+				"  /sdlc:approve US-001, or sdlc approve US-001\n  sdlc approve US-001 --reject \"why\"\n"})
 		if got := storiesOf(t, main); got["US-001"] != "awaiting_human" {
 			t.Fatalf("the story is %q after the escalation, want awaiting_human", got["US-001"])
 		}
@@ -575,10 +575,10 @@ func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunSt
 }
 
 // T-4: a person-only step that carried a session id would pass for the wrong
-// reason, because the binary lets the session working a story through. The
-// harness's steps carry none, and this is what shows the difference is real:
-// the same command from a session the story is not held in is refused by the
-// binary, and from no session it is taken.
+// reason. The harness's steps carry none, and this is what shows the
+// difference is real: the same command from a session the story is not held
+// in is refused by the binary, as every person's command in Claude Code's
+// environment is (US-108 AC-15), and from no session it is taken.
 func TestAC3APersonOnlyStepCarriesNoSessionAndASessionThatDoesNotHoldTheStoryIsRefused(t *testing.T) {
 	sb := newSandbox(t)
 	sb.works(t, sb.repo, "", "", "start")
@@ -587,12 +587,15 @@ func TestAC3APersonOnlyStepCarriesNoSessionAndASessionThatDoesNotHoldTheStoryIsR
 	}
 
 	stdout, stderr, code := sb.outcome(t, sandboxOther, sb.tree(), "", "unfreeze", "--reason", "from another session")
-	if code != 1 || stdout != "" || !strings.Contains(stderr, "is being worked on in another Claude Code session") {
+	if code != 1 || stdout != "" || !strings.Contains(stderr, inClaudeCodeCode) {
 		t.Errorf("unfreeze from a session that does not hold the story: exit %d\nstdout %q\nstderr %q\n"+
-			"want it refused as another session's", code, stdout, stderr)
+			"want it refused with %s, as a person's command run inside Claude Code", code, stdout, stderr, inClaudeCodeCode)
 	}
 	for _, kv := range sb.env(t, "") {
 		if strings.HasPrefix(kv, "CLAUDE_") && !strings.HasPrefix(kv, "CLAUDE_PROJECT_DIR=") {
+			t.Errorf("a person's environment carries %s", kv)
+		}
+		if strings.HasPrefix(kv, "CLAUDECODE=") || strings.HasPrefix(kv, "AI_AGENT=") {
 			t.Errorf("a person's environment carries %s", kv)
 		}
 		if strings.HasPrefix(kv, "SDLC_ENFORCE=") {
@@ -939,7 +942,7 @@ func (s stopped) counted(t *testing.T, n int, what string) {
 func (s stopped) givenToAPerson(t *testing.T, sb sandbox, what string) {
 	t.Helper()
 	want := "{\"continue\":true,\"systemMessage\":\"sdlc: US-001 stopped 4 times in a row with nothing recorded, so it has been handed " +
-		"to a person and the iteration has ended. `sdlc status` shows the question; answer it with `sdlc approve US-001`.\"}\n"
+		"to a person and the iteration has ended. `sdlc status` shows the question; answer it with `/sdlc:approve US-001`, or `sdlc approve US-001`.\"}\n"
 	if s.stdout != want || s.stderr != "" || s.code != 0 {
 		t.Fatalf("%s: exit %d\nstdout %q\nstderr %q\nwant exactly %q, nothing on stderr and exit 0", what, s.code, s.stdout, s.stderr, want)
 	}

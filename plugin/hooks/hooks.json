@@ -34,6 +34,30 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" SessionStart",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "UserPromptExpansion": [
+      {
+        "matcher": "sdlc:approve|sdlc:unfreeze|sdlc:ack|sdlc:remap|sdlc:release|sdlc:assign|sdlc:init|sdlc:doctor|approve|unfreeze|ack|remap|release|assign|init|doctor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" UserPromptExpansion",
+            "timeout": 60
+          }
+        ]
+      }
     ]
   }
 }

@@ -1,0 +1,48 @@
+== PreToolUse: a write in a project that does not take part
+{"continue":true}
+== PreToolUse: a write of code by the main conversation during an iteration
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"neither the main conversation nor an agent outside the loop writes code or tests during an iteration; the gates exist so that each is done by an agent that cannot see the others' reasoning. Instead: delegate the story's work to the agent whose gate it is. A file that is not the story's work, such as a note for the person or a commit message, goes under .sdlc/stories/A-1/ in the checkout this session works in (the story's worktree where it has one, not the main checkout), where the file tools may write it. Keep it out of the commit and remove it before the commit gate is recorded: where the project does not ignore that directory, a file left there is committed with the story. If neither fits, say what the work is and stop [orchestrator-delegates]"}}
+== PreToolUse: a write of code by the implementer
+{"continue":true}
+== PreToolUse: a write to the loop's own state
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":".sdlc/state/active is protected while a story is being worked on: it is either human-owned configuration or the loop's own record of what happened. Instead: configuration is yours to change by hand outside a running iteration, and loop state changes through the sdlc command [write-protected-path]"}}
+== PreToolUse: a write outside the repository
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"this path is outside the repository, and the loop only governs what it can review. Instead: work inside the repository; if you need a file elsewhere, ask the user to create it [write-outside-repository]"}}
+== PreToolUse: an edit from another session of the same project
+{"continue":true}
+== PreToolUse: a command that pushes
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"`git push` writes refs, into this repository or from it, and a held story moves none; while a story is held, nothing its session runs moves trunk or a story branch, the story's own or another's, other than the story's own gated commit. Instead: leave branches to the loop: `sdlc stop` in a finished story's worktree lands it on trunk, and a person moves, deletes, pushes or fetches a branch in their own terminal; to read one, use `git log`, `git show` or `git diff` [branch-through-the-tool]"}}
+== PreToolUse: a command that turns enforcement off
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"SDLC_ENFORCE decides whether the loop is enforced at all, and it is set by the person who started the session, not from inside it. Instead: if a rule is wrong, say which one and why, and stop [enforcement-stays-on]"}}
+== PreToolUse: a command that writes the loop's own state
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":".sdlc/state is the loop's own record, and a shell command is the one way around every rule that protects it. Instead: the sdlc command owns this: `sdlc artifact write` for a gate's documents, `sdlc review add` for a review, `sdlc gate` for an outcome; the freeze is lifted by the person running the session [loop-state-through-the-tool]"}}
+== PreToolUse: a command the session working the story may run
+{"continue":true}
+== PreToolUse: a command from another session of the same project
+{"continue":true}
+== PreToolUse: a write to the loop's own state with enforcement off
+{"continue":true}
+== PreToolUse: a payload that is not JSON
+{"continue":true}
+== PostToolUse: a write the formatter fails on
+{"continue":true,"decision":"block","reason":"commands.fmt_file failed on internal/broken.go: it exited with exit status 3, so the file is as it was written and not formatted. Fix what the formatter reports; if the command itself is wrong, say so rather than editing .sdlc/config.json."}
+== PostToolUse: a write to the loop's own directory, which is not formatted
+{"continue":true}
+== PostToolUse: a write from another session
+{"continue":true}
+== PostToolUse: a write in a project that does not take part
+{"continue":true}
+== PostToolUse: a payload that is not JSON
+{"continue":true}
+== Stop: the session working the story stops for the first time
+{"continue":true,"decision":"block","reason":"A-1 is still being worked on. Work analysis and record it, or hand the story to a person with `sdlc escalate \u003ctype\u003e --message \"...\"` if it needs one. If the /sdlc:next runbook in this conversation no longer ends with \"Rework, at any gate\", compaction cut it short: do not work from memory, tell the person to type /sdlc:next to pick the story up where it is, and stop. A story left mid-gate is one nobody is looking at, so after 3 stops in a row with nothing recorded the loop hands it to a person itself (this was 1)."}
+== Stop: and a second time, with nothing recorded
+{"continue":true,"decision":"block","reason":"A-1 is still being worked on. Work analysis and record it, or hand the story to a person with `sdlc escalate \u003ctype\u003e --message \"...\"` if it needs one. If the /sdlc:next runbook in this conversation no longer ends with \"Rework, at any gate\", compaction cut it short: do not work from memory, tell the person to type /sdlc:next to pick the story up where it is, and stop. A story left mid-gate is one nobody is looking at, so after 3 stops in a row with nothing recorded the loop hands it to a person itself (this was 2)."}
+== Stop: a stop already sent back once
+{"continue":true}
+== Stop: another session of the same project stops
+{"continue":true}
+== Stop: with enforcement off
+{"continue":true}
+== Stop: a payload that is not JSON
+{"continue":true}

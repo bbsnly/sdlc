@@ -12,6 +12,8 @@ ordered from what you will meet first to what you may never need.
 - [Installation](installation.md): install the command and the plugin
 - [Getting started](getting-started.md): your first story, from nothing to a
   story going through the loop, in about ten minutes
+- [Claude Desktop](claude-desktop.md): run the loop from Claude Desktop, with the
+  plugin from its plugin browser and slash commands in place of a terminal
 - [Adding sdlc to an existing project](guides/adding-to-an-existing-project.md):
   set up a repository that already has code, tests and a `CLAUDE.md`
 - [Upgrading](installation.md#updating): move to a newer release

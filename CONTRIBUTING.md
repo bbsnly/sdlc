@@ -254,11 +254,59 @@ immediately rather than during a release.
    else, not generated from commit subjects.
 3. `./task check`, then `./task release-snapshot` to see exactly what the
    release will publish, in `dist/`.
-4. Commit, then tag and push:
+4. Commit the bump on a branch named for the tag, cut from trunk, and push the
+   branch and the tag together. Do not push trunk yet:
 
    ```console
-   $ git tag v0.1.0 && git push origin main v0.1.0
+   $ git switch -c release/v0.1.0 origin/main
+   $ git commit -am "chore(release): v0.1.0"
+   $ git tag v0.1.0
+   $ git push origin release/v0.1.0 v0.1.0
    ```
+
+   `release.yml` builds a tag whose commit is on trunk, or exactly one commit
+   on top of trunk on `release/<tag>`, counting every commit a merge brings;
+   any other it refuses before it builds.
+
+5. When the release is published, pin its checksums in the plugin, which checks
+   every binary it fetches against them. Check that the pins name the six
+   archives of this release before you commit them:
+
+   ```console
+   $ gh release download v0.1.0 --repo bbsnly/sdlc --pattern checksums.txt --output plugin/checksums.txt --clobber
+   $ grep -cE '_0\.1\.0_[a-z0-9_]+\.(tar\.gz|zip)$' plugin/checksums.txt
+   6
+   $ ./task check
+   $ git commit -m "chore(plugin): pin the checksums of v0.1.0" -- plugin/checksums.txt
+   ```
+
+   `gh attestation verify <archive> --repo bbsnly/sdlc` on a downloaded archive
+   checks the values came from this repository's build.
+
+6. Put both commits on trunk together, then remove the branch:
+
+   ```console
+   $ git switch main && git merge --ff-only release/v0.1.0
+   $ git push origin main
+   $ git push origin --delete release/v0.1.0
+   ```
+
+   If trunk moved meanwhile, merge it into the branch (`git merge origin/main`)
+   rather than rebasing. A rebase gives the release commit a new name, and the
+   tag would point at a commit trunk never has. Cut a release while no story is
+   under way, as before: a story started on trunk sees trunk move (SDLC-E0046).
+
+   The order is the point. The marketplace serves the plugin from trunk, and
+   Claude Code keeps the files of a plugin version until the version changes.
+   Trunk pushed with the release commit and without its pins would serve that
+   version with the previous release's pins to everyone who picked it up then,
+   and its launcher would refuse to fetch, and say so, every session until the
+   next release. The failure is closed, never an unchecked binary, but it lasts
+   a release.
+
+   `published.yml` ran when the release finished, against trunk's installers
+   from before this push; where the release changed `install.sh` or
+   `install.ps1`, run it again from the Actions tab.
 
 The tag starts `.github/workflows/release.yml`, which runs the full check
 matrix on the tagged commit before it builds anything, then publishes the

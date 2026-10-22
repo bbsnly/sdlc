@@ -118,14 +118,14 @@ func (res Resolver) Rel(p string) (rel string, outside bool) {
 
 	r, err := filepath.Rel(root, resolved)
 	if err != nil {
-		if folded, inside := foldedRel(root, resolved); inside {
+		if folded, inside := respelledRel(root, resolved); inside {
 			return folded, false
 		}
 		return filepath.ToSlash(abs), true
 	}
 	r = filepath.ToSlash(r)
 	if r == ".." || strings.HasPrefix(r, "../") {
-		if folded, inside := foldedRel(root, resolved); inside {
+		if folded, inside := respelledRel(root, resolved); inside {
 			return folded, false
 		}
 		return filepath.ToSlash(resolved), true
@@ -435,7 +435,7 @@ func Within(root, p string) (string, bool) {
 			return r, true
 		}
 	}
-	rel, inside := foldedRel(root, p)
+	rel, inside := respelledRel(root, p)
 	if inside && rel == "" {
 		rel = "."
 	}
@@ -444,6 +444,27 @@ func Within(root, p string) (string, bool) {
 
 // Root is the project, resolved.
 func (res Resolver) Root() string { return res.root }
+
+// respelledRel is p relative to root where filepath.Rel has read it as outside:
+// as written, where one of them is spelled through macOS's data-volume
+// firmlink and the two are related without it, and otherwise as foldedRel
+// reads it. Asked only once filepath.Rel says outside, so nothing it places
+// already is placed differently, and Root is as it was.
+func respelledRel(root, p string) (string, bool) {
+	r, q := withoutFirmlink(root), withoutFirmlink(p)
+	if r == root && q == p {
+		return foldedRel(root, p)
+	}
+	rel, err := filepath.Rel(r, q)
+	rel = filepath.ToSlash(rel)
+	switch {
+	case err != nil || rel == ".." || strings.HasPrefix(rel, "../"):
+		return foldedRel(root, p)
+	case rel == ".":
+		return "", true
+	}
+	return rel, true
+}
 
 // foldedRel is p relative to root where the filesystem folds case, as macOS's
 // and Windows' do and filepath.Rel does not: `/PRIVATE/VAR/.../.sdlc/state`,
@@ -455,10 +476,14 @@ func (res Resolver) Root() string { return res.root }
 // keeps the trailing dot Fold drops, so `proj` beside a project called `Proj`
 // or `proj.` is another directory, and a write there was read as the
 // project's. The part of p that spells the project has to be the project.
+//
+// On macOS either may be spelled through the data volume's firmlink, which
+// comes off first (AC-18 of US-108).
 func foldedRel(root, p string) (string, bool) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
 		return "", false
 	}
+	root, p = withoutFirmlink(root), withoutFirmlink(p)
 	r := strings.TrimSuffix(Fold(filepath.ToSlash(root)), "/")
 	spelled := strings.TrimPrefix(filepath.ToSlash(p), "//?/")
 	q := Fold(spelled)

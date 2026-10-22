@@ -738,7 +738,7 @@ func unreadFinding(rule, glob, root string, cause unreadCause, what string, know
 func ruleWayOut(rule string) string {
 	if rule == ruleFrozenTest {
 		return ". If a frozen test genuinely has to change, say which and why: the person running " +
-			"the session lifts the freeze with `sdlc unfreeze --reason ...`"
+			"the session lifts the freeze with `/sdlc:unfreeze`, or `sdlc unfreeze --reason ...`"
 	}
 	return ". The loop's own files are changed through the sdlc command: `sdlc artifact write` " +
 		"for a gate's documents, `sdlc review add` for a review, `sdlc gate` for an outcome; " +

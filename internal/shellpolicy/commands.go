@@ -129,6 +129,11 @@ type lexer struct {
 	inputs [][]string
 	input  []string
 	here   bool
+	// fed is set for each command given something on standard input: the
+	// output of the command before it in a pipeline, or a file, a document or
+	// a here-string redirected in. feeding is the command being read's.
+	fed     []bool
+	feeding bool
 }
 
 func (l *lexer) endWord() {
@@ -172,8 +177,10 @@ func (l *lexer) endCommand() {
 		l.substituted = append(l.substituted, l.substituting)
 		l.calls = append(l.calls, l.call)
 		l.inputs = append(l.inputs, l.input)
+		l.fed = append(l.fed, l.feeding)
 		l.call = false
 		l.words, l.marked = nil, nil
+		l.feeding = false
 	}
 	l.input, l.here = nil, false
 	l.redirected = false
@@ -205,6 +212,7 @@ func (l *lexer) substitute(inner []rune) {
 	l.substituted = append(l.substituted, sub.substituted...)
 	l.calls = append(l.calls, sub.calls...)
 	l.inputs = append(l.inputs, sub.inputs...)
+	l.fed = append(l.fed, sub.fed...)
 }
 
 func (l *lexer) read(rs []rune) {
@@ -302,6 +310,10 @@ func (l *lexer) readPlain(rs []rune, i int) int {
 		l.call = true
 	case strings.ContainsRune("\n;&|{}", r):
 		l.endCommand()
+		// A `|` alone hands the next command this one's output; `||` does not.
+		if r == '|' && (i+1 == len(rs) || rs[i+1] != '|') && (i == 0 || rs[i-1] != '|') {
+			l.feeding = true
+		}
 	default:
 		l.putRune(r)
 		l.started = true
@@ -364,6 +376,7 @@ func (l *lexer) redirect(rs []rune, i int) int {
 	start := i
 	for i < len(rs) && strings.ContainsRune("<>&|-", rs[i]) {
 		l.redirected = l.redirected || rs[i] == '>'
+		l.feeding = l.feeding || rs[i] == '<'
 		i++
 	}
 	// What follows is the target: a file, the descriptor in `>&2`, or the
@@ -441,6 +454,11 @@ type ran struct {
 	// given more words on standard input, through xargs or GNU parallel: the
 	// words here are then not all it runs with.
 	piped bool
+	// input is set when the command, or the one that handed it to a shell, is
+	// given anything on standard input: a pipeline's output, a file, a
+	// document or a here-string. What a Claude Code session reads there is a
+	// prompt the words do not show.
+	input bool
 }
 
 // programsAt is the commands a line runs, with what only wraps them taken off,
@@ -449,11 +467,11 @@ type ran struct {
 // read in turn for the commands it runs.
 func programsAt(line string, powerShell bool) ([]ran, *subshells) {
 	t := newSubshells()
-	return programsWithin(line, powerShell, t, 0, 0, false, false), t
+	return programsWithin(line, powerShell, t, 0, 0, false, false, false), t
 }
 
-func programsWithin(line string, powerShell bool, t *subshells, group, depth int, substituted, piped bool) []ran {
-	p := programScan{powerShell: powerShell, t: t, depth: depth, substituted: substituted, piped: piped}
+func programsWithin(line string, powerShell bool, t *subshells, group, depth int, substituted, piped, input bool) []ran {
+	p := programScan{powerShell: powerShell, t: t, depth: depth, substituted: substituted, piped: piped, input: input}
 	p.l = lexIn(line, powerShell, t, group)
 	for i, words := range p.l.commands {
 		p.command(i, words)
@@ -464,12 +482,12 @@ func programsWithin(line string, powerShell bool, t *subshells, group, depth int
 // programScan is programsWithin part way through a line: the line as lexed,
 // what the line itself was handed with, and the commands found so far.
 type programScan struct {
-	powerShell         bool
-	t                  *subshells
-	depth              int
-	substituted, piped bool
-	l                  *lexer
-	out                []ran
+	powerShell                bool
+	t                         *subshells
+	depth                     int
+	substituted, piped, input bool
+	l                         *lexer
+	out                       []ran
 }
 
 // lexedCommand is one command of a line as programScan reads it: the
@@ -479,10 +497,10 @@ type programScan struct {
 // words on standard input; the variables it runs with, and those a
 // `${NAME:=word}` among its words sets.
 type lexedCommand struct {
-	run, marked   invocation
-	in            int
-	cut, fed      bool
-	env, defaults []string
+	run, marked     invocation
+	in              int
+	cut, fed, input bool
+	env, defaults   []string
 }
 
 // command adds what the i-th command of the line runs.
@@ -495,7 +513,7 @@ func (p *programScan) command(i int, words []string) {
 		words, marks = words[1:], marks[1:]
 	}
 	run := program(words)
-	c := lexedCommand{run: run, in: l.groups[i], cut: p.substituted || l.substituted[i], fed: p.piped || run.piped}
+	c := lexedCommand{run: run, in: l.groups[i], cut: p.substituted || l.substituted[i], fed: p.piped || run.piped, input: p.input || l.fed[i]}
 	if !p.powerShell {
 		c.defaults = defaulted(l.marks[i])
 	}
@@ -539,7 +557,7 @@ func (p *programScan) plain(i int, c lexedCommand) {
 	l, run, marked := p.l, c.run, c.marked
 	sets := slices.Concat(c.defaults, exported(marked.words, l.inputs[i], p.powerShell))
 	p.out = append(p.out, ran{words: run.words, group: c.in, redirects: l.writes[i], substituted: c.cut,
-		marked: marked.words, env: c.env, sets: sets, chdir: marked.chdir, piped: c.fed,
+		marked: marked.words, env: c.env, sets: sets, chdir: marked.chdir, piped: c.fed, input: c.input,
 		expression: p.powerShell && !l.calls[i]})
 	if base(run.words[0]) != "find" {
 		return
@@ -561,7 +579,7 @@ func (p *programScan) plain(i int, c lexedCommand) {
 // script being the words of that string.
 func (p *programScan) script(script []string, c lexedCommand) {
 	t := p.t
-	p.out = append(p.out, programsWithin(strings.Join(script, " "), p.powerShell, t, c.in, p.depth+1, c.cut, c.fed)...)
+	p.out = append(p.out, programsWithin(strings.Join(script, " "), p.powerShell, t, c.in, p.depth+1, c.cut, c.fed, c.input)...)
 	// The script once more as the shell will run it, with each substitution
 	// standing where it was: to the reading above, `sh -c "git $(echo
 	// worktree) prune"` is `git  prune`, and git's subcommand is not empty.
@@ -575,7 +593,7 @@ func (p *programScan) script(script []string, c lexedCommand) {
 	again := t.start(c.in)
 	t.script[again] = c.run.shell
 	t.startsWith(again, c.env)
-	for _, r := range programsWithin(strings.Join(markedScript, " "), p.powerShell, t, again, p.depth+1, c.cut, c.fed) {
+	for _, r := range programsWithin(strings.Join(markedScript, " "), p.powerShell, t, again, p.depth+1, c.cut, c.fed, c.input) {
 		r.extra = true
 		p.out = append(p.out, r)
 	}

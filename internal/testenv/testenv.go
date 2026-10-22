@@ -11,7 +11,10 @@
 // sent every test repository to the index of the commit being made. And every
 // command that writes takes a lock under the user's cache directory, so the
 // tests took theirs beside the locks of a story being worked on the same
-// machine.
+// machine. Claude Code sets CLAUDECODE and AI_AGENT in the processes it
+// starts, and sdlc's person-only commands refuse where either is set: a test
+// that runs approve as a person passed in CI and failed when the suite ran
+// from a Claude Code session.
 package testenv
 
 import (
@@ -54,8 +57,8 @@ const goEnvTimeout = time.Minute
 // Run runs m and returns its exit code, for TestMain. While it runs, git reads
 // no configuration but a repository's own and the two settings that turn its
 // automatic maintenance off, and stops looking for a repository at the temp
-// directory; no SDLC_ or CLAUDE_ variable is set, nor any GIT_ variable but
-// the three that say so. The home and the cache directory are inside a
+// directory; no SDLC_ or CLAUDE_ variable is set, nor CLAUDECODE or AI_AGENT,
+// nor any GIT_ variable but the three that say so. The home and the cache directory are inside a
 // directory the run made, and the Go caches stay where they were. Anything
 // the tests leave in that cache directory, but the empty directories a lock is
 // taken in, fails the run and is named.
@@ -69,7 +72,8 @@ func Run(m *testing.M) int {
 func run(tests func() int) int {
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
-		if strings.HasPrefix(name, "SDLC_") || strings.HasPrefix(name, "CLAUDE_") || strings.HasPrefix(name, "GIT_") {
+		if strings.HasPrefix(name, "SDLC_") || strings.HasPrefix(name, "CLAUDE_") || strings.HasPrefix(name, "GIT_") ||
+			name == "CLAUDECODE" || name == "AI_AGENT" {
 			_ = os.Unsetenv(name)
 		}
 	}

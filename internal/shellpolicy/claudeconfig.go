@@ -1,0 +1,827 @@
+package shellpolicy
+
+import (
+	"path"
+	"slices"
+	"strings"
+)
+
+// ruleClaudeConfig is the rule a write to the person's Claude Code
+// configuration is refused under, from the file tools and from the shell.
+const ruleClaudeConfig = "claude-config-is-the-persons"
+
+// claudeConfigRoute is what to do instead. internal/policy says the same of a
+// file tool's write.
+const claudeConfigRoute = "say what you would change there and why, and stop: the person changes their own " +
+	"Claude Code configuration, in Claude Code's settings or by hand"
+
+// claudeConfigReason is why: what the configuration decides.
+const claudeConfigReason = "the person's Claude Code configuration, which decides the hooks, plugins, skills, " +
+	"agents and permissions every session runs under, so a session that wrote it could change the rules it is held to"
+
+// ClaudeConfigWrites reports a command that writes the person's Claude Code
+// configuration: the one shell rule the hook asks in a session that holds no
+// story, where none of the others applies. It reads the command as Inspect
+// does, with the same readings and the same walk of where it runs, and asks
+// nothing but this; only Dir, Root, PowerShell, ClaudeConfig and
+// ClaudeConfigHeld of s are read.
+func ClaudeConfigWrites(command string, s State) (Finding, bool) {
+	if s.ClaudeConfig == nil {
+		return Finding{}, false
+	}
+	s.configOnly = true
+	return inspectAs(command, command, s)
+}
+
+// checkClaudeConfig refuses a command of one segment that writes the person's
+// Claude Code configuration: a word it writes or takes away that the caller
+// places there, one that cannot be placed in a command that names it, and
+// Claude Code's own commands that change it.
+//
+// The words asked are the ones the loop-state rule asks, read for what they
+// write rather than what they name: a copy's destination and not its source,
+// and sed or perl only when they edit in place, so that reading the
+// configuration stays free.
+func checkClaudeConfig(q pathQuestion) (Finding, bool) {
+	s, run := q.s, q.run
+	if s.ClaudeConfig == nil || len(run.words) == 0 {
+		return Finding{}, false
+	}
+	if sub, ok := claudeChangesItsConfig(run.words); ok {
+		return Finding{
+			Rule:   ruleClaudeConfig,
+			Reason: "`claude " + sub + "` changes " + claudeConfigReason,
+			Route:  claudeConfigRoute,
+		}, true
+	}
+	// A program places its own paths: `python3 -c` with expanduser("~/.claude")
+	// or HOME+"/.claude.json" names a place the shell never sees whole.
+	if q.runsCode() && q.m.namesConfigLiterally(q.line) {
+		return Finding{
+			Rule: ruleClaudeConfig,
+			Reason: "the inline code names the person's Claude Code configuration, and where it writes " +
+				"is the program's to work out, so it could write " + claudeConfigReason,
+			Route: "if the code only reads the configuration, read it with a plain command such as `cat`; " +
+				"otherwise " + claudeConfigRoute,
+		}, true
+	}
+	inside, held := q.configWords()
+	for _, group := range []struct {
+		words []string
+		held  bool
+	}{{inside, false}, {held, true}} {
+		for _, raw := range group.words {
+			for _, w := range q.m.spell(s, q.dir, []string{raw}) {
+				if f, ok := q.configWord(w, raw, group.held); ok {
+					return f, true
+				}
+			}
+		}
+	}
+	return Finding{}, false
+}
+
+// configWord is the refusal of one word the command writes, where it is the
+// configuration, or with held set, a directory that holds it; or where it
+// cannot be placed and the command names the configuration. raw is the word
+// as the command gave it, before it was placed.
+func (q pathQuestion) configWord(w, raw string, held bool) (Finding, bool) {
+	s := q.s
+	c := clean(w)
+	if c == "" || strings.HasPrefix(c, "-") {
+		return Finding{}, false
+	}
+	if s.ClaudeConfig(w) || held && s.ClaudeConfigHeld != nil && s.ClaudeConfigHeld(w) {
+		return Finding{Rule: ruleClaudeConfig, Reason: c + " is " + claudeConfigReason, Route: claudeConfigRoute}, true
+	}
+	// A glob names the configuration only in the word it is written in, and
+	// only where the shell expands it; elsewhere on the line only a name
+	// spelled out does. The whole line's reading with globs is the cheap
+	// question first: the word is on the line, so where that finds nothing
+	// neither can the others.
+	if q.configUnplaced(c) && q.m.namesClaudeConfig(q.line) &&
+		(q.m.namesConfigLiterally(q.line) || namesClaudeConfig(raw) && q.expandsAGlob(raw)) {
+		return Finding{
+			Rule: ruleClaudeConfig,
+			Reason: c + " is not known until the shell runs the command, which names " +
+				"the person's Claude Code configuration, so it could be " + claudeConfigReason,
+			Route: "write it with the path spelled out, if it is not the person's Claude Code configuration; " +
+				"otherwise " + claudeConfigRoute,
+		}, true
+	}
+	return Finding{}, false
+}
+
+// runsCode reports whether the segment's command runs a program it is handed
+// rather than one in a file: inline code, or an interpreter reading its
+// program from standard input. The walk splits a line at its pipes, so a pipe
+// anywhere on the line counts as feeding it.
+func (q pathQuestion) runsCode() bool {
+	return runsInlineCode(q.run.words, q.segment) ||
+		programOnStdin(q.run.words, strings.Contains(q.segment, "<") || q.m.piped(q.line))
+}
+
+// piped reports whether a line holds a pipe, worked out once for the line.
+func (m *memo) piped(line string) bool {
+	if m.pipe == 0 {
+		m.pipe = -1
+		if strings.Contains(line, "|") {
+			m.pipe = 1
+		}
+	}
+	return m.pipe > 0
+}
+
+// stdinValued are the options of an interpreter that take their value as the
+// next word, so that the value is not read as the script it runs, and whether
+// the name is an interpreter's at all. A switch and not a map, which would be
+// built in the package's init.
+func stdinValued(name string) ([]string, bool) {
+	switch name {
+	case "python":
+		return []string{"-W", "-X"}, true
+	case "node":
+		return []string{"-r", "--require", "--import", "-C", "--conditions"}, true
+	case "bun":
+		return []string{"-r", "--require", "--preload"}, true
+	case "ruby":
+		return []string{"-r", "-I", "-C", "-E"}, true
+	case "php":
+		return []string{"-c", "-d", "-z"}, true
+	case "perl":
+		// Read as a script, the directory of `perl -I lib` hid the program
+		// perl was fed on standard input.
+		return []string{"-I"}, true
+	}
+	return nil, false
+}
+
+// programOnStdin reports whether an interpreter fed on standard input reads
+// its program from there: it names no script and no module. `printf '%s'
+// "$code" | python3` and `node <<< "$code"` run what they are given as surely
+// as `python3 -c` does, with no `-` to say so.
+func programOnStdin(words []string, fed bool) bool {
+	if !fed || len(words) == 0 {
+		return false
+	}
+	name := base(words[0])
+	if strings.HasPrefix(name, "python") || name == "py" {
+		name = "python"
+	}
+	valued, ok := stdinValued(name)
+	if !ok {
+		return false
+	}
+	for i := 1; i < len(words); i++ {
+		switch a := words[i]; {
+		case a == "-":
+			return true
+		case a == "--":
+			return i+1 == len(words) || words[i+1] == "-"
+		case name == "python" && strings.HasPrefix(a, "-m"):
+			return false
+		case strings.HasPrefix(a, "-"):
+			if slices.Contains(valued, a) {
+				i++
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// expandsAGlob reports whether the shell would expand a glob in a word the
+// segment gives: a `*`, `?` or `[` outside every quote and not escaped, as the
+// command spells it. `"$HOME"/.cla*""` is expanded and `'s/.*//'` is a sed
+// script. Every word that unquotes to raw is read, and one expanded is
+// enough: read by the first alone, the quoted twin in `rm -rf "$HOME/.cla*"
+// $HOME/.cla*` hid the bare one the shell expands. A word the segment does not
+// spell as a word of its own, a redirect's target or a name the walk made, is
+// read as expanded.
+func (q pathQuestion) expandsAGlob(raw string) bool {
+	m := q.m
+	if m.spelledFor != q.segment || m.spelled == nil {
+		m.spelledFor = q.segment
+		m.unspelled, m.spelled = spelledFields(q.segment)
+		m.globbed = nil
+	}
+	// The same for every word that unquotes to raw, so worked out once: asked
+	// for each of k twins, each reading all k, the walk was quadratic in them.
+	if expanded, ok := m.globbed[raw]; ok {
+		return expanded
+	}
+	expanded, found := false, false
+	for i, w := range m.unspelled {
+		if w == raw {
+			found = true
+			expanded = expanded || globOutsideQuotes(m.spelled[i])
+		}
+	}
+	expanded = expanded || !found
+	if m.globbed == nil {
+		m.globbed = map[string]bool{}
+	}
+	m.globbed[raw] = expanded
+	return expanded
+}
+
+// globOutsideQuotes reports whether a word, as the command spells it, holds a
+// `*`, `?` or `[` outside every quote and not escaped.
+func globOutsideQuotes(spelled string) bool {
+	var quote byte
+	for j := 0; j < len(spelled); j++ {
+		switch c := spelled[j]; {
+		case c == quote:
+			quote = 0
+		case c == '\\' && quote != '\'':
+			j++
+		case quote != 0:
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '*' || c == '?' || c == '[':
+			return true
+		}
+	}
+	return false
+}
+
+// configUnplaced reports whether a written word is one whose place the shell
+// settles and the caller cannot: an expansion or a glob, another user's home,
+// or a relative path from somewhere the walk has lost. `X=~/.claude; cd "$X";
+// echo > settings.json` writes there in words none of which says so.
+func (q pathQuestion) configUnplaced(c string) bool {
+	switch {
+	case strings.ContainsAny(c, "$%`*?["):
+		return true
+	case strings.HasPrefix(c, "~"):
+		return c != "~" && !strings.HasPrefix(c, "~/")
+	}
+	return q.lost && !isAbsolute(c)
+}
+
+// configWords are the words of the segment's command that could write the
+// configuration: inside are asked whether they are in it, and held whether
+// they are in it or hold it, which only a command that writes a whole
+// directory's worth or takes one away can do to a home.
+func (q pathQuestion) configWords() (inside, held []string) {
+	run, m := q.run, q.m
+	words := run.words
+	inside = append(inside, q.redirects...)
+	if changesAFile(words) {
+		if copiesWhole(words) {
+			held = append(held, configWritten(words)...)
+		} else {
+			inside = append(inside, configWritten(words)...)
+		}
+	}
+	// The file a program opens is inside a string, and a command fed on
+	// standard input is given words from elsewhere on the line.
+	if q.runsCode() || run.piped && changesFiles(words) {
+		inside = append(inside, m.words(q.line)...)
+	}
+	held = append(held, takenAway(words)...)
+	held = append(held, intoDirectories(words)...)
+	if findChanges(words) {
+		roots, _, _ := findArguments(words[1:])
+		held = append(held, roots...)
+	}
+	return inside, held
+}
+
+// configWritten is what a command writes, as writtenTo has it, except that a
+// copy writes only where it copies to: `cp ~/.claude/settings.json backup`
+// reads the configuration.
+//
+// Each source's name under the destination is asked too, whatever the
+// destination's own name looks like: landing reads a home whose name holds a
+// dot as a file, and `cp x/.claude.json` into that home spelled out in full
+// wrote the person's configuration with nothing asked.
+func configWritten(words []string) []string {
+	switch name := base(words[0]); name {
+	case "cp", "copy", "copy-item", "cpi", "install", "ln":
+		from, to, _ := moveArguments(words[1:])
+		out := []string{to}
+		if name == "ln" {
+			out = writtenTo(words)
+			if len(from) == 0 {
+				// `ln -s /x/.claude.json` makes the link where the command runs.
+				out = append(out, path.Base(clean(to)))
+			}
+		}
+		for _, f := range from {
+			out = append(out, path.Join(to, path.Base(clean(f))))
+		}
+		return append(out, landing(words[1:])...)
+	}
+	return writtenTo(words)
+}
+
+// copiesWhole reports whether a copy takes directories with it, so that its
+// destination can be a home it fills: `cp -r dotfiles/. ~`.
+func copiesWhole(words []string) bool {
+	args := words[1:]
+	switch base(words[0]) {
+	case "cp":
+		return recursive(args) || hasWord(args, "--archive") || shortFlag(args, 'a')
+	case "copy-item", "cpi", "copy":
+		for _, a := range args {
+			if strings.EqualFold(a, "-Recurse") || strings.EqualFold(a, "/s") || strings.EqualFold(a, "/e") {
+				return true
+			}
+		}
+	case "rsync", "scp", "mv", "move", "move-item", "mi":
+		return true
+	}
+	return false
+}
+
+// intoDirectories are the directories a command is told to write into by an
+// option: tar's and make's -C, unzip's -d, and git's -C for a git that writes
+// files there, with the directory a clone makes.
+func intoDirectories(words []string) []string {
+	args := words[1:]
+	switch base(words[0]) {
+	case "tar":
+		_, into, _, extract := tarArguments(args)
+		if extract {
+			return into
+		}
+	case "unzip":
+		return valueOf(args, "-d")
+	case "make", "gmake":
+		return append(valueOf(args, "-C"), valueOf(args, "--directory")...)
+	case "git":
+		sub, dir, rest, _ := gitCall(args)
+		var out []string
+		if dir != "" && (gitChangesFiles(args) || sub == "clone" || sub == "init" || sub == "pull" || sub == "reset") {
+			out = append(out, dir)
+		}
+		if sub == "clone" || sub == "init" {
+			if operands := nonOptions(rest); len(operands) > 0 {
+				out = append(out, path.Join(dir, operands[len(operands)-1]))
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// valueOf is the value of option name wherever it is among args, glued on or
+// in the word after.
+func valueOf(args []string, name string) []string {
+	var out []string
+	for i, a := range args {
+		switch {
+		case a == name && i+1 < len(args):
+			out = append(out, args[i+1])
+		case strings.HasPrefix(a, name) && len(a) > len(name):
+			out = append(out, strings.TrimPrefix(strings.TrimPrefix(a, name), "="))
+		}
+	}
+	return out
+}
+
+// nonOptions are the words among args that are not options.
+func nonOptions(args []string) []string {
+	var out []string
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// namesClaudeConfig reports whether a command names the person's Claude Code
+// configuration in any way the shell could make a path of: a name that is
+// .claude or .claude.json, or a glob that matches one, or the variables that
+// move it. Worked out once for each reading's line.
+func (m *memo) namesClaudeConfig(line string) bool {
+	if m.claudeNamed == 0 {
+		m.claudeNamed = -1
+		if namesClaudeConfig(line) {
+			m.claudeNamed = 1
+		}
+	}
+	return m.claudeNamed > 0
+}
+
+func namesClaudeConfig(line string) bool {
+	return namesClaudeConfigAs(line, true)
+}
+
+// namesConfigLiterally is namesClaudeConfig with no glob read as a name: what
+// a whole line is asked. A regular expression's `.*`, in a sed script or a
+// program, matched .claude as a glob, and `perl -pe 's/.*//' notes.txt` was
+// refused for writing the person's configuration.
+func (m *memo) namesConfigLiterally(line string) bool {
+	if m.claudeLiteral == 0 {
+		m.claudeLiteral = -1
+		if namesClaudeConfigAs(line, false) {
+			m.claudeLiteral = 1
+		}
+	}
+	return m.claudeLiteral > 0
+}
+
+// namesClaudeConfigAs is namesClaudeConfig, reading globs as names or not.
+func namesClaudeConfigAs(line string, globs bool) bool {
+	lower := strings.ToLower(line)
+	if strings.Contains(lower, "claude_config_dir") || strings.Contains(lower, "claude_code_plugin_cache_dir") {
+		return true
+	}
+	if !strings.Contains(lower, ".") {
+		return false
+	}
+	names := strings.FieldsFunc(lower, func(r rune) bool {
+		return strings.ContainsRune(" \t\r\n/\\'\"=;:&|()<>$`{},", r)
+	})
+	return slices.ContainsFunc(names, func(name string) bool { return namesConfigFile(name, globs) })
+}
+
+// namesConfigFile reports whether one name, a segment of a path, is .claude or
+// .claude.json, or with globs set, a glob that could match either.
+func namesConfigFile(name string, globs bool) bool {
+	// Windows drops a trailing dot or space: `.claude.` is .claude there.
+	name = strings.TrimRight(name, ". ")
+	if name == "" || name[0] != '.' && name[0] != '[' {
+		return false
+	}
+	if name == ".claude" || name == ".claude.json" {
+		return true
+	}
+	if !globs || !strings.ContainsAny(name, "*?[") {
+		return false
+	}
+	for _, file := range []string{".claude", ".claude.json"} {
+		if ok, _ := path.Match(name, file); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// claudeChangesItsConfig reports a run of Claude Code's own command line that
+// changes the configuration, and names the subcommand: settings, MCP servers
+// and plugins. What only reads it -- list, get, --help -- is not.
+func claudeChangesItsConfig(words []string) (string, bool) {
+	if !runsClaudeProgram(words) {
+		return "", false
+	}
+	args := nonOptions(claudeArgs(words))
+	if len(args) < 2 || hasWord(words, "--help") || hasWord(words, "-h") {
+		return "", false
+	}
+	sub, verb := strings.ToLower(args[0]), strings.ToLower(args[1])
+	changes := false
+	switch sub {
+	case "config":
+		changes = verb == "set" || verb == "add" || verb == "remove" || verb == "rm"
+	case "mcp":
+		changes = verb == "add" || verb == "add-json" || verb == "add-from-claude-desktop" || verb == "remove"
+	case "plugin", "plugins":
+		switch verb {
+		case "install", "i", "uninstall", "remove", "enable", "disable", "update":
+			changes = true
+		case "marketplace":
+			if len(args) > 2 {
+				third := strings.ToLower(args[2])
+				changes = third == "add" || third == "remove" || third == "rm" || third == "update"
+				verb += " " + third
+			}
+		}
+	}
+	return sub + " " + verb, changes
+}
+
+// claudeArgs are the words Claude Code is given, after the program and, for a
+// package runner, after the package it names.
+func claudeArgs(words []string) []string {
+	switch base(words[0]) {
+	case "npx", "bunx", "pnpx":
+		return afterPackage(words[1:])
+	case "npm", "bun", "pnpm", "yarn":
+		if len(words) > 2 {
+			return afterPackage(words[2:])
+		}
+		return nil
+	}
+	return words[1:]
+}
+
+// afterPackage is a package runner's words after the package it runs.
+func afterPackage(args []string) []string {
+	for i, w := range args {
+		if !strings.HasPrefix(w, "-") {
+			return args[i+1:]
+		}
+	}
+	return nil
+}
+
+// claudeProgram reports whether a name, folded and without the .exe base
+// takes off, is one Claude Code's command line is run by.
+func claudeProgram(name string) bool {
+	switch name {
+	case "claude", "claude.cmd", "claude.ps1":
+		return true
+	}
+	return false
+}
+
+// runsClaudeProgram reports whether a command runs Claude Code's command line:
+// by its name, by any path, by a glob that matches the name, the native
+// installer's binary named by its version, or through a package runner.
+func runsClaudeProgram(words []string) bool {
+	if len(words) == 0 {
+		return false
+	}
+	name := base(words[0])
+	switch {
+	case claudeProgram(name):
+		return true
+	case strings.Contains("/"+strings.ToLower(clean(words[0])), "/claude/versions/"):
+		// ~/.local/bin/claude is a link to ~/.local/share/claude/versions/<v>.
+		return true
+	case strings.ContainsAny(name, "*?["):
+		for _, n := range []string{"claude", "claude.cmd", "claude.ps1"} {
+			if ok, _ := path.Match(name, n); ok {
+				return true
+			}
+		}
+	case name == "npx" || name == "bunx" || name == "pnpx":
+		return runsClaude(words[1:])
+	case name == "npm" || name == "bun" || name == "pnpm" || name == "yarn":
+		// A package runner's own spelling: `npm exec`, `bun x`, `pnpm dlx`.
+		// Installing the package starts nothing.
+		if len(words) > 1 {
+			switch base(words[1]) {
+			case "exec", "x", "dlx":
+				return runsClaude(words[2:])
+			}
+		}
+	}
+	return false
+}
+
+// startsClaudeCode reports whether a command starts a Claude Code session of
+// its own: its command line run as runsClaudeProgram reads it, PowerShell's
+// Start-Process or cmd's start given it, or any word naming its package, its
+// cli.js or the Agent SDK, which `node .../cli.js` and a script's import do.
+func startsClaudeCode(words []string) bool {
+	if runsClaudeProgram(words) {
+		return true
+	}
+	if len(words) == 0 {
+		return false
+	}
+	switch base(words[0]) {
+	case "start-process", "saps", "start":
+		if slices.ContainsFunc(words[1:], func(w string) bool { return claudeProgram(base(w)) }) {
+			return true
+		}
+	case "npm", "pnpm", "yarn", "bun", "pip", "pip3", "pipx", "uv", "poetry", "brew", "conda":
+		// Installing the package starts nothing; runsClaudeProgram has read
+		// the spellings of these that run it.
+		return false
+	}
+	return slices.ContainsFunc(words, namesClaudePackage)
+}
+
+// namesClaudePackage reports whether a word names Claude Code's package or
+// the Agent SDK's, in npm's spelling or Python's.
+func namesClaudePackage(word string) bool {
+	w := strings.ToLower(word)
+	return strings.Contains(w, "@anthropic-ai/claude-code") || strings.Contains(w, "claude-agent-sdk") ||
+		strings.Contains(w, "claude_agent_sdk")
+}
+
+// personsCommands are the person's decisions, as their slash commands are
+// named.
+var personsCommands = []string{"approve", "unfreeze", "ack", "remap", "release", "assign"}
+
+// namesAPersonsCommand reports whether text holds one of a person's slash
+// commands: a `/` that starts a word, any plugin's name and a colon or none,
+// and the command's name, whole, in any case. `/sdlc:approve`, `/approve` and
+// `/SDLC:Approve` are all expanded as a person's approval.
+func namesAPersonsCommand(text string) bool {
+	lower := strings.ToLower(text)
+	for i := strings.IndexByte(lower, '/'); i >= 0; {
+		if personsCommandAt(lower, i) {
+			return true
+		}
+		next := strings.IndexByte(lower[i+1:], '/')
+		if next < 0 {
+			break
+		}
+		i += next + 1
+	}
+	return false
+}
+
+// personsCommandAt reports whether the `/` at i in lower text starts one of a
+// person's slash commands.
+func personsCommandAt(lower string, i int) bool {
+	if i > 0 && strings.IndexByte(" \t\r\n'\"`=(;&|<>{,", lower[i-1]) < 0 {
+		return false
+	}
+	name := lower[i+1:]
+	if colon := strings.IndexAny(name, ": \t\r\n/'\""); colon >= 0 && name[colon] == ':' {
+		name = name[colon+1:]
+	}
+	for _, c := range personsCommands {
+		if rest, ok := strings.CutPrefix(name, c); ok && (rest == "" || !wordByte(rest[0])) {
+			return true
+		}
+	}
+	return false
+}
+
+// wordByte is a byte that carries a command's name on: `/approve-all` is
+// another command, and erring that way refuses it too, which is the safe side.
+func wordByte(b byte) bool {
+	return 'a' <= b && b <= 'z' || '0' <= b && b <= '9' || b == '_'
+}
+
+// terminalGivers are the programs that run a command in a terminal of its
+// own, which something can type into after the command has started.
+var terminalGivers = map[string]bool{
+	"tmux": true, "screen": true, "zellij": true, "expect": true, "unbuffer": true, "script": true,
+}
+
+// checkSecondSession refuses a command that starts a Claude Code session that
+// would expand one of a person's slash commands: a session started from here
+// that reads /sdlc:approve as its prompt makes the decision as if a person had
+// typed it. It is the reading for a session that holds no story, which
+// HumanDecisions asks, and for the session holding one, Inspect asks it last,
+// for the spellings checkNestedSession does not read as Claude Code.
+//
+// The prompt is read where it can be. A session whose prompt cannot be read --
+// held in a variable, substituted, fed on standard input or by xargs, or
+// typed later into a terminal it was given -- is refused as one that could;
+// one with a literal prompt that names no person's command, `claude
+// --version` and `claude mcp list` are not.
+func checkSecondSession(command string, powerShell bool) (Finding, bool) {
+	lower := strings.ToLower(command)
+	if !strings.ContainsAny(command, "$%`*?[") && !mayNameClaude(lower) {
+		return Finding{}, false
+	}
+	runs, named := everyRun(command, powerShell)
+	// What can type into a session later: `tmux new 'claude'`, then send-keys.
+	given := slices.ContainsFunc(wordsIn(lower), func(w string) bool { return terminalGivers[base(w)] })
+	for _, run := range runs {
+		if len(run.words) == 0 || run.extra {
+			continue
+		}
+		if expandsAPersonsCommand(run, named, given, command) {
+			return secondSessionFinding, true
+		}
+	}
+	// `ln -s "$(which claude)" /tmp/x && /tmp/x -p "/sdlc:approve"` starts it
+	// under a name no reading knows, in the same call. The `command -v` form
+	// never gets here: the loop above reads `command -v claude` as a run of
+	// claude, and refuses it there.
+	if named && slices.ContainsFunc(runs, copiesAProgram) &&
+		(mentionsClaude(command) || slices.ContainsFunc(runs, func(r ran) bool { return mentionsClaude(strings.Join(r.words, " ")) })) {
+		return copiedSessionFinding, true
+	}
+	return Finding{}, false
+}
+
+// mayNameClaude reports whether a command, folded, could name claude once the
+// shell has taken its quotes and backslashes out and expanded its brace
+// lists. Asked of the raw text alone, `cl""aude -p '/sdlc:approve'`, `c\laude`
+// and `cl{a,}ude` held no claude, and a second session started each with
+// nothing read.
+func mayNameClaude(lower string) bool {
+	if strings.Contains(lower, "claude") {
+		return true
+	}
+	bare := unescaped.Replace(lower)
+	if strings.Contains(bare, "claude") {
+		return true
+	}
+	return strings.Contains(lower, "{") && strings.Contains(unescaped.Replace(bracesExpanded(lower)), "claude")
+}
+
+// unescaped takes out what the shell removes from a word once it has read it.
+var unescaped = strings.NewReplacer(`'`, "", `"`, "", `\`, "")
+
+// copiesAProgram reports whether a command copies, moves or links files, as
+// the configuration's own rule reads a copy: what it makes can be run under a
+// name of its own.
+func copiesAProgram(r ran) bool {
+	if len(r.words) == 0 {
+		return false
+	}
+	switch base(r.words[0]) {
+	case "cp", "copy", "copy-item", "cpi", "mv", "move", "move-item", "mi", "rsync", "scp", "install", "ln":
+		return true
+	case "new-item", "ni":
+		return slices.ContainsFunc(r.words[1:], func(w string) bool {
+			w = strings.ToLower(w)
+			return strings.Contains(w, "symboliclink") || strings.Contains(w, "hardlink")
+		})
+	}
+	return false
+}
+
+// everyRun is every command each reading of a line runs, and whether a
+// person's slash command is named anywhere in it, in a reading or in the words
+// of a command one runs.
+func everyRun(command string, powerShell bool) (all []ran, named bool) {
+	for _, r := range readings(command, powerShell) {
+		runs, _ := programsAt(r.text, powerShell)
+		all = append(all, runs...)
+		named = named || namesAPersonsCommand(r.text)
+		for _, run := range runs {
+			named = named || namesAPersonsCommand(strings.Join(run.words, " "))
+		}
+	}
+	return all, named
+}
+
+// expandsAPersonsCommand reports whether one command starts a Claude Code
+// session that would, or could, expand a person's command. named is whether
+// the command names one anywhere, and given whether it runs something that
+// gives a program a terminal of its own.
+func expandsAPersonsCommand(r ran, named, given bool, command string) bool {
+	words := r.words
+	starts := startsClaudeCode(words)
+	// A program the shell has yet to work out could be claude: `c=claude; $c
+	// -p ...`, `"$(command -v claude)" -p ...`.
+	program := words[0]
+	if len(r.marked) > 0 {
+		program = r.marked[0]
+	}
+	unsure := program == "" || strings.ContainsAny(program, "$%`")
+	switch {
+	case starts && named, unsure && named:
+		return true
+	case starts:
+		return r.substituted || r.piped || r.input || given || !readablePrompt(words[1:], r.marked)
+	case terminalGivers[base(words[0])]:
+		// `tmux new-session -d 'claude'`: the session is given a terminal
+		// something can type into later.
+		return mentionsClaude(strings.Join(words, " "))
+	case runsInlineCode(words, "") || programOnStdin(words, r.input):
+		// Inline code that starts it, or the SDK, whose prompt is not read:
+		// in its words, or, for a program read from standard input, anywhere
+		// in the command. A bare `python3` fed on standard input reads its
+		// program there as surely as `python3 -` does.
+		return mentionsClaude(strings.Join(words, " ")) ||
+			r.input && (hasWord(words[1:], "-") || programOnStdin(words, true)) && mentionsClaude(command)
+	}
+	return false
+}
+
+// mentionsClaude reports whether text names Claude Code as a program or a
+// package: `"claude"` in a list of arguments does, `.claude` does not.
+func mentionsClaude(text string) bool {
+	for _, w := range wordsIn(strings.ToLower(text)) {
+		if claudeProgram(base(w)) || namesClaudePackage(w) {
+			return true
+		}
+	}
+	return false
+}
+
+// readablePrompt reports whether each of a session's words is one the rules
+// read as written, with nothing the shell has yet to expand.
+func readablePrompt(args, marked []string) bool {
+	for _, w := range args {
+		if strings.ContainsAny(w, "$%`") {
+			return false
+		}
+	}
+	for _, w := range marked {
+		if strings.Contains(w, "$SUB") {
+			return false
+		}
+	}
+	return true
+}
+
+// copiedSessionFinding is the refusal of a line that copies or links a program
+// and names both Claude Code and a person's command. Its reason is its own:
+// the line starts no session under a name the hook knows, and a reason that
+// said it did read as a false refusal worth a retry.
+var copiedSessionFinding = Finding{
+	Rule: secondSessionFinding.Rule,
+	Reason: "this line copies or links a program and names both Claude Code and a person's slash command, " +
+		"such as /sdlc:approve, so it could start a session under another name that expands it, " +
+		"and a decision typed by a model is not a person's",
+	Route: secondSessionFinding.Route,
+}
+
+// secondSessionFinding is the refusal of a session started from here that
+// would expand a person's command. It keeps the name of the rule that refuses
+// every nested session in the session holding a story.
+var secondSessionFinding = Finding{
+	Rule: "story-stays-in-its-session",
+	Reason: "a Claude Code session started from here could expand a person's slash command, such as " +
+		"/sdlc:approve, and a decision typed by a model is not a person's",
+	Route: "say what you wanted that session to do and stop; a person types their own commands, " +
+		"in Claude Code or in their own terminal",
+}

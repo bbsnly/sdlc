@@ -29,9 +29,13 @@ type Request struct {
 	// this one, as a story's worktree is in the main checkout: its files are
 	// that checkout's work, and no rule of this one's reaches them.
 	OtherCheckout bool
-	Story         string // the story the iteration is on
-	Tests         Tests  // what the freeze says about this path
-	Backlog       string // the backlog file, as Path is; empty for none
+	// ClaudeConfig is a path in the person's Claude Code configuration, as the
+	// caller resolved it: ~/.claude, ~/.claude.json, or where Claude Code is
+	// told to keep them instead.
+	ClaudeConfig bool
+	Story        string // the story the iteration is on
+	Tests        Tests  // what the freeze says about this path
+	Backlog      string // the backlog file, as Path is; empty for none
 }
 
 // Tests is the freeze, as it applies to one path. The caller works these out --
@@ -114,6 +118,22 @@ var ProtectedPaths = []string{
 // never appears for a path nobody may write at all.
 var Rules = []Rule{
 	{
+		// Ahead of write-outside-repository, so that the refusal says why this
+		// outside path in particular is not written; and asked whether or not
+		// the path reads as outside, because a link in the repository that
+		// leads into ~/.claude is still the configuration.
+		ID:    "claude-config-is-the-persons",
+		Route: claudeConfigRoute,
+		check: func(r Request) string {
+			if !r.ClaudeConfig {
+				return ""
+			}
+			return r.Path + " is the person's Claude Code configuration, which decides the hooks, plugins, " +
+				"skills, agents and permissions every session runs under, so a session that wrote it could " +
+				"change the rules it is held to"
+		},
+	},
+	{
 		ID:    "write-outside-repository",
 		Route: "work inside the repository; if you need a file elsewhere, ask the user to create it",
 		check: func(r Request) string {
@@ -171,7 +191,7 @@ var Rules = []Rule{
 		ID: "frozen-test-is-not-edited",
 		Route: "change the code until the test passes; if the test itself is wrong, " +
 			"say which acceptance criterion it got wrong and stop: the person running " +
-			"the session lifts the freeze with `sdlc unfreeze --reason \"...\"`, which " +
+			"the session lifts the freeze with `/sdlc:unfreeze`, or `sdlc unfreeze --reason \"...\"`, which " +
 			"puts the change on the record",
 		check: func(r Request) string {
 			if !r.Tests.Locked {
@@ -467,3 +487,8 @@ func storyDir(story string) string {
 	}
 	return ".sdlc/stories/" + strings.TrimSpace(story)
 }
+
+// claudeConfigRoute is what a session does instead of writing the person's
+// Claude Code configuration. internal/shellpolicy says the same of a command.
+const claudeConfigRoute = "say what you would change there and why, and stop: the person changes their own " +
+	"Claude Code configuration, in Claude Code's settings or by hand"

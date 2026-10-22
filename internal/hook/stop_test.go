@@ -554,7 +554,7 @@ func handedOver(t *testing.T, root string, r stopOutcome, what string) {
 		t.Fatalf("%s: the stop past the limit was held: %+v", what, r)
 	}
 	want := "sdlc: A-1 stopped 4 times in a row with nothing recorded, so it has been handed to a person " +
-		"and the iteration has ended. `sdlc status` shows the question; answer it with `sdlc approve A-1`."
+		"and the iteration has ended. `sdlc status` shows the question; answer it with `/sdlc:approve A-1`, or `sdlc approve A-1`."
 	if r.SystemMessage != want {
 		t.Errorf("%s: the hand-over says\n%q\nwant\n%q", what, r.SystemMessage, want)
 	}
@@ -563,7 +563,7 @@ func handedOver(t *testing.T, root string, r stopOutcome, what string) {
 	}
 	e, ok := pendingQuestion(t, root)
 	question := "the session stopped 4 times in a row without recording anything on the story. Read " +
-		".sdlc/stories/A-1/gate-record.json for where it got to, and answer with `sdlc approve A-1` to let the loop carry on."
+		".sdlc/stories/A-1/gate-record.json for where it got to, and answer with `/sdlc:approve A-1`, or `sdlc approve A-1` to let the loop carry on."
 	if !ok || e.Type != "loop_stalled" || e.Message != question {
 		t.Errorf("%s: the record holds %+v, want a loop_stalled question saying\n%q", what, e, question)
 	}

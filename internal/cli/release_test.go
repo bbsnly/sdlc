@@ -227,7 +227,7 @@ func TestAC6AGoneHolderAndATieReadAsWhatTheyAre(t *testing.T) {
 		r := wtRun(t, main, "", "", args...)
 		text := r.stdout + r.stderr
 		for _, want := range []string{
-			strconv.Quote(filepath.ToSlash(gone)), "gone: see sdlc release",
+			strconv.Quote(filepath.ToSlash(gone)), `gone: see /sdlc:release US-001 --reason "...", or sdlc release US-001 --reason "..."`,
 			"more than one checkout names it", strconv.Quote(filepath.ToSlash(main)), strconv.Quote(filepath.ToSlash(wt)),
 		} {
 			if !strings.Contains(text, want) {

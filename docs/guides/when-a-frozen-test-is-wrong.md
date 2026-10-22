@@ -156,8 +156,8 @@ content when the test gate passed, and an agent that can edit its own tests will
 eventually edit them -- which makes every gate after this one theatre. Instead:
 change the code until the test passes; if the test itself is wrong, say which
 acceptance criterion it got wrong and stop: the person running the session lifts
-the freeze with `sdlc unfreeze --reason "..."`, which puts the change on the
-record [frozen-test-is-not-edited]
+the freeze with `/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."`, which puts the
+change on the record [frozen-test-is-not-edited]
 ```
 
 The shell is covered too. Once the tests are frozen, the hook refuses:

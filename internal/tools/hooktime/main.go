@@ -139,6 +139,10 @@ func state(dir string, powerShell bool) shellpolicy.State {
 		Nested:    func(string) bool { return false },
 		Carried:   func(string) string { return "" },
 		Checkouts: func() shellpolicy.CheckoutSet { return shellpolicy.CheckoutSet{} },
+		// Stand-ins, as Outside and IsTrunk are: the hook asks the disk where
+		// the home is, and this leg times the classifier that asks it.
+		ClaudeConfig:     func(string) bool { return false },
+		ClaudeConfigHeld: func(string) bool { return false },
 	}
 }
 

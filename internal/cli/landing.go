@@ -549,7 +549,7 @@ func whenItLands(s *store.Store, active string) (string, bool, error) {
 		return id, false, sdlcerr.New(sdlcerr.AwaitingPerson,
 			quote(id)+" is waiting for a person",
 			"it was handed over at "+pending.At+" ("+quote(pending.Type)+"): "+quote(pending.Message)).
-			WithFix(`a person answers first, in their own terminal, in ` + worktreeIn(id) + `: "sdlc approve ` + id +
+			WithFix(`a person answers first, in Claude Code or in their own terminal, in ` + worktreeIn(id) + `: "/sdlc:approve ` + id + `", or "sdlc approve ` + id +
 				`", after which "sdlc stop" there lands it, or "sdlc approve ` + id + ` --reject ..." to send the work ` +
 				`back; an assistant stops and tells the person`)
 	}
@@ -1287,7 +1287,7 @@ func (l *lander) requireApprovalAgain(ctx context.Context, st landState) error {
 		since = " since its change changed"
 	}
 	fix := `hand it to a person with "sdlc escalate pre_commit_approval --message ..." and stop; once they have ` +
-		`run "sdlc approve ` + l.id + `" in ` + worktreeIn(l.id) + ` on the work as it now is, "sdlc stop" there ` +
+		`run "/sdlc:approve ` + l.id + `", or "sdlc approve ` + l.id + `" in ` + worktreeIn(l.id) + ` on the work as it now is, "sdlc stop" there ` +
 		`lands it`
 	if !l.running {
 		// A stop run on a story handed over and answered before: followed as
@@ -1382,8 +1382,9 @@ func (l *lander) reopenFix() string {
 // the story's worktree, the checkout that holds it (SDLC-E0050 elsewhere).
 func reopenRoute(id string, g model.Gate) string {
 	in := worktreeIn(id)
-	return `answer the escalation first, with "sdlc approve ` + id + `" or "sdlc approve ` + id + ` --reject ..." in ` +
-		in + `, then run "sdlc gate ` + string(g) + ` fail --story ` + id + ` --note ..." there and type /sdlc:next`
+	return `answer the escalation first, in ` + in + `, with "/sdlc:approve ` + id + `", or "sdlc approve ` + id +
+		`", or send it back with "/sdlc:approve ` + id + ` --reject ...", or "sdlc approve ` + id +
+		` --reject ...", then run "sdlc gate ` + string(g) + ` fail --story ` + id + ` --note ..." there and type /sdlc:next`
 }
 
 // stopAgainFix is SDLC-E0054's fix where trunk moved under the landing: the
@@ -1463,7 +1464,7 @@ func (l *lander) freezeFix(err error) error {
 // reopens Gate 3 and every gate after it, so what follows is /sdlc:next, never
 // a stop.
 func unfreezeRoute(id string) string {
-	return reopenRoute(id, model.GateCodeReview) + `; once the iteration is running, they run "sdlc unfreeze ` +
+	return reopenRoute(id, model.GateCodeReview) + `; once the iteration is running, they run "/sdlc:unfreeze", or "sdlc unfreeze ` +
 		`--reason ..." there in their own terminal, which sends the story back to have its tests frozen again; ` +
 		assistantEscalates
 }
@@ -2087,7 +2088,7 @@ func (l *lander) notReplayed(ctx context.Context, st landState, cause error) err
 				back+". Resolving a conflict is a person's").
 			WithFix(`a person, in their own terminal: cd -- ` + wt + `; then git rebase ` + shellWord(trunk) +
 				`; resolve the files it stops on, "git add" them and carry the rebase on as git says until it ` +
-				`finishes; then, where an assistant handed this story over, sdlc approve ` + l.id + `, after resolving ` +
+				`finishes; then, where an assistant handed this story over, /sdlc:approve ` + l.id + `, or sdlc approve ` + l.id + `, after resolving ` +
 				`and not before, so that the approval is of the work as it now is; then sdlc stop, which runs the ` +
 				`configured commands on the result. In a tier that waits for a person the rebased work is approved ` +
 				`again: where no question is open on the story, that stop says so with SDLC-E0037, and its fix says ` +

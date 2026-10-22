@@ -45,7 +45,7 @@ func newEscalateCmd() *cobra.Command {
 			"story's record, bound to the work as it stands. The story becomes\n" +
 			"awaiting_human and the iteration ends, so the session stops rather than\n" +
 			"carrying on past the question. `sdlc start` refuses the story until a person\n" +
-			"answers with `sdlc approve`.",
+			"answers with `/sdlc:approve <ID>`, or `sdlc approve <ID>`.",
 		Example: `  sdlc escalate pre_commit_approval --message "the migration has no down step"`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,9 +75,9 @@ func newEscalateCmd() *cobra.Command {
 				})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  waiting for a person: %s\n  %s\n\n"+
-				"The iteration has ended. A person reads the work and answers in their own terminal:\n"+
-				"  sdlc approve %s\n  sdlc approve %s --reject \"why\"\n",
-				id, oneLine(kind), oneLine(message), id, id)
+				"The iteration has ended. A person reads the work and answers in Claude Code or in their own terminal:\n"+
+				"  /sdlc:approve %s, or sdlc approve %s\n  sdlc approve %s --reject \"why\"\n",
+				id, oneLine(kind), oneLine(message), id, id, id)
 			return nil
 		},
 	}
@@ -100,7 +100,14 @@ func newApproveCmd() *cobra.Command {
 		Example: "  sdlc approve US-001\n" +
 			`  sdlc approve US-001 --reject "the migration has no way back"`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error { return runApprove(cmd, args, reject) },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Here and not in runApprove, which is long enough already: it is
+			// still the first thing the command does.
+			if err := refuseInsideClaudeCode(cmd, "/sdlc:approve"); err != nil {
+				return err
+			}
+			return runApprove(cmd, args, reject)
+		},
 	}
 	cmd.Flags().StringVar(&reject, "reject", "", "send the work back instead, saying why")
 	return cmd
@@ -283,8 +290,8 @@ func notRecorded(err error, what string) error {
 // sayHandedOver is what a command prints after handOverAt handed a story over.
 func sayHandedOver(w io.Writer, id, message string) {
 	fmt.Fprintf(w, "\n%s is handed to a person: %s\n\n"+
-		"A person reads the work and answers in their own terminal:\n"+
-		"  sdlc approve %s\n  sdlc approve %s --reject \"why\"\n", id, oneLine(message), id, id)
+		"A person reads the work and answers in Claude Code or in their own terminal:\n"+
+		"  /sdlc:approve %s, or sdlc approve %s\n  sdlc approve %s --reject \"why\"\n", id, oneLine(message), id, id, id)
 }
 
 // lastNote is a note for a message that quotes it.

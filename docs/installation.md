@@ -270,7 +270,10 @@ gives you three skills only you start in Claude Code (`/sdlc:next` to work the
 loop, `/sdlc:trunk-review` to look back at what landed and `/sdlc:consolidate`
 to turn the retros into changes to your contract and configuration),
 twelve agents, and the `PreToolUse`, `PostToolUse` and `Stop` hooks that do the
-enforcing.
+enforcing. It also gives you a slash command for each command only a person
+runs, such as `/sdlc:approve` for `sdlc approve`, which the hook runs when you
+type it, and `/sdlc:init` and `/sdlc:doctor`. [Claude Desktop](claude-desktop.md)
+lists them, and says what else differs when you run the loop from there.
 
 The marketplace serves the repository's default branch, not a tag.
 `/plugin update sdlc@sdlc` therefore gives you the plugin as it is on the
@@ -285,6 +288,36 @@ even though it keeps the `PATH` it was started with. Installed anywhere else,
 quit the app fully and reopen it after changing `PATH`, or set `SDLC_BIN` to the
 full path of the binary.
 
+### The plugin fetches its own binary
+
+A plugin installed from Claude Desktop's plugin browser comes with no binary,
+and nobody has run an installer. So on the first `SessionStart`, when the
+plugin's own `bin` directory holds no `sdlc` and `SDLC_BIN` is not set, the
+plugin's launcher fetches the release that matches the plugin's version into
+that directory. That is also the directory Claude Code puts on the model's
+`PATH`, so the model's Bash tool finds the same `sdlc` the hook runs. It does
+this even when an installer's `sdlc` is on `PATH`, so that the hook runs the
+plugin's own release. Set `SDLC_BIN` to keep the one you installed.
+
+The archive is checked against the checksums the plugin carries in its
+`checksums.txt`, before anything is unpacked. A checksums file served beside the
+archive is never read. An archive that does not match is neither installed nor
+run, and a plugin with no checksum for its own version fetches nothing. The
+fetch needs `curl`, `tar` (or `unzip`), and `sha256sum`, `shasum` or `openssl`;
+on Windows it uses the `curl.exe`, `tar.exe` and `certutil.exe` that Windows
+ships.
+
+Offline, the fetch can take up to about two minutes to give up, and it tries
+again on every session start until a binary is found. Setting `SDLC_BIN` stops
+it. Each try at the archive is cut off after 50 seconds, so on a link too slow
+to bring it in that time the fetch never finishes. Getting a binary another way
+needs a terminal: install it with `npx @bbsnly/sdlc install`, or download the
+archive for your platform from the release, check it against the plugin's
+`checksums.txt` and unpack it, then set `SDLC_BIN` to it in the local
+environment editor.
+[Troubleshooting](troubleshooting.md#the-sdlc-binary-was-not-found-so-nothing-is-being-enforced)
+lists what a session is told when the fetch fails, and what to do about each.
+
 ### The plugin without the binary
 
 Installed without the binary, the plugin stays out of the way:
@@ -296,9 +329,11 @@ Installed without the binary, the plugin stays out of the way:
 - `/sdlc:next` says the binary is missing, offers to install it, and does
   nothing else until you say yes. It does not work the gates by hand.
 - The hook enforces nothing, and says nothing either, so every session carries
-  on as if the plugin were not there. The one exception is the session working
-  a story it started with `sdlc start`: it is told, on every tool call, that the
-  binary was not found.
+  on as if the plugin were not there. The exceptions are the session working
+  a story it started with `sdlc start`, which is told on every tool call that
+  the binary was not found; a session that starts in a project taking part in
+  the loop, which is told once, when it starts; and a person who types one of
+  the plugin's commands, which is told that the command did not run.
 - A binary left where the installers put it (`~/.local/bin`, or
   `%LOCALAPPDATA%\Programs\sdlc\bin` on Windows) still counts: the hook runs it
   even when that directory is not on `PATH`.

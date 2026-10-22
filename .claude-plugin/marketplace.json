@@ -14,7 +14,15 @@
       "skills": [
         "./skills/next",
         "./skills/trunk-review",
-        "./skills/consolidate"
+        "./skills/consolidate",
+        "./skills/approve",
+        "./skills/unfreeze",
+        "./skills/ack",
+        "./skills/remap",
+        "./skills/release",
+        "./skills/assign",
+        "./skills/init",
+        "./skills/doctor"
       ],
       "description": "Run one story at a time through nine gates: tests are written and frozen before any implementation, and the agent that implements cannot edit them."
     }

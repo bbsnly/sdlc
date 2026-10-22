@@ -8,9 +8,15 @@
 # silently off would be worse than enforcement off with an explanation, and a
 # session that never asked for sdlc must not hear from it at all.
 #
-# The fallback path uses only shell builtins. An environment that has lost the
-# sdlc binary may have lost more, and the failure path is the last place that
-# should need something else to be installed.
+# On the first SessionStart it also fetches the plugin's own release into the
+# plugin's bin directory, because a person who installed the plugin from Claude
+# Desktop's plugin browser never ran an installer. The download is checked
+# against the checksums the plugin carries, never against a checksums file
+# served beside it, before anything is unpacked.
+#
+# Outside the fetch the fallback path uses only shell builtins. An environment
+# that has lost the sdlc binary may have lost more, and the failure path is the
+# last place that should need something else to be installed.
 set -eu
 
 event="${1:-}"
@@ -23,9 +29,14 @@ find_binary() {
     printf '%s' "${SDLC_BIN}"
     return 0
   fi
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/bin/sdlc" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/bin/sdlc" ]; then
-    printf '%s' "${CLAUDE_PLUGIN_ROOT}/bin/sdlc"
-    return 0
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    # Git Bash fetches the Windows build, which keeps its extension.
+    for candidate in "${CLAUDE_PLUGIN_ROOT}/bin/sdlc" "${CLAUDE_PLUGIN_ROOT}/bin/sdlc.exe"; do
+      if [ -f "${candidate}" ] && [ -x "${candidate}" ]; then
+        printf '%s' "${candidate}"
+        return 0
+      fi
+    done
   fi
   if command -v sdlc >/dev/null 2>&1; then
     command -v sdlc
@@ -53,6 +64,15 @@ find_binary() {
   return 1
 }
 
+# note appends one line to SDLC_DEBUG_FILE, when it is set, so that what the
+# launcher did is on the record even when it said nothing: a fetch that failed
+# its checksum while an installer's sdlc was on PATH was otherwise invisible.
+note() {
+  if [ -n "${SDLC_DEBUG_FILE:-}" ]; then
+    printf 'sdlc-hook %s: %s\n' "${event}" "$1" 2>/dev/null >>"${SDLC_DEBUG_FILE}" || true
+  fi
+}
+
 # only_line sets line to the one line of a file that says anything, without the
 # white space around it. It fails when there is no such file, no such line, or
 # more than one, since the binary reads the whole file as a single value.
@@ -76,9 +96,8 @@ only_line() {
   [ -n "${line}" ]
 }
 
-# working_session sets session to the Claude Code session recorded as working
-# the story under way in the project a directory is in. It fails when there is
-# no such project, no story under way there, or no session recorded.
+# project_of sets base to the project a directory is in, with a trailing
+# separator. It fails when there is none.
 #
 # The project is found as the binary finds it: the nearest directory, going up,
 # with .sdlc/config.json, stopping at a repository boundary so a project never
@@ -87,8 +106,7 @@ only_line() {
 # command names; reading paths out of the payload is no job for shell builtins.
 # Git Bash on Windows can hand this a directory written with backslashes, so a
 # name with no slash in it goes up by its backslashes.
-working_session() {
-  session=''
+project_of() {
   dir="$1"
   base=''
   while [ -n "${dir}" ]; do
@@ -99,7 +117,7 @@ working_session() {
       *) base="${dir}/" ;;
     esac
     if [ -e "${base}.sdlc/config.json" ]; then
-      break
+      return 0
     fi
     if [ -e "${base}.git" ] || [ "${dir}" = / ]; then
       return 1
@@ -113,7 +131,18 @@ working_session() {
       *) return 1 ;;
     esac
   done
-  if [ -z "${dir}" ] || ! only_line "${base}.sdlc/state/active"; then
+  return 1
+}
+
+# working_session sets session to the Claude Code session recorded as working
+# the story under way in the project a directory is in. It fails when there is
+# no such project, no story under way there, or no session recorded.
+working_session() {
+  session=''
+  if ! project_of "$1"; then
+    return 1
+  fi
+  if ! only_line "${base}.sdlc/state/active"; then
     return 1
   fi
   if ! only_line "${base}.sdlc/state/session"; then
@@ -127,9 +156,242 @@ working_session() {
   session="${line}"
 }
 
+# drain reads the payload to end of file, so the caller never writes into a
+# closed pipe.
+drain() {
+  payload_line=''
+  while IFS= read -r payload_line || [ -n "${payload_line}" ]; do
+    payload_line=''
+  done || true
+}
+
+# fetch puts the plugin's own release of sdlc in the plugin's bin directory, or
+# sets why to what stopped it and fix to what a person can do about it. Only the
+# validated version and an archive name built from fixed parts go into why,
+# because it ends up in JSON this script writes by hand.
+fetch() {
+  why=''
+  fix="${other_fix}"
+  plugin_bin="${CLAUDE_PLUGIN_ROOT}/bin"
+  ver=''
+  manifest="${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json"
+  if [ -f "${manifest}" ]; then
+    ver="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${manifest}" 2>/dev/null | head -n 1)" || ver=''
+  fi
+  if ! printf '%s\n' "${ver}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+    why="the version of the plugin could not be read from its plugin.json"
+    fix="${plugin_fix}"
+    return 1
+  fi
+
+  os=''
+  arch=''
+  ext=tar.gz
+  exe=sdlc
+  case "$(uname -s 2>/dev/null || true)" in
+    Darwin) os=darwin ;;
+    Linux) os=linux ;;
+    MINGW* | MSYS* | CYGWIN*)
+      os=windows
+      ext=zip
+      exe=sdlc.exe
+      ;;
+  esac
+  case "$(uname -m 2>/dev/null || true)" in
+    x86_64 | amd64) arch=amd64 ;;
+    arm64 | aarch64) arch=arm64 ;;
+  esac
+  # Under Rosetta a shell is translated, and `uname -m` answers for it rather
+  # than for the machine; install.sh asks the same question.
+  if [ "${os}" = darwin ] && [ "${arch}" = amd64 ] &&
+    [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || true)" = 1 ]; then
+    arch=arm64
+  fi
+  if [ -z "${os}" ] || [ -z "${arch}" ]; then
+    why="no release of sdlc is built for this operating system and processor"
+    fix="${platform_fix}"
+    return 1
+  fi
+  archive="sdlc_${ver}_${os}_${arch}.${ext}"
+
+  # Both of these come before any request: a plugin whose pins are another
+  # release's fails closed, and never fetches what it cannot check. That is
+  # the tagged commit of every release, which carries the previous one's pins.
+  pins="${CLAUDE_PLUGIN_ROOT}/checksums.txt"
+  if [ ! -f "${pins}" ]; then
+    why="the plugin carries no checksums.txt, so no download can be checked against a pinned checksum"
+    fix="${plugin_fix}"
+    return 1
+  fi
+  want=''
+  cr="$(printf '\r')"
+  pin_sum=''
+  pin_name=''
+  while read -r pin_sum pin_name _ || [ -n "${pin_sum}" ]; do
+    pin_name="${pin_name%"${cr}"}"
+    if [ "${pin_name}" = "${archive}" ] || [ "${pin_name}" = "*${archive}" ]; then
+      case "${pin_sum}" in
+        *[!0-9A-Fa-f]*) ;;
+        *) if [ "${#pin_sum}" -eq 64 ]; then want="${pin_sum}"; fi ;;
+      esac
+    fi
+    pin_sum=''
+    pin_name=''
+  done 2>/dev/null <"${pins}"
+  if [ -z "${want}" ]; then
+    why="the plugin's checksums.txt holds no checksum for sdlc ${ver} on ${os}_${arch}"
+    fix="${plugin_fix}"
+    return 1
+  fi
+
+  # A trap does not run when Claude Code kills a launcher that ran past the
+  # hook's timeout, so a staging directory can outlive its fetch. One left for a
+  # day is nobody's.
+  for old in "${plugin_bin}"/.sdlc-fetch.*; do
+    if [ -d "${old}" ] && [ -n "$(find "${old}" -prune -mtime +0 2>/dev/null)" ]; then
+      rm -rf -- "${old}" 2>/dev/null || true
+    fi
+  done
+  # Staged in the directory it is installed in, so the rename is atomic.
+  stage="$(mktemp -d "${plugin_bin}/.sdlc-fetch.XXXXXX" 2>/dev/null)" || stage=''
+  if [ -z "${stage}" ]; then
+    why="the bin directory of the plugin could not be written to"
+    return 1
+  fi
+
+  # --max-time is per attempt and --retry-max-time stops a new attempt after
+  # it, so the whole fetch ends inside SessionStart's 120 second timeout. A
+  # connection that is refused or a 404 is not retried at all.
+  if ! command -v curl >/dev/null 2>&1 ||
+    ! curl -fsSL --retry 2 --connect-timeout 10 --max-time 50 --retry-max-time 60 \
+      -o "${stage}/${archive}" \
+      "${SDLC_DOWNLOAD_BASE:-https://github.com/bbsnly/sdlc/releases/download}/v${ver}/${archive}" \
+      </dev/null >/dev/null 2>&1; then
+    why="could not fetch sdlc ${ver} (${archive}) from the release"
+    fix="${network_fix}"
+    return 1
+  fi
+
+  got=''
+  if command -v sha256sum >/dev/null 2>&1; then
+    got="$(sha256sum "${stage}/${archive}" 2>/dev/null | awk '{print $1}')" || got=''
+  elif command -v shasum >/dev/null 2>&1; then
+    got="$(shasum -a 256 "${stage}/${archive}" 2>/dev/null | awk '{print $1}')" || got=''
+  elif command -v openssl >/dev/null 2>&1; then
+    got="$(openssl dgst -sha256 "${stage}/${archive}" 2>/dev/null | awk '{print $NF}')" || got=''
+  else
+    why="nothing here can check a download against its pinned checksum (sha256sum, shasum or openssl)"
+    return 1
+  fi
+  if [ -z "${got}" ] ||
+    [ "$(printf '%s' "${got}" | tr 'A-F' 'a-f')" != "$(printf '%s' "${want}" | tr 'A-F' 'a-f')" ]; then
+    why="the download does not match the checksum the plugin pins for it, so it was neither installed nor run"
+    fix="${mismatch_fix}"
+    return 1
+  fi
+
+  # Only the binary comes out of the archive.
+  if [ "${ext}" = zip ]; then
+    if command -v unzip >/dev/null 2>&1; then
+      unzip -o -q "${stage}/${archive}" "${exe}" -d "${stage}" </dev/null >/dev/null 2>&1 || true
+    elif [ -n "${SYSTEMROOT:-}" ]; then
+      # Git Bash's own tar cannot read a zip; the one Windows ships can.
+      "${SYSTEMROOT}/System32/tar.exe" -xf "${stage}/${archive}" -C "${stage}" "${exe}" </dev/null >/dev/null 2>&1 || true
+    fi
+  else
+    tar -xzf "${stage}/${archive}" -C "${stage}" "${exe}" </dev/null >/dev/null 2>&1 || true
+  fi
+  if [ ! -f "${stage}/${exe}" ]; then
+    why="the download could not be unpacked"
+    return 1
+  fi
+  chmod 0755 "${stage}/${exe}" 2>/dev/null || true
+  # Two sessions fetching at once each rename a checked copy of the same bytes.
+  # On Windows a running sdlc.exe cannot be replaced, and is the same release.
+  if ! mv -f "${stage}/${exe}" "${plugin_bin}/${exe}" 2>/dev/null && [ ! -f "${plugin_bin}/${exe}" ]; then
+    why="the bin directory of the plugin could not be written to"
+    return 1
+  fi
+  return 0
+}
+
+# What a person can do about each reason the fetch stopped. Every one names
+# SDLC_BIN and the local environment editor, because a person in Claude Desktop
+# has no terminal, and those are the route that always works from inside the
+# app. None of them asks a person to point SDLC_BIN at a binary they did not
+# install themselves.
+network_fix="check that this machine can reach the release, and open a new session, which tries again. Or, in Claude Desktop, open the local environment editor and set SDLC_BIN to the full path of an sdlc you installed; in a terminal, install it with npx @bbsnly/sdlc install. Then type /sdlc:doctor, or run sdlc doctor in a terminal."
+plugin_fix="update the plugin from the plugin browser and open a new session; if that does not help, report it to the sdlc project. Do not set SDLC_BIN to a binary you did not install yourself; to use one you did, install it in a terminal with npx @bbsnly/sdlc install and set SDLC_BIN to its full path in the local environment editor of Claude Desktop. Then type /sdlc:doctor, or run sdlc doctor in a terminal."
+mismatch_fix="open a new session to try again. If it fails the same way, what was served is not the release the plugin pins, so do not run it, and report it to the sdlc project. To use an sdlc you installed yourself, with npx @bbsnly/sdlc install in a terminal, set SDLC_BIN to its full path in the local environment editor of Claude Desktop. Then type /sdlc:doctor, or run sdlc doctor in a terminal."
+other_fix="in Claude Desktop, open the local environment editor and set SDLC_BIN to the full path of an sdlc you installed; in a terminal, install it with npx @bbsnly/sdlc install, then quit the app fully and reopen it so that it sees the new PATH. Then type /sdlc:doctor, or run sdlc doctor in a terminal."
+# A machine no release is built for gets no help from the installers, which
+# fetch the same releases: other_fix sent a person to a second failure.
+platform_fix="build sdlc for this machine from its source, or ask the sdlc project for a release for it; the installers fetch the same releases, so they do not help here. Then, in Claude Desktop, open the local environment editor and set SDLC_BIN to the full path of the sdlc you built, and type /sdlc:doctor, or run sdlc doctor in a terminal. Until then nothing is enforced."
+
+# The fetch runs once: on a SessionStart with no binary in the plugin's bin
+# directory. It runs even when an installer's sdlc is on PATH, so that the hook
+# runs the plugin's own release; SDLC_BIN, set to anything, opts out.
+why=''
+fix=''
+if [ "${event}" = SessionStart ] && [ -z "${SDLC_BIN:-}" ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] &&
+  [ ! -e "${CLAUDE_PLUGIN_ROOT}/bin/sdlc" ] && [ ! -e "${CLAUDE_PLUGIN_ROOT}/bin/sdlc.exe" ]; then
+  stage=''
+  trap '[ -z "${stage}" ] || rm -rf -- "${stage}"' EXIT
+  trap '[ -z "${stage}" ] || rm -rf -- "${stage}"; exit 130' INT
+  trap '[ -z "${stage}" ] || rm -rf -- "${stage}"; exit 143' TERM
+  if fetch; then
+    note "fetched sdlc ${ver} into the plugin's bin directory"
+  else
+    note "the fetch stopped: ${why}"
+  fi
+  if [ -n "${stage}" ]; then
+    rm -rf -- "${stage}" 2>/dev/null || true
+  fi
+  stage=''
+fi
+
 if binary="$(find_binary)"; then
+  note "running ${binary}"
   exec "${binary}" hook "${event}"
 fi
+note "no sdlc binary was found"
+
+case "${event}" in
+  SessionStart)
+    # A session that has just started is in a project or not: one that takes
+    # part hears what happened, any other hears nothing.
+    drain
+    if project_of "${CLAUDE_PROJECT_DIR:-}" || project_of "${PWD:-}"; then
+      if [ -z "${why}" ]; then
+        why='it is not at SDLC_BIN, in the bin directory of the plugin, on the PATH this app started with, or where the installers put it'
+        fix="${other_fix}"
+      fi
+      printf '{"continue":true,"%s":"%s"}\n' systemMessage \
+        "sdlc: the sdlc binary was not found, so nothing is being enforced. why: ${why}. fix: ${fix}"
+    else
+      printf '%s\n' '{"continue":true}'
+    fi
+    exit 0
+    ;;
+  UserPromptExpansion)
+    # A person who typed one of the plugin's commands is told it did not run,
+    # in any project: the command they typed may be /sdlc:init. The name is
+    # matched, never echoed back.
+    typed=''
+    payload_line=''
+    while IFS= read -r payload_line || [ -n "${payload_line}" ]; do
+      case "${payload_line}" in
+        *'"command_name":"sdlc:'* | *'"command_name": "sdlc:'*) typed=1 ;;
+      esac
+      payload_line=''
+    done || true
+    if [ -n "${typed}" ]; then
+      printf '{"continue":true,"decision":"block","reason":"%s"}\n' \
+        "sdlc: the command you typed did not run, because the sdlc binary was not found, so nothing is being enforced. why: it is not at SDLC_BIN, in the bin directory of the plugin, on the PATH this app started with, or where the installers put it. fix: ${other_fix} Then type your command again."
+    fi
+    exit 0
+    ;;
+esac
 
 # The plugin is installed for every session, and most sessions are in projects
 # that do not use sdlc, or in one with a story under way that is not theirs.
@@ -167,16 +429,18 @@ fi
 
 # systemMessage is what reaches the session. Stderr from a hook that exits 0
 # goes to Claude Code's debug log only, so the lines below it are for that log;
-# on their own they told nobody that enforcement was off.
-printf '%s\n' '{"continue":true,"systemMessage":"sdlc: the sdlc binary was not found, so nothing is being enforced. why: it is not at SDLC_BIN, in the bin directory of the plugin, on the PATH this app started with, or where the installers put it. fix: install it with npx @bbsnly/sdlc install. A desktop app such as Claude Desktop keeps the PATH it started with, so quit it fully and reopen it after installing or changing PATH, or set SDLC_BIN to the full path of the binary. Then run sdlc doctor in your terminal."}'
+# on their own they told nobody that enforcement was off. The SessionStart and
+# typed-command answers above are built from the same why and fix.
+printf '%s\n' '{"continue":true,"systemMessage":"sdlc: the sdlc binary was not found, so nothing is being enforced. why: it is not at SDLC_BIN, in the bin directory of the plugin, on the PATH this app started with, or where the installers put it. fix: in Claude Desktop, open the local environment editor and set SDLC_BIN to the full path of an sdlc you installed; in a terminal, install it with npx @bbsnly/sdlc install, then quit the app fully and reopen it so that it sees the new PATH. Then type /sdlc:doctor, or run sdlc doctor in a terminal."}'
 
 printf '%s\n' \
   'sdlc: the sdlc binary was not found, so nothing is being enforced.' \
   '' \
   '  why  it is not at SDLC_BIN, in the bin directory of the plugin, on the PATH' \
   '       this app started with, or where the installers put it' \
-  '  fix  install it with "npx @bbsnly/sdlc install". A desktop app such as' \
-  '       Claude Desktop keeps the PATH it started with, so quit it fully and' \
-  '       reopen it after installing or changing PATH, or set SDLC_BIN to the' \
-  '       full path of the binary. Then run "sdlc doctor" in your terminal.' >&2
+  '  fix  in Claude Desktop, open the local environment editor and set SDLC_BIN' \
+  '       to the full path of an sdlc you installed; in a terminal, install it' \
+  '       with "npx @bbsnly/sdlc install", then quit the app fully and reopen it' \
+  '       so that it sees the new PATH. Then type /sdlc:doctor, or run' \
+  '       "sdlc doctor" in a terminal.' >&2
 exit 0

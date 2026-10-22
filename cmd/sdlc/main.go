@@ -79,10 +79,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 
 	// The fast path. Hooks fire on every matching tool call, so they must not
 	// pay for building the command tree; internal/cli builds it inside a
-	// function precisely so that not calling it costs nothing.
+	// function precisely so that not calling it costs nothing. The hook is
+	// handed cli.ExecuteIn, not its result: only a slash command a person typed
+	// runs it, and hook may not import cli.
 	if isHook {
 		defer logging.Stage(opts, "hook")()
-		return hook.Run(args[1:], stdin, stdout, stderr, getenv)
+		return hook.RunWith(args[1:], stdin, stdout, stderr, getenv, cli.ExecuteIn)
 	}
 
 	defer logging.Stage(opts, "cli")()

@@ -1521,7 +1521,13 @@ func TestAC9ARepositoryWithNoMainCheckoutIsRefusedWithACodeOfItsOwn(t *testing.T
 		{"approve", "US-001"},
 	} {
 		t.Run("AC-9 "+strings.Join(args, " "), func(t *testing.T) {
-			refusedBare(t, wt, args...)
+			// approve is a person's, run from a terminal: from a session it is
+			// refused before the repository is read (US-108 AC-15).
+			c := wt
+			if args[0] == "approve" {
+				c = wt.as("")
+			}
+			refusedBare(t, c, args...)
 			if exists(filepath.Join(wt.dir, ".sdlc", "stories")) {
 				t.Error("a record was written in the worktree")
 			}

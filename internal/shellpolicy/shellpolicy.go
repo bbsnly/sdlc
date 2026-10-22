@@ -193,6 +193,22 @@ type State struct {
 	// commit`.
 	Carried func(name string) string
 
+	// ClaudeConfig, when set, reports whether a word, as the walk spells it, is
+	// the person's Claude Code configuration or inside it: ~/.claude,
+	// ~/.claude.json, or where Claude Code is told to keep them. Only the
+	// caller knows where the home is. Nil means never.
+	ClaudeConfig func(word string) bool
+
+	// ClaudeConfigHeld, when set, reports whether a word is a directory that
+	// holds the configuration: the home, or one above it. It is asked only of
+	// a word a command takes away, extracts into, or copies a directory into,
+	// so that `cp notes.txt ~` is not read as writing ~/.claude.
+	ClaudeConfigHeld func(word string) bool
+
+	// configOnly is set by ClaudeConfigWrites, for which no rule runs but the
+	// one for the person's Claude Code configuration.
+	configOnly bool
+
 	// undecoded is set by Inspect for a reading that another decodes; see
 	// pair.
 	undecoded bool
@@ -414,6 +430,18 @@ func addDecodedReadings(out []pair, shell string) []pair {
 // taking out a quoted text with a space in it made a command plain that was
 // not, and the refusal of a path it writes said the path might only be named.
 func Inspect(command string, s State) (Finding, bool) {
+	if f, refused := inspectNamed(command, s); refused {
+		return f, true
+	}
+	// After every rule a command was refused under before there was this one:
+	// the Claude Code sessions checkNestedSession does not read as one, where
+	// they would expand a person's command.
+	return checkSecondSession(command, s.PowerShell)
+}
+
+// inspectNamed is Inspect without the reading of a second session, with the
+// paths a command only names let go of.
+func inspectNamed(command string, s State) (Finding, bool) {
 	s.whole = plainCommand(command, s)
 	n := nameOnly(command, s)
 	if n.rewritten(command) {
@@ -482,6 +510,9 @@ func inspectEach(line string, s State, m *memo, rules func(pair, State, *memo) (
 }
 
 func inspectReading(r pair, s State, m *memo) (Finding, bool) {
+	if s.configOnly {
+		return inspectPaths(r, s, m)
+	}
 	if f, ok := inspectPrograms(r, s, m); ok {
 		return f, true
 	}
@@ -613,7 +644,7 @@ func (w *pathWalk) segment(idx int, marked string) (Finding, bool) {
 	if f, ok := j.judge(segment, run); ok {
 		return f, true
 	}
-	if found.spent {
+	if found.spent && !s.configOnly {
 		// More finds the reader gave up on than it reads to the end. A command
 		// can be written to come here, so nothing it says is asked: not where
 		// the find starts, and not what it goes on to do.
@@ -715,6 +746,13 @@ type segmentRules struct {
 
 // judge asks the path rules about a command of the segment, spelled segment.
 func (j segmentRules) judge(segment string, run invocation) (Finding, bool) {
+	q := pathQuestion{
+		line: j.command, segment: segment, exp: j.exp, run: run, redirects: j.redirects,
+		dir: j.dir, lost: j.lost, certain: j.certain, s: j.s, m: j.m,
+	}
+	if j.s.configOnly {
+		return checkClaudeConfig(q)
+	}
 	// A glob that can come back through `..` is refused for that first,
 	// under the same rule: refused for the `.sdlc` it could match as well,
 	// `rm -rf build/.*` was sent to `sdlc artifact write` when it had asked
@@ -723,10 +761,6 @@ func (j segmentRules) judge(segment string, run invocation) (Finding, bool) {
 		if f, ok := checkTakesACheckout(j.command, segment, run, j.away); ok {
 			return f, true
 		}
-	}
-	q := pathQuestion{
-		line: j.command, segment: segment, exp: j.exp, run: run, redirects: j.redirects,
-		dir: j.dir, lost: j.lost, certain: j.certain, s: j.s, m: j.m,
 	}
 	if f, ok := checkLoopState(q); ok {
 		return f, true
@@ -739,7 +773,12 @@ func (j segmentRules) judge(segment string, run invocation) (Finding, bool) {
 	}
 	// After the rules a command was refused under before there was one, so
 	// that it keeps the rule it was refused under.
-	return checkTakesACheckout(j.command, segment, run, j.away)
+	if f, ok := checkTakesACheckout(j.command, segment, run, j.away); ok {
+		return f, true
+	}
+	// Last for the same reason: a write the rules above refuse keeps their
+	// name.
+	return checkClaudeConfig(q)
 }
 
 // movesInAScript reports whether a script handed to a shell changes directory
@@ -839,12 +878,18 @@ func (w *programWalk) run(r ran) (Finding, bool) {
 		if _, f, ok := w.git.check(r, dir, w.env, 0, false); ok {
 			return f, true
 		}
-		return Finding{}, false
+		// Read without its substitutions, `sh plugin/bin/sdlc-hook
+		// "$(echo UserPromptExpansion)"` ran the launcher on no event at all.
+		return checkHandRunHook(r)
 	}
 	if len(words) == 0 {
 		return Finding{}, false
 	}
 	if f, ok := checkSdlcCommands(words, r.piped, r.substituted, w.s); ok {
+		return f, true
+	}
+	// After the rules above, so that what any of them refused keeps its name.
+	if f, ok := checkHandRunHook(r); ok {
 		return f, true
 	}
 	// Asked before the commit gate and answered after it, so that a commit
@@ -1059,6 +1104,19 @@ func mayName(text, name string) bool {
 // the command is read with each of those taken out, as Inspect reads it, and
 // what is reported is what the command as written is reported for.
 func HumanDecisions(command string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
+	if f, reported := humanDecisionsNamed(command, powerShell, storyWaits); reported {
+		return f, true
+	}
+	// A Claude Code session started from here that would expand a person's
+	// slash command makes the decision as surely as the command would, in a
+	// session that holds no story as in the one that does. Asked after the
+	// decisions, so that each keeps the name it was reported under.
+	return checkSecondSession(command, powerShell)
+}
+
+// humanDecisionsNamed is HumanDecisions without the reading of a second
+// session, with the commands that only ask for help let go of.
+func humanDecisionsNamed(command string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
 	n := nameOnly(command, State{PowerShell: powerShell})
 	if n.asked != command {
 		if _, reported := humanDecisionsAs(n.asked, powerShell, storyWaits); !reported {
@@ -1093,7 +1151,13 @@ func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) 
 	// a move there was one that cannot be read.
 	places := map[int]decisionPlace{0: {dir: "."}}
 	for _, r := range runs {
+		// A script read again with its substitutions in place is asked only
+		// whether it runs the hook, as the program walk asks it; the other
+		// rules read the script once, as they always have.
 		if len(r.words) == 0 || r.extra {
+			if f, ok := checkHandRunHook(r); ok {
+				return f, true
+			}
 			continue
 		}
 		here, ok := places[r.group]
@@ -1164,7 +1228,14 @@ func humanDecisionBy(r ran, here decisionPlace, storyWaits func(dir string) bool
 	}
 	// After the decision above, so that an approval or an unfreeze handed
 	// to sdlc on standard input keeps the name of its own rule.
-	return checkUnread(r.words, r.piped)
+	if f, ok := checkUnread(r.words, r.piped); ok {
+		return f, true
+	}
+	// Last, so that `echo UserPromptExpansion | xargs sdlc hook` keeps the
+	// rule it was refused under before. Whatever the project holds, as an
+	// acknowledgement is: a forged payload can name any of a person's
+	// commands.
+	return checkHandRunHook(r)
 }
 
 // Places is every path-shaped word a command names, each once, in the order
@@ -1213,26 +1284,7 @@ func checkEnforcement(assigns []string) (Finding, bool) {
 // inside was a session no rule here held: it could lift the freeze, commit, or
 // end the iteration.
 func checkNestedSession(words []string) (Finding, bool) {
-	if len(words) == 0 {
-		return Finding{}, false
-	}
-	nested := false
-	switch base(words[0]) {
-	case "claude", "claude.cmd":
-		nested = true
-	case "npx", "bunx", "pnpx":
-		nested = runsClaude(words[1:])
-	case "npm", "bun", "pnpm", "yarn":
-		// A package runner's own spelling: `npm exec`, `bun x`, `pnpm dlx`.
-		// Installing the package starts nothing.
-		if len(words) > 1 {
-			switch base(words[1]) {
-			case "exec", "x", "dlx":
-				nested = runsClaude(words[2:])
-			}
-		}
-	}
-	if !nested {
+	if !startsClaudeCode(words) {
 		return Finding{}, false
 	}
 	return Finding{
@@ -1272,7 +1324,7 @@ func checkUnfreeze(words []string) (Finding, bool) {
 			"so it is not one an agent makes",
 		Route: "say which frozen test is wrong and which acceptance criterion it gets " +
 			"wrong, and stop there; the person running the session lifts the freeze with " +
-			"`sdlc unfreeze --reason \"...\"` in their own terminal",
+			"`/sdlc:unfreeze`, or `sdlc unfreeze --reason \"...\"` in their own terminal",
 	}, true
 }
 
@@ -1311,7 +1363,7 @@ func checkApprove(words []string) (Finding, bool) {
 		Reason: "an approval is a person's answer to a question the loop stopped to ask them, " +
 			"and an agent that gave it would be approving its own work",
 		Route: "hand the question over with `sdlc escalate <type> --message \"...\"` and stop; " +
-			"the person reads the work and runs `sdlc approve` in their own terminal",
+			"the person reads the work and runs `/sdlc:approve`, or `sdlc approve` in their own terminal",
 	}, true
 }
 
@@ -1327,7 +1379,7 @@ func checkRelease(words []string) (Finding, bool) {
 		Reason: "releasing a story takes it from the checkout holding it, and an agent that did it " +
 			"could take a story another checkout is working, or let go of the one it is held to",
 		Route: "say which checkout holds the story and stop; a person runs " +
-			"`sdlc release <ID> --reason \"...\"` in their own terminal if it is to move",
+			"`/sdlc:release <ID> --reason \"...\"`, or `sdlc release <ID> --reason \"...\"` in their own terminal if it is to move",
 	}, true
 }
 
@@ -1363,7 +1415,7 @@ func checkAck(words []string) (Finding, bool) {
 		Reason: "acknowledging says a person has read what landed on trunk, and an agent that " +
 			"gave it would be deciding which stories nobody needs to look at",
 		Route: "say what `sdlc log` lists and stop; the person reads it and runs " +
-			"`sdlc ack --through <commit>` in their own terminal",
+			"`/sdlc:ack`, or `sdlc ack --through <commit>` in their own terminal",
 	}, true
 }
 
@@ -1388,7 +1440,7 @@ func checkRemap(words []string) (Finding, bool) {
 		Reason: "putting a landed story's change into trunk's CODEMAP.md, over what trunk holds or not at all, " +
 			"is a choice between two texts that nobody reviewed, and an agent that made it would be " +
 			"deciding what trunk's map says",
-		Route: "say what the stop or `sdlc status` printed and stop; the person runs `sdlc remap <story>` " +
+		Route: "say what the stop or `sdlc status` printed and stop; the person runs `/sdlc:remap <story>`, or `sdlc remap <story>` " +
 			"in their own terminal. To read what it does, run `sdlc help remap`",
 	}, true
 }
@@ -2090,7 +2142,7 @@ func frozenFinding(frozen string) Finding {
 		Route: "leave it alone -- it was locked by content when the test gate " +
 			"passed, and every gate after that is measured against it. If it " +
 			"genuinely has to change, say which and why: the person running the " +
-			"session lifts the freeze with `sdlc unfreeze --reason ...`, which puts the " +
+			"session lifts the freeze with `/sdlc:unfreeze`, or `sdlc unfreeze --reason ...`, which puts the " +
 			"reason on the record",
 	}
 }
@@ -2755,6 +2807,18 @@ type memo struct {
 	split    bool
 	disk     *diskAnswers // what the hook said of the checkouts, for every reading
 	whole    []plainRun   // the command as the plain reader read it, or nil; see plainCommand
+	// claudeNamed is whether the line names the person's Claude Code
+	// configuration: 0 not yet asked, 1 it does, -1 it does not.
+	claudeNamed int8
+	// claudeLiteral is the same, with no glob read as a name, and pipe
+	// whether the line holds a pipe.
+	claudeLiteral, pipe int8
+	// spelled is the segment being judged as the command spells it, and
+	// unspelled each word of it unquoted, split once for that segment; and
+	// globbed what expandsAGlob answered there, by the word it was asked.
+	spelledFor         string
+	spelled, unspelled []string
+	globbed            map[string]bool
 }
 
 // diskAnswers is what State.Checkouts said, asked once for a command, and where

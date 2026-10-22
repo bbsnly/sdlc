@@ -255,8 +255,9 @@ func (v *statusView) printAdvice(w io.Writer, finished bool, notHereNext string)
 	case notHereNext != "":
 		fmt.Fprintf(w, "\n%s\n", notHereNext)
 	case active == "" && payload.Next == nil && len(payload.Waiting) > 0:
-		fmt.Fprintf(w, "\nA person answers first, in their own terminal: `sdlc approve %s`, "+
-			"or `sdlc approve %s --reject \"why\"`.\n", payload.Waiting[0].Story, payload.Waiting[0].Story)
+		waiting := payload.Waiting[0].Story
+		fmt.Fprintf(w, "\nA person answers first, in Claude Code or in their own terminal: `/sdlc:approve %s`, or `sdlc approve %s`, "+
+			"or `sdlc approve %s --reject \"why\"`.\n", waiting, waiting, waiting)
 	case active != "":
 		fmt.Fprint(w, "\nA person types /sdlc:next in Claude Code to carry on, "+
 			"or runs `sdlc stop` to put it down.\n")
@@ -297,7 +298,7 @@ func notHeldHere(active string, finished bool, holders map[string]store.Holder, 
 	case !h.Live:
 		return "  (" + heldIn(active, h) + ")",
 			"The checkout holding " + active + " is gone: a person moves it here with " +
-				"`sdlc release " + active + " --reason \"...\"` in their own terminal, then `sdlc start " + active + "`."
+				"`/sdlc:release " + active + " --reason \"...\"`, or `sdlc release " + active + " --reason \"...\"` in their own terminal, then `sdlc start " + active + "`."
 	case !h.Here:
 		return "  (" + heldIn(active, h) + ")",
 			"This checkout's copy of " + active + " is stale: a person runs `sdlc stop` here to put it down, " +

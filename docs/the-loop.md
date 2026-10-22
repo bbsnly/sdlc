@@ -54,6 +54,12 @@ A few more words are used with a fixed meaning throughout:
 - **a person**: whoever is at the keyboard. `approve`, `unfreeze` and `ack` are
   theirs alone, and so are a few more commands: see
   [a person's decisions](enforcement.md#a-persons-decisions-refused-in-every-session).
+  Their own terminal is one outside Claude Code: a window they opened
+  themselves. A `!` line typed in a session, a terminal or `tmux` that Claude
+  Code started, and anything a model's tool runs have Claude Code's environment
+  variables, and the person's commands refuse themselves there with
+  [SDLC-E0079](troubleshooting.md#sdlc-e0079). In Claude Code the slash
+  commands are the way.
 - **the conversation** (also called the assistant): the main Claude Code
   session that runs the skill and hands each gate to an agent.
 
@@ -693,7 +699,7 @@ Where the step cannot be made, **the landing stands**. The stop exits 0, prints
 [`SDLC-E0076`](troubleshooting.md#sdlc-e0076) as a warning with what was in the
 way, and keeps the sections: the kept change the messages speak of is the
 stored set, the same file. Every `sdlc` command then says the story's map
-change is waiting, until a person runs `sdlc remap <ID>` in their own terminal.
+change is waiting, until a person runs `/sdlc:remap <ID>`, or `sdlc remap <ID>` in their own terminal.
 The plain form makes the change where it still applies. `--replace` puts the
 kept sections over what trunk holds under their headings, and `--drop` discards
 them with no commit. The command is a person's because it chooses between two

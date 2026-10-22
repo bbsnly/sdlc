@@ -57,6 +57,9 @@ type remapPayload struct {
 }
 
 func runRemap(cmd *cobra.Command, id string, replace, drop bool) error {
+	if err := refuseInsideClaudeCode(cmd, "/sdlc:remap"); err != nil {
+		return err
+	}
 	s, _, unlock, err := openStoreForWriting(cmd)
 	if err != nil {
 		return err
@@ -154,8 +157,8 @@ func putKept(cmd *cobra.Command, s *store.Store, id, form string, replace bool) 
 	if record.CodemapCommit != "" {
 		return nothing("its record names " + record.CodemapCommit[:12] + " as the commit that put its change on " + trunk +
 			"; what is still kept " + keptAt(s, id) + " is left over from it").
-			WithFix(`a person, in their own terminal, removes the leftover file with "sdlc remap ` + id +
-				` --drop", which commits nothing; there is nothing else to do`)
+			WithFix(`a person removes the leftover file with "/sdlc:remap ` + id + ` --drop", or "sdlc remap ` + id +
+				` --drop", typing the first in Claude Code or running the second in their own terminal; it commits nothing; there is nothing else to do`)
 	}
 	step := mapStep{s: s, root: s.Root(), trunk: trunk, id: id, by: form, replace: replace, kept: keptAt(s, id)}
 	commit, what, failed := step.run(cmd.Context())
@@ -164,8 +167,9 @@ func putKept(cmd *cobra.Command, s *store.Store, id, form string, replace bool) 
 		return sdlcerr.New(sdlcerr.MapSectionsRefused,
 			"the sections kept for "+id+" are not a set that can be put into "+codemap,
 			causeOf(failed.err)+". They were changed after they were stored, and nothing was committed").
-			WithFix("put right the file kept " + step.kept + ` and run "sdlc remap ` + id +
-				`" again, or discard it with "sdlc remap ` + id + ` --drop"`)
+			WithFix("put right the file kept " + step.kept + ` and run the step again with "/sdlc:remap ` + id +
+				`", or "sdlc remap ` + id + `"; or discard it with "/sdlc:remap ` + id + ` --drop", or "sdlc remap ` +
+				id + ` --drop"`)
 	case failed != nil:
 		return step.notOnTrunk(failed)
 	case commit == "":

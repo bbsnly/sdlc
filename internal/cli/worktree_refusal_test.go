@@ -235,7 +235,13 @@ func TestAC9AWorktreeOfARepositoryWithNoMainCheckoutIsRefusedWithSDLCE0052(t *te
 		{"approve", "US-001"},
 	} {
 		t.Run("AC-9 "+strings.Join(args, " "), func(t *testing.T) {
-			if out := wtRefused(t, wtNoMainCheckout, wt, wtSessionWorktree, "", args...); !strings.Contains(strings.ToLower(out), "bare") {
+			// approve is a person's, run from a terminal: from a session it is
+			// refused before the repository is read (US-108 AC-15).
+			session := wtSessionWorktree
+			if args[0] == "approve" {
+				session = ""
+			}
+			if out := wtRefused(t, wtNoMainCheckout, wt, session, "", args...); !strings.Contains(strings.ToLower(out), "bare") {
 				t.Errorf("the refusal does not say the repository is bare:\n%s", out)
 			}
 			if wtExists(filepath.Join(wt, ".sdlc", "stories")) {

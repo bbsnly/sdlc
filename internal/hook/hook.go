@@ -9,7 +9,18 @@
 // installed for every session, and in any other one the hook holds no turn open
 // and says nothing at all. It refuses nothing there but a person's decisions, in
 // a project that takes part: acknowledging the log, and approving work handed
-// over or lifting the freeze while a story has one waiting.
+// over or lifting the freeze while a story has one waiting. With them go the two
+// ways round a person's slash commands: writing the person's Claude Code
+// configuration, and starting a second Claude Code session that could type one.
+//
+// It also runs those slash commands. When a person types one of the plugin's,
+// the hook runs the command it stands for and shows what it printed, and the
+// text of the command never reaches the model (slash.go). A model's shell that
+// runs the hook on that event itself, on a payload it wrote, is refused as a
+// person's decision: the hook cannot tell that run from Claude Code's by its
+// payload. By its own environment it can, for a spelling that rule cannot read:
+// a hook that has AI_AGENT, which Claude Code sets for a model's tools alone,
+// answers that a typed person's command did not run.
 //
 // It fails open. An error -- an unreadable payload, a missing configuration, a
 // path that cannot be resolved -- ends in "carry on". In the session working a
@@ -27,6 +38,13 @@
 // round every rule with nothing said. A call the hook knows it checks, and has
 // not decided by its own deadline, is refused. What is left is a hook killed
 // before it knows whether it checks the call: that one still goes through.
+//
+// And except for a slash command a person typed. Carrying on there hands the
+// command's text to the model, which is told only to say that the command did
+// not run; a person who typed /sdlc:approve and saw nothing would not know that.
+// So a command the hook could not run, its own panic included, is answered with
+// a block that says it did not run and what to do. Nothing is decided either
+// way: a block stops only the model reading the command.
 package hook
 
 import (
@@ -116,8 +134,14 @@ type payload struct {
 }
 
 // Run dispatches a hook event. args is everything after the `hook` verb, so
-// args[0] is the event name.
+// args[0] is the event name. It has no way to run a slash command, and says
+// that one typed did not run; cmd/sdlc calls RunWith.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
+	return RunWith(args, stdin, stdout, stderr, getenv, nil)
+}
+
+// runOnTheClock is run on the process's own clock.
+func runOnTheClock(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
 	return run(args, stdin, stdout, stderr, getenv, clock{
 		now:   time.Now,
 		after: time.After,
@@ -143,7 +167,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	// unread can give the caller a broken pipe. One byte past the bound is read,
 	// so that a payload cut off there is known to be one.
 	raw, _ := io.ReadAll(io.LimitReader(stdin, maxPayload+1))
-	if len(args) == 0 {
+	// SessionStart runs the launcher, which fetches the plugin's own sdlc where
+	// it has none, and asks nothing of the loop: it is answered before anything
+	// is looked for.
+	if len(args) == 0 || args[0] == "SessionStart" {
 		return emit(stdout, Allow())
 	}
 
@@ -369,7 +396,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 		// held in could otherwise approve it or lift its freeze. Where no story
 		// has one waiting, that is refused nobody. The command is read before the
 		// project's state, which is read only for a decision on a story.
-		if rest := humanDecisionsOnly(getenv, p); rest != nil {
+		if rest := humanDecisionsOnly(getenv, p, path); rest != nil {
 			return rest, event, true
 		}
 		return nil, event, false
@@ -395,6 +422,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 			// Asked only of a path inside the project, and only where the
 			// repository has another checkout that could be nested in it.
 			OtherCheckout: !outside && nestedCheckout(placeOf(project), path, p.CWD),
+			ClaudeConfig:  newClaudeConfig(getenv, project).holds(writtenAt(p, path, project)),
 			Story:         story,
 			Tests:         testState(project, story, rel, warn),
 			Backlog:       backlogPath(project),
@@ -411,11 +439,13 @@ func unreadableBecause(raw []byte) string {
 	return "it is not valid JSON"
 }
 
-// humanDecisionsOnly is the rest of the decision for a command in a project
-// that takes part when the session holds no story, and nil for any other call.
-func humanDecisionsOnly(getenv func(string) string, p payload) func(context.Context) outcome {
+// humanDecisionsOnly is the rest of the decision for a call in a project that
+// takes part when the session holds no story: a command, and a file tool's
+// write to the person's Claude Code configuration, path being the file it
+// writes. It is nil for any other call.
+func humanDecisionsOnly(getenv func(string) string, p payload, path string) func(context.Context) outcome {
 	if !shellpolicy.Tools[p.ToolName] {
-		return nil
+		return claudeConfigWrite(getenv, p, path)
 	}
 	projects := loopProjects(getenv, p)
 	if len(projects) == 0 {
@@ -425,11 +455,86 @@ func humanDecisionsOnly(getenv func(string) string, p payload) func(context.Cont
 	// checks, whoever's session it is from.
 	return func(context.Context) outcome {
 		waits := storyWaits(getenv, p, projects)
-		if f, refused := shellpolicy.HumanDecisions(p.ToolInput.Command, p.ToolName == toolPowerShell, waits); refused {
+		powerShell := p.ToolName == toolPowerShell
+		if f, refused := shellpolicy.HumanDecisions(p.ToolInput.Command, powerShell, waits); refused {
+			return outcome{verdict: policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, ok: true}
+		}
+		// Read from the first project the call is in, which is the session's
+		// own where Claude Code names one.
+		project := projects[0]
+		cfg := newClaudeConfig(getenv, project)
+		state := shellpolicy.State{
+			Dir:  commandDir(pathrules.NewResolver(project).Memoised(), p.CWD),
+			Root: filepath.ToSlash(project), PowerShell: powerShell,
+			ClaudeConfig: cfg.word, ClaudeConfigHeld: cfg.heldWord,
+		}
+		if f, refused := shellpolicy.ClaudeConfigWrites(p.ToolInput.Command, state); refused {
 			return outcome{verdict: policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, ok: true}
 		}
 		return outcome{verdict: policy.Allowed}
 	}
+}
+
+// claudeConfigWrite is the rest of the decision for a file tool's write to the
+// person's Claude Code configuration from a session that holds no story, and
+// nil for any other write. The configuration is asked about first, so that an
+// ordinary write costs no look for a project; and which project takes part is
+// read from the session and where the call runs, never from the file, so a
+// write there is judged by the project the session is in.
+func claudeConfigWrite(getenv func(string) string, p payload, path string) func(context.Context) outcome {
+	switch p.ToolName {
+	case "Write", "Edit", "MultiEdit", "NotebookEdit":
+	default:
+		return nil
+	}
+	abs := writtenAt(p, path, "")
+	if !newClaudeConfig(getenv, "").holds(abs) || len(loopProjects(getenv, p)) == 0 {
+		return nil
+	}
+	return func(context.Context) outcome {
+		return outcome{ok: true, verdict: policy.Evaluate(policy.Request{
+			Tool: p.ToolName, Agent: p.AgentType, Path: filepath.ToSlash(abs), Outside: true, ClaudeConfig: true,
+		})}
+	}
+}
+
+// writtenAt is the absolute path a file tool writes: path itself, or path
+// below where the call runs, or below base where the call names nowhere. ""
+// where it cannot be placed.
+func writtenAt(p payload, path, base string) string {
+	if path == "" {
+		return ""
+	}
+	if filepath.IsAbs(path) {
+		return path
+	}
+	if p.CWD != "" {
+		base = p.CWD
+	}
+	if base == "" {
+		return ""
+	}
+	if abs, ok := pathrules.Abs(base, path); ok {
+		return abs
+	}
+	return ""
+}
+
+// commandDir is where a command starts, as shellpolicy.State.Dir has it:
+// relative to the project, empty for its root, and absolute where the
+// session is outside it, so that a commit made there is known to be another
+// repository's.
+func commandDir(resolver pathrules.Resolver, cwd string) string {
+	if cwd == "" {
+		return ""
+	}
+	switch rel, outside := resolver.Rel(cwd); {
+	case outside:
+		return filepath.ToSlash(cwd)
+	case rel != ".":
+		return rel
+	}
+	return ""
 }
 
 // backlogPath is the backlog file as the configuration names it,
@@ -509,15 +614,7 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	// them down the same directories, and the disk does not change while one
 	// command is judged.
 	resolver := pathrules.NewResolver(project).Memoised()
-	dir := ""
-	if p.CWD != "" {
-		switch rel, outside := resolver.Rel(p.CWD); {
-		case outside:
-			dir = filepath.ToSlash(p.CWD)
-		case rel != ".":
-			dir = rel
-		}
-	}
+	dir := commandDir(resolver, p.CWD)
 	// Created just before the parse, and started only at the first git call.
 	// The cancel it returns is not kept: the budget has to outlive this
 	// function for the record, and it ends with ctx, which is run's to cancel.
@@ -542,6 +639,7 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	// The disk is asked about a path only where a rule would let a word go for
 	// being outside the repository, and about each directory once.
 	out := newOutsider(func() []string { return checkoutSet(pl, resolver).Checkouts })
+	cfg := newClaudeConfig(getenv, project)
 	fresh := sync.OnceValues(func() (bool, string) { return reviewsFresh(pl, story, warn, budget) }) //nolint:contextcheck // reviewsFresh takes the command's lazily started budget, not ctx: the deadline must begin at the first git call
 	// internal/tools/hooktime builds this State a second time, to hold Inspect
 	// to a time (`./task hook-time`): nothing here can be called from outside
@@ -566,6 +664,10 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 		// the environment Claude Code runs the session's commands with.
 		Carried:   getenv,
 		Checkouts: func() shellpolicy.CheckoutSet { return checkoutSet(pl, resolver) },
+		// Where the person's Claude Code configuration is, worked out at the
+		// first word a command writes.
+		ClaudeConfig:     cfg.word,
+		ClaudeConfigHeld: cfg.heldWord,
 	}
 	// The repository's other checkouts are held as this one is. Where it is
 	// the only one, nothing is asked and nothing changes.

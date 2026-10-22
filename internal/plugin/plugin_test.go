@@ -123,7 +123,11 @@ func TestEveryAgentAndSkillIsUsable(t *testing.T) {
 
 // humanOnlySkills are the skills only a person starts. The docs promise it of
 // each of them, and every other skill is one the model has to be able to start.
-var humanOnlySkills = map[string]bool{"next": true, "trunk-review": true, "consolidate": true}
+// A person's slash commands (US-108 AC-2) are among them.
+var humanOnlySkills = map[string]bool{
+	"next": true, "trunk-review": true, "consolidate": true,
+	"approve": true, "unfreeze": true, "ack": true, "remap": true, "release": true, "assign": true,
+}
 
 // The hook holds only the session `sdlc start` recorded. Where Claude Code does
 // not tell a command which session it runs in, start records none, and a
@@ -236,6 +240,9 @@ func TestAHumanOnlySkillKeepsWhatItPromises(t *testing.T) {
 			"Apply it only on a yes, and only that one",
 			"A proposal that loosens a check says so first",
 		},
+	}
+	for _, s := range personsSkills {
+		promises[s.name] = personsSkillPromises(s)
 	}
 	for name := range humanOnlySkills {
 		if _, ok := promises[name]; !ok {

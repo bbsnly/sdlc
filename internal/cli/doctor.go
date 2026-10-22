@@ -327,7 +327,7 @@ func (p *stateProbe) readFreeze() {
 	lock, err := p.s.Lock()
 	if err != nil {
 		p.problem(err.Error(), "every test is treated as frozen until .sdlc/state/tests.lock reads: "+
-			`restore it if you keep a copy, or lift it on the record with "sdlc unfreeze --reason ..." `+
+			`restore it if you keep a copy, or lift it on the record with "/sdlc:unfreeze", or "sdlc unfreeze --reason ..." `+
 			`in your own terminal and run "sdlc freeze", which freezes the tests as they are now`)
 		return
 	}
@@ -342,7 +342,7 @@ func (p *stateProbe) readFreeze() {
 	if at, standing := record.StandingFreeze(); standing {
 		p.problem("the tests for "+active+" were frozen at "+at+", and .sdlc/state/tests.lock no longer holds that freeze",
 			"every test is treated as frozen until it does: restore it if you keep a copy, or lift the "+
-				`freeze on the record with "sdlc unfreeze --reason ..." in your own terminal and run "sdlc freeze"`)
+				`freeze on the record with "/sdlc:unfreeze", or "sdlc unfreeze --reason ..." in your own terminal and run "sdlc freeze"`)
 	}
 }
 
@@ -366,7 +366,7 @@ func (p *stateProbe) readAcknowledged(ctx context.Context) {
 	}
 	if _, err := gitx.Resolve(ctx, p.s.Root(), named); gitx.NamesNoCommit(err) {
 		p.problem(store.AcknowledgedFile+" names "+quote(named)+", which is no commit in this repository",
-			`"sdlc log" refuses to start until it does: run "sdlc ack --through <commit>" in your own `+
+			`"sdlc log" refuses to start until it does: run "/sdlc:ack", or "sdlc ack --through <commit>" in your own `+
 				"terminal, or remove the file to list every story")
 	}
 }
