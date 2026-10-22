@@ -1364,3 +1364,85 @@ helpers of `codemap_test.go` (`cmStopped`, `cmRefusedRepair`, `cmUnchanged`)
 or call `mapStep.run`, `mapAt` and `keptAt` from inside the package. The ones
 that make a directory read-only (`cxReadOnly`) skip on Windows and where the
 user can write in it all the same, as root can.
+
+## Person-only slash commands and Claude Code's environment (US-108)
+
+Two independent ways a person's decision reaches `sdlc` from inside Claude
+Code, and a third that keeps a model from forging either.
+
+**The slash command.** `plugin/hooks/hooks.json` registers the launcher on
+`UserPromptExpansion` for the sixteen names of `plugin/skills/{approve,
+unfreeze,ack,remap,release,assign,init,doctor}`, each as `sdlc:<name>` and
+bare. `hook.RunWith` (`internal/hook/slash.go`) routes on the event word
+`args[0]`, never on the payload's `hook_event_name`, because the shell rule
+in `shellpolicy/forgedhook.go` reads that word alone. `answerExpansion`
+acts only on a plugin-sourced `slash_command` with no `agent_type`
+(`expansion.typed`); anything else is answered `{"continue":true}`.
+`typedCommand` is the fixed table from name to argv prefix (`assign` is
+`staffing assign`); `splitTyped` reads `command_args` as words with no shell
+expansion. `runTyped` runs it through a `Runner`, the signature of
+`cli.ExecuteIn` that `cmd/sdlc/main.go` hands over (`hook` does not import
+`cli`), from the payload's `cwd` and an environment with
+`store.ClaudeCodeMarkers()` blanked, and answers `{"decision":"block","reason":
+<output>}`: the one place the hook answers its own failure with a block
+(`runGuarded` recovers a panic and says the command did not run). A hook
+whose environment has `AI_AGENT` (`store.AgentEnv`) runs nothing but `init`
+and `doctor`. The skills of the six decisions carry
+`disable-model-invocation` and only report that the command did not run.
+
+**The marker check.** `store.ClaudeCodeMarkers()` returns a copy of the five
+variables Claude Code sets for processes it starts. `refuseInsideClaudeCode`
+(`internal/cli/inclaudecode.go`, SDLC-E0079) is the first thing `approve`,
+`unfreeze`, `ack`, `remap`, `release`, `parallel` and `staffing assign` do;
+it reads through `envOf(cmd).getenv`, never `os.Getenv`. `internal/testenv`
+clears `CLAUDECODE` and `AI_AGENT` as well as the `SDLC_`, `CLAUDE_` and
+`GIT_` names. SDLC-E0061 and E0074 still fire first for `parallel` and
+`staffing assign` where the session id is set.
+
+**Refusals in the hook for a model.** `shellpolicy/forgedhook.go`
+(`checkHandRunHook`, rule `slash-command-is-a-human-decision`) refuses the
+hook or the launcher run by hand on `UserPromptExpansion` or on an event it
+cannot read, in Bash, PowerShell and cmd; a script run under `sh` is read a
+second time with its substitutions kept (`programScan.script`, runs marked
+`extra`). `shellpolicy/claudeconfig.go` holds `checkClaudeConfig` (rule
+`claude-config-is-the-persons`, a write to `~/.claude`, `~/.claude.json` or
+`CLAUDE_CONFIG_DIR`) and `checkSecondSession` (rule
+`story-stays-in-its-session`, a `claude` started that would expand a
+person's command); `ClaudeConfigWrites` runs the first alone for a session
+that holds no story. The shell's `State` gains `ClaudeConfig` and
+`ClaudeConfigHeld`, set by `internal/hook/claudeconfig.go` (`claudeConfig.
+holds`, `above`, `word`, `heldWord`) and stubbed false in
+`internal/tools/hooktime`. `internal/policy` has the file-tool rule of the
+same name, first in `Rules`.
+
+**Firmlink.** `pathrules/firmlink_darwin.go` `withoutFirmlink` takes
+`/System/Volumes/Data` off a path, in any case, only where the deepest
+existing part is the same file both ways; `firmlink_other.go` returns the
+path as it is. `hook/claudeconfig.go` has a `withoutFirmlink` of its own that
+takes the prefix off whatever follows, since there that can only add
+refusals.
+
+**The launcher.** `plugin/bin/sdlc-hook` and `sdlc-hook.cmd` mirror each
+other. On a `SessionStart` with `SDLC_BIN` unset and no `bin/sdlc` they read
+the version from `plugin.json`, find the archive's sha256 in
+`plugin/checksums.txt` (a copy of one release's `checksums.txt`, pinned
+before any request), download only that archive with curl, verify, and
+install the binary; the Go binary makes no network call. Every other event
+`exec`s the binary found.
+
+**Docs.** `docs/claude-desktop.md` is the setup page; `docs/enforcement.md`
+lists, for each route to a person-only decision, whether SDLC-E0079
+refuses it or it is not caught, and `internal/cli/notcaught_docs_test.go`
+reads it.
+
+**Tests.** `internal/cli/inclaudecode_test.go`; `internal/hook/
+{slashcommands,inclaudecode,forgedhook,claudeconfig,firmlink,dottedhome}_test.go`;
+`internal/shellpolicy/{claudeconfig,claudeconfigbranches,claudeconfigunits,
+forgedhook,splitclaude}_test.go`; `internal/pathrules/firmlink_test.go`;
+`internal/plugin/{desktop,personsskills}_test.go`;
+`internal/sdlcerr/{inclaudecode,personscommands}_test.go`;
+`internal/testenv/testenv_claudecode_test.go`; `cmd/sdlc/hookgolden_test.go`
+with `testdata/hook-replies.golden` (the hook's stdout, held byte for byte);
+`test/e2e/{slashcommands,inclaudecode,forgedhook,desktopdocs}_test.go`;
+`test/install/launcher_test.go`, which runs both launchers against a local
+`httptest` mirror.
