@@ -60,3 +60,7 @@ Thumbs.db
 /npm/checksums.txt
 /npm/LICENSE
 /npm/*.tgz
+
+# A local, browser-only viewer for the backlog above. A developer's own tool,
+# not part of the product, so it stays out of the repository.
+/backlog-board.html
