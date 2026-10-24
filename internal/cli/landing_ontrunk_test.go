@@ -16,7 +16,9 @@ package cli
 // The AC numbers in this file are US-088's; landing_test.go's are US-029.3's.
 // Everything here reads what a caller can see, as landing_test.go does: what
 // a command printed and how it exited, git's own answers, the record and the
-// backlog on disk. No test names a function the story has still to add.
+// backlog on disk. No test names a function the story has still to add, but
+// AC-13, which US-107 extended: it pauses one stop and gives the other a clock
+// through the seams landing_lockwait_test.go describes.
 //
 // A repository here has a committer of its own in its configuration, as a
 // project a person commits in has: the binary's own replay of the story's
@@ -39,6 +41,7 @@ import (
 
 	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
@@ -761,35 +764,109 @@ func otStop(dir, session string) result {
 // where the first's ends. Trunk had moved before either stop, so each has its
 // commits to put onto it and the commands to run, and the two overlap.
 //
+// US-107: under the full race suite one stop could hold the loop's state past
+// the whole ten seconds the other waits for it, and the other was refused with
+// SDLC-E0006, which the runbook answers by stopping again. So does this test,
+// saying so and counting (US-107 AC-2), and it shows the case it answers
+// without loading the machine and without a clock on the wall: the first stop
+// is paused as it begins to land, holding the loop's state, while the
+// second's wait runs out on a clock the test gives it (US-107 AC-1).
+//
 // Nothing here waits on a clock: both stops are let go by one channel, and the
 // criterion holds however the two then fall, so the outcome is the same for
 // every interleaving.
 func TestAC13TwoStoriesStoppedAtTheSameMomentBothLandOneAfterTheOther(t *testing.T) {
 	t.Parallel()
-	main := lxRepository(t, nil, nil, wtStory{id: "US-001"}, wtStory{id: "US-002"})
-	otIdentity(t, main)
-	first := ldFinished(t, main)
-	second := otSecondStory(t, main)
-	moved := ldMoveTrunk(t, main)
-
-	stops := []struct{ dir, session string }{{first, ldSession}, {second, otSecondSession}}
-	results := make([]result, len(stops))
-	gun := make(chan struct{})
-	var wg sync.WaitGroup
-	for i, s := range stops {
-		wg.Go(func() {
-			<-gun
-			results[i] = otStop(s.dir, s.session)
-		})
-	}
-	close(gun)
-	wg.Wait()
-
-	for i, r := range results {
-		if r.code != 0 {
-			t.Errorf("the stop in %s exited %d, want both stories landed:\n%s%s", stops[i].dir, r.code, r.stdout, r.stderr)
+	t.Run("US-107 AC-2 both stops let go by one channel land, each refused for the loop's state run again and counted", func(t *testing.T) {
+		t.Parallel()
+		main, first, second, moved := otTwoFinished(t)
+		stops := []struct{ story, dir, session string }{{"US-001", first, ldSession}, {"US-002", second, otSecondSession}}
+		results := make([]result, len(stops))
+		again := make([]int, len(stops))
+		gun := make(chan struct{})
+		var wg sync.WaitGroup
+		for i, s := range stops {
+			wg.Go(func() {
+				<-gun
+				results[i], again[i] = lwStopAgain(t, s.story, func(int) result { return otStop(s.dir, s.session) })
+			})
 		}
-	}
+		close(gun)
+		wg.Wait()
+
+		t.Logf("US-107 AC-2: the two stops were run again %d times in all for the loop's state held past the wait (%s %d, %s %d)",
+			again[0]+again[1], stops[0].story, again[0], stops[1].story, again[1])
+		for i, r := range results {
+			if r.code != 0 {
+				t.Errorf("the stop in %s exited %d after it was run again %d times, want both stories landed:\n%s%s",
+					stops[i].dir, r.code, again[i], r.stdout, r.stderr)
+			}
+		}
+		otBothLanded(t, main, moved, false)
+	})
+
+	t.Run("US-107 AC-1 AC-2 the first stop holds the loop's state past the whole wait of the second", func(t *testing.T) {
+		t.Parallel()
+		main, first, second, moved := otTwoFinished(t)
+		held := lwPausedStop(t, first, ldSession, nil)
+		held.waitReached(t)
+
+		clock := newLWClock()
+		var waitedOut, firstStop result
+		last, again := lwStopAgain(t, "US-002", func(try int) result {
+			if try == 0 {
+				waitedOut = lwStop(second, otSecondSession, clock, nil)
+				return waitedOut
+			}
+			// Run again once the stop in front has finished, as a session
+			// does: it was the stop in front that held the state.
+			if try == 1 {
+				firstStop = held.result(t)
+			}
+			return otStop(second, otSecondSession)
+		})
+
+		if !lwWaitedOut(waitedOut) {
+			t.Fatalf("the second stop, waiting on its own clock while the first held the loop's state, exited %d, "+
+				"want it refused with %s %q:\n%s%s", waitedOut.code, sdlcerr.StateUnwritable, lwStillRunning, waitedOut.stdout, waitedOut.stderr)
+		}
+		if doc, _ := lwRefusalOf(waitedOut); !strings.Contains(doc.Why, "`sdlc stop`") || !strings.Contains(doc.Why, "longer than 10s") {
+			t.Errorf("the second stop's refusal says %q, want the first stop named as holding the state for longer than 10s", doc.Why)
+		}
+		if clock.sleeps() == 0 {
+			t.Error("the second stop never slept on the clock it was given")
+		}
+		if again != 1 {
+			t.Errorf("the second stop was run again %d times, want once: refused while the first held the state, and landed after", again)
+		}
+		if firstStop.code != 0 {
+			t.Errorf("the first stop exited %d once let go, want US-001 landed:\n%s%s", firstStop.code, firstStop.stdout, firstStop.stderr)
+		}
+		if last.code != 0 {
+			t.Errorf("the second stop, run again, exited %d, want US-002 landed:\n%s%s", last.code, last.stdout, last.stderr)
+		}
+		otBothLanded(t, main, moved, true)
+	})
+}
+
+// otTwoFinished is the repository of AC-13: US-001 and US-002 each finished in
+// a worktree of its own, begun before either landed, on a trunk that moved
+// since; and where trunk was before the stops.
+func otTwoFinished(t *testing.T) (main, first, second, moved string) {
+	t.Helper()
+	main = lxRepository(t, nil, nil, wtStory{id: "US-001"}, wtStory{id: "US-002"})
+	otIdentity(t, main)
+	first = ldFinished(t, main)
+	second = otSecondStory(t, main)
+	return main, first, second, ldMoveTrunk(t, main)
+}
+
+// otBothLanded is what AC-13 requires once both stops have run: trunk
+// descends from moved in one line and holds both stories' files, both are
+// done, and their records name one landed on moved and the other on top of it,
+// up to trunk's tip. Where inOrder, US-001 is the one that landed on moved.
+func otBothLanded(t *testing.T, main, moved string, inOrder bool) {
+	t.Helper()
 	tip := ldTrunk(t, main)
 	if _, ok := swGitTry(t, main, "merge-base", "--is-ancestor", moved, tip); !ok {
 		t.Fatalf("trunk at %s does not descend from %s, where it was before the stops", tip[:12], moved[:12])
@@ -809,11 +886,12 @@ func TestAC13TwoStoriesStoppedAtTheSameMomentBothLandOneAfterTheOther(t *testing
 		}
 	}
 	a, b := swRecord(t, main, "US-001"), swRecord(t, main, "US-002")
-	if b.CommitBase == moved {
+	if !inOrder && b.CommitBase == moved {
 		a, b = b, a
 	}
 	if a.CommitBase != moved || a.Commit == "" || b.CommitBase != a.Commit || b.Commit != tip {
-		t.Errorf("the records name %s..%s and %s..%s, want one story landed on %s and the other on top of it, up to %s",
+		t.Errorf("the records name %s..%s and %s..%s, want US-001 landed on %s and US-002 on top of it, "+
+			"or the other way about where the test chose no order, up to %s",
 			a.CommitBase, a.Commit, b.CommitBase, b.Commit, moved, tip)
 	}
 }

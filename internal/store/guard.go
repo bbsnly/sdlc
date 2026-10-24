@@ -109,14 +109,41 @@ var held = struct {
 	guards map[*Guard]struct{}
 }{guards: map[*Guard]struct{}{}}
 
-// Lock takes the project's loop-state lock, waiting for whoever has it.
+// Clock is the time a wait for a lock is measured on. It is for the wait alone:
+// a lock's age, its holder's liveness and its heartbeat stay on the real clock,
+// because a clock that ran ahead there would break open a lock whose holder is
+// alive, and one of the two commands' changes would be lost -- the bug the lock
+// exists to prevent.
+type Clock interface {
+	Now() time.Time
+	Sleep(d time.Duration)
+}
+
+type realClock struct{}
+
+func (realClock) Now() time.Time        { return time.Now() }
+func (realClock) Sleep(d time.Duration) { time.Sleep(d) }
+
+// Lock takes the project's loop-state lock, waiting for whoever has it, on the
+// real clock. See LockOn.
 //
 // It is the project that is locked, not one file: a command changes the gate
 // record, the backlog and the active marker together, and a reader that saw one
 // of those without the others would see a story that never existed.
 func Lock(root, what string) (*Guard, error) {
+	return LockOn(root, what, nil)
+}
+
+// LockOn is Lock with the wait measured on clock, where nil is the real one. It
+// exists so that a test can show a lock held past the whole wait without
+// spending the wait: under load a real ten seconds is too short a margin for a
+// test that only needs the wait to run out, and too long to spend on every one.
+func LockOn(root, what string, clock Clock) (*Guard, error) {
+	if clock == nil {
+		clock = realClock{}
+	}
 	path := guardPath(root)
-	return take(path, what, guardWait, func() error {
+	return take(path, what, guardWait, clock, func() error {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"another sdlc command is still running",
 			heldBy(path)+" has held the loop's state for longer than "+
@@ -139,7 +166,7 @@ func (s *Store) LockLanding(id string) (*Guard, error) {
 	}
 	project := guardPath(s.LockRoot())
 	path := project + "-landing-" + id
-	return take(path, "stop "+id, 0, func() error {
+	return take(path, "stop "+id, 0, realClock{}, func() error {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"another sdlc stop is landing "+id,
 			heldBy(path)+" holds the lock at "+sdlcerr.QuotePath(path)+", and a story is landed by one stop at a time").
@@ -167,7 +194,7 @@ func (s *Store) LockLandings(id string, wait time.Duration) (*Guard, error) {
 	}
 	project := guardPath(s.LockRoot())
 	path := project + "-landing"
-	return take(path, "stop "+id, wait, func() error {
+	return take(path, "stop "+id, wait, realClock{}, func() error {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"another story is still landing",
 			heldBy(path)+" holds the landing lock at "+sdlcerr.QuotePath(path)+", and stories land on trunk one at a time").
@@ -191,15 +218,15 @@ type landingHeldError struct{}
 func (landingHeldError) Error() string { return "another stop holds the landing lock" }
 
 // take takes the lock at path, waiting up to wait for whoever has it, and
-// returns busy's refusal once it has waited that long.
-func take(path, what string, wait time.Duration, busy func() error) (*Guard, error) {
+// returns busy's refusal once it has waited that long, as clock counts it.
+func take(path, what string, wait time.Duration, clock Clock, busy func() error) (*Guard, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, sdlcerr.New(sdlcerr.StateUnwritable,
 			"the lock directory could not be created",
 			filepath.Dir(path)+" is not writable").WithCause(err)
 	}
 
-	start := time.Now()
+	start := clock.Now()
 	for {
 		err := mkdir(path, 0o755)
 		if err == nil {
@@ -216,10 +243,10 @@ func take(path, what string, wait time.Duration, busy func() error) (*Guard, err
 		if !denied && breakIfStale(path) {
 			continue
 		}
-		if err := waitedTooLong(path, err, denied, time.Since(start), wait, busy); err != nil {
+		if err := waitedTooLong(path, err, denied, clock.Now().Sub(start), wait, busy); err != nil {
 			return nil, err
 		}
-		time.Sleep(guardPoll)
+		clock.Sleep(guardPoll)
 	}
 }
 

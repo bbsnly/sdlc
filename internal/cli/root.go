@@ -163,6 +163,14 @@ type commandEnv struct {
 	dir    string
 	dirErr error
 	getenv func(string) string
+	// lockClock, where set, is the clock every wait of this run for the project's
+	// lock is measured on; nil is the real clock. Only this package's tests set it.
+	lockClock store.Clock
+	// pauseLanding, where set, is called by a landing once, as land() begins:
+	// after waitItsTurn and LockLanding, so with the project's lock, the landing
+	// lock and the story's landing lock all held, before readyToMove. nil does
+	// nothing. Only this package's tests set it.
+	pauseLanding func()
 }
 
 type commandEnvKey struct{}
@@ -315,7 +323,7 @@ func openStoreForWriting(cmd *cobra.Command) (*store.Store, *config.Project, fun
 	}
 	// One lock for every checkout of the repository: they share one backlog,
 	// and two checkouts starting at once took a lock each and the same story.
-	g, err := store.Lock(s.LockRoot(), strings.TrimPrefix(cmd.CommandPath(), "sdlc "))
+	g, err := store.LockOn(s.LockRoot(), strings.TrimPrefix(cmd.CommandPath(), "sdlc "), envOf(cmd).lockClock)
 	if err != nil {
 		return nil, nil, nothing, err
 	}

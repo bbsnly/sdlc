@@ -18,16 +18,19 @@ package e2e
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
 // ontoRepository is storyRepository with the loop's state ignored, commands
@@ -257,6 +260,13 @@ func TestAC8ASessionsStopLandsItsStoryOnATrunkThatMovedWithNoRebaseByHand(t *tes
 // commits to put onto trunk and the commands to run. Both exit 0 and trunk
 // holds the commits of both. One channel lets both go; nothing waits on a
 // clock, and the criterion holds however the two then fall.
+//
+// US-107 AC-2: on a loaded machine one stop can hold the loop's state past the
+// whole ten seconds the other waits for it, and the other is refused with
+// SDLC-E0006, saying another sdlc command is still running. The runbook
+// answers that by stopping again, up to three times, and so does this test,
+// saying so and counting. US-107 AC-1, that first stop held past the wait, is
+// shown in process, in internal/cli, where the test can pause it.
 func TestAC13TwoSessionsStoppingAtTheSameMomentBothLand(t *testing.T) {
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
@@ -270,28 +280,26 @@ func TestAC13TwoSessionsStoppingAtTheSameMomentBothLand(t *testing.T) {
 	writeFile(t, filepath.Join(main.dir, "CHANGES.md"), "a person's work\n")
 	moved := commitPaths(t, main.dir, "a person commits", "CHANGES.md")
 
-	type result struct {
-		out bytes.Buffer
-		err error
-	}
-	results := make([]*result, len(stories))
-	gun := make(chan struct{})
-	var wg sync.WaitGroup
-	for i, s := range stories {
-		results[i] = &result{}
-		cmd := s.here().command(t, "", "stop")
-		cmd.Stdout, cmd.Stderr = &results[i].out, &results[i].out
-		wg.Go(func() {
-			<-gun
-			results[i].err = cmd.Run()
-		})
-	}
-	close(gun)
-	wg.Wait()
+	results := make([]ontoStopped, len(stories))
+	t.Run("US-107 AC-2 each stop refused for the loop's state is run again, said and counted", func(t *testing.T) {
+		gun := make(chan struct{})
+		var wg sync.WaitGroup
+		for i, s := range stories {
+			wg.Go(func() {
+				<-gun
+				results[i] = ontoStopAgain(t, s)
+			})
+		}
+		close(gun)
+		wg.Wait()
+		t.Logf("US-107 AC-2: the two stops were run again %d times in all for the loop's state held past the wait (%s %d, %s %d)",
+			results[0].again+results[1].again, stories[0].story, results[0].again, stories[1].story, results[1].again)
+	})
 
 	for i, r := range results {
-		if r.err != nil {
-			t.Errorf("the stop of %s failed (%v), want both stories landed:\n%s", stories[i].story, r.err, r.out.String())
+		if r.code != 0 {
+			t.Errorf("the stop of %s exited %d after it was run again %d times, want both stories landed:\n%s",
+				stories[i].story, r.code, r.again, r.said)
 		}
 	}
 	tip := landTrunk(t, main)
@@ -312,6 +320,105 @@ func TestAC13TwoSessionsStoppingAtTheSameMomentBothLand(t *testing.T) {
 		if status != "done" {
 			t.Errorf("%s is %s after both stops, want done", id, status)
 		}
+	}
+}
+
+// ontoTries is how many times a stop refused for the loop's state is run
+// again: the runbook's "stop again, up to three times"
+// (plugin/skills/next/SKILL.md).
+const ontoTries = 3
+
+// ontoStillRunning is the first line of the one refusal a stop is run again
+// for: the project's lock, held by another command past the whole wait.
+const ontoStillRunning = "sdlc: another sdlc command is still running"
+
+// ontoStopped is a session's `sdlc stop`, after it was run again as often as
+// it was: both streams of the last run, its exit code, and how many times it
+// was run again.
+type ontoStopped struct {
+	said  string
+	code  int
+	again int
+}
+
+// ontoWaitedOut reports whether a stop that exited code, saying stderr, was
+// refused because another command held the loop's state past the whole wait:
+// SDLC-E0006, saying another sdlc command is still running. Nothing else. The
+// same code refuses a landing still running after eight minutes and a second
+// stop of a story already landing, and running either again would hide what
+// went wrong.
+func ontoWaitedOut(stderr string, code int) bool {
+	lines := strings.Split(stderr, "\n")
+	coded := slices.ContainsFunc(lines, func(line string) bool {
+		fields := strings.Fields(line)
+		return len(fields) > 0 && fields[0] == sdlcerr.StateUnwritable.String()
+	})
+	return code == 1 && coded && slices.Contains(lines, ontoStillRunning)
+}
+
+// ontoStopAgain runs `sdlc stop` in the story's worktree from its session, and
+// where it is refused because another command held the loop's state past the
+// wait, runs it again, up to ontoTries times, saying so each time.
+func ontoStopAgain(t *testing.T, s *ontoStory) ontoStopped {
+	t.Helper()
+	var r ontoStopped
+	for {
+		cmd := s.here().command(t, "", "stop")
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		r.code = exitCodeOf(cmd.Run())
+		r.said = stdout.String() + stderr.String()
+		if r.again == ontoTries || !ontoWaitedOut(stderr.String(), r.code) {
+			return r
+		}
+		r.again++
+		t.Logf("US-107 AC-2: the stop of %s was refused with %s, another command holding the loop's state past the whole wait; "+
+			"as the runbook allows, it is run again, time %d of at most %d:\n%s",
+			s.story, sdlcerr.StateUnwritable, r.again, ontoTries, stderr.String())
+	}
+}
+
+// exitCodeOf is the exit code of a command that ran, and -1 for one that could
+// not be run at all.
+func exitCodeOf(err error) int {
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return 0
+	case errors.As(err, &exit):
+		return exit.ExitCode()
+	}
+	return -1
+}
+
+// US-107 AC-2: the binary's stop is run again for SDLC-E0006 saying another
+// command is still running, as sdlc prints it, and for nothing else: not the
+// same code for a landing that outran the eight-minute wait, for another stop
+// landing the same story, or for one landing another story; not the same words
+// under another code; not a stop that landed or could not be run.
+func TestUS107AC2OnlyAStopRefusedForTheLoopsStateHeldPastTheWaitIsRunAgain(t *testing.T) {
+	refused := func(code sdlcerr.Code, what string) string {
+		return sdlcerr.New(code, what, "the reason").WithFix("the fix").Render()
+	}
+	for _, tc := range []struct {
+		name   string
+		stderr string
+		code   int
+		again  bool
+	}{
+		{"the loop's state held past the wait", refused(sdlcerr.StateUnwritable, "another sdlc command is still running"), 1, true},
+		{"a landing still running after eight minutes", refused(sdlcerr.StateUnwritable, "another story was still landing after 8 minutes"), 1, false},
+		{"another stop landing the same story", refused(sdlcerr.StateUnwritable, "another sdlc stop is landing US-001"), 1, false},
+		{"another story landing", refused(sdlcerr.StateUnwritable, "another story is still landing"), 1, false},
+		{"the same words under another code", refused(sdlcerr.LandingCheckFailed, "another sdlc command is still running"), 1, false},
+		{"a stop that landed", "", 0, false},
+		{"a stop that could not be run", refused(sdlcerr.StateUnwritable, "another sdlc command is still running"), -1, false},
+	} {
+		t.Run("US-107 AC-2 "+tc.name, func(t *testing.T) {
+			if got := ontoWaitedOut(tc.stderr, tc.code); got != tc.again {
+				t.Errorf("run again = %v, want %v for a stop that exited %d saying:\n%s", got, tc.again, tc.code, tc.stderr)
+			}
+		})
 	}
 }
 

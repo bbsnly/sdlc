@@ -459,7 +459,7 @@ func landingTurn(cmd *cobra.Command, s *store.Store, id string, unlock *func(), 
 		}
 		return nil, false, err
 	}
-	g, err := store.Lock(s.LockRoot(), w.command)
+	g, err := store.LockOn(s.LockRoot(), w.command, envOf(cmd).lockClock)
 	if err != nil {
 		return turn, true, err
 	}
@@ -596,6 +596,12 @@ func claimedHere(s *store.Store, id string) bool {
 // land is L1 to L12, once L0 has found the story to land and its lock is held.
 func (l *lander) land() error {
 	ctx := l.cmd.Context()
+	// A test seam: it lets a test hold a landing, with all three locks taken, for
+	// as long as it needs, so that another command's wait for the project's lock
+	// runs out without loading the machine. nil outside tests.
+	if pause := envIn(ctx).pauseLanding; pause != nil {
+		pause()
+	}
 	st, err := l.readyToMove(ctx)
 	if err != nil {
 		return l.refused(err)
@@ -1490,7 +1496,7 @@ func (l *lander) runLandingCommands(ctx context.Context, st landState) error {
 			return err
 		}
 	}
-	g, err := store.Lock(l.s.LockRoot(), "stop")
+	g, err := store.LockOn(l.s.LockRoot(), "stop", envIn(ctx).lockClock)
 	if err != nil {
 		return err
 	}
