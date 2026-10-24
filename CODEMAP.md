@@ -1493,3 +1493,8 @@ word whose `**` has a `..` after it.
 worktrees fix and SDLC-E0053 (`noConfigOnTrunk`) tell a person to commit.
 `internal/cli/instructions.go` `instructionsCheck` reads Claude Code's Project
 instructions setting, only where the section is in `AGENTS.md` alone.
+
+`docs/the-agents.md` (renamed from `docs/agents.md`, which `AGENTS.md`'s
+any-case match would have held) describes the plugin's agents; links to the
+old name are rewritten in `README.md`, `docs/README.md`, `docs/enforcement.md`
+and the guides. `docs/enforcement.md` lists the two new rule ids.
