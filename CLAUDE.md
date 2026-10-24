@@ -34,8 +34,10 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
 - Dependency direction: `cmd/sdlc` → `cli`, `hook` → `store`, `scaffold`, `policy`,
   `shellpolicy`, `testset` → `config`, `model` → `pathrules`, `sdlcerr`, and the leaves (`fsx`,
   `gitx`, `shellx`, `logging`, `version`). `parallel` sits beside `store`: only `cli` imports it,
-  and it imports `shellpolicy`, `model`, `sdlcerr` and `shellx`. Never upward, and `cli` and
-  `hook` never import each other. Nothing enforces this but review.
+  and it imports `shellpolicy`, `model`, `sdlcerr` and `shellx`. `guard` sits between `cli`,
+  `hook` and the layer below: both import it, it imports `store`, `policy`, `shellpolicy` and
+  `testset`, and it never imports `cli` or `hook`. Never upward, and `cli` and `hook` never
+  import each other. Nothing enforces this but review.
 - `cmd/sdlc/main.go` stays a dispatcher. Behaviour goes in a package under `internal/`.
 - Stdout is a protocol surface: the hook's stdout is JSON that Claude Code parses. Diagnostics go
   through `internal/logging` to stderr or a file, never stdout.
@@ -79,6 +81,9 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
 - Text a user reads changes together with the docs that quote it; `docs/` reproduces command
   output, and `linkcheck` holds the links.
 - Conventional Commits, checked by CI on the subject line. Commits are small and go to trunk.
+- Scout rule: a story leaves what it touches better than it found it. A finding raised in its
+  reviews is fixed in the story or declined with a reason on the record, never deferred to a
+  follow-up story; a defect noticed in a file the story changes is fixed there too.
 - Nothing from `plan/`, and no path from anyone's machine, goes into a tracked file;
   `./task no-internal-docs` refuses it.
 
