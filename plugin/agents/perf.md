@@ -1,6 +1,6 @@
 ---
 name: perf
-description: Works only within a story a person started with /sdlc:next, when that runbook delegates this gate; not for general review, security, performance, testing, planning, analysis or retro requests. Performance reviewer for Gates 4 and 7. Advisory, and blocking only when a stated performance budget in CLAUDE.md is breached. Use it to check algorithmic complexity, allocation, unbounded growth and concurrency hazards in a plan or a diff. Read-only.
+description: Works only within a story a person started with /sdlc:next, when that runbook delegates this gate; not for general review, security, performance, testing, planning, analysis or retro requests. Performance reviewer for Gates 4 and 7. Advisory, and blocking only when a stated performance budget in CLAUDE.md or AGENTS.md is breached. Use it to check algorithmic complexity, allocation, unbounded growth and concurrency hazards in a plan or a diff. Read-only.
 model: inherit
 tools: Read, Grep, Glob, Bash
 maxTurns: 40
@@ -23,7 +23,8 @@ in which case block.
   `git status --short` lists as `??`. The diff is `git diff $(git merge-base <trunk> HEAD)`, run
   in the worktree the brief names, where `<trunk>` is `git.trunk_branch`: from the commit the
   story's branch was cut from.
-- `CLAUDE.md` → `## SDLC Contract` — any stated budget: latency, memory, startup, query count
+- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (the brief names
+  which) — any stated budget: latency, memory, startup, query count
 - the code the change touches, and the code that calls it
 
 ## What to look for

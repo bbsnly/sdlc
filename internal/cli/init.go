@@ -32,11 +32,12 @@ func newInitCmd() *cobra.Command {
 		Short: "Set this repository up to run the loop",
 		Long: "init writes the four files a project needs to take part in the loop:\n" +
 			"its configuration, the story schema, a starter backlog, and the contract\n" +
-			"section the assistant reads from CLAUDE.md.\n\n" +
+			"section the assistant reads from CLAUDE.md, or from AGENTS.md where there is\n" +
+			"no CLAUDE.md, or CLAUDE.md is a link to it.\n\n" +
 			"It reads the repository first and fills in commands that match it, so the\n" +
 			"configuration works before you edit it. It never overwrites your backlog or\n" +
-			"a CLAUDE.md you have already filled in, and it writes no .gitignore: what a\n" +
-			"project commits is the project's decision.",
+			"a CLAUDE.md or AGENTS.md you have already filled in, and it writes no\n" +
+			".gitignore: what a project commits is the project's decision.",
 		Example: "  sdlc init\n  sdlc init --force   # restore the default settings, keeping your stories",
 		Args:    cobra.NoArgs,
 		RunE:    func(cmd *cobra.Command, _ []string) error { return runInit(cmd, force) },

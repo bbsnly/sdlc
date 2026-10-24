@@ -42,10 +42,11 @@ func orEvasionsRefused(t *testing.T, links map[string]string, rows []orEvasionRo
 	t.Helper()
 	for _, agent := range orWho {
 		for _, row := range rows {
-			t.Run(agent+" from "+row.dir+" "+row.command, func(t *testing.T) {
-				f, ok := Inspect(row.command, orState(agent, row.dir, links))
+			check := func(t *testing.T, command string, s State) {
+				t.Helper()
+				f, ok := Inspect(command, s)
 				if !ok {
-					t.Fatalf("allowed: %s", row.command)
+					t.Fatalf("allowed: %s", command)
 				}
 				if row.rule != "" && agent == "" {
 					if f.Rule != row.rule {
@@ -56,6 +57,12 @@ func orEvasionsRefused(t *testing.T, links map[string]string, rows []orEvasionRo
 				if !slices.Contains(fileRules, f.Rule) {
 					t.Errorf("refused by %s, want one of %v: %s", f.Rule, fileRules, f.Reason)
 				}
+			}
+			t.Run(agent+" from "+row.dir+" "+row.command, func(t *testing.T) {
+				s := orState(agent, row.dir, links)
+				check(t, row.command, s)
+				// US-023 AC-5: the row again, for AGENTS.md.
+				alsoRefusedAsAgents(t, row.command, s, []string{row.rule}, check)
 			})
 		}
 	}

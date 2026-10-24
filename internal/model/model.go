@@ -348,6 +348,16 @@ type Artifact struct {
 // here rather than in the store because the rules that protect it need it too.
 const RecordFile = "gate-record.json"
 
+// InstructionFiles are the files Claude Code, and the agent tools that read
+// AGENTS.md, load as instructions. Both rule packages hold them at any depth
+// in the project, and the instructions-above-the-project rule holds them in
+// every directory above it.
+var InstructionFiles = []string{"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md"}
+
+// InstructionPaths adds the two directories those tools load settings and
+// skills from, which the rules hold at any depth as well.
+var InstructionPaths = append([]string{".claude", ".agents"}, InstructionFiles...)
+
 // Artifacts is every document the loop knows how to store.
 var Artifacts = []Artifact{
 	{Name: "analysis", File: "ANALYSIS.md", Gate: GateAnalysis, Role: roleResearcher},

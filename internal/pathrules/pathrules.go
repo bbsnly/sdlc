@@ -623,6 +623,10 @@ func Fold(p string) string {
 		// On NTFS `name::$DATA` is the file's own content under another
 		// spelling, so it is that file.
 		part = strings.TrimSuffix(part, "::$data")
+		// And `name::$INDEX_ALLOCATION`, or `name:$I30:$INDEX_ALLOCATION`,
+		// is the directory itself: the spelling of Git's CVE-2019-1352.
+		part = strings.TrimSuffix(part, ":$i30:$index_allocation")
+		part = strings.TrimSuffix(part, "::$index_allocation")
 		if trimmed := strings.TrimRight(part, ". "); trimmed != "" {
 			parts[i] = trimmed
 		}

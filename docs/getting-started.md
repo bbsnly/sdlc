@@ -102,9 +102,15 @@ few files the loop needs:
 | `user_stories.json` | your backlog, with one example story in it |
 | `.sdlc/templates/story.schema.json` | what a story may contain |
 | `CLAUDE.md` | created with a `## SDLC Contract` section, or the section appended if the file exists |
+| `AGENTS.md` | the section appended instead, where the project keeps its instructions there and has no `CLAUDE.md` |
 
 `init` never overwrites your own files, so it is safe to run in a repository
-that already has a `CLAUDE.md`.
+that already has a `CLAUDE.md` or an `AGENTS.md`. Where there is an `AGENTS.md`
+and no `CLAUDE.md`, `sdlc init` appends the section to `AGENTS.md` and creates
+no `CLAUDE.md`, because Claude Code reads `AGENTS.md` only where there is no
+`CLAUDE.md`. [Adding sdlc to an existing
+project](guides/adding-to-an-existing-project.md#a-project-that-keeps-agentsmd)
+says more.
 
 If `init` says no stack was recognised, the commands in `.sdlc/config.json` are
 empty, and you will need to fill in at least `test` and `lint` yourself.
@@ -120,7 +126,8 @@ how.
 
 ### Fill in the contract
 
-The `## SDLC Contract` section that `init` added to your `CLAUDE.md` is where
+The `## SDLC Contract` section that `init` added to your `CLAUDE.md` (or your
+`AGENTS.md`) is where
 you tell the reviewers what good looks like in your project. Most fields start
 as `TBD`, and the design reviewer and the code reviewer check the work against
 what you write there. A contract full of `TBD` gives them nothing to hold the
@@ -139,6 +146,9 @@ Next, commit the contract together with everything `init` wrote:
 $ git add .sdlc user_stories.json CLAUDE.md
 $ git commit -m "Set up the sdlc loop"
 ```
+
+Where `init` wrote the section to `AGENTS.md`, add `AGENTS.md` in place of
+`CLAUDE.md`.
 
 > [!WARNING]
 > Do not skip this commit. Each story is worked on in a worktree of its own (a
@@ -300,7 +310,7 @@ Now that your first story is under way, you may be wondering what to read
 next. If you would like to understand how the loop works, start here:
 
 - [The loop](the-loop.md): what each gate is for and what it produces
-- [Agents](agents.md): who does the work at each gate
+- [Agents](the-agents.md): who does the work at each gate
 - [Enforcement](enforcement.md): what the hook holds the agent to, and why
 
 If you would rather get on with your own project, these guides cover the jobs

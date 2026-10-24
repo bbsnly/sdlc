@@ -24,8 +24,8 @@ you through putting the loop on such a repository.
 
 The short version is reassuring. `sdlc init` adds a few files and appends one
 section to your `CLAUDE.md`. It does not change your code, your tests, your
-build or your `.gitignore`, and it does not overwrite a `CLAUDE.md` or a
-backlog you already have. Along the way you will run `sdlc init`, commit what it
+build or your `.gitignore`, and it does not overwrite a `CLAUDE.md`, an
+`AGENTS.md` or a backlog you already have. Along the way you will run `sdlc init`, commit what it
 wrote, check what it guessed with `sdlc doctor`, fill in the contract the
 reviewers hold the work to, and decide what else belongs in version control.
 
@@ -69,6 +69,7 @@ if you later run `sdlc init --force`:
 | `.sdlc/templates/story.schema.json` | written | rewritten |
 | `user_stories.json` | written with one example story, unless it exists | kept |
 | `CLAUDE.md` | created, or the `## SDLC Contract` section appended | section appended only if missing |
+| `AGENTS.md` | the section appended in place of `CLAUDE.md`, where there is no `CLAUDE.md` or it links to `AGENTS.md` | section appended only if missing |
 
 `init` writes no `.gitignore`. What a project commits and ignores is the
 project's decision, and [Deciding what to commit](#deciding-what-to-commit)
@@ -124,6 +125,63 @@ If you want a fresh start, `--force` replaces every other setting with its
 default, but keeps where your stories are and what your trunk branch is
 called: those describe the repository rather than tune the loop. The backlog it
 keeps, or writes if it is missing, is the one at the `backlog.path` you had.
+
+### A project that keeps AGENTS.md
+
+Claude Code reads `AGENTS.md` only where there is no `CLAUDE.md`, from version
+2.1.277 on. So where the repository has an `AGENTS.md` and no `CLAUDE.md`,
+`sdlc init` appends the section to `AGENTS.md` and creates no `CLAUDE.md`,
+which would hide your `AGENTS.md` from Claude Code:
+
+```console
+  created  AGENTS.md (appended to)
+```
+
+Where your `CLAUDE.md` is a link to `AGENTS.md`, `init` appends to `AGENTS.md`
+and keeps the link, and says `AGENTS.md (appended to; CLAUDE.md links to it)`.
+Where `AGENTS.md` is itself a link, to a file shared between projects, `init`
+writes a file of the project's own in its place and leaves the shared one
+alone: `AGENTS.md (appended to a copy of the file it linked to, which is
+unchanged)`. `init` writes nothing outside the project. Where either file
+already carries the section, it changes neither.
+
+`sdlc doctor` then says Claude Code reads the section there:
+
+```console
+  ok       project contract     AGENTS.md carries the "## SDLC Contract" section and there is no CLAUDE.md, so Claude Code 2.1.277 or later reads it
+```
+
+Whether Claude Code reads `AGENTS.md` at all is its Project instructions
+setting, which you change with `/config` in Claude Code. Its default,
+`claude-md-or-agents-md`, reads it; `claude-md` and `managed-only` do not. In
+this layout `doctor` adds a `project instructions` check, which reads the
+setting from your user settings only, never writes it, and says that managed
+settings, which an organisation sets, were not checked.
+
+A project that has both files keeps the section in one of them. With it in
+`AGENTS.md`, `CLAUDE.md` needs a line `@AGENTS.md`, outside any code block,
+for Claude Code to read it, and `doctor` reports it until it has one:
+
+```console
+  problem  project contract     AGENTS.md carries the "## SDLC Contract" section, but Claude Code reads CLAUDE.md in its place, and CLAUDE.md does not import it
+                                fix: add a line @AGENTS.md to CLAUDE.md, outside any code block
+```
+
+With the line in place:
+
+```console
+  ok       project contract     AGENTS.md carries the "## SDLC Contract" section, and CLAUDE.md imports it with an @AGENTS.md line
+```
+
+A `CLAUDE.local.md` at the root is read in place of `AGENTS.md` too, so it
+needs the same `@AGENTS.md` line, or can be a link to `AGENTS.md`. A `CLAUDE.md`
+that imports `AGENTS.md` is enough even beside a `CLAUDE.local.md` without the
+line, because Claude Code reaches `AGENTS.md` through the import, and `doctor`
+reports that layout as ok.
+
+A link in place of a file needs Developer Mode on Windows, or an administrator,
+and git checks a link out as a plain file where it cannot make one. That is why
+the `@AGENTS.md` line, which works everywhere, is the advice for Windows.
 
 ## Commit the setup
 

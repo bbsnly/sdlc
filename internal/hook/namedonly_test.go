@@ -77,6 +77,13 @@ func namedRun(t *testing.T, rows []namedRow) {
 	root := namedProject(t)
 	for _, c := range rows {
 		t.Run(c.name, func(t *testing.T) { c.check(t, root) })
+		// US-023 AC-5: the row again, for AGENTS.md.
+		agAgentsMD(t, c.command, []string{root}, func(t *testing.T, respelt string) {
+			t.Helper()
+			r := c
+			r.command = respelt
+			r.check(t, root)
+		})
 	}
 }
 

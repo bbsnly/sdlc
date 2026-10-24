@@ -21,7 +21,8 @@ finding, a gate that always needs a second round, a lesson written down three
 times and never acted on.
 
 The `/sdlc:consolidate` skill turns that into changes to how your project runs
-the loop: the `## SDLC Contract` section of `CLAUDE.md`, and
+the loop: the `## SDLC Contract` section of `CLAUDE.md`, or of `AGENTS.md` where
+the project keeps it there, and
 `.sdlc/config.json`. It proposes the changes, and you decide which of them
 happen. Nothing is edited until you say so.
 
@@ -94,8 +95,10 @@ The assistant goes through the contract and configuration proposals one at a
 time, shows you the exact change, and applies only the ones you confirm. Each
 decision is written back into the proposals file.
 
-It changes lines inside the `## SDLC Contract` section and nothing else in
-`CLAUDE.md`. In `.sdlc/config.json` it changes one key at a time, running
+It changes lines inside the `## SDLC Contract` section and nothing else in the
+file that holds it, `CLAUDE.md` or `AGENTS.md`. Where both files carry a
+section, it changes neither and sends you to `sdlc doctor`, which says which one
+to remove. In `.sdlc/config.json` it changes one key at a time, running
 `sdlc doctor` before the first and after each, so that only a problem the edit
 caused is put down to it.
 
@@ -109,15 +112,15 @@ through ends the editing, and the decisions left go in the session instead.
 
 ### Committing what it wrote
 
-Everything it writes is left uncommitted. An edit to `CLAUDE.md` stops the next
-`sdlc start` until it is committed. The proposals file and an edited
+Everything it writes is left uncommitted. An edit to `CLAUDE.md` or `AGENTS.md`
+stops the next `sdlc start` until it is committed. The proposals file and an edited
 `.sdlc/config.json` do not, and the next story's commit takes them in with its
 own work, so commit them, or set them aside, before the next story starts.
 
 ## What it never does
 
 It writes only the proposals file, the `## SDLC Contract` section of
-`CLAUDE.md` and `.sdlc/config.json`. Three things are off the table, whatever
+`CLAUDE.md` or `AGENTS.md`, and `.sdlc/config.json`. Three things are off the table, whatever
 the retros say:
 
 - **Edit the plugin.** A change the agents, skills or hooks need comes out as
@@ -126,7 +129,7 @@ the retros say:
   the next update would put it back.
 - **Pin a model.** It never proposes a model or a reasoning effort for an agent
   or in the configuration. The agents inherit your session's model on purpose;
-  see [Models](../agents.md#models).
+  see [Models](../the-agents.md#models).
 - **Guess from one story.** A single retro is an anecdote, and a contract rule
   written from one tends to be the wrong rule.
 

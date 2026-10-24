@@ -143,6 +143,8 @@ func state(dir string, powerShell bool) shellpolicy.State {
 		// the home is, and this leg times the classifier that asks it.
 		ClaudeConfig:     func(string) bool { return false },
 		ClaudeConfigHeld: func(string) bool { return false },
+		AgentsConfig:     func(string) bool { return false },
+		AgentsConfigHeld: func(string) bool { return false },
 	}
 }
 

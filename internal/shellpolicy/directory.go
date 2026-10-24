@@ -3,6 +3,7 @@ package shellpolicy
 import (
 	"path"
 	"strings"
+	"unicode"
 
 	"github.com/bbsnly/sdlc/internal/pathrules"
 )
@@ -28,7 +29,12 @@ func takenAway(words []string) []string {
 	case "rmdir", "rd", "del", "erase":
 		return args
 	case "mv", "move", "move-item", "mi", "ren", "rename", "rename-item", "rni":
-		return sources(args)
+		// A bundle that ends in t is read both ways; see bundleTarget.
+		from := sources(args)
+		if bundled, _, ok := bundleTarget(base(words[0]), args); ok {
+			from = append(from, bundled...)
+		}
+		return from
 	case "trash", "trash-put", "gvfs-trash":
 		// A directory moved to the trash, with no -r asked for, is gone from
 		// where it was as much as one rm -rf removed.
@@ -257,17 +263,24 @@ func sources(args []string) []string {
 
 // moveArguments are what a copy or move takes from, where it puts them, and
 // whether that was given as an option.
+//
+// A start of --target-directory, at least `--t`, is read as getopt reads it,
+// with `=` or the next word: `--target=internal` names the directory as
+// surely as the whole option does.
 func moveArguments(args []string) (from []string, to string, target bool) {
 	for i := 0; i < len(args); i++ {
-		switch a := args[i]; {
-		case a == "-t" || a == "--target-directory" || strings.EqualFold(a, "-Destination"):
+		a := args[i]
+		option, value, glued := strings.Cut(a, "=")
+		long := strings.HasPrefix(a, "--") && abbreviates(option, "--target-directory")
+		switch {
+		case a == "-t" || long && !glued || strings.EqualFold(a, "-Destination"):
 			target = true
 			if i+1 < len(args) {
 				to = args[i+1]
 			}
 			i++
-		case strings.HasPrefix(a, "--target-directory="):
-			target, to = true, strings.TrimPrefix(a, "--target-directory=")
+		case long:
+			target, to = true, value
 		case strings.HasPrefix(a, "-t"):
 			target, to = true, a[len("-t"):]
 		case len(a) > len(destinationColon) && strings.EqualFold(a[:len(destinationColon)], destinationColon):
@@ -281,6 +294,60 @@ func moveArguments(args []string) (from []string, to string, target bool) {
 		from, to = from[:len(from)-1], from[len(from)-1]
 	}
 	return from, to, target
+}
+
+// bundleTarget is a second reading of a cp, mv, ln or install whose options
+// hold a bundle of letters that ends in t (`-Ct dir`, `-svt dir`, `mv -ft
+// dir`): GNU reads the t as -t, whose value is the next word, the target, and
+// every other operand as a source. ok is false where there is no such bundle,
+// and for every other name: PowerShell takes a parameter by any unique start
+// (`-PassT` is -PassThru), and cmd's copy and move have no -t.
+//
+// It is a second reading and not a better first one, because the t can be
+// another option's value: BSD install reads `-bBt` as -b and `-B t`, a backup
+// suffix, and installs into the last operand, and GNU's -S takes a value the
+// same way. The hook cannot know which program is on PATH, so the callers
+// that read what is written read both answers, which only add words. It
+// rests on t being the only letter of GNU cp, mv, ln and install that takes a
+// directory; a program added to these callers inherits the reading. copies
+// (outside.go) is the deliberate exception: it places a copy only for the
+// outside-repository rule, and keeps the release's one reading through
+// moveArguments so that rule answers a bundle as the released tool does.
+func bundleTarget(name string, args []string) (from []string, to string, ok bool) {
+	switch name {
+	case "cp", "mv", "ln", "install":
+	default:
+		return nil, "", false
+	}
+	options := true
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case options && a == "--":
+			options = false
+		case options && tBundle(a) && i+1 < len(args):
+			to, ok = args[i+1], true
+			i++
+		case options && strings.HasPrefix(a, "-"):
+		default:
+			from = append(from, a)
+		}
+	}
+	return from, to, ok
+}
+
+// tBundle reports whether a word is one dash and two or more letters, letters
+// only, the last a t.
+func tBundle(a string) bool {
+	if len(a) < 3 || a[0] != '-' || a[len(a)-1] != 't' {
+		return false
+	}
+	for _, c := range a[1:] {
+		if !unicode.IsLetter(c) {
+			return false
+		}
+	}
+	return true
 }
 
 // holding is a frozen path inside the directory word names. The project's own

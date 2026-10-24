@@ -34,12 +34,14 @@ var ccSettings = []string{
 // ccDocURL is what the last line of every block starts with.
 const ccDocURL = "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#"
 
-// ccDoc is `_doc` as the template wrote it before the story. It stays as it was
-// (ANALYSIS.md section 1a, answer 2).
+// ccDoc is `_doc` as the template writes it. US-002 kept it as it was
+// (ANALYSIS.md section 1a, answer 2); US-023's second decision has it name
+// AGENTS.md beside CLAUDE.md, and the rest stays.
 var ccDoc = []string{
 	"This is the machine-readable half of your project's contract with the loop.",
-	"The other half is the '## SDLC Contract' section of your CLAUDE.md: rules a",
-	"script cannot check, written for the assistant to read.",
+	"The other half is the '## SDLC Contract' section of your CLAUDE.md, or of your",
+	"AGENTS.md where the project keeps its instructions there: rules a script",
+	"cannot check, written for the assistant to read.",
 	"Nothing here starts the loop: a person does, by typing /sdlc:next in Claude Code.",
 	"",
 	"Commands run from the repository root. Leave one empty to skip that step.",

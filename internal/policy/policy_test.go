@@ -31,6 +31,19 @@ var fixtures = map[string]fixture{
 		denies:  Request{Tool: "Write", Path: "home/.claude/settings.json", Outside: true, ClaudeConfig: true, Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc:implementer", Path: "internal/x.go", Story: "A-1"},
 	},
+	// US-023 AC-11: a write under the person's ~/.agents, which other agent
+	// tools load skills from. agWithAgentsConfig sets the field the story adds.
+	"agents-config-is-the-persons": {
+		denies:  agWithAgentsConfig(Request{Tool: "Write", Path: "home/.agents/skills/x/SKILL.md", Outside: true, Story: "A-1"}),
+		permits: Request{Tool: "Write", Agent: "sdlc:implementer", Path: "internal/x.go", Story: "A-1"},
+	},
+	// US-023 AC-13: a write to an instruction file in a directory above the
+	// project, which Claude Code loads in every session started below it.
+	// agWithAboveProject sets the field the story adds.
+	"instructions-above-the-project": {
+		denies:  agWithAboveProject(Request{Tool: "Write", Path: "/home/u/CLAUDE.md", Outside: true, Story: "A-1"}),
+		permits: Request{Tool: "Write", Agent: "sdlc:implementer", Path: "internal/x.go", Story: "A-1"},
+	},
 	"write-protected-path": {
 		denies:  Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/state/active", Story: "A-1"},
 		permits: Request{Tool: "Edit", Agent: "sdlc-researcher", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
@@ -267,15 +280,33 @@ func TestOnlyWritingToolsAreGoverned(t *testing.T) {
 	}
 }
 
+// protectedPathRows are paths nobody writes during an iteration. US-023 asks
+// the same of each with AGENTS.md and .agents for CLAUDE.md and .claude.
+var protectedPathRows = []string{
+	".git/config", ".git/hooks/pre-commit",
+	".claude/settings.json",
+	"CLAUDE.md",
+	".sdlc/config.json",
+	".sdlc/state/active", ".sdlc/state/tests.lock",
+	".sdlc/claude-progress.json",
+}
+
+// prefixRows only start with a protected name.
+var prefixRows = []string{".gitignore", ".claude-code-version", "CLAUDE.md.bak", ".sdlc-notes"}
+
+// caseRows are protected paths in another case.
+var caseRows = []string{
+	".SDLC/state/active",
+	".Sdlc/state/Active",
+	".sdlc/Config.json",
+	"claude.md",
+	"Claude.MD",
+	".GIT/config",
+	".Claude/settings.json",
+}
+
 func TestProtectedPathsAreProtectedFromEveryone(t *testing.T) {
-	for _, path := range []string{
-		".git/config", ".git/hooks/pre-commit",
-		".claude/settings.json",
-		"CLAUDE.md",
-		".sdlc/config.json",
-		".sdlc/state/active", ".sdlc/state/tests.lock",
-		".sdlc/claude-progress.json",
-	} {
+	for _, path := range protectedPathRows {
 		for _, agent := range []string{"", "sdlc-researcher", "sdlc-implementer", "sdlc-sdet"} {
 			got := Evaluate(Request{Tool: "Write", Agent: agent, Path: path, Story: "A-1"})
 			if got.Allowed {
@@ -287,7 +318,7 @@ func TestProtectedPathsAreProtectedFromEveryone(t *testing.T) {
 
 // A path that merely starts with the same letters is a different path.
 func TestProtectionIsDirectoryAwareNotPrefixAware(t *testing.T) {
-	for _, path := range []string{".gitignore", ".claude-code-version", "CLAUDE.md.bak", ".sdlc-notes"} {
+	for _, path := range prefixRows {
 		got := Evaluate(Request{Tool: "Write", Agent: "sdlc-implementer", Path: path, Story: "A-1"})
 		if !got.Allowed {
 			t.Errorf("%s was refused by %s, but it is not a protected path", path, got.Rule)
@@ -567,15 +598,7 @@ func TestANewTestAfterTheFreezeFollowsTheProjectsSetting(t *testing.T) {
 // `claude.md` and `.GIT/config`, all of which are the same files the rule
 // above refuses.
 func TestAProtectedPathIsProtectedWhateverTheCase(t *testing.T) {
-	for _, path := range []string{
-		".SDLC/state/active",
-		".Sdlc/state/Active",
-		".sdlc/Config.json",
-		"claude.md",
-		"Claude.MD",
-		".GIT/config",
-		".Claude/settings.json",
-	} {
+	for _, path := range caseRows {
 		t.Run(path, func(t *testing.T) {
 			v := Evaluate(Request{Tool: "Write", Agent: "implementer", Story: "US-1", Path: path})
 			if v.Allowed {

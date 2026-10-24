@@ -13,7 +13,8 @@ changes is theirs to decide.
 In the project you may write three files, and nothing else:
 
 - `.sdlc/consolidation-<YYYY-MM-DD>.md`, the proposals;
-- the `## SDLC Contract` section of the project's `CLAUDE.md`, and only that section;
+- the `## SDLC Contract` section of the project's `CLAUDE.md`, or of its `AGENTS.md` where the
+  project keeps the section there, and only that section;
 - `.sdlc/config.json`.
 
 Everything else is read only. Never write under `~/.claude`, and never write under the plugin
@@ -58,9 +59,10 @@ lessons and follow-ups — and from the entry `rounds`, `blocks`, `reopened`, `u
 `escalations` and `spent_usd`. When the entry has `not_in_backlog`, the story has gone from the
 backlog; its retro and record still count.
 
-Then read what the proposals would change: the `## SDLC Contract` section of `CLAUDE.md`, from
-that heading to the next heading of the same level or the end of the file, and
-`.sdlc/config.json`.
+Then read what the proposals would change: the `## SDLC Contract` section in the file that holds
+the section, `CLAUDE.md` or `AGENTS.md`, from that heading to the next heading of the same level or
+the end of the file, and `.sdlc/config.json`. Where both files carry a section, change neither:
+say so, and send the person to `sdlc doctor`, which says which one to remove.
 
 A retro that is only its headings, or a placeholder such as `# Retro`, says nothing. The log
 still counts without one: the same gate reopened, escalations of the same type, or blocks from the
@@ -143,9 +145,9 @@ Apply it only on a yes, and only that one. Before each edit run `sdlc status --j
 `active` now names a story, stop: make no more edits and write nothing more to the proposals
 file, and give the decisions still to record, and the proposals still to apply, in the session.
 
-- **contract**: change only lines inside the `## SDLC Contract` section, and nothing else in
-  `CLAUDE.md`. If the file has no such section, do not write one anywhere: say so, and leave the
-  proposal as text for the person to add.
+- **contract**: change only lines inside the `## SDLC Contract` section, and nothing else in the
+  file that holds it, `CLAUDE.md` or `AGENTS.md`. If neither file has such a section, do not
+  write one anywhere: say so, and leave the proposal as text for the person to add.
 - **config**: before the first config edit, run `sdlc doctor` once and keep what it reports: it
   can report problems the edit has nothing to do with, and ends with a failing exit when it
   finds any. In each config edit, change only that key, keeping the file's formatting and its `_`
@@ -159,8 +161,8 @@ While no story is active, record each decision in the proposals file: `applied`,
 ## Finish
 
 Say what changed — which files, and which proposals — and what did not. The proposals file and
-every edit are uncommitted. An edit to `CLAUDE.md` stops the next `sdlc start` until it is
-committed. The proposals file and an edited `.sdlc/config.json` do not, and the next story's
+every edit are uncommitted. An edit to `CLAUDE.md` or `AGENTS.md` stops the next `sdlc start`
+until it is committed. The proposals file and an edited `.sdlc/config.json` do not, and the next story's
 commit would take them in with its own work. Tell the person to commit them, or set them aside,
 before the next story starts.
 

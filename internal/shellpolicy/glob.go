@@ -112,6 +112,27 @@ func matchShape(pattern []string, shape string) []string {
 	return out
 }
 
+// climbsPastGlobstar reports whether a word, as clean leaves it (which keeps
+// `..`), has a segment that holds `**` and a later segment that is `..`; it
+// is asked of the word with its backslashes taken out as well, since clean
+// reads `.\.` as two names. zsh, and bash with globstar, let `**` stand for
+// no directories, so `/tmp/**/..` can be `/` and what follows it any path;
+// filepath.Clean (inside pathrules.Rel), path.Join and path.Dir each read
+// `**/..` as one name and clean it away, and `/tmp/**/../work/project` was
+// read as /tmp/work/project, outside.
+func climbsPastGlobstar(word string) bool {
+	for _, w := range []string{word, strings.ReplaceAll(word, `\`, "")} {
+		star := false
+		for seg := range strings.SplitSeq(clean(w), "/") {
+			if star && seg == ".." {
+				return true
+			}
+			star = star || strings.Contains(seg, "**")
+		}
+	}
+	return false
+}
+
 // segmentMatches reports whether one segment of a glob matches a name, folded
 // as the filesystem folds it. The shell reads a class as find does, so it is
 // the same reader as find's -name. The shell's `*` and `?` do not match a

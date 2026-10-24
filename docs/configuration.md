@@ -647,7 +647,8 @@ who would rather be refused sooner than wait.
 ## The other half of the contract
 
 `.sdlc/config.json` is what the hooks look for: in a project without it they do
-nothing at all. The other half is a `## SDLC Contract` section in `CLAUDE.md`,
+nothing at all. The other half is a `## SDLC Contract` section in `CLAUDE.md`, or in
+`AGENTS.md` where the project keeps its instructions there,
 on a line of its own. The hooks do not read it, but the agents do, and
 `sdlc doctor` reports a project that has no such section.
 

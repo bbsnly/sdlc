@@ -2,7 +2,7 @@
 //
 // It writes four things: the configuration, the story schema editors validate
 // against, a starter backlog, and the contract section the assistant reads from
-// CLAUDE.md. It writes no .gitignore: what a project commits is the project's
+// CLAUDE.md or AGENTS.md. It writes no .gitignore: what a project commits is the project's
 // decision, and the loop's state is useful in version control for exactly the
 // same reasons the code is. The one exception is .sdlc/state: every story
 // worktree writes its own there, so a story worked in one cannot land on a
@@ -29,8 +29,8 @@ import (
 //go:embed templates
 var templates embed.FS
 
-// ContractHeading is the section of a project's CLAUDE.md that makes it take
-// part. Its presence is half the contract; .sdlc/config.json is the other half.
+// ContractHeading is the section of a project's CLAUDE.md or AGENTS.md that
+// makes it take part. Its presence is half the contract; .sdlc/config.json is the other half.
 const ContractHeading = "## SDLC Contract"
 
 // HasContract reports whether text has the contract heading on a line of its
@@ -50,6 +50,7 @@ func HasContract(text string) bool {
 const (
 	schemaPath   = config.Dir + "/templates/story.schema.json"
 	claudeMDPath = "CLAUDE.md"
+	agentsFile   = "AGENTS.md"
 )
 
 // Result says what init did, in enough detail to print without asking the disk
@@ -63,8 +64,8 @@ type Result struct {
 }
 
 // Init sets up root. It refuses to overwrite an existing configuration unless
-// force is set, and it never overwrites a backlog or a CLAUDE.md: those hold
-// the user's own words.
+// force is set, and it never overwrites a backlog, a CLAUDE.md or an
+// AGENTS.md: those hold the user's own words.
 func Init(root string, force bool) (*Result, error) {
 	return InitAt(root, root, force)
 }
@@ -155,34 +156,84 @@ func (r *Result) write(dir, rel string, data []byte, overwrite bool) error {
 	return nil
 }
 
-// writeContract adds the SDLC Contract section to the project's CLAUDE.md,
-// appending to whatever is already there rather than replacing it. A CLAUDE.md
-// that already has the section is left alone entirely: it has been filled in.
+// writeContract adds the SDLC Contract section to the file Claude Code reads
+// the project's instructions from: CLAUDE.md, or AGENTS.md where there is no
+// CLAUDE.md or CLAUDE.md is a link to it. It appends to whatever is there
+// rather than replacing it, and where either file already has the section
+// neither is touched: it has been filled in.
+//
+// Claude Code reads AGENTS.md only where there is no CLAUDE.md, so a CLAUDE.md
+// created beside one would hide the project's own instructions. Nothing is
+// written through a link: WriteFileAtomic renames over it, so a shared
+// AGENTS.md is never given this project's contract.
 func (r *Result) writeContract(root string) error {
 	contract, err := templates.ReadFile("templates/contract.md")
 	if err != nil {
 		return embedFailure(err)
 	}
-	path := filepath.Join(root, claudeMDPath)
+	claudePath, agentsPath := filepath.Join(root, claudeMDPath), filepath.Join(root, agentsFile)
+	claudeLink, claudeErr := os.Lstat(claudePath)
+	claude, claudeText := RegularFile(claudePath)
+	agents, agentsText := RegularFile(agentsPath)
+	same := claude != nil && agents != nil && os.SameFile(claude, agents)
+	linked := same && claudeLink.Mode()&os.ModeSymlink != 0
 
-	existing, err := os.ReadFile(path)
-	if err == nil {
-		if HasContract(string(existing)) {
-			r.Kept = append(r.Kept, claudeMDPath)
-			return nil
+	switch {
+	case !linked && HasContract(claudeText):
+		r.Kept = append(r.Kept, claudeMDPath)
+		return nil
+	case HasContract(agentsText):
+		r.Kept = append(r.Kept, agentsFile)
+		return nil
+	case linked:
+		return r.appendContract(root, agentsFile, agentsText, contract, agentsNote(agentsPath, "appended to; CLAUDE.md links to it"))
+	case claude != nil:
+		note := "appended to"
+		if same {
+			note = "appended to; it was a hard link to AGENTS.md, which keeps its old text"
 		}
-		var b bytes.Buffer
-		b.Write(existing)
-		if !bytes.HasSuffix(existing, []byte("\n")) {
-			b.WriteString("\n")
-		}
-		b.WriteString("\n")
-		b.Write(contract)
-		return r.writeRaw(root, claudeMDPath, b.Bytes(), "appended to")
+		return r.appendContract(root, claudeMDPath, claudeText, contract, note)
+	case claudeErr != nil && agents != nil:
+		return r.appendContract(root, agentsFile, agentsText, contract, agentsNote(agentsPath, "appended to"))
 	}
-
 	header := "# " + filepath.Base(root) + "\n\n<!-- Project instructions for Claude Code. -->\n\n"
 	return r.writeRaw(root, claudeMDPath, append([]byte(header), contract...), "")
+}
+
+// RegularFile is the file at path and its text, where Stat, following links,
+// says it is a regular file that can be read; nil otherwise.
+func RegularFile(path string) (os.FileInfo, string) {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, ""
+	}
+	text, err := os.ReadFile(path)
+	if err != nil {
+		return nil, ""
+	}
+	return info, string(text)
+}
+
+// agentsNote is note, or what the write did to an AGENTS.md that is a link:
+// put a file of the project's own in its place.
+func agentsNote(path, note string) string {
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return "appended to a copy of the file it linked to, which is unchanged"
+	}
+	return note
+}
+
+// appendContract writes text with the contract after it, a blank line
+// between.
+func (r *Result) appendContract(root, rel, text string, contract []byte, note string) error {
+	var b bytes.Buffer
+	b.WriteString(text)
+	if !strings.HasSuffix(text, "\n") {
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	b.Write(contract)
+	return r.writeRaw(root, rel, b.Bytes(), note)
 }
 
 func (r *Result) writeRaw(root, rel string, data []byte, note string) error {

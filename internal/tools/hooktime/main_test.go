@@ -363,6 +363,13 @@ func TestAC1TheStateIsTheOneTheHookBuildsForAnImplementerUnderAFreeze(t *testing
 			// US-108 AC-7: the person's Claude Code configuration, asked in
 			// every session in a participating project.
 			"ClaudeConfig", "ClaudeConfigHeld",
+			// US-023 AC-11: the person's ~/.agents, asked the same way.
+			"AgentsConfig", "AgentsConfigHeld",
+		}
+		for _, name := range []string{"AgentsConfig", "AgentsConfigHeld"} {
+			if _, ok := reflect.TypeOf(s).FieldByName(name); !ok {
+				t.Errorf("US-023 AC-11 shellpolicy.State has no field %s for the person's ~/.agents", name)
+			}
 		}
 		// IsTest stands in only for a freeze that cannot be read, Shared is set
 		// only where the repository has other checkouts, and Dir is empty for a

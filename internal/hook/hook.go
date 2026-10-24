@@ -409,7 +409,8 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 	}
 
 	return func(context.Context) outcome {
-		rel, outside := pathrules.Rel(project, path)
+		res := pathrules.NewResolver(project)
+		rel, outside := res.Rel(path)
 		slog.Debug("hook considering",
 			"tool", p.ToolName, "agent", p.AgentType, "role", policy.NormalizeAgent(p.AgentType),
 			"path", path, "rel", rel, "outside", outside, "story", story, "project", project)
@@ -423,9 +424,13 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 			// repository has another checkout that could be nested in it.
 			OtherCheckout: !outside && nestedCheckout(placeOf(project), path, p.CWD),
 			ClaudeConfig:  newClaudeConfig(getenv, project).holds(writtenAt(p, path, project)),
-			Story:         story,
-			Tests:         testState(project, story, rel, warn),
-			Backlog:       backlogPath(project),
+			AgentsConfig:  newAgentsConfig(getenv, project).holds(writtenAt(p, path, project)),
+			// rel is the resolved absolute path for a write outside, so a
+			// link on the way to a directory above has been followed.
+			AboveProject: outside && aboveProject(filepath.ToSlash(res.Root()), rel),
+			Story:        story,
+			Tests:        testState(project, story, rel, warn),
+			Backlog:      backlogPath(project),
 		})}
 	}, event, false
 }
@@ -445,7 +450,7 @@ func unreadableBecause(raw []byte) string {
 // writes. It is nil for any other call.
 func humanDecisionsOnly(getenv func(string) string, p payload, path string) func(context.Context) outcome {
 	if !shellpolicy.Tools[p.ToolName] {
-		return claudeConfigWrite(getenv, p, path)
+		return personsConfigWrite(getenv, p, path)
 	}
 	projects := loopProjects(getenv, p)
 	if len(projects) == 0 {
@@ -462,11 +467,12 @@ func humanDecisionsOnly(getenv func(string) string, p payload, path string) func
 		// Read from the first project the call is in, which is the session's
 		// own where Claude Code names one.
 		project := projects[0]
-		cfg := newClaudeConfig(getenv, project)
+		cfg, acfg := newClaudeConfig(getenv, project), newAgentsConfig(getenv, project)
 		state := shellpolicy.State{
 			Dir:  commandDir(pathrules.NewResolver(project).Memoised(), p.CWD),
 			Root: filepath.ToSlash(project), PowerShell: powerShell,
 			ClaudeConfig: cfg.word, ClaudeConfigHeld: cfg.heldWord,
+			AgentsConfig: acfg.word, AgentsConfigHeld: acfg.heldWord,
 		}
 		if f, refused := shellpolicy.ClaudeConfigWrites(p.ToolInput.Command, state); refused {
 			return outcome{verdict: policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, ok: true}
@@ -475,25 +481,28 @@ func humanDecisionsOnly(getenv func(string) string, p payload, path string) func
 	}
 }
 
-// claudeConfigWrite is the rest of the decision for a file tool's write to the
-// person's Claude Code configuration from a session that holds no story, and
-// nil for any other write. The configuration is asked about first, so that an
+// personsConfigWrite is the rest of the decision for a file tool's write to
+// the person's Claude Code configuration or ~/.agents from a session that
+// holds no story, and nil for any other write. The configuration is asked about first, so that an
 // ordinary write costs no look for a project; and which project takes part is
 // read from the session and where the call runs, never from the file, so a
 // write there is judged by the project the session is in.
-func claudeConfigWrite(getenv func(string) string, p payload, path string) func(context.Context) outcome {
+func personsConfigWrite(getenv func(string) string, p payload, path string) func(context.Context) outcome {
 	switch p.ToolName {
 	case "Write", "Edit", "MultiEdit", "NotebookEdit":
 	default:
 		return nil
 	}
 	abs := writtenAt(p, path, "")
-	if !newClaudeConfig(getenv, "").holds(abs) || len(loopProjects(getenv, p)) == 0 {
+	claude := newClaudeConfig(getenv, "").holds(abs)
+	agents := !claude && newAgentsConfig(getenv, "").holds(abs)
+	if !claude && !agents || len(loopProjects(getenv, p)) == 0 {
 		return nil
 	}
 	return func(context.Context) outcome {
 		return outcome{ok: true, verdict: policy.Evaluate(policy.Request{
-			Tool: p.ToolName, Agent: p.AgentType, Path: filepath.ToSlash(abs), Outside: true, ClaudeConfig: true,
+			Tool: p.ToolName, Agent: p.AgentType, Path: filepath.ToSlash(abs), Outside: true,
+			ClaudeConfig: claude, AgentsConfig: agents,
 		})}
 	}
 }
@@ -639,7 +648,7 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	// The disk is asked about a path only where a rule would let a word go for
 	// being outside the repository, and about each directory once.
 	out := newOutsider(func() []string { return checkoutSet(pl, resolver).Checkouts })
-	cfg := newClaudeConfig(getenv, project)
+	cfg, acfg := newClaudeConfig(getenv, project), newAgentsConfig(getenv, project)
 	fresh := sync.OnceValues(func() (bool, string) { return reviewsFresh(pl, story, warn, budget) }) //nolint:contextcheck // reviewsFresh takes the command's lazily started budget, not ctx: the deadline must begin at the first git call
 	// internal/tools/hooktime builds this State a second time, to hold Inspect
 	// to a time (`./task hook-time`): nothing here can be called from outside
@@ -668,6 +677,9 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 		// first word a command writes.
 		ClaudeConfig:     cfg.word,
 		ClaudeConfigHeld: cfg.heldWord,
+		// And the person's ~/.agents, placed the same way.
+		AgentsConfig:     acfg.word,
+		AgentsConfigHeld: acfg.heldWord,
 	}
 	// The repository's other checkouts are held as this one is. Where it is
 	// the only one, nothing is asked and nothing changes.

@@ -61,10 +61,10 @@ func TestAC11TheCommandsPageHasASectionForEachStaffingCommandAndSaysWhoRunsIt(t 
 // AC-11: where a person reads the choices. AC-9 puts them in three commands.
 func TestAC11TheDocumentationSaysWhereAPersonReadsTheStaffing(t *testing.T) {
 	t.Parallel()
-	agents := stfFolded(page(t, "agents.md"))
+	agents := stfFolded(page(t, "the-agents.md"))
 	for _, want := range []string{"`sdlc staffing show`", "`sdlc review list`", "`sdlc log`"} {
 		if !strings.Contains(agents, want) {
-			t.Errorf("docs/agents.md does not send a reader to %s for the staffing", want)
+			t.Errorf("docs/the-agents.md does not send a reader to %s for the staffing", want)
 		}
 	}
 	for name, heading := range map[string]string{"review list": "## `sdlc review list`", "log": "## `sdlc log`"} {
@@ -79,20 +79,20 @@ func TestAC11TheDocumentationSaysWhereAPersonReadsTheStaffing(t *testing.T) {
 // inside what the configuration allows; some agents are never left out.
 func TestAC11TheAgentsPageSaysHowTheStaffingIsChosen(t *testing.T) {
 	t.Parallel()
-	agents := stfFolded(page(t, "agents.md"))
+	agents := stfFolded(page(t, "the-agents.md"))
 	for _, want := range []string{
 		"`sdlc:project-manager`", "staffing", "`staffing.enabled`", "`sdlc staffing assign`",
 		"never left out", "risk tier",
 	} {
 		if !strings.Contains(agents, want) {
-			t.Errorf("docs/agents.md does not say %q", want)
+			t.Errorf("docs/the-agents.md does not say %q", want)
 		}
 	}
 	// The page said no agent names a model and `/model` moves the whole loop.
 	// With the staffing on that is no longer the whole of it.
-	models := stfDocSection(t, "agents.md", "## Models")
+	models := stfDocSection(t, "the-agents.md", "## Models")
 	if !strings.Contains(models, "staffing") {
-		t.Error("the Models section of docs/agents.md does not say what the staffing changes")
+		t.Error("the Models section of docs/the-agents.md does not say what the staffing changes")
 	}
 	if loop := page(t, "the-loop.md"); !strings.Contains(loop, "staffing") {
 		t.Error("docs/the-loop.md, which owns the glossary, does not define the staffing")
@@ -111,7 +111,7 @@ func TestAC2TheDocumentationCallsItWhatWasAskedForAndNeverWhatAnAgentRanAt(t *te
 		}
 	}
 	pages := map[string]string{}
-	for _, name := range []string{"agents.md", "commands.md", "configuration.md", "the-loop.md", "enforcement.md", "troubleshooting.md"} {
+	for _, name := range []string{"the-agents.md", "commands.md", "configuration.md", "the-loop.md", "enforcement.md", "troubleshooting.md"} {
 		pages["docs/"+name] = page(t, name)
 	}
 	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
@@ -126,7 +126,7 @@ func TestAC2TheDocumentationCallsItWhatWasAskedForAndNeverWhatAnAgentRanAt(t *te
 	}
 	for _, where := range []struct{ what, text string }{
 		{"the section for `sdlc staffing show`", stfDocSection(t, "commands.md", "## `sdlc staffing show")},
-		{"the Models section of docs/agents.md", stfDocSection(t, "agents.md", "## Models")},
+		{"the Models section of docs/the-agents.md", stfDocSection(t, "the-agents.md", "## Models")},
 		{"the staffing section of docs/configuration.md", stfDocSection(t, "configuration.md", "## `staffing`")},
 	} {
 		if !strings.Contains(where.text, "asked for") {
@@ -134,8 +134,8 @@ func TestAC2TheDocumentationCallsItWhatWasAskedForAndNeverWhatAnAgentRanAt(t *te
 		}
 	}
 	// And why: the environment can override both.
-	if models := stfDocSection(t, "agents.md", "## Models"); !strings.Contains(models, "environment") {
-		t.Error("the Models section of docs/agents.md does not say the environment can override what was asked for")
+	if models := stfDocSection(t, "the-agents.md", "## Models"); !strings.Contains(models, "environment") {
+		t.Error("the Models section of docs/the-agents.md does not say the environment can override what was asked for")
 	}
 }
 
@@ -193,7 +193,7 @@ func TestAC12EveryPageThatCountsTheAgentsSaysTwelve(t *testing.T) {
 	for _, pg := range []struct{ name, body, want string }{
 		{"README.md", string(readme), "twelve agents"},
 		{"docs/installation.md", page(t, "installation.md"), "twelve agents"},
-		{"docs/agents.md", page(t, "agents.md"), "Twelve agents"},
+		{"docs/the-agents.md", page(t, "the-agents.md"), "Twelve agents"},
 		{"docs/the-loop.md", page(t, "the-loop.md"), "Twelve agents"},
 	} {
 		body := stfFolded(pg.body)

@@ -61,7 +61,7 @@ Once stories are landing, these help you run the loop well over time.
 Read these when you want to understand the loop, and not only use it.
 
 - [The loop](the-loop.md): what each gate is for, and what it produces
-- [Agents](agents.md): who does the work at each gate, and what none of them
+- [Agents](the-agents.md): who does the work at each gate, and what none of them
   may do
 - [Enforcement](enforcement.md#what-this-is-and-what-it-is-not): what the hook
   is, what it is not, and when it applies

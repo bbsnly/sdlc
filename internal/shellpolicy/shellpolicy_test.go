@@ -30,6 +30,11 @@ func refused(t *testing.T, command string, s State, wantRule string) Finding {
 	if got.Route == "" || got.Reason == "" {
 		t.Errorf("finding = %+v", got)
 	}
+	// US-023 AC-5 and AC-11: the row again, for AGENTS.md and .agents.
+	alsoRefusedAsAgents(t, command, s, []string{wantRule}, func(t *testing.T, command string, s State) {
+		t.Helper()
+		refused(t, command, s, wantRule)
+	})
 	return got
 }
 
@@ -361,6 +366,11 @@ func allowed(t *testing.T, command string, s State) {
 	if got, ok := inspect(t, command, s); ok {
 		t.Errorf("%s was refused by %s: %s", command, got.Rule, got.Reason)
 	}
+	// US-023 AC-5: AGENTS.md is held, not every mention of it.
+	alsoAllowedAsAgents(t, command, s, func(t *testing.T, command string, s State) {
+		t.Helper()
+		allowed(t, command, s)
+	})
 }
 
 // What only wraps a command is not the command. Every one of these went

@@ -6,6 +6,8 @@
   - [`not-checked-in-time`](#not-checked-in-time)
 - [Rules on writing files](#rules-on-writing-files)
   - [`claude-config-is-the-persons`](#claude-config-is-the-persons)
+  - [`agents-config-is-the-persons`](#agents-config-is-the-persons)
+  - [`instructions-above-the-project`](#instructions-above-the-project)
   - [`write-outside-repository`](#write-outside-repository)
   - [`write-protected-path`](#write-protected-path)
   - [`backlog-is-not-edited`](#backlog-is-not-edited)
@@ -382,6 +384,94 @@ not is held to nothing, so it can still write all of this, and every project on
 the machine then runs what it wrote. That is the residual a person accepted
 for this rule; [SECURITY.md](../SECURITY.md) says more.
 
+### `agents-config-is-the-persons`
+
+Refuses writing the person's `~/.agents`, and everything under it, from any
+session, in a project that takes part in the loop. `~/.agents` is the folder
+Codex, Cursor, Copilot, Gemini CLI and other agent tools load skills from. It
+has nothing to do with sdlc's own [agents](the-agents.md). A skill written there
+runs in the person's next session with one of those tools, outside every rule
+on this page. A `~/.agents` linked into a dotfiles directory is held where it
+leads, and it is placed by every spelling of the home the
+[`~/.claude` rule](#claude-config-is-the-persons) reads. The shell refuses the
+same writes under this rule, as
+[the shell's reading of it](#claude-config-through-the-shell) says.
+
+A command that fills or empties the whole home, such as `cp -r dotfiles/. ~`
+or `rm -rf ~`, writes both `~/.agents` and `~/.claude`. It is refused under
+this rule, which is asked before the `~/.claude` rule, because `~/.agents` is
+the folder less often known to be there, unless a rule asked earlier refuses it
+first: in a story session, taking away a home that holds a checkout is refused
+as [`loop-state-through-the-tool`](#loop-state-through-the-tool).
+
+A path the command writes whose own spelling names `.agents` is asked under
+this rule before the loop-state rule, so `echo x > $D/.agents/s`, which could
+be `~/.agents`, is refused here rather than as the project's own `.agents`.
+
+*Instead:* say what you would change there and why, and stop. The person
+installs or edits a skill in their own `~/.agents`, by hand or from their own
+terminal, outside the session.
+
+### `instructions-above-the-project`
+
+Refuses a write, while a story is being worked on, to an instruction file in a
+directory above the project. The project is the checkout this session works
+in, so a story's worktree has the main checkout above it.
+
+- The files are `CLAUDE.md`, `CLAUDE.local.md` and `AGENTS.md`, in any case,
+  in such a directory or in its `.claude`.
+- The directories are the one the project is in and every one above it, the
+  home among them. One beside the project, such as `~/code/other`, is not above
+  it, and neither is one below the home that the project is not in.
+
+Claude Code loads those files from every directory above the one it starts in,
+so what a session writes there is read as instructions by every later session
+started below it, in this project and in others.
+
+The file tools follow links to place the file. The shell places a word by its
+text first, and then by asking the disk whether the project's own `.sdlc` is
+below it, so `~/code/CLAUDE.md` is held where the project is
+`~/code/project`. It reads the name through globs, braces and backslashes, as
+it reads the project's own files: `~/code/CLAUDE.m?` and `~/code/CLAUDE.{md,x}`
+are refused. A directory spelt with a glob counts as above unless the part
+before the glob is the project or inside it, so `~/co*/CLAUDE.md` is refused
+with a reason that says to spell the directory out without a glob if it is not
+above the project. One with `**` followed by `..` counts as above whatever comes
+before it. A link or an install counts by where it lands, whatever the
+destination is called, and a copy or a move by where it lands as
+[that section](#links-and-installs) reads it.
+
+A copy or extraction that fills such a directory is refused as well, because
+it may put an instruction file there: a recursive `cp` or `mv`, `rsync`, `scp`,
+`ditto`, a `cp`, `mv`, `ln` or `install` of a glob that can match an
+instruction file, `tar` and `bsdtar` extracting, `unzip`, and `7z x` or `7z e`.
+Each is read into the directory its option names, or the one the command runs
+in where it names none. After a `cd` into an absolute path with a glob in it,
+such as `cd /wor? && tar -xf p.tar`, that directory is read from the glob, and
+the reason says it can name a directory above the project, with the advice to
+spell it out without a glob if it is not one.
+
+Where `ln`, `install` or a decompressor puts the file somewhere the command
+did not spell, the reason names that place and says which, in brackets: "(ln
+puts the link there)". Where the destination may be a file rather than a
+directory, it says "if ... is a directory".
+
+What the shell cannot see:
+
+- a link the same command makes and then writes through;
+- a directory spelt with a variable other than the home, which is refused by
+  name instead;
+- where a `cd` leaves the command when the hook cannot spell it, such as a
+  `cd` into a glob; the hook logs nothing when it gives up on one, and the
+  file is then judged by its name, as the project's (a copy or extraction
+  after a `cd` into an absolute glob is read from the glob, as above);
+- a program that writes the file itself.
+
+*Instead:* say what you would change there and why, and stop. The person
+changes the instruction files above the project by hand, outside a running
+iteration. For a copy or extraction: say what you would put there and why, and
+stop, or write the files inside the project instead.
+
 ### `write-outside-repository`
 
 Refuses a write that resolves outside the repository, symlinks followed.
@@ -400,8 +490,15 @@ holding its story.
 
 ### `write-protected-path`
 
-Refuses any write to `.git`, `.claude`, `CLAUDE.md`, `.sdlc/config.json`,
-`.sdlc/state` or `.sdlc/claude-progress.json`.
+Refuses any write to `.git`, `.sdlc/config.json`, `.sdlc/state` or
+`.sdlc/claude-progress.json` at the root of the repository, and to `.claude`,
+`.agents`, `CLAUDE.md`, `CLAUDE.local.md` and `AGENTS.md` at any depth, in any
+case. A nested one is refused with the reason the root's gets and a clause that
+says why it is held wherever it is: Claude Code reads a `CLAUDE.md`,
+`CLAUDE.local.md` or `.claude` in a subdirectory when it works there, and other
+agent tools read `AGENTS.md` and load skills from `.agents` the same way. This
+makes the file tools and the shell agree: the shell has refused those names at
+any depth all along.
 
 Configuration is the human's, and loop state is the tool's. An assistant editing
 either can make the record say something that did not happen.
@@ -409,7 +506,8 @@ either can make the record say something that did not happen.
 *Instead:* change configuration by hand outside a running iteration; change loop
 state through the `sdlc` command.
 
-`CLAUDE.md` is in that list for the same reason the test freeze exists. A rule
+`CLAUDE.md`, and `AGENTS.md` beside it, are in that list for the same reason the
+test freeze exists. A rule
 the agent can edit is a rule that stopped applying to it, and a contract rewritten
 to get past a gate takes every gate after it with it. If a rule is genuinely
 wrong, the loop's answer is to stop and say so, not to edit it and carry on.
@@ -937,6 +1035,29 @@ Each of these errs towards refusing:
 - On macOS, `sed -i` wants a suffix after it, `sed -i '' s/x/y/ FILE`, and that
   spelling is not plain.
 
+#### A glob in the directory
+
+An absolute or `~` word whose directory holds a glob is read against the
+project's own path, name by name. Where it can name a path in the project, it
+is held as that path is; where it cannot, it is outside, as before. So
+`rm /work/proj*/.sdlc/state/active` is refused as loop state where the project
+is `/work/project`, and `rm /tmp/p*/x_test.go` is not.
+
+A segment that is `**`, or holds it, is read as any number of directories, as
+zsh and bash's `globstar` read `**`. Once the part before it is the project's
+directory or one above it, the word is held as the project's:
+`rm ~/**/.sdlc/state/active` is refused as loop state. Where such a segment has
+`..` after it, the word is held as the project's whatever comes before it,
+because `**` can stand for no directories and `..` then climbs from the part
+before it: `rm /tmp/**/../work/project/.sdlc/state/active`. None of this asks
+the disk. A word read as the project's only because of its glob is told to
+spell the directory out without a glob if it is not this project.
+
+What it misses: a glob whose match is a link into the project from a directory
+that is not above it (`/tmp/p?/.sdlc/config.json`, where `/tmp/pl` links to the
+project), and the directories above a project reached through a link whose
+names differ from the project's own path.
+
 ### `loop-state-through-the-tool`
 
 Refuses a command that would write or delete the loop's own files: `.sdlc/state`,
@@ -982,6 +1103,37 @@ A refused `find` has a way on of its own:
 
 The rest of this entry is the fine detail: what is left alone, how a `find` is
 read, and what counts as taking a checkout away.
+
+#### Links and installs
+
+`ln` and `install` land each source under the destination, whatever the
+destination is called, so `ln -s /tmp/x/AGENTS.md docs.v2` writes
+`docs.v2/AGENTS.md`. `-t`, `--target-directory=` and a bundle such as `-Ct dir`
+are read, and so is a one-operand `ln`, which links into the directory it runs
+in. A bundle that ends in `t` is read both ways, as naming the target and as
+another option's value, because BSD install's `-B` and GNU's `-S` take the `t`
+as a backup suffix. `cp` and `mv` land a source under the destination where the
+destination is written as a directory: more than one source, a trailing `/`,
+`..`, or a last name with no dot after its first character. The disk is not
+asked, so `cp x_test.go pkg.v2` into an existing `pkg.v2` directory is read as
+writing a file called `pkg.v2`, as before. They read `-t` and the same bundles
+too. A refusal for a place the command did not spell says which
+reading put the file there.
+
+#### Programs that write a file they are given
+
+These are read as writing the file they are given, as a redirect to it is:
+
+- `sort -o`, `base64 -o` and `iconv -o`, and `--output`;
+- `uniq`, whose second operand is its output;
+- `gzip -d`, `gunzip`, `pigz -d`, `unpigz`, `xz -d`, `unxz`, `lzma -d`,
+  `unlzma`, `bzip2 -d`, `bunzip2`, `compress -d` and `uncompress`, read with or
+  without `-f`, which write the file without its suffix (`CLAUDE.md.gz` writes
+  `CLAUDE.md`), or with the one `-S` names; `-c`, `--stdout`, `-t` and `-l`
+  write nothing.
+
+Reading with them, such as `sort CLAUDE.md`, is not refused. One of them run by
+`xargs` makes every word of the line a candidate, as any writer there does.
 
 #### What is left alone
 
@@ -1194,12 +1346,17 @@ as in `rm -rf build` or `find build -type d -empty -delete`.
 
 ### `protected-path-through-the-tool`
 
-Refuses a command that would write or delete `CLAUDE.md`, anything under
-`.claude`, anything under `.git`, or the backlog — the paths
+Refuses a command that would write or delete `CLAUDE.md`, `CLAUDE.local.md`,
+`AGENTS.md`, anything under `.claude` or `.agents`, anything under `.git`, or
+the backlog — the paths
 `write-protected-path` and `backlog-is-not-edited` protect from the file tools
 that are not the loop's own state. It matches the way the filesystem does, so
 `claude.md` is `CLAUDE.md` on macOS and Windows. A `CLAUDE.md` in a directory
-below the root, such as `sub/CLAUDE.md`, is refused by this rule too.
+below the root, such as `sub/CLAUDE.md`, is refused by this rule too, and so is
+an `AGENTS.md` or `CLAUDE.local.md` anywhere. A link or install that lands one
+there is read as [links and installs](#links-and-installs) says, and a program
+that writes a file it is given as
+[that section](#programs-that-write-a-file-they-are-given) says.
 
 A settings file under `.claude` is where hooks are configured, `CLAUDE.md` is
 the contract every gate reads, and the backlog is the story itself, so a shell
@@ -1218,7 +1375,10 @@ wrong, stop and say what.
 Refuses a command that would write, rewrite or delete a frozen acceptance test:
 by redirection; through `rm`, `mv`, `cp`, `tee`, `sed -i`, `find -delete`,
 `git checkout` and their like; or from inside a program handed to `sed`, `awk`,
-`perl` or another interpreter, on the command line or on standard input.
+`perl` or another interpreter, on the command line or on standard input. A link
+or install that lands one is read as [links and installs](#links-and-installs)
+says, and a program that writes a file it is given as
+[that section](#programs-that-write-a-file-they-are-given) says.
 
 Before the freeze this rule does nothing at all.
 
@@ -2022,7 +2182,11 @@ the person's Claude Code configuration:
 - a redirect into it, or a command that changes a file there, such as `cp`,
   `mv`, `tee`, `sed -i`, `touch` or PowerShell's `Set-Content`;
 - a recursive copy or move, or a removal, of a directory that holds it, such as
-  `rm -rf ~` or `cp -r dotfiles ~`;
+  `rm -rf ~` or `cp -r dotfiles ~` (refused under
+  [`agents-config-is-the-persons`](#agents-config-is-the-persons), which is
+  asked first, because the home holds `~/.agents` too; in a story session where
+  the home holds a checkout, the removal is refused under
+  [`loop-state-through-the-tool`](#loop-state-through-the-tool));
 - a command that writes into a directory it is given, such as `tar -x -C`,
   `unzip -d`, `make -C` or a `git -C` that writes, and a `find` rooted there
   that changes what it finds;
@@ -2059,6 +2223,12 @@ any other.
 
 A project that is itself inside `~/.claude` has every write refused, since every
 file in it is part of the configuration.
+
+The same readings hold the person's `~/.agents`, under
+[`agents-config-is-the-persons`](#agents-config-is-the-persons), in every
+session of a project that takes part. A program that
+[writes a file it is given](#programs-that-write-a-file-they-are-given), writing
+there, is refused too.
 
 ### `command-too-deep-to-read`
 

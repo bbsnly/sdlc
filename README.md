@@ -67,7 +67,8 @@ $ sdlc init
 ```
 
 `init` reads the repository, writes a configuration with commands that match it,
-and adds the contract section to your `CLAUDE.md`. It never overwrites your own
+and adds the contract section to your `CLAUDE.md`, or to your `AGENTS.md` where
+you keep your instructions there. It never overwrites your own
 files.
 
 > [!WARNING]
@@ -184,7 +185,7 @@ Two limits are worth knowing from the start:
 
 [Enforcement](https://github.com/bbsnly/sdlc/blob/main/docs/enforcement.md)
 lists every rule and what to do instead, and
-[Agents](https://github.com/bbsnly/sdlc/blob/main/docs/agents.md) says who does
+[Agents](https://github.com/bbsnly/sdlc/blob/main/docs/the-agents.md) says who does
 the work at each gate and which of them can block.
 
 ## Documentation
@@ -201,7 +202,7 @@ need them.
 | [Commands](https://github.com/bbsnly/sdlc/blob/main/docs/commands.md) | every command and flag |
 | [Configuration](https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md) | every setting in `.sdlc/config.json` |
 | [Enforcement](https://github.com/bbsnly/sdlc/blob/main/docs/enforcement.md) | every rule, what it refuses, and what to do instead |
-| [Agents](https://github.com/bbsnly/sdlc/blob/main/docs/agents.md) | who does the work |
+| [Agents](https://github.com/bbsnly/sdlc/blob/main/docs/the-agents.md) | who does the work |
 | [Troubleshooting](https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md) | every error code, and what to do about it |
 
 ## Contributing

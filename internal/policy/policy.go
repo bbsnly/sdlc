@@ -33,6 +33,14 @@ type Request struct {
 	// caller resolved it: ~/.claude, ~/.claude.json, or where Claude Code is
 	// told to keep them instead.
 	ClaudeConfig bool
+	// AgentsConfig is a path in the person's ~/.agents, as the caller
+	// resolved it: the folder other agent tools load skills from.
+	AgentsConfig bool
+	// AboveProject is a path in a directory above the project (the one it is
+	// in, or one above that), or in the .claude directory of one, as the
+	// caller resolved it. Which names there are instruction files is the
+	// rule's to say.
+	AboveProject bool
 	Story        string // the story the iteration is on
 	Tests        Tests  // what the freeze says about this path
 	Backlog      string // the backlog file, as Path is; empty for none
@@ -103,8 +111,18 @@ type Rule struct {
 
 // ProtectedPaths are the paths nobody writes during an iteration. Configuration is the human's, and loop state is the CLI's:
 // an assistant editing either can make the record say something that did not
-// happen.
-var ProtectedPaths = []string{
+// happen. The instruction paths are held at any depth (anyDepth); the rest at
+// the root.
+var ProtectedPaths = append([]string{
+	".git",
+	".sdlc/config.json",
+	".sdlc/state",
+	".sdlc/claude-progress.json",
+}, model.InstructionPaths...)
+
+// rootOnly is what write-protected-path held before the instruction paths
+// were held at any depth; a refusal there keeps its words.
+var rootOnly = []string{
 	".git",
 	".claude",
 	"CLAUDE.md",
@@ -131,6 +149,32 @@ var Rules = []Rule{
 			return r.Path + " is the person's Claude Code configuration, which decides the hooks, plugins, " +
 				"skills, agents and permissions every session runs under, so a session that wrote it could " +
 				"change the rules it is held to"
+		},
+	},
+	{
+		// Asked, as the claude rule is, whether or not the path reads as
+		// outside: a link in the repository that leads into ~/.agents is
+		// still the person's.
+		ID:    "agents-config-is-the-persons",
+		Route: agentsConfigRoute,
+		check: func(r Request) string {
+			if !r.AgentsConfig {
+				return ""
+			}
+			return r.Path + agentsConfigReason
+		},
+	},
+	{
+		// Ahead of write-outside-repository, so that the refusal says why
+		// this outside file in particular is not written. Only while a story
+		// is worked on: the person's own sessions write their instructions.
+		ID:    "instructions-above-the-project",
+		Route: aboveRoute,
+		check: func(r Request) string {
+			if !r.AboveProject || r.Story == "" || !instructionFile(r.Path) {
+				return ""
+			}
+			return r.Path + aboveReason
 		},
 	},
 	{
@@ -162,11 +206,15 @@ var Rules = []Rule{
 		Route: "configuration is yours to change by hand outside a running iteration, " +
 			"and loop state changes through the sdlc command",
 		check: func(r Request) string {
-			if !pathrules.UnderAny(r.Path, ProtectedPaths...) {
+			if pathrules.UnderAny(r.Path, rootOnly...) {
+				return r.Path + " is protected while a story is being worked on: it is either " +
+					"human-owned configuration or the loop's own record of what happened"
+			}
+			name := anyDepth(r.Path)
+			if name == "" {
 				return ""
 			}
-			return r.Path + " is protected while a story is being worked on: it is either " +
-				"human-owned configuration or the loop's own record of what happened"
+			return r.Path + " is protected while a story is being worked on: " + heldEverywhere(name)
 		},
 	},
 	{
@@ -492,3 +540,66 @@ func storyDir(story string) string {
 // Claude Code configuration. internal/shellpolicy says the same of a command.
 const claudeConfigRoute = "say what you would change there and why, and stop: the person changes their own " +
 	"Claude Code configuration, in Claude Code's settings or by hand"
+
+// agentsConfigReason and agentsConfigRoute say why a session does not write
+// the person's ~/.agents. internal/shellpolicy says the same of a command.
+const agentsConfigReason = " is in the person's ~/.agents, the folder Codex, Cursor, Copilot, Gemini CLI and " +
+	"other agent tools load skills from (it has nothing to do with sdlc's own agents), so a skill written " +
+	"there runs in the person's next session with one of them"
+
+const agentsConfigRoute = "say what you would change there and why, and stop: the person adds or changes a " +
+	"skill in their own ~/.agents, by hand or from their own terminal, outside the session"
+
+// aboveReason and aboveRoute say why a session does not write an instruction
+// file above the project. internal/shellpolicy says the same of a command.
+const aboveReason = " is an instruction file above the project, which is the checkout this session works in " +
+	"(so a story's worktree has the main checkout above it): Claude Code loads CLAUDE.md, CLAUDE.local.md and " +
+	"AGENTS.md from every directory above the one it starts in, so what a session writes there is read as " +
+	"instructions by every later session started below it, in this project and in others"
+
+const aboveRoute = "say what you would change there and why, and stop: the person changes the instruction " +
+	"files above the project by hand, outside a running iteration"
+
+// anyDepth is the first segment of path that is one of the instruction
+// paths, folded, or "". Every segment is read: a matcher that stopped at the
+// first segment that starts with a name let a/.claudex/.claude/s through.
+func anyDepth(path string) string {
+	for seg := range strings.SplitSeq(pathrules.Fold(path), "/") {
+		for _, name := range model.InstructionPaths {
+			if seg == pathrules.Fold(name) {
+				return name
+			}
+		}
+	}
+	return ""
+}
+
+// heldEverywhere is why an instruction path below the root is held.
+func heldEverywhere(name string) string {
+	switch name {
+	case "AGENTS.md":
+		return "it is an instruction file, and Claude Code and other agent tools read one as instructions " +
+			"wherever it is in the project"
+	case ".agents":
+		return "it is under a .agents directory, which Codex, Cursor, Copilot, Gemini CLI and other agent " +
+			"tools load skills from wherever it is in the project"
+	case ".claude":
+		return "it is under a .claude directory, and a Claude Code session started in the directory that " +
+			"holds it loads its settings, skills and commands"
+	}
+	// CLAUDE.md and CLAUDE.local.md, Claude Code's own names.
+	return "it is an instruction file, and Claude Code reads one as instructions wherever it is in the project"
+}
+
+// instructionFile reports whether path names one of the instruction files, in
+// any case: on a disk that keeps case that refuses a different file, which is
+// the safe way to be wrong.
+func instructionFile(path string) bool {
+	name := path[strings.LastIndex(path, "/")+1:]
+	for _, f := range model.InstructionFiles {
+		if pathrules.SameName(name, f) {
+			return true
+		}
+	}
+	return false
+}

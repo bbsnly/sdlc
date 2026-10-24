@@ -111,8 +111,12 @@ $ sdlc init
 
 `init` reads the repository, detects the stack, and writes `.sdlc/config.json`
 with commands that already match it, a backlog with one example story, the story
-schema, and a `## SDLC Contract` section appended to `CLAUDE.md`. It never
-overwrites a file you wrote, and it writes no `.gitignore`.
+schema, and a `## SDLC Contract` section appended to `CLAUDE.md`. Where the
+project has an `AGENTS.md` and no `CLAUDE.md`, or its `CLAUDE.md` is a link to
+`AGENTS.md`, the section goes in `AGENTS.md` instead, and no `CLAUDE.md` is
+made: Claude Code reads `AGENTS.md` only where there is no `CLAUDE.md`. init
+then prints `created  AGENTS.md (appended to)`. It never overwrites a file you
+wrote, and it writes no `.gitignore`.
 
 Then commit what `init` wrote, because each story's worktree is cut from trunk's
 commits. After that, run `sdlc doctor` to check the setup, and open Claude Code
@@ -151,7 +155,7 @@ $ sdlc doctor --json
 `doctor` looks at the git repository, the git command itself, the configuration —
 including a setting it does not know, such as a misspelled one — the backlog,
 the loop's state files the hook reads on every tool call and the commit
-[`sdlc ack`](#sdlc-ack) recorded, the contract in `CLAUDE.md`, the programs your
+[`sdlc ack`](#sdlc-ack) recorded, the contract in `CLAUDE.md` or `AGENTS.md`, the programs your
 configured commands would run, whether the hook would refuse any of them, and
 whether `sdlc` is on your `PATH`. Every problem comes with what to do about it.
 Exits non-zero when something is wrong, so it works in a script.
@@ -162,6 +166,23 @@ with no story under way, so it does not judge the agent's role, the freeze, the
 other checkouts or whether the story's gates have passed, and it does not judge
 `fmt_file`, which the hook runs itself. It names a refused command by its key
 and the rule, never prints the command, and never runs it.
+
+The `project contract` check says which file Claude Code will read the section
+from. With the section in `AGENTS.md`, it is a problem where a `CLAUDE.md` is
+read in its place and does not import it with an `@AGENTS.md` line, or where a
+`CLAUDE.local.md` at the root does the same; and where both files carry the
+section, since the two can disagree. A project with the section in `AGENTS.md`
+and only `AGENTS.md` at the root shows:
+
+```console
+  ok       project contract     AGENTS.md carries the "## SDLC Contract" section and there is no CLAUDE.md, so Claude Code 2.1.277 or later reads it
+```
+
+In that layout a `project instructions` check follows it. It reads the Project
+instructions setting from your Claude Code user settings (`settings.json` in
+`CLAUDE_CONFIG_DIR`, or in `~/.claude`) and never writes it, and it is a
+problem where the setting is `claude-md` or `managed-only`, which keep Claude
+Code from reading `AGENTS.md`. It does not read managed settings, and says so.
 
 In a repository with linked worktrees it names the checkout holding each story
 under "loop state", in whichever checkout you run it. In a linked worktree it
@@ -178,8 +199,9 @@ something to do:
 
 - trunk has no `.sdlc/config.json` committed, so `sdlc start` would refuse to
   begin a story ([SDLC-E0053](troubleshooting.md#sdlc-e0053)): commit it and
-  `CLAUDE.md` to trunk, or set `git.worktrees` to false in this checkout's
-  `.sdlc/config.json`;
+  the file that holds the contract, `CLAUDE.md` or `AGENTS.md` (both where
+  `CLAUDE.md` imports or links to `AGENTS.md`), to trunk, or set
+  `git.worktrees` to false in this checkout's `.sdlc/config.json`;
 - trunk tracks files under `.sdlc/state`, the loop's own state, which every
   story worktree writes to, so no story worked in a worktree could land
   ([SDLC-E0055](troubleshooting.md#sdlc-e0055)): a person stops tracking them on
@@ -1418,7 +1440,7 @@ the model and effort each is asked for. It is off unless the project sets
 [`staffing.enabled`](configuration.md#staffing); while it is off, each of the
 four commands below is refused with
 [SDLC-E0067](troubleshooting.md#sdlc-e0067) and every agent takes part in every
-story. [Agents](agents.md#the-staffing) says how it is chosen.
+story. [Agents](the-agents.md#the-staffing) says how it is chosen.
 
 `sdlc staffing` on its own prints what the four commands are.
 

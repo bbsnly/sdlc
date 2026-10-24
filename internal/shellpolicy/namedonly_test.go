@@ -86,6 +86,13 @@ func (r corpusRow) notRefused(t *testing.T) {
 			t.Errorf("HumanDecisions (a story waits: %v) reported %s for %s", waits, f.Rule, r.command)
 		}
 	}
+	// US-023 AC-5: a mention of AGENTS.md is let through as one of CLAUDE.md is.
+	alsoAllowedAsAgents(t, r.command, corpusState(r.who, r.ps), func(t *testing.T, command string, _ State) {
+		t.Helper()
+		respelt := r
+		respelt.command = command
+		respelt.notRefused(t)
+	})
 }
 
 // stillRefused holds a row to the rule the released tool refuses it under.
@@ -113,6 +120,13 @@ func saysItCouldNotTell(f Finding) bool {
 // released rule and told why. Refused in silence, as today, is neither.
 func (r corpusRow) allowedOrNotTold(t *testing.T) {
 	t.Helper()
+	// US-023 AC-5: the same of AGENTS.md.
+	alsoRefusedAsAgents(t, r.command, corpusState(r.who, r.ps), []string{r.rule}, func(t *testing.T, command string, _ State) {
+		t.Helper()
+		respelt := r
+		respelt.command = command
+		respelt.allowedOrNotTold(t)
+	})
 	f, ok := Inspect(r.command, corpusState(r.who, r.ps))
 	if !ok {
 		return

@@ -165,14 +165,21 @@ func TestAC1AndAC2ACopyOrMoveOfAnOutsideFileLandingInTheRepositoryStaysRefused(t
 			{"", "cp /tmp/out/flat/x_test.go /tmp/out/in.x", ""},
 			{"", "mv /tmp/out/flat/x_test.go /tmp/out/in.x", ""},
 		} {
-			t.Run(agent+" from "+c.dir+" "+c.command, func(t *testing.T) {
-				f, ok := Inspect(c.command, orDottedState(agent, c.dir))
+			check := func(t *testing.T, command string, s State) {
+				t.Helper()
+				f, ok := Inspect(command, s)
 				if !ok {
-					t.Fatalf("allowed: %s", c.command)
+					t.Fatalf("allowed: %s", command)
 				}
 				if c.rule != "" && agent == "" && f.Rule != c.rule {
 					t.Errorf("refused by %s, want %s: %s", f.Rule, c.rule, f.Reason)
 				}
+			}
+			t.Run(agent+" from "+c.dir+" "+c.command, func(t *testing.T) {
+				s := orDottedState(agent, c.dir)
+				check(t, c.command, s)
+				// US-023 AC-5: the row again, for AGENTS.md.
+				alsoRefusedAsAgents(t, c.command, s, []string{c.rule}, check)
 			})
 		}
 	}

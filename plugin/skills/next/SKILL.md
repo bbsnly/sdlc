@@ -147,7 +147,7 @@ the work changes, tell `sdlc:project-manager`; if it cannot staff the story, esc
 Delegate to `sdlc:researcher`, with:
 
 - the story's full text, including every acceptance criterion
-- the paths to `CODEMAP.md`, `CLAUDE.md`'s `## SDLC Contract` section, and `spec.paths` from
+- the paths to `CODEMAP.md`, `## SDLC Contract` in `CLAUDE.md` or `AGENTS.md`, and `spec.paths` from
   `.sdlc/config.json`
 - that it stores its two documents with `sdlc artifact write analysis` and
   `sdlc artifact write threats`

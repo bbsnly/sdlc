@@ -210,7 +210,13 @@ func runChecks(ctx context.Context) []check {
 	if c, ok := storyWorktreesCheck(ctx, s); ok {
 		add(c)
 	}
-	add(contractCheck(root))
+	contract := readContract(root)
+	add(contractCheck(contract))
+	// Only where Claude Code reaches the section through the setting, so a
+	// CLAUDE.md project's report keeps the checks it had.
+	if contract.bySetting() {
+		add(instructionsCheck(env.getenv))
+	}
 	out = append(out, commandChecks(root, cfg)...)
 	add(binaryCheck(env))
 	return out
@@ -521,8 +527,8 @@ func storyWorktreesCheck(ctx context.Context, s *store.Store) (check, bool) {
 		if has, err := gitx.Holds(ctx, co.Main, "refs/heads/"+trunk, config.File); err == nil && !has {
 			details = append(details, "trunk, "+quote(trunk)+", has no "+config.File+
 				" committed, and a story's worktree has only what trunk commits, so sdlc start refuses to begin one")
-			fixes = append(fixes, "commit "+config.File+" and CLAUDE.md to trunk, or set git.worktrees to false in "+
-				"this checkout's "+config.File)
+			fixes = append(fixes, commitList(contractToCommit(ctx, co.Main, trunk))+
+				", or set git.worktrees to false in this checkout's "+config.File)
 		}
 		if detail, fix, ok := trackedStateCheck(ctx, co.Main, trunk); ok {
 			details, fixes = append(details, detail), append(fixes, fix)
@@ -676,22 +682,6 @@ func workChanges(ctx context.Context, dir string) (changes []string, loops bool,
 		changes = append(changes, p)
 	}
 	return changes, loops, nil
-}
-
-func contractCheck(root string) check {
-	raw, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
-	if err != nil {
-		return check{Name: checkProjectContract, State: stateProblem,
-			Detail: "there is no CLAUDE.md",
-			Fix:    `run "sdlc init" -- it writes one without touching anything else`}
-	}
-	if !scaffold.HasContract(string(raw)) {
-		return check{Name: checkProjectContract, State: stateProblem,
-			Detail: `CLAUDE.md has no "` + scaffold.ContractHeading + `" section`,
-			Fix:    `run "sdlc init" -- it appends the section and leaves the rest alone`}
-	}
-	return check{Name: checkProjectContract, State: stateOK,
-		Detail: `CLAUDE.md carries the "` + scaffold.ContractHeading + `" section`}
 }
 
 // commandChecks looks for the programs the configured commands would run. It

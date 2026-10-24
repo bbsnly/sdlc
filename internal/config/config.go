@@ -2,8 +2,8 @@
 // contract it works to.
 //
 // Two files make a project participate: .sdlc/config.json, which this package
-// reads, and a "## SDLC Contract" section in the project's CLAUDE.md, which the
-// assistant reads. Everything else about the loop is the same in every project,
+// reads, and a "## SDLC Contract" section in the project's CLAUDE.md or
+// AGENTS.md, which the assistant reads. Everything else about the loop is the same in every project,
 // which is what lets one tool serve a Go service and a Rails app without knowing
 // anything about either.
 package config
@@ -39,7 +39,7 @@ const File = Dir + "/config.json"
 const FormatVersion = 1
 
 // Config is the machine-readable half of a project's contract. The human half
-// lives in CLAUDE.md; nothing here describes a language or a framework, only
+// lives in CLAUDE.md or AGENTS.md; nothing here describes a language or a framework, only
 // the commands this project runs and the numbers it holds itself to.
 type Config struct {
 	Version    int               `json:"version"`

@@ -966,7 +966,7 @@ all together:
 - `personsDecisions` in `test/e2e/sandbox_loop_test.go`;
 - the agent count in `TestEveryAgentWorksOnlyAStoryAPersonStarted`
   (`internal/plugin/plugin_test.go`), and in prose in `README.md`,
-  `docs/agents.md`, `docs/the-loop.md` and `docs/installation.md`.
+  `docs/the-agents.md`, `docs/the-loop.md` and `docs/installation.md`.
 
 `plugin/skills/next/SKILL.md` is capped at 17,500 bytes by
 `TestTheRunbookFitsWhatCompactionKeeps`, and was 17,492 at c7bb9d8 and 17,493
@@ -1410,10 +1410,11 @@ second time with its substitutions kept (`programScan.script`, runs marked
 `story-stays-in-its-session`, a `claude` started that would expand a
 person's command); `ClaudeConfigWrites` runs the first alone for a session
 that holds no story. The shell's `State` gains `ClaudeConfig` and
-`ClaudeConfigHeld`, set by `internal/hook/claudeconfig.go` (`claudeConfig.
-holds`, `above`, `word`, `heldWord`) and stubbed false in
-`internal/tools/hooktime`. `internal/policy` has the file-tool rule of the
-same name, first in `Rules`.
+`ClaudeConfigHeld`, set by `internal/hook/claudeconfig.go` (`personsConfig.
+holds`, `above`, `word`, `heldWord`, built by `newClaudeConfig`) and stubbed
+false in `internal/tools/hooktime`; `AgentsConfig` and `AgentsConfigHeld` are
+the same type built by `newAgentsConfig`, for `~/.agents`. `internal/policy`
+has the file-tool rule of the same name, first in `Rules`.
 
 **Firmlink.** `pathrules/firmlink_darwin.go` `withoutFirmlink` takes
 `/System/Volumes/Data` off a path, in any case, only where the deepest
@@ -1446,3 +1447,49 @@ with `testdata/hook-replies.golden` (the hook's stdout, held byte for byte);
 `test/e2e/{slashcommands,inclaudecode,forgedhook,desktopdocs}_test.go`;
 `test/install/launcher_test.go`, which runs both launchers against a local
 `httptest` mirror.
+
+## The instruction files, ~/.agents and the directories above the project
+
+`model.InstructionFiles` (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`) and
+`model.InstructionPaths` (those and `.claude`, `.agents`) are named once.
+`policy.ProtectedPaths` holds them at any depth (`anyDepth`, `heldEverywhere`)
+and the rest at the root (`rootOnly`); the shell's `protectedShellPaths` is
+`.git` and `InstructionPaths`. `pathrules.Fold` trims NTFS's
+`::$INDEX_ALLOCATION` as it trims `::$DATA`. `shellpolicy.cutsAt` yields every
+whole-segment match of a name, and `loopState` asks each.
+
+`policy` has `agents-config-is-the-persons` (`Request.AgentsConfig`) and
+`instructions-above-the-project` (`Request.AboveProject`, asked only during a
+story); `hook.decide` sets the second from `aboveProject` in
+`internal/hook/claudeconfig.go`, and `personsConfigWrite` asks both of the
+person's places for a session with no story. In the shell,
+`checkPersonsConfig` (`shellpolicy/claudeconfig.go`) asks a `configKind` for
+`~/.agents`, then one for `~/.claude`.
+
+`shellpolicy/above.go`: `levelsAbove` asks the disk how many names a directory
+is above the project (by whether `.sdlc` below it resolves to the project's
+own); `reachesProject` reads an absolute or `~` glob against the project's own
+path, and `memo.byGlob` records the words held for it; `checkAboveProject`
+(before `checkLoopState`) and `checkFillsAbove` (last in `judge`) refuse an
+instruction file above the project and a copy or extraction that fills a
+directory there, both placing the directory through `aboveDir`. The walk's
+`from` (`movedFrom`) is where a `cd` to a `~` path left a lost walk, read only
+by `aboveDir`. `madeWords` and `madeReason` add the clause naming the program
+that put a file somewhere the command did not spell.
+
+`shellpolicy/writers.go`: `everyLanding` lands each source of `ln` and
+`install` under the destination whatever its name, and `givenWrites` is what
+`sort`, `base64`, `iconv`, `uniq` and the decompressors write (`scanOptions`,
+`outputOption`, `uniqWrites`, `decompressed`, `unsuffixed`).
+`shellpolicy/directory.go` `bundleTarget` reads a bundle ending in `t` a second
+way, as naming the target. `shellpolicy/glob.go` `climbsPastGlobstar` is a
+word whose `**` has a `..` after it.
+
+`scaffold.writeContract` appends the section to `AGENTS.md` where there is no
+`CLAUDE.md` or `CLAUDE.md` links to it (`RegularFile`, `agentsNote`,
+`appendContract`). `internal/cli/contract.go`: `readContract`, `importsAgents`
+(decision 6's `@AGENTS.md` line, outside a fence), `contractCheck`, and
+`contractToCommit` and `commitList`, which name the files doctor's story
+worktrees fix and SDLC-E0053 (`noConfigOnTrunk`) tell a person to commit.
+`internal/cli/instructions.go` `instructionsCheck` reads Claude Code's Project
+instructions setting, only where the section is in `AGENTS.md` alone.

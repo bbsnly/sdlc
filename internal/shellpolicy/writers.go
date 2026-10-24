@@ -1,7 +1,9 @@
 package shellpolicy
 
 import (
+	"cmp"
 	"path"
+	"slices"
 	"strings"
 )
 
@@ -26,11 +28,20 @@ func writtenTo(words []string) []string {
 			return printedTo(args)
 		}
 	case "cp", "copy", "copy-item", "cpi", "mv", "move", "move-item", "mi":
-		return append(args, landing(args)...)
+		return append(args, everyLanding(words, false)...)
+	case "ln", "install":
+		// Every word stays, so a hard link's source, a second name the file
+		// can be written through, is read as written; the landings come
+		// after, so a command refused by one of its own words is refused in
+		// the same words.
+		return append(args, everyLanding(words, true)...)
 	case "curl":
 		return curlWrites(args)
 	case "wget":
 		return wgetWrites(args)
+	}
+	if written, known := givenWrites(words); known {
+		return written
 	}
 	return args
 }
@@ -216,17 +227,61 @@ func intoADirectory(to string, sources int) bool {
 	return name == ".." || !strings.Contains(name[1:], ".")
 }
 
-// landing are the names a cp or mv writes in the directory it copies or moves
-// into, as a copy's: `cp /tmp/snap/CLAUDE.md .` writes CLAUDE.md. A directory given
-// as an option is one whatever its name.
-func landing(args []string) []string {
-	from, to, target := moveArguments(args)
-	if !target && !intoADirectory(to, len(from)) {
-		return nil
+// everyLanding are the names a cp, mv, ln or install (or their PowerShell and
+// cmd names) writes in its destination: each source under its own name. With
+// anyName set, that is whatever the destination's name looks like: a link
+// and an install are made into a directory as often as onto a file, and a
+// name with a dot is no sign of which. Read as a file, `ln -sf
+// <outside>/CLAUDE.md .` replaced the root's CLAUDE.md with a link, and
+// `install <outside>/CLAUDE.md ~/src/github.com` was let through. Without
+// it, a destination intoADirectory reads as a file, and not named by an
+// option, lands nothing, as the release reads a cp or mv: `cp x
+// internal/calc.v2` writes the file. A one-operand ln makes the link where
+// the command runs.
+//
+// Where bundleTarget reads a target as well, every source of that reading
+// lands under it too, after the release's reading.
+func everyLanding(words []string, anyName bool) []string {
+	name := base(words[0])
+	from, to, target := linkArguments(name, words[1:])
+	var landed []string
+	if anyName || target || intoADirectory(to, len(from)) {
+		landed = landedIn(to, from)
 	}
+	if bundled, into, ok := bundleTarget(name, words[1:]); ok {
+		landed = append(landed, landedIn(into, bundled)...)
+	}
+	return landed
+}
+
+// linkArguments is moveArguments for a cp, mv, ln or install, but that a
+// one-operand ln makes the link where the command runs, as though given -t:
+// `ln -sf /tmp/x/CLAUDE.md` makes ./CLAUDE.md.
+func linkArguments(name string, args []string) (from []string, to string, target bool) {
+	from, to, target = moveArguments(args)
+	if name == "ln" && !target && len(from) == 0 {
+		return []string{to}, ".", true
+	}
+	return from, to, target
+}
+
+// landedIn are the sources under to, each under its own name. Where to has
+// a `**` with a `..` after it, each is spelt under to as well, uncleaned,
+// after the cleaned ones, so that a refusal the released tool made keeps its
+// words: path.Join reads `**/..` as one name and drops both, and `cp
+// /tmp/p/CLAUDE.md /tmp/**/../work` landed only `/tmp/work/CLAUDE.md`.
+func landedIn(to string, from []string) []string {
+	// clean takes the trailing slash off, and with it all of `/`.
+	dir := cmp.Or(clean(to), path.Clean(to))
 	names := make([]string, 0, len(from))
+	var spelt []string
 	for _, f := range from {
-		names = append(names, path.Join(to, path.Base(clean(f))))
+		name := path.Base(clean(f))
+		names = append(names, path.Join(dir, name))
+		spelt = append(spelt, dir+"/"+name)
+	}
+	if climbsPastGlobstar(to) {
+		names = append(names, spelt...)
 	}
 	return names
 }
@@ -252,4 +307,187 @@ func copyOperands(args []string, valued map[string]bool) []string {
 		}
 	}
 	return operands
+}
+
+// givenWrites are the files a program writes that it is given by an option or
+// an operand, and known whether the program is one of those read here. Each
+// gets a reader that returns only what it writes: counted as changing every
+// file it is given, `sort CLAUDE.md` and `uniq CLAUDE.md out.txt` would be
+// refused as writes, and counted as changing none, `sort -o CLAUDE.md x`
+// rewrote the contract as a read.
+func givenWrites(words []string) (written []string, known bool) {
+	args := words[1:]
+	switch name := base(words[0]); name {
+	case "sort":
+		return outputOption(args, "kotST"), true
+	case "base64":
+		// It writes the file whether it encodes or decodes.
+		return outputOption(args, "biw"), true
+	case "iconv":
+		return outputOption(args, "fto"), true
+	case "uniq":
+		return uniqWrites(args), true
+	default:
+		return decompressed(name, args)
+	}
+}
+
+// option is one option as scanOptions read it: a letter, or a long option's
+// name, with the value it took.
+type option struct{ name, value string }
+
+// scanOptions reads a program's words as getopt does. A word of one dash is a
+// bundle of letters; at a letter in valued, the rest of the bundle, or the
+// next word where the bundle ends there, is its value. A long word that is a
+// start, three bytes or more, of one of long takes its `=` value or the next
+// word, under that name; any other long word is passed over alone, and a
+// value it leaves behind is read as an operand. `--` ends the options.
+func scanOptions(args []string, valued string, long ...string) (opts []option, operands []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		var read []option
+		switch {
+		case a == "--":
+			return opts, append(operands, args[i+1:]...)
+		case strings.HasPrefix(a, "--"):
+			read, i = longOption(args, i, long)
+		case strings.HasPrefix(a, "-") && a != "-":
+			read, i = optionBundle(args, i, valued)
+		default:
+			operands = append(operands, a)
+		}
+		opts = append(opts, read...)
+	}
+	return opts, operands
+}
+
+// longOption is the long option at args[i], under the name of the one of long
+// it starts, and the index of the last word it took.
+func longOption(args []string, i int, long []string) ([]option, int) {
+	name, value, glued := strings.Cut(args[i], "=")
+	for _, l := range long {
+		if abbreviates(name, l) {
+			name = l
+			if !glued && i+1 < len(args) {
+				value, i = args[i+1], i+1
+			}
+		}
+	}
+	return []option{{name, value}}, i
+}
+
+// optionBundle is the letters of the bundle at args[i], up to the first that
+// takes a value, and the index of the last word they took.
+func optionBundle(args []string, i int, valued string) ([]option, int) {
+	a := args[i]
+	var opts []option
+	for j := 1; j < len(a); j++ {
+		o := option{name: a[j : j+1]}
+		if strings.IndexByte(valued, a[j]) < 0 {
+			opts = append(opts, o)
+			continue
+		}
+		o.value = a[j+1:]
+		if o.value == "" && i+1 < len(args) {
+			o.value, i = args[i+1], i+1
+		}
+		return append(opts, o), i
+	}
+	return opts, i
+}
+
+// outputOption is the file -o or a start of --output names, with valued the
+// program's other letters that take a value: `-o X`, `-oX`, `-uo X` and
+// `sort x -o X` all write X. These programs write no operand.
+func outputOption(args []string, valued string) []string {
+	opts, _ := scanOptions(args, valued+"o", "--output")
+	var out []string
+	for _, o := range opts {
+		if (o.name == "o" || o.name == "--output") && o.value != "" {
+			out = append(out, o.value)
+		}
+	}
+	return out
+}
+
+// uniqWrites are uniq's operands after the first, which it writes, but for
+// `-`, standard output. -f, -s and -w take a value.
+func uniqWrites(args []string) []string {
+	_, operands := scanOptions(args, "fsw")
+	var out []string
+	for i, w := range operands {
+		if i > 0 && w != "-" {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// decompressed is what a decompression writes: each operand without its
+// compressed suffix, and known whether name is one of the programs read here.
+// They are named whole, since a prefix test misses gunzip and bunzip2. The
+// un- names decompress whatever they are given, and the rest where given -d
+// or a start of --decompress or --uncompress. Nothing is written where one
+// writes to standard output, tests or lists; those long options are matched
+// exactly, so an abbreviation of one is read as a decompression that writes,
+// the safe direction. -f is not asked for: without it the program does not
+// replace a file that is there, but creates one that is not.
+//
+// The letters that take a value are each program's own, as its manual
+// (Apple gzip 487.0.1, xz 5.8, macOS compress, bzip2 1.0.8) names them, -S
+// and --suffix the suffix: a letter wrongly read as a flag leaves its value
+// as an operand with no compressed suffix, which writes nothing, and one
+// wrongly read as taking a value would hide an operand.
+func decompressed(name string, args []string) ([]string, bool) {
+	valued := ""
+	switch name {
+	case "gzip", "gunzip", "pigz", "unpigz":
+		valued = "S"
+	case "xz", "unxz", "lzma", "unlzma":
+		valued = "SFCTM"
+	case "compress", "uncompress":
+		valued = "b"
+	case "bzip2", "bunzip2":
+	default:
+		return nil, false
+	}
+	decompress := slices.Contains([]string{"gunzip", "unpigz", "unxz", "unlzma", "bunzip2", "uncompress"}, name)
+	opts, operands := scanOptions(args, valued, "--suffix")
+	suffix := ""
+	for _, o := range opts {
+		switch o.name {
+		case "d":
+			decompress = true
+		case "c", "t", "l", "--stdout", "--to-stdout", "--test", "--list":
+			return nil, true
+		case "S", "--suffix":
+			suffix = o.value
+		default:
+			decompress = decompress || abbreviates(o.name, "--decompress") || abbreviates(o.name, "--uncompress")
+		}
+	}
+	var written []string
+	for _, op := range operands {
+		if w, ok := unsuffixed(op, suffix); ok && decompress {
+			written = append(written, w)
+		}
+	}
+	return written, true
+}
+
+// unsuffixed is the name a decompression gives an operand: without the
+// suffix -S gave, or one the programs know, compared folded (`.z` is
+// compress's `.Z`), with the tar ones becoming .tar. ok is false for an
+// operand with none, which the program leaves alone.
+func unsuffixed(op, given string) (string, bool) {
+	for _, s := range [][2]string{
+		{given, ""}, {".gz", ""}, {"-gz", ""}, {".z", ""}, {"-z", ""}, {"_z", ""}, {".xz", ""}, {".lzma", ""},
+		{".bz2", ""}, {".bz", ""}, {".tgz", ".tar"}, {".taz", ".tar"}, {".txz", ".tar"}, {".tlz", ".tar"},
+		{".tbz", ".tar"}, {".tbz2", ".tar"},
+	} {
+		if s[0] != "" && len(op) > len(s[0]) && strings.EqualFold(op[len(op)-len(s[0]):], s[0]) {
+			return op[:len(op)-len(s[0])] + s[1], true
+		}
+	}
+	return "", false
 }

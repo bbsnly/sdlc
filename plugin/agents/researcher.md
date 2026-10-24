@@ -29,7 +29,8 @@ checkout, at the absolute paths the brief gives.
 - the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names — with its
   EARS acceptance criteria (AC-1..n)
 - `CODEMAP.md` — read this FIRST; it is the cheapest way to find the right modules
-- `CLAUDE.md` → `## SDLC Contract` — architecture rules, phase constraints, glossary
+- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (the brief names
+  which) — architecture rules, phase constraints, glossary
 - `.sdlc/config.json` → `spec.paths` — where this project's specifications live — and
   `paths.src`, where its production code lives: after `CODEMAP.md`, look there first
 - The repository. It is read-only to you; Bash is for `git log`, `git blame`, `grep` and

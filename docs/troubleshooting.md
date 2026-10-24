@@ -52,7 +52,8 @@ repository inside the first. The hook stops at the same place, so no rule applie
 This repository has no `.sdlc/config.json`, so it does not take part in the loop yet.
 
 If you want the loop in this repository, run this in its root yourself. It writes the
-configuration, a starter backlog, and the contract section your project's `CLAUDE.md` needs.
+configuration, a starter backlog, and the contract section your project's `CLAUDE.md` needs,
+or its `AGENTS.md` where the project keeps its instructions there.
 
 ```console
 $ sdlc init
@@ -790,7 +791,7 @@ $ sdlc start
 
 The loop's own files do not count: everything under `.sdlc/`, and the backlog,
 whose statuses the loop writes. Straight after `sdlc init`, what is left is
-usually the contract section it added to `CLAUDE.md`, so commit it.
+usually the contract section it added to `CLAUDE.md`, or to `AGENTS.md`, so commit it.
 
 If `sdlc start` first said that it passed over a story whose checkout no longer
 exists, the work it found may be that story's own: this checkout, moved while
@@ -1202,8 +1203,9 @@ the message names. Setting `git.worktrees` to false in
 
 - **Trunk has no committed `.sdlc/config.json`.** This is the usual first run after `sdlc init`.
   The worktree holds only what trunk commits, and reads its settings from there. Commit
-  `.sdlc/config.json` and `CLAUDE.md` to trunk, then start again. `sdlc doctor` says so too,
-  under `story worktrees`.
+  `.sdlc/config.json` and the file that holds the contract to trunk, then start again: the fix
+  names `CLAUDE.md`, `AGENTS.md`, or both where `CLAUDE.md` imports or links to `AGENTS.md`.
+  `sdlc doctor` says so too, under `story worktrees`.
 - **The `.sdlc/config.json` trunk commits cannot be read.** Correct it and commit it to trunk,
   then start again.
 - **Trunk is not a branch with a commit here.** In the main checkout, create the branch

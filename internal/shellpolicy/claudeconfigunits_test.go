@@ -39,12 +39,11 @@ func tempHomeState(t *testing.T) (State, string) {
 	return s, home
 }
 
-func TestAC7ClaudeConfigWritesRefusesWritesToTheConfigurationAndLetsReadsThrough(t *testing.T) {
-	if _, ok := ClaudeConfigWrites("echo x > ~/.claude/settings.json", ready); ok {
-		t.Error("with no way to place the configuration, a command was refused for writing it")
-	}
-	s, home := tempHomeState(t)
-	for _, command := range []string{
+// claudeConfigWritten are commands that write the person's Claude Code
+// configuration, with the home at home. US-023 asks the same rows of ~/.agents
+// (agentsmd_test.go), which is why they are a table of their own.
+func claudeConfigWritten(home string) []string {
+	return []string{
 		"echo x > ~/.claude/settings.json",
 		`echo x > "` + home + `/.claude/settings.json"`,
 		`rm -rf "` + home + `/.claude/hooks"`,
@@ -61,17 +60,13 @@ func TestAC7ClaudeConfigWritesRefusesWritesToTheConfigurationAndLetsReadsThrough
 		`python3 -c 'import os; open(os.path.expanduser("~/.claude/settings.json"), "w")'`,
 		"X=~/.claude; echo x > $X/settings.json",
 		"echo x > ~bob/.claude/settings.json",
-	} {
-		f, ok := ClaudeConfigWrites(command, s)
-		if !ok || f.Rule != ruleClaudeConfig {
-			t.Errorf("AC-7 %q = %+v, %v; want it refused as %s", command, f, ok, ruleClaudeConfig)
-			continue
-		}
-		if f.Reason == "" || f.Route == "" {
-			t.Errorf("AC-7 the refusal of %q does not say why and what to do: %+v", command, f)
-		}
 	}
-	for _, command := range []string{
+}
+
+// claudeConfigRead are commands that only read the configuration, or write
+// somewhere else, with the home at home.
+func claudeConfigRead(home string) []string {
+	return []string{
 		"cat ~/.claude/settings.json",
 		"cp ~/.claude/settings.json backup.json",
 		"claude mcp list",
@@ -82,7 +77,25 @@ func TestAC7ClaudeConfigWritesRefusesWritesToTheConfigurationAndLetsReadsThrough
 		`cat "` + home + `/.claude/settings.json"`,
 		`cp notes.txt "` + home + `/notes.txt"`,
 		"echo x > internal/app.go",
-	} {
+	}
+}
+
+func TestAC7ClaudeConfigWritesRefusesWritesToTheConfigurationAndLetsReadsThrough(t *testing.T) {
+	if _, ok := ClaudeConfigWrites("echo x > ~/.claude/settings.json", ready); ok {
+		t.Error("with no way to place the configuration, a command was refused for writing it")
+	}
+	s, home := tempHomeState(t)
+	for _, command := range claudeConfigWritten(home) {
+		f, ok := ClaudeConfigWrites(command, s)
+		if !ok || f.Rule != ruleClaudeConfig {
+			t.Errorf("AC-7 %q = %+v, %v; want it refused as %s", command, f, ok, ruleClaudeConfig)
+			continue
+		}
+		if f.Reason == "" || f.Route == "" {
+			t.Errorf("AC-7 the refusal of %q does not say why and what to do: %+v", command, f)
+		}
+	}
+	for _, command := range claudeConfigRead(home) {
 		if f, ok := ClaudeConfigWrites(command, s); ok {
 			t.Errorf("AC-7 %q was refused: %+v", command, f)
 		}

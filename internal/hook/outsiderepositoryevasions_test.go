@@ -82,6 +82,11 @@ func orRun(t *testing.T, w orWorld, rows []orEvasion) {
 			t.Run(agent+" from "+row.dir+" "+row.command, func(t *testing.T) {
 				orRefusedAs(t, w.ask(t, agent, row.dir, row.command), agent, row.rule)
 			})
+			// US-023 AC-5: the row again, for AGENTS.md.
+			agAgentsMD(t, row.command, []string{w.root, w.out}, func(t *testing.T, respelt string) {
+				t.Helper()
+				orRefusedAs(t, w.ask(t, agent, row.dir, respelt), agent, row.rule)
+			})
 		}
 	}
 }

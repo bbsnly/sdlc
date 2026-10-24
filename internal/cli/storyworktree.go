@@ -188,7 +188,7 @@ func checkNewWorktree(cmd *cobra.Command, s *store.Store, main, wt, id, trunk st
 	// loop in the worktree reads it, so the smoke check is the one it names.
 	wtCfg, err := config.Load(wt)
 	if err != nil {
-		return rolledBack(noConfigOnTrunk(err, trunk), id, undo())
+		return rolledBack(noConfigOnTrunk(err, trunk, contractToCommit(cmd.Context(), main, trunk)...), id, undo())
 	}
 	// git's own variables, where they are set, name wherever start was run
 	// from, and would point the project's command at that repository instead.
@@ -523,15 +523,19 @@ func behindInWorktrees(err error, trunk string) error {
 }
 
 // noConfigOnTrunk is a worktree whose configuration, the one trunk commits,
-// cannot be read.
-func noConfigOnTrunk(err error, trunk string) error {
+// cannot be read. contract is the files the contract is in, as
+// contractToCommit names them, which the one caller passes, so that doctor
+// and this name the same ones. It is variadic so that a test that asks for the
+// refusal alone still compiles; with no names the fix names only the
+// configuration, so a new caller that skips the lookup tells the person less.
+func noConfigOnTrunk(err error, trunk string, contract ...string) error {
 	var e *sdlcerr.Error
 	if errors.As(err, &e) && e.Code == sdlcerr.NotInitialised {
 		return sdlcerr.New(sdlcerr.WorktreeNotMade,
 			"the story's worktree could not be made: trunk, "+quote(trunk)+", has no .sdlc/config.json committed",
 			"a new worktree has only what trunk commits, and the loop in it reads its configuration from there").
 			WithCause(err).
-			WithFix("commit .sdlc/config.json and CLAUDE.md to trunk, then start again, or set git.worktrees to " +
+			WithFix(commitList(contract) + ", then start again, or set git.worktrees to " +
 				"false in this checkout's .sdlc/config.json; an assistant stops and tells the person")
 	}
 	what, why := err.Error(), ""

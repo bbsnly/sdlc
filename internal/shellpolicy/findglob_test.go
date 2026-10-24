@@ -155,6 +155,11 @@ func refusedUnder(t *testing.T, command string, s State, rules ...string) {
 	case f.Route == "" || f.Reason == "":
 		t.Errorf("%s: finding = %+v", command, f)
 	}
+	// US-023 AC-5 and AC-11: the row again, for AGENTS.md and .agents.
+	alsoRefusedAsAgents(t, command, s, rules, func(t *testing.T, command string, s State) {
+		t.Helper()
+		refusedUnder(t, command, s, rules...)
+	})
 }
 
 func allowedGlob(t *testing.T, command string, s State) {
@@ -162,6 +167,10 @@ func allowedGlob(t *testing.T, command string, s State) {
 	if f, ok := inspectNoPanic(t, command, s); ok {
 		t.Errorf("%s was refused by %s: %s", command, f.Rule, f.Reason)
 	}
+	alsoAllowedAsAgents(t, command, s, func(t *testing.T, command string, s State) {
+		t.Helper()
+		allowedGlob(t, command, s)
+	})
 }
 
 func triedName(c triedGlob) string {

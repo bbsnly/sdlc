@@ -235,7 +235,7 @@ func shellRules(t *testing.T) []string {
 
 func TestEveryAgentIsDocumented(t *testing.T) {
 	t.Parallel()
-	doc := page(t, "agents.md")
+	doc := page(t, "the-agents.md")
 	entries, err := os.ReadDir(filepath.Join("..", "..", "plugin", "agents"))
 	if err != nil {
 		t.Fatal(err)
@@ -243,7 +243,7 @@ func TestEveryAgentIsDocumented(t *testing.T) {
 	for _, e := range entries {
 		name := strings.TrimSuffix(e.Name(), ".md")
 		if !strings.Contains(doc, "`sdlc:"+name+"`") {
-			t.Errorf("docs/agents.md has no row for sdlc:%s", name)
+			t.Errorf("docs/the-agents.md has no row for sdlc:%s", name)
 		}
 	}
 }

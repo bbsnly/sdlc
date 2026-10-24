@@ -324,11 +324,11 @@ func TestAC1WhatReachesTheRepositoryFromOutsideStaysRefused(t *testing.T) {
 			{"", `python3 -c 'import os; os.remove("` + frozen + `")' /tmp/out/notes.txt`, rule},
 			{"", "echo /tmp/out/notes.txt | xargs rm " + frozen, rule},
 		} {
-			t.Run(agent+" from "+c.dir+" "+c.command, func(t *testing.T) {
-				s := orState(agent, c.dir, links)
-				f, ok := Inspect(c.command, s)
+			check := func(t *testing.T, command string, s State) {
+				t.Helper()
+				f, ok := Inspect(command, s)
 				if !ok {
-					t.Fatalf("allowed: %s", c.command)
+					t.Fatalf("allowed: %s", command)
 				}
 				// Which of the rules that read a file's name speaks first is
 				// not what is held here -- a word placed in the repository by a
@@ -337,6 +337,12 @@ func TestAC1WhatReachesTheRepositoryFromOutsideStaysRefused(t *testing.T) {
 				if !slices.Contains(fileRules, f.Rule) {
 					t.Errorf("refused by %s, want one of %v (%s): %s", f.Rule, fileRules, c.rule, f.Reason)
 				}
+			}
+			t.Run(agent+" from "+c.dir+" "+c.command, func(t *testing.T) {
+				s := orState(agent, c.dir, links)
+				check(t, c.command, s)
+				// US-023 AC-5: the row again, for AGENTS.md.
+				alsoRefusedAsAgents(t, c.command, s, []string{c.rule}, check)
 			})
 		}
 	}

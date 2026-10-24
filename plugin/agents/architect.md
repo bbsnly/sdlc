@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Works only within a story a person started with /sdlc:next, when that runbook delegates this gate; not for general review, security, performance, testing, planning, analysis or retro requests. Blocking design reviewer for Gate 4. Use it to review a story's plan against the acceptance criteria, the architecture rules in CLAUDE.md, and the shape of the existing code, and to approve or block it. Read-only; records its review through the sdlc command.
+description: Works only within a story a person started with /sdlc:next, when that runbook delegates this gate; not for general review, security, performance, testing, planning, analysis or retro requests. Blocking design reviewer for Gate 4. Use it to review a story's plan against the acceptance criteria, the architecture rules in CLAUDE.md or AGENTS.md, and the shape of the existing code, and to approve or block it. Read-only; records its review through the sdlc command.
 model: inherit
 tools: Read, Grep, Glob, Bash
 maxTurns: 60
@@ -29,7 +29,8 @@ gives.
 - the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names
 - `.sdlc/stories/<ID>/ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md`
 - the frozen acceptance tests — they are the specification the plan has to satisfy
-- `CLAUDE.md` → `## SDLC Contract` — architecture rules, phase constraints, layering
+- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (the brief names
+  which) — architecture rules, phase constraints, layering
 - `CODEMAP.md` and the code the plan touches
 
 ## What to look for

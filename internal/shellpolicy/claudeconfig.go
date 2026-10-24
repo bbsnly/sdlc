@@ -19,35 +19,104 @@ const claudeConfigRoute = "say what you would change there and why, and stop: th
 const claudeConfigReason = "the person's Claude Code configuration, which decides the hooks, plugins, skills, " +
 	"agents and permissions every session runs under, so a session that wrote it could change the rules it is held to"
 
+// ruleAgentsConfig is the rule a write to the person's ~/.agents is refused
+// under, from the file tools and from the shell: the twin of
+// ruleClaudeConfig, for the folder other agent tools load skills from.
+const ruleAgentsConfig = "agents-config-is-the-persons"
+
+// agentsConfigRoute and agentsConfigReason are what to do instead, and why.
+// internal/policy says the same of a file tool's write.
+const agentsConfigRoute = "say what you would change there and why, and stop: the person adds or changes a " +
+	"skill in their own ~/.agents, by hand or from their own terminal, outside the session"
+
+const agentsConfigReason = "in the person's ~/.agents, the folder Codex, Cursor, Copilot, Gemini CLI and other " +
+	"agent tools load skills from (it has nothing to do with sdlc's own agents), so a skill written there runs " +
+	"in the person's next session with one of them"
+
 // ClaudeConfigWrites reports a command that writes the person's Claude Code
-// configuration: the one shell rule the hook asks in a session that holds no
-// story, where none of the others applies. It reads the command as Inspect
-// does, with the same readings and the same walk of where it runs, and asks
-// nothing but this; only Dir, Root, PowerShell, ClaudeConfig and
-// ClaudeConfigHeld of s are read.
+// configuration or their ~/.agents: the one shell rule the hook asks in a
+// session that holds no story, where none of the others applies. It reads the
+// command as Inspect does, with the same readings and the same walk of where
+// it runs, and asks nothing but this; only Dir, Root, PowerShell and the
+// ClaudeConfig and AgentsConfig pairs of s are read.
 func ClaudeConfigWrites(command string, s State) (Finding, bool) {
-	if s.ClaudeConfig == nil {
+	if s.ClaudeConfig == nil && s.ClaudeConfigHeld == nil && s.AgentsConfig == nil && s.AgentsConfigHeld == nil {
 		return Finding{}, false
 	}
 	s.configOnly = true
 	return inspectAs(command, command, s)
 }
 
-// checkClaudeConfig refuses a command of one segment that writes the person's
-// Claude Code configuration: a word it writes or takes away that the caller
-// places there, one that cannot be placed in a command that names it, and
-// Claude Code's own commands that change it.
+// configKind is one of the person's places the shell holds in every session:
+// ~/.claude or ~/.agents, with the rule's words and the caller's callbacks.
+type configKind struct {
+	rule, route string
+	// what is what the place is, after "<word> is "; named is the place as
+	// a refusal names it.
+	what, named string
+	in, held    func(word string) bool
+	// agents is whether this is ~/.agents, whose names make an unplaced
+	// word suspect in place of .claude's.
+	agents bool
+}
+
+// checkPersonsConfig refuses a command that writes either of the person's
+// places. ~/.agents is asked first: a command that fills or empties a whole
+// home (`cp -r dotfiles/. ~`, `rm -rf ~`) writes both, and its refusal names
+// the folder that is less known to be there; any other write into ~/.claude
+// is not under ~/.agents, so it keeps its own rule.
+func checkPersonsConfig(q pathQuestion) (Finding, bool) {
+	s := q.s
+	if f, ok := checkConfig(q, agentsKind(s)); ok {
+		return f, true
+	}
+	claude := configKind{
+		rule: ruleClaudeConfig, route: claudeConfigRoute, what: claudeConfigReason,
+		named: "the person's Claude Code configuration", in: s.ClaudeConfig, held: s.ClaudeConfigHeld,
+	}
+	return checkConfig(q, claude)
+}
+
+// agentsKind is the person's ~/.agents, as checkPersonsConfig and
+// checkAgentsNamedWord ask it.
+func agentsKind(s State) configKind {
+	return configKind{
+		rule: ruleAgentsConfig, route: agentsConfigRoute, what: agentsConfigReason,
+		named: "the person's ~/.agents", in: s.AgentsConfig, held: s.AgentsConfigHeld, agents: true,
+	}
+}
+
+// checkAgentsNamedWord refuses, ahead of the loop-state rule, a word the
+// command writes whose own spelling names .agents and that is or could be in
+// the person's ~/.agents. .agents is protected at any depth by name, so the
+// loop-state rule refused `echo x > ~bob/.agents/settings.json` and `echo x >
+// $HOME/.agents/x` as the project's own. Only such a word is asked: asked of
+// the whole line, as checkPersonsConfig asks it, `cd "$D" && rm -rf
+// .sdlc/state && ls .agents` and `python3 -c 'open(".agents/x","w")'` lost
+// the released rules that refuse them.
+func checkAgentsNamedWord(q pathQuestion) (Finding, bool) {
+	k := agentsKind(q.s)
+	if k.in == nil || len(q.run.words) == 0 {
+		return Finding{}, false
+	}
+	return q.writtenConfig(k, true)
+}
+
+// checkConfig refuses a command of one segment that writes one of the
+// person's places: a word it writes or takes away that the caller places
+// there, one that cannot be placed in a command that names it, and, for
+// ~/.claude, Claude Code's own commands that change it.
 //
 // The words asked are the ones the loop-state rule asks, read for what they
 // write rather than what they name: a copy's destination and not its source,
 // and sed or perl only when they edit in place, so that reading the
 // configuration stays free.
-func checkClaudeConfig(q pathQuestion) (Finding, bool) {
-	s, run := q.s, q.run
-	if s.ClaudeConfig == nil || len(run.words) == 0 {
+func checkConfig(q pathQuestion, k configKind) (Finding, bool) {
+	run := q.run
+	if k.in == nil || len(run.words) == 0 {
 		return Finding{}, false
 	}
-	if sub, ok := claudeChangesItsConfig(run.words); ok {
+	if sub, ok := claudeChangesItsConfig(run.words); ok && !k.agents {
 		return Finding{
 			Rule:   ruleClaudeConfig,
 			Reason: "`claude " + sub + "` changes " + claudeConfigReason,
@@ -56,23 +125,33 @@ func checkClaudeConfig(q pathQuestion) (Finding, bool) {
 	}
 	// A program places its own paths: `python3 -c` with expanduser("~/.claude")
 	// or HOME+"/.claude.json" names a place the shell never sees whole.
-	if q.runsCode() && q.m.namesConfigLiterally(q.line) {
+	if q.runsCode() && q.m.namesConfig(q.line, k.agents, false) {
 		return Finding{
-			Rule: ruleClaudeConfig,
-			Reason: "the inline code names the person's Claude Code configuration, and where it writes " +
-				"is the program's to work out, so it could write " + claudeConfigReason,
+			Rule: k.rule,
+			Reason: "the inline code names " + k.named + ", and where it writes " +
+				"is the program's to work out, so it could write " + k.what,
 			Route: "if the code only reads the configuration, read it with a plain command such as `cat`; " +
-				"otherwise " + claudeConfigRoute,
+				"otherwise " + k.route,
 		}, true
 	}
+	return q.writtenConfig(k, false)
+}
+
+// writtenConfig is the refusal of the first word the command writes that is
+// the place, or a directory that holds it. With spelt set, only a word whose
+// own spelling names the place is asked.
+func (q pathQuestion) writtenConfig(k configKind, spelt bool) (Finding, bool) {
 	inside, held := q.configWords()
 	for _, group := range []struct {
 		words []string
 		held  bool
 	}{{inside, false}, {held, true}} {
 		for _, raw := range group.words {
-			for _, w := range q.m.spell(s, q.dir, []string{raw}) {
-				if f, ok := q.configWord(w, raw, group.held); ok {
+			if spelt && !namesConfigAs(raw, true, k.agents) {
+				continue
+			}
+			for _, w := range q.m.spell(q.s, q.dir, []string{raw}) {
+				if f, ok := q.configWord(k, w, raw, group.held); ok {
 					return f, true
 				}
 			}
@@ -82,31 +161,30 @@ func checkClaudeConfig(q pathQuestion) (Finding, bool) {
 }
 
 // configWord is the refusal of one word the command writes, where it is the
-// configuration, or with held set, a directory that holds it; or where it
-// cannot be placed and the command names the configuration. raw is the word
-// as the command gave it, before it was placed.
-func (q pathQuestion) configWord(w, raw string, held bool) (Finding, bool) {
-	s := q.s
+// place, or with held set, a directory that holds it; or where it cannot be
+// placed and the command names the place. raw is the word as the command
+// gave it, before it was placed.
+func (q pathQuestion) configWord(k configKind, w, raw string, held bool) (Finding, bool) {
 	c := clean(w)
 	if c == "" || strings.HasPrefix(c, "-") {
 		return Finding{}, false
 	}
-	if s.ClaudeConfig(w) || held && s.ClaudeConfigHeld != nil && s.ClaudeConfigHeld(w) {
-		return Finding{Rule: ruleClaudeConfig, Reason: c + " is " + claudeConfigReason, Route: claudeConfigRoute}, true
+	if k.in(w) || held && k.held != nil && k.held(w) {
+		return Finding{Rule: k.rule, Reason: c + " is " + k.what, Route: k.route}, true
 	}
 	// A glob names the configuration only in the word it is written in, and
 	// only where the shell expands it; elsewhere on the line only a name
 	// spelled out does. The whole line's reading with globs is the cheap
 	// question first: the word is on the line, so where that finds nothing
 	// neither can the others.
-	if q.configUnplaced(c) && q.m.namesClaudeConfig(q.line) &&
-		(q.m.namesConfigLiterally(q.line) || namesClaudeConfig(raw) && q.expandsAGlob(raw)) {
+	if q.configUnplaced(c) && q.m.namesConfig(q.line, k.agents, true) &&
+		(q.m.namesConfig(q.line, k.agents, false) || namesConfigAs(raw, true, k.agents) && q.expandsAGlob(raw)) {
 		return Finding{
-			Rule: ruleClaudeConfig,
+			Rule: k.rule,
 			Reason: c + " is not known until the shell runs the command, which names " +
-				"the person's Claude Code configuration, so it could be " + claudeConfigReason,
-			Route: "write it with the path spelled out, if it is not the person's Claude Code configuration; " +
-				"otherwise " + claudeConfigRoute,
+				k.named + ", so it could be " + k.what,
+			Route: "write it with the path spelled out, if it is not " + k.named + "; " +
+				"otherwise " + k.route,
 		}, true
 	}
 	return Finding{}, false
@@ -291,28 +369,22 @@ func (q pathQuestion) configWords() (inside, held []string) {
 
 // configWritten is what a command writes, as writtenTo has it, except that a
 // copy writes only where it copies to: `cp ~/.claude/settings.json backup`
-// reads the configuration.
+// reads the configuration. A link and a move write what writtenTo says,
+// their landings among it; a move removes its source, which is written too.
 //
 // Each source's name under the destination is asked too, whatever the
-// destination's own name looks like: landing reads a home whose name holds a
-// dot as a file, and `cp x/.claude.json` into that home spelled out in full
-// wrote the person's configuration with nothing asked.
+// destination's own name looks like (everyLanding): read as a file, a home
+// whose name holds a dot let `cp x/.claude.json` into that home spelled out
+// in full write the person's configuration with nothing asked.
 func configWritten(words []string) []string {
 	switch name := base(words[0]); name {
-	case "cp", "copy", "copy-item", "cpi", "install", "ln":
-		from, to, _ := moveArguments(words[1:])
+	case "cp", "copy", "copy-item", "cpi", "install":
+		_, to, _ := moveArguments(words[1:])
 		out := []string{to}
-		if name == "ln" {
-			out = writtenTo(words)
-			if len(from) == 0 {
-				// `ln -s /x/.claude.json` makes the link where the command runs.
-				out = append(out, path.Base(clean(to)))
-			}
+		if _, into, ok := bundleTarget(name, words[1:]); ok {
+			out = append(out, into)
 		}
-		for _, f := range from {
-			out = append(out, path.Join(to, path.Base(clean(f))))
-		}
-		return append(out, landing(words[1:])...)
+		return append(out, everyLanding(words, true)...)
 	}
 	return writtenTo(words)
 }
@@ -398,63 +470,75 @@ func nonOptions(args []string) []string {
 // .claude or .claude.json, or a glob that matches one, or the variables that
 // move it. Worked out once for each reading's line.
 func (m *memo) namesClaudeConfig(line string) bool {
-	if m.claudeNamed == 0 {
-		m.claudeNamed = -1
-		if namesClaudeConfig(line) {
-			m.claudeNamed = 1
-		}
-	}
-	return m.claudeNamed > 0
+	return m.namesConfig(line, false, true)
 }
 
 func namesClaudeConfig(line string) bool {
-	return namesClaudeConfigAs(line, true)
+	return namesConfigAs(line, true, false)
 }
 
-// namesConfigLiterally is namesClaudeConfig with no glob read as a name: what
-// a whole line is asked. A regular expression's `.*`, in a sed script or a
-// program, matched .claude as a glob, and `perl -pe 's/.*//' notes.txt` was
-// refused for writing the person's configuration.
-func (m *memo) namesConfigLiterally(line string) bool {
-	if m.claudeLiteral == 0 {
-		m.claudeLiteral = -1
-		if namesClaudeConfigAs(line, false) {
-			m.claudeLiteral = 1
+// namesConfig is namesConfigAs, worked out once for each reading's line,
+// with a cache for each place and each reading of globs: a shared one would
+// answer one place with the other's answer.
+//
+// With globs unset it is what a whole line is asked. A regular expression's
+// `.*`, in a sed script or a program, matched .claude as a glob, and `perl
+// -pe 's/.*//' notes.txt` was refused for writing the person's configuration.
+func (m *memo) namesConfig(line string, agents, globs bool) bool {
+	cache := &m.claudeNamed
+	switch {
+	case agents && globs:
+		cache = &m.agentsNamed
+	case agents:
+		cache = &m.agentsLiteral
+	case !globs:
+		cache = &m.claudeLiteral
+	}
+	if *cache == 0 {
+		*cache = -1
+		if namesConfigAs(line, globs, agents) {
+			*cache = 1
 		}
 	}
-	return m.claudeLiteral > 0
+	return *cache > 0
 }
 
-// namesClaudeConfigAs is namesClaudeConfig, reading globs as names or not.
-func namesClaudeConfigAs(line string, globs bool) bool {
+// namesConfigAs reports whether a line names the person's Claude Code
+// configuration, or with agents set their ~/.agents, reading globs as names
+// or not.
+func namesConfigAs(line string, globs, agents bool) bool {
 	lower := strings.ToLower(line)
-	if strings.Contains(lower, "claude_config_dir") || strings.Contains(lower, "claude_code_plugin_cache_dir") {
+	if !agents && (strings.Contains(lower, "claude_config_dir") || strings.Contains(lower, "claude_code_plugin_cache_dir")) {
 		return true
 	}
 	if !strings.Contains(lower, ".") {
 		return false
 	}
+	files := []string{".claude", ".claude.json"}
+	if agents {
+		files = []string{".agents"}
+	}
 	names := strings.FieldsFunc(lower, func(r rune) bool {
 		return strings.ContainsRune(" \t\r\n/\\'\"=;:&|()<>$`{},", r)
 	})
-	return slices.ContainsFunc(names, func(name string) bool { return namesConfigFile(name, globs) })
+	return slices.ContainsFunc(names, func(name string) bool { return namesConfigFile(name, globs, files) })
 }
 
-// namesConfigFile reports whether one name, a segment of a path, is .claude or
-// .claude.json, or with globs set, a glob that could match either.
-func namesConfigFile(name string, globs bool) bool {
+// namesConfigFile reports whether one name, a segment of a path, is one of
+// files, or with globs set, a glob that could match one.
+func namesConfigFile(name string, globs bool, files []string) bool {
 	// Windows drops a trailing dot or space: `.claude.` is .claude there.
 	name = strings.TrimRight(name, ". ")
 	if name == "" || name[0] != '.' && name[0] != '[' {
 		return false
 	}
-	if name == ".claude" || name == ".claude.json" {
+	if slices.Contains(files, name) {
 		return true
 	}
 	if !globs || !strings.ContainsAny(name, "*?[") {
 		return false
 	}
-	for _, file := range []string{".claude", ".claude.json"} {
+	for _, file := range files {
 		if ok, _ := path.Match(name, file); ok {
 			return true
 		}

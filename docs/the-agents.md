@@ -83,8 +83,11 @@ woken up at 3am can tell which branch was taken.
 Whatever its role, no agent may do any of the following. The hook refuses each
 one, so you do not need to rely on an agent remembering.
 
-- Write outside the repository, or into `.git`, `.claude`, `CLAUDE.md`,
-  `.sdlc/config.json` or `.sdlc/state`.
+- Write outside the repository, or into `.git`, `.sdlc/config.json` or
+  `.sdlc/state`; or into `.claude`, `.agents`, `CLAUDE.md`, `CLAUDE.local.md` or
+  `AGENTS.md` at any depth; or into the person's `~/.claude` or `~/.agents`.
+  `.agents` and `~/.agents` are the folders other agent tools load skills from,
+  not where sdlc keeps the agents on this page.
 - Write a gate's documents as files. Those go through `sdlc artifact write` and
   `sdlc review add`, from everyone.
 - Edit a frozen acceptance test.

@@ -235,6 +235,6 @@ story. It blocks here only because this story's sensitivity was never recorded.
 
 - [Commands: `sdlc review add`](../commands.md#sdlc-review-add-gate-role-verdict)
   and [`sdlc review list`](../commands.md#sdlc-review-list)
-- [Agents](../agents.md#who-does-what): which agent reviews at each gate
+- [Agents](../the-agents.md#who-does-what): which agent reviews at each gate
 - [The loop: rework](../the-loop.md#rework)
 - [When a frozen test is wrong](when-a-frozen-test-is-wrong.md)

@@ -229,7 +229,8 @@ func TestAHumanOnlySkillKeepsWhatItPromises(t *testing.T) {
 			"Do not run it yourself",
 		},
 		"consolidate": {
-			"the `## SDLC Contract` section of the project's `CLAUDE.md`, and only that section",
+			"the `## SDLC Contract` section of the project's `CLAUDE.md`, or of its `AGENTS.md` where the project keeps the section there, and only that section",
+			"change only lines inside the `## SDLC Contract` section, and nothing else in the file that holds it",
 			"Never write under `~/.claude`",
 			"never write under the plugin cache",
 			"Before each edit run `sdlc status --json` again",

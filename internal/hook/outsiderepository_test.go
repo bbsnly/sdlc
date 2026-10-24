@@ -137,6 +137,13 @@ func TestAC1AndAC2AFrozenLookingNameOutsideTheRepositoryIsNotRefusedByTheHook(t 
 					t.Errorf("refused: %s", reasonOf(r))
 				}
 			})
+			// US-023 AC-5: an AGENTS.md outside the repository is not its.
+			agAgentsMD(t, row.command, []string{w.root, w.out}, func(t *testing.T, respelt string) {
+				t.Helper()
+				if r := w.ask(t, agent, row.dir, respelt); denied(r) {
+					t.Errorf("refused: %s", reasonOf(r))
+				}
+			})
 		}
 	}
 }
@@ -469,6 +476,13 @@ func TestAC1WhatReachesTheRepositoryFromOutsideStaysRefusedByTheHook(t *testing.
 			t.Run(agent+" from "+row.dir+" "+row.command, func(t *testing.T) {
 				if r := w.ask(t, agent, row.dir, row.command); !denied(r) {
 					t.Errorf("allowed: a spelling that reaches the repository from outside went through")
+				}
+			})
+			// US-023 AC-5: the row again, for AGENTS.md.
+			agAgentsMD(t, row.command, []string{w.root, w.out}, func(t *testing.T, respelt string) {
+				t.Helper()
+				if r := w.ask(t, agent, row.dir, respelt); !denied(r) {
+					t.Errorf("allowed: a spelling that reaches AGENTS.md from outside went through")
 				}
 			})
 		}

@@ -169,7 +169,7 @@ story's gate record by `sdlc:project-manager` where the project has
 [`staffing.enabled`](configuration.md#staffing), and a gate then waits only for
 the reviewers the story needs. It is not the plan: the plan is Gate 4's
 document, and says how the change is made, not who makes it.
-[Agents](agents.md#the-staffing) says how it is chosen and where to read it.
+[Agents](the-agents.md#the-staffing) says how it is chosen and where to read it.
 
 Twelve agents take part. With the staffing off, a story that needs no rework
 runs agents fifteen times: one each at Gates 2, 3, 5, 6 and 9, six at Gate 4 and

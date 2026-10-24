@@ -2,6 +2,7 @@ package hook
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -10,56 +11,79 @@ import (
 	"github.com/bbsnly/sdlc/internal/pathrules"
 )
 
-// claudeConfig is where the person's Claude Code configuration is, for one
-// call: ~/.claude and ~/.claude.json, and the directories Claude Code is told
-// to keep it in instead. It decides the hooks, plugins, skills and permissions
-// every session runs under, this plugin's own launcher and binary among them,
-// so no session writes it (AC-7 of US-108).
+// personsConfig is where one part of the person's own configuration is, for
+// one call. newClaudeConfig is Claude Code's: ~/.claude and ~/.claude.json,
+// and the directories Claude Code is told to keep it in instead. It decides
+// the hooks, plugins, skills and permissions every session runs under, this
+// plugin's own launcher and binary among them, so no session writes it (AC-7
+// of US-108). newAgentsConfig is ~/.agents, the skills Codex, Cursor, Copilot,
+// Gemini CLI and other agent tools load (AC-11 of US-023). Both are placed by
+// the same code, so a spelling of the home that reaches one reaches the other.
 //
 // It is worked out only when a write is asked about, and once. A home that
 // cannot be found is no configuration at all: the hook fails open on its own
 // errors, and Claude Code always sets one.
-type claudeConfig struct {
+type personsConfig struct {
 	getenv func(string) string
 	// project is what a relative word of a command is relative to, absolute.
 	project string
-	roots   func() []claudeRoot
+	roots   func() []configRoot
 	// said is what word answered for each word asked, and held what heldWord
 	// did: a command names the same words in segment after segment.
 	said, held map[string]bool
 }
 
-// claudeRoot is one place the configuration is kept, as written and with the
+// configRoot is one place the configuration is kept, as written and with the
 // links on the way to it followed.
-type claudeRoot struct {
+type configRoot struct {
 	path     string
 	resolver pathrules.Resolver
 }
 
-func newClaudeConfig(getenv func(string) string, project string) *claudeConfig {
-	c := &claudeConfig{getenv: getenv, project: project, said: map[string]bool{}, held: map[string]bool{}}
-	c.roots = sync.OnceValue(c.find)
+func newClaudeConfig(getenv func(string) string, project string) *personsConfig {
+	return newPersonsConfig(getenv, project, func() []string {
+		paths := inHome(".claude", ".claude.json")
+		for _, name := range []string{"CLAUDE_CONFIG_DIR", "CLAUDE_CODE_PLUGIN_CACHE_DIR"} {
+			if dir := getenv(name); dir != "" && filepath.IsAbs(dir) {
+				paths = append(paths, filepath.Clean(dir))
+			}
+		}
+		return paths
+	})
+}
+
+func newAgentsConfig(getenv func(string) string, project string) *personsConfig {
+	return newPersonsConfig(getenv, project, func() []string { return inHome(".agents") })
+}
+
+func newPersonsConfig(getenv func(string) string, project string, paths func() []string) *personsConfig {
+	c := &personsConfig{getenv: getenv, project: project, said: map[string]bool{}, held: map[string]bool{}}
+	c.roots = sync.OnceValue(func() []configRoot { return rootsAt(paths()) })
 	return c
 }
 
-// find is every place the configuration is kept. A ~/.claude linked into a
+// inHome is each name in the person's home, or nothing where there is no home.
+func inHome(names ...string) []string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+	paths := make([]string, len(names))
+	for i, name := range names {
+		paths[i] = filepath.Join(home, name)
+	}
+	return paths
+}
+
+// rootsAt is every place the configuration is kept. A ~/.claude linked into a
 // dotfiles directory is common, so each is compared as it is on disk too.
-func (c *claudeConfig) find() []claudeRoot {
-	var paths []string
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		paths = append(paths, filepath.Join(home, ".claude"), filepath.Join(home, ".claude.json"))
-	}
-	for _, name := range []string{"CLAUDE_CONFIG_DIR", "CLAUDE_CODE_PLUGIN_CACHE_DIR"} {
-		if dir := c.getenv(name); dir != "" && filepath.IsAbs(dir) {
-			paths = append(paths, filepath.Clean(dir))
-		}
-	}
-	roots := make([]claudeRoot, 0, len(paths))
+func rootsAt(paths []string) []configRoot {
+	roots := make([]configRoot, 0, len(paths))
 	for _, p := range paths {
 		// The path asked has the firmlink taken off, so a HOME spelled
 		// through it has to lose it too, or neither spelling meets the other.
 		p = withoutFirmlink(p)
-		roots = append(roots, claudeRoot{path: p, resolver: pathrules.NewResolver(p).Memoised()})
+		roots = append(roots, configRoot{path: p, resolver: pathrules.NewResolver(p).Memoised()})
 	}
 	return roots
 }
@@ -67,7 +91,7 @@ func (c *claudeConfig) find() []claudeRoot {
 // holds reports whether an absolute path is the configuration or inside it:
 // as written, folded as a filesystem that folds case reads it, and as the
 // disk has it, through links and on Windows short names.
-func (c *claudeConfig) holds(abs string) bool {
+func (c *personsConfig) holds(abs string) bool {
 	if abs == "" || !filepath.IsAbs(abs) {
 		return false
 	}
@@ -87,7 +111,7 @@ func (c *claudeConfig) holds(abs string) bool {
 
 // above reports whether an absolute path is a directory that holds the
 // configuration: the home, or a directory above it.
-func (c *claudeConfig) above(abs string) bool {
+func (c *personsConfig) above(abs string) bool {
 	if abs == "" || !filepath.IsAbs(abs) {
 		return false
 	}
@@ -103,9 +127,23 @@ func (c *claudeConfig) above(abs string) bool {
 	return false
 }
 
+// aboveProject reports whether abs, an absolute slash-separated path, is in a
+// directory the project root is in or one above it, or in the .claude of one:
+// Claude Code loads the instruction files there in every session it starts in
+// the project (AC-13 of US-023). Both are compared by their names alone, with
+// the firmlink off, so a .sdlc planted on the way plays no part.
+func aboveProject(root, abs string) bool {
+	root, abs = withoutFirmlink(root), withoutFirmlink(abs)
+	dir := path.Dir(abs)
+	if pathrules.SameName(path.Base(dir), ".claude") {
+		dir = path.Dir(dir)
+	}
+	return !pathrules.SameName(dir, root) && pathrules.Under(root, dir)
+}
+
 // word reports whether a word of a command, as the shell rules spell it, is
 // the configuration or inside it.
-func (c *claudeConfig) word(word string) bool {
+func (c *personsConfig) word(word string) bool {
 	if said, ok := c.said[word]; ok {
 		return said
 	}
@@ -117,7 +155,7 @@ func (c *claudeConfig) word(word string) bool {
 
 // heldWord reports whether a word of a command is a directory that holds the
 // configuration.
-func (c *claudeConfig) heldWord(word string) bool {
+func (c *personsConfig) heldWord(word string) bool {
 	if held, ok := c.held[word]; ok {
 		return held
 	}
@@ -131,7 +169,7 @@ func (c *claudeConfig) heldWord(word string) bool {
 // of the configuration's own variables read as the shell would read them. ok
 // is false for a word whose place only the shell can settle, which the shell
 // rules judge by what the command names.
-func (c *claudeConfig) place(word string) (string, bool) {
+func (c *personsConfig) place(word string) (string, bool) {
 	w := strings.NewReplacer(`"`, "", "'", "").Replace(word)
 	w, ok := c.expanded(w)
 	if !ok {
@@ -165,7 +203,7 @@ var configSpellings = []string{
 // expanded is word with a home or CLAUDE_CONFIG_DIR at its start put where it
 // is. Case is folded, as PowerShell and cmd fold it; a POSIX shell does not,
 // and reading `$Home` as the home there refuses more, which is the safe side.
-func (c *claudeConfig) expanded(word string) (string, bool) {
+func (c *personsConfig) expanded(word string) (string, bool) {
 	lower := strings.ToLower(word)
 	for _, s := range homeSpellings {
 		if strings.HasPrefix(lower, s) && atBoundary(word, len(s)) {

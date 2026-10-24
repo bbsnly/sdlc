@@ -15,6 +15,7 @@ package shellpolicy
 
 import (
 	"cmp"
+	"iter"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -205,8 +206,17 @@ type State struct {
 	// so that `cp notes.txt ~` is not read as writing ~/.claude.
 	ClaudeConfigHeld func(word string) bool
 
+	// AgentsConfig, when set, reports whether a word, as the walk spells it, is
+	// the person's ~/.agents or inside it: the twin of ClaudeConfig, for the
+	// folder other agent tools load skills from. Nil means never.
+	AgentsConfig func(word string) bool
+
+	// AgentsConfigHeld, when set, reports whether a word is a directory that
+	// holds ~/.agents: the twin of ClaudeConfigHeld. Nil means never.
+	AgentsConfigHeld func(word string) bool
+
 	// configOnly is set by ClaudeConfigWrites, for which no rule runs but the
-	// one for the person's Claude Code configuration.
+	// ones for the person's Claude Code configuration and ~/.agents.
 	configOnly bool
 
 	// undecoded is set by Inspect for a reading that another decodes; see
@@ -575,6 +585,7 @@ type walkPlace struct {
 	dir  string
 	lost bool
 	old  string
+	from string
 }
 
 // pathWalk is the path rules part way through one reading of a command: the
@@ -599,7 +610,11 @@ type pathWalk struct {
 	//
 	// old is where the command was before its last `cd`, which $OLDPWD and ~-
 	// name: before the first, somewhere this command does not show.
-	old    string
+	old string
+	// from is where a lost walk is, as the command spells it, when that
+	// spelling starts at ~ (movedFrom). Every rule but aboveDir reads the
+	// walk after `cd ~/code` as lost, as before.
+	from   string
 	outer  []walkPlace
 	ticked bool
 	// plain is the command's segments as spelled, and scan the reader of
@@ -630,13 +645,14 @@ func (w *pathWalk) segment(idx int, marked string) (Finding, bool) {
 	// of it would, and leaves the shell where it was. Read from where the
 	// shell was, `env -C .. rm -rf B-2` took another story's worktree away,
 	// and `env -C .sdlc rm -rf state` the loop's own record.
-	at, atLost := w.dir, w.lost
+	at, atLost, atFrom := w.dir, w.lost, w.from
 	if run.chdir != "" {
 		at, _ = changedDir(w.dir, []string{"cd", run.chdir})
 		atLost = w.movedTo(at)
+		atFrom = movedFrom(w.from, w.lost, []string{"cd", run.chdir})
 	}
 	j := segmentRules{
-		command: w.command, exp: &found.exp, redirects: redirects, dir: at, lost: atLost, unsure: w.unsure,
+		command: w.command, exp: &found.exp, redirects: redirects, dir: at, lost: atLost, from: atFrom, unsure: w.unsure,
 		s: s, m: w.m,
 		certain: w.alike && evals == 0 && !atLost && len(run.words) == len(words) && w.m.readFrom(idx, at),
 		away:    takeAway{s: s, m: w.m, dir: at, lost: atLost, pwd: w.dir, pwdLost: w.lost, old: w.old, exp: &found.exp},
@@ -685,6 +701,7 @@ func (w *pathWalk) follow(run invocation, evals int) {
 		if w.lost {
 			w.old = unknownDir
 		}
+		w.from = movedFrom(w.from, w.lost, run.words)
 		w.dir, w.lost = next, w.movedTo(next)
 	}
 }
@@ -694,11 +711,11 @@ func (w *pathWalk) follow(run invocation, evals int) {
 func (w *pathWalk) subshells(opens, closes int) {
 	for ; closes > 0 && len(w.outer) > 0; closes-- {
 		top := w.outer[len(w.outer)-1]
-		w.dir, w.lost, w.old = top.dir, top.lost, top.old
+		w.dir, w.lost, w.old, w.from = top.dir, top.lost, top.old, top.from
 		w.outer = w.outer[:len(w.outer)-1]
 	}
 	for ; opens > 0; opens-- {
-		w.outer = append(w.outer, walkPlace{w.dir, w.lost, w.old})
+		w.outer = append(w.outer, walkPlace{w.dir, w.lost, w.old, w.from})
 	}
 }
 
@@ -736,6 +753,8 @@ type segmentRules struct {
 	// whether a script moves and then writes, which the freeze counts as
 	// lost.
 	lost, unsure bool
+	// from is the walk's from, for aboveDir alone.
+	from string
 	// certain is whether the plain reader read the command as it is read
 	// here, and this segment from this directory: see pathQuestion.
 	certain bool
@@ -748,10 +767,10 @@ type segmentRules struct {
 func (j segmentRules) judge(segment string, run invocation) (Finding, bool) {
 	q := pathQuestion{
 		line: j.command, segment: segment, exp: j.exp, run: run, redirects: j.redirects,
-		dir: j.dir, lost: j.lost, certain: j.certain, s: j.s, m: j.m,
+		dir: j.dir, lost: j.lost, from: j.from, certain: j.certain, s: j.s, m: j.m,
 	}
 	if j.s.configOnly {
-		return checkClaudeConfig(q)
+		return checkPersonsConfig(q)
 	}
 	// A glob that can come back through `..` is refused for that first,
 	// under the same rule: refused for the `.sdlc` it could match as well,
@@ -761,6 +780,16 @@ func (j segmentRules) judge(segment string, run invocation) (Finding, bool) {
 		if f, ok := checkTakesACheckout(j.command, segment, run, j.away); ok {
 			return f, true
 		}
+	}
+	// Before the loop-state rule, whose name match refuses `../CLAUDE.md`
+	// and `../CLAUDE.m?` today as the project's own CLAUDE.md.
+	if f, ok := checkAboveProject(q); ok {
+		return f, true
+	}
+	// Before the loop-state rule too, whose name match refuses a ~/.agents
+	// word as the project's .agents.
+	if f, ok := checkAgentsNamedWord(q); ok {
+		return f, true
 	}
 	if f, ok := checkLoopState(q); ok {
 		return f, true
@@ -778,7 +807,10 @@ func (j segmentRules) judge(segment string, run invocation) (Finding, bool) {
 	}
 	// Last for the same reason: a write the rules above refuse keeps their
 	// name.
-	return checkClaudeConfig(q)
+	if f, ok := checkPersonsConfig(q); ok {
+		return f, true
+	}
+	return checkFillsAbove(q)
 }
 
 // movesInAScript reports whether a script handed to a shell changes directory
@@ -1587,6 +1619,8 @@ type pathQuestion struct {
 	redirects     []string
 	dir           string
 	lost          bool
+	// from is where a lost walk is, spelt from ~; see pathWalk.
+	from string
 	// certain is whether the command is one the hook reads whole and the
 	// plain reader read all of it as it was read here: the same segments, with
 	// the same words sent to the same places, and this one from the same
@@ -1654,6 +1688,7 @@ func (q pathQuestion) addWritten(candidates []string) []string {
 	if !changesFiles(run.words) {
 		return candidates
 	}
+	q.noteMade()
 	for _, w := range writtenTo(run.words) {
 		// A whole directory given to an interpreter is a setting of the
 		// program it runs, as in `python3 -m pytest --ignore .sdlc`, not a
@@ -1755,7 +1790,7 @@ func (q pathQuestion) namesLoopFiles(candidates, picked []string) (Finding, bool
 			continue
 		}
 		if f, ok := loopFileFinding(c, s, m); ok {
-			return leftIn(f, i >= flat), true
+			return leftIn(q.madeReason(m.byGlobRoute(f, c), c), i >= flat), true
 		}
 	}
 	return Finding{}, false
@@ -1774,7 +1809,7 @@ func loopFileFinding(c string, s State, m *memo) (Finding, bool) {
 		return Finding{
 			Rule: "protected-path-through-the-tool",
 			Reason: hit + " is protected while a story is being worked on, and a shell " +
-				"command is the one way around the rule that protects it",
+				"command is the one way around the rule that protects it" + heldEverywhere(hit),
 			Route: "change it by hand outside a running iteration; if what it says is " +
 				"wrong, stop and say what rather than editing it",
 		}, true
@@ -2049,7 +2084,7 @@ func (q pathQuestion) takesFrozenTests() (Finding, bool) {
 			continue
 		}
 		if frozen, ok := holding(c, s.Frozen); ok {
-			return frozenFinding(frozen), true
+			return m.byGlobRoute(frozenFinding(frozen), c), true
 		}
 	}
 	// A glob is expanded where the command runs, so that has to be known. Read
@@ -2188,6 +2223,11 @@ func changesAFile(words []string) bool {
 	case "git":
 		return gitChangesFiles(words[1:])
 	default:
+		// A program that writes only a file it is given changes one where it
+		// is given one: `sort -o CLAUDE.md x`, and not `sort CLAUDE.md`.
+		if written, known := givenWrites(words); known {
+			return len(written) > 0
+		}
 		return mutating[name]
 	}
 }
@@ -2813,6 +2853,17 @@ type memo struct {
 	// claudeLiteral is the same, with no glob read as a name, and pipe
 	// whether the line holds a pipe.
 	claudeLiteral, pipe int8
+	// agentsNamed and agentsLiteral are the same for the person's ~/.agents.
+	agentsNamed, agentsLiteral int8
+	// byGlob are the words outside placed in the project only because their
+	// glob can reach it, and madeBy the clause of each word a segment's
+	// command writes without spelling it, by segment, directory and
+	// spelling, noted once for the segment and directory madeFor names.
+	byGlob  map[string]bool
+	madeBy  map[string]string
+	madeFor string
+	// instruction is whether each last name asked is an instruction file.
+	instruction map[string]bool
 	// spelled is the segment being judged as the command spells it, and
 	// unspelled each word of it unquoted, split once for that segment; and
 	// globbed what expandsAGlob answered there, by the word it was asked.
@@ -2971,7 +3022,20 @@ func (m *memo) outside(s State, word string) bool {
 	if shellDirectory(c) {
 		return false
 	}
-	return m.resolve(s, c) == ""
+	if m.resolve(s, c) != "" {
+		return false
+	}
+	// A glob Resolve reads as a literal name, which is nowhere; where it can
+	// name a path in the project, the word is read by its names, as a
+	// relative one is (AC-14).
+	if strings.ContainsAny(c, "*?[") && m.reachesProject(s, c) {
+		if m.byGlob == nil {
+			m.byGlob = map[string]bool{}
+		}
+		m.byGlob[c] = true
+		return false
+	}
+	return true
 }
 
 // shellDirectory reports whether a word starts at ~+, the directory the
@@ -2997,7 +3061,7 @@ func shellDirectory(word string) bool {
 // themselves, with nothing inside named.
 func bareDirectory(word string) bool {
 	switch pathrules.Fold(strings.TrimPrefix(clean(word), "./")) {
-	case ".git", ".sdlc", ".claude":
+	case ".git", ".sdlc", ".claude", ".agents":
 		return true
 	}
 	return false
@@ -3805,25 +3869,30 @@ func loopState(word string) (string, bool) {
 	if p == ".sdlc" || strings.HasSuffix(p, "/.sdlc") {
 		return ".sdlc", true
 	}
-	rest, inStories := cutAt(p, ".sdlc/stories")
-	if !inStories {
-		return "", false
-	}
-	// .sdlc/stories itself, or a whole story directory, taken wholesale.
-	if rest == "" || !strings.Contains(rest, "/") {
-		return p, true
-	}
-	_, tail, _ := strings.Cut(rest, "/")
-	if strings.HasPrefix(tail, "reviews/") || tail == "reviews" {
-		return p, true
-	}
-	if tail == model.RecordFile {
-		return p, true
-	}
-	if _, ok := model.ArtifactByFile(tail); ok {
-		return p, true
+	// Every place the stories directory sits in the path is read:
+	// `.sdlc/stories/US-1/y/.sdlc/stories/US-1` is a whole story directory,
+	// though the first place names only a scratch file's directory.
+	for rest := range cutsAt(p, ".sdlc/stories") {
+		if storyOwned(rest) {
+			return p, true
+		}
 	}
 	return "", false
+}
+
+// storyOwned reports whether rest, what follows .sdlc/stories in a path, is
+// the stories directory, a whole story directory, a review, the record or a
+// gate document.
+func storyOwned(rest string) bool {
+	if rest == "" || !strings.Contains(rest, "/") {
+		return true
+	}
+	_, tail, _ := strings.Cut(rest, "/")
+	if strings.HasPrefix(tail, "reviews/") || tail == "reviews" || tail == model.RecordFile {
+		return true
+	}
+	_, ok := model.ArtifactByFile(tail)
+	return ok
 }
 
 // protectedShellPaths are the human-owned paths the file-writing rules protect
@@ -3831,7 +3900,9 @@ func loopState(word string) (string, bool) {
 // in policy.ProtectedPaths, and a test holds it to that: `Write` to CLAUDE.md was
 // refused and `echo > CLAUDE.md` was not, and a rewritten contract, or a
 // settings file that turns the hooks off, takes every gate after it with it.
-var protectedShellPaths = []string{".git", ".claude", "CLAUDE.md"}
+// The instruction paths come from model, as the file tools' do, so the two
+// lists cannot drift apart.
+var protectedShellPaths = append([]string{".git"}, model.InstructionPaths...)
 
 // protectedPath reports whether a word names one of them, or the backlog,
 // folded as the filesystem folds it.
@@ -3851,6 +3922,21 @@ func protectedPath(word, backlog string) (string, bool) {
 	return "", false
 }
 
+// heldEverywhere is the clause a refusal of one of the newer instruction
+// paths ends with, saying why it is held wherever it is. The older names keep
+// their words, which the released refusals print.
+func heldEverywhere(hit string) string {
+	switch hit {
+	case "AGENTS.md":
+		return "; Claude Code and other agent tools read it as instructions wherever it is"
+	case "CLAUDE.local.md":
+		return "; Claude Code reads it as instructions wherever it is"
+	case ".agents":
+		return "; Codex, Cursor, Copilot, Gemini CLI and other agent tools load skills from a .agents directory wherever it is"
+	}
+	return ""
+}
+
 // at reports whether p is the named path or something inside it, wherever the
 // named path sits in p.
 func at(p, want string) bool {
@@ -3859,24 +3945,48 @@ func at(p, want string) bool {
 }
 
 // cutAt finds want as a whole path segment run inside p and returns what
-// follows it, without a leading slash.
+// follows its first such place, without a leading slash.
 func cutAt(p, want string) (string, bool) {
-	switch {
-	case p == want:
-		return "", true
-	case strings.HasPrefix(p, want+"/"):
-		return strings.TrimPrefix(p, want+"/"), true
-	}
-	if i := strings.Index(p, "/"+want); i >= 0 {
-		rest := p[i+1+len(want):]
-		if rest == "" {
-			return "", true
-		}
-		if after, ok := strings.CutPrefix(rest, "/"); ok {
-			return after, true
-		}
+	for rest := range cutsAt(p, want) {
+		return rest, true
 	}
 	return "", false
+}
+
+// cutsAt yields what follows each place want sits in p as a whole run of
+// segments, without a leading slash. Every place counts: one search that
+// stopped at the first `/<want>` let `a/.claudex/.claude/s` through, because
+// that first match was not whole.
+//
+// Each yield is checked, because cutAt stops at the first value: a loop that
+// went on would panic, and the hook fails open on a panic.
+func cutsAt(p, want string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for i := 0; i+len(want) <= len(p); {
+			j := strings.Index(p[i:], want)
+			if j < 0 {
+				return
+			}
+			j += i
+			if rest, ok := wholeAt(p, j, len(want)); ok && !yield(rest) {
+				return
+			}
+			i = j + 1
+		}
+	}
+}
+
+// wholeAt is what follows the n bytes at j in p, without a leading slash,
+// where they are whole segments.
+func wholeAt(p string, j, n int) (string, bool) {
+	end := j + n
+	if j > 0 && p[j-1] != '/' || end < len(p) && p[end] != '/' {
+		return "", false
+	}
+	if end == len(p) {
+		return "", true
+	}
+	return p[end+1:], true
 }
 
 func clean(word string) string {
