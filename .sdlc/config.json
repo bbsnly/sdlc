@@ -35,7 +35,7 @@
     "fmt":       "./task fmt",
     "fmt_check": "./task fmt-check",
     "fmt_file":  "case \"$FILE\" in *.go) GOTOOLCHAIN=\"$(sed -n 's/^toolchain //p' go.mod | head -n 1)\" go fmt \"$FILE\" >/dev/null ;; esac",
-    "coverage":  "go test ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'",
+    "coverage":  "go test -timeout 20m ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'",
     "mutation":  ""
   },
 
