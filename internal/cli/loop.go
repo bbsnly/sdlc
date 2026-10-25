@@ -1023,6 +1023,7 @@ func (g *gateRun) noteCommitGate() error {
 	// requireEvidence has just held this gate to a passed code
 	// review, so this is the HEAD a gate reopened on the story
 	// measures from, as every other gate takes it above.
+	began := record.Base
 	record.Base = head
 	var at changeStart
 	own := inItsWorktree(g.s, g.id)
@@ -1033,14 +1034,22 @@ func (g *gateRun) noteCommitGate() error {
 	}
 	// Read before placeCommits, which records this pass's commit over it.
 	known := recordedAtGate(record)
+	// Also before it, which moves the start to the oldest commit the hook
+	// watched: a commit before that one, a person's hand-resolved
+	// "git pull --rebase" for one, is still the story's change.
+	started := record.CommitBase
 	landed := placeCommits(ctx, g.s, g.id, record, head, at)
 	if err := requireNoteInRange(ctx, g.s.Root(), landed, g.note); err != nil {
 		return err
 	}
 	if !own {
-		return nil
+		return g.requireNoMarkersFrom(ctx, started, began, head)
 	}
 	if err := requireAnAnchorLeft(g.s, g.id, record, known); err != nil {
+		return err
+	}
+	if err := requireNoConflictMarkers(ctx, g.s.Root(), at.base, head, g.s.Config().Paths,
+		atTheGate(trunkName(g.s))); err != nil {
 		return err
 	}
 	if err := recordChange(g.cmd, g.s, g.id, record, head, at); err != nil {

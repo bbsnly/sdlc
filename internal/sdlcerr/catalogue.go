@@ -257,6 +257,9 @@ var (
 	// slash command and the story it names.
 	PersonsCommandInClaudeCode = register("SDLC-E0079",
 		`a person types the command's slash command in Claude Code with the same arguments, "/sdlc:approve" for "sdlc approve" and likewise "/sdlc:unfreeze", "/sdlc:ack", "/sdlc:remap", "/sdlc:release", and "/sdlc:assign" for "sdlc staffing assign", or runs the command in a terminal outside Claude Code, in a window they opened themselves; "sdlc parallel" has no slash command and runs only there; an assistant stops here and says what it would have run, and tries no other way of running it`)
+
+	ConflictMarkersAdded = register("SDLC-E0080",
+		`a person puts each file the message names right: they resolve the unresolved conflict in it, or take out the lines that are not one, commit, and run the commit gate or "sdlc stop" again; where the lines are meant to be there, a person lists the file in "paths.conflict_markers_intended" in .sdlc/config.json, in a commit to the trunk branch, because "sdlc stop" reads trunk's copy and not the story's, and then runs "sdlc stop" in the story's worktree again. An assistant hands the story to a person with "sdlc escalate" and stops: it does not resolve the conflict and does not edit that list`)
 )
 
 // entry is one row of the catalogue.

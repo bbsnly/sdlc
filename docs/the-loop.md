@@ -327,6 +327,20 @@ fixes the commits of a story in its own worktree: the gate passed again with
 other commits, and a landing with other commits, each need a person's answer
 ([what your approval covers](guides/human-approval-gates.md#what-your-approval-covers)).
 
+The pass also refuses a story whose commits add the markers of an unresolved
+conflict, naming the files and the lines ([`SDLC-E0080`](troubleshooting.md#sdlc-e0080)),
+and records nothing. The change it looks at runs from where the story started
+to HEAD: the commit its worktree was cut from, or the trunk commit it sits on
+afterwards; with `git.worktrees` off, the commit HEAD was on when code review
+first passed. The paths where the lines are meant to be come from this
+checkout's `.sdlc/config.json`, and the stop reads trunk's. With
+`git.worktrees` off nothing lands through a stop, so this is the only look, and
+it does not refuse a diff driver whose name it cannot override, as the stop
+does. Where the record names no commit that code review began from, or git
+cannot read it, it looks from the commit the record holds as where the iteration
+started instead, and only where neither can be read does it look at nothing and
+log why.
+
 Passing the gate records the commits the story landed in, as a range: the ones
 since code review first passed that the loop watched the session land, as far as
 the hook could tell a command was a commit. A person's commit made in that
@@ -578,6 +592,16 @@ again at once. The landing checks, in order:
 - the commits that would land are the story's alone, with no merge among them,
   change nothing under `.sdlc/` or in the backlog, and leave the root
   `CODEMAP.md` a plain file;
+- the story's commits add no unresolved conflict: the change from where the story
+  started to its tip adds no set of conflict markers (an opening line, an
+  optional base line, a separator line and a closing line, in that order, among
+  the lines it added to one file), bar in the paths that trunk's
+  [`paths.conflict_markers_intended`](configuration.md#pathsconflict_markers_intended)
+  lists ([`SDLC-E0080`](troubleshooting.md#sdlc-e0080)). It is asked of the
+  story as it stands, of the story as the stop puts it onto a trunk that moved,
+  and again after the commands. A story that trunk already holds is not asked:
+  what is on trunk is not the stop's to refuse. The commit gate asks it too, of
+  the same change, with this checkout's list;
 - trunk has not moved past the story. Where it has only moved on, as it does
   each time another story lands, `sdlc stop` puts the story's commits onto
   trunk as it is then, itself. Where they do not apply, it abandons that, leaves

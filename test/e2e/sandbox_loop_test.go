@@ -198,6 +198,7 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 			"  ok       git repository       <repository>\n" +
 			"  ok       git command          found on PATH\n" +
 			"  ok       configuration        .sdlc/config.json\n" +
+			"                                paths.conflict_markers_intended (this checkout's copy; \"sdlc stop\" reads trunk's): none\n" +
 			"  ok       backlog              user_stories.json  (1 story, " + runnable + " runnable)\n" +
 			"  ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read\n" +
 			"  ok       project contract     CLAUDE.md carries the \"## SDLC Contract\" section\n" +

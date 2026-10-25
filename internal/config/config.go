@@ -123,6 +123,12 @@ type Thresholds struct {
 type Paths struct {
 	Tests TestPaths `json:"tests"`
 	Src   []string  `json:"src"`
+
+	// ConflictMarkersIntended lists the paths, or globs, where the lines of an
+	// unresolved conflict are meant to be, so that a story may add them there:
+	// a document that shows what a conflict looks like. Absent from Default(),
+	// so that nothing is exempt until a person says so.
+	ConflictMarkersIntended []string `json:"conflict_markers_intended,omitempty"`
 }
 
 // TestPaths matches a test file by the directory it is in or by its name.
@@ -394,6 +400,7 @@ func (c Config) validate() error {
 	if c.Staffing.Enabled {
 		problems = append(problems, c.Staffing.problems()...)
 	}
+	problems = append(problems, c.Paths.conflictMarkerProblems()...)
 	if len(problems) == 0 {
 		return nil
 	}

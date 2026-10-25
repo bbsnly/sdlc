@@ -312,7 +312,7 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	// counted once it is registered and stands for nothing until then.
 	// TestAC6TheMapChangeThatDidNotReachTrunkHasACodeThatSaysWhatAPersonRuns
 	// holds that the code is there, under whichever of them it has.
-	for _, id := range []string{"SDLC-E0076", "SDLC-E0077", "SDLC-E0078", "SDLC-E0080"} {
+	for _, id := range []string{"SDLC-E0076", "SDLC-E0077", "SDLC-E0078"} {
 		if c := registered(id); c != (Code{}) {
 			released = append(released, pin{c, id})
 		}
@@ -321,6 +321,12 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	// is refused under a code of its own, the next after SDLC-E0078. It is
 	// released with v0.5.0, so it is pinned outright, not ahead of its code.
 	released = append(released, pin{registered("SDLC-E0079"), "SDLC-E0079"})
+	// US-099 AC-4: a story whose commits add the markers of an unresolved
+	// conflict is refused under a code of its own, the next after
+	// SDLC-E0079. Pinned outright, found by number as the staffing's are: the
+	// number is what is released and the name in the source is not, and until
+	// the code is registered this row fails by rendering as nothing.
+	released = append(released, pin{registered("SDLC-E0080"), "SDLC-E0080"})
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
 			t.Errorf("%s now renders as %s: a released code was renumbered", r.id, got)

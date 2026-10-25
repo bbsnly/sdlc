@@ -2355,7 +2355,10 @@ and the root `CODEMAP.md` only as a plain file by exactly that name.
 
 Those last checks are the landing's, so they hold only for stories worked in
 their own worktree: with `git.worktrees` off, a story's commit can carry any of
-them, as it always could.
+them, as it always could. The check for the markers of an unresolved conflict
+is the exception: the commit gate makes it too, so with `git.worktrees` off it
+is the one look, from the commit the record names as where the story started
+([`SDLC-E0080`](troubleshooting.md#sdlc-e0080)).
 
 ### Which checkout a path is in
 

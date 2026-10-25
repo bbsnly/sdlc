@@ -160,6 +160,11 @@ configured commands would run, whether the hook would refuse any of them, and
 whether `sdlc` is on your `PATH`. Every problem comes with what to do about it.
 Exits non-zero when something is wrong, so it works in a script.
 
+The configuration check also lists, on a line of its own, the paths in
+`paths.conflict_markers_intended`, or says `none`. That is this checkout's copy:
+`sdlc stop` reads trunk's, so a path a person has only listed in a commit that
+this checkout does not have yet is not shown.
+
 A quiet `doctor` is not a promise that the hook will allow every command: it
 judges each command as the main conversation would run it from the project root,
 with no story under way, so it does not judge the agent's role, the freeze, the
@@ -514,6 +519,14 @@ Kept .sdlc/worktrees/US-001 and story/US-001: it holds changes nobody committed,
 
 With `--json` these lines go to standard error, and standard output has `ok`,
 `story`, `was_active` and `done`, which is `true`.
+
+A story whose commits add the markers of an unresolved conflict is refused
+before anything moves, under [SDLC-E0080](troubleshooting.md#sdlc-e0080), with the
+files and the lines named. It is asked of the story as it stands, as the stop
+puts it onto a trunk that moved, and again after the commands, and not of a story
+that trunk already holds. The paths where the lines are meant to be come from
+**trunk's** `paths.conflict_markers_intended`
+([configuration](configuration.md#pathsconflict_markers_intended)).
 
 ### The story's sections of `CODEMAP.md`
 
@@ -1227,6 +1240,18 @@ anything else is prose. Where the start is not known, the one commit the record
 names is the range the note is held to. The note needs no hash. The check is
 skipped when no range is recorded, so it is a consistency check between the
 note and the record, not evidence of which commits are the story's.
+
+A pass of the commit gate is also refused, with nothing recorded, under
+[SDLC-E0080](troubleshooting.md#sdlc-e0080) when the story's commits add the markers
+of an unresolved conflict, naming each file and the lines of each conflict. It
+looks at the net change from where the story started to HEAD, so a conflict one
+commit adds and a later one takes out is not there. The paths where the lines are
+meant to be are the ones this checkout's `paths.conflict_markers_intended` lists;
+`sdlc stop` reads trunk's. With `git.worktrees` off the story starts where the
+record says code review began. Where the record names no such commit, or git
+cannot read it, the pass looks from the commit the record holds as where the
+iteration started instead, and only where neither can be read does it look at
+nothing, with the debug log saying why.
 
 A story in its own worktree that has been put onto a later trunk commit than the
 one it was cut from, by a rebase or by the stop's own replay, has its range start

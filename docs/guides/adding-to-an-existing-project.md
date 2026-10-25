@@ -211,6 +211,7 @@ sdlc doctor
   ok       git repository       /home/<user>/src/billing
   ok       git command          found on PATH
   ok       configuration        .sdlc/config.json  (Go project)
+                                paths.conflict_markers_intended (this checkout's copy; "sdlc stop" reads trunk's): none
   ok       backlog              user_stories.json  (1 story, one runnable)
   ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section

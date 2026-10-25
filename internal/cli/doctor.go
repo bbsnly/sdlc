@@ -194,14 +194,17 @@ func runChecks(ctx context.Context) []check {
 	if stack.Name != "" {
 		detail += "  (" + stack.Name + " project)"
 	}
+	// On either branch, where the configuration loaded: a person who listed a
+	// path and misspelt another key still sees what the list holds.
+	intended := intendedLine(cfg.Paths)
 	if unknown := config.UnknownKeys(root); len(unknown) > 0 {
 		add(check{Name: checkConfiguration, State: stateProblem,
 			Detail: config.File + " has settings sdlc does not know, which change nothing: " +
-				strings.Join(unknown, ", "),
+				strings.Join(unknown, ", ") + "\n" + intended,
 			Fix: "correct the spelling, or remove them — docs/configuration.md lists every setting, " +
 				"and a key that starts with _ is a comment"})
 	} else {
-		add(check{Name: checkConfiguration, State: stateOK, Detail: detail})
+		add(check{Name: checkConfiguration, State: stateOK, Detail: detail + "\n" + intended})
 	}
 
 	s := store.New(&config.Project{Root: root, Config: cfg}).WithEnv(env.getenv)
@@ -1079,4 +1082,16 @@ func relativeTo(root, path string) string {
 		return path
 	}
 	return filepath.ToSlash(rel)
+}
+
+// intendedLine is the configuration check's line for the paths where the
+// markers of an unresolved conflict are meant to be. It lists this checkout's
+// copy: the commit gate reads that, and "sdlc stop" reads trunk's. Each entry
+// is quoted, so that a pattern with a line break in it cannot forge a line.
+func intendedLine(p config.Paths) string {
+	listed := "none"
+	if len(p.ConflictMarkersIntended) > 0 {
+		listed = quoteAll(p.ConflictMarkersIntended)
+	}
+	return `paths.conflict_markers_intended (this checkout's copy; "sdlc stop" reads trunk's): ` + listed
 }

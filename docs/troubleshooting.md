@@ -1863,6 +1863,101 @@ For `sdlc parallel` and `sdlc staffing assign`, [SDLC-E0061](#sdlc-e0061) and
 [SDLC-E0074](#sdlc-e0074) answer first where `CLAUDE_CODE_SESSION_ID` is set, as before, and this
 code covers every other case. `SDLC_ENFORCE=0` does not turn this check off, nor those two.
 
+### SDLC-E0080
+
+The story's commits add the markers of an unresolved conflict to a file. The commit gate or
+`sdlc stop` refused, and nothing was recorded or landed: trunk is where it was, and the story is
+still held.
+
+To go on, a person does one of two things:
+
+- **Puts each file the message names right.** They resolve the unresolved conflict in it, or
+  take out the lines that are not one, commit that in the story's worktree, and run the commit
+  gate or `sdlc stop` there again. After the commit, the reviews and the commit gate are asked
+  again as they are for any change.
+- **Says the lines are meant to be there**, where the file is a document that shows what a
+  conflict looks like, or a fixture that holds one. They list the file in
+  [`paths.conflict_markers_intended`](configuration.md#pathsconflict_markers_intended) in
+  `.sdlc/config.json`, in a **commit to trunk**. A change to `.sdlc/` cannot ride the story. The
+  commit to trunk is a person's, made in the main checkout while the story waits. Then:
+  - Refused at `sdlc stop`: run `sdlc stop` in the story's worktree again. It reads **trunk's**
+    copy of the list, not the story's, and puts the story onto that commit as it does for any
+    trunk that moved.
+  - Refused at the commit gate: the gate reads the copy in the checkout it runs in, so bring the
+    story onto that trunk commit with `git rebase <trunk>` before the gate is run again. A gate
+    that is refused afterwards because HEAD moved is answered as [SDLC-E0046](#sdlc-e0046) says.
+
+An assistant does neither: it hands the story to a person with `sdlc escalate` and stops. It
+does not resolve the conflict, and it does not edit the list.
+
+#### What is refused
+
+An unresolved conflict, to this check, is four kinds of line among the lines the story added to
+**one** file, in this order: a line that begins with seven less-than signs and a space (the
+opening marker), optionally a line that begins with seven vertical bars and a space (the base,
+which `diff3` conflict style writes), a line that is seven equals signs and nothing else (the
+separator), and a line that begins with seven greater-than signs and a space (the closing
+marker). Other lines may stand between them, and the markers may be any distance apart or in
+different hunks of the change: a conflict from a rebase often has one side unchanged beside the
+markers. One carriage return at the end of a line is allowed, so a conflict in a file with CRLF
+line endings is found.
+
+The message names each file with the lines of its first conflicts, numbered, and says how many
+more there are. It never prints a line of the file. Where the scan stopped counting at 100000
+conflicts, it says "at least". Where more than 100000 places that may be the start of one wait to
+be checked, it says how many it could not check, as places that may be conflicts and not as
+conflicts, and names no file if it found no conflict to name. A story is not passed because the
+scan could not look at it all.
+
+The change that is looked at is the net one: from where the story started to its tip (the commit
+its worktree was cut from, or the trunk commit it sits on afterwards; with `git.worktrees` off,
+the commit the record names as where code review began). A conflict one commit adds and a later
+one takes out is not in it, and a file that already held an unresolved conflict before the story,
+and keeps it, is not refused for it. Moving a file that holds one is not adding one. A copy of
+such a file is an add. Every file is read as text, whatever its attributes say, and the root
+`CODEMAP.md` is read like any other.
+
+A story that trunk already holds is not asked, and neither is a path listed in the setting.
+
+#### What is not found
+
+The check finds an unresolved conflict as git writes it. A pass is not a promise that no file
+holds conflict text:
+
+- markers of a width other than seven, as a `conflict-marker-size` attribute writes them;
+- a separator with a space or a second carriage return after it;
+- indented markers, and a bare opening marker with no space after it;
+- an unresolved conflict that is split across files, or whose markers are not all lines the story
+  added. The one exception is a separator the file already had between an added opening marker
+  and an added closing one, which is counted. So is a conflict already in a file whose opening
+  and closing lines the story both rewrites, as added;
+- a partial conflict: the common half-resolution that deletes the separator and the closing marker
+  and leaves the opening line is not a conflict to this check, and nor is any other marker
+  missing;
+- a wrong resolution that leaves no marker at all;
+- a file moved from a path the list exempts to one it does not, with edits small enough for git
+  to call it a rename: the lines moved with it and were not added;
+- with `git.worktrees` off, the start of the change is the commit the record names as where code
+  review began, and three cases follow from that:
+  - a story that was finished and reopened later is charged with whatever reached the branch in
+    between, markers somebody else committed included;
+  - a story rebased by hand can be charged with trunk's own additions, because the commit the
+    record names is not an ancestor of HEAD; and
+  - where the record names no such commit, or git cannot read the one it names, the gate looks
+    from the commit the record holds as where the iteration started instead. That is not always
+    the start: every gate recorded after code review passed, a failed commit gate included,
+    moves it to HEAD. So it can be before commits that others made on trunk since, which charges
+    the story with markers they committed, and it can be after the story's own commits, whose
+    markers are then not seen. Only where neither can be read does the commit gate look at
+    nothing, and the debug log says so.
+
+  The first two err towards a refusal; the third can err either way.
+- also with `git.worktrees` off, the commit gate does not refuse a diff driver whose name it
+  cannot override, as the stop does, and nothing lands through a stop to ask again.
+
+A list entry that is not a path or a glob `path.Match` reads does not load: see
+[SDLC-E0045](#sdlc-e0045).
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session working a story as a system message, and

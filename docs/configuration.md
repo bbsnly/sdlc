@@ -13,6 +13,7 @@
 - [`paths`](#paths)
   - [`paths.tests`](#pathstests)
   - [`paths.src`](#pathssrc)
+  - [`paths.conflict_markers_intended`](#pathsconflict_markers_intended)
 - [`git`](#git)
   - [How worktrees work](#how-worktrees-work)
   - [What start writes into the repository](#what-start-writes-into-the-repository)
@@ -295,9 +296,12 @@ A threshold of `0` is not enforced, and a negative one is refused.
 
 ## `paths`
 
-`paths` tells the loop which files are tests and which are source. Its two keys
-have a section each: [`paths.tests`](#pathstests) decides what the freeze
-covers, and [`paths.src`](#pathssrc) is where production code lives.
+`paths` tells the loop which files are tests and which are source, and where the
+lines of an unresolved conflict are meant to be. Its keys have a section each:
+[`paths.tests`](#pathstests) decides what the freeze covers,
+[`paths.src`](#pathssrc) is where production code lives, and
+[`paths.conflict_markers_intended`](#pathsconflict_markers_intended) lists the
+files a story may add conflict markers to.
 
 ### `paths.tests`
 
@@ -335,6 +339,42 @@ the implementer puts new code there, and the code reviewer reads it with
 Nothing refuses a write outside it. A build file, a migration or a
 configuration change can be part of a story, and a rule that refused them would
 be worked around rather than followed.
+
+### `paths.conflict_markers_intended`
+
+The paths where a story may add the lines of an unresolved conflict. It is a list
+of paths and globs, and **absent from what `sdlc init` writes**: until a person
+adds it, no path is exempt.
+
+The commit gate and `sdlc stop` refuse a story whose commits add a set of conflict
+markers to a file ([`SDLC-E0080`](troubleshooting.md#sdlc-e0080)). A document that
+shows what a conflict looks like, or a test fixture that holds one, is meant to
+have them; listing its path here is what lets a story add it.
+
+```json
+"paths": {
+  "conflict_markers_intended": ["docs/merging.md", "testdata/**", "**/*.patch"]
+}
+```
+
+- A pattern is matched against the whole path from the repository root, slash
+  separated, and **exactly**: `Docs/a.md` is not `docs/a.md`, and a bare name
+  such as `testdata` is that one path and not a directory of that name anywhere.
+  This is not how `paths.tests` reads its patterns, and is stricter on purpose,
+  since an exemption that matched more than it names would let a conflict in.
+- `**` is a segment of its own that stands for any number of directories, so
+  `docs/**` is everything under `docs/` and `**/*.patch` is a patch file at any
+  depth. A trailing `**` needs something beneath it.
+- A list that cannot mean what it says does not load, and `sdlc doctor` names the
+  entry ([`SDLC-E0045`](troubleshooting.md#sdlc-e0045)): one that is empty, starts
+  with a slash, has a backslash or a control character in it, has a `..`, a `.` or
+  an empty segment, ends in a slash, or is a pattern `path.Match` rejects, such
+  as `docs/[`. A scanned path with an empty, `.` or `..` segment is never exempt.
+- **The commit gate reads this checkout's copy and `sdlc stop` reads trunk's**, as
+  committed at the tip it lands on. A change to `.sdlc/` cannot ride a story, so a
+  person lists a path in a commit to trunk, and runs `sdlc stop` in the story's
+  worktree again. `sdlc doctor` lists this checkout's copy, on the line of the
+  configuration check, or says `none`; it does not read trunk's.
 
 ## `git`
 

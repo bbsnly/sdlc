@@ -158,6 +158,7 @@ sdlc doctor
   ok       git repository       /work/invoices
   ok       git command          found on PATH
   ok       configuration        .sdlc/config.json  (Go project)
+                                paths.conflict_markers_intended (this checkout's copy; "sdlc stop" reads trunk's): none
   ok       backlog              user_stories.json  (1 story, one runnable)
   problem  loop state           the test freeze could not be read (SDLC-E0005): invalid character 'o' in literal null (expecting 'u')
                                 fix: every test is treated as frozen until .sdlc/state/tests.lock reads: restore it if you keep a copy, or lift it on the record with "sdlc unfreeze --reason ..." in your own terminal and run "sdlc freeze", which freezes the tests as they are now

@@ -988,7 +988,9 @@ func (l *lander) markStands(ctx context.Context, mk model.Mark, trunkTip, tip st
 }
 
 // rangeChecks is L4 and L5: no merge commit, and nothing of the loop's own or
-// the backlog, in R..S.
+// the backlog, in R..S; and the markers of an unresolved conflict are none that
+// the story adds. check runs it on S, on the story as the stop replays it onto a
+// trunk that moved, and again after the commands.
 func (l *lander) rangeChecks(ctx context.Context, st landState) error {
 	root, trunk, branch, in := l.s.Root(), l.m.trunk, store.StoryBranch(l.id), worktreeIn(l.id)
 	merges, err := gitx.HasMerges(ctx, root, st.from, st.tip)
@@ -1015,7 +1017,10 @@ func (l *lander) rangeChecks(ctx context.Context, st landState) error {
 		return err
 	}
 	if len(files) == 0 {
-		return l.codemapCheck(ctx, st)
+		if err := l.codemapCheck(ctx, st); err != nil {
+			return err
+		}
+		return l.markerCheck(ctx, st)
 	}
 	fix := `a person takes those changes out of the story's commits, or brings them to ` + trunk + ` themselves, then ` +
 		`runs "sdlc stop" in ` + in + ` again`
@@ -1070,6 +1075,29 @@ func (l *lander) codemapCheck(ctx context.Context, st landState) error {
 			l.m.trunk+" with no reviewer and no command having seen it").
 		WithFix(`a person takes those changes out of the story's commits, leaving ` + codemap + ` a plain file, then ` +
 			`runs "sdlc stop" in ` + in + ` again; ` + assistantEscalates)
+}
+
+// markerCheck is L5's third half: the story's commits add no markers of an
+// unresolved conflict, bar in the paths that trunk's configuration says are
+// meant to hold them. Trunk's, and never the story's own: what a story's
+// worktree holds of .sdlc/config.json is what its branch was cut from, and the
+// person who lists a path does it on trunk.
+//
+// A story trunk already holds has nothing left to move, and what is on trunk is
+// not the story's to be refused for; st.already is the predicate land uses to
+// skip the move. A landing mark that stands but leaves the story ahead of trunk
+// still moves commits, so it is asked.
+func (l *lander) markerCheck(ctx context.Context, st landState) error {
+	if st.already {
+		return nil
+	}
+	// Before the story is measured, as changeChecks does, which comes later in
+	// check and would otherwise be reached after the first read.
+	if err := l.diffDriversOverridable(ctx); err != nil {
+		return err
+	}
+	return requireNoConflictMarkers(ctx, l.s.Root(), st.from, st.tip, st.trunkCfg.Paths,
+		atTheStop(l.m.trunk, worktreeIn(l.id)))
 }
 
 // atOrUnderFold reports whether the slash path name is dir or under it,

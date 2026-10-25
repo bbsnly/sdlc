@@ -744,16 +744,9 @@ func fingerprint(ctx context.Context, root, unified, base, tip string, leaveOut 
 	if err := fullHashes(base, tip); err != nil {
 		return "", err
 	}
-	// Before git 2.42, a diff driver's own algorithm, set in the repository's
-	// configuration and chosen by its attributes, outranked the one on the
-	// command line.
-	settings := []string{"core.quotePath=true", "diff.suppressBlankEmpty=false", "diff.relative=false"}
-	drivers, err := DiffDrivers.Keys(ctx, root)
+	settings, err := patchSettings(ctx, root)
 	if err != nil {
 		return "", err
-	}
-	for _, key := range drivers {
-		settings = append(settings, key+"=myers")
 	}
 	args := []string{"diff-tree", "-r", "-p", "--text", "--binary", argFullIndex,
 		"--no-color", "--no-ext-diff", "--no-textconv", argNoRenames,
@@ -764,6 +757,43 @@ func fingerprint(ctx context.Context, root, unified, base, tip string, leaveOut 
 		args = append(args, ":(top,exclude,literal)"+p)
 	}
 
+	sum := sha256.New()
+	if err := streamPatch(ctx, root, settings, args, func(r *bufio.Reader) error {
+		return hashPatch(r, sum)
+	}); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// patchSettings are the settings, handed to git as -c, that fix how a patch
+// is written whatever the repository's configuration says: quoting, blank
+// context lines, paths relative to the root, and the algorithm of every diff
+// driver the configuration defines.
+func patchSettings(ctx context.Context, root string) ([]string, error) {
+	// Before git 2.42, a diff driver's own algorithm, set in the repository's
+	// configuration and chosen by its attributes, outranked the one on the
+	// command line.
+	settings := []string{"core.quotePath=true", "diff.suppressBlankEmpty=false", "diff.relative=false"}
+	drivers, err := DiffDrivers.Keys(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range drivers {
+		settings = append(settings, key+"=myers")
+	}
+	return settings, nil
+}
+
+// streamPatch runs the sealed git call with args and hands what it prints to
+// read as a stream, never all at once. The reader end is drained or closed on
+// every path out, an early error of read's included, so that git's writer
+// never blocks on a pipe nobody reads and its goroutine does not outlive the
+// call.
+//
+// The error is git's own failure where there is one. A failure of read's own,
+// a patch that cannot be one, wins over the broken pipe it causes in git.
+func streamPatch(ctx context.Context, root string, settings, args []string, read func(*bufio.Reader) error) error {
 	pr, pw := io.Pipe()
 	ran := make(chan error, 1)
 	go func() {
@@ -771,17 +801,24 @@ func fingerprint(ctx context.Context, root, unified, base, tip string, leaveOut 
 		_ = pw.CloseWithError(err)
 		ran <- err
 	}()
-	sum := sha256.New()
-	readErr := hashPatch(bufio.NewReaderSize(pr, 64<<10), sum)
+	readErr := read(bufio.NewReaderSize(pr, 64<<10))
+	if readErr == nil {
+		// What read left unread is read past: a closed pipe fails git's write.
+		_, readErr = io.Copy(io.Discard, pr)
+	}
 	_ = pr.CloseWithError(readErr)
-	if err := <-ran; err != nil {
-		return "", err
-	}
-	if readErr != nil {
-		return "", sdlcerr.New(sdlcerr.RepositoryUnreadable,
+	gitErr := <-ran
+	switch {
+	case readErr != nil && (gitErr == nil || !errors.Is(readErr, gitErr)):
+		if _, told := errors.AsType[*sdlcerr.Error](readErr); told {
+			return readErr
+		}
+		return sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			"the change could not be read", readErr.Error()).WithCause(readErr)
+	case gitErr != nil:
+		return gitErr
 	}
-	return hex.EncodeToString(sum.Sum(nil)), nil
+	return nil
 }
 
 // hashPatch writes the patch r reads to w, with each hunk header cut down to
