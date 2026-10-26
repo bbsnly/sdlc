@@ -286,6 +286,42 @@ reads them to decide what to do:
 | `next_gate` | the gate to work now — the first one that has not passed. Absent when every gate is behind you, or when no story is active |
 | `next` | the story `sdlc start` would pick up. Only present when nothing is active, and absent while a story waits for a person |
 | `waiting` | every story handed to a person with `sdlc escalate` and not yet answered, with the question it asks |
+| `landing` | whoever holds the landing lock: the `story`, the `command` (`stop`, or `remap`, which lands nothing), `since` when, and its `pid`; `gone` is `true` where that process is not running, with `takeable_from`, the time a stop can take the lock from. `story`, `command` and `since` are there together or not at all: a lock whose owner cannot be read has only `gone`, and `pid` where one is named. Absent while no lock is there |
+| `waiting_to_land` | every `sdlc stop` or `sdlc remap` waiting for the landing lock, with its `story`, `command`, `since` and `pid`, and `for`, the story of the running stop it waits for. Absent while nothing waits |
+
+With nothing landing, status prints what it always has:
+
+```text
+No iteration running.
+
+  backlog  1 ready
+  next up  US-001  Example: reject invoices with a non-positive total
+
+A person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.
+```
+
+While a story lands, status in every checkout of the repository names it, its
+stop's process and the time it took the landing lock, and every stop that waits
+to land after it:
+
+```text
+No iteration running.
+
+  backlog  1 ready
+  landing  US-002  sdlc stop, pid 4242, since 2026-10-25T09:00:00Z
+  to land  US-003  sdlc stop, pid 4243, since 2026-10-25T09:01:10Z, waits for US-002
+  next up  US-001  Example: reject invoices with a non-positive total
+
+A person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.
+```
+
+The `to land` lines come in the order their stops began to wait, which is not
+the order they land in: whichever asks first once the lock is let go takes it.
+A lock whose holder is not running reads `landing  none: sdlc stop US-002 left
+the landing lock, and pid 4242 is not running; a stop can take it from about
+<time>`, and a remap holding it reads `none: sdlc remap <ID> holds the landing
+lock, pid <pid>, since <time>`, because neither is a story landing. A stop shows as
+waiting only while its process runs.
 
 Where the project has the [staffing](#sdlc-staffing) on, a `staffing` line says
 whether one is recorded for the active story and names who it leaves out, and
@@ -492,7 +528,10 @@ landing runs, and only where the story was put onto a trunk that moved, was
 rebased, or its change is not the one reviewed
 ([configuration](configuration.md#at-landing)). Where another story is landing,
 a line on standard error names the stop that holds the landing lock and says
-how long this one waits for it. Where trunk had moved on, a line says the
+how long this one waits for it, and `sdlc status` in any checkout shows both.
+Where that stop's process is not running, the line says so, with the age its
+lock is taken at, two minutes without a refresh, and about when that is; the
+waiting stop takes it then, and nobody removes it by hand. Where trunk had moved on, a line says the
 story's commits are being put onto it, and the stop's last lines say from which
 commit to which:
 

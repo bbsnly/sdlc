@@ -311,17 +311,33 @@ func readCommits(id, trunk string) string {
 		store.StoryBranch(id) + `"`
 }
 
-// handOverLead begins a fix that ends in a person's answer, in the state the
-// refusal is printed in: with an iteration running the story is handed over;
-// with none, `sdlc escalate` has no story to hand over and `sdlc start`
-// refuses a finished one, so the commit gate is first recorded as failed.
-func handOverLead(id string, running bool) string {
-	const escalate = `"sdlc escalate pre_commit_approval --message ..."`
+// approvalLead begins a fix that ends in a person's answer, in the state the
+// refusal is printed in: with an iteration running, nothing; with none,
+// `sdlc escalate` has no story to hand over and `sdlc start` refuses a
+// finished one, so the commit gate is first recorded as failed.
+func approvalLead(id string, running bool) string {
 	if running {
-		return `hand the story to a person with ` + escalate + ` and stop. `
+		return ""
 	}
-	return noIterationToHandOver(id) + `; where that gate refuses with this code, the story is handed to a person ` +
-		`with ` + escalate + `. `
+	return noIterationToHandOver(id) + `, before a person answers; then `
+}
+
+// assistantHandsOver is the last sentence of an SDLC-E0037 fix: what an
+// assistant does, apart from what a person types. The catalogue's fix for the
+// code ends with the same words (internal/sdlcerr/catalogue.go), kept together
+// by hand, since sdlcerr cannot import cli. message is put in single quotes
+// and holds neither a quote nor a full stop: the sentence is read to its first.
+//
+// With no iteration running, `sdlc escalate` has no story to hand over until
+// the commit gate fail and /sdlc:next the fix gives first have taken it up again:
+// said without that, an assistant ran it at once and was refused.
+func assistantHandsOver(message string, running bool) string {
+	when := ""
+	if !running {
+		when = `once "sdlc gate commit fail" and /sdlc:next have taken the story up again at the commit gate, `
+	}
+	return `An assistant does not answer for them: ` + when + `it hands the story to a person with "sdlc escalate ` +
+		`pre_commit_approval --message '` + message + `'" and stops`
 }
 
 // noIterationToHandOver says how a finished story with no iteration running
@@ -341,7 +357,7 @@ func personReads(id, trunk, shown string) string {
 		also = ` ("git --no-replace-objects show --no-mailmap --no-patch --format=fuller ` + shortCommit(shown) +
 			`" shows the last one the commit gate recorded, if git still has it)`
 	}
-	return `A person then, in their own terminal, in ` + worktreeIn(id) + `, reads the story's commits as they now ` +
+	return `a person, in their own terminal, in ` + worktreeIn(id) + `, reads the story's commits as they now ` +
 		`are with ` + readCommits(id, trunk) + `, which shows each one's author and message` + also +
 		`, and answers with "/sdlc:approve ` + id + `", or "sdlc approve ` + id + `"`
 }
@@ -349,10 +365,14 @@ func personReads(id, trunk, shown string) string {
 // gateCommitsFix is the fix of a commit gate refused for the story's commits.
 func gateCommitsFix(s *store.Store, id string) string {
 	active, _ := s.Active()
-	return handOverLead(id, active == id) + personReads(id, trunkName(s), "") +
+	return approvalLead(id, active == id) + personReads(id, trunkName(s), "") +
 		`; after that the session records the commit gate again, and the story is held to its commits as that ` +
-		`answer found them`
+		`answer found them. ` + assistantHandsOver(commitsChanged, active == id)
 }
+
+// commitsChanged is what an assistant hands a story over with where its
+// commits changed after the commit gate.
+const commitsChanged = "the commits changed since the commit gate"
 
 // link is one replay sdlc stop made: the tip before, the trunk commit it put
 // the story onto, and the tip it made. unread is an event that says there was
@@ -597,7 +617,7 @@ func (l *lander) commitsRefusal(recorded string, f *fault) error {
 	default:
 		why, reset = looseWhy(branch, trunk, recorded, f), recorded != "" && !f.beforeReplay
 	}
-	fix := handOverLead(l.id, l.running) + personReads(l.id, trunk, recorded) +
+	fix := approvalLead(l.id, l.running) + personReads(l.id, trunk, recorded) +
 		`; after that, "sdlc stop" there, run by the person or by the session, lands the story`
 	if reset && fullHex(recorded) {
 		rec := shortCommit(recorded)
@@ -607,6 +627,7 @@ func (l *lander) commitsRefusal(recorded string, f *fault) error {
 			`the commits, so the reset leaves them, the stop still puts them on ` + trunk + ` after the landing, and ` +
 			`nothing is committed on the branch in their place), and "sdlc stop" there lands it. Otherwise ` + fix
 	}
+	fix += `. ` + assistantHandsOver(commitsChanged, l.running)
 	return sdlcerr.New(sdlcerr.ApprovalRequired, notApprovedAsCommitted(l.id), why+". "+approvalCovers).WithFix(fix)
 }
 

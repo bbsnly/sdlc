@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -48,6 +49,34 @@ type statusPayload struct {
 	// Held is every story a checkout of the repository holds, where the
 	// repository has more than one checkout.
 	Held []heldStory `json:"held,omitempty"`
+	// Landing is whoever holds the landing lock, and WaitingToLand every stop
+	// or remap waiting for it, read alike from every checkout of the
+	// repository. Neither is a story handed to a person, which is Waiting.
+	Landing       *landingState   `json:"landing,omitempty"`
+	WaitingToLand []landingWaiter `json:"waiting_to_land,omitempty"`
+}
+
+// landingState is whoever holds the landing lock, as far as its lock can be
+// trusted: story, command and since are there together or not at all.
+type landingState struct {
+	Story   string `json:"story,omitempty"`
+	Command string `json:"command,omitempty"`
+	Since   string `json:"since,omitempty"`
+	PID     int    `json:"pid,omitempty"`
+	// Gone is a holder whose process is not running, and TakeableFrom the
+	// time a stop can take its lock from.
+	Gone         bool   `json:"gone"`
+	TakeableFrom string `json:"takeable_from,omitempty"`
+}
+
+// landingWaiter is a stop or a remap waiting for the landing lock, and the
+// story of the running stop it waits for, where a running stop holds it.
+type landingWaiter struct {
+	Story   string `json:"story"`
+	Command string `json:"command"`
+	For     string `json:"for,omitempty"`
+	Since   string `json:"since"`
+	PID     int    `json:"pid"`
 }
 
 // waitingStory is one question the loop stopped to ask a person.
@@ -128,6 +157,7 @@ func runStatus(cmd *cobra.Command) error {
 	if shown {
 		v.payload.Held = heldStories(backlog, holders)
 	}
+	v.payload.Landing, v.payload.WaitingToLand = landingOf(s.LandingQueue())
 	if active != "" {
 		if err := v.readActive(cmd.Context(), p); err != nil {
 			return err
@@ -203,7 +233,58 @@ func (v *statusView) print(w io.Writer) {
 	for _, hs := range payload.Held {
 		fmt.Fprintf(w, "  held     %s  %s\n", hs.Story, strings.TrimPrefix(heldIn(hs.Story, v.holders[hs.Story]), "held "))
 	}
+	if payload.Landing != nil {
+		fmt.Fprintf(w, "  landing  %s\n", landingLine(payload.Landing))
+	}
+	for _, lw := range payload.WaitingToLand {
+		fmt.Fprintf(w, "  to land  %s  sdlc %s, pid %d, since %s, waits for %s\n",
+			lw.Story, lw.Command, lw.PID, lw.Since, cmp.Or(lw.For, "the landing lock"))
+	}
 	v.printAdvice(w, finished, notHereNext)
+}
+
+// landingOf is what status says of the landing lock and of who waits for it.
+// Every value comes from the store, which passes on only what it can trust of
+// a lock.
+func landingOf(q store.Landings) (*landingState, []landingWaiter) {
+	var state *landingState
+	if l := q.Landing; l != nil {
+		state = &landingState{Story: l.Story, Command: string(l.Command), Since: l.Since, PID: l.PID,
+			Gone: l.Gone, TakeableFrom: l.From}
+	}
+	var waiting []landingWaiter
+	for _, w := range q.Waiting {
+		waiting = append(waiting, landingWaiter{Story: w.Story, Command: string(w.Command), For: w.For, Since: w.Since, PID: w.PID})
+	}
+	return state, waiting
+}
+
+// landingLine is status's line for whoever holds the landing lock. Only a
+// running stop is a story landing: a remap holds the lock without landing
+// anything, and a holder that has gone is landing nothing.
+func landingLine(l *landingState) string {
+	who := "another command"
+	if l.Story != "" {
+		who = "sdlc " + l.Command + " " + l.Story
+	}
+	switch {
+	case l.Gone:
+		return fmt.Sprintf("none: %s left the landing lock, and pid %d is not running; a stop can take it from about %s",
+			who, l.PID, l.TakeableFrom)
+	case l.Story != "" && l.Command == string(store.LandingStop):
+		return fmt.Sprintf("%s  sdlc stop, pid %d%s", l.Story, l.PID, clause("since", l.Since))
+	case l.PID > 0:
+		return fmt.Sprintf("none: %s holds the landing lock, pid %d%s", who, l.PID, clause("since", l.Since))
+	}
+	return "none: " + who + " holds the landing lock"
+}
+
+// clause is ", name value" for a status line, or nothing where value is "".
+func clause(name, value string) string {
+	if value == "" {
+		return ""
+	}
+	return ", " + name + " " + value
 }
 
 // printActive prints the story being worked on and where it has got to.
@@ -298,7 +379,9 @@ func notHeldHere(active string, finished bool, holders map[string]store.Holder, 
 	case !h.Live:
 		return "  (" + heldIn(active, h) + ")",
 			"The checkout holding " + active + " is gone: a person moves it here with " +
-				"`/sdlc:release " + active + " --reason \"...\"`, or `sdlc release " + active + " --reason \"...\"` in their own terminal, then `sdlc start " + active + "`."
+				"`/sdlc:release " + active + " --reason \"" + checkoutGone + "\"`, or `sdlc release " + active + " --reason \"" +
+				checkoutGone + "\"` in their own terminal, with their own words in the quotes where they have them, " +
+				"then `sdlc start " + active + "`."
 	case !h.Here:
 		return "  (" + heldIn(active, h) + ")",
 			"This checkout's copy of " + active + " is stale: a person runs `sdlc stop` here to put it down, " +
@@ -306,6 +389,10 @@ func notHeldHere(active string, finished bool, holders map[string]store.Holder, 
 	}
 	return "", ""
 }
+
+// checkoutGone is the reason status gives a release of a story from a checkout
+// that is gone: a reason, where "..." pasted as it stood recorded three dots.
+const checkoutGone = "the checkout that held it is gone"
 
 // waitingStories is every story handed to a person that nobody has answered.
 func waitingStories(s *store.Store, b *model.Backlog) ([]waitingStory, error) {

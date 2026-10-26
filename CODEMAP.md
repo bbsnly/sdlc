@@ -205,6 +205,38 @@ the only caller of `commands.coverage`/`commands.mutation` from
 `.sdlc/config.json` (`sdlc doctor` reads each command's text and runs none);
 `./task check` in `Taskfile.yml` does not run either.
 
+Where trunk moved after the story was cut, `ontoTrunk` is the stop's own
+replay: `gitx.Replay` (`internal/gitx/replay.go`) puts the story's commits onto
+trunk's tip in the worktree, and where the result is the reviewed change line
+for line it saves `Record.Replay` (`replay` in `gate-record.json`) with a
+`replayed` event in one write. `move` sets `Record.Landing` (the `landing`
+mark) before the fast-forward and takes it off again where the fast-forward is
+refused; `finish` clears it, records the `landed` event, and calls
+`recordAccepted` (`internal/cli/trunktests.go`), which writes the test files
+the landing took as trunk's to `Record.TrunkTests` (`trunk_tests`).
+`landingTurn` takes the landing lock as `stop` or `remap`
+(`store.LandingCommand`); where it is held, it records the wait with
+`WaitToLandAs` before it prints the line that says whom it waits for, and lets
+the record go when its wait ends. For a holder that is not running, that line
+says so and when its lock is taken (`store.ErrLandingLeft`).
+
+## internal/model
+
+Package `model`. The gate record, `gate-record.json`, is `model.Record`
+(`internal/model/model.go`). Three of its fields are the landing's:
+`Record.Landing` (`landing`, a `Mark` of trunk's `from` and `to`) is the mark
+`move` in `internal/cli/landing.go` leaves between moving trunk and writing the
+record, so that a landing cut short there is finished by the next stop;
+`Record.Replay` (`replay`, a `Replay` of `from`, `to` and `onto`) is written by
+`ontoTrunk` in the same file with its `replayed` event, and names the one tip
+the stop made itself; `Record.TrunkTests` (`trunk_tests`, a `TrunkTests` of a
+trunk `commit`, its `files` and the frozen ones `gone`) is written by
+`recordAccepted` in `internal/cli/trunktests.go`, from the gates before the
+commit gate and from the landing's `finish`. `forgetCommit` drops `landing`
+and `replay` whenever the commit gate no longer stands passed, and
+`trunk_tests` only where it stood until that call; lifting the freeze drops
+`trunk_tests` too (`internal/cli/freeze.go`).
+
 ## internal/cli/commitcover.go
 
 Package `cli`. Added by US-092. Holds a story to the commits the commit gate
@@ -884,8 +916,20 @@ project lock's path with `-landing` added. A stop takes it before it reads trunk
 and holds it through the replay, the commands and the fast-forward. Where it is
 held, the stop lets the project's lock go before it waits, up to `landingWait`
 (eight minutes, `internal/cli/landing.go`). `sdlc remap` takes the same lock
-through the same function, `landingTurn`, with words of its own; the lock's
-holder is still labelled `stop <ID>` for either.
+through the same function, `landingTurn`, with words of its own, and its lock is
+labelled `remap <ID>`, a stop's `stop <ID>` (`LockLandingsAs`, with a
+`store.LandingCommand`). A stop or remap that waits for it records the wait at
+`<project>-waiting-<ID>-<pid>` beside the locks, a lock-shaped record of its own
+that `ReleaseHeld` lets go of and that the next command to take the landing
+lock removes where its waiter has gone (`internal/store/landingqueue.go`).
+`LandingQueue` there is what `sdlc status` shows of both, read and never
+written; a refusal or status prints of a lock's owner file only a label this
+code writes, an RFC 3339 time and a pid (`holderWords`, `commandLabel`,
+`landingLabel` in `guard.go`). A lock's age is read on the real clock, or on a
+copy's from `lockAgesOn`, which only a test calls. `LockLanding`, the story's
+own landing lock, is taken at once from a holder that is not running where this
+process holds the landing lock, because it is only ever taken inside it; a lock
+with no readable owner is still judged by its age.
 
 ## internal/hook/deadline.go
 

@@ -92,7 +92,8 @@ func waitingToLand(id, trunk string, running bool) *sdlcerr.Error {
 	fix := `run "sdlc stop" in the story's worktree, ` + worktreeIn(id) + ` in the main checkout, to land it on ` + trunk
 	if !running {
 		fix += `; or, to rework it instead, record a gate as failed there -- "sdlc gate code_review fail --story ` +
-			id + ` --note ..." says on the record why the work came back`
+			id + ` --note 'a person sent the work back to be reworked'" says on the record why the work came back, ` +
+			`in words of their own between the single quotes`
 	}
 	return sdlcerr.New(sdlcerr.StoryAlreadyFinished, quote(id)+" is finished",
 		"every gate on it has passed, and it waits to land on "+trunk).WithFix(fix)
@@ -284,6 +285,12 @@ const (
 // assistantEscalates ends every landing fix that is a person's to carry out.
 const assistantEscalates = `an assistant hands the story to a person with "sdlc escalate" and stops`
 
+// workNeedsChanging is the reason a fix gives a rejection to send the work
+// back with. A fix used to print "--reject ...", which pasted as it stood
+// recorded three dots as a person's reason; this is a reason, and the fix says
+// it is the person's to put in their own words.
+const workNeedsChanging = "the work needs changing"
+
 // lander is one landing, as `sdlc stop` runs it in a finished story's own
 // worktree.
 type lander struct {
@@ -400,7 +407,7 @@ const landingWait = 8 * time.Minute
 // landed meanwhile.
 func (l *lander) waitItsTurn() (*store.Guard, bool, error) {
 	turn, waited, err := landingTurn(l.cmd, l.s, l.id, l.unlock, turnWords{
-		command:   "stop",
+		command:   store.LandingStop,
 		meanwhile: "a stop cut short while it waits can be run again at once",
 	})
 	if err != nil || !waited {
@@ -414,8 +421,9 @@ func (l *lander) waitItsTurn() (*store.Guard, bool, error) {
 // stop and a person's repair of the map wait for the same lock, and neither
 // is told to run the other.
 type turnWords struct {
-	// command is the command, as the project's lock names its holder.
-	command string
+	// command is the command, as the project's lock and the landing lock
+	// name their holder.
+	command store.LandingCommand
 	// meanwhile is what the reader is told while it waits.
 	meanwhile string
 	// fix, where it is set, is what to do where the wait runs out, in place
@@ -432,7 +440,7 @@ func landingTurn(cmd *cobra.Command, s *store.Store, id string, unlock *func(), 
 	// holder is letting go of reads as a denial, which the store waits out for
 	// up to its guardWait before it says so: the same wait any command gives
 	// the project's lock, and only while a holder is on its way out.
-	turn, err := s.LockLandings(id, 0)
+	turn, err := s.LockLandingsAs(w.command, id, 0)
 	if err == nil {
 		return turn, false, nil
 	}
@@ -446,9 +454,16 @@ func landingTurn(cmd *cobra.Command, s *store.Store, id string, unlock *func(), 
 	// stop in front takes that one back once its commands have run.
 	(*unlock)()
 	*unlock = noUnlock
-	fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s; this waits up to %s for it. Nothing has changed: %s\n",
-		busy.Why, minutes(landingWait), w.meanwhile)
-	if turn, err = s.LockLandings(id, landingWait); err != nil {
+	// Recorded before the line is printed, so that status run on seeing the
+	// line finds the wait. A command that cannot record it still waits its
+	// turn: the record is status's to read, and refusing the landing for it
+	// would turn what status shows into a landing that fails.
+	queued, qerr := s.WaitToLandAs(w.command, id)
+	slog.Debug("recording the wait to land, for status", "story", id, "err", qerr)
+	fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s; %s. Nothing has changed: %s\n", busy.Why, waitsHow(err), w.meanwhile)
+	turn, err = s.LockLandingsAs(w.command, id, landingWait)
+	queued.Release()
+	if err != nil {
 		if errors.As(err, &busy) {
 			still := *busy
 			still.What = "another story was still landing after " + minutes(landingWait)
@@ -459,12 +474,23 @@ func landingTurn(cmd *cobra.Command, s *store.Store, id string, unlock *func(), 
 		}
 		return nil, false, err
 	}
-	g, err := store.LockOn(s.LockRoot(), w.command, envOf(cmd).lockClock)
+	g, err := store.LockOn(s.LockRoot(), string(w.command), envOf(cmd).lockClock)
 	if err != nil {
 		return turn, true, err
 	}
 	*unlock = g.Release
 	return turn, true, nil
+}
+
+// waitsHow is what the line a waiting command prints says of the wait, for the
+// refusal err it waits on. A holder that has gone has its lock taken at a time
+// the refusal gives, and "up to 8 minutes" for it read as a wait for nothing.
+func waitsHow(err error) string {
+	if errors.Is(err, store.ErrLandingLeft) {
+		return "this waits for that time and takes the lock then, giving up after " + minutes(landingWait) +
+			" if it is still held"
+	}
+	return "this waits up to " + minutes(landingWait) + " for it"
 }
 
 // landedWhileWaiting asks L0 again once the stop has both locks, and reports
@@ -550,15 +576,17 @@ func whenItLands(s *store.Store, active string) (string, bool, error) {
 			quote(id)+" is waiting for a person",
 			"it was handed over at "+pending.At+" ("+quote(pending.Type)+"): "+quote(pending.Message)).
 			WithFix(`a person answers first, in Claude Code or in their own terminal, in ` + worktreeIn(id) + `: "/sdlc:approve ` + id + `", or "sdlc approve ` + id +
-				`", after which "sdlc stop" there lands it, or "sdlc approve ` + id + ` --reject ..." to send the work ` +
-				`back; an assistant stops and tells the person`)
+				`", after which "sdlc stop" there lands it, or "sdlc approve ` + id + ` --reject '` + workNeedsChanging +
+				`'" to send the work back, with their own reason between the single quotes; an assistant stops and ` +
+				`tells the person`)
 	}
 	if d, ok := record.LatestDecision(); ok && d.Decision == model.DecisionRejected {
 		return id, false, sdlcerr.New(sdlcerr.StoryAlreadyFinished,
 			quote(id)+" is finished, and a person sent it back",
 			"every gate on it has passed, and the latest answer to it, at "+d.At+", was a rejection: "+quote(d.Reason)).
 			WithFix(`record a gate as failed to reopen it, in ` + worktreeIn(id) + ` -- "sdlc gate code_review fail --story ` +
-				id + ` --note ..." says on the record why the work came back -- then type /sdlc:next in Claude Code`)
+				id + ` --note 'a person sent the work back'" says on the record why the work came back, in words ` +
+				`of their own between the single quotes -- then type /sdlc:next in Claude Code`)
 	}
 	return id, false, nil
 }
@@ -1320,14 +1348,15 @@ func (l *lander) requireApprovalAgain(ctx context.Context, st landState) error {
 	case !st.rebased:
 		since = " since its change changed"
 	}
-	fix := `hand it to a person with "sdlc escalate pre_commit_approval --message ..." and stop; once they have ` +
-		`run "/sdlc:approve ` + l.id + `", or "sdlc approve ` + l.id + `" in ` + worktreeIn(l.id) + ` on the work as it now is, "sdlc stop" there ` +
-		`lands it`
+	fix := `a person reads the work as it now is and answers with "/sdlc:approve ` + l.id + `", or "sdlc approve ` +
+		l.id + `", typing the first in Claude Code or running the second in their own terminal, in ` +
+		worktreeIn(l.id) + `; once they have, "sdlc stop" there lands it`
 	if !l.running {
 		// A stop run on a story handed over and answered before: followed as
 		// written, the fix above ended at `sdlc escalate` refusing.
 		fix += `. Where ` + noIterationToHandOver(l.id) + `, and it is handed over there`
 	}
+	fix += `. ` + assistantHandsOver("the work changed since a person approved it", l.running)
 	return sdlcerr.New(sdlcerr.ApprovalRequired, quote(l.id)+" has not been approved by a person"+since, why).WithFix(fix)
 }
 
@@ -1417,8 +1446,10 @@ func (l *lander) reopenFix() string {
 func reopenRoute(id string, g model.Gate) string {
 	in := worktreeIn(id)
 	return `answer the escalation first, in ` + in + `, with "/sdlc:approve ` + id + `", or "sdlc approve ` + id +
-		`", or send it back with "/sdlc:approve ` + id + ` --reject ...", or "sdlc approve ` + id +
-		` --reject ...", then run "sdlc gate ` + string(g) + ` fail --story ` + id + ` --note ..." there and type /sdlc:next`
+		`", or send it back with "/sdlc:approve ` + id + ` --reject '` + workNeedsChanging + `'", or "sdlc approve ` + id +
+		` --reject '` + workNeedsChanging + `'", then run "sdlc gate ` + string(g) + ` fail --story ` + id +
+		` --note 'a person reopened the story'" there and type /sdlc:next, with their own words between the single ` +
+		`quotes where they have them`
 }
 
 // stopAgainFix is SDLC-E0054's fix where trunk moved under the landing: the
@@ -1499,7 +1530,8 @@ func (l *lander) freezeFix(err error) error {
 // a stop.
 func unfreezeRoute(id string) string {
 	return reopenRoute(id, model.GateCodeReview) + `; once the iteration is running, they run "/sdlc:unfreeze", or "sdlc unfreeze ` +
-		`--reason ..." there in their own terminal, which sends the story back to have its tests frozen again; ` +
+		`--reason 'the frozen tests need changing'" there in their own terminal, which sends the story back to ` +
+		`have its tests frozen again; ` +
 		assistantEscalates
 }
 

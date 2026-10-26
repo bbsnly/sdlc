@@ -808,7 +808,7 @@ func TestAC13TwoStoriesStoppedAtTheSameMomentBothLandOneAfterTheOther(t *testing
 	t.Run("US-107 AC-1 AC-2 the first stop holds the loop's state past the whole wait of the second", func(t *testing.T) {
 		t.Parallel()
 		main, first, second, moved := otTwoFinished(t)
-		held := lwPausedStop(t, first, ldSession, nil)
+		held := lwPausedStop(t, first, nil)
 		held.waitReached(t)
 
 		clock := newLWClock()

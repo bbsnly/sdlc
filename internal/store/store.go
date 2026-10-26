@@ -79,6 +79,9 @@ type Store struct {
 	now    func() time.Time
 	getenv func(string) string
 	place  *placement
+	// lockNow is the time the store's locks are aged on, nil for the real
+	// clock. Only lockAgesOn sets it, and only a test calls that.
+	lockNow func() time.Time
 }
 
 // placement is where the checkout the store was opened in sits in its
@@ -158,6 +161,26 @@ func (s *Store) WithClock(now func() time.Time) *Store {
 	out := *s
 	out.now = now
 	return &out
+}
+
+// lockAgesOn returns a copy whose locks are aged on now, so that a test can
+// stand a lock on the age it is taken at without waiting the age out. It is
+// neither the record's clock (WithClock) nor a wait's (Clock): either one
+// running ahead would break open a lock whose holder is alive, and one of two
+// commands' changes would be lost. No code outside the tests calls it.
+func (s *Store) lockAgesOn(now func() time.Time) *Store {
+	out := *s
+	out.lockNow = now
+	return &out
+}
+
+// ages is the clock the store's locks are aged on: the real one, unless a test
+// made the store with lockAgesOn.
+func (s *Store) ages() func() time.Time {
+	if s.lockNow != nil {
+		return s.lockNow
+	}
+	return time.Now
 }
 
 // WithEnv has the store read the command's environment through getenv, for a

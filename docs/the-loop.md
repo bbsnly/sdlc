@@ -585,8 +585,11 @@ depends on it waits.
 
 Stories land one at a time. A stop that finds another story landing says which,
 waits up to eight minutes for it, and then carries on from trunk as that landing
-left it. A stop cut short while it waits has changed nothing and can be run
-again at once. The landing checks, in order:
+left it; `sdlc status`, in any checkout, names the story landing and every stop
+that waits. Where the stop holding the lock is not running, the line says so and
+when its lock is taken, two minutes after it was last refreshed, and the stop
+waiting takes it then: nothing is removed by hand. A stop cut short while it
+waits has changed nothing and can be run again at once. The landing checks, in order:
 
 - the worktree is clean and on `story/<ID>`, with no rebase or merge part-way;
 - the commits that would land are the story's alone, with no merge among them,

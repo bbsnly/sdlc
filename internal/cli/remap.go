@@ -80,7 +80,7 @@ func runRemap(cmd *cobra.Command, id string, replace, drop bool) error {
 	// The repair is a second writer of trunk, so it takes the lock every
 	// landing holds, and reads everything below only once it has it.
 	turn, _, err := landingTurn(cmd, s, id, &unlock, turnWords{
-		command:   "remap",
+		command:   store.LandingRemap,
 		meanwhile: "this command cut short while it waits can be run again at once",
 		fix: `run "` + form + `" again once that landing has finished: nothing was changed, and the change to ` +
 			codemap + ` is still kept`,

@@ -7,9 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -143,16 +147,42 @@ func LockOn(root, what string, clock Clock) (*Guard, error) {
 		clock = realClock{}
 	}
 	path := guardPath(root)
-	return take(path, what, guardWait, clock, func() error {
+	return take(path, what, guardWait, clock, breakIfStale, func() error {
+		// A holder that is gone is said to be, with the time its lock is taken
+		// from: told only that a command was still running and to delete the
+		// lock if nothing was, people deleted it by hand, and a model would.
+		if gone := leftBy(path); gone != "" {
+			return sdlcerr.New(sdlcerr.StateUnwritable,
+				"another sdlc command is still running",
+				heldBy(path)+" left the loop's state locked, and two commands writing it at once would lose one "+
+					"of the changes; "+gone).
+				WithFix("run the command again at or after the time given above, and it takes the lock; " +
+					"nothing is removed by hand")
+		}
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"another sdlc command is still running",
 			heldBy(path)+" has held the loop's state for longer than "+
 				guardWait.String()+", and two commands writing it at once "+
 				"would lose one of the changes").
-			WithFix("wait for it to finish, or delete " + path +
-				" if nothing is running")
+			WithFix("wait for it to finish, and run the command again: the lock at " + path + " is kept for as long " +
+				"as its holder runs, and is taken once it has gone " + staleWords() + " without a refresh " +
+				"after that. Only where the pid named above is not an sdlc command at all, its number having come " +
+				"round to another program, does a person remove that directory by hand; an assistant never removes " +
+				"it, and where the command is refused again it hands the story to a person with \"sdlc escalate\" " +
+				"and stops")
 	})
 }
+
+// LandingCommand is a command that takes the landing lock, as its lock names
+// it. The landing lock is only ever held by one of these, so that what holds
+// it reads back as a stop's landing or a remap, and as nothing else.
+type LandingCommand string
+
+// The commands that take the landing lock.
+const (
+	LandingStop  LandingCommand = "stop"
+	LandingRemap LandingCommand = "remap"
+)
 
 // LockLanding takes the lock one sdlc stop holds while it lands story id,
 // from its first check to its last write, the configured commands included.
@@ -160,27 +190,47 @@ func LockOn(root, what string, clock Clock) (*Guard, error) {
 // the main checkout, so that another story's landing and every other command
 // go on meanwhile. It is taken without waiting: a second stop of the same
 // story would only run its checks again on what the first one is changing.
+//
+// Taken by a process that holds the landing lock, a story lock whose holder is
+// not running is taken whatever its age. That is safe only because this lock
+// is taken inside the landing lock and let go before it (landIfFinished):
+// whoever holds it held the landing lock as they took it, and the landing lock
+// is taken from a holder that has gone only by age, so by the time this
+// process holds it, that holder has been waited out already. Without the rule,
+// a stop killed as it landed left this lock a moment younger than the landing
+// lock, and the stop that took the landing lock was refused this one at once.
+// A caller that takes it outside the landing lock does not get the rule.
 func (s *Store) LockLanding(id string) (*Guard, error) {
 	if err := CheckID(id); err != nil {
 		return nil, err
 	}
 	project := guardPath(s.LockRoot())
 	path := project + "-landing-" + id
-	return take(path, "stop "+id, 0, realClock{}, func() error {
+	rule := staleness{now: s.ages(), gone: holds(project + "-landing")}
+	return take(path, string(LandingStop)+" "+id, 0, realClock{}, rule.breakOpen, func() error {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"another sdlc stop is landing "+id,
-			heldBy(path)+" holds the lock at "+sdlcerr.QuotePath(path)+", and a story is landed by one stop at a time").
-			WithFix("wait for that stop to finish, then run \"sdlc stop\" again if the story has not landed; " +
-				"if that stop was killed, its lock breaks open once it is " + guardStale.String() +
-				" old and nothing holds it")
+			landingHeldBy(path)+" holds the lock at "+sdlcerr.QuotePath(path)+", and a story is landed by one stop at a time").
+			// Reached under the landing lock only with a holder that runs, or a
+			// lock that does not say whose it is yet: one left by a stop that is
+			// no longer running is taken at once there.
+			WithFix("wait for that stop to finish, then run \"sdlc stop\" again if the story has not landed: the " +
+				"lock is kept for as long as the stop that took it runs, and one that does not yet say which stop " +
+				"took it is taken once it has gone " + staleWords() + " without a refresh")
 	})
 }
 
-// LockLandings takes the one lock every landing of the project holds, from
-// before its first read of trunk to its last write, so that stories land one
-// after another and the second finds trunk where the first left it. Without
-// it two stops that began together each ran the project's commands and one
-// lost the race for trunk, to run them all again.
+// LockLandings takes the one lock every landing of the project holds, as a
+// stop. See LockLandingsAs.
+func (s *Store) LockLandings(id string, wait time.Duration) (*Guard, error) {
+	return s.LockLandingsAs(LandingStop, id, wait)
+}
+
+// LockLandingsAs takes the one lock every landing of the project holds, for
+// command of story id, from before its first read of trunk to its last write,
+// so that stories land one after another and the second finds trunk where the
+// first left it. Without it two stops that began together each ran the
+// project's commands and one lost the race for trunk, to run them all again.
 //
 // It is beside the project's lock and each story's own, and none of them. It
 // is tried for up to wait, and at once where wait is nothing; the refusal
@@ -188,24 +238,48 @@ func (s *Store) LockLanding(id string) (*Guard, error) {
 //
 // That refusal alone wraps ErrLandingHeld. A lock that could not be made at
 // all is refused with the same code, and has no holder to wait for.
-func (s *Store) LockLandings(id string, wait time.Duration) (*Guard, error) {
+func (s *Store) LockLandingsAs(command LandingCommand, id string, wait time.Duration) (*Guard, error) {
 	if err := CheckID(id); err != nil {
 		return nil, err
 	}
-	project := guardPath(s.LockRoot())
-	path := project + "-landing"
-	return take(path, "stop "+id, wait, realClock{}, func() error {
+	path := guardPath(s.LockRoot()) + "-landing"
+	g, err := take(path, string(command)+" "+id, wait, realClock{}, staleness{now: s.ages()}.breakOpen, func() error {
+		return landingHeld(path)
+	})
+	if err == nil {
+		s.sweepWaiters()
+	}
+	return g, err
+}
+
+// landingHeld is the refusal of the landing lock at path, where somebody
+// holds it.
+func landingHeld(path string) error {
+	if gone := leftBy(path); gone != "" {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"another story is still landing",
-			heldBy(path)+" holds the landing lock at "+sdlcerr.QuotePath(path)+", and stories land on trunk one at a time").
-			WithFix("nothing has changed, so run \"sdlc stop\" again once that landing has finished. Where it is hung, " +
-				"a person ends it -- Ctrl+C in its terminal, or by ending the process named above -- and it gives the " +
-				"lock back as it goes; one killed outright leaves the lock, which breaks open once it is " +
-				strconv.Itoa(int(guardStale/time.Minute)) + " minutes" + " old with its holder gone. An assistant runs \"sdlc stop\" again up to three times and, " +
-				"where the third is refused too, hands the story to a person with \"sdlc escalate\" and stops").
-			WithCause(ErrLandingHeld)
-	})
+			landingHeldBy(path)+" left the landing lock at "+sdlcerr.QuotePath(path)+", and stories land on trunk "+
+				"one at a time; "+gone).
+			WithFix("nothing has changed, so run \"sdlc stop\" again at or after the time given above, and it takes " +
+				"the lock; nothing is removed by hand. " + assistantStopsAgain).
+			WithCause(ErrLandingLeft)
+	}
+	return sdlcerr.New(sdlcerr.StateUnwritable,
+		"another story is still landing",
+		landingHeldBy(path)+" holds the landing lock at "+sdlcerr.QuotePath(path)+", and stories land on trunk one at a time").
+		WithFix("nothing has changed, so run \"sdlc stop\" again once that landing has finished. Where it is hung, " +
+			"a person ends it -- Ctrl+C in its terminal, or ending the process named above where that is an sdlc " +
+			"command -- and it gives the lock back as it goes; one killed outright leaves the lock, which is taken " +
+			"once it has gone " + staleWords() + " without a refresh with its holder gone. The lock is kept " +
+			"for as long as that process runs: only where it is not an sdlc command at all, its number having come " +
+			"round to another program, does a person remove the lock by hand. " + assistantStopsAgain).
+		WithCause(ErrLandingHeld)
 }
+
+// assistantStopsAgain is what an assistant does where the landing lock is
+// held: the runbook stops again up to three times, and so does the refusal.
+const assistantStopsAgain = `An assistant never removes the lock: it runs "sdlc stop" again up to three times ` +
+	`and, where the third is refused too, hands the story to a person with "sdlc escalate" and stops`
 
 // ErrLandingHeld is the cause of LockLandings' refusal where another stop
 // holds the landing lock.
@@ -213,13 +287,29 @@ func (s *Store) LockLandings(id string, wait time.Duration) (*Guard, error) {
 // says everything a person reads.
 var ErrLandingHeld error = landingHeldError{}
 
-type landingHeldError struct{}
+type landingHeldError struct {
+	// gone is a holder that is not running, whose lock is taken by age.
+	gone bool
+}
 
 func (landingHeldError) Error() string { return "another stop holds the landing lock" }
 
+// Is makes the refusal ErrLandingHeld whether its holder runs or has gone, as
+// a stop waits for either, and ErrLandingLeft only where it has gone.
+func (e landingHeldError) Is(target error) bool {
+	t, ok := target.(landingHeldError)
+	return ok && (!t.gone || e.gone)
+}
+
+// ErrLandingLeft is the cause of LockLandings' refusal where the holder of the
+// landing lock is not running, and its lock is taken once it is old enough.
+// It is ErrLandingHeld as well.
+var ErrLandingLeft error = landingHeldError{gone: true}
+
 // take takes the lock at path, waiting up to wait for whoever has it, and
 // returns busy's refusal once it has waited that long, as clock counts it.
-func take(path, what string, wait time.Duration, clock Clock, busy func() error) (*Guard, error) {
+// brk breaks open a lock its holder left, and reports whether to try again.
+func take(path, what string, wait time.Duration, clock Clock, brk func(string) bool, busy func() error) (*Guard, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, sdlcerr.New(sdlcerr.StateUnwritable,
 			"the lock directory could not be created",
@@ -240,7 +330,7 @@ func take(path, what string, wait time.Duration, clock Clock, busy func() error)
 		if !denied && !errors.Is(err, fs.ErrExist) {
 			return nil, lockNotCreated(path, err)
 		}
-		if !denied && breakIfStale(path) {
+		if !denied && brk(path) {
 			continue
 		}
 		if err := waitedTooLong(path, err, denied, clock.Now().Sub(start), wait, busy); err != nil {
@@ -341,7 +431,11 @@ func ReleaseHeld(wait time.Duration) {
 }
 
 // beat keeps the lock's directory young for as long as it is held, and stops
-// once it is no longer this holder's to keep.
+// once it is no longer this holder's to keep: gone, or another holder's. A read
+// of the owner file that fails any other way is not taken for that. Stopping on
+// one, a live holder's landing lock aged out under it while its story's own
+// lock went on beating, and the stop that took the landing lock took that one
+// too, a moment old.
 func (g *Guard) beat() {
 	defer close(g.done)
 	ticker := time.NewTicker(guardBeat)
@@ -351,7 +445,7 @@ func (g *Guard) beat() {
 		case <-g.stop:
 			return
 		case <-ticker.C:
-			if !ownedBy(g.path, g.token) {
+			if lost(g.path, g.token) {
 				return
 			}
 			now := time.Now()
@@ -383,38 +477,122 @@ func (g *Guard) describe(what string) error {
 // pid can be reused, and a lock that really was abandoned is then waited on and
 // explained rather than broken, which loses nothing.
 func breakIfStale(path string) bool {
+	return staleness{now: time.Now}.breakOpen(path)
+}
+
+// staleness is how a lock is judged left by its holder: by its age on now, as
+// a lock's age is always judged, and, with gone set, by its holder alone.
+type staleness struct {
+	now func() time.Time
+	// gone takes a lock whose owner names a process that is not running,
+	// whatever its age. Only LockLanding sets it, and only for a process
+	// that holds the landing lock (see there).
+	gone bool
+}
+
+// The rules a lock is broken open by, as the debug log names them.
+const (
+	ruleAge  = "old, and its holder gone"
+	ruleGone = "its holder gone, under the landing lock"
+)
+
+// left reports whether the lock at path was left by its holder, and the rule
+// that says so; err is why the lock could not be looked at.
+//
+// A lock that does not name a process -- taken a moment ago and not yet
+// described, or described by a process that died doing it -- is judged by its
+// age, gone or not: under gone alone such a lock was never broken open.
+func (st staleness) left(path string) (rule string, left bool, err error) {
 	info, err := os.Stat(path)
+	if err != nil {
+		return "", false, err
+	}
+	if st.gone {
+		if o, ok := readOwner(path); ok {
+			return ruleGone, !processAlive(o.PID), nil
+		}
+	}
+	return ruleAge, st.now().Sub(info.ModTime()) >= guardStale && !holderAlive(path), nil
+}
+
+// breakOpen removes the lock at path where its holder left it, and reports
+// whether it is worth trying to take the lock again. See breakIfStale.
+func (st staleness) breakOpen(path string) bool {
+	_, left, err := st.left(path)
 	if err != nil {
 		// Gone between the Mkdir failing and now, which is the ordinary way a
 		// contended lock is released. Retrying is the right move.
 		return errors.Is(err, fs.ErrNotExist)
 	}
-	if time.Since(info.ModTime()) < guardStale || holderAlive(path) {
+	if !left {
 		return false
 	}
 
 	// Broken open by one command at a time. Several can find one lock abandoned
 	// at once, and each removing it where it stood let a later one remove the
 	// lock an earlier one had just taken in its place: both went on to write.
-	// Holding the break, a command looks again, and a lock that is still old
+	// Holding the break, a command looks again, and a lock that is still left
 	// then is the abandoned one: nobody can create a new one while it stands,
 	// and nobody else can remove it while the break is held.
 	breaking := path + ".break"
 	if err := mkdir(breaking, 0o755); err != nil {
 		// Somebody else is breaking it, and is waited for -- unless they died
 		// doing it, which would leave the break standing for good.
-		if b, err := os.Stat(breaking); err == nil && time.Since(b.ModTime()) >= guardStale {
+		if b, err := os.Stat(breaking); err == nil && st.now().Sub(b.ModTime()) >= guardStale {
 			_ = os.Remove(breaking)
 		}
 		return false
 	}
 	defer func() { _ = os.Remove(breaking) }()
 
-	info, err = os.Stat(path)
-	if err != nil || time.Since(info.ModTime()) < guardStale {
+	rule, left, err := st.left(path)
+	if err != nil || !left {
 		return true
 	}
-	return os.RemoveAll(path) == nil
+	removed := os.RemoveAll(path) == nil
+	if removed {
+		// Said, because a lock broken open is the one decision here that can
+		// let two writers in, and the rule it was broken by is what a person
+		// needs to tell a mistaken break from a right one.
+		slog.Debug("broke open a lock its holder left", "path", path, "rule", rule)
+	}
+	return removed
+}
+
+// holds reports whether this process holds the lock at path, and still has it:
+// a lock broken open under it and taken by another is not its own.
+func holds(path string) bool {
+	held.Lock()
+	var tokens []string
+	for g := range held.guards {
+		if g.path == path {
+			tokens = append(tokens, g.token)
+		}
+	}
+	held.Unlock()
+	return slices.ContainsFunc(tokens, func(token string) bool { return ownedBy(path, token) })
+}
+
+// ownerAt is the owner file of the lock at path, as it reads.
+func ownerAt(path string) (guardOwner, error) {
+	raw, err := os.ReadFile(filepath.Join(path, ownerFile))
+	if err != nil {
+		return guardOwner{}, err
+	}
+	var o guardOwner
+	err = json.Unmarshal(raw, &o)
+	return o, err
+}
+
+// readOwner is the owner of the lock at path, and whether it names a process.
+// A pid of 0 or less names none: to a signal they mean a process group, which
+// read as running on Unix and as not running on Windows. Nor does one past
+// MaxInt32: Unix's kill truncates it to 32 bits, to 0, -1 or another process,
+// where Windows reads it as not running. A lock that says either is judged as
+// one that says nothing, the same on every platform.
+func readOwner(path string) (guardOwner, bool) {
+	o, err := ownerAt(path)
+	return o, err == nil && o.PID > 0 && o.PID <= math.MaxInt32
 }
 
 // holderAlive reports whether the process that took the lock is still running.
@@ -422,39 +600,115 @@ func breakIfStale(path string) bool {
 // described, or described by a process that died doing it -- is judged by its
 // age alone.
 func holderAlive(path string) bool {
-	raw, err := os.ReadFile(filepath.Join(path, ownerFile))
-	if err != nil {
-		return false
-	}
-	var o guardOwner
-	if json.Unmarshal(raw, &o) != nil {
-		return false
-	}
-	return processAlive(o.PID)
+	o, ok := readOwner(path)
+	return ok && processAlive(o.PID)
 }
 
 // ownedBy reports whether the lock at path is still the one token took.
 func ownedBy(path, token string) bool {
-	raw, err := os.ReadFile(filepath.Join(path, ownerFile))
-	if err != nil {
-		return false
+	o, err := ownerAt(path)
+	return err == nil && o.Token == token
+}
+
+// lost reports whether the lock at path is known to be no longer token's: it
+// is gone, or another holder's.
+func lost(path, token string) bool {
+	o, err := ownerAt(path)
+	return errors.Is(err, fs.ErrNotExist) || (err == nil && o.Token != token)
+}
+
+// leftBy is what a refusal says of a lock whose owner names a process that is
+// not running, and "" for any other: that it is not, and when the lock is
+// taken. Nothing of the owner file but its pid is printed, and no host: the
+// lock may be shared with one where the process does run.
+func leftBy(path string) string {
+	o, ok := readOwner(path)
+	if !ok || processAlive(o.PID) {
+		return ""
 	}
-	var o guardOwner
-	return json.Unmarshal(raw, &o) == nil && o.Token == token
+	said := "pid " + strconv.Itoa(o.PID) + " is not running on this machine, so its lock can be taken once it " +
+		"has gone " + staleWords() + " without a refresh"
+	if info, err := os.Stat(path); err == nil {
+		said += ", at about " + info.ModTime().Add(guardStale).UTC().Format(time.RFC3339)
+	}
+	return said
+}
+
+// staleWords is guardStale as a person reads it, in whole minutes: Go's 2m0s
+// is not how anybody says it.
+func staleWords() string {
+	return strconv.Itoa(int(guardStale/time.Minute)) + " minutes"
 }
 
 // heldBy names whoever is holding the lock, for the one message that has to
 // explain a wait. A lock with no readable owner still gets a sentence.
 func heldBy(path string) string {
-	raw, err := os.ReadFile(filepath.Join(path, ownerFile))
-	if err != nil {
+	return holderWords(path, commandLabel)
+}
+
+// landingHeldBy is heldBy for a landing lock, which only a stop or a remap of
+// a story holds.
+func landingHeldBy(path string) string {
+	return holderWords(path, func(what string) bool {
+		_, _, ok := landingLabel(what)
+		return ok
+	})
+}
+
+// holderWords names the holder of the lock at path by what of its owner file
+// it can trust. The lock is in a directory any process of the user's can
+// write, and a refusal is read by a model as the tool's own words: a label
+// is printed only where trusted says it is one this code writes, and a time
+// only where it is one.
+func holderWords(path string, trusted func(string) bool) string {
+	o, ok := readOwner(path)
+	if !ok {
 		return "another command"
 	}
-	var o guardOwner
-	if err := json.Unmarshal(raw, &o); err != nil || o.What == "" {
-		return "another command"
+	process := "pid " + strconv.Itoa(o.PID)
+	if isTime(o.At) {
+		process += ", started " + o.At
 	}
-	return "`sdlc " + o.What + "` (pid " + strconv.Itoa(o.PID) + ", started " + o.At + ")"
+	if trusted(o.What) {
+		return "`sdlc " + o.What + "` (" + process + ")"
+	}
+	return "another command (" + process + ")"
+}
+
+// isTime reports whether at is an RFC 3339 time, as a holder writes it.
+func isTime(at string) bool {
+	_, err := time.Parse(time.RFC3339, at)
+	return err == nil
+}
+
+// commandLabel reports whether what is a label this code writes: the path of
+// a command that takes the project's lock (openStoreForWriting), the Stop
+// hook's, and for the commands that take a lock for one story, that story --
+// start's own lock on the story's worktree (LockStory), and a stop's or a
+// remap's landing lock. A command that comes to take a lock later and is not
+// named here is shown as another command, which says less and never anything
+// untrue.
+func commandLabel(what string) bool {
+	switch what {
+	case "ack", "approve", "escalate", "freeze", "gate", "release", "unfreeze", "hook Stop",
+		"artifact write", "codemap write", "cost add", "review add", "staffing set", "staffing amend",
+		"staffing assign":
+		return true
+	}
+	command, id, _ := strings.Cut(what, " ")
+	return (command == string(LandingStop) || command == string(LandingRemap) || command == "start") &&
+		(id == "" || CheckID(id) == nil)
+}
+
+// landingLabel is the command and story of a landing lock's label, where it
+// is one a stop or a remap writes.
+func landingLabel(what string) (command LandingCommand, id string, ok bool) {
+	word, id, _ := strings.Cut(what, " ")
+	command = LandingCommand(word)
+	if (command != LandingStop && command != LandingRemap) || CheckID(id) != nil {
+		return "", "", false
+	}
+	return command, id, true
 }
 
 // guardPath is where this project's lock lives: one directory per project,

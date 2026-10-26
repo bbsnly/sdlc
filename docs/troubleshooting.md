@@ -111,30 +111,43 @@ below it is.
 - **Another sdlc command is still running.** Every command that writes loop state takes a lock
   first, and waits up to ten seconds for a command that holds it. The message names that command
   and its process id. Wait for it to finish, then run your command again. A command stopped
-  with Ctrl+C gives the lock back on its way out. If nothing is running, the lock was left by a
-  command that could not: one killed outright, or a machine that went down. It is broken open
-  once it has gone two minutes without its holder refreshing it and that process is no longer
-  running, or you can delete the directory the message names. A holder that is still running,
-  however long ago it took the lock, is waited for: a laptop asleep in the middle of a command
-  still has a change to write.
+  with Ctrl+C gives the lock back on its way out. A lock whose holder is not running was left by
+  a command that could not: one killed outright, or a machine that went down. The message then
+  says that process is not running, and that its lock is taken once it has gone two minutes
+  without a refresh, with about when that is: run your command again then, and it takes the
+  lock. Nothing is removed by hand. A holder that is still running, however long ago it took the
+  lock, is waited for: a laptop asleep in the middle of a command still has a change to write.
+  Only where the process the message names is not an `sdlc` command at all, its number having
+  come round to another program, does a person remove the directory the message names. An
+  assistant never removes it: where the command is refused again, it hands the story to a person
+  with `sdlc escalate`.
 - **Another story is landing.** Stories land on trunk one at a time. `sdlc stop` in a finished
   story's worktree waits up to eight minutes for the landing in front of it, having said which
   stop holds the lock and its process id, and is refused with this code if that landing is still
-  going. Nothing has changed: run `sdlc stop` again when it has finished. A landing that is hung,
-  most often on a configured command that never ends, is a person's to end: Ctrl+C in its
-  terminal, or end the process the message names; it gives the lock back as it goes. One killed
-  outright leaves the lock, which breaks open once it is two minutes old with its holder gone, or
-  you can delete the directory the message names. An assistant runs `sdlc stop` again up to
-  three times and, where the third is refused too, hands the story to a person with
+  going. Nothing has changed: run `sdlc stop` again when it has finished. Meanwhile
+  `sdlc status`, in any checkout, names the story landing, its stop's process and since when,
+  and every stop that waits to land after it. A landing that is hung, most often on a
+  configured command that never ends, is a person's to end: Ctrl+C in its terminal, or end the
+  process the message names where that is an `sdlc` command; it gives the lock back as it goes.
+  One killed outright leaves the lock. The stop that finds it says its holder is not running and
+  that the lock is taken once it has gone two minutes without a refresh, with about when; it
+  waits for that time and takes the lock, and the story's own landing lock that the killed stop
+  left with it. Nothing is removed by hand. Only where the process the message names is not an
+  `sdlc` command at all, its number having come round to another program, does a person remove
+  the directory the message names. An assistant never removes it: it runs `sdlc stop` again up
+  to three times and, where the third is refused too, hands the story to a person with
   `sdlc escalate`.
 - **At landing**, another `sdlc stop` is landing the same story. A story is landed by one stop
   at a time, and the second is refused at once rather than waiting, since it would only check
   again what the first is changing. The message names the lock's path, quoted. Wait for that
   stop to finish, and run `sdlc stop` in the story's worktree again if the story has not
-  landed. A stop that was killed leaves the lock, which breaks open once it is two minutes old
-  and nothing holds it. Every other command goes on meanwhile; another story's landing waits its
-  turn, as above. A second stop of the same story that began later waits for the first and is
-  then told the story has landed.
+  landed. The lock is kept for as long as the stop that took it runs. A stop that was killed
+  leaves it, and the next stop of the story takes it at once, as the landing lock is its own by
+  then and the stop that took the story's lock is no longer running. A lock that does not yet
+  say which stop took it is taken once it has gone two minutes without a refresh. Every other
+  command goes on meanwhile;
+  another story's landing waits its turn, as above. A second stop of the same story that began
+  later waits for the first and is then told the story has landed.
 
 **At a limit.** `sdlc gate ... fail` and `sdlc review add ... block` hand the story to a person
 when the failure or the block reaches its limit, and the hand-over writes the backlog, the claim
@@ -409,9 +422,12 @@ right in one of two ways:
 - **Where the change is to stay**, or where trunk changed the test too, so that restoring the
   frozen copy would take trunk's change away, reopen the story instead. Answer the escalation first,
   in `.sdlc/worktrees/<ID>`, with `/sdlc:approve <ID>`, or `sdlc approve <ID>`, or send it back
-  with `/sdlc:approve <ID> --reject "..."`, or `sdlc approve <ID> --reject "..."`, then run
-  `sdlc gate code_review fail --story <ID> --note "..."` there and type `/sdlc:next`. Once
-  the iteration is running, `sdlc unfreeze --reason "..."` there, in their own terminal, sends
+  with `/sdlc:approve <ID> --reject 'the work needs changing'`, or
+  `sdlc approve <ID> --reject 'the work needs changing'`, then run
+  `sdlc gate code_review fail --story <ID> --note 'a person reopened the story'` there and type
+  `/sdlc:next`, with their own words between the single quotes where they have them. Once the
+  iteration is running, `sdlc unfreeze --reason 'the frozen tests need changing'` there, in their
+  own terminal, sends
   the story back to have its tests frozen again: `sdlc unfreeze` needs an iteration running, and
   it reopens Gate 3 and every gate after it.
 
@@ -502,8 +518,10 @@ is compared with the lines around its change, as before. The fix says which of t
   the worktree and run `sdlc stop` there again. Otherwise, to have it reviewed and committed
   again, they reopen it: they answer the escalation first, in `.sdlc/worktrees/<ID>`, with
   `/sdlc:approve <ID>`, or `sdlc approve <ID>`, or send it back with
-  `/sdlc:approve <ID> --reject "..."`, or `sdlc approve <ID> --reject "..."`, then run
-  `sdlc gate code_review fail --story <ID> --note "..."` there and type `/sdlc:next`. Until the
+  `/sdlc:approve <ID> --reject 'the work needs changing'`, or
+  `sdlc approve <ID> --reject 'the work needs changing'`, then run
+  `sdlc gate code_review fail --story <ID> --note 'a person reopened the story'` there and type
+  `/sdlc:next`, with their own words between the single quotes where they have them. Until the
   escalation is answered, the story waits for a person and the loop does not carry it on
   (SDLC-E0036). An assistant hands the story to a person with `sdlc escalate` and stops.
 
@@ -620,8 +638,9 @@ escalation waits, and lands nothing. A person answers first, in Claude Code or i
 terminal, in
 `.sdlc/worktrees/<ID>`, the checkout that holds the story: `/sdlc:approve <ID>`, or `sdlc approve <ID>`,
 after which
-`sdlc stop` there lands it, or `sdlc approve <ID> --reject "..."`, to send the work back. An
-assistant stops and tells the person.
+`sdlc stop` there lands it, or `sdlc approve <ID> --reject 'the work needs changing'`, to send the
+work back, with their own reason between the single quotes. An assistant stops and tells the
+person.
 
 ### SDLC-E0037
 
@@ -630,10 +649,20 @@ committed, and nobody has approved the work being committed.
 
 `human_gates.pre_commit_pause_tiers` in `.sdlc/config.json` names those tiers,
 `high` unless it says otherwise, and a story with no `risk_tier` is `low`. The
-loop hands the story over and stops:
+fix says what a person types and, apart from it, what an assistant does:
+
+```text
+a person reads the work and answers with "/sdlc:approve <ID>", or "sdlc approve <ID>", typing the
+first in Claude Code or running the second in their own terminal; once they have, the session
+commits the work they approved. An assistant does not answer for them: it hands the story to a
+person with "sdlc escalate pre_commit_approval --message 'ready for a person to approve before it
+is committed'" and stops
+```
+
+The words in the single quotes are the session's to change, to say what changed and why:
 
 ```console
-$ sdlc escalate pre_commit_approval --message "ready to commit: what changed, and why"
+$ sdlc escalate pre_commit_approval --message "ready to commit: the refund total is checked"
 ```
 
 **At landing**, it means that, in a tier that pauses, nobody has approved the work as it now is:
@@ -642,14 +671,15 @@ to pause after the story was committed. An approval given before the commit stan
 `sdlc stop` itself puts the story onto a trunk that moved and the result is the approved change
 line for line. A story rebased by hand is approved again, and so is one whose reviews were
 recorded again after the commit gate, or one with a code review on its record from a reviewer the
-staffing has since left out, where that review is of another tree than the others. Hand the
-story to a person with `sdlc escalate pre_commit_approval --message "..."` and stop; once they
-have run `/sdlc:approve <ID>`, or `sdlc approve <ID>` in `.sdlc/worktrees/<ID>`, `sdlc stop`
-there lands it. With no iteration
-running on the story, it cannot be handed over from there: `sdlc gate commit fail --story <ID>
---note "..."` in `.sdlc/worktrees/<ID>` and `/sdlc:next` take it up again at the commit gate
-first. A tier pauses where the main checkout's configuration or trunk's committed one says it
-does.
+staffing has since left out, where that review is of another tree than the others. A person
+reads the work as it now is and answers with `/sdlc:approve <ID>`, or `sdlc approve <ID>`, in
+`.sdlc/worktrees/<ID>`; once they have, `sdlc stop` there lands it. An assistant does not answer
+for them: it hands the story to a person with `sdlc escalate pre_commit_approval --message 'the
+work changed since a person approved it'` and stops. With no iteration running on the story, it
+cannot be handed over from there: `sdlc gate commit fail --story <ID> --note 'the story changed
+after the commit gate; a person is to read it'` in `.sdlc/worktrees/<ID>` and `/sdlc:next` take it
+up again at the commit gate first. A tier pauses where the main checkout's configuration or
+trunk's committed one says it does.
 
 A person reads the work and runs `/sdlc:approve`, or `sdlc approve` in their own terminal. An
 approval is bound to the work as it stands, so a change made after it needs
@@ -684,13 +714,14 @@ its commits`. What it says next tells the cases apart:
   nobody having tampered: the story is then held to the commit the last answer named, and the
   rework's commits are above it.
 
-The fix is a person's answer. With an iteration running, the session hands the story over with
-`sdlc escalate pre_commit_approval --message "..."` and stops. With none, which is the state of a
-finished story that was handed over and answered before, a person or the session first runs
-`sdlc gate commit fail --story <ID> --note "..."` in `.sdlc/worktrees/<ID>` and types
-`/sdlc:next`, which takes the story up again at the commit gate, where it is handed over. A
-person then reads the story's commits in their own terminal, in `.sdlc/worktrees/<ID>`, with
-`<trunk>` standing for the trunk branch's name:
+The fix is a person's answer, and an assistant does not give it: with an iteration running, the
+session hands the story over with `sdlc escalate pre_commit_approval --message 'the commits
+changed since the commit gate'` and stops. With none, which is the state of a finished story that
+was handed over and answered before, a person or the session first runs `sdlc gate commit fail
+--story <ID> --note 'the story changed after the commit gate; a person is to read it'` in
+`.sdlc/worktrees/<ID>` and types `/sdlc:next`, which takes the story up again at the commit gate,
+where it is handed over. A person then reads the story's commits in their own terminal, in
+`.sdlc/worktrees/<ID>`, with `<trunk>` standing for the trunk branch's name:
 
 ```console
 $ git --no-replace-objects log --no-mailmap --format=fuller <trunk>..story/<ID>
@@ -901,10 +932,11 @@ changed or took away one of trunk's. A person decides:
 - **To leave them out**, take them out of the branch and run `sdlc stop` in the story's worktree
   again.
 - **To keep them**, reopen the story, as under SDLC-E0025. Answer the escalation first in
-  `.sdlc/worktrees/<ID>`, record `sdlc gate code_review fail --story <ID> --note "..."` there,
-  type `/sdlc:next`, and once the iteration is running, run `/sdlc:unfreeze`, or `sdlc unfreeze
-  --reason "..."` there
-  in their own terminal, which sends the story back to have its tests frozen again with them.
+  `.sdlc/worktrees/<ID>`, record
+  `sdlc gate code_review fail --story <ID> --note 'a person reopened the story'` there, type
+  `/sdlc:next`, and once the iteration is running, run `/sdlc:unfreeze`, or
+  `sdlc unfreeze --reason 'the frozen tests need changing'` there in their own terminal,
+  which sends the story back to have its tests frozen again with them.
 
 **Whose commits are the story's.** A test file is trunk's only below the story's own commits,
 and sdlc tells those by a list in the story's record (`forks`). `sdlc start` begins it; every
@@ -1258,7 +1290,7 @@ $ git merge --ff-only story/US-001
 ```
 
 If git says it cannot fast-forward, trunk has moved since the story was cut: in the story's
-worktree, run `git rebase main` and the project's tests, then merge again.
+worktree, run `git rebase <trunk>` and the project's tests, then merge again.
 
 The worktree may be on no branch: a rebase stopped part-way leaves it so, and so does a HEAD
 somebody detached. A commit on no branch is lost when its worktree is removed, and

@@ -163,12 +163,12 @@ type lwPaused struct {
 	r        result
 }
 
-// lwPausedStop begins `sdlc stop` in dir from session with its pause set.
+// lwPausedStop begins `sdlc stop` in dir from ldSession with its pause set.
 // inside, where it is given, runs at the first pause, while the stop holds
 // what it holds there. The stop is let go and waited for when the test ends,
 // whatever the test did: a paused stop holds the loop's state, and one that
 // outlived its test would hold it for every test after.
-func lwPausedStop(t *testing.T, dir, session string, inside func()) *lwPaused {
+func lwPausedStop(t *testing.T, dir string, inside func()) *lwPaused {
 	t.Helper()
 	p := &lwPaused{reached: make(chan struct{}), finished: make(chan struct{})}
 	release := make(chan struct{})
@@ -186,7 +186,7 @@ func lwPausedStop(t *testing.T, dir, session string, inside func()) *lwPaused {
 	}
 	go func() {
 		defer close(p.finished)
-		p.r = lwStop(dir, session, nil, pause)
+		p.r = lwStop(dir, ldSession, nil, pause)
 	}()
 	t.Cleanup(func() {
 		p.letGo()
@@ -237,7 +237,7 @@ func TestAC1AStopPausedAsItBeginsToLandHoldsTheLoopsStateAndTheLandingLockAndLan
 	root, s := lwLockRoot(t, main)
 
 	var projectErr, landingErr error
-	p := lwPausedStop(t, wt, ldSession, func() {
+	p := lwPausedStop(t, wt, func() {
 		g, err := store.LockOn(root, "status", newLWClock())
 		g.Release()
 		projectErr = err
@@ -330,7 +330,7 @@ func TestAC1AStopPausedByATestIsLetGoAndGivesTheLoopsStateBackWhenTheTestEnds(t 
 
 	var p *lwPaused
 	t.Run("a test that ends with its stop paused", func(t *testing.T) {
-		p = lwPausedStop(t, wt, ldSession, nil)
+		p = lwPausedStop(t, wt, nil)
 		p.waitReached(t)
 	})
 	select {

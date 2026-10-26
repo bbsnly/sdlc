@@ -229,8 +229,9 @@ func TestB1APlainOrExecutableRootCodemapStillLands(t *testing.T) {
 // worktree, before the gate command that actually reopens the gate.
 func lrAnswerFirst(t *testing.T, text, id, gate string) {
 	t.Helper()
-	suSays(t, text, `"sdlc approve `+id+`"`, `"sdlc approve `+id+` --reject ..."`, worktreeIn(id),
-		`"sdlc gate `+gate+` fail --story `+id+` --note ..."`, "/sdlc:next")
+	suSays(t, text, `"sdlc approve `+id+`"`, `"sdlc approve `+id+` --reject `, worktreeIn(id),
+		`"sdlc gate `+gate+` fail --story `+id+` --note `, "/sdlc:next")
+	afNoDots(t, "the answer-first route (US-096 D7)", text)
 }
 
 // SDLC-E0036: a finished story with a question open waits for a person, and
@@ -243,7 +244,8 @@ func TestE0036sFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 
 	out := swRefused(t, "SDLC-E0036", wt, "", "stop")
 	_, fix := ldRefusal(t, out, "SDLC-E0036")
-	suSays(t, fix, `"sdlc approve US-001"`, `"sdlc approve US-001 --reject ..."`, worktreeIn("US-001"),
+	afNoDots(t, "SDLC-E0036's fix (US-096 D7)", fix)
+	suSays(t, fix, `"sdlc approve US-001"`, `"sdlc approve US-001 --reject `, worktreeIn("US-001"),
 		`"sdlc stop" there lands it`)
 }
 
@@ -317,7 +319,7 @@ func TestE0025AndE0043sFreezeFixesNameTheAnswerFirstRouteAndTheWorktree(t *testi
 			out := swRefused(t, tc.code, wt, ldSession, "stop")
 			_, fix := ldRefusal(t, out, tc.code)
 			lrAnswerFirst(t, fix, "US-001", "code_review")
-			suSays(t, fix, `"sdlc unfreeze --reason ..."`)
+			suSays(t, fix, `"sdlc unfreeze --reason `)
 			if got := ldTrunk(t, main); got != before {
 				t.Errorf("trunk moved to %s past a broken freeze", got)
 			}
@@ -346,7 +348,8 @@ func TestE0037sFixNamesApproveInTheWorktree(t *testing.T) {
 
 	out := swRefused(t, ldNotApproved, wt, ldSession, "stop")
 	_, fix := ldRefusal(t, out, ldNotApproved)
-	suSays(t, fix, `"sdlc escalate pre_commit_approval --message ..."`, `"sdlc approve US-001"`, worktreeIn("US-001"))
+	suSays(t, fix, `"sdlc escalate pre_commit_approval --message `, `"sdlc approve US-001"`, worktreeIn("US-001"))
+	afPersonAndAssistant(t, "the stop's SDLC-E0037 (US-096 AC-9)", fix, "US-001")
 	if got := ldTrunk(t, main); got != before {
 		t.Errorf("trunk moved to %s though the changed work was not approved", got)
 	}

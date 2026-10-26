@@ -60,8 +60,13 @@ var (
 	AwaitingPerson = register("SDLC-E0036",
 		`a person decides first, in Claude Code or in their own terminal: "/sdlc:approve <ID>", or "sdlc approve <ID>", or "sdlc approve <ID> --reject ..." to send the work back`)
 
+	// ApprovalRequired says what a person types, and apart from it, last, what
+	// an assistant does. The assistant's sentence is the same words as cli's
+	// assistantHandsOver (internal/cli/commitcover.go), which the stop's own
+	// fixes for this code end with: sdlcerr cannot import cli, so the two are
+	// kept together by hand.
 	ApprovalRequired = register("SDLC-E0037",
-		`hand it to a person with "sdlc escalate pre_commit_approval --message ..." and stop; once they have run "/sdlc:approve <ID>", or "sdlc approve <ID>", commit the work they approved`)
+		`a person reads the work and answers with "/sdlc:approve <ID>", or "sdlc approve <ID>", typing the first in Claude Code or running the second in their own terminal; once they have, the session commits the work they approved. An assistant does not answer for them: it hands the story to a person with "sdlc escalate pre_commit_approval --message 'ready for a person to approve before it is committed'" and stops`)
 
 	NotOnTrunk = register("SDLC-E0038",
 		`switch to the branch named by git.trunk_branch in .sdlc/config.json, then start again`)

@@ -897,7 +897,7 @@ func TestAC1TheCommitGateFailThatARefusalPrintsWithNoIterationRunningGetsToALand
 	out := swRefused(t, ldNotApproved, s.wt, ldSession, "stop")
 	_, fix := ldRefusal(t, out, ldNotApproved)
 	fix = cmFlat(fix)
-	suSays(t, fix, "/sdlc:next", `"sdlc escalate pre_commit_approval --message ..."`, worktreeIn("US-001"))
+	suSays(t, fix, "/sdlc:next", `"sdlc escalate pre_commit_approval --message `, worktreeIn("US-001"))
 	printed := cmFixCommand(t, fix, "sdlc gate commit fail --story US-001 --note ")
 	// The note is printed in single quotes: one argument.
 	note := strings.Trim(strings.TrimPrefix(printed, "sdlc gate commit fail --story US-001 --note "), "'")
@@ -911,7 +911,7 @@ func TestAC1TheCommitGateFailThatARefusalPrintsWithNoIterationRunningGetsToALand
 	}
 	gate := swRefused(t, ldNotApproved, s.wt, ldSession, "gate", "commit", "pass", "--note", "again")
 	_, gateFix := ldRefusal(t, gate, ldNotApproved)
-	suSays(t, cmFlat(gateFix), `"sdlc escalate pre_commit_approval --message ..."`)
+	suSays(t, cmFlat(gateFix), `"sdlc escalate pre_commit_approval --message `)
 	ccHandedOverAndApproved(t, s.wt)
 	wtMust(t, s.wt, ldSession, "", "gate", "commit", "pass", "--story", "US-001", "--note", "approved again")
 	wtMust(t, s.wt, ldSession, "", "gate", "retro", "pass", "--story", "US-001", "--note", "the retro again")
