@@ -23,8 +23,11 @@ In these pages, "their own terminal" and "your own terminal" mean a terminal out
 a window the person opened themselves, as [SDLC-E0079](#sdlc-e0079) describes.
 
 > [!NOTE]
-> If you were refused by the hook while working on a story, and no `SDLC-E` code came with it,
-> read [Why was I refused?](guides/why-was-i-refused.md). Messages the hook prints in your
+> A refusal by the hook names a rule in square brackets. Most come with no `SDLC-E` code: for
+> those, read [Why was I refused?](guides/why-was-i-refused.md). One refused at a bound on the
+> symbolic links the hook follows also names [SDLC-E0081](#sdlc-e0081) or
+> [SDLC-E0082](#sdlc-e0082), and one refused for a path too long to look up names
+> [SDLC-E0083](#sdlc-e0083); their sections are below. Messages the hook prints in your
 > session that are not errors are covered under
 > [Warnings the hook prints](#warnings-the-hook-prints).
 
@@ -1989,6 +1992,78 @@ holds conflict text:
 
 A list entry that is not a path or a glob `path.Match` reads does not load: see
 [SDLC-E0045](#sdlc-e0045).
+
+### SDLC-E0081
+
+A word of the command goes through too many symbolic links (symlinks) for `sdlc` to say where it
+lands: more than 64, or more than this system follows in one lookup, which is about 32 on macOS,
+40 on Linux and 63 reparse points on Windows. The second is why a chain of 40 links can be
+refused on a Mac. A link that leads back to itself, directly or round a loop, never lands and is
+refused the same way. The hook refused the command; nothing ran. The refusal quotes the word,
+and its reason says which it was. After a `cd` it quotes the word as you typed it after the `cd`;
+it names the `cd`'s directory only when that directory alone is past the limit. From a working
+directory reached through too many links, every command is refused and the refusal names the
+working directory; `cd` to the place it leads to by a path without the links.
+
+The hook places every word a command writes before it decides, by following the links on the way
+as the filesystem does. Past either limit it cannot be sure where the word lands, so it refuses
+rather than guess. A word within the limits is placed where its links lead.
+
+To go on, name the place the word leads to directly, without the links. To find that place,
+follow the links one at a time: `readlink <link>` on macOS and Linux, or
+`(Get-Item <link>).Target` in PowerShell, prints where one link leads, and you run it again on
+what it printed until it prints a directory or a file. `realpath`, and other tools that resolve
+the whole path in one go, stop at the system's own limit and fail on these words. Where Python is
+installed, this follows the links itself and prints the place in one go (measured on macOS, on a
+chain of 40 links one per directory and on one of 70 at one name; on Windows run it with `py` in
+place of `python3`):
+
+```console
+$ python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' <word>
+```
+
+If a chain of links that long is not one you made, find out who made it before writing through
+it. If you are an assistant, ask the person where the word leads.
+
+### SDLC-E0082
+
+The words of one command, together, go through more symbolic links (symlinks) than the hook
+follows for one command: 512. That is a count of links followed, across all the command's words,
+not a time. The hook refused the command; nothing ran. The refusal quotes the word that took the
+count past 512 as you typed it, after a `cd` too, so you can see where to cut.
+
+Each word's place is found by following its links, and a command of many such words can hold the
+hook until it runs out of time, which refuses the command anyway, later and without saying why.
+So the links are counted, and the command is refused once the count passes the budget. What is
+counted is the links each word goes through on its way, once for each different path. The links
+on the way to the project itself, such as `/tmp` or `/var` on macOS or a linked home, count
+towards a word's 64 but not towards the command's 512. A word through more than 64 links on its
+own is refused under [SDLC-E0081](#sdlc-e0081) instead, even where it is the word that takes the
+count past 512.
+
+To go on, split the command into several, each naming fewer paths that go through links, or name
+each place directly, without the links.
+
+<!-- The figure 512 is pathrules.CommandLinks, and 64 is pathrules' maxLinks: change them here
+     with the constants. -->
+
+### SDLC-E0083
+
+A path the command names is longer, in full, than this system looks up in one go: about 1,024
+bytes on macOS and 4,096 on Linux, counted from the root of the disk. The hook refused the
+command; nothing ran. The refusal quotes the word, or names the working directory where that is
+the path that is too long.
+
+The hook places every path a command writes by looking it up from the root, following the links
+on the way. A path past that length cannot be looked up, so the hook cannot tell where it leads,
+while a shell already part of the way down still reaches it by a shorter name, through any link
+on the way. So it refuses rather than guess.
+
+To go on, make the full path shorter, by moving or renaming the directories on the way to it,
+and name it again. Running the command from a directory nearer the file does not help: the hook
+reads the full path whichever way the command names it. From a working directory whose own path
+is that long, every command is refused; `cd` to a directory with a shorter path first. If you
+are an assistant, ask the person.
 
 ## Warnings the hook prints
 

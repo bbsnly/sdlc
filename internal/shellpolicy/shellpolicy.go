@@ -140,6 +140,12 @@ type State struct {
 	// in the next named the freeze in a word that did not say so.
 	Dir string
 
+	// DirBound is the bound on links the walk to where the command starts
+	// passed, nil where it passed none. Every command run there is refused for
+	// it, and the refusal names the working directory: Dir is that walk's
+	// answer, spelled past where it stopped, and names no path the person knows.
+	DirBound error
+
 	// Agent is the role running the command, as policy.NormalizeAgent gives
 	// it: empty for the main conversation.
 	Agent string
@@ -215,6 +221,20 @@ type State struct {
 	// holds ~/.agents: the twin of ClaudeConfigHeld. Nil means never.
 	AgentsConfigHeld func(word string) bool
 
+	// Bound, when set, says whether a word can be placed within the bounds on
+	// the symbolic links one word and one command may follow, and within the
+	// length of a path the system looks up: nil, or an error that is
+	// pathrules.ErrTooManyLinks, ErrPathTooLong or ErrLinkBudget. It is
+	// asked of every word before the disk is, and once more, with "", at the
+	// end of the command; see linkbound.go. Nil means no bound.
+	Bound func(word string) error
+
+	// Considered, when set, is told each program the rules took up, by its
+	// name in Candidates and never as the command spells it, and the reading
+	// that brought it in: released, shell, decoded or braces. Each pair once
+	// for a call of Inspect. It is for the debug log.
+	Considered func(candidate, via string)
+
 	// configOnly is set by ClaudeConfigWrites, for which no rule runs but the
 	// ones for the person's Claude Code configuration and ~/.agents.
 	configOnly bool
@@ -222,6 +242,14 @@ type State struct {
 	// undecoded is set by Inspect for a reading that another decodes; see
 	// pair.
 	undecoded bool
+
+	// via is the name of the reading being walked, set by Inspect; see pair.
+	via string
+
+	// seen is the call of Inspect or ClaudeConfigWrites this State is for,
+	// shared by every copy of it: what it told Considered, and where a word
+	// passed a bound.
+	seen *inspection
 
 	// hold is the branch rule's finding for this call of Inspect, set by it.
 	hold *branchHold
@@ -277,6 +305,12 @@ type Finding struct {
 	Rule   string
 	Reason string
 	Route  string
+	// Via is the reading the refusal was found in: released, shell, decoded
+	// or braces.
+	Via string
+	// Code is the SDLC-E code a refusal has, where it has one: only those at
+	// a bound on links do.
+	Code string
 }
 
 // Message is what the assistant reads.
@@ -284,7 +318,11 @@ func (f Finding) Message() string {
 	if f.Rule == "" {
 		return ""
 	}
-	return f.Reason + ". Instead: " + f.Route + " [" + f.Rule + "]"
+	code := ""
+	if f.Code != "" {
+		code = " (" + f.Code + ")"
+	}
+	return f.Reason + ". Instead: " + f.Route + code + " [" + f.Rule + "]"
 }
 
 // Tools are the Claude Code tools that run a command line, each carrying it in
@@ -353,6 +391,9 @@ type pair struct {
 	// to expand to it: read here, `git $'status'` was refused for a `$status`
 	// that is not there.
 	undecoded bool
+	// via is the reading's name, for the debug log: released, shell, decoded
+	// or braces. A text two readings share keeps the name of the first.
+	via string
 }
 
 // readings is a command read as the released tool reads it, as the shell that
@@ -390,14 +431,14 @@ func readings(command string, powerShell bool) []pair {
 		shell = withoutEscapes(command)
 	}
 	out := make([]pair, 0, 3)
-	out = addReadings(out, withoutDocuments(released, powerShell, true), released, false)
-	out = addReadings(out, withoutDocuments(shell, powerShell, false), shell, false)
+	out = addReadings(out, withoutDocuments(released, powerShell, true), released, false, viaReleased)
+	out = addReadings(out, withoutDocuments(shell, powerShell, false), shell, false, viaShell)
 	if !powerShell {
 		out = addDecodedReadings(out, shell)
 		// And each once more with its brace lists expanded, where it has one.
 		for _, p := range slices.Clone(out) {
 			if text := bracesExpanded(p.text); text != p.text {
-				out = addReadings(out, []string{text}, bracesExpanded(p.command), p.undecoded)
+				out = addReadings(out, []string{text}, bracesExpanded(p.command), p.undecoded, viaBraces)
 			}
 		}
 	}
@@ -410,10 +451,10 @@ func readings(command string, powerShell bool) []pair {
 // A reading another has already made is not made again: the two differ only
 // where the command holds a here-string marker or a backtick, and a document
 // handed over as a bash heredoc is one reading for both.
-func addReadings(out []pair, texts []string, spelling string, undecoded bool) []pair {
+func addReadings(out []pair, texts []string, spelling string, undecoded bool, via string) []pair {
 	for _, text := range texts {
 		if !slices.ContainsFunc(out, func(p pair) bool { return p.text == text && p.command == spelling }) {
-			out = append(out, pair{text: text, command: spelling, undecoded: undecoded})
+			out = append(out, pair{text: text, command: spelling, undecoded: undecoded, via: via})
 		}
 	}
 	return out
@@ -439,7 +480,7 @@ func addDecodedReadings(out []pair, shell string) []pair {
 		for i, text := range texts {
 			texts[i] = decoded(text)
 		}
-		out = addReadings(out, texts, d, false)
+		out = addReadings(out, texts, d, false, viaDecoded)
 	}
 	return out
 }
@@ -469,13 +510,14 @@ func addDecodedReadings(out []pair, shell string) []pair {
 // taking out a quoted text with a space in it made a command plain that was
 // not, and the refusal of a path it writes said the path might only be named.
 func Inspect(command string, s State) (Finding, bool) {
+	s.seen = newInspection()
 	if f, refused := inspectNamed(command, s); refused {
 		return f, true
 	}
 	// After every rule a command was refused under before there was this one:
 	// the Claude Code sessions checkNestedSession does not read as one, where
 	// they would expand a person's command.
-	return checkSecondSession(command, s.PowerShell)
+	return secondSession(command, s.PowerShell)
 }
 
 // inspectNamed is Inspect without the reading of a second session, with the
@@ -512,6 +554,7 @@ func inspectAs(asked, named string, s State) (Finding, bool) {
 	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}, landed: map[string][]Landing{},
 		disk: &diskAnswers{}, whole: s.whole, tildes: namedDirectories(named)}
 	s.hold = &branchHold{}
+	s = s.bounded()
 	var f Finding
 	var ok bool
 	if asked == named {
@@ -520,6 +563,13 @@ func inspectAs(asked, named string, s State) (Finding, bool) {
 		f, ok = inspectEach(named, s, m, inspectPaths)
 	}
 	if ok {
+		return f, true
+	}
+	// A word past a bound on links refuses the command only now, when every
+	// rule has read all of it: a rule that refuses it anywhere keeps its name.
+	// This is the one way out of inspectAs that allows, and ClaudeConfigWrites
+	// ends here too, so a session with no story is bounded the same way.
+	if f, ok := s.seen.linkFinding(s, named); ok {
 		return f, true
 	}
 	// The branch rule answers last, where nothing else refused the command.
@@ -538,8 +588,12 @@ func inspectEach(line string, s State, m *memo, rules func(pair, State, *memo) (
 		if s.hold.charge(len(r.text)) {
 			return s.hold.finding, true
 		}
-		s.undecoded = r.undecoded
+		s.undecoded, s.via = r.undecoded, r.via
+		s.seen.reading(r.via)
 		if f, ok := rules(r, s, m); ok {
+			if f.Via == "" {
+				f.Via = r.via
+			}
 			return f, true
 		}
 		// What Resolve said of a word, and the folded freeze, are functions of
@@ -687,18 +741,21 @@ func (w *pathWalk) segment(idx int, marked string) (Finding, bool) {
 	}
 	run, evals := underEval(program(words))
 	run.cut = w.cutWords(idx, marked)
+	s.seen.tell(s, run.words)
 	// A find's expression is read once, here, for every rule that asks.
 	found := w.find(idx, segment, run, evals)
 	// env -C runs the command in the directory it names, as a cd in front
 	// of it would, and leaves the shell where it was. Read from where the
 	// shell was, `env -C .. rm -rf B-2` took another story's worktree away,
-	// and `env -C .sdlc rm -rf state` the loop's own record.
+	// and `env -C .sdlc rm -rf state` the loop's own record. After `--`, since
+	// what env -C names is a directory whatever it begins with.
 	at, atLost, atFrom := w.dir, w.lost, w.from
 	if run.chdir != "" {
-		at, _ = changedDir(w.dir, []string{"cd", run.chdir})
+		at, _ = changedDir(w.dir, []string{"cd", "--", run.chdir})
 		atLost = w.movedTo(at)
-		atFrom = movedFrom(w.from, w.lost, []string{"cd", run.chdir})
+		atFrom = movedFrom(w.from, w.lost, []string{"cd", "--", run.chdir})
 	}
+	s.seen.parents(s, at, run.words)
 	j := segmentRules{
 		command: w.command, exp: &found.exp, redirects: redirects, dir: at, lost: atLost, from: atFrom, unsure: w.unsure,
 		s: s, m: w.m,
@@ -1064,6 +1121,7 @@ func (w *programWalk) run(r ran) (Finding, bool) {
 	if len(words) == 0 {
 		return Finding{}, false
 	}
+	w.s.seen.tell(w.s, words)
 	if f, ok := checkSdlcCommands(words, r.piped, r.substituted, w.s); ok {
 		return f, true
 	}
@@ -1290,7 +1348,7 @@ func HumanDecisions(command string, powerShell bool, storyWaits func(dir string)
 	// slash command makes the decision as surely as the command would, in a
 	// session that holds no story as in the one that does. Asked after the
 	// decisions, so that each keeps the name it was reported under.
-	return checkSecondSession(command, powerShell)
+	return secondSession(command, powerShell)
 }
 
 // humanDecisionsNamed is HumanDecisions without the reading of a second
@@ -1315,6 +1373,7 @@ func humanDecisionsAs(command string, powerShell bool, storyWaits func(dir strin
 	// stops being reported here.
 	for _, r := range readings(command, powerShell) {
 		if f, ok := humanDecisionsOn(r.text, powerShell, storyWaits); ok {
+			f.Via = r.via
 			return f, true
 		}
 	}
@@ -1399,7 +1458,7 @@ func humanDecisionBy(r ran, here decisionPlace, storyWaits func(dir string) bool
 	// Where env -C sends it, as a cd in front of it would.
 	at := here
 	if r.chdir != "" {
-		next, _ := changedDir(here.dir, []string{"cd", r.chdir})
+		next, _ := changedDir(here.dir, []string{"cd", "--", r.chdir})
 		at = here.moved(r, next)
 	}
 	if onAStory && (at.lost || storyWaits(at.dir)) {
@@ -2906,6 +2965,26 @@ func skipOptions(words []string) []string {
 	return words
 }
 
+// cdOperands are the words of a `cd` after its options: the flags before the
+// first word that is not one, where `--` ends them and the word after it is
+// the directory whatever it begins with, and `-` alone is a directory, the
+// one before. skipOptions dropped `--` and every dash-led word after it, and
+// the directory a link named `-x` led to was read as one the walk could not
+// follow, so a relative word after it was read by name (US-035). A word of
+// digits is a directory too: cd takes no number, as nice does.
+func cdOperands(words []string) []string {
+	for len(words) > 0 {
+		switch w := words[0]; {
+		case w == "--":
+			return words[1:]
+		case w == "-" || !strings.HasPrefix(w, "-"):
+			return words
+		}
+		words = words[1:]
+	}
+	return words
+}
+
 // changedDir follows a `cd`, so that a relative path after it is read from where
 // the command actually is. A directory it cannot follow -- home, `-`, a
 // variable, where popd goes back to -- is "", and from there on a bare name is
@@ -2921,7 +3000,7 @@ func changedDir(dir string, words []string) (string, bool) {
 	default:
 		return dir, false
 	}
-	args := skipOptions(words[1:])
+	args := cdOperands(words[1:])
 	if len(args) > 1 && strings.EqualFold(args[0], "/d") {
 		// cmd's switch to change drive as well, not a directory called /d.
 		args = args[1:]
@@ -2991,13 +3070,30 @@ func namedBy(w string) []string {
 	// flags bundled before it: `-C.sdlc`, `-oCLAUDE.md`, `-sSLo.sdlc/x`.
 	// Only after letters, which options are: every spelling is looked up on
 	// disk, and `curl -d{...}` is not thousands of paths.
+	//
+	// A value starts no more than maxName letters before the end of the run
+	// of letters the word starts with. Every spelling further in begins with
+	// more than maxName letters before its first separator, which is no name
+	// a program can open, and a word of 8 KB of letters made 8,000 spellings
+	// of 8 KB each: 100 MB handed to the rules, and 3 s, for one word (US-103).
 	if len(w) > 2 && w[0] == '-' && w[1] != '-' {
-		for i := 2; i < len(w) && isLetter(w[i-1]); i++ {
+		run := 1
+		for run < len(w) && isLetter(w[run]) {
+			run++
+		}
+		for i := max(2, run-maxName); i < len(w) && isLetter(w[i-1]); i++ {
 			named = append(named, w[i:])
 		}
 	}
 	return named
 }
+
+// maxName is the longest name of one file or directory on every filesystem
+// sdlc runs on: 255 bytes on ext4, XFS and Btrfs, 255 UTF-8 characters on
+// APFS and 255 UTF-16 units on NTFS, and an ASCII letter is one of each. It is
+// the limit itself and no less, so that `-vvv...vC.sdlc`, a value after any
+// number of flags, is still read.
+const maxName = 255
 
 // isLetter reports whether b can be a short option: `-x`, not the `.` or `/`
 // that starts a path.
@@ -3143,6 +3239,13 @@ func (m *memo) frozen(word string, frozen []string, byName bool) (string, bool) 
 // spell is spellings, and then the file each spelling is on disk where that is
 // another name: through a link, or a Windows short name. Each word is looked up
 // once per command.
+//
+// A word that begins with a dash is looked up too. Whether it is an option is
+// the program's to say, and it is a file wherever the shell hands it over as
+// one: after `--`, as the target of a redirect, or spelled `./-x`, which
+// cleans to `-x`. Passed over as an option, a link named `-x` to .sdlc was a
+// name no rule knew. An option that names no link on disk is its own spelling,
+// and adds nothing.
 func (m *memo) spell(s State, dir string, words []string) []string {
 	out := m.untilded(spellings(dir, words))
 	if s.Resolve == nil {
@@ -3150,7 +3253,7 @@ func (m *memo) spell(s State, dir string, words []string) []string {
 	}
 	for _, w := range slices.Clip(out) {
 		c := strings.TrimPrefix(clean(w), "./")
-		if c == "" || strings.HasPrefix(c, "-") {
+		if c == "" {
 			continue
 		}
 		if r := m.resolve(s, c); r != "" && r != c {
@@ -3170,13 +3273,14 @@ func (m *memo) resolve(s State, c string) string {
 }
 
 // shared is what Shared says of a word, asked once per command. A word the
-// shell has yet to expand is somewhere this cannot know.
+// shell has yet to expand is somewhere this cannot know. A word that begins
+// with a dash is asked too, as spell asks it.
 func (m *memo) shared(s State, word string) []Landing {
 	if s.Shared == nil {
 		return nil
 	}
 	c := clean(word)
-	if c == "" || strings.HasPrefix(c, "-") || shellDirectory(c) || strings.ContainsAny(c, "$%") {
+	if c == "" || shellDirectory(c) || strings.ContainsAny(c, "$%") {
 		return nil
 	}
 	l, ok := m.landed[c]

@@ -265,6 +265,22 @@ var (
 
 	ConflictMarkersAdded = register("SDLC-E0080",
 		`a person puts each file the message names right: they resolve the unresolved conflict in it, or take out the lines that are not one, commit, and run the commit gate or "sdlc stop" again; where the lines are meant to be there, a person lists the file in "paths.conflict_markers_intended" in .sdlc/config.json, in a commit to the trunk branch, because "sdlc stop" reads trunk's copy and not the story's, and then runs "sdlc stop" in the story's worktree again. An assistant hands the story to a person with "sdlc escalate" and stops: it does not resolve the conflict and does not edit that list`)
+
+	// TooManyLinks and LinkBudgetSpent are the hook's refusals at a bound on
+	// the symbolic links it follows to place a command's words. Their reasons
+	// carry the figures, from internal/pathrules; the fixes leave them out, so
+	// that the two cannot drift apart.
+	TooManyLinks = register("SDLC-E0081",
+		`name the place the word leads to directly, without the links. To find it, follow the links one at a time: "readlink <link>" (macOS, Linux) or "(Get-Item <link>).Target" (PowerShell) prints where one link leads; "realpath" and other tools that resolve the whole path in one go stop at the system's own limit and fail on these words. If a chain of links that long is not one you made, find out who made it before writing through it; if you are an assistant, ask the person where it leads`)
+
+	LinkBudgetSpent = register("SDLC-E0082",
+		`split the command into several, each naming fewer paths that go through symbolic links, or name each place directly, without the links; the budget is a count of the links followed for one command, across all its words, not a time`)
+
+	// PathTooLong is the hook's refusal of a path longer than the system looks
+	// up in one go, where it cannot follow the links on the way as it does for
+	// TooManyLinks.
+	PathTooLong = register("SDLC-E0083",
+		`make the full path shorter, from the root of the disk, by moving or renaming the directories on the way to it, and name it again; running the command from a directory nearer the file does not help, because the hook reads the full path whichever way it is named. From a working directory whose own path is that long, "cd" to one with a shorter path first. If you are an assistant, ask the person`)
 )
 
 // entry is one row of the catalogue.

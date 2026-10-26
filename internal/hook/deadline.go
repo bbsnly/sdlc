@@ -91,6 +91,9 @@ func deadlineVerdict(shell bool) policy.Verdict {
 // outcome is what the rest of a decision hands back to run.
 type outcome struct {
 	verdict policy.Verdict
+	// via is the reading of a command that decided a refusal, for the
+	// decision line.
+	via string
 	// ok is false where the answer could not be reached at all, which is
 	// treated exactly like an allow.
 	ok bool

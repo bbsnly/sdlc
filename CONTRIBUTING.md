@@ -83,9 +83,9 @@ working tree itself.
 gets slower refuses, for time, long commands it used to answer. The leg times
 `shellpolicy.Inspect` in process, with the test matchers and the path resolver
 wired as the hook wires them for an implementer whose story has frozen tests,
-on three commands that are slow by construction. Each is the longest whole
-command of its shape that fits in 8,192 bytes, and the leg prints them by these
-names:
+on eight commands that are slow by construction. All but the last are the
+longest whole command of their shape that fits in 8,192 bytes, and the leg
+prints them by these names:
 
 - `perl`: `perl -` followed by 8,181 of the letter `a`, a space and `file`:
   8,192 bytes.
@@ -93,19 +93,33 @@ names:
   one-line body `x` and the closer `'@`, read as PowerShell: 8,190 bytes.
 - `dot-glob`: `rm` of one path, 4,093 `a/` segments and then `.*`: 8,191
   bytes. The leg classifies it and never runs it.
+- `single-dash-touch`, `single-dash-cp`, `single-dash-sed` and
+  `single-dash-tee`: the tool, a space, one single-dash word of the letter `a`,
+  a space and `file`: 8,192 bytes each, one shape for each tool so that a bound
+  keyed on one tool's name does not pass for the others.
+- `links`: `touch` and fifty words, each through a chain of 255 symbolic links
+  of its own, which the leg makes in a temporary directory of its own and
+  removes. Every word goes through more links than sdlc follows in one path,
+  so the shape times the refusal, `SDLC-E0081`, of words past that bound until
+  the command's count of links is spent, and not a command allowed at the edge
+  of that count. Where no link can be made, as on Windows without Developer Mode
+  or an administrator, the leg skips the `links` shape, prints a line that says
+  so and why, and times and judges the others as usual.
 
-The three are timed in turn, five times each, and a shape's fastest run counts.
+The shapes are timed in turn, five times each, and a shape's fastest run counts.
 A line for each shape gives that time, the time of its first run and its
 budget. The first run is there because the hook is a new process for every
 command and pays for the first; it is not compared with anything. The budgets
 are `HOOK_PERL_BUDGET_MS`, `HOOK_HERESTRING_BUDGET_MS` and
 `HOOK_DOTGLOB_BUDGET_MS`, beside `INIT_BUDGET_MS` in the vars of
-`Taskfile.yml`.
+`Taskfile.yml`. The single-dash and `links` shapes take no budget of their
+own: each is held to the `perl` budget.
 
 The leg fails when a shape's fastest run is over its budget. It also fails,
-however fast the shape was, when `Inspect` allows the `dot-glob` shape or
-refuses either of the other two. If that happened on every run, running the leg
-again changes nothing, and the place to look is `internal/shellpolicy`. If it
+however fast the shape was, when `Inspect` allows the `dot-glob` or `links`
+shape or refuses any of the others. If that happened on every run, running the
+leg again changes nothing, and the place to look is `internal/shellpolicy`, or
+for the `links` shape the bound on links in `internal/pathrules`. If it
 happened on only some of the runs, the answer depends on something besides the
 command (state, time or ordering), and that is what to look for. If a story
 meant to change the answer, the answer the leg expects changes with it, in
@@ -113,8 +127,8 @@ meant to change the answer, the answer the leg expects changes with it, in
 
 A time over budget is not always a slower classifier. A busy machine goes over
 on a tree that has not changed, and not evenly: the `dot-glob` shape rises
-first, then `here-string`, and `perl` least; under heavy load all three go
-over. So when the leg fails on a time:
+first, then `here-string`, and `perl` least; under heavy load every shape
+goes over. So when the leg fails on a time:
 
 - On your own machine, run `./task hook-time` again when the machine is quiet,
   which means nothing else on it is building or running tests. When it passes,
@@ -133,7 +147,8 @@ over. So when the leg fails on a time:
   behind.
 
 The leg is the last in `./task check` and adds about ten seconds to it on a
-quiet laptop.
+quiet laptop, and on macOS several more to make and remove the links shape's
+12,750 links.
 
 ## Testing in a sandbox
 

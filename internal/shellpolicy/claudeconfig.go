@@ -43,9 +43,13 @@ const agentsConfigReason = "in the person's ~/.agents, the folder Codex, Cursor,
 // ClaudeConfig and AgentsConfig pairs of s are read.
 func ClaudeConfigWrites(command string, s State) (Finding, bool) {
 	if s.ClaudeConfig == nil && s.ClaudeConfigHeld == nil && s.AgentsConfig == nil && s.AgentsConfigHeld == nil {
+		// Allowed without the bound on links, which is sound: with nothing to
+		// ask, no word is placed on disk and no link is followed. The hook
+		// always sets all four.
 		return Finding{}, false
 	}
 	s.configOnly = true
+	s.seen = newInspection()
 	return inspectAs(command, command, s)
 }
 
@@ -942,4 +946,14 @@ var secondSessionFinding = Finding{
 		"/sdlc:approve, and a decision typed by a model is not a person's",
 	Route: "say what you wanted that session to do and stop; a person types their own commands, " +
 		"in Claude Code or in their own terminal",
+}
+
+// secondSession is checkSecondSession, whose refusal is read from the command
+// as it arrived.
+func secondSession(command string, powerShell bool) (Finding, bool) {
+	f, ok := checkSecondSession(command, powerShell)
+	if ok {
+		f.Via = viaReleased
+	}
+	return f, ok
 }

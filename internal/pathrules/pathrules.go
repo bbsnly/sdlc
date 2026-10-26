@@ -8,11 +8,14 @@
 package pathrules
 
 import (
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode/utf16"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
@@ -38,7 +41,76 @@ type Resolver struct {
 	// once. Every word of a command was walked down from the root on its own,
 	// and 2,500 words from 50 directories took 28 s of the hook's 30.
 	disk *diskAnswers
+	// budget, where it is set, is the links one command may still follow,
+	// shared by every copy of the Resolver and by every one At makes.
+	budget *budget
 }
+
+// budget is what is left of the links a command may follow. Every walk that
+// follows a link charges it here, once for each path it walks, so that a
+// command of many words through long chains is refused before it holds the
+// hook to its deadline. project and root are the resolver's own, cleaned and
+// resolved, and rootLinks the links on the way to the project: a word spelled
+// through the project is counted from root, so that /tmp or /var on macOS, or
+// a linked home holding the project, is followed once, when the resolver is
+// made, and never charged for every word.
+type budget struct {
+	left          int
+	first         error
+	project, root string
+	rootLinks     int
+}
+
+// spent reports whether the command has followed more links than it may.
+func (b *budget) spent() bool { return b != nil && b.left < 0 }
+
+// met keeps the first bound any walk passed, which the end of a command asks
+// for with Bound("").
+func (b *budget) met(err error) {
+	if b != nil && b.first == nil {
+		b.first = err
+	}
+}
+
+// charge takes n links off what is left.
+func (b *budget) charge(n int) {
+	if b == nil || n <= 0 {
+		return
+	}
+	b.left -= n
+	if b.left < 0 {
+		b.met(ErrLinkBudget)
+	}
+}
+
+// CommandLinks is the budget of links one command may follow, counted across
+// all its words. Derived, not measured: the slowest link seen on macOS took
+// 1.18 ms to follow through the hook, Linux is taken to be twenty times
+// slower, and half of the hook's 25 s deadline is given to following links;
+// 12.5 s / 23.5 ms is 531, rounded down to 512 (US-035, D4). A command of 60
+// words through 255 links each held the hook for 22.8 s before this.
+// docs/troubleshooting.md and docs/enforcement.md give the figure.
+const CommandLinks = 512
+
+var (
+	// ErrTooManyLinks is a word that goes through more than maxLinks links,
+	// or whose placing stopped at a link the system would not follow.
+	ErrTooManyLinks = errors.New("a path goes through more symbolic links than sdlc follows for one path")
+	// ErrLookupLimit is ErrTooManyLinks where the word is within maxLinks but
+	// past what this system follows in one lookup (macOS 32, Linux 40): the
+	// OS cannot say where it leads, and a program that walks one directory at
+	// a time still writes through it.
+	ErrLookupLimit = fmt.Errorf("%w: more than this system follows in one lookup", ErrTooManyLinks)
+	// ErrLinkBudget is a command whose words have followed more than its
+	// budget of links between them.
+	ErrLinkBudget = errors.New("the paths of one command go through more symbolic links than sdlc follows for one command")
+	// ErrPathTooLong is a word whose path from the root is longer than this
+	// system looks up in one go (1,024 bytes on macOS, 4,096 on Linux). The OS
+	// cannot say where it leads, and the walk read the rest of it by name,
+	// while a shell part of the way down writes to it by a shorter, relative
+	// name, through any link on the way (US-035, security review).
+	ErrPathTooLong = errors.New("a path is longer than this system looks up in one go")
+)
 
 // diskAnswers is what Lstat said of each path asked about, and where each
 // existing path leads with its links followed: whole, for resolve, and from a
@@ -47,12 +119,15 @@ type diskAnswers struct {
 	there    map[string]entry
 	resolved map[string]string
 	followed map[[2]string]followed
+	counted  map[[2]string]followed
 }
 
 // entry is what Lstat said of a path: whether it is there, and whether it is a
 // link or a directory itself. symlink is a symlink alone, the only link
-// EvalSymlinks follows.
-type entry struct{ there, link, symlink, dir bool }
+// EvalSymlinks follows. unreadable is a path Lstat could not look up because
+// the lookup passed the system's own limit on links, or, where tooLong, on
+// the length of a path.
+type entry struct{ there, link, symlink, dir, unreadable, tooLong bool }
 
 // NewResolver resolves the project's own path, once.
 func NewResolver(project string) Resolver {
@@ -63,8 +138,53 @@ func NewResolver(project string) Resolver {
 // it is used. It is for one decision, over which the disk is taken not to
 // change: a Resolver kept while files come and go would answer from before.
 func (res Resolver) Memoised() Resolver {
-	res.disk = &diskAnswers{there: map[string]entry{}, resolved: map[string]string{}, followed: map[[2]string]followed{}}
+	res.disk = &diskAnswers{there: map[string]entry{}, resolved: map[string]string{},
+		followed: map[[2]string]followed{}, counted: map[[2]string]followed{}}
 	return res
+}
+
+// Budgeted is res with every link it follows from then on, by Rel, Place and
+// Bound, charged to a budget of links shared by every copy of it. It is for
+// one command, as Memoised is.
+func (res Resolver) Budgeted(links int) Resolver {
+	b := &budget{left: links}
+	if p := filepath.Clean(res.project); filepath.IsAbs(p) {
+		b.project, b.root = p, res.root
+		b.rootLinks = res.walkLinks(p[:rootLen(p)], p, maxLinkWalk).links
+	}
+	res.budget = b
+	return res
+}
+
+// At is a resolver for another project, asking the same memo and charging
+// the same budget as res. The configuration checks place each word a command
+// writes against the person's own roots, and a resolver of their own for each
+// walked every word again from the root, four times in all (US-035, D8).
+func (res Resolver) At(project string) Resolver {
+	res.project = project
+	res.root = res.resolve(project)
+	return res
+}
+
+// nameMax is the longest name a system the hook runs on holds: 255 bytes on
+// Linux, and 255 UTF-16 units on macOS and Windows.
+const nameMax = 255
+
+// nameOverLimit reports whether name is past nameMax in bytes and in UTF-16
+// units both, and so a name no system holds. Counted in bytes alone, a name of
+// 130 "é", which macOS holds, read a path past the system's length below it as
+// not there, and a relative write through a link on that path into
+// .sdlc/state was allowed (US-035, verifier round 7). A name past the limit
+// in one count only is left a path too long: refusing it is the safe side.
+func nameOverLimit(name string) bool {
+	if len(name) <= nameMax {
+		return false
+	}
+	units := 0
+	for _, r := range name {
+		units += utf16.RuneLen(r)
+	}
+	return units > nameMax
 }
 
 // there reports whether p is on disk, its last element not followed.
@@ -79,9 +199,21 @@ func (res Resolver) lstat(p string) entry {
 		}
 	}
 	var e entry
-	if info, err := os.Lstat(p); err == nil {
+	info, err := os.Lstat(p)
+	switch {
+	case err == nil:
 		e = entry{there: true, link: info.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0,
 			symlink: info.Mode()&fs.ModeSymlink != 0, dir: info.IsDir()}
+	case lookupLimit(err):
+		e.unreadable = true
+	case pathTooLong(err) && !nameOverLimit(filepath.Base(p)):
+		// The system gives the same answer for one name longer than it can
+		// hold, and taken for a path too long, a word that was no path, as a
+		// long token in `python3 -c` code, refused the command (US-035,
+		// verifier round 6). Such a name cannot be there, nor anything below
+		// it, so it is not there, as before; but only the name looked up is
+		// asked, never an earlier one, which the system held to get this far.
+		e.unreadable, e.tooLong = true, true
 	}
 	if res.disk != nil {
 		res.disk.there[p] = e
@@ -89,17 +221,104 @@ func (res Resolver) lstat(p string) entry {
 	return e
 }
 
-// resolve is resolve(p), asked once where res is memoised.
+// resolve is resolve(p), asked once where res is memoised. With a budget,
+// the links on the way are counted first, by a walk of their own, and
+// charged; resolve(p) is still the answer. Where p is over the bound of one
+// word, or the budget is spent, the answer is p by name, without following a
+// link: the command is refused for it by then, and EvalSymlinks would follow
+// up to 255.
 func (res Resolver) resolve(p string) string {
-	if res.disk == nil {
-		return resolve(p)
+	if res.disk != nil {
+		if out, asked := res.disk.resolved[p]; asked {
+			return out
+		}
 	}
-	out, asked := res.disk.resolved[p]
-	if !asked {
+	out := filepath.Clean(p)
+	if res.followable(p) {
 		out = resolve(p)
+	}
+	if res.disk != nil {
 		res.disk.resolved[p] = out
 	}
 	return out
+}
+
+// followable reports whether resolve may follow the links on the way to p:
+// always without a budget, and with one where p is within the bound of one
+// word and the budget is not spent. The links are counted, and charged, on
+// the way.
+func (res Resolver) followable(p string) bool {
+	b := res.budget
+	if b == nil {
+		return true
+	}
+	if b.spent() {
+		return false
+	}
+	if res.countPath(p) > maxLinks {
+		b.met(ErrTooManyLinks)
+		return false
+	}
+	return !b.spent()
+}
+
+// span is where a count of the links on the way to p starts: known, a place
+// that holds no link, the path at to walk from it, and base, the links on the
+// way to known. A path spelled through the budget's project starts at its
+// resolved root. The comparison is by bytes, so on a disk that folds case a
+// word spelled in other letters is counted from the volume's root, with the
+// project's own links: that can only charge more, and refuse sooner.
+func (res Resolver) span(p string) (known, at string, base int) {
+	if b := res.budget; b != nil && b.project != "" {
+		if rest, ok := strings.CutPrefix(p, b.project); ok && (rest == "" || os.IsPathSeparator(rest[0])) {
+			return b.root, b.root + rest, b.rootLinks
+		}
+	}
+	return p[:rootLen(p)], p, 0
+}
+
+// countPath is how many links following p goes through, up to one more than
+// maxLinks, charged to the budget where they are new.
+func (res Resolver) countPath(p string) int {
+	known, at, base := res.span(p)
+	return base + res.count(known, at, max(maxLinks-base, 0)).links
+}
+
+// count is walkLinks(known, at, limit), asked once where res is memoised, with
+// what it followed charged to the budget. Only a walk that finished within
+// its limit is kept: one cut short says nothing of a longer limit. A known
+// that at does not start with is a path past the bound, never a slice past
+// the end of at, since a panic in the hook is an allow.
+func (res Resolver) count(known, at string, limit int) followed {
+	if !startsAt(known, at) {
+		res.budget.met(ErrTooManyLinks)
+		return followed{links: limit + 1}
+	}
+	key := [2]string{known, at}
+	if res.disk != nil {
+		if f, asked := res.disk.counted[key]; asked {
+			return f
+		}
+	}
+	f := res.walkLinks(known, at, limit)
+	res.budget.charge(f.links)
+	if res.disk != nil && f.links <= limit {
+		res.disk.counted[key] = f
+	}
+	return f
+}
+
+// startsAt reports whether at is known or a path below it, by its names: the
+// bytes of known followed by a separator, or ending in one.
+func startsAt(known, at string) bool {
+	rest, ok := strings.CutPrefix(at, known)
+	switch {
+	case !ok || known == "":
+		return false
+	case rest == "", os.IsPathSeparator(known[len(known)-1]):
+		return true
+	}
+	return os.IsPathSeparator(rest[0])
 }
 
 // Rel is Rel(project, p).
@@ -157,6 +376,28 @@ func (res Resolver) Place(p string) (string, bool) {
 	if !ok {
 		return "", false
 	}
+	w, parts := res.walk(abs)
+	sep := string(filepath.Separator)
+	resolved := res.settle(&w)
+	base := filepath.VolumeName(resolved)
+	kept := strings.FieldsFunc(resolved[len(base):], func(r rune) bool { return r == '/' || r == filepath.Separator })
+	for _, part := range parts[w.i:] {
+		switch part {
+		case ".":
+		case "..":
+			if len(kept) > 0 {
+				kept = kept[:len(kept)-1]
+			}
+		default:
+			kept = append(kept, part)
+		}
+	}
+	return base + sep + strings.Join(kept, sep), true
+}
+
+// walk is Place's walk down abs as far as it goes, before the place it got to
+// is settled, and the names of abs it walked.
+func (res Resolver) walk(abs string) (placeWalk, []string) {
 	volume := filepath.VolumeName(abs)
 	parts := strings.FieldsFunc(abs[len(volume):], func(r rune) bool { return r == '/' || r == filepath.Separator })
 	sep := string(filepath.Separator)
@@ -177,21 +418,7 @@ func (res Resolver) Place(p string) (string, bool) {
 			break
 		}
 	}
-	resolved := res.settle(&w)
-	base := filepath.VolumeName(resolved)
-	kept := strings.FieldsFunc(resolved[len(base):], func(r rune) bool { return r == '/' || r == filepath.Separator })
-	for _, part := range parts[w.i:] {
-		switch part {
-		case ".":
-		case "..":
-			if len(kept) > 0 {
-				kept = kept[:len(kept)-1]
-			}
-		default:
-			kept = append(kept, part)
-		}
-	}
-	return base + sep + strings.Join(kept, sep), true
+	return w, parts
 }
 
 // absolute is p made absolute against the project, and false for a path whose
@@ -217,13 +444,17 @@ func (res Resolver) absolute(p string) (string, bool) {
 // `..`, so a `..` after plain directories costs nothing. crossed is how many
 // links lie between known and at, and left how many more links the word may
 // follow. i is how many parts have been taken, and stopped says the walk
-// ended because a link could not be followed.
+// ended because a link could not be followed. over says that was because the
+// word needed more links than it had left, and unreadable, where set, is the
+// path the walk stopped at because the system would not look it up.
 type placeWalk struct {
 	at, known       string
 	settled, isDir  bool
 	i, crossed      int
 	left            int
 	dotted, stopped bool
+	over            bool
+	unreadable      string
 }
 
 // stepParent takes a `..` and says whether the walk is over.
@@ -233,9 +464,9 @@ func (res Resolver) stepParent(w *placeWalk) bool {
 		return false // `..` at the top of a volume stays there, as every platform reads it
 	}
 	if !w.settled {
-		to, ok := res.follow(w.known, w.at, w.crossed, &w.left)
+		to, ok, over := res.followCounting(w.known, w.at, w.crossed, &w.left)
 		if !ok {
-			w.stopped = true // past the budget, or a link to nothing: the rest by name
+			w.stopped, w.over = true, over // past the budget, or a link to nothing: the rest by name
 			return true
 		}
 		w.at, w.known, w.settled, w.crossed, w.isDir = to, to, true, 0, res.lstat(to).dir
@@ -254,6 +485,10 @@ func (res Resolver) stepName(w *placeWalk, name string) bool {
 	next := joinName(w.at, name)
 	e := res.lstat(next)
 	if !e.there {
+		if e.unreadable {
+			w.unreadable = next
+			res.metLookup(next)
+		}
 		return true
 	}
 	if e.link {
@@ -271,9 +506,11 @@ func (res Resolver) settle(w *placeWalk) string {
 	switch {
 	case filepath.Dir(w.at) == w.at, w.stopped:
 	case w.dotted:
-		if to, ok := res.follow(w.known, w.at, w.crossed, &w.left); ok {
+		to, ok, over := res.followCounting(w.known, w.at, w.crossed, &w.left)
+		if ok {
 			return to
 		}
+		w.over = over
 	default:
 		return res.resolve(w.at)
 	}
@@ -300,24 +537,50 @@ type followed struct {
 // follow is resolve for Place's walk: where at leads with its links followed,
 // each counted against *left, which it lowers. known is the start of at that
 // is there and holds no link, and crossed the links in the rest of it. Where
-// at needs more links than *left allows, or leads nowhere, it says false and
-// leaves *left alone.
+// at needs more links than *left allows, leads nowhere, fails the guard that
+// it start with known at a name, or the command's budget is spent, it says
+// false and leaves *left alone; followCounting says whether it was the first.
 func (res Resolver) follow(known, at string, crossed int, left *int) (string, bool) {
+	to, ok, _ := res.followCounting(known, at, crossed, left)
+	return to, ok
+}
+
+// followCounting is follow, saying as well whether at was over: whether it
+// needed more links than *left, as against leading nowhere. A known that at
+// does not start with at a name is neither: walkLinks slices at by the length
+// of known, and a panic in the hook is an allow (US-035, AC-8). It is kept
+// as a bound met all the same, as count keeps it: the rest of the word is read
+// by name, and Bound("") then refuses the command for it. With a budget, the
+// links followed are charged to it, and once it is spent nothing is followed,
+// so the rest of the word is read by name: the command is refused by then.
+func (res Resolver) followCounting(known, at string, crossed int, left *int) (string, bool, bool) {
+	if !startsAt(known, at) {
+		res.budget.met(ErrTooManyLinks)
+		return at, false, false
+	}
+	if res.budget.spent() {
+		return at, false, false
+	}
 	f, asked := followed{}, false
 	if res.disk != nil {
 		f, asked = res.disk.followed[[2]string{known, at}]
 	}
 	if !asked {
 		f = res.followFrom(known, at, crossed, *left)
+		res.budget.charge(f.links)
 		if res.disk != nil && f.links <= *left {
 			res.disk.followed[[2]string{known, at}] = f
 		}
 	}
-	if !f.ok || f.links > *left {
-		return at, false
+	if f.links > *left {
+		res.budget.met(ErrTooManyLinks)
+		return at, false, true
+	}
+	if !f.ok {
+		return at, false, false
 	}
 	*left -= f.links
-	return f.to, true
+	return f.to, true, false
 }
 
 // followFrom is follow, asked of the disk. Windows follows every link on the
@@ -424,6 +687,13 @@ func rootLen(p string) int {
 // counts those too, though Windows passes through them without following
 // anything, so a word through them can reach the bound first: US-053.
 const maxLinks = 64
+
+// WordLinks is maxLinks, for a refusal at it to say.
+const WordLinks = maxLinks
+
+// maxLinkWalk is how many links filepath.EvalSymlinks follows before it gives
+// up, the most a count of the links on the way to a project needs.
+const maxLinkWalk = 255
 
 // Within is p relative to root, slash-separated, when p is root or inside it,
 // comparing as the filesystem compares names. Both are absolute and resolved.
@@ -548,24 +818,136 @@ func resolve(p string) string {
 // from the far end cost a lookup per level, and a path tens of thousands of
 // levels deep, which fits in one tool call, took longer than the hook is given.
 func (res Resolver) resolveExisting(p string) string {
+	existing, rest, _ := res.existingPrefix(p)
+	return filepath.Join(append([]string{res.resolve(existing)}, rest...)...)
+}
+
+// existingPrefix is the longest part of p that is there, the names after it,
+// and, where the walk stopped at a path the system would not look up rather
+// than one that is not there, that path.
+func (res Resolver) existingPrefix(p string) (string, []string, string) {
 	// Memoised, the walk below asks the disk only about what no earlier word
 	// passed through, and a path that is not there costs nothing more.
 	if res.disk == nil && res.there(p) {
-		return res.resolve(p)
+		return p, nil, ""
 	}
 	sep := string(filepath.Separator)
 	volume := filepath.VolumeName(p)
 	parts := strings.Split(strings.TrimPrefix(p[len(volume):], sep), sep)
 	existing := volume + sep
-	i := 0
-	for ; i < len(parts); i++ {
+	for i := range parts {
 		next := filepath.Join(existing, parts[i])
-		if !res.there(next) {
-			break
+		if e := res.lstat(next); !e.there {
+			if !e.unreadable {
+				return existing, parts[i:], ""
+			}
+			res.metLookup(next)
+			return existing, parts[i:], next
 		}
 		existing = next
 	}
-	return filepath.Join(append([]string{res.resolve(existing)}, parts[i:]...)...)
+	return existing, nil, ""
+}
+
+// Bound says whether p can be placed within the bounds on the links a word
+// and a command may follow: nil where it can, ErrTooManyLinks (or
+// ErrLookupLimit) where p goes through more than maxLinks or its placing
+// stops at a link the system would not follow, ErrPathTooLong where its
+// placing stops at a path longer than the system looks up, and ErrLinkBudget
+// where the command's budget is spent. Bound("") asks about the command alone: the
+// first bound any walk on the resolver passed, word or not. A word is read
+// both ways a program can read it, as Rel reads it and as Place does, and the
+// walks are the ones they do, memoised, so asking first costs them nothing.
+//
+// Past the bound, Rel read the rest of a word by name, and on macOS a chain
+// of 33 to 64 links, one in each directory, into .sdlc/state was allowed for
+// a program that walks a path one directory at a time (US-035, AC-7).
+func (res Resolver) Bound(p string) error {
+	b := res.budget
+	if p == "" {
+		if b == nil {
+			return nil
+		}
+		return b.first
+	}
+	if b.spent() {
+		return ErrLinkBudget
+	}
+	abs, ok := res.absolute(p)
+	if !ok {
+		return nil
+	}
+	if err := res.wordBound(abs); err != nil {
+		b.met(err)
+		return err
+	}
+	if b.spent() {
+		return ErrLinkBudget
+	}
+	return nil
+}
+
+// wordBound is Bound for abs alone, without the command's budget: nil, or the
+// bound of one word it passes.
+func (res Resolver) wordBound(abs string) error {
+	over, stop := res.readBoth(abs)
+	switch {
+	case over:
+		return ErrTooManyLinks
+	case stop == "":
+		return nil
+	}
+	return res.lookupBound(stop, abs)
+}
+
+// lookupBound is the bound p passes where a walk along it stopped at stop,
+// which the system would not look up: ErrPathTooLong where stop is longer than
+// it looks up in one go, and otherwise, for the links on the way to p,
+// ErrTooManyLinks where a count link by link from the root, in which no lookup
+// crosses more than one link and the system's own limit cannot stop it, passes
+// maxLinks, and ErrLookupLimit otherwise. The length is asked of stop, the path
+// the system refused, and not of p: below a working directory past the length,
+// `touch l/<a name past the system's>` was given the lookup limit's reason,
+// because the name it ends in cannot be there and so was no path too long
+// (US-035, verifier round 7).
+func (res Resolver) lookupBound(stop, p string) error {
+	if res.lstat(stop).tooLong {
+		return ErrPathTooLong
+	}
+	if res.count(p[:rootLen(p)], p, maxLinks).links > maxLinks {
+		return ErrTooManyLinks
+	}
+	return ErrLookupLimit
+}
+
+// metLookup keeps, on a budgeted resolver, the bound a walk passed where it
+// stopped at p because the system would not look p up. A walk that stops there
+// reads the rest of its word by name, and recorded nowhere, a word in a
+// spelling Bound was not asked about was placed by name past the bound (US-035,
+// code review); kept, Bound("") refuses the command for it whoever walked it.
+func (res Resolver) metLookup(p string) {
+	if b := res.budget; b != nil && b.first == nil {
+		b.met(res.lookupBound(p, p))
+	}
+}
+
+// readBoth walks abs as Rel reads it and as Place does, and reports whether
+// either went through more than maxLinks, and the first path either met that
+// the system would not look up, "" where neither met one.
+func (res Resolver) readBoth(abs string) (over bool, stop string) {
+	existing, _, stop := res.existingPrefix(filepath.Clean(abs))
+	over = res.countPath(existing) > maxLinks
+	w, _ := res.walk(abs)
+	switch {
+	case w.dotted && !w.stopped:
+		res.settle(&w)
+	case !w.dotted:
+		over = over || res.countPath(w.at) > maxLinks
+	}
+	if stop == "" {
+		stop = w.unreadable
+	}
+	return over || w.over, stop
 }
 
 // Under reports whether rel is dir itself or something inside it. Both are

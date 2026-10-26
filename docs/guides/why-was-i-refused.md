@@ -41,6 +41,19 @@ The reason always has the same three parts:
 2. **`Instead:`**, the sanctioned way to get the same thing done.
 3. **The rule id** in square brackets at the end.
 
+A few refusals also carry an error code, such as `SDLC-E0081`, in brackets just
+before the rule id:
+
+```text
+lnk/notes.txt goes through more than 64 links, more than sdlc follows in one
+path. Instead: name the place it leads to directly, without the links, or ask
+the person where it leads (SDLC-E0081) [too-many-links]
+```
+
+Look the code up in [troubleshooting](../troubleshooting.md), which has a
+heading for every `SDLC-E` code with what caused it and the fix. The rule id
+still takes you to the rule, as the next section shows.
+
 Read the `Instead:` part before you work around anything. It is usually one
 command. For example, the main conversation running `git commit` too early
 gets:
@@ -203,6 +216,36 @@ subagent that is not one of the loop's own is held to the same rules.
 `considered` is `false` when the hook never got as far as the rules. `rule`
 names the rule that refused. A shell command logs `hook considering a command`
 instead, with `commit_ready` and the reason a commit would be refused.
+
+A shell command also logs a line for each program in it that a rule looks at,
+and the decision line says which reading of the command refused it:
+
+```text
+time=2026-09-14T09:02:11.204+02:00 level=DEBUG msg="hook considered a tool" candidate=touch via=released
+time=2026-09-14T09:02:11.205+02:00 level=DEBUG msg="hook considered a tool" candidate=cp via=decoded
+time=2026-09-14T09:02:11.207+02:00 level=DEBUG msg="hook decision" event=PreToolUse considered=true allowed=false rule=loop-state-through-the-tool via=decoded
+```
+
+`candidate` is the program, by its plain name: only the programs the rules key
+on are logged, never a word as the command spells it, so the log holds nothing
+the command says. `via` is the reading of the command the program was found
+in, because the hook reads one command more than one way:
+
+| `via` | The command as |
+| --- | --- |
+| `released` | the hook has always read it |
+| `shell` | the shell that runs it reads it, where that differs, as it does around a PowerShell here-string or backtick |
+| `decoded` | a POSIX shell reads it once each `$'...'` is decoded and each backslash taken out |
+| `braces` | a POSIX shell reads it once each brace list, such as `{a,b}`, is written out |
+
+A program logged under `decoded` or `braces` and nowhere else was hidden in
+the command as typed, which is often the answer to why a command that looks
+harmless was refused. On the decision line, `via` is the reading that refused
+the call, and `code` is the error code where the refusal carries one:
+
+```text
+time=2026-09-14T09:05:40.018+02:00 level=DEBUG msg="hook decision" event=PreToolUse considered=true allowed=false rule=too-many-links via=released code=SDLC-E0082
+```
 
 Setting `SDLC_DEBUG_FILE` is enough on its own. `SDLC_DEBUG=1` without a file
 writes the same log to the hook's standard error, which ends up in Claude Code's

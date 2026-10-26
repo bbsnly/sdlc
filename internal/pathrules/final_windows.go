@@ -3,6 +3,7 @@
 package pathrules
 
 import (
+	"errors"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -54,3 +55,22 @@ func finalPath(p string) (string, bool) {
 // follow, filepath.EvalSymlinks follows none, and finalPath is bounded by
 // Windows itself.
 func normalise(p string) string { return resolve(p) }
+
+// errCantResolveFilename is ERROR_CANT_RESOLVE_FILENAME, what Windows gives a
+// lookup that passed its 63 reparse points.
+const errCantResolveFilename syscall.Errno = 1921
+
+// lookupLimit reports whether err is a lookup that passed the system's own
+// limit on the links one lookup follows.
+func lookupLimit(err error) bool { return errors.Is(err, errCantResolveFilename) }
+
+// errFilenameExcedRange is ERROR_FILENAME_EXCED_RANGE, what Windows gives a
+// lookup of a path longer than it looks up, which Go's long-path prefix puts
+// at about 32,767 characters.
+const errFilenameExcedRange syscall.Errno = 206
+
+// pathTooLong reports whether err is a lookup of a path longer than the system
+// looks up in one go. By Windows' documentation a name past nameMax is
+// answered ERROR_INVALID_NAME (123), which is not this; were it ever 206,
+// lstat tells the two apart with nameOverLimit, as on the other systems.
+func pathTooLong(err error) bool { return errors.Is(err, errFilenameExcedRange) }

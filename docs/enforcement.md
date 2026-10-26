@@ -52,6 +52,8 @@
   - [`story-stays-in-its-session`](#story-stays-in-its-session)
   - [Claude config through the shell](#claude-config-through-the-shell)
   - [`command-too-deep-to-read`](#command-too-deep-to-read)
+  - [`too-many-links`](#too-many-links)
+  - [`path-too-long`](#path-too-long)
 - [A repository with more than one checkout](#a-repository-with-more-than-one-checkout)
   - [Not held: the known gaps](#not-held)
 - [Unattended sessions](#unattended-sessions)
@@ -326,6 +328,10 @@ this refusal.
 
 [`SDLC_HOOK_DEADLINE_MS`](configuration.md#sdlc_hook_deadline_ms) can shorten
 the deadline. Nothing lengthens it.
+
+The links a command's paths go through are bounded by a count, under
+[`too-many-links`](#too-many-links), so a command of many paths through long
+chains of links is refused for that before it can use up the deadline.
 
 #### What is still left open
 
@@ -2522,6 +2528,63 @@ or an approval could be buried in it.
 
 *Instead:* write it as separate commands.
 
+### `too-many-links`
+
+<!-- The figure 64 is pathrules' maxLinks, and 512 is pathrules.CommandLinks: change them here
+     with the constants. -->
+
+Refuses a command one of whose paths goes through more symbolic links
+(symlinks) than sdlc follows: more than 64 on the way to one path, or more than
+512 across all the paths of one command.
+
+To know where a path leads, the hook follows each link on the way to it, as
+the system does, and judges the path by where it lands. A path through more
+links than the hook follows has no place it can be sure of, so it is refused
+rather than guessed at. A link that leads back to itself, directly or round a
+loop, never lands, and is refused the same way.
+
+A path within 64 links can still pass what the system itself follows in one
+lookup (32 on macOS, 40 on Linux). The system then cannot say where it leads,
+and a program that walks one directory at a time, as `mkdir -p` does, still
+writes through it, so that path is refused too.
+
+Following links takes time, and the hook has 25 seconds for a call. So one
+command may follow 512 links, counted across all its words. 512 is a count,
+not a time: a command is refused for it the same way on a fast machine as on a
+slow one.
+
+The links on the way to the project itself count towards a path's 64 but not
+towards the command's 512.
+
+The refusal carries a code: `SDLC-E0081` for one path, and `SDLC-E0082` for the
+command. [Troubleshooting](troubleshooting.md#sdlc-e0081) shows how to find
+where a chain of links leads without the hook.
+
+*Instead:* name the place a path leads to directly, without the links, or ask
+the person where it leads. For a command past 512, split it into several, each
+naming fewer paths through links.
+
+### `path-too-long`
+
+Refuses a command one of whose paths is longer, in full, than the system looks
+up in one go: about 1,024 bytes on macOS and 4,096 on Linux, from the root of
+the disk.
+
+The hook places a path by looking it up from the root, following the links on
+the way, as it does for [`too-many-links`](#too-many-links). A path past that
+length cannot be looked up, so the hook cannot tell where it leads, while a
+shell already part of the way down still reaches it by a shorter name, through
+any link on the way. So it is refused rather than read by its name. From a
+working directory whose own path is that long, every command is refused, and
+the refusal names the working directory.
+
+The refusal carries the code `SDLC-E0083`, which
+[Troubleshooting](troubleshooting.md#sdlc-e0083) explains.
+
+*Instead:* make the full path shorter, by moving or renaming the directories on
+the way to it, or ask the person to run the command. Running it from a nearer
+directory does not help: the hook reads the full path either way.
+
 ## A repository with more than one checkout
 
 Every checkout of a repository, the main checkout and each linked worktree made
@@ -3394,6 +3457,13 @@ $ export SDLC_DEBUG_FILE=/tmp/sdlc-hook.log
 
 `SDLC_DEBUG=1` without a file writes the same log to stderr. `SDLC_TRACE=1` adds
 how long each call to `sdlc` took, which is how to tell whether a slow session is the hook.
+
+The decision line of a shell command also gives `via`, the reading of the
+command that refused it, and `code`, where the refusal carries an `SDLC-E`
+code. A `hook considered a tool` line names each program a rule looked at, as
+`candidate`, with the reading it came in by.
+[See every decision](guides/why-was-i-refused.md#see-every-decision) says what
+each value means.
 
 To read a single refusal, see [Why was I refused?](guides/why-was-i-refused.md).
 For an `SDLC-E` code, see [Troubleshooting](troubleshooting.md).

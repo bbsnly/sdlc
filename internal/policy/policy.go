@@ -92,6 +92,7 @@ type Verdict struct {
 	Rule    string // the rule that refused, for the docs and the tests
 	Reason  string // what the rule is, in one clause
 	Route   string // the sanctioned way to achieve the same thing
+	Code    string // the SDLC-E code, where the refusal has one
 }
 
 // Allowed is the verdict for the overwhelmingly common case.
@@ -457,7 +458,12 @@ func (v Verdict) Message() string {
 	if v.Allowed {
 		return ""
 	}
-	return v.Reason + ". Instead: " + v.Route + " [" + v.Rule + "]"
+	code := ""
+	if v.Code != "" {
+		// Before the rule id, which every refusal ends with.
+		code = " (" + v.Code + ")"
+	}
+	return v.Reason + ". Instead: " + v.Route + code + " [" + v.Rule + "]"
 }
 
 // artifactAt reports the gate artifact at this path, if there is one.

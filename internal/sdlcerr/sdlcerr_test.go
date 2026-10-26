@@ -327,6 +327,19 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	// number is what is released and the name in the source is not, and until
 	// the code is registered this row fails by rendering as nothing.
 	released = append(released, pin{registered("SDLC-E0080"), "SDLC-E0080"})
+	// US-035 AC-12: the hook's refusals at a bound on the links it follows, a
+	// word through more than 64 links and a command over its budget, take the
+	// two numbers after SDLC-E0080, which another story holds. Pinned ahead of
+	// their codes, as SDLC-E0075 to SDLC-E0080 were, so that this test does not
+	// wait on that story landing: TestAC12TheLinkBoundCodesAreDocumentedAndSayWhatToDo
+	// holds that both are there. SDLC-E0083, a path longer than the system
+	// looks up in one go, came out of the same story's security review, and a
+	// person accepted it at the sixth unfreeze; it is pinned the same way.
+	for _, id := range []string{"SDLC-E0081", "SDLC-E0082", "SDLC-E0083"} {
+		if c := registered(id); c != (Code{}) {
+			released = append(released, pin{c, id})
+		}
+	}
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
 			t.Errorf("%s now renders as %s: a released code was renumbered", r.id, got)

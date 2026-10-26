@@ -57,6 +57,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -262,7 +263,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	if o.crashed != nil {
 		// The stack cmd/sdlc prints is the one below, of this goroutine. Where
 		// the work gave way is only here.
-		slog.Debug("hook: the decision crashed on its own goroutine", "panic", o.crashed, "stack", string(o.stack))
+		slog.Debug("hook: the decision crashed on its own goroutine", append(panicked(o.crashed), "stack", string(o.stack))...)
 		panic(o.crashed)
 	}
 	if o.record != nil {
@@ -293,8 +294,17 @@ func answerPreToolUse(stdout io.Writer, event string, o outcome, warnings []stri
 	// Why a hook did nothing is the hardest thing to find out from the outside,
 	// so every decision is available at debug level. SDLC_DEBUG_FILE is the way
 	// to see it: stderr from a hook that allowed the call is not shown.
-	slog.Debug("hook decision",
-		"event", event, "considered", o.ok, "allowed", o.verdict.Allowed, "rule", o.verdict.Rule)
+	attrs := []any{"event", event, "considered", o.ok, "allowed", o.verdict.Allowed, "rule", o.verdict.Rule}
+	// Fixed words from closed sets, as rule is: the reading and the code tell a
+	// long chain of links from a spent budget, which have opposite fixes. The
+	// reason is never logged, since it quotes the command.
+	if o.via != "" {
+		attrs = append(attrs, "via", o.via)
+	}
+	if o.verdict.Code != "" {
+		attrs = append(attrs, "code", o.verdict.Code)
+	}
+	slog.Debug("hook decision", attrs...)
 	message := ""
 	if len(warnings) > 0 {
 		message = "sdlc: " + strings.Join(warnings, " ")
@@ -409,7 +419,9 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 	}
 
 	return func(context.Context) outcome {
-		res := pathrules.NewResolver(project)
+		// Memoised, so that the configuration checks below place the path
+		// through what Rel already asked of the disk.
+		res := pathrules.NewResolver(project).Memoised()
 		rel, outside := res.Rel(path)
 		slog.Debug("hook considering",
 			"tool", p.ToolName, "agent", p.AgentType, "role", policy.NormalizeAgent(p.AgentType),
@@ -423,8 +435,8 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 			// Asked only of a path inside the project, and only where the
 			// repository has another checkout that could be nested in it.
 			OtherCheckout: !outside && nestedCheckout(placeOf(project), path, p.CWD),
-			ClaudeConfig:  newClaudeConfig(getenv, project).holds(writtenAt(p, path, project)),
-			AgentsConfig:  newAgentsConfig(getenv, project).holds(writtenAt(p, path, project)),
+			ClaudeConfig:  newClaudeConfig(getenv, project, res).holds(writtenAt(p, path, project)),
+			AgentsConfig:  newAgentsConfig(getenv, project, res).holds(writtenAt(p, path, project)),
 			// rel is the resolved absolute path for a write outside, so a
 			// link on the way to a directory above has been followed.
 			AboveProject: outside && aboveProject(filepath.ToSlash(res.Root()), rel),
@@ -462,20 +474,28 @@ func humanDecisionsOnly(getenv func(string) string, p payload, path string) func
 		waits := storyWaits(getenv, p, projects)
 		powerShell := p.ToolName == toolPowerShell
 		if f, refused := shellpolicy.HumanDecisions(p.ToolInput.Command, powerShell, waits); refused {
-			return outcome{verdict: policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, ok: true}
+			return refusedFor(f)
 		}
 		// Read from the first project the call is in, which is the session's
 		// own where Claude Code names one.
 		project := projects[0]
-		cfg, acfg := newClaudeConfig(getenv, project), newAgentsConfig(getenv, project)
+		// Budgeted as a session working a story is, and bounded through the end
+		// of the classifier's inspectAs, which ClaudeConfigWrites ends in: a
+		// word past a bound on links is refused here too, never answered as
+		// not the configuration and let through.
+		resolver := pathrules.NewResolver(project).Memoised().Budgeted(pathrules.CommandLinks)
+		dir := commandDir(resolver, p.CWD)
+		dirBound := resolver.Bound("") // the first walk on resolver is to dir
+		cfg, acfg := newClaudeConfig(getenv, project, resolver), newAgentsConfig(getenv, project, resolver)
 		state := shellpolicy.State{
-			Dir:  commandDir(pathrules.NewResolver(project).Memoised(), p.CWD),
+			Dir: dir, DirBound: dirBound,
 			Root: filepath.ToSlash(project), PowerShell: powerShell,
 			ClaudeConfig: cfg.word, ClaudeConfigHeld: cfg.heldWord,
 			AgentsConfig: acfg.word, AgentsConfigHeld: acfg.heldWord,
+			Bound: func(word string) error { return boundAsPlaced(resolver, cfg, word) },
 		}
 		if f, refused := shellpolicy.ClaudeConfigWrites(p.ToolInput.Command, state); refused {
-			return outcome{verdict: policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route}, ok: true}
+			return refusedFor(f)
 		}
 		return outcome{verdict: policy.Allowed}
 	}
@@ -494,8 +514,9 @@ func personsConfigWrite(getenv func(string) string, p payload, path string) func
 		return nil
 	}
 	abs := writtenAt(p, path, "")
-	claude := newClaudeConfig(getenv, "").holds(abs)
-	agents := !claude && newAgentsConfig(getenv, "").holds(abs)
+	res := pathrules.NewResolver("").Memoised()
+	claude := newClaudeConfig(getenv, "", res).holds(abs)
+	agents := !claude && newAgentsConfig(getenv, "", res).holds(abs)
 	if !claude && !agents || len(loopProjects(getenv, p)) == 0 {
 		return nil
 	}
@@ -598,6 +619,41 @@ func onDisk(resolver pathrules.Resolver, word string) string {
 	return rel
 }
 
+// boundAsPlaced is boundOnDisk of a word of a shell command, with the home or
+// CLAUDE_CONFIG_DIR at its start put where it is in every spelling the
+// configuration check reads. Read as onDisk alone, a word through a variable
+// for the home was a path in the project that was not there, and within every
+// bound, while the configuration check placed it in the home (US-035, code
+// review). Only the variable is put in place: the rest of the word is handed
+// over as typed, since a `..` after a link is the link's parent, and cleaned
+// away by name it took the links with it.
+func boundAsPlaced(resolver pathrules.Resolver, cfg *personsConfig, word string) error {
+	if word != "" {
+		unquoted := strings.NewReplacer(`"`, "", "'", "").Replace(word)
+		if expanded, ok := cfg.expanded(unquoted); ok && expanded != unquoted {
+			word = expanded
+		}
+	}
+	return boundOnDisk(resolver, word)
+}
+
+// boundOnDisk is resolver.Bound of a word of a shell command, read as onDisk
+// reads it: `~` as the home, and a drive-relative word as within bounds, since
+// only the shell knows where it is.
+func boundOnDisk(resolver pathrules.Resolver, word string) error {
+	if word == "" {
+		return resolver.Bound("")
+	}
+	word, ok := expandHome(word)
+	if !ok {
+		return nil
+	}
+	if volume := filepath.VolumeName(word); volume != "" && !filepath.IsAbs(word) {
+		return nil
+	}
+	return resolver.Bound(filepath.FromSlash(word))
+}
+
 // inspectShell applies the shell rules, which exist because every other rule in
 // this tool governs the file-writing tools and a shell command is not one.
 //
@@ -631,8 +687,13 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	// Memoised, because every word of the command is placed on disk, most of
 	// them down the same directories, and the disk does not change while one
 	// command is judged.
-	resolver := pathrules.NewResolver(project).Memoised()
+	// And budgeted: every link a word of the command goes through is charged
+	// to one count for the command, which Bound refuses past (US-035).
+	resolver := pathrules.NewResolver(project).Memoised().Budgeted(pathrules.CommandLinks)
 	dir := commandDir(resolver, p.CWD)
+	// The walk to dir is the first on resolver, so a bound passed so far was
+	// passed on the way there; set on the State below only where there was one.
+	dirBound := resolver.Bound("")
 	// Created just before the parse, and started only at the first git call.
 	// The cancel it returns is not kept: the budget has to outlive this
 	// function for the record, and it ends with ctx, which is run's to cancel.
@@ -657,7 +718,7 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	// The disk is asked about a path only where a rule would let a word go for
 	// being outside the repository, and about each directory once.
 	out := newOutsider(func() []string { return checkoutSet(pl, resolver).Checkouts })
-	cfg, acfg := newClaudeConfig(getenv, project), newAgentsConfig(getenv, project)
+	cfg, acfg := newClaudeConfig(getenv, project, resolver), newAgentsConfig(getenv, project, resolver)
 	fresh := sync.OnceValues(func() (bool, string) { return reviewsFresh(pl, story, warn, budget) }) //nolint:contextcheck // reviewsFresh takes the command's lazily started budget, not ctx: the deadline must begin at the first git call
 	// internal/tools/hooktime builds this State a second time, to hold Inspect
 	// to a time (`./task hook-time`): nothing here can be called from outside
@@ -689,6 +750,7 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 		// And the person's ~/.agents, placed the same way.
 		AgentsConfig:     acfg.word,
 		AgentsConfigHeld: acfg.heldWord,
+		Bound:            func(word string) error { return boundAsPlaced(resolver, cfg, word) },
 	}
 	// The repository's other checkouts are held as this one is. Where it is
 	// the only one, nothing is asked and nothing changes.
@@ -700,6 +762,16 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	disk := newDiskReader(project)
 	state = state.WithDisk(shellpolicy.Disk{Entries: disk.entries, Archive: disk.members, IsDir: disk.isDir,
 		Stories: disk.stories(pl.records), Formats: archiveFormats()})
+	if dirBound != nil {
+		state.DirBound = dirBound
+	}
+	// Told only where the debug log would keep it: a session without the log
+	// pays nothing for it.
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		state.Considered = func(candidate, via string) {
+			slog.Debug("hook considered a tool", "candidate", candidate, "via", via)
+		}
+	}
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, state)
 	if !refused {
 		o := outcome{verdict: policy.Allowed, ok: true}
@@ -708,7 +780,25 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 		}
 		return o
 	}
-	return outcome{verdict: policy.Verdict{Rule: finding.Rule, Reason: finding.Reason, Route: finding.Route}, ok: true}
+	return refusedFor(finding)
+}
+
+// refusedFor is the outcome of a refusal by the shell rules, with its code and
+// the reading that decided it for the decision line.
+func refusedFor(f shellpolicy.Finding) outcome {
+	return outcome{verdict: policy.Verdict{Rule: f.Rule, Reason: f.Reason, Route: f.Route, Code: f.Code}, via: f.Via, ok: true}
+}
+
+// panicked is a panic as the debug log gives it: its type, and its message
+// only where the runtime raised it, in the runtime's own words. The value of
+// any other can quote a word of the command, and the log is a file anyone on
+// the machine may read (US-035, THREATS I1).
+func panicked(r any) []any {
+	attrs := []any{"panic_type", fmt.Sprintf("%T", r)}
+	if e, ok := r.(runtime.Error); ok {
+		attrs = append(attrs, "panic", e.Error())
+	}
+	return attrs
 }
 
 // toolPowerShell is the tool name Claude Code gives a PowerShell command, which

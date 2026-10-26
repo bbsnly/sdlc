@@ -68,6 +68,7 @@ func (j *gitRules) branch(g gitRead, r ran, dir string, e *environment, asGit bo
 		if h == nil {
 			return f, true
 		}
+		f.Via = j.s.via
 		h.keep(f)
 	}
 	return Finding{}, false

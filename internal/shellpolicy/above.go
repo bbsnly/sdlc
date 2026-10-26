@@ -848,12 +848,14 @@ func joinAbove(start, dir string) string {
 // a rule that joined relative words to it would read `cd ~ && rm
 // .sdlc/state/active`, refused by name today, as a file in the home.
 func movedFrom(from string, lost bool, words []string) string {
-	args := skipOptions(words[1:])
+	args := cdOperands(words[1:])
 	if len(args) == 0 {
 		return ""
 	}
 	to := clean(args[0])
 	switch {
+	case to == "-":
+		// The directory before, which no spelling here says.
 	case strings.HasPrefix(to, "~") && !shellDirectory(to):
 		return to
 	case lost && from != "" && !isAbsolute(to):

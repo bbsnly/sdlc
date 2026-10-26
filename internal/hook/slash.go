@@ -208,7 +208,7 @@ func runGuarded(commands Runner, dir string, getenv func(string) string, args []
 		if r := recover(); r != nil {
 			// At error level, so that it reaches a log without debugging on.
 			// The panic is never shown: it can quote anything the command read.
-			slog.Error("hook: the slash command gave way", "command", args[0], "panic", r, "stack", string(debug.Stack()))
+			slog.Error("hook: the slash command gave way", append([]any{"command", args[0]}, append(panicked(r), "stack", string(debug.Stack()))...)...)
 			code, ran = 0, false
 		}
 	}()

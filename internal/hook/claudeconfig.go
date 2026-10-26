@@ -27,7 +27,13 @@ type personsConfig struct {
 	getenv func(string) string
 	// project is what a relative word of a command is relative to, absolute.
 	project string
-	roots   func() []configRoot
+	// base is the resolver of the command being judged: every root, and every
+	// directory asked whether it holds one, is placed through it, so that a
+	// word is walked once for the command and not once more for each root.
+	// A resolver of their own for each root walked every word the command
+	// writes four times in all (US-035, D8).
+	base  pathrules.Resolver
+	roots func() []configRoot
 	// said is what word answered for each word asked, and held what heldWord
 	// did: a command names the same words in segment after segment.
 	said, held map[string]bool
@@ -40,8 +46,8 @@ type configRoot struct {
 	resolver pathrules.Resolver
 }
 
-func newClaudeConfig(getenv func(string) string, project string) *personsConfig {
-	return newPersonsConfig(getenv, project, func() []string {
+func newClaudeConfig(getenv func(string) string, project string, base pathrules.Resolver) *personsConfig {
+	return newPersonsConfig(getenv, project, base, func() []string {
 		paths := inHome(".claude", ".claude.json")
 		for _, name := range []string{"CLAUDE_CONFIG_DIR", "CLAUDE_CODE_PLUGIN_CACHE_DIR"} {
 			if dir := getenv(name); dir != "" && filepath.IsAbs(dir) {
@@ -52,13 +58,13 @@ func newClaudeConfig(getenv func(string) string, project string) *personsConfig 
 	})
 }
 
-func newAgentsConfig(getenv func(string) string, project string) *personsConfig {
-	return newPersonsConfig(getenv, project, func() []string { return inHome(".agents") })
+func newAgentsConfig(getenv func(string) string, project string, base pathrules.Resolver) *personsConfig {
+	return newPersonsConfig(getenv, project, base, func() []string { return inHome(".agents") })
 }
 
-func newPersonsConfig(getenv func(string) string, project string, paths func() []string) *personsConfig {
-	c := &personsConfig{getenv: getenv, project: project, said: map[string]bool{}, held: map[string]bool{}}
-	c.roots = sync.OnceValue(func() []configRoot { return rootsAt(paths()) })
+func newPersonsConfig(getenv func(string) string, project string, base pathrules.Resolver, paths func() []string) *personsConfig {
+	c := &personsConfig{getenv: getenv, project: project, base: base, said: map[string]bool{}, held: map[string]bool{}}
+	c.roots = sync.OnceValue(func() []configRoot { return rootsAt(base, paths()) })
 	return c
 }
 
@@ -77,13 +83,13 @@ func inHome(names ...string) []string {
 
 // rootsAt is every place the configuration is kept. A ~/.claude linked into a
 // dotfiles directory is common, so each is compared as it is on disk too.
-func rootsAt(paths []string) []configRoot {
+func rootsAt(base pathrules.Resolver, paths []string) []configRoot {
 	roots := make([]configRoot, 0, len(paths))
 	for _, p := range paths {
 		// The path asked has the firmlink taken off, so a HOME spelled
 		// through it has to lose it too, or neither spelling meets the other.
 		p = withoutFirmlink(p)
-		roots = append(roots, configRoot{path: p, resolver: pathrules.NewResolver(p).Memoised()})
+		roots = append(roots, configRoot{path: p, resolver: base.At(p)})
 	}
 	return roots
 }
@@ -120,7 +126,7 @@ func (c *personsConfig) above(abs string) bool {
 		if pathrules.Under(filepath.ToSlash(r.path), filepath.ToSlash(abs)) {
 			return true
 		}
-		if _, outside := pathrules.NewResolver(abs).Rel(r.resolver.Root()); !outside {
+		if _, outside := c.base.At(abs).Rel(r.resolver.Root()); !outside {
 			return true
 		}
 	}
