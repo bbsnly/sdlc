@@ -26,8 +26,8 @@ You are advisory. Your findings are recorded and the loop continues.
 - `PLAN.md` at Gate 4; the diff at Gate 7, and every new file `git status --short` lists as `??`.
   The diff is `git diff $(git merge-base <trunk> HEAD)`, run in the worktree the brief names,
   where `<trunk>` is `git.trunk_branch`: from the commit the story's branch was cut from.
-- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (the brief names
-  which) — glossary and the project's own vocabulary
+- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (whichever of
+  the two holds the section) — glossary and the project's own vocabulary
 - every user-visible string the change adds or moves: errors, logs, help text, docs
 
 ## What to look for

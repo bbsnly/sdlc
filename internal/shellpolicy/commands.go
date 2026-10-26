@@ -562,17 +562,33 @@ func (p *programScan) plain(i int, c lexedCommand) {
 	if base(run.words[0]) != "find" {
 		return
 	}
-	// Each -exec runs a command:
-	// `find . -exec true \; -exec git commit -m x \;` runs git.
+	// Each -exec runs a command, up to its `;` or `+` terminator:
+	// `find . -exec true \; -exec git commit -m x \;` runs git. Cut at the
+	// terminator so the next -exec, and the find's own later words, are not
+	// read as part of this command: `find q -exec cp -r {} .. \;` runs `cp -r
+	// {} ..`, not `cp -r {} .. ;`. The path rules take their -exec commands
+	// from the find expression reader instead (judgeExecs), since their words
+	// have lost the terminator (Step 18's `{}` case, security r4 B1).
 	for j, w := range run.words {
 		if !findRuns(w) {
 			continue
 		}
-		if exec := program(run.words[j+1:]); len(exec.words) > 0 {
+		if exec := program(execArguments(run.words[j+1:])); len(exec.words) > 0 {
 			p.out = append(p.out, ran{words: exec.words, group: c.in, substituted: c.cut,
 				marked: exec.words, env: c.env, piped: c.fed})
 		}
 	}
+}
+
+// execArguments are the words of a find -exec command, up to its `;` or `+`
+// terminator.
+func execArguments(words []string) []string {
+	for i, w := range words {
+		if w == ";" || w == "+" {
+			return words[:i]
+		}
+	}
+	return words
 }
 
 // script adds the commands a string handed to a shell or to eval runs,

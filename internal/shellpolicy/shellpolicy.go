@@ -229,6 +229,34 @@ type State struct {
 	// whole is the command as it was written, as the plain reader read it, or
 	// nil; set by Inspect, and see plainCommand.
 	whole []plainRun
+
+	// disk is what the hook reads of the disk for the rules; see WithDisk.
+	disk Disk
+}
+
+// Disk is the disk's answers that a word alone cannot give: the names in a
+// directory, the member names of an archive, and whether a path is a
+// directory. Each word is as the command spells it. A nil answer keeps the
+// one the words give alone, and see Listing for what a cut-short read
+// answers.
+type Disk struct {
+	Entries func(dir string) Listing
+	Archive func(file string) Listing
+	IsDir   func(word string) bool
+	// Stories is the names in .sdlc/stories where the story records are
+	// kept, the main checkout's: which names are stories is only on disk.
+	Stories func() Listing
+	// Formats are the archive formats Archive reads, for a refusal to name.
+	Formats []string
+}
+
+// WithDisk is s with d to ask. Only the hook asks the disk: these are reads
+// bounded by the hook's caps rather than answers about the session, so they
+// are kept apart from the fields that describe it, which
+// internal/tools/hooktime mirrors one by one.
+func (s State) WithDisk(d Disk) State {
+	s.disk = d
+	return s
 }
 
 // A Landing is where a word of a command lands in another checkout of the
@@ -280,7 +308,8 @@ var mutating = map[string]bool{
 	// What unpacks, copies or downloads into a path it is given: `tar -xf e.tar
 	// -C .sdlc`, `unzip -d .git/hooks`, `curl -o CLAUDE.md`. Counted whatever
 	// they are asked, like cp, since what they read is named the same way.
-	"tar": true, "rsync": true, "unzip": true, "cpio": true, "scp": true,
+	"tar": true, "rsync": true, "unzip": true, "cpio": true, "scp": true, "pax": true, "jar": true,
+	"unar": true, "expand-archive": true,
 	"curl": true, "wget": true,
 	// Editors that rewrite a file given on the command line. sed, perl, awk
 	// and the interpreters are not here: what they write is decided by their
@@ -452,6 +481,14 @@ func Inspect(command string, s State) (Finding, bool) {
 // inspectNamed is Inspect without the reading of a second session, with the
 // paths a command only names let go of.
 func inspectNamed(command string, s State) (Finding, bool) {
+	if f, ok := inspectShellGlobs(command, s); ok {
+		return f, true
+	}
+	return inspectWritten(command, s)
+}
+
+// inspectWritten is inspectNamed for the globs as the line spells them.
+func inspectWritten(command string, s State) (Finding, bool) {
 	s.whole = plainCommand(command, s)
 	n := nameOnly(command, s)
 	if n.rewritten(command) {
@@ -473,7 +510,7 @@ func inspectNamed(command string, s State) (Finding, bool) {
 // still read as it always was.
 func inspectAs(asked, named string, s State) (Finding, bool) {
 	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}, landed: map[string][]Landing{},
-		disk: &diskAnswers{}, whole: s.whole}
+		disk: &diskAnswers{}, whole: s.whole, tildes: namedDirectories(named)}
 	s.hold = &branchHold{}
 	var f Finding
 	var ok bool
@@ -514,7 +551,7 @@ func inspectEach(line string, s State, m *memo, rules func(pair, State, *memo) (
 		// will see duplicated work here; sharing it is what would break the
 		// guarantee above.
 		m = &memo{checked: map[string]bool{}, resolved: m.resolved, landed: m.landed, folded: m.folded, disk: m.disk,
-			whole: m.whole}
+			whole: m.whole, tildes: m.tildes}
 	}
 	return Finding{}, false
 }
@@ -547,6 +584,9 @@ func inspectPaths(r pair, s State, m *memo) (Finding, bool) {
 	// separators the shell hid from find left as markers. It is made once, the
 	// first time a segment runs find; a command with no find pays nothing for it.
 	w.plain = markedSegments(pathText(text, s.PowerShell))
+	if strings.Contains(text, "$(") || strings.Contains(text, "`") {
+		w.filled = markedSegments(pathTextIn(text, s.PowerShell, true))
+	}
 	w.alike = m.readAlike(w.plain)
 	for idx, marked := range w.plain {
 		if s.hold.charge(1) {
@@ -586,6 +626,7 @@ type walkPlace struct {
 	lost bool
 	old  string
 	from string
+	near lostPlace
 }
 
 // pathWalk is the path rules part way through one reading of a command: the
@@ -614,13 +655,19 @@ type pathWalk struct {
 	// from is where a lost walk is, as the command spells it, when that
 	// spelling starts at ~ (movedFrom). Every rule but aboveDir reads the
 	// walk after `cd ~/code` as lost, as before.
-	from   string
+	from string
+	// near is what is known of a lost walk: where it could be, and why it
+	// is lost (lostPlace).
+	near   lostPlace
 	outer  []walkPlace
 	ticked bool
 	// plain is the command's segments as spelled, and scan the reader of
 	// the finds among them, made the first time a segment runs find.
 	plain []string
 	scan  *findScan
+	// filled is plain with `$SUB` left for each substitution inside a word,
+	// where the command has one (pathTextIn); see cutWords.
+	filled []string
 	// alike is whether the plain reader read every one of those segments as
 	// they are read here: see pathQuestion.certain.
 	alike bool
@@ -639,6 +686,7 @@ func (w *pathWalk) segment(idx int, marked string) (Finding, bool) {
 		return Finding{}, false
 	}
 	run, evals := underEval(program(words))
+	run.cut = w.cutWords(idx, marked)
 	// A find's expression is read once, here, for every rule that asks.
 	found := w.find(idx, segment, run, evals)
 	// env -C runs the command in the directory it names, as a cd in front
@@ -684,25 +732,120 @@ func (w *pathWalk) segment(idx int, marked string) (Finding, bool) {
 			return f, true
 		}
 	}
+	if f, ok := w.beyondWords(j, segment, run, found); ok {
+		return f, true
+	}
 	// A script handed to a shell runs in a process of its own, and its cd is
 	// movesInAScript's. With the eval builtin taken off, a string that opened
 	// a subshell around a move was read as moving the shell, and a command
 	// that is refused where it stands was read from a directory the shell was
 	// never in, and allowed.
-	w.follow(run, evals)
+	w.follow(run, evals, segment)
 	return Finding{}, false
+}
+
+// cutWords are the words of the segment at idx, as the path rules read them,
+// that a substitution inside them was cut from: gluedIn drops one that does not
+// start a word, so `cp -r /tmp/p/x$(echo y) ..` was read as copying the plain
+// name /tmp/p/x, where the shell copies whatever the substitution names.
+func (w *pathWalk) cutWords(idx int, marked string) []string {
+	if idx >= len(w.filled) {
+		return nil
+	}
+	read, _ := spelledFields(marked)
+	filled, _ := spelledFields(w.filled[idx])
+	var cut []string
+	for i := range min(len(read), len(filled)) {
+		if read[i] != filled[i] {
+			cut = append(cut, read[i])
+		}
+	}
+	return cut
+}
+
+// beyondWords asks what the segment's own words, judged where the walk is, do
+// not show: the commands a find's -exec runs, then where a lost walk could be.
+func (w *pathWalk) beyondWords(j segmentRules, segment string, run invocation, found foundFind) (Finding, bool) {
+	if f, ok := judgeExecs(j, segment, run, found); ok {
+		return f, true
+	}
+	return w.lostWalk(j, segment, run)
+}
+
+// judgeExecs asks the path rules of each command a find's -exec runs, as they
+// ask of the command xargs runs: asked of find alone, `find q -exec cp -r {}
+// .. \;` was allowed where its xargs twin was refused (verifier r4 gap 1). The
+// find is judged first, so a refusal of it keeps its rule.
+func judgeExecs(j segmentRules, segment string, run invocation, found foundFind) (Finding, bool) {
+	words := run.words
+	if found.more {
+		words = found.words
+	}
+	if len(words) == 0 || base(words[0]) != "find" {
+		return Finding{}, false
+	}
+	j.certain = false
+	for _, command := range execCommands(words[1:], found.exp) {
+		if exec := program(command); len(exec.words) > 0 {
+			// Where the reader could not follow the find, the commands are cut
+			// from the path rules' words, which lost a substitution inside a
+			// word; the reader's own keep it as `$SUB`.
+			exec.cut = run.cut
+			if f, ok := j.judge(segment, exec); ok {
+				return f, true
+			}
+		}
+	}
+	return Finding{}, false
+}
+
+// execCommands are the commands a find's -exec kind of actions run: as the
+// expression reader cut them at their terminators, or, where it could not
+// follow the expression, each to the next -exec, a `;` or `+` still written,
+// or the end. The path rules' words have lost the terminator (`\;` is a space
+// to them), which only the reader saw. The spans do not overlap, so a long
+// line of them is read once.
+func execCommands(args []string, exp findExpression) [][]string {
+	if exp.followed {
+		return exp.execs
+	}
+	var out [][]string
+	for i, w := range args {
+		if !findRuns(w) {
+			continue
+		}
+		rest := args[i+1:]
+		if k := slices.IndexFunc(rest, findRuns); k >= 0 {
+			rest = rest[:k]
+		}
+		out = append(out, execArguments(rest))
+	}
+	return out
+}
+
+// lostWalk is what is known of a lost walk asked of the segment
+// (lostPlace.judge), where the segment runs where the walk is.
+func (w *pathWalk) lostWalk(j segmentRules, segment string, run invocation) (Finding, bool) {
+	if run.chdir != "" || !w.lost || w.s.configOnly {
+		return Finding{}, false
+	}
+	return w.near.judge(j, segment, run, w.dir)
 }
 
 // follow moves the walk to where a `cd` among the segment's words leaves the
 // shell.
-func (w *pathWalk) follow(run invocation, evals int) {
+func (w *pathWalk) follow(run invocation, evals int, segment string) {
 	if next, ok := changedDir(w.dir, run.words); ok && !run.shell && evals == 0 {
 		w.old = w.dir
 		if w.lost {
 			w.old = unknownDir
 		}
 		w.from = movedFrom(w.from, w.lost, run.words)
-		w.dir, w.lost = next, w.movedTo(next)
+		near, lost := w.near.after(w.dir, w.lost, run.words, w.cdpath(segment))
+		w.dir, w.lost, w.near = next, w.movedTo(next), near
+		if lost {
+			w.dir, w.lost = "", true
+		}
 	}
 }
 
@@ -711,11 +854,11 @@ func (w *pathWalk) follow(run invocation, evals int) {
 func (w *pathWalk) subshells(opens, closes int) {
 	for ; closes > 0 && len(w.outer) > 0; closes-- {
 		top := w.outer[len(w.outer)-1]
-		w.dir, w.lost, w.old, w.from = top.dir, top.lost, top.old, top.from
+		w.dir, w.lost, w.old, w.from, w.near = top.dir, top.lost, top.old, top.from, top.near
 		w.outer = w.outer[:len(w.outer)-1]
 	}
 	for ; opens > 0; opens-- {
-		w.outer = append(w.outer, walkPlace{w.dir, w.lost, w.old, w.from})
+		w.outer = append(w.outer, walkPlace{w.dir, w.lost, w.old, w.from, w.near})
 	}
 }
 
@@ -765,6 +908,7 @@ type segmentRules struct {
 
 // judge asks the path rules about a command of the segment, spelled segment.
 func (j segmentRules) judge(segment string, run invocation) (Finding, bool) {
+	run.words = withEnvironmentOptions(run.words, j.command, j.s.Carried)
 	q := pathQuestion{
 		line: j.command, segment: segment, exp: j.exp, run: run, redirects: j.redirects,
 		dir: j.dir, lost: j.lost, from: j.from, certain: j.certain, s: j.s, m: j.m,
@@ -808,6 +952,9 @@ func (j segmentRules) judge(segment string, run invocation) (Finding, bool) {
 	// Last for the same reason: a write the rules above refuse keeps their
 	// name.
 	if f, ok := checkPersonsConfig(q); ok {
+		return f, true
+	}
+	if f, ok := checkFromDisk(q); ok {
 		return f, true
 	}
 	return checkFillsAbove(q)
@@ -1651,6 +1798,9 @@ func checkLoopState(q pathQuestion) (Finding, bool) {
 	}
 	candidates := append([]string{}, q.redirects...)
 	candidates = q.addWritten(candidates)
+	// What a glob fills in from the disk, where the hook has read it.
+	listed, _ := q.listedNames()
+	candidates = append(candidates, listed...)
 	if runsInlineCode(run.words, segment) {
 		// The file a program opens is inside a string, as it is for the
 		// freeze below.
@@ -1689,7 +1839,7 @@ func (q pathQuestion) addWritten(candidates []string) []string {
 		return candidates
 	}
 	q.noteMade()
-	for _, w := range writtenTo(run.words) {
+	for _, w := range q.written() {
 		// A whole directory given to an interpreter is a setting of the
 		// program it runs, as in `python3 -m pytest --ignore .sdlc`, not a
 		// file for it to write.
@@ -1806,13 +1956,18 @@ func loopFileFinding(c string, s State, m *memo) (Finding, bool) {
 		return Finding{}, false
 	}
 	if hit, ok := protectedPath(c, s.Backlog); ok {
-		return Finding{
+		f := Finding{
 			Rule: "protected-path-through-the-tool",
 			Reason: hit + " is protected while a story is being worked on, and a shell " +
 				"command is the one way around the rule that protects it" + heldEverywhere(hit),
 			Route: "change it by hand outside a running iteration; if what it says is " +
 				"wrong, stop and say what rather than editing it",
-		}, true
+		}
+		// A name held only because the disk may fold its case says so
+		// (pathrules.CaseClause). The route is CLAUDE.md's, which the file
+		// tools hold it to.
+		f.Reason += pathrules.CaseClause(bounded(strings.TrimPrefix(clean(c), "./")), hit)
+		return f, true
 	}
 	hit, ok := loopState(c)
 	if !ok {
@@ -1931,6 +2086,11 @@ func checkFrozenTests(q pathQuestion) (Finding, bool) {
 		candidates = q.addProgramWords(candidates)
 	}
 	candidates, removed := q.addFrozenWritten(candidates)
+	if listed, _ := q.listedNames(); len(listed) > 0 && removes(run.words) {
+		removed = append(removed, listed...)
+	} else {
+		candidates = append(candidates, listed...)
+	}
 	// A word placed outside the repository is no test of its freeze, whatever
 	// its name: the Write tool refuses it for being outside, and the shell has
 	// nothing there to protect.
@@ -2031,9 +2191,9 @@ func (q pathQuestion) addFrozenWritten(candidates []string) (added, removed []st
 		return candidates, nil
 	}
 	if removes(run.words) {
-		removed = writtenTo(run.words)
+		removed = q.written()
 	} else {
-		candidates = append(candidates, writtenTo(run.words)...)
+		candidates = append(candidates, q.written()...)
 	}
 	if run.piped {
 		candidates = append(candidates, q.m.words(q.line)...)
@@ -2515,6 +2675,9 @@ type invocation struct {
 	assigns []string
 	// chdir is where env -C runs the program, or "".
 	chdir string
+	// cut are the words a substitution inside them was cut from, as the path
+	// walk read them (cutWords): the shell fills in what the words do not show.
+	cut []string
 }
 
 // program takes off the front of a segment whatever only runs the command after
@@ -2772,6 +2935,10 @@ func changedDir(dir string, words []string) (string, bool) {
 		return "", true
 	case isAbsolute(to):
 		return to, true
+	case climbsPastGlobstar(dir):
+		// path.Join cleans `**/..` away as one name, which placed `cd
+		// /work/project/internal/**/.. && cd ..` in the project.
+		return dir + "/" + to, true
 	}
 	return path.Join(dir, to), true
 }
@@ -2804,6 +2971,11 @@ func namedBy(w string) []string {
 	// the Windows spelling.
 	if strings.Contains(w, `\`) {
 		named = append(named, strings.ReplaceAll(w, `\`, ""))
+	}
+	// A `**` can be no directories, so a `..` after it climbs from the
+	// segment before it (climbedGlobstar).
+	if climbsPastGlobstar(w) {
+		named = append(named, climbedGlobstar(strings.ReplaceAll(w, `\`, "")))
 	}
 	if _, value, ok := strings.Cut(w, "="); ok && value != "" {
 		named = append(named, value)
@@ -2864,6 +3036,13 @@ type memo struct {
 	madeFor string
 	// instruction is whether each last name asked is an instruction file.
 	instruction map[string]bool
+	// dirs is what Disk.IsDir said of a word, asked once per command, and
+	// listed what listedNames found for a segment, by its words.
+	dirs   map[string]bool
+	listed map[string]listedGlobs
+	// tildes are the named directories the command makes: zsh reads `~c` as
+	// the directory a variable c holds, or `hash -d c=...` names.
+	tildes map[string]string
 	// spelled is the segment being judged as the command spells it, and
 	// unspelled each word of it unquoted, split once for that segment; and
 	// globbed what expandsAGlob answered there, by the word it was asked.
@@ -2965,7 +3144,7 @@ func (m *memo) frozen(word string, frozen []string, byName bool) (string, bool) 
 // another name: through a link, or a Windows short name. Each word is looked up
 // once per command.
 func (m *memo) spell(s State, dir string, words []string) []string {
-	out := spellings(dir, words)
+	out := m.untilded(spellings(dir, words))
 	if s.Resolve == nil {
 		return out
 	}
@@ -3476,18 +3655,25 @@ func segments(command string) []string {
 // read. A line continued with a backslash is one line. PowerShell escapes with
 // a backtick, which Inspect has already taken out.
 func pathText(text string, powerShell bool) string {
+	return pathTextIn(text, powerShell, false)
+}
+
+// pathTextIn is pathText, and, where inWords is set, with `$SUB` left for a
+// substitution inside a word too (gluedIn). It adds no separator, so its
+// segments and their words line up with pathText's one for one.
+func pathTextIn(text string, powerShell, inWords bool) string {
 	if !powerShell {
 		text = escapedSeparators.Replace(text)
 	} else {
 		text = locationCalls.ReplaceAllString(text, "${1}$$PWD")
 	}
-	return glued(shortMagic(text))
+	return gluedIn(shortMagic(text), inWords)
 }
 
 // locationCalls are PowerShell's names for where it is, in parentheses, which
 // split as the path rules split a command were a word `(Get-Location` and a
 // command `)`: `Remove-Item -Recurse (Get-Location)`. `$(Get-Location)` is
-// glued's.
+// gluedIn's.
 var locationCalls = regexp.MustCompile(`(?i)(^|[^$])\((?:get-location|gl|pwd)\)(?:\.path)?`)
 
 // shortMagic is a command with git's long pathspec magic written the short way,
@@ -3527,20 +3713,16 @@ func shortMagic(text string) string {
 	return b.String()
 }
 
-// glued is a command with each substitution taken out of the word it is written
-// in, and read after the command as a subshell of its own. Split where it
-// stands, `rm $(pwd)/.sdlc/state/active` was a command called `rm` and one
-// called `/.sdlc/state/active`. At the start of a word it leaves `$SUB`, which is somewhere, not the root of the disk; inside a word,
-// nothing. PowerShell's backticks are gone by now, so there only `$(` is one.
-func glued(text string) string {
-	return gluedIn(text, false)
-}
-
-// gluedIn is glued, and, when inWords is set, leaves `$SUB` for a substitution
-// standing inside a word as well as at the start of one. The find expression
-// reader sets it, so that a substitution partway through a word still reads as
-// a word the shell fills in rather than vanishing; the path rules leave it as
-// nothing, which is what they have always done.
+// gluedIn is a command with each substitution taken out of the word it is
+// written in, and read after the command as a subshell of its own. Split where
+// it stands, `rm $(pwd)/.sdlc/state/active` was a command called `rm` and one
+// called `/.sdlc/state/active`. At the start of a word it leaves `$SUB`, which
+// is somewhere, not the root of the disk; inside a word, nothing, or `$SUB` too
+// where inWords is set. PowerShell's backticks are gone by now, so there only
+// `$(` is one. The find expression reader sets inWords, so that a substitution
+// partway through a word still reads as a word the shell fills in rather than
+// vanishing; the path rules leave it as nothing, which is what they have
+// always done, and ask the other reading only for a copy's sources (cutWords).
 func gluedIn(text string, inWords bool) string {
 	var b strings.Builder
 	var inner []string
@@ -3912,7 +4094,9 @@ func protectedPath(word, backlog string) (string, bool) {
 		return "", false
 	}
 	for _, own := range protectedShellPaths {
-		if at(p, pathrules.Fold(own)) {
+		// A directory the word climbs back out of is not where it lands:
+		// `$D/.agents/../.sdlc` is the loop's, and was refused as .agents.
+		if at(p, pathrules.Fold(own)) && !climbsOutOf(p, own) {
 			return own, true
 		}
 	}
@@ -4027,5 +4211,13 @@ func base(word string) string {
 		word = word[i+1:]
 	}
 	// `(sdlc unfreeze)` runs sdlc, whatever the parenthesis is stuck to.
-	return strings.TrimSuffix(strings.TrimLeft(word, "({!"), ".exe")
+	word = strings.TrimSuffix(strings.TrimLeft(word, "({!"), ".exe")
+	// GNU tar installed beside the system's, and libarchive's bsdtar, are
+	// tar under another name: read by no rule, `cd .. && gtar -xf p.tar`
+	// filled the directory above, and `bsdtar -xf p.tar -C .` laid a
+	// member over a protected file.
+	if word == "gtar" || word == "bsdtar" {
+		return "tar"
+	}
+	return word
 }

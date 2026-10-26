@@ -206,15 +206,17 @@ var Rules = []Rule{
 		Route: "configuration is yours to change by hand outside a running iteration, " +
 			"and loop state changes through the sdlc command",
 		check: func(r Request) string {
+			name := anyDepth(r.Path)
 			if pathrules.UnderAny(r.Path, rootOnly...) {
 				return r.Path + " is protected while a story is being worked on: it is either " +
-					"human-owned configuration or the loop's own record of what happened"
+					"human-owned configuration or the loop's own record of what happened" +
+					pathrules.CaseClause(r.Path, name)
 			}
-			name := anyDepth(r.Path)
 			if name == "" {
 				return ""
 			}
-			return r.Path + " is protected while a story is being worked on: " + heldEverywhere(name)
+			return r.Path + " is protected while a story is being worked on: " + heldEverywhere(name) +
+				pathrules.CaseClause(r.Path, name)
 		},
 	},
 	{

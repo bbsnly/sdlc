@@ -169,13 +169,13 @@ func TestAC7CopiesWholeIsACopyThatTakesDirectoriesWithIt(t *testing.T) {
 func TestAC7NamesClaudeConfigSeesTheConfigurationInAnySpellingTheShellCouldPlace(t *testing.T) {
 	for line, want := range map[string]bool{
 		"cat ~/.claude/settings.json":        true,
-		"ls /home/alice/.claude.json":        true,
+		"ls /home/dev/.claude.json":          true,
 		"echo $CLAUDE_CONFIG_DIR":            true,
 		"echo $claude_code_plugin_cache_dir": true,
 		"ls ~/.cla*":                         true,
 		"ls ~/[.]claude":                     true,
 		"ls ~/.claude.":                      true,
-		`cat "C:\Users\a\.claude\x"`:         true,
+		`cat "C:\Users\dev\.claude\x"`:       true,
 		"cat CLAUDE.md":                      false,
 		"cat ~/.clauderc":                    false,
 		"ls src":                             false,

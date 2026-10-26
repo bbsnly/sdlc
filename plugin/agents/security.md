@@ -32,8 +32,8 @@ gives.
   is `git.trunk_branch`: from the commit the story's branch was cut from.
 - the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names;
   `ANALYSIS.md`; the frozen tests
-- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (the brief names
-  which)
+- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (whichever of
+  the two holds the section)
 
 ## What to look for
 

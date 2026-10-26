@@ -25,6 +25,11 @@ You do not start the agents yourself. You type `/sdlc:next`, and the runbook
 hands each gate to the agent that owns it. This page shows who they are, what
 each one may write, and how a project can choose which of them a story needs.
 
+This page was renamed from `docs/agents.md`. The hook matches `AGENTS.md`
+without regard to case, because a disk that folds case treats the two names as
+one file, so a page called `agents.md` would have been held as an instruction
+file, and no agent could have edited it while a story was being worked on.
+
 > [!NOTE]
 > None of the agents is meant to start on its own. Each is told to work only a
 > gate of a story a person started by typing `/sdlc:next`, when that runbook

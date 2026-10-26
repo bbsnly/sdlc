@@ -316,7 +316,7 @@ func TestAC13AFileToolsWriteToAnInstructionFileAboveTheProjectIsRefused(t *testi
 			"directory above the project, as ClaudeConfig says a path is in ~/.claude")
 	}
 	for _, path := range []string{
-		"/home/u/CLAUDE.md", "/home/u/code/AGENTS.md", "/home/u/CLAUDE.local.md", "/CLAUDE.md", "C:/Users/u/AGENTS.md",
+		"/home/dev/CLAUDE.md", "/home/dev/code/AGENTS.md", "/home/dev/CLAUDE.local.md", "/CLAUDE.md", "C:/Users/dev/AGENTS.md",
 	} {
 		for _, tool := range agWriters {
 			got := Evaluate(agWithAboveProject(Request{Tool: tool, Agent: "sdlc-implementer", Path: path, Outside: true, Story: "A-1"}))
@@ -331,16 +331,16 @@ func TestAC13AFileToolsWriteToAnInstructionFileAboveTheProjectIsRefused(t *testi
 		}
 	}
 	for _, r := range []Request{
-		agWithAboveProject(Request{Tool: "Write", Path: "/home/u/notes.md", Outside: true, Story: "A-1"}),
-		agWithAboveProject(Request{Tool: "Write", Path: "/home/u/CLAUDE.md.bak", Outside: true, Story: "A-1"}),
-		{Tool: "Write", Path: "/home/u/other/CLAUDE.md", Outside: true, Story: "A-1"},
-		{Tool: "Write", Path: "/home/u/code/project2/AGENTS.md", Outside: true, Story: "A-1"},
+		agWithAboveProject(Request{Tool: "Write", Path: "/home/dev/notes.md", Outside: true, Story: "A-1"}),
+		agWithAboveProject(Request{Tool: "Write", Path: "/home/dev/CLAUDE.md.bak", Outside: true, Story: "A-1"}),
+		{Tool: "Write", Path: "/home/dev/other/CLAUDE.md", Outside: true, Story: "A-1"},
+		{Tool: "Write", Path: "/home/dev/code/project2/AGENTS.md", Outside: true, Story: "A-1"},
 	} {
 		if got := Evaluate(r); got.Rule != "write-outside-repository" {
 			t.Errorf("AC-13 %s is not an instruction file above the project and was refused by %q", r.Path, got.Rule)
 		}
 	}
-	if got := Evaluate(agWithAboveProject(Request{Tool: "Read", Path: "/home/u/CLAUDE.md", Outside: true, Story: "A-1"})); !got.Allowed {
+	if got := Evaluate(agWithAboveProject(Request{Tool: "Read", Path: "/home/dev/CLAUDE.md", Outside: true, Story: "A-1"})); !got.Allowed {
 		t.Errorf("AC-13 reading an instruction file above the project was refused by %s", got.Rule)
 	}
 }
@@ -356,15 +356,15 @@ func TestAC13AnInstructionFileAboveTheProjectIsKnownInAnyCase(t *testing.T) {
 			"directory above the project")
 	}
 	for _, path := range []string{
-		"/home/u/Agents.MD", "/home/u/code/claude.md", "/home/u/code/Claude.Local.MD", "/home/u/code/.claude/AGENTS.md",
-		"C:/Users/u/agents.md",
+		"/home/dev/Agents.MD", "/home/dev/code/claude.md", "/home/dev/code/Claude.Local.MD", "/home/dev/code/.claude/AGENTS.md",
+		"C:/Users/dev/agents.md",
 	} {
 		got := Evaluate(agWithAboveProject(Request{Tool: "Write", Agent: "sdlc-implementer", Path: path, Outside: true, Story: "A-1"}))
 		if got.Rule != agAboveRule {
 			t.Errorf("AC-13 Write to %s: rule %q, allowed %v; want %s", path, got.Rule, got.Allowed, agAboveRule)
 		}
 	}
-	for _, path := range []string{"/home/u/Claude.md.bak", "/home/u/my-agents.md", "/home/u/code/.claude/settings.json"} {
+	for _, path := range []string{"/home/dev/Claude.md.bak", "/home/dev/my-agents.md", "/home/dev/code/.claude/settings.json"} {
 		got := Evaluate(agWithAboveProject(Request{Tool: "Write", Agent: "sdlc-implementer", Path: path, Outside: true, Story: "A-1"}))
 		if got.Rule == agAboveRule {
 			t.Errorf("AC-13 %s is no instruction file and was refused as one", path)

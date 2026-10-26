@@ -143,6 +143,10 @@ type findExpression struct {
 	// Such an expression is never followed, whatever else is recorded.
 	unknown string
 	stack   []pickAct
+	// execs are the words of each command an -exec kind of action runs, cut at
+	// its terminator. The path rules' words have lost the terminator (`\;` is
+	// a space to them), so judgeExecs asks of these (verifier r4 gap 1).
+	execs [][]string
 }
 
 // unfollowed is an expression that could not be read, and why.
@@ -1158,7 +1162,8 @@ func (e *findExpression) readPrimary(tokens []token, i int) (findItem, int, stri
 	opt := tokens[i].word
 	switch opt {
 	case "-exec", "-execdir", "-ok", "-okdir":
-		next, word, why := readExec(tokens, i)
+		next, words, word, why := readExec(tokens, i)
+		e.execs = append(e.execs, words)
 		return findItem{pick: true, action: true}, next, word, why
 	}
 	values, known := findTakes(opt)
@@ -1186,36 +1191,41 @@ func (e *findExpression) readPrimary(tokens []token, i int) (findItem, int, stri
 }
 
 // readExec reads the command an -exec kind of action runs, to the terminator
-// the shell hid from find, or to a `+` after `{}`, or to the end of the words.
-// A word the shell could split could become the terminator, and a word after a
-// filled word that reads as an operator could be the expression that follows a
-// filled terminator: either cannot be followed.
-func readExec(tokens []token, i int) (int, string, string) {
+// the shell hid from find, or to a `+` after `{}`, or to the end of the words,
+// and returns its words with the index of its last token. A word the shell
+// could split could become the terminator, and a word after a filled word that
+// reads as an operator could be the expression that follows a filled
+// terminator: either cannot be followed.
+func readExec(tokens []token, i int) (int, []string, string, string) {
 	filledBefore := false
 	last := ""
+	var words []string
 	for i++; i < len(tokens); i++ {
 		t := tokens[i]
 		if t.marker == ';' {
-			return i, "", ""
+			return i, words, "", ""
 		}
 		if t.marker != 0 {
+			// A separator the shell hid from find is a word of the command.
+			words = append(words, string(t.marker))
 			last = ""
 			continue
 		}
 		if t.word == "+" && last == "{}" {
-			return i, "", ""
+			return i, words, "", ""
 		}
 		if cause := execUnfollowed(t, filledBefore); cause != "" {
-			return i, t.raw, cause
+			return i, words, t.raw, cause
 		}
 		if t.filled {
 			filledBefore = true
 		}
+		words = append(words, t.word)
 		last = t.word
 	}
 	// The command ran to the end of the words: find rejects that, and reading
 	// it to the end swallows nothing find would run.
-	return i - 1, "", ""
+	return i - 1, words, "", ""
 }
 
 // execUnfollowed is why a word of an -exec command cannot be followed, or

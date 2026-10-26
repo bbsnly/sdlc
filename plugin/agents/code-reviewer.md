@@ -36,8 +36,8 @@ gives.
 - `.sdlc/stories/<ID>/PLAN.md`, `TEST-PLAN.md`, `VERIFICATION.md`
 - `.sdlc/stories/<ID>/reviews/` — what the design reviewers said. A finding that was raised at
   Gate 4 and ignored is a block.
-- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (the brief names
-  which)
+- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (whichever of
+  the two holds the section)
 - `.sdlc/config.json` → `paths.src` and `paths.tests` — which files in the diff are production
   code and which are its tests. A change to production code outside `paths.src` is worth a
   question, not a block on its own.

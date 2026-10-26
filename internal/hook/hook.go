@@ -582,6 +582,15 @@ func onDisk(resolver pathrules.Resolver, word string) string {
 	if volume := filepath.VolumeName(word); volume != "" && !filepath.IsAbs(word) {
 		return filepath.ToSlash(word[len(volume):])
 	}
+	// Rel cleans a `..` away before it follows the link before it, so
+	// `<outside>/s/../CLAUDE.md`, with s a link into the project, was beside
+	// the link and outside. Place reads the `..` where the link leads, as
+	// the shell does; only a word with a `..` in it pays for the walk.
+	if slices.Contains(strings.Split(filepath.ToSlash(word), "/"), "..") {
+		if placed, ok := resolver.Place(filepath.FromSlash(word)); ok {
+			word = placed
+		}
+	}
 	rel, outside := resolver.Rel(filepath.FromSlash(word))
 	if outside {
 		return ""
@@ -686,6 +695,11 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	if l := newLandings(pl, resolver); l != nil {
 		state.Shared = l.land
 	}
+	// What a glob, a copy's source or an archive holds, read from the disk
+	// only where a rule asks and within the bounds in disk.go.
+	disk := newDiskReader(project)
+	state = state.WithDisk(shellpolicy.Disk{Entries: disk.entries, Archive: disk.members, IsDir: disk.isDir,
+		Stories: disk.stories(pl.records), Formats: archiveFormats()})
 	finding, refused := shellpolicy.Inspect(p.ToolInput.Command, state)
 	if !refused {
 		o := outcome{verdict: policy.Allowed, ok: true}

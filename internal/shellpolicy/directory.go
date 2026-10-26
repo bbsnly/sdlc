@@ -44,7 +44,7 @@ func takenAway(words []string) []string {
 	case "tar":
 		// Each file goes once it is in the archive.
 		if hasWord(args, "--remove-files") {
-			_, _, operands, _ := tarArguments(args)
+			_, _, _, operands, _ := tarArguments(args)
 			return operands
 		}
 	case "rsync":
@@ -273,7 +273,9 @@ func moveArguments(args []string) (from []string, to string, target bool) {
 		option, value, glued := strings.Cut(a, "=")
 		long := strings.HasPrefix(a, "--") && abbreviates(option, "--target-directory")
 		switch {
-		case a == "-t" || long && !glued || strings.EqualFold(a, "-Destination"):
+		// PowerShell takes a parameter by any start of its name that names
+		// no other: `-Dest ..` is -Destination.
+		case a == "-t" || long && !glued || abbreviates(pathrules.Fold(a), "-destination"):
 			target = true
 			if i+1 < len(args) {
 				to = args[i+1]
@@ -313,13 +315,23 @@ func moveArguments(args []string) (from []string, to string, target bool) {
 // (outside.go) is the deliberate exception: it places a copy only for the
 // outside-repository rule, and keeps the release's one reading through
 // moveArguments so that rule answers a bundle as the released tool does.
+//
+// The same reading takes a target glued on after the t (`cp -pt. x`, which
+// GNU reads as -p and `-t .`), and passes over the value of an option that
+// takes one, so that one written after the operands is not the destination:
+// `ln -sf x .. -S /tmp/x` links into .., and read by moveArguments it made a
+// link called /tmp/x.
 func bundleTarget(name string, args []string) (from []string, to string, ok bool) {
+	var valued string
 	switch name {
-	case "cp", "mv", "ln", "install":
+	case "cp", "mv", "ln":
+		valued = "S"
+	case "install":
+		valued = "Smog"
 	default:
 		return nil, "", false
 	}
-	options := true
+	options, passed := true, false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -328,12 +340,54 @@ func bundleTarget(name string, args []string) (from []string, to string, ok bool
 		case options && tBundle(a) && i+1 < len(args):
 			to, ok = args[i+1], true
 			i++
+		case options && gluedTarget(a, valued) != "":
+			to, ok = gluedTarget(a, valued), true
+		case options && takesAValue(a, valued) && i+1 < len(args):
+			passed = true
+			i++
 		case options && strings.HasPrefix(a, "-"):
 		default:
 			from = append(from, a)
 		}
 	}
+	if !ok && passed && len(from) > 1 {
+		return from[:len(from)-1], from[len(from)-1], true
+	}
 	return from, to, ok
+}
+
+// gluedTarget is the target a bundle of letters holds after its t, where no
+// letter before the t takes a value of its own: `-pt.` is ".", and `-St.`
+// is a suffix.
+func gluedTarget(a, valued string) string {
+	if len(a) < 3 || a[0] != '-' || a[1] == '-' {
+		return ""
+	}
+	for j := 1; j < len(a)-1; j++ {
+		switch c := a[j]; {
+		case c == 't':
+			return a[j+1:]
+		case strings.IndexByte(valued, c) >= 0 || !unicode.IsLetter(rune(c)):
+			return ""
+		}
+	}
+	return ""
+}
+
+// takesAValue reports whether a word is an option, written alone, whose
+// value is the next word: one of the letters in valued, or the long name of
+// one.
+func takesAValue(a, valued string) bool {
+	if len(a) == 2 && a[0] == '-' && strings.IndexByte(valued, a[1]) >= 0 {
+		return true
+	}
+	switch a {
+	case "--suffix":
+		return true
+	case "--mode", "--owner", "--group":
+		return strings.Contains(valued, "m")
+	}
+	return false
 }
 
 // tBundle reports whether a word is one dash and two or more letters, letters

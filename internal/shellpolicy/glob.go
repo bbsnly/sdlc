@@ -121,6 +121,11 @@ func matchShape(pattern []string, shape string) []string {
 // `**/..` as one name and clean it away, and `/tmp/**/../work/project` was
 // read as /tmp/work/project, outside.
 func climbsPastGlobstar(word string) bool {
+	// Asked of every spelling of every word, most of which have no two stars
+	// for a quote or a backslash taken out to bring together.
+	if strings.Count(word, "*") < 2 {
+		return false
+	}
 	for _, w := range []string{word, strings.ReplaceAll(word, `\`, "")} {
 		star := false
 		for seg := range strings.SplitSeq(clean(w), "/") {
@@ -133,10 +138,36 @@ func climbsPastGlobstar(word string) bool {
 	return false
 }
 
+// climbedGlobstar is a word with every `**` that a `..` comes after read as no
+// directories at all, which zsh and bash's globstar allow, and then cleaned:
+// `.sdlc/stories/**/../state/active` is `.sdlc/state/active`, which nothing
+// read from its words, since path.Join cleans `**/..` away as one name. A
+// `**` that is directories only goes deeper, so this is the reading that
+// climbs highest. It is one pass over the segments, so a word of many climbs
+// costs no more than its length.
+func climbedGlobstar(word string) string {
+	segs := strings.Split(word, "/")
+	last := -1
+	for i, seg := range segs {
+		if seg == ".." {
+			last = i
+		}
+	}
+	kept := make([]string, 0, len(segs))
+	for i, seg := range segs {
+		if (seg == "**" || seg == "***") && i < last {
+			continue
+		}
+		kept = append(kept, seg)
+	}
+	return path.Clean(strings.Join(kept, "/"))
+}
+
 // segmentMatches reports whether one segment of a glob matches a name, folded
 // as the filesystem folds it. The shell reads a class as find does, so it is
-// the same reader as find's -name. The shell's `*` and `?` do not match a
-// leading dot, so `rm -rf ?git` leaves .git where it is.
+// the same reader as find's -name. Without GLOB_DOTS or dotglob the shell's
+// `*` and `?` do not match a leading dot; the reading with one of them set is
+// written out apart, as braces (shellGlobReading).
 func segmentMatches(pattern, name string) bool {
 	g := findPattern(pattern)
 	if g == nil {
@@ -146,10 +177,27 @@ func segmentMatches(pattern, name string) bool {
 		// would be refused for a file it did not name.
 		return pathMatches(pattern, name)
 	}
+	return g.matchesName(pattern, name)
+}
+
+// matchesName is the match of a read pattern against a name, which a leading
+// dot in the name keeps from any pattern that does not start with one.
+func (g *globPattern) matchesName(pattern, name string) bool {
 	if strings.HasPrefix(pathrules.Fold(name), ".") && !strings.HasPrefix(pathrules.Fold(pattern), ".") {
 		return false
 	}
 	return g.MatchString(name)
+}
+
+// segmentMatcher is segmentMatches for one pattern, read once, to be asked of
+// many names: a directory's listing is matched entry by entry, and the
+// glob is not read again for each of as many as 20000 entries.
+func segmentMatcher(pattern string) func(name string) bool {
+	g := findPattern(pattern)
+	if g == nil {
+		return func(name string) bool { return pathMatches(pattern, name) }
+	}
+	return func(name string) bool { return g.matchesName(pattern, name) }
 }
 
 // pathMatches is segmentMatches as it was before the reader, by path.Match.

@@ -191,7 +191,7 @@ func TestAC15ATerminalOutsideClaudeCodeStillRecordsAPersonsCommand(t *testing.T)
 	for name, set := range map[string]map[string]string{
 		"AC-15 a terminal with no marker":                 {},
 		"AC-15 markers set to nothing":                    {"CLAUDECODE": "", "AI_AGENT": "", "CLAUDE_PID": ""},
-		"AC-15 the person's own CLAUDE_CONFIG_DIR is set": {"CLAUDE_CONFIG_DIR": "/home/person/.claude-work"},
+		"AC-15 the person's own CLAUDE_CONFIG_DIR is set": {"CLAUDE_CONFIG_DIR": "/home/dev/.claude-work"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := storyUnderway(t)

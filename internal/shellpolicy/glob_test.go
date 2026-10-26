@@ -48,12 +48,18 @@ func TestAGlobNamesTheFilesItMatches(t *testing.T) {
 	} {
 		refused(t, command, s, "protected-path-through-the-tool")
 	}
+	// These two were allowed until US-120 AC-6: with zsh's GLOB_DOTS or bash's
+	// dotglob, which a person's start-up files can set where the hook never
+	// sees, `?` and `*` match a leading dot, so `?git` names .git and
+	// `*sdlc/config.json` names the configuration. An ambiguous reading that
+	// writes refuses, by the person's standing rule. A released answer
+	// changing, so the commit is marked breaking.
+	refused(t, "rm -rf ?git", s, "protected-path-through-the-tool")
+	refused(t, "rm *sdlc/config.json", s, "loop-state-through-the-tool")
 	for _, command := range []string{
 		"rm -rf *",
 		"rm -rf ./*",
 		"rm -rf [!.]*",
-		"rm -rf ?git",
-		"rm *sdlc/config.json",
 		"rm -rf build/*",
 		"cd build && rm -rf *",
 		"rm -rf dist/*/*",

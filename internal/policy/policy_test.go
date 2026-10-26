@@ -41,7 +41,7 @@ var fixtures = map[string]fixture{
 	// project, which Claude Code loads in every session started below it.
 	// agWithAboveProject sets the field the story adds.
 	"instructions-above-the-project": {
-		denies:  agWithAboveProject(Request{Tool: "Write", Path: "/home/u/CLAUDE.md", Outside: true, Story: "A-1"}),
+		denies:  agWithAboveProject(Request{Tool: "Write", Path: "/home/dev/CLAUDE.md", Outside: true, Story: "A-1"}),
 		permits: Request{Tool: "Write", Agent: "sdlc:implementer", Path: "internal/x.go", Story: "A-1"},
 	},
 	"write-protected-path": {

@@ -205,6 +205,136 @@ const globAboveRoute = "if the directory is not above the project, spell it out 
 // it, which no name above the project need match.
 const climbsReason = " (`**` can stand for no directories, so the `..` after it climbs out of the part before it)"
 
+// An unreadReason says why a copy's source is one the hook cannot read as a
+// plain name, so that it counts as filling its destination: the source could
+// be a whole directory, a glob's match or an instruction file, and the
+// ambiguous write refuses. A clause and a route name the cause (one per
+// cause), appended to fillsAboveReason/fillsAboveRoute by strings.Contains so
+// the released words and the frozen rows that check them stand.
+type unreadReason int
+
+const (
+	readSource     unreadReason = iota
+	unreadSpelling              // a variable, a substitution, a backtick or a `%name%`
+	unreadFed                   // fed on standard input or by a `{}` token
+	unreadTilde                 // a `~`, `~-`, `~+` or `~name` the shell expands
+	unreadDotDot                // a last name of `..`
+)
+
+// unreadClause is the clause appended to a fill refusal naming why the source
+// could not be read, and the extra route for it.
+func unreadClause(r unreadReason) (clause, route string) {
+	switch r {
+	case readSource:
+		return "", ""
+	case unreadSpelling:
+		return "; its source is spelt with a variable, a substitution, a backtick or a `%name%`, quoted or not, " +
+				"so the hook cannot tell it is not a whole directory, a glob's match or an instruction file",
+			"; or spell the source's path out in full, with no variable or substitution in it, so the hook can read it"
+	case unreadFed:
+		return "; its source is fed to it on standard input or through a `{}`, so the words do not show what it " +
+				"copies there",
+			"; or name on the command line the files you would copy"
+	case unreadTilde:
+		return "; its source begins with a `~` the shell expands to a directory the words do not show",
+			"; or spell the source out without a `~`"
+	case unreadDotDot:
+		return "; its source ends in `..`, so the hook cannot tell which directory it names",
+			"; or name the directory the source is in"
+	}
+	return "", ""
+}
+
+// unreadSource reports why a copy's source, as the command spells it in
+// segment, is one the hook cannot read as a plain name. It reads the source's
+// last name, and its spelt twins (the segment carries the quotes), so a quoted
+// `"$D"/docs` stays a plain name while an unquoted `$D/docs` and a quoted
+// `"$D"` do not, which the parsed word alone cannot tell apart.
+func unreadSource(source, segment string) (unreadReason, bool) {
+	c := clean(source)
+	switch {
+	case strings.Contains(source, "{}"):
+		return unreadFed, true
+	case strings.HasPrefix(source, "("):
+		// A PowerShell subexpression source, `(Get-Item …)`, is a substitution
+		// with no `$` for unreadSpelt to find; the words do not show what it
+		// names. unreadSpelling's clause already names a substitution.
+		return unreadSpelling, true
+	case c == ".." || strings.HasSuffix(c, "/.."):
+		return unreadDotDot, true
+	case strings.HasPrefix(source, "~"):
+		// `~` and `~/...` are the home, placed elsewhere; `~-`, `~+` and
+		// `~name` expand to a directory the words do not show.
+		head, _, _ := strings.Cut(source, "/")
+		if head != "~" {
+			return unreadTilde, true
+		}
+	}
+	// A last name the shell fills in, quoted or not; or a `$`, a backtick or a
+	// `%` outside every quote, or an unclosed quote, in any spelt twin of the
+	// source: read by the first twin alone, a quoted `"$D"/docs` beside a bare
+	// `$D/docs` would hide the bare one.
+	if expandsLastName(source) || slices.ContainsFunc(speltTwins(source, segment), unreadSpelt) {
+		return unreadSpelling, true
+	}
+	return readSource, false
+}
+
+// expandsLastName reports whether a word's last name, the part after its last
+// `/`, holds a `$`, a backtick or a `%`, or a `}` that can close a `${…}` whose
+// own `/` was taken for the last (`${D/a/b}`). Quotes stop the shell splitting
+// a word, not filling it in: read as plain, `D=/tmp/p/.; cp -r "$D" ..` filled
+// the directory above with whatever D held (code review r2). A quoted
+// `"$D"/docs` keeps its spelt last name. A `$(…)` or backtick span never
+// reaches the word here: gluedIn leaves `$SUB` for one that starts it and
+// nothing for one inside it.
+func expandsLastName(word string) bool {
+	name := word[strings.LastIndexByte(word, '/')+1:]
+	return strings.ContainsAny(name, "$`%") || strings.Contains(word, "${") && strings.Contains(name, "}")
+}
+
+// speltTwins are the words of segment that unquote to source, as the command
+// spells them; or source itself where it is a word the walk made, which the
+// segment does not spell.
+func speltTwins(source, segment string) []string {
+	unquoted, raw := spelledFields(segment)
+	var twins []string
+	for i, w := range unquoted {
+		if w == source {
+			twins = append(twins, raw[i])
+		}
+	}
+	if len(twins) == 0 {
+		return []string{source}
+	}
+	return twins
+}
+
+// unreadSpelt reports whether a word, as the command spells it, holds a `$`, a
+// backtick or a `%` outside every quote, or a quote it never closes: anything
+// the shell fills in that the hook cannot. A `$'...'` or `$"..."` is a quote,
+// not an expansion. It is globOutsideQuotes for the fill rules.
+func unreadSpelt(spelt string) bool {
+	var quote byte
+	for j := 0; j < len(spelt); j++ {
+		switch c := spelt[j]; {
+		case c == quote:
+			quote = 0
+		case c == '\\' && quote != '\'':
+			j++
+		case quote != 0:
+		case c == '$' && j+1 < len(spelt) && (spelt[j+1] == '\'' || spelt[j+1] == '"'):
+			quote = spelt[j+1]
+			j++
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '$' || c == '`' || c == '%':
+			return true
+		}
+	}
+	return quote != 0
+}
+
 // fillsAboveReason and fillsAboveRoute are the rule's words for a command
 // that fills a whole directory above the project.
 const fillsAboveReason = " is a directory above the project, which is the checkout this session works in (so a " +
@@ -226,6 +356,17 @@ const globFillsReason = " can name a directory above the project, because the sh
 
 const globFillsRoute = "if the directory is not above the project, spell it out without a glob; otherwise " +
 	fillsAboveRoute
+
+// unplacedFillReason and unplacedFillRoute are its words for a fill after a
+// `cd` the hook cannot place, which can be into any directory at all; the
+// reason starts with the `cd` and why it cannot be placed. Read with the
+// glob's words, `cd -` was told the shell fills in a glob it does not have.
+const unplacedFillReason = ", this command may put files into a directory above the project, the project being the " +
+	"checkout this session works in; the files may include an instruction file; Claude Code loads CLAUDE.md, " +
+	"CLAUDE.local.md and AGENTS.md from every directory above the one it starts in"
+
+const unplacedFillRoute = "spell the directory out with an absolute path, or `cd` to the directory you mean by an " +
+	"absolute path with no variable or glob; otherwise say what you would copy there and why, and stop"
 
 // How aboveDir placed a directory: by its text or the disk, through a glob,
 // or through a `**` with a `..` after it.
@@ -335,13 +476,18 @@ func checkFillsAbove(q pathQuestion) (Finding, bool) {
 	if q.lost && q.from == "" && isAbsolute(q.dir) && strings.ContainsAny(q.dir, "*?[") {
 		q.from = q.dir
 	}
-	for _, d := range filledDirs(q.run.words) {
-		shown, how, ok := q.aboveDir(clean(d))
+	for _, d := range filledDirs(q.run, q.segment) {
+		shown, how, ok := q.aboveDir(clean(d.dir))
 		if !ok {
 			continue
 		}
 		if how == aboveSpelt {
-			return Finding{Rule: ruleAbove, Reason: shown + fillsAboveReason, Route: fillsAboveRoute}, true
+			f := Finding{Rule: ruleAbove, Reason: shown + fillsAboveReason, Route: fillsAboveRoute}
+			if clause, route := unreadClause(d.unread); clause != "" {
+				f.Reason += clause
+				f.Route += route
+			}
+			return f, true
 		}
 		f := Finding{Rule: ruleAbove, Reason: shown + globFillsReason, Route: globFillsRoute}
 		if how == aboveClimbs {
@@ -352,33 +498,160 @@ func checkFillsAbove(q pathQuestion) (Finding, bool) {
 	return Finding{}, false
 }
 
+// A filledDir is a directory a command puts files into whole, with why its
+// source could not be read as a plain name where that is what makes it a
+// fill (Step 18); readSource where its contents, a glob or a .claude does.
+type filledDir struct {
+	dir    string
+	unread unreadReason
+}
+
+// plainDirs wraps directories whose fill the source spelling does not decide.
+func plainDirs(dirs []string) []filledDir {
+	out := make([]filledDir, 0, len(dirs))
+	for _, d := range dirs {
+		out = append(out, filledDir{dir: d})
+	}
+	return out
+}
+
 // filledDirs are the directories a command puts files into whole, where
 // "." is the one it runs in. make -C and git -C are left out: they run a
-// program there rather than copy files into it.
-func filledDirs(words []string) []string {
+// program there rather than copy files into it. segment is the command as
+// spelled, which unreadSource reads for a source's quotes.
+func filledDirs(run invocation, segment string) []filledDir {
+	words := run.words
 	name, args := base(words[0]), words[1:]
 	switch name {
 	case "cp", "copy", "copy-item", "cpi", "mv", "move", "move-item", "mi", "ln", "install":
-		from, to, _ := linkArguments(name, args)
-		if copiesWhole(words) || slices.ContainsFunc(from, globsAnInstructionFile) {
-			return []string{to}
+		var dirs []filledDir
+		// Both readings of what it copies (linkArguments' and bundleTarget's,
+		// Step 17), so a glob or contents source glued to a bundle ending in t
+		// is seen where it lands: `cp -rt .. /tmp/p/*` filled nothing read by
+		// linkArguments alone.
+		for _, r := range copyReadings(name, args) {
+			if dir, unread, ok := fillsDestination(r, args, run, segment); ok {
+				dirs = append(dirs, filledDir{dir: dir, unread: unread})
+			}
 		}
+		return dirs
 	case "rsync":
-		return destination(copyOperands(args, rsyncValued))
+		return plainDirs(destination(copyOperands(args, rsyncValued)))
 	case "scp":
-		return destination(copyOperands(args, scpValued))
+		return plainDirs(destination(copyOperands(args, scpValued)))
 	case "ditto":
-		return destination(nonOptions(args))
-	case "tar", "bsdtar":
-		if _, into, _, extract := tarArguments(args); extract {
-			return orHere(into)
+		return plainDirs(destination(nonOptions(args)))
+	case "tar":
+		if _, _, into, _, extract := tarArguments(args); extract {
+			return plainDirs(orHere(into))
 		}
 	case "unzip":
-		return unzipInto(args)
+		return plainDirs(unzipInto(args))
 	case "7z", "7za", "7zr", "7zz":
-		return sevenZipInto(args)
+		return plainDirs(sevenZipInto(args))
+	case "pax":
+		return plainDirs(paxInto(args))
+	case "cpio":
+		return plainDirs(cpioInto(args))
+	case "jar":
+		if len(args) > 0 && strings.Contains(strings.TrimPrefix(args[0], "-"), "x") {
+			return plainDirs(orHere(valueOf(args, "-C")))
+		}
+	case "unar":
+		return plainDirs(orHere(append(valueOf(args, "-o"), valueOf(args, "-output-directory")...)))
+	case "expand-archive":
+		return plainDirs(orHere(parameterValue(args, "-destinationpath")))
 	}
 	return nil
+}
+
+// fillsDestination reports whether a copy reading puts what its sources hold
+// into its destination, and why where that is a source the hook cannot read.
+// A source fills the destination where it is spelt for its contents (`src/.`,
+// `src/`, -T), a glob that can match an instruction file, a .claude whose
+// files are held in a directory above as in it, or a source the hook cannot
+// read as a plain name (Step 18). Counted for every recursive copy and every
+// move, `mv build.log ..` and `cp -r docs ..` were told they put an
+// instruction file above the project.
+func fillsDestination(r copyReading, args []string, run invocation, segment string) (string, unreadReason, bool) {
+	if slices.ContainsFunc(r.from, fillsWithContents) || noTargetDirectory(args) ||
+		slices.ContainsFunc(r.from, globsAnInstructionFile) || slices.ContainsFunc(r.from, isClaudeDirectory) {
+		return r.to, readSource, true
+	}
+	for _, f := range r.from {
+		// A word a substitution was cut from (run.cut) is spelt with one.
+		if unread, ok := unreadSource(f, segment); ok || slices.Contains(run.cut, f) {
+			return r.to, cmp.Or(unread, unreadSpelling), true
+		}
+	}
+	// Fed by xargs or parallel, it is counted whatever its replace string and
+	// whether or not the words name sources, since xargs adds what it reads as
+	// more of them and what lands there is unknown: `xargs -I X cp -r X ..` fed
+	// with `dir/.` fills the directory above (security code review r3 B1).
+	if run.piped {
+		return r.to, unreadFed, true
+	}
+	return "", readSource, false
+}
+
+// paxInto is where pax reads an archive into: the directory it runs in for
+// -r, and the last operand for -rw, which copies a tree there.
+func paxInto(args []string) []string {
+	read, write := false, false
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") {
+			read = read || strings.Contains(a, "r")
+			write = write || strings.Contains(a, "w")
+		}
+	}
+	switch {
+	case read && write:
+		return destination(nonOptions(args))
+	case read:
+		return []string{"."}
+	}
+	return nil
+}
+
+// cpioInto is where cpio puts files: the directory it runs in for -i, which
+// copies in from an archive, and the last operand for -p, which passes a tree
+// through to it.
+func cpioInto(args []string) []string {
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") || strings.HasPrefix(a, "--") {
+			continue
+		}
+		switch {
+		case strings.Contains(a, "p"):
+			return destination(nonOptions(args))
+		case strings.Contains(a, "i"):
+			return []string{"."}
+		}
+	}
+	if hasWord(args, "--extract") {
+		return []string{"."}
+	}
+	return nil
+}
+
+// parameterValue is the value of a PowerShell parameter, which may be given
+// by any start of its name that is three letters or more, in any case: the
+// word after it, or after a colon glued to it.
+func parameterValue(args []string, name string) []string {
+	var out []string
+	for i, a := range args {
+		p, _, glued := strings.Cut(a, ":")
+		if !abbreviates(pathrules.Fold(p), name) {
+			continue
+		}
+		switch {
+		case glued:
+			out = append(out, a[len(p)+1:])
+		case i+1 < len(args):
+			out = append(out, args[i+1])
+		}
+	}
+	return out
 }
 
 // unzipInto is where unzip extracts: -d's directory, or the one it runs in,
@@ -423,6 +696,25 @@ func orHere(dirs []string) []string {
 	return dirs
 }
 
+// fillsWithContents reports whether a source is spelt so that a copy puts
+// what it holds, rather than itself, in the destination: `src/.`, and `src/`,
+// which BSD cp reads so.
+func fillsWithContents(source string) bool {
+	return strings.HasSuffix(source, "/") || strings.HasSuffix(source, "/.") || source == "."
+}
+
+// noTargetDirectory reports whether GNU's -T has a copy treat its
+// destination as the name to write, so a directory's contents land in it.
+func noTargetDirectory(args []string) bool {
+	return hasWord(args, "--no-target-directory") || shortFlag(args, 'T')
+}
+
+// isClaudeDirectory reports whether a source's last name is .claude, folded
+// as the disk folds it, which aboveDir lifts.
+func isClaudeDirectory(source string) bool {
+	return pathrules.SameName(path.Base(clean(source)), ".claude")
+}
+
 // globsAnInstructionFile reports whether a source's last name holds a glob
 // that can match an instruction file: `cp /tmp/p/* ..` copies the CLAUDE.md
 // there, if there is one, and `*.txt` cannot.
@@ -457,8 +749,21 @@ func (q pathQuestion) aboveDir(dir string) (shown string, how int, ok bool) {
 // placedAbove is aboveDir for a directory that is not a .claude.
 func (q pathQuestion) placedAbove(dir string) (string, int, bool) {
 	s, m := q.s, q.m
+	if isAbsolute(dir) && slices.Contains(strings.Split(dir, "/"), "..") && q.inProject(dir) {
+		// A `..` after a link climbs from where the link leads, which the
+		// hook's Resolve follows and a clean does not: `<above>/s/..`, with s
+		// a link to the project's sub, is the project's root, and its
+		// CLAUDE.md was named as above it.
+		return "", 0, false
+	}
 	if !climbsPastGlobstar(dir) {
 		dir = path.Clean(dir)
+	} else if _, _, above := q.placedAbove(climbedGlobstar(dir) + "/"); !above {
+		// Read with no directories for each `**`, a climb climbs as high as
+		// it can, so where that stays in the project every other reading
+		// does too: `rm sub/**/../CLAUDE.md` is the project's CLAUDE.md, and
+		// was told it was above the project.
+		return "", 0, false
 	}
 	if shellDirectory(dir) || strings.ContainsAny(dir, "$%") {
 		// Resolve reads no variables: the home, spelt with one, is above

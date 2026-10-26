@@ -10,7 +10,7 @@ package hook
 // ~/.agents with HOME at a temp dir, from the session holding the story and
 // from a second session, as US-108 holds ~/.claude. AC-12 asks each of those
 // table rows once more with CLAUDE.local.md beside every CLAUDE.md, and AC-13
-// is a project held at <temp>/home/code/project, with the home and the
+// is a project held at <temp>/<home>/code/project, with the home and the
 // directories between above it.
 
 import (
@@ -369,9 +369,9 @@ func TestAC12AWriteToCLAUDElocalmdIsRefusedAsTheSameWriteToCLAUDEmdIs(t *testing
 // refused under (AC-13).
 const agAboveRule = "instructions-above-the-project"
 
-// agAboveWorld is a project held in a story at <base>/home/code/project, with
-// HOME and USERPROFILE at <base>/home: so the home, <base>/home/code and
-// <base> are all above the project, and <base>/home/code/other is beside it.
+// agAboveWorld is a project held in a story at <base>/<home>/code/project, with
+// HOME and USERPROFILE at <base>/<home>: so the home, <base>/<home>/code and
+// <base> are all above the project, and <base>/<home>/code/other is beside it.
 func agAboveWorld(t *testing.T) (root, home, base string) {
 	t.Helper()
 	base = t.TempDir()

@@ -28,6 +28,8 @@
   - [`loop-state-through-the-tool`](#loop-state-through-the-tool)
   - [`protected-path-through-the-tool`](#protected-path-through-the-tool)
   - [`frozen-test-through-the-tool`](#frozen-test-through-the-tool)
+  - [`archive-members-unknown`](#archive-members-unknown)
+  - [`directory-entries-unknown`](#directory-entries-unknown)
   - [`unfreeze-is-a-human-decision`](#unfreeze-is-a-human-decision)
   - [`approval-is-a-human-decision`](#approval-is-a-human-decision)
   - [`acknowledgement-is-a-human-decision`](#acknowledgement-is-a-human-decision)
@@ -406,7 +408,15 @@ as [`loop-state-through-the-tool`](#loop-state-through-the-tool).
 
 A path the command writes whose own spelling names `.agents` is asked under
 this rule before the loop-state rule, so `echo x > $D/.agents/s`, which could
-be `~/.agents`, is refused here rather than as the project's own `.agents`.
+be `~/.agents`, is refused here rather than as the project's own `.agents`. A
+word whose `..` climbs back out of `.agents` is judged where it lands instead,
+counting the names after `.agents` rather than its text: `rm -rf
+$D/.agents/../.sdlc/state` is refused as
+[`loop-state-through-the-tool`](#loop-state-through-the-tool) and `echo x >
+$D/.agents/../CLAUDE.md` as
+[`protected-path-through-the-tool`](#protected-path-through-the-tool), each
+with that rule's way on, while `.agents/x/../s` stays inside and keeps this
+rule.
 
 *Instead:* say what you would change there and why, and stop. The person
 installs or edits a skill in their own `~/.agents`, by hand or from their own
@@ -436,19 +446,48 @@ it reads the project's own files: `~/code/CLAUDE.m?` and `~/code/CLAUDE.{md,x}`
 are refused. A directory spelt with a glob counts as above unless the part
 before the glob is the project or inside it, so `~/co*/CLAUDE.md` is refused
 with a reason that says to spell the directory out without a glob if it is not
-above the project. One with `**` followed by `..` counts as above whatever comes
-before it. A link or an install counts by where it lands, whatever the
-destination is called, and a copy or a move by where it lands as
-[that section](#links-and-installs) reads it.
+above the project. One with `**` followed by `..` counts as above unless, read
+with no directories for each `**`, it stays in the project: `rm
+sub/**/../CLAUDE.md` names the project's own `CLAUDE.md`, and is refused as
+[`protected-path-through-the-tool`](#protected-path-through-the-tool). A `..`
+after a link is read where the link leads, so `<above>/s/../CLAUDE.md`, where
+`s` is a link into the project, is the project's own file too. A link or an
+install counts by where it lands, whatever the destination is called, and a
+copy or a move by where it lands as [that section](#links-and-installs) reads
+it.
 
 A copy or extraction that fills such a directory is refused as well, because
-it may put an instruction file there: a recursive `cp` or `mv`, `rsync`, `scp`,
-`ditto`, a `cp`, `mv`, `ln` or `install` of a glob that can match an
-instruction file, `tar` and `bsdtar` extracting, `unzip`, and `7z x` or `7z e`.
-Each is read into the directory its option names, or the one the command runs
-in where it names none. After a `cd` into an absolute path with a glob in it,
-such as `cd /wor? && tar -xf p.tar`, that directory is read from the glob, and
-the reason says it can name a directory above the project, with the advice to
+it may put an instruction file there: `rsync`, `scp`, `ditto`, a `cp`, `mv`,
+`ln` or `install` whose source puts what it holds in the destination itself,
+`tar`, `gtar` and `bsdtar` extracting, `unzip`, `7z x` or `7z e`, `pax -r`,
+`cpio -i`, `jar x`, `unar`, and PowerShell's `Expand-Archive`. A copy's source
+puts what it holds there where it is spelt for its contents (`src/.`, `src/`,
+or with `-T`), where it is a glob that can match an instruction file, or where
+it is a `.claude`, whose files are held in a directory above as in the
+directory itself. A source the hook cannot read as a plain name counts too,
+because it could be any of these: one spelt with a variable, a substitution, a
+backtick or a `%name%`, quoted or not (the refusal says to spell the source's
+path out in full), one that `xargs` or `parallel` feeds, whatever its replace
+string and whether or not the command also names sources, or that `find -exec`
+feeds through a `{}` (name the files on the command line), one beginning
+with a `~`, `~-`, `~+` or `~name` the shell expands (spell the path out), and
+one ending in `..` (name the directory). A source whose last name the shell
+fills in is refused whether it is quoted or not, since quotes stop the shell
+splitting a word but not filling it in: `cp -r "$D" ..` copies whatever `D`
+holds. A variable in an earlier part leaves the last name spelt, so a quoted
+`"$D"/docs` is not refused; an unquoted `$D/docs` is, since the shell can split
+it into words the name does not show. A substitution anywhere in the source,
+`/tmp/p/x$(echo y)` or `/tmp/$(echo p)/x`, quoted or not, is refused too, since
+the hook cannot tell what it fills in. The command a `find -exec` runs is judged
+as it would be on its own, up to its `;` or `+`, so a contents source there
+(`{}/.`) is refused as it is in a plain `cp`. A source that lands under its own name puts
+no instruction file there, so `mv build.log ..` and `cp -r docs ..` are not
+refused. Each is read into the directory its option names, including a target
+glued to a bundle of letters ending in t (`cp -rt ..`) or a valued option
+after the operands (`install x .. -m 644`), or the one the command runs in
+where it names none. After a `cd` into an absolute path with a glob in it, such
+as `cd /wor? && tar -xf p.tar`, that directory is read from the glob, and the
+reason says it can name a directory above the project, with the advice to
 spell it out without a glob if it is not one.
 
 Where `ln`, `install` or a decompressor puts the file somewhere the command
@@ -461,16 +500,72 @@ What the shell cannot see:
 - a link the same command makes and then writes through;
 - a directory spelt with a variable other than the home, which is refused by
   name instead;
-- where a `cd` leaves the command when the hook cannot spell it, such as a
-  `cd` into a glob; the hook logs nothing when it gives up on one, and the
-  file is then judged by its name, as the project's (a copy or extraction
-  after a `cd` into an absolute glob is read from the glob, as above);
+- where a `cd` into a glob leaves the command; the file is then judged by its
+  name, as the project's (a copy or extraction after a `cd` into an absolute
+  glob is read from the glob, as above);
 - a program that writes the file itself.
 
 *Instead:* say what you would change there and why, and stop. The person
 changes the instruction files above the project by hand, outside a running
 iteration. For a copy or extraction: say what you would put there and why, and
 stop, or write the files inside the project instead.
+
+#### After a `cd` the hook cannot place
+
+Some `cd`s leave the shell somewhere the words do not say:
+
+- one given `CDPATH`, on the line or in the environment the session started
+  in, which looks for a relative directory under each entry first;
+- `cd -` and `popd`, which go back to a directory the command does not show;
+- a `cd` of two words, which zsh reads as a substitution in the directory it
+  is in;
+- one that starts with a variable, such as `cd "$(git rev-parse
+  --show-toplevel)"`;
+- one into a `**` with a `..` after it, or a `cd ..` after one.
+
+After such a `cd`, a relative write is judged as written and also below each
+directory the shell could be in: given `CDPATH=<root>`, `cd .sdlc && rm -rf
+state` is refused as [`loop-state-through-the-tool`](#loop-state-through-the-tool).
+A copy or extraction is placed from each such directory, and where none is
+known it is refused under this rule, because it may fill a directory above the
+project:
+
+```text
+after `cd -`, which the hook cannot place because it goes back to the directory
+before, which the command does not show, this command may put files into a
+directory above the project, the project being the checkout this session works
+in; the files may include an instruction file; Claude Code loads CLAUDE.md,
+CLAUDE.local.md and AGENTS.md from every directory above the one it starts in
+```
+
+*Instead:* spell the directory out with an absolute path, or `cd` to the
+directory you mean by an absolute path with no variable or glob; otherwise say
+what you would copy there and why, and stop.
+
+Where nothing places the shell, a relative write or removal is also judged
+from each directory of the project that would make the word a held path, or a
+path inside one: one that a held path runs through, where the next name is the
+word's first. So `cd - && rm -rf state` is refused as
+[`loop-state-through-the-tool`](#loop-state-through-the-tool), since in
+`.sdlc` it is `.sdlc/state`, and the reason starts "after `cd -`, which the
+hook cannot place because it goes back to the directory before, which the
+command does not show, the command could be in .sdlc, where". The reason names
+the operand the command acts on, not an option word, as a project-relative
+path. A story's record counts where the disk lists it in `.sdlc/stories` of
+the checkout that keeps the records, so `cd - && rm -rf US-7` is refused while
+a story `US-7` exists; where that listing cannot be read in full the reason
+says so and that any name there could be a story's record. To this refusal the
+route adds that, if the command is meant for another directory, you can `cd` to
+it by an absolute path with no variable or glob so the hook can place the
+shell. A directory that is held is not one of them, or every name would be
+refused as inside `.sdlc/state`.
+
+A relative write or removal whose first name is a glob is refused too, under
+[`directory-entries-unknown`](#directory-entries-unknown), because the glob
+could match an instruction file or the loop's own state in whatever directory
+the shell is in. A plain `cd "$D" && rm -rf build`, which fills nothing, names
+no held path and has no glob, is judged as before; so is `rm -rf $D/*`, whose
+ambiguity is the variable directory `$D` rather than the lost shell.
 
 ### `write-outside-repository`
 
@@ -499,6 +594,12 @@ says why it is held wherever it is: Claude Code reads a `CLAUDE.md`,
 agent tools read `AGENTS.md` and load skills from `.agents` the same way. This
 makes the file tools and the shell agree: the shell has refused those names at
 any depth all along.
+
+A name held only because the case is folded says so, in the file tools and the
+shell alike, so `docs/agents.md` is not called an instruction file without a
+word on why: the reason ends "; the name is matched without regard to case, so
+docs/agents.md is held as AGENTS.md is, because the disk may treat them as one
+file". A name spelt exactly as the held one keeps its reason as it was.
 
 Configuration is the human's, and loop state is the tool's. An assistant editing
 either can make the record say something that did not happen.
@@ -1114,11 +1215,37 @@ in. A bundle that ends in `t` is read both ways, as naming the target and as
 another option's value, because BSD install's `-B` and GNU's `-S` take the `t`
 as a backup suffix. `cp` and `mv` land a source under the destination where the
 destination is written as a directory: more than one source, a trailing `/`,
-`..`, or a last name with no dot after its first character. The disk is not
-asked, so `cp x_test.go pkg.v2` into an existing `pkg.v2` directory is read as
-writing a file called `pkg.v2`, as before. They read `-t` and the same bundles
-too. A refusal for a place the command did not spell says which
-reading put the file there.
+`..`, or a last name with no dot after its first character. A destination with
+a dot is a directory too where the project's own `.sdlc` is below it (the root,
+such as `me.github.io`, or a directory above it), where it holds a frozen test,
+where it is another checkout, or, asked of the disk only where a source would
+land on a held name in it, where the disk says it is one: `cp
+payload/invoice_test.go pkg.v2` writes a frozen `pkg.v2/invoice_test.go`. A
+destination with a dot is read so for `rsync` and `scp` too, so `rsync
+CLAUDE.md ../me.github.io` from inside the project is refused as it is into a
+root with no dot. `cp` and `mv` read `-t`,
+a target glued to a bundle (`cp -pt. x`), PowerShell's `-Destination` by any
+start of its name, and the same bundles too, and pass over the value of an
+option such as `-S` written after the operands. `rsync -R` lands each source
+under its full path, from a `/./` in it where there is one. A `cp`, `mv`, `ln`
+or `install` that `xargs` feeds, with `-t` or with `-I{}` and the destination
+last, lands the line's paths under its destination. A refusal for a place the
+command did not spell says which reading put the file there.
+
+#### What a copy's source holds
+
+A copy whose source puts what it holds under the destination, rather than
+itself, is judged by what the disk shows the source holds: a glob in the
+source's last name (`cp p/* .`), a source spelt for its contents (`cp -r p/.
+.`, `p/`, or `-T`), and the same fed by `xargs`. Each entry of the source's
+directory that the glob matches, or every entry, lands under the destination
+under its own name and is judged there by name, so `cp -r p/. .` with a
+`CLAUDE.md` in `p` is refused as
+[`protected-path-through-the-tool`](#protected-path-through-the-tool), and one
+holding only `x.txt` is not. The destination itself is never listed, and one
+level is read, as the shell's glob is: a listed directory lands under its own
+name. A source whose listing comes back short is refused as
+[`directory-entries-unknown`](#directory-entries-unknown).
 
 #### Programs that write a file they are given
 
@@ -1126,14 +1253,69 @@ These are read as writing the file they are given, as a redirect to it is:
 
 - `sort -o`, `base64 -o` and `iconv -o`, and `--output`;
 - `uniq`, whose second operand is its output;
+- `shuf -o`, `--output` and `--output=`;
+- the output prefix of `split` and `csplit`, read as every name that starts
+  with it and ends with any `--additional-suffix`, because the program adds
+  the rest: `split -l 1 log CLAUDE.` can write `CLAUDE.md`, and a prefix with
+  no name, `x` for `split` and `xx` for `csplit`, is read the same way;
+- `zstd -o`, `brotli -o` and the second operand of `lz4`;
 - `gzip -d`, `gunzip`, `pigz -d`, `unpigz`, `xz -d`, `unxz`, `lzma -d`,
   `unlzma`, `bzip2 -d`, `bunzip2`, `compress -d` and `uncompress`, read with or
   without `-f`, which write the file without its suffix (`CLAUDE.md.gz` writes
-  `CLAUDE.md`), or with the one `-S` names; `-c`, `--stdout`, `-t` and `-l`
-  write nothing.
+  `CLAUDE.md`), or with the one `-S` names; an operand with no such suffix is
+  the file written, since `gunzip CLAUDE.local.md` finds and unpacks
+  `CLAUDE.local.md.gz`. A `-d` in `GZIP`, `BZIP2`, `BZIP` or `XZ_OPT`, on the
+  line or in the session's environment, counts as one on the line. `-N` writes
+  the name the archive's header holds, and `-r` writes into every directory
+  below, so where neither is known the operand's directory is judged as one
+  that could hold a held file; `xz --files` reads its names from a file, and is
+  refused. `-c`, `--stdout`, `-t` and `-l` write nothing.
 
 Reading with them, such as `sort CLAUDE.md`, is not refused. One of them run by
 `xargs` makes every word of the line a candidate, as any writer there does.
+
+A compressor that removes what it packs takes the file away as `rm` does, and
+is refused as `rm` of it is: `gzip`, `pigz`, `xz`, `lzma`, `bzip2` and
+`compress` without `-k`, `-c` or a test or list option, `zstd`, `brotli` and
+`lz4` given `--rm`, and `zip -m`.
+
+#### Globs read as the shell reads them
+
+A glob is read as the shell that runs it may read it, and where two readings
+differ, the one that writes a held file is refused:
+
+- zsh's `GLOB_DOTS` and bash's `dotglob` let `?` and `*` match a leading dot.
+  Your start-up files can set either where the hook does not see them, so a
+  glob that would then match a held name, such as `?sdlc` or `*git`, is read so
+  whether or not the line sets one, and the reason ends "; `?sdlc` matches
+  `.sdlc` if the shell has GLOB_DOTS or dotglob set, which the hook cannot see
+  in your start-up files". Quoted text is not expanded, so `find -name
+  '*.orig'` is read as written, unless it is a script given to a shell's `-c`.
+- bash 3.2 lets `.?` match `..`, and the reason ends "; `.?` matches `..` in
+  bash 3.2".
+- zsh reads `(a|b)` in a word as either name with no option set, so `echo x >
+  CLAUDE.(md|x)` writes `CLAUDE.md`; a group at the start of a command, or one
+  holding a space, is a subshell and is read as one. With `EXTENDED_GLOB`,
+  `^x` is every name but `x` and `(*/)#` is any number of directories.
+- zsh's `~name` is the directory a variable `name` holds, or that `hash -d`
+  names, so `c=<root>; rm -rf ~c/.sdlc/state` is the project's own.
+
+A glob that is the last name of a word a command writes or takes away, such as
+`rm -f *`, `truncate -s 0 *` or zsh's `echo x > *`, names nothing held by its
+text alone. Where its directory is spelt with no glob or variable and is the
+project, in it, or above it, the hook lists that directory and judges each
+entry the glob matches, so `rm -f *` in a root that holds a `CLAUDE.md` is
+refused, and `rm -rf build/*` in a `build` that holds nothing held is not. A
+directory that is not there holds nothing. zsh's `***/` follows links, so the
+entries of the directory before it are judged with the rest of the word after
+each. Nothing is listed outside the project and not above it. The listing is
+bounded: one command lists at most 20000 entries in all, and a listing past
+that, or one that fails, is refused as
+[`directory-entries-unknown`](#directory-entries-unknown) where the directory
+is in the project or above it.
+
+A name read from the disk is shown in a refusal with every character that is
+not printable escaped, as Go's `strconv.QuoteToGraphic` escapes it.
 
 #### What is left alone
 
@@ -1351,7 +1533,9 @@ Refuses a command that would write or delete `CLAUDE.md`, `CLAUDE.local.md`,
 the backlog — the paths
 `write-protected-path` and `backlog-is-not-edited` protect from the file tools
 that are not the loop's own state. It matches the way the filesystem does, so
-`claude.md` is `CLAUDE.md` on macOS and Windows. A `CLAUDE.md` in a directory
+`claude.md` is `CLAUDE.md` on macOS and Windows, and the reason then says the
+name is matched without regard to case, as
+[`write-protected-path`](#write-protected-path) does. A `CLAUDE.md` in a directory
 below the root, such as `sub/CLAUDE.md`, is refused by this rule too, and so is
 an `AGENTS.md` or `CLAUDE.local.md` anywhere. A link or install that lands one
 there is read as [links and installs](#links-and-installs) says, and a program
@@ -1465,6 +1649,100 @@ the directory.
 A patch applied with `git apply` or `patch` names its files inside the patch,
 where this cannot see them. `sdlc gate` still refuses a frozen test that
 changed, with `SDLC-E0025`.
+
+### `archive-members-unknown`
+
+Refuses an extraction into the project whose archive's members the hook
+cannot read. The hook reads the member names of the archive a `tar`, `gtar`,
+`bsdtar`, `unzip`, `jar x` or `Expand-Archive` is given, by what the file holds
+rather than its name, and judges each where it lands, with its leading `/` and
+every `..` taken off as `tar` and `unzip` take them off, or as written under
+`tar -P`: `tar -xf p.tar -C .` with a member `CLAUDE.md` is refused as
+[`protected-path-through-the-tool`](#protected-path-through-the-tool), and one
+holding only `notes/a.txt` is not. Where the members cannot be read, any of
+them could be an instruction file or the loop's own, so the extraction is
+refused, and the reason says why:
+
+- the archive does not exist yet: "`p.tar` does not exist yet, so the hook
+  cannot read its members";
+- it is in none of the formats the hook reads, tar, tar.gz, tar.bz2 and zip
+  (a file shorter than one 512-byte tar header is in none), or it is
+  extracted by `pax`, `cpio`, `unar`, `7z` or `ditto`: "`x.7z` is an archive
+  the hook cannot read the member names of (it reads tar, tar.gz, tar.bz2 and
+  zip)";
+- it comes on standard input: "`tar` reads its archive from standard input,
+  whose member names the hook cannot read";
+- an option renames members as they are extracted, `--strip-components`,
+  `--transform`, bsdtar's `-s`, or unzip's `-j` (junk paths): "`--strip-components`
+  renames members as they are extracted, so the hook cannot tell where they
+  land";
+- `tar` is given more than one archive (`-f a.tar -f b.tar`), which differ in
+  which they extract: "`tar` is given more than one archive (`a.tar`, `b.tar`),
+  and tars differ in which one they extract, so the hook cannot tell whose
+  members land" (a `-g` snapshot file is not counted; unzip's `-P` value is a
+  password, not an archive);
+- `unzip` names no archive the hook can pick out of its options, because a
+  bundle holds a letter it does not know: "`unzip` names no archive the hook
+  can pick out of its options, so it cannot tell which file it extracts";
+- the archive word is one the shell or the extractor expands, a variable, a
+  substitution, a backtick, a `%name%`, a glob or a brace list: "`$A` is
+  expanded by the shell or `tar` to a file the hook cannot see, so it cannot
+  read its members";
+- an option variable the extractor reads is set, `UNZIP`, `UNZIPOPT` or
+  `TAR_OPTIONS`, whose options the hook cannot see: "`UNZIP` is set, and the
+  hook cannot see the options it adds to `unzip`, so it cannot tell where the
+  members land" (its route starts "unset `UNZIP`, or put its options on the
+  command line");
+- `unzip` is given a file the hook reads as another format, which means unzip's
+  own fall-back to `<name>.zip` or a wildcard in the name: "`unzip` reads `q`
+  as a zip, and it is not one (the hook reads it as tar), so it cannot tell
+  which members `unzip` extracts";
+- it could not be read to its end, because it is cut short or malformed, or
+  past a bound: "`p.tgz` could not be read to its end (unexpected EOF)".
+
+Each ends ", and it is extracted into `build`, which may hold an instruction
+file or loop state". The bounds are 64 MiB decompressed for one command, 64 MiB
+for a zip, 20000 members and 4096 bytes for a member's name; a bzip2 archive
+read to the first takes about two seconds. An extraction above the project, or
+after a `cd` the hook cannot place, is
+[`instructions-above-the-project`](#instructions-above-the-project)'s instead.
+
+*Instead:* extract it outside the project (an absolute path under the temp
+directory) and copy by name the files you need; or, if an earlier part of this
+command makes the archive, run that part first as its own command so the hook
+can read it; otherwise say what you would unpack and why, and stop.
+
+### `directory-entries-unknown`
+
+Refuses a write whose glob, or a copy whose source, the hook lists to judge
+(see [globs read as the shell reads them](#globs-read-as-the-shell-reads-them)
+and [what a copy's source holds](#what-a-copys-source-holds)), where the
+directory could not be listed in full: a glob's directory in the project or
+above it, or the source of a copy into the project:
+
+```text
+`dist/*` could not be listed in full (more than 20000 entries), so the hook
+cannot tell whether it matches an instruction file or loop state
+```
+
+The cause is "more than 20000 entries" or "the listing failed". The 20000 are
+counted across every directory one command lists, so where the command listed
+other directories first, the cause reads "more than 20000 entries, counting
+those the command listed in other directories first": the directory named may
+hold few entries itself. The same cause appears where the list of stories in
+`.sdlc/stories` could not be read in full after a `cd` the hook cannot place. A
+name the part that was listed already shows held is refused under its own rule
+first.
+
+It also refuses a relative write or removal whose first name is a glob after a
+`cd` the hook cannot place, such as `cd - && rm -f *.o`: there is no directory
+to list, so the glob could match an instruction file or loop state wherever the
+shell is. [After a `cd` the hook cannot place](#after-a-cd-the-hook-cannot-place)
+gives the route.
+
+*Instead:* name the files you mean or use a narrower glob; to empty a large
+directory, remove the directory itself (`rm -rf dist`) and make it again. For a
+copy: copy the files by name, or copy the directory under its own name.
 
 ### `unfreeze-is-a-human-decision`
 

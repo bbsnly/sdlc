@@ -22,7 +22,7 @@ import "testing"
 // claudeConfigState is ready with the project's own paths resolved, the user's
 // home outside it, and the words under ~/.claude named for the caller.
 func claudeConfigState() State {
-	const home = "/home/alice"
+	const home = "/home/dev"
 	under := func(word string) bool {
 		c := clean(word)
 		return c == "~/.claude" || hasDir(c, "~/.claude") ||
@@ -78,7 +78,7 @@ func TestAC7AShellWriteUnderThePersonsClaudeConfigIsRefused(t *testing.T) {
 	s := claudeConfigState()
 	for _, command := range []string{
 		"echo x > ~/.claude/settings.json",
-		"echo x > /home/alice/.claude/settings.json",
+		"echo x > /home/dev/.claude/settings.json",
 		"cp /etc/hosts ~/.claude/skills/x/SKILL.md",
 		"tee -a ~/.claude/plugins/x.json < /etc/hosts",
 	} {

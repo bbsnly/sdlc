@@ -638,6 +638,28 @@ func Fold(p string) string {
 // case.
 func SameName(a, b string) bool { return Fold(a) == Fold(b) }
 
+// CaseClause is the clause a refusal of path ends with where path holds name
+// only as the disk folds case: `docs/agents.md` is held as AGENTS.md is, and
+// a reason that called it an instruction file wherever it is said what no
+// agent tool on a disk that keeps case does. It is "" where name is spelt as
+// written, and for no name. The file tools and the shell end their refusals
+// with the same words.
+func CaseClause(path, name string) string {
+	if name == "" {
+		return ""
+	}
+	for seg := range strings.SplitSeq(path, "/") {
+		if seg == name {
+			return ""
+		}
+		if SameName(seg, name) {
+			return "; the name is matched without regard to case, so " + path + " is held as " + name +
+				" is, because the disk may treat them as one file"
+		}
+	}
+	return ""
+}
+
 // UnderAny reports whether rel is under any of dirs.
 func UnderAny(rel string, dirs ...string) bool {
 	for _, d := range dirs {

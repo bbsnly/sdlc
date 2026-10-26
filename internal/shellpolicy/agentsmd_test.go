@@ -862,8 +862,8 @@ func TestAC13AndAC15ALinkOrCopyThatLandsAnInstructionFileAboveTheProjectIsRefuse
 	} {
 		ask(t, command, s)
 	}
-	// A directory above whose name has a dot: a GOPATH layout, and a home
-	// named first.last.
+	// A directory above whose name has a dot: a GOPATH layout, and a user
+	// directory named <user>.site.
 	dotted := agAboveStateAt("/src/github.com/project")
 	for _, command := range []string{
 		"cp /tmp/p/CLAUDE.md /src/github.com",
@@ -876,7 +876,7 @@ func TestAC13AndAC15ALinkOrCopyThatLandsAnInstructionFileAboveTheProjectIsRefuse
 	} {
 		ask(t, command, dotted)
 	}
-	ask(t, "cp /tmp/p/CLAUDE.md /Users/first.last", agAboveStateAt("/Users/first.last/code/project"))
+	ask(t, "cp /tmp/p/CLAUDE.md /srv/dev.site", agAboveStateAt("/srv/dev.site/code/project"))
 	// What lands beside the project, or is no instruction file, is not this
 	// rule's.
 	for _, command := range []string{

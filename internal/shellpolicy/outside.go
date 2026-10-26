@@ -3,7 +3,10 @@ package shellpolicy
 import (
 	"path"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // The loop governs the repository and nothing else, so a word the hook places
@@ -547,6 +550,20 @@ func bounded(word string) string {
 		word = strings.ToValidUTF8(word[:maxShown], "") + "..."
 	}
 	return word
+}
+
+// graphic is a name read from the disk with every rune that is not
+// graphic escaped, as strconv.QuoteToGraphic escapes it: a directory entry or
+// an archive member is named by whoever made it, and one holding a newline
+// or a right-to-left mark would have written what it liked into a refusal
+// the model and the person read. It runs before bounded, so that an escape is
+// never cut in half.
+func graphic(name string) string {
+	if !strings.ContainsFunc(name, func(r rune) bool { return !unicode.IsGraphic(r) || r == utf8.RuneError }) {
+		return name
+	}
+	q := strconv.QuoteToGraphic(name)
+	return q[1 : len(q)-1]
 }
 
 // explained is a frozen-test refusal with it said, where the refusal does not

@@ -35,8 +35,8 @@ checkout, at the absolute paths the brief gives.
   current behaviour with `file:line`. Read them before you read the code.
 - `CODEMAP.md` and the existing tests. Match their idiom; a suite of two styles is a suite
   nobody maintains.
-- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (the brief names
-  which) — test conventions, phase constraints, allowed dependencies
+- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (whichever of
+  the two holds the section) — test conventions, phase constraints, allowed dependencies
 - `.sdlc/config.json` → `paths.tests` tells you where tests live in this project, and
   `commands.test` is how they are run
 

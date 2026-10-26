@@ -37,8 +37,8 @@ gives.
 - `.sdlc/stories/<ID>/TEST-PLAN.md` and the frozen tests themselves — read them before you plan.
   They are the specification now.
 - `.sdlc/stories/<ID>/reviews/` — if you are reworking, the reviews that sent it back
-- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (the brief names
-  which) — architecture rules, phase constraints, allowed dependencies
+- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (whichever of
+  the two holds the section) — architecture rules, phase constraints, allowed dependencies
 - `.sdlc/config.json` → `commands` (how to build, test, lint, format) and `paths.src` — where
   new production code belongs, unless the plan says otherwise
 

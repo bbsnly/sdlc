@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -124,6 +125,12 @@ func state(dir string, powerShell bool) shellpolicy.State {
 		// time: without it the leg passes a classifier four times slower than
 		// today's.
 		Resolve: func(word string) string {
+			// As onDisk does: a `..` is read where a link before it leads.
+			if slices.Contains(strings.Split(filepath.ToSlash(word), "/"), "..") {
+				if placed, ok := resolver.Place(filepath.FromSlash(word)); ok {
+					word = placed
+				}
+			}
 			rel, outside := resolver.Rel(filepath.FromSlash(word))
 			if outside {
 				return ""
@@ -145,6 +152,9 @@ func state(dir string, powerShell bool) shellpolicy.State {
 		ClaudeConfigHeld: func(string) bool { return false },
 		AgentsConfig:     func(string) bool { return false },
 		AgentsConfigHeld: func(string) bool { return false },
+		// State.WithDisk is left out: the hook's listings and archive reads
+		// are disk I/O bounded by the caps in internal/hook/disk.go, not the
+		// classifier's CPU this leg times.
 	}
 }
 

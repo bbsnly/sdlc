@@ -4,6 +4,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"github.com/bbsnly/sdlc/internal/pathrules"
 )
 
 // ruleClaudeConfig is the rule a write to the person's Claude Code
@@ -147,7 +149,7 @@ func (q pathQuestion) writtenConfig(k configKind, spelt bool) (Finding, bool) {
 		held  bool
 	}{{inside, false}, {held, true}} {
 		for _, raw := range group.words {
-			if spelt && !namesConfigAs(raw, true, k.agents) {
+			if spelt && !k.spells(raw) {
 				continue
 			}
 			for _, w := range q.m.spell(q.s, q.dir, []string{raw}) {
@@ -158,6 +160,34 @@ func (q pathQuestion) writtenConfig(k configKind, spelt bool) (Finding, bool) {
 		}
 	}
 	return Finding{}, false
+}
+
+// spells reports whether a word spells the configuration out by its name,
+// and does not climb back out of ~/.agents to land beside it.
+func (k configKind) spells(raw string) bool {
+	return namesConfigAs(raw, true, k.agents) && (!k.agents || !climbsOutOf(raw, ".agents"))
+}
+
+// climbsOutOf reports whether a word that names a directory called name
+// leaves it again with `..`, counting levels, so that where it lands is not
+// in any such directory: `$D/.agents/../CLAUDE.md` is beside ~/.agents, not
+// in it, and was told it was the person's ~/.agents, losing the rule its
+// landing has. `.agents/x/..` stays inside.
+func climbsOutOf(word, name string) bool {
+	named, depth := false, -1
+	for seg := range strings.SplitSeq(clean(word), "/") {
+		switch {
+		case pathrules.SameName(seg, name):
+			named, depth = true, 0
+		case seg == "..":
+			if depth >= 0 {
+				depth--
+			}
+		case seg != "" && seg != "." && depth >= 0:
+			depth++
+		}
+	}
+	return named && depth < 0
 }
 
 // configWord is the refusal of one word the command writes, where it is the
@@ -358,6 +388,10 @@ func (q pathQuestion) configWords() (inside, held []string) {
 	if q.runsCode() || run.piped && changesFiles(words) {
 		inside = append(inside, m.words(q.line)...)
 	}
+	inside = append(inside, q.pipedLandings()...)
+	inside = append(inside, q.directoryLandings()...)
+	listed, _ := q.listedNames()
+	inside = append(inside, listed...)
 	held = append(held, takenAway(words)...)
 	held = append(held, intoDirectories(words)...)
 	if findChanges(words) {
@@ -415,7 +449,7 @@ func intoDirectories(words []string) []string {
 	args := words[1:]
 	switch base(words[0]) {
 	case "tar":
-		_, into, _, extract := tarArguments(args)
+		_, _, into, _, extract := tarArguments(args)
 		if extract {
 			return into
 		}

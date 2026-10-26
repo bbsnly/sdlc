@@ -29,8 +29,8 @@ gives.
 - the story, in the backlog file that `backlog.path` in `.sdlc/config.json` names
 - `.sdlc/stories/<ID>/ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md`
 - the frozen acceptance tests — they are the specification the plan has to satisfy
-- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (the brief names
-  which) — architecture rules, phase constraints, layering
+- `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (whichever of
+  the two holds the section) — architecture rules, phase constraints, layering
 - `CODEMAP.md` and the code the plan touches
 
 ## What to look for
