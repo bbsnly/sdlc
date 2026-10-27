@@ -268,7 +268,9 @@ async function install(options = {}) {
 
     const unpacked = unpack(downloaded, tmp, binary)
     fs.mkdirSync(dir, { recursive: true })
-    fs.chmodSync(unpacked, 0o755)
+    // The unpacked copy lives in a private temporary directory; only the
+    // installed file needs to be executable by others.
+    fs.chmodSync(unpacked, 0o700)
     // Through a temporary name in the target's own directory and then rename:
     // a half written binary on PATH is worse than no binary on PATH, and
     // rename is the only step that is atomic.
