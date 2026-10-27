@@ -238,8 +238,11 @@ if [ "$on_path" = no ]; then
   echo
   echo "  $dir is not on your PATH. Add it:"
   echo
-  case "${SHELL##*/}" in
-    fish)
+  # ${SHELL:-}, not $SHELL: under set -u an unset SHELL, as in a container
+  # or a CI step with a bare environment, ended the run with exit 2 after the
+  # binary was already installed.
+  case "${SHELL:-}" in
+    */fish | fish)
       echo "    fish_add_path \"$dir\""
       echo
       echo "  fish remembers that one; nothing else to edit."

@@ -314,6 +314,24 @@ func TestTheShellInstallerPutsAWorkingBinaryOnDisk(t *testing.T) {
 	}
 }
 
+// A container or a CI step with a bare environment has no SHELL, and the
+// installer runs under set -u: the PATH hint read it unguarded and the run
+// ended with exit 2 after the binary was already in place.
+func TestTheShellInstallerFinishesWhenSHELLIsUnset(t *testing.T) {
+	skipUnlessPOSIX(t)
+	t.Setenv("SHELL", "")
+	os.Unsetenv("SHELL")
+	dir := t.TempDir()
+	out, err := run(t, serve(t, release(t, false)), dir, "sh", "install.sh")
+	if err != nil {
+		t.Fatalf("install.sh failed with SHELL unset: %v\n%s", err, out)
+	}
+	installed(t, dir)
+	if !strings.Contains(out, "export PATH=") {
+		t.Errorf("the PATH hint was not printed:\n%s", out)
+	}
+}
+
 func TestTheShellInstallerRefusesADownloadThatDoesNotMatchItsChecksum(t *testing.T) {
 	skipUnlessPOSIX(t)
 	dir := t.TempDir()
