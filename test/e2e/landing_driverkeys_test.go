@@ -302,6 +302,7 @@ func (d *dkeStory) lands(when string) {
 // and again with trunk moved, in the same words. Taking the driver away is all
 // the way back: the stop then lands the story.
 func TestAC2ADiffDriverNamedBeforeTheGatesLetsTheCommitGatePassAndTheStopRefusesOnEveryStop(t *testing.T) {
+	parallel(t)
 	const key = "diff.st=eer.algorithm"
 	d := dkeWorked(t, func(main checkout) { git(t, main.dir, "config", "--", key, "patience") })
 
@@ -328,6 +329,7 @@ func TestAC2ADiffDriverNamedBeforeTheGatesLetsTheCommitGatePassAndTheStopRefuses
 // SDLC-E0055. With every driver taken away the stop lands the story, so
 // nothing but the drivers' names was wrong.
 func TestAC1AndAC2AndAC3TheStopRefusesADriverNameGitsCommandLineCannotCarryInSdlcsOwnWordsAndTheDocsQuoteThem(t *testing.T) {
+	parallel(t)
 	d := dkeWorked(t, func(checkout) {})
 	d.moveTrunk()
 

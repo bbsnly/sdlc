@@ -41,6 +41,7 @@ func (sb sandbox) refusesAWrite(t *testing.T, dir, path, rule string) string {
 }
 
 func TestTheSandboxLetsThroughAPathThatIsOnlyNamedAndRefusesTheActBesideIt(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	tree := sb.tree()
 	sb.works(t, sb.repo, "", "", "start")

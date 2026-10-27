@@ -250,6 +250,7 @@ func cmkRebasedHalfWay(t *testing.T, main checkout, s *ontoStory, ledger []strin
 // the line of each marker, records nothing, and passes once the file is put
 // right; the story then lands.
 func TestAC1TheCommitGateRefusesAStoryThatAddsAConflictsMarkersAndTheStoryLandsOncePutRight(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
@@ -287,6 +288,7 @@ func TestAC1TheCommitGateRefusesAStoryThatAddsAConflictsMarkersAndTheStoryLandsO
 // move and the story is still held. Resolved, with the reviews and the commit
 // gate again, the same story lands.
 func TestAC1AndAC4SdlcStopRefusesAStoryRebasedByHandWithTheConflictLeftHalfResolved(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main, s, ledger := cmkLedgerRepository(t, binary)
@@ -320,6 +322,7 @@ func TestAC1AndAC4SdlcStopRefusesAStoryRebasedByHandWithTheConflictLeftHalfResol
 // same way, and records nothing: the record still names the range the gate
 // recorded before the rebase.
 func TestAC1AndAC4TheCommitGateRunAgainAfterARebaseByHandRefusesAConflictLeftHalfResolved(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main, s, ledger := cmkLedgerRepository(t, binary)
@@ -345,6 +348,7 @@ func TestAC1AndAC4TheCommitGateRunAgainAfterARebaseByHandRefusesAConflictLeftHal
 // added and not those that were there; put right, the file still holds the
 // first set and the story lands.
 func TestAC2AFileThatAlreadyHoldsASetOnTrunkLandsAndASecondSetInItIsRefusedByItsOwnLines(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
@@ -385,6 +389,7 @@ func TestAC2AFileThatAlreadyHoldsASetOnTrunkLandsAndASecondSetInItIsRefusedByIts
 // the moved file whole when it is not asked to look for renames; one that adds
 // a set to the moved file is refused for its own lines.
 func TestAC2AndDecision4AStoryThatMovesAFileHoldingASetLandsAndOneThatAddsToItIsRefused(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
@@ -433,6 +438,7 @@ func TestAC2AndDecision4AStoryThatMovesAFileHoldingASetLandsAndOneThatAddsToItIs
 // somewhere that is not listed is refused for the one that is not, and lands
 // with the lines in the listed path once the other is out.
 func TestAC3AStoryThatAddsTheLinesInAListedPathLandsAndDoctorListsThePath(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
@@ -493,6 +499,7 @@ func TestAC3AStoryThatAddsTheLinesInAListedPathLandsAndDoctorListsThePath(t *tes
 
 // AC-3: with nothing listed doctor says so.
 func TestAC3SdlcDoctorSaysNoneWhereNoPathIsListed(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	root := project(t, binary)

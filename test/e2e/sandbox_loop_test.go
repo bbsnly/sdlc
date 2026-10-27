@@ -187,6 +187,7 @@ func reviewedBy(gate, role string) string {
 // and `sdlc gate commit pass`. `parallel` starts model sessions and is never
 // run; AC-3's test holds it refused.
 func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	main, tree, title := sb.repo, sb.tree(), titleOf(t, sb.repo)
 
@@ -447,6 +448,7 @@ var personsDecisions = []struct{ command, rule string }{
 // argument, the environment or a file, and no command, flag, variable or task
 // performs one.
 func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunStillCompletes(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	main, tree, title := sb.repo, sb.tree(), titleOf(t, sb.repo)
 
@@ -581,6 +583,7 @@ func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunSt
 // in is refused by the binary, as every person's command in Claude Code's
 // environment is (US-108 AC-15), and from no session it is taken.
 func TestAC3APersonOnlyStepCarriesNoSessionAndASessionThatDoesNotHoldTheStoryIsRefused(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	sb.works(t, sb.repo, "", "", "start")
 	for gate := sb.nextGate(t); gate != string(model.GatePlan); gate = sb.nextGate(t) {
@@ -614,6 +617,7 @@ func TestAC3APersonOnlyStepCarriesNoSessionAndASessionThatDoesNotHoldTheStoryIsR
 // approve, unfreeze and ack. internal/shellpolicy has every spelling; this is
 // the shipped launcher and the built binary agreeing on the three.
 func TestAC3TheHookStillRefusesAPersonsDecisionsToAModelDrivenSessionInARealProject(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := repository(t, binary, spec{id: "US-001", priority: 1})
@@ -683,6 +687,7 @@ var stopCount = regexp.MustCompile(`\(this was (\d+)\)`)
 // parse it drops. So each reply is compared whole where it is fixed, and read
 // with every field accounted for where it carries a reason.
 func TestAC4TheHookIsGivenTheJSONClaudeCodeSendsAndItsStdoutIsTheProtocol(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	main, tree := sb.repo, sb.tree()
 
@@ -1038,6 +1043,7 @@ func (sb sandbox) waitBeganAt(t *testing.T, at time.Time) {
 // thirty minutes after it began, to start again only when something is
 // recorded (AC-5, derived from the story's non-goal by decision D2).
 func TestUS085AStopWhileABackgroundSubagentRunsIsNotCountedUntilTheWaitRunsOut(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	main, tree := sb.repo, sb.tree()
 	sb.works(t, main, "", "", "start")

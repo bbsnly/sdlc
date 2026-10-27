@@ -48,6 +48,7 @@ func (sb sandbox) refusesUnderOneOf(t *testing.T, dir, command string, rules ...
 }
 
 func TestUS079AFindIsJudgedByWhatItsOperatorsPickInTheSandbox(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	tree := sb.tree()
 	sb.works(t, sb.repo, "", "", "start")

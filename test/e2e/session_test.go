@@ -199,6 +199,7 @@ func (s *session) workGate(gate model.Gate, story string) {
 // The loop run the way the documentation describes it: one story per session,
 // each session starting from nothing but what the tool says.
 func TestASessionWorksAStoryTheWayTheRunbookSaysTo(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here")
 	}
@@ -223,6 +224,7 @@ func TestASessionWorksAStoryTheWayTheRunbookSaysTo(t *testing.T) {
 // by asking rather than by remembering -- which is what makes an interrupted
 // story recoverable at all.
 func TestEachGateCanBeWorkedByItsOwnSession(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here")
 	}
@@ -260,6 +262,7 @@ func TestEachGateCanBeWorkedByItsOwnSession(t *testing.T) {
 // hook enforces it against the agent the runbook actually names, and each of
 // these is a step some session will eventually try.
 func TestTheRunbookIsRefusedWhereItShouldBe(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here")
 	}

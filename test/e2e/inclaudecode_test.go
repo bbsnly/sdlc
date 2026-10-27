@@ -115,6 +115,7 @@ func loopRecord(t *testing.T, repo string) map[string]string {
 }
 
 func TestAC15APersonsCommandRunWithClaudeCodesMarkersIsRefusedByTheBinaryAndTheSlashCommandStillDecides(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	main, tree := sb.repo, sb.tree()
 	sb.works(t, main, "", "", "start")

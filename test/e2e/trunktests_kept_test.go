@@ -93,6 +93,7 @@ func keptGate(s *ontoStory, gate string) string {
 
 // AC-1, AC-2 and AC-3 through the binary and the hook.
 func TestAC1AC2AndAC3AReworkOnAMovedTrunkKeepsWhatItsFirstGateAcceptedOnTheRecordWithOneEvent(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1})

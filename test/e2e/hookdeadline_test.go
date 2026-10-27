@@ -102,6 +102,7 @@ func outOfTime(t *testing.T, what, stdout, stderr string, code int) (reason, rou
 }
 
 func TestAC10TheHookRefusesACallItCouldNotCheckInTimeThroughTheBuiltBinaryAndTheLauncher(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	main, tree := sb.repo, sb.tree()
 	sb.works(t, main, "", "", "start")
@@ -259,6 +260,7 @@ func someParagraph(text string, words ...string) bool {
 // refused, and what is not: the limit that is left is a person's to know about,
 // and a page that calls the hole closed is worse than the hole.
 func TestAC9TheDocsSayWhatIsRefusedForRunningOutOfTimeAndWhatIsStillLeftOpen(t *testing.T) {
+	parallel(t)
 	docs := moduleRoot(t)
 	for name, text := range map[string]string{
 		"docs/enforcement.md": readFile(t, filepath.Join(docs, "docs", "enforcement.md")),
@@ -283,6 +285,7 @@ func TestAC9TheDocsSayWhatIsRefusedForRunningOutOfTimeAndWhatIsStillLeftOpen(t *
 }
 
 func TestAC11TheConfigurationPageNamesTheVariableAndSaysItCanOnlyShorten(t *testing.T) {
+	parallel(t)
 	page := readFile(t, filepath.Join(moduleRoot(t), "docs", "configuration.md"))
 	if !strings.Contains(page, "`"+deadlineVariable+"`") {
 		t.Fatalf("docs/configuration.md does not name %s", deadlineVariable)

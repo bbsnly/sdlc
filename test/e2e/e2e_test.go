@@ -26,19 +26,54 @@ import (
 // command the tests run and every call they hand the hook comes from it.
 const claudeSession = "e2e-session"
 
-// build compiles the binary once for the whole package.
+// build is the binary, in a directory of the test's own.
 func build(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	name := "sdlc"
+	return builtOnce(t, "sdlc", "../../cmd/sdlc", "building sdlc")
+}
+
+// built is each program the tests build, by its package: built the first time
+// a test asks, and copied for every later one. Each test used to run go
+// build itself, about a hundred times a run, which linked the same binary
+// each time.
+var built sync.Map // package -> *program
+
+type program struct {
+	once  sync.Once
+	bytes []byte
+	err   string
+}
+
+// builtOnce is the program in pkg, named name, in a directory of t's own:
+// what a test does to the directory, or to the binary, no other test sees.
+// failure starts the message when pkg does not build, and every test that
+// asks for it fails with that message.
+func builtOnce(t *testing.T, name, pkg, failure string) string {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	out := filepath.Join(dir, name)
-
-	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", out, "../../cmd/sdlc")
-	if combined, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("building sdlc: %v\n%s", err, combined)
+	out := filepath.Join(t.TempDir(), name)
+	p, _ := built.LoadOrStore(pkg, &program{})
+	prog, _ := p.(*program)
+	prog.once.Do(func() {
+		cmd := exec.CommandContext(t.Context(), "go", "build", "-o", out, pkg)
+		if combined, err := cmd.CombinedOutput(); err != nil {
+			prog.err = fmt.Sprintf("%s: %v\n%s", failure, err, combined)
+			return
+		}
+		var err error
+		if prog.bytes, err = os.ReadFile(out); err != nil {
+			prog.err = fmt.Sprintf("%s: %v", failure, err)
+		}
+	})
+	if prog.err != "" {
+		t.Fatal(prog.err)
+	}
+	if _, err := os.Stat(out); err != nil {
+		if err := os.WriteFile(out, prog.bytes, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return out
 }
@@ -197,6 +232,7 @@ func parse(t *testing.T, out string) reply {
 // TestAStoryReachesTheAnalysisGate walks the path a user walks: set the project
 // up, start a story, record the gates the shipped skill records.
 func TestAStoryReachesTheAnalysisGate(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	root := project(t, binary)
 
@@ -244,6 +280,7 @@ func TestAStoryReachesTheAnalysisGate(t *testing.T) {
 // tests cannot see: hooks.json names a script, the script finds the binary, the
 // binary applies the policy, and Claude Code gets an answer it understands.
 func TestTheShippedHookEnforcesThroughItsOwnLauncher(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here; plugin/bin/sdlc-hook.cmd is its counterpart")
 	}
@@ -291,6 +328,7 @@ func TestTheShippedHookEnforcesThroughItsOwnLauncher(t *testing.T) {
 
 // A missing binary must not block the session, and must say why.
 func TestTheLauncherWithoutABinaryAllowsAndExplains(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here")
 	}
@@ -353,6 +391,7 @@ func TestTheLauncherWithoutABinaryAllowsAndExplains(t *testing.T) {
 // nobody can satisfy. Both are answered by the same thing -- the document goes
 // through the tool, from whoever is holding it.
 func TestAGateDocumentIsOnlyEverWrittenByTheTool(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here")
 	}
@@ -387,6 +426,7 @@ func TestAGateDocumentIsOnlyEverWrittenByTheTool(t *testing.T) {
 // it: the document arrives on standard input, the way an agent's heredoc sends
 // it, and lands where the next gate will look for it.
 func TestTheRouteTheDenialNamesActuallyStoresTheDocument(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	root := project(t, binary)
 	runTool(t, binary, root, "start")
@@ -416,6 +456,7 @@ func TestTheRouteTheDenialNamesActuallyStoresTheDocument(t *testing.T) {
 }
 
 func TestStoringADocumentTheLoopDoesNotKnowExplainsWhatItDoesKnow(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	root := project(t, binary)
 	runTool(t, binary, root, "start")
@@ -439,6 +480,7 @@ func TestStoringADocumentTheLoopDoesNotKnowExplainsWhatItDoesKnow(t *testing.T) 
 // checked the way a user meets it: a real repository, the real binary, and the
 // hook script that hooks.json actually names.
 func TestTheFreezeHoldsThroughTheShippedLauncher(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here")
 	}
@@ -483,6 +525,7 @@ func TestTheFreezeHoldsThroughTheShippedLauncher(t *testing.T) {
 // is the one move that makes every gate after it meaningless, so the gate has
 // to notice on its own.
 func TestTheTestGateRefusesAPassOnTestsThatChanged(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	root := project(t, binary)
 	runTool(t, binary, root, "start")
@@ -517,6 +560,7 @@ func TestTheTestGateRefusesAPassOnTestsThatChanged(t *testing.T) {
 // the real binary, a real repository, and the shipped launcher standing in
 // front of the commit.
 func TestAStoryReachesTrunk(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here")
 	}
@@ -696,6 +740,7 @@ func shell(root, agent, cmd string) string {
 // launcher, touching nothing by hand between them, and then asks the loop what
 // is left. Anything that needs a person to intervene fails it.
 func TestTwoStoriesRunBackToBackWithNobodyInBetween(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here")
 	}
@@ -820,6 +865,7 @@ func addSecondStory(t *testing.T, root string) {
 // `sdlc review list` then said "not reviewed" for four agents that had each
 // reported, the gate refused, and the session ran the whole panel again.
 func TestReviewersRecordingAtTheSameTimeAllLand(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here")
 	}
@@ -978,6 +1024,7 @@ func theirCommit(t *testing.T, root, name, message string) string {
 // does -- the shipped launcher in front of the session's commits, and nothing
 // at all in front of a person's.
 func TestAC1TheRangeHoldsOnlyTheCommitsTheSessionMade(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here")
 	}
@@ -1062,6 +1109,7 @@ func TestAC1TheRangeHoldsOnlyTheCommitsTheSessionMade(t *testing.T) {
 // person's commit is at the front of the window, where a range can start after
 // it.
 func TestAC1TheRangeHoldsACommitLandedBySomeSpellingOtherThanGitCommit(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here")
 	}

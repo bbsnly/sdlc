@@ -269,6 +269,7 @@ func lkAge(t *testing.T, path string, age time.Duration) {
 // landed, status names no landing and no wait, and nothing is left beside the
 // project's lock.
 func TestAC5AC6AC7StatusNamesTheStoryLandingAndTheStopThatWaitsForItInEveryCheckout(t *testing.T) {
+	parallel(t)
 	h := lkProject(t, "US-001", "US-002")
 	locks := lkLocks(t, h.main)
 	lkPutBack(t, locks)
@@ -348,6 +349,7 @@ func TestAC5AC6AC7StatusNamesTheStoryLandingAndTheStopThatWaitsForItInEveryCheck
 // story's own a second younger than the landing lock, that one stop lands the
 // story, with nothing removed by hand and nothing left behind.
 func TestAC1AC2AStopKilledWhileItLandsIsLandedByOneLaterStopThatSaysItsHolderHasGone(t *testing.T) {
+	parallel(t)
 	h := lkProject(t, "US-001")
 	locks := lkLocks(t, h.main)
 	lkPutBack(t, locks)

@@ -131,6 +131,7 @@ func ontoHolds(t *testing.T, main checkout, rel string) bool {
 // a person: every command here is one a session runs, asked of the hook first,
 // and each stop has to work as it is, on a trunk the stop before it moved.
 func TestAC7ThreeStoriesFromThreeWorktreesLandOneAfterTheOtherWithNobodyBetween(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2}, spec{id: "US-003", priority: 3})
@@ -227,6 +228,7 @@ func TestAC7ThreeStoriesFromThreeWorktreesLandOneAfterTheOtherWithNobodyBetween(
 // a story on a trunk that a person's commit moved, with no refusal to act on
 // and no rebase for the session to run.
 func TestAC8ASessionsStopLandsItsStoryOnATrunkThatMovedWithNoRebaseByHand(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1})
@@ -268,6 +270,7 @@ func TestAC8ASessionsStopLandsItsStoryOnATrunkThatMovedWithNoRebaseByHand(t *tes
 // saying so and counting. US-107 AC-1, that first stop held past the wait, is
 // shown in process, in internal/cli, where the test can pause it.
 func TestAC13TwoSessionsStoppingAtTheSameMomentBothLand(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
 	stories := []*ontoStory{
@@ -397,6 +400,7 @@ func exitCodeOf(err error) int {
 // landing the same story, or for one landing another story; not the same words
 // under another code; not a stop that landed or could not be run.
 func TestUS107AC2OnlyAStopRefusedForTheLoopsStateHeldPastTheWaitIsRunAgain(t *testing.T) {
+	parallel(t)
 	refused := func(code sdlcerr.Code, what string) string {
 		return sdlcerr.New(code, what, "the reason").WithFix("the fix").Render()
 	}
@@ -437,6 +441,7 @@ const ontoPatience = 3 * time.Minute
 // Nothing here waits on a clock. The first landing is held and let go through
 // named pipes, and the second stop is killed on the line it prints.
 func TestAC13AStopThatWaitsForAnotherLandingSaysWhomItWaitsForAndCanBeCutShort(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the first landing is held open on a named pipe made with mkfifo, which Windows has not")
 	}
@@ -592,6 +597,7 @@ func TestAC13AStopThatWaitsForAnotherLandingSaysWhomItWaitsForAndCanBeCutShort(t
 // files the landing now takes for trunk's are never taken for the session's to
 // write.
 func TestAC6TheHookStillRefusesAWriteToATestFileThatCameFromTrunk(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1})
@@ -642,6 +648,7 @@ func TestAC6TheHookStillRefusesAWriteToATestFileThatCameFromTrunk(t *testing.T) 
 // trunk itself, a conflict goes to a person, a command that fails is reworked
 // by the session, and trunk's test files are not held against the story.
 func TestAC7TheLoopPageTroubleshootingAndTheRunbookDescribeLandingAsItIs(t *testing.T) {
+	parallel(t)
 	read := func(t *testing.T, parts ...string) string {
 		t.Helper()
 		text := readFile(t, filepath.Join(append([]string{"..", ".."}, parts...)...))

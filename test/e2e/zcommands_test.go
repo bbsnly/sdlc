@@ -3,9 +3,11 @@
 //
 // The name of this file is part of how it works. Go runs a package's tests in
 // the order of its files' names, and the guard has to run after every test that
-// can record a run; no file here sorts after this one. Under -run, -skip,
-// -shuffle and -list the package has not run whole, and the guard says so
-// instead of naming commands whose cases were left out.
+// can record a run; no file here sorts after this one. A test that runs in
+// parallel with the others starts in that order and finishes later, so it says
+// so through parallel(t), and the guard waits for every one that did. Under
+// -run, -skip, -shuffle and -list the package has not run whole, and the guard
+// says so instead of naming commands whose cases were left out.
 //
 // What counts as a run is what the launch sites below note (noteRun, noteHook)
 // and nothing else:
@@ -54,6 +56,22 @@ func noteRun(args ...string) {
 // noteHook records that the hook answered.
 func noteHook() { noteRun("hook") }
 
+// inParallel is every test that called parallel and has not finished.
+var inParallel sync.WaitGroup
+
+// parallel runs t in parallel with the package's other tests, and has the guard
+// wait for it. One after another the tests took six and a half minutes on a
+// ten-core Mac under the race detector, each of them mostly waiting on the
+// binary and the processes it starts, in a repository of its own: nothing one
+// test makes is another's. A test that sets the environment (t.Setenv) cannot
+// run in parallel, and does not call this.
+func parallel(t *testing.T) {
+	t.Helper()
+	inParallel.Add(1)
+	t.Cleanup(inParallel.Done)
+	t.Parallel()
+}
+
 // knownGaps is every command no case here runs, and why. A gap that stops being
 // one fails, so this list cannot outlive its cause.
 func knownGaps() map[string]string {
@@ -89,6 +107,16 @@ func TestAC1EveryCommandAndTheHookHaveACaseThatRanItToTheResultItExpected(t *tes
 	if why := partialRun(); why != "" {
 		t.Skipf("the cases that run the commands are not all being run (%s), so a command with no run says nothing", why)
 	}
+	// Every other test has started by now, this file sorting last, and has
+	// called parallel if it is going to. The guard has to be parallel too to
+	// run after them, and then it holds one of go test's -parallel slots while
+	// it waits; with one slot, the tests it waits for would never run.
+	if fl := flag.Lookup("test.parallel"); fl != nil && fl.Value.String() == "1" {
+		t.Skip("-parallel 1 leaves the guard no slot to wait in but the one the tests it waits for need, so it cannot run; " +
+			"TestMain gives the package two or more unless the command line says 1")
+	}
+	t.Parallel()
+	inParallel.Wait()
 	ranOK.Lock()
 	ran := maps.Clone(ranOK.commands)
 	ranOK.Unlock()

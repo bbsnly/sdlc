@@ -197,6 +197,7 @@ func (sb sandbox) staffedGate(t *testing.T, gate model.Gate, out ...string) {
 }
 
 func TestUS026AStoryIsStaffedByTheProjectManagerAndWorkedToTrunkInTheSandbox(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	sb.turnsTheStaffingOn(t)
 	main, tree := sb.repo, sb.tree()
@@ -513,6 +514,7 @@ func TestUS026AStoryIsStaffedByTheProjectManagerAndWorkedToTrunkInTheSandbox(t *
 // that the new command says the staffing is off and that nothing about it
 // reaches the output or the record.
 func TestUS026WithTheStaffingOffTheSandboxAsksNothingOfAStory(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	main, tree := sb.repo, sb.tree()
 	sb.works(t, main, "", "", "start")

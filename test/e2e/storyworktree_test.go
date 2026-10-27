@@ -657,6 +657,7 @@ func (s *treeSession) workGate(gate model.Gate) {
 // ---------------------------------------------------------------- AC-1
 
 func TestAC1StartMakesAWorktreeOnAStoryBranchCutFromTrunkAndSaysWhere(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 
 	t.Run("AC-1 from the main checkout on trunk", func(t *testing.T) {
@@ -763,6 +764,7 @@ func TestAC1StartMakesAWorktreeOnAStoryBranchCutFromTrunkAndSaysWhere(t *testing
 // ---------------------------------------------------------------- AC-2
 
 func TestAC2StartLeavesTheMainCheckoutAsItWasApartFromTheLoopsBookkeeping(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 
 	for _, c := range []struct {
@@ -828,6 +830,7 @@ func TestAC2StartLeavesTheMainCheckoutAsItWasApartFromTheLoopsBookkeeping(t *tes
 // ---------------------------------------------------------------- AC-3
 
 func TestAC3AWorktreeStartIsNotRefusedForWhereTheMainCheckoutIsOrWhatIsInIt(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	for _, c := range []struct {
 		name    string
@@ -861,6 +864,7 @@ func TestAC3AWorktreeStartIsNotRefusedForWhereTheMainCheckoutIsOrWhatIsInIt(t *t
 }
 
 func TestAC3SmokeRunsInTheNewWorktree(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the smoke check here records its directory with pwd, which prints a POSIX path under Git for Windows")
 	}
@@ -881,6 +885,7 @@ func TestAC3SmokeRunsInTheNewWorktree(t *testing.T) {
 }
 
 func TestAC3AWorktreeStartIsStillRefusedWhenTrunkIsBehindItsRemote(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 
 	behind := func(t *testing.T, prepare func(main checkout)) {
@@ -921,6 +926,7 @@ func TestAC3AWorktreeStartIsStillRefusedWhenTrunkIsBehindItsRemote(t *testing.T)
 // ---------------------------------------------------------------- AC-4
 
 func TestAC4AWorktreeThatCannotBeMadeIsRefusedAndLeavesNothingBehind(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 
 	// T6: a branch by the story's name is a person's, or one a crashed start
@@ -957,6 +963,7 @@ func TestAC4AWorktreeThatCannotBeMadeIsRefusedAndLeavesNothingBehind(t *testing.
 }
 
 func TestAC4ASmokeCheckThatFailsInTheWorktreeIsRefusedAndLeavesNothingBehind(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	// .git is a directory in the main checkout and a file in a linked worktree,
 	// so this passes where the released tool runs it and fails in the worktree.
@@ -998,6 +1005,7 @@ func TestAC4ASmokeCheckThatFailsInTheWorktreeIsRefusedAndLeavesNothingBehind(t *
 // ---------------------------------------------------------------- AC-5
 
 func TestAC5ResumingAStoryPrintsTheSamePathAndBranchAndMakesNothing(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := storyRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
 	first := startIn(t, main, main.as(sessionFirst))
@@ -1068,6 +1076,7 @@ func TestAC5ResumingAStoryPrintsTheSamePathAndBranchAndMakesNothing(t *testing.T
 // The runbook's own walk, from each place a session can be opened: every call
 // past the shipped launcher, every command in the worktree.
 func TestAC6ASessionWorksItsStoryInItsWorktreeTheWayTheRunbookSaysTo(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 
@@ -1125,6 +1134,7 @@ func TestAC6ASessionWorksItsStoryInItsWorktreeTheWayTheRunbookSaysTo(t *testing.
 // What a session is held to in one checkout, asked of the hook for files and
 // commands in the story's worktree, from each place the session can be opened.
 func TestAC6TheHookHoldsTheSessionInItsWorktreeToWhatItHoldsASingleCheckoutTo(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := storyRepository(t, binary, spec{id: "US-001", priority: 1})
@@ -1232,6 +1242,7 @@ func TestAC6TheHookHoldsTheSessionInItsWorktreeToWhatItHoldsASingleCheckoutTo(t 
 // checkout that keeps the backlog, the records and the claims, holds for a
 // session held in its story's worktree.
 func TestAC6TheSessionInAStoryWorktreeIsRefusedTheMainCheckoutsBacklogRecordsAndClaims(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := storyRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
@@ -1312,6 +1323,7 @@ func TestAC6TheSessionInAStoryWorktreeIsRefusedTheMainCheckoutsBacklogRecordsAnd
 // commands or by moving its checkout, may not make a worktree, and may not
 // commit in another checkout by any spelling that points git there.
 func TestAC6AHeldSessionCannotEndItsHoldOrCommitInAnotherCheckout(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := storyRepository(t, binary, spec{id: "US-001", priority: 1})
@@ -1373,6 +1385,7 @@ func TestAC6AHeldSessionCannotEndItsHoldOrCommitInAnotherCheckout(t *testing.T) 
 // session the main checkout holds reaches it by path, and may not use that to
 // edit another story's frozen tests or loop state.
 func TestAC6ASessionHeldInTheMainCheckoutMayNotEditAStoryWorktreeInsideIt(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := storyRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
@@ -1409,6 +1422,7 @@ func TestAC6ASessionHeldInTheMainCheckoutMayNotEditAStoryWorktreeInsideIt(t *tes
 // ---------------------------------------------------------------- AC-7
 
 func TestAC7TrunkMovingTripsNoGateBeforeTheCommitAndTheWorktreeIsWhatIsReviewed(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := storyRepository(t, binary, spec{id: "US-001", priority: 1})
 	cut := headOf(t, main.dir)
@@ -1488,6 +1502,7 @@ func TestAC7TrunkMovingTripsNoGateBeforeTheCommitAndTheWorktreeIsWhatIsReviewed(
 // ---------------------------------------------------------------- AC-8
 
 func TestAC8ASecondSessionStartsASecondStoryInASecondWorktree(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := storyRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
 	first := startIn(t, main, main.as(sessionFirst))
@@ -1556,6 +1571,7 @@ func TestAC8ASecondSessionStartsASecondStoryInASecondWorktree(t *testing.T) {
 // story and no worktree is given twice, and a start that loses leaves nothing
 // of its own behind.
 func TestAC8TwoStartsAtTheSameMomentNeverShareAStoryOrAWorktree(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := storyRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
 	sessions := []string{sessionFirst, sessionSecond}
@@ -1646,6 +1662,7 @@ func TestAC8TwoStartsAtTheSameMomentNeverShareAStoryOrAWorktree(t *testing.T) {
 // ---------------------------------------------------------------- AC-9
 
 func TestAC9WithStoryWorktreesOffStartDoesWhatTheReleasedToolDoes(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	off := func(t *testing.T) checkout {
 		t.Helper()
@@ -1717,6 +1734,7 @@ func TestAC9WithStoryWorktreesOffStartDoesWhatTheReleasedToolDoes(t *testing.T) 
 }
 
 func TestAC9WhereTheKeyIsAbsentStoryWorktreesAreOn(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 
 	t.Run("AC-9 git.worktrees absent", func(t *testing.T) {
@@ -1767,6 +1785,7 @@ func TestAC9WhereTheKeyIsAbsentStoryWorktreesAreOn(t *testing.T) {
 // ---------------------------------------------------------------- AC-10
 
 func TestAC10TheRunbookTakesTheWorktreeFromStartAndWorksThere(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := storyRepository(t, binary, spec{id: "US-001", priority: 1})
 	w := startIn(t, main, main.as(sessionFirst))
@@ -1807,6 +1826,7 @@ func TestAC10TheRunbookTakesTheWorktreeFromStartAndWorksThere(t *testing.T) {
 }
 
 func TestAC10TheDocsDescribeTheSwitchTheWorktreeAndSDLCE0053(t *testing.T) {
+	parallel(t)
 	doc := func(name string) string {
 		t.Helper()
 		return readFile(t, filepath.Join("..", "..", "docs", name))
@@ -1914,6 +1934,7 @@ func advisesDiscarding(text string) bool {
 // D7(6): a single checkout, story worktrees off, moved while its story runs.
 // Its claim names where it was, and it goes on holding the story.
 func TestACheckoutMovedWhileItsStoryRunsKeepsTheStory(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := repository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
 	m := main.as(sessionMain)
@@ -1943,6 +1964,7 @@ func TestACheckoutMovedWhileItsStoryRunsKeepsTheStory(t *testing.T) {
 // plain start passes the story over and says so, in words that fit a checkout
 // that was moved and that keep the story's own uncommitted work.
 func TestACheckoutMovedWhileItsStoryWasStoppedSaysSoAndKeepsTheStorysWork(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 
 	t.Run("put down with its work uncommitted", func(t *testing.T) {
@@ -2014,6 +2036,7 @@ func TestACheckoutMovedWhileItsStoryWasStoppedSaysSoAndKeepsTheStorysWork(t *tes
 // D7(1) and OQ-8: a fix a person pastes into a terminal quotes its
 // placeholder as they would type it.
 func TestTheFixesThatQuoteAReasonOrANotePrintNoBackslashes(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 
 	unquoted := func(t *testing.T, out string, failed bool, code, flag string) {

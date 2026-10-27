@@ -86,6 +86,7 @@ func landLogged(t *testing.T, c checkout) map[string]any {
 // sdlc log prints what reached trunk in the main checkout and in the next
 // story's worktree.
 func TestAC1TheRunbooksSessionLandsItsFinishedStoryWithoutAPersonRunningGit(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := landRepository(t, binary)
@@ -123,6 +124,7 @@ func TestAC1TheRunbooksSessionLandsItsFinishedStoryWithoutAPersonRunningGit(t *t
 // moved, which the hook lets it do on its own branch, lands as rebased. That
 // it need not rebase at all is US-088's, in landing_ontrunk_test.go.
 func TestAC4AStoryTheSessionRebasedOntoTheTrunkThatMovedLands(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := landRepository(t, binary)
@@ -155,6 +157,7 @@ func TestAC4AStoryTheSessionRebasedOntoTheTrunkThatMovedLands(t *testing.T) {
 // opened, a sample of each class that moves trunk or a story branch is
 // refused. internal/hook/landing_test.go holds the full tables.
 func TestAC9TheHookRefusesTheSessionEveryWayOfMovingTrunkOrAStoryBranch(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := landRepository(t, binary)

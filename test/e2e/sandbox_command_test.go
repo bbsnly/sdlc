@@ -64,6 +64,7 @@ func titleOf(t *testing.T, repo string) string {
 // ---------------------------------------------------------------- AC-1
 
 func TestAC1OneCommandMakesASandboxPrintsWhereItIsAndRemovesItTouchingNothingElse(t *testing.T) {
+	parallel(t)
 	before := checkoutStatus(t)
 	sb := newSandbox(t)
 
@@ -180,6 +181,7 @@ func refusedRemoval(t *testing.T, stdout, stderr string, code int) {
 // else. internal/tools/sandbox holds the whole table; these are the cases a
 // built program is asked from a shell.
 func TestAC1RemoveRefusesADirectoryCreateDidNotMake(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	env := programEnv(t, sb.home, sb.temp)
 	keep := "kept.txt"
@@ -253,6 +255,7 @@ func TestAC1RemoveRefusesADirectoryCreateDidNotMake(t *testing.T) {
 // loop's switches, or go flags of its own must get the same sandbox, in the
 // same place, built the same way.
 func TestAC1TheSandboxIsTheSameWhateverTheSessionThatMakesItHasSet(t *testing.T) {
+	parallel(t)
 	decoy := scratch(t)
 	sb := newSandboxWith(t, sandboxProgram(t),
 		"GIT_DIR="+filepath.Join(decoy, "git"),
@@ -310,6 +313,7 @@ func TestAC1TheSandboxIsTheSameWhateverTheSessionThatMakesItHasSet(t *testing.T)
 // the sandbox writes while it builds sdlc: a build with neither would start
 // from nothing and fetch from the network.
 func TestAC5TheSandboxClosesEveryKnownRouteOutOfItsDirectory(t *testing.T) {
+	parallel(t)
 	before := checkoutStatus(t)
 	sb := newSandbox(t)
 	title := titleOf(t, sb.repo)
@@ -387,6 +391,7 @@ func TestAC5TheSandboxClosesEveryKnownRouteOutOfItsDirectory(t *testing.T) {
 // that makes the sandbox, without a test failing. It cannot be "no net": pflag
 // imports it.
 func TestAC5NeitherTheBinaryNorTheSandboxProgramLinksANetworkClient(t *testing.T) {
+	parallel(t)
 	deps := func(t *testing.T, pkg string) []string {
 		t.Helper()
 		cmd := exec.CommandContext(t.Context(), "go", "list", "-deps", pkg)
@@ -456,6 +461,7 @@ func fencedBlocks(text string) []string {
 }
 
 func TestAC6TheContributingGuideNamesTheSandboxCommandAndQuotesWhatItPrints(t *testing.T) {
+	parallel(t)
 	guide := section(readFile(t, filepath.Join(moduleRoot(t), "CONTRIBUTING.md")), sandboxSection)
 	if guide == "" {
 		t.Fatalf("CONTRIBUTING.md has no %q section", sandboxSection)

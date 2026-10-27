@@ -105,6 +105,7 @@ func (sb sandbox) refusedAndNothingRecorded(t *testing.T, r result, before []byt
 }
 
 func TestUS008AGateFailureAtTheLimitHandsTheStoryOverOrChangesNothingInTheSandbox(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	tree := sb.tree()
 	sb.works(t, sb.repo, "", "", "start")
@@ -155,6 +156,7 @@ func TestUS008AGateFailureAtTheLimitHandsTheStoryOverOrChangesNothingInTheSandbo
 }
 
 func TestUS008ABlockAtTheLimitHandsTheStoryOverOrChangesNothingInTheSandbox(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	tree := sb.tree()
 	sb.works(t, sb.repo, "", "", "start")

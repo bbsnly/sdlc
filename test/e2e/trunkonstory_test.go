@@ -108,6 +108,7 @@ func (sb sandbox) onNothingTaken(t *testing.T) {
 // trunk's. The record takes nothing for trunk's, the commit gate has not passed,
 // and the story is still at the commit.
 func TestAC3TrunkMovedToTheStorysFirstCommitStillGetsItsLateTestRefusedAtTheCommitGate(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	tree := sb.tree()
 	sb.works(t, sb.repo, "", "", "start")
@@ -152,6 +153,7 @@ func TestAC3TrunkMovedToTheStorysFirstCommitStillGetsItsLateTestRefusedAtTheComm
 // stop answered before the fix and then landed the story once they were
 // recorded again -- and recording the reviews again does not let it land.
 func TestAC3TrunkMovedToAStoryCommitThatAddsATestFileIsRefusedAtTheStopAndNothingLands(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	tree := sb.tree()
 	sb.works(t, sb.repo, "", "", "start")
@@ -198,6 +200,7 @@ func TestAC3TrunkMovedToAStoryCommitThatAddsATestFileIsRefusedAtTheStopAndNothin
 // saying that it accepted the file as trunk's. It passes before the fix and has
 // to go on passing.
 func TestAC2AndAC3ATestFileAnotherStoryLandedIsStillAcceptedAsTrunksAtTheStop(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	tree := sb.tree()
 	sb.works(t, sb.repo, "", "", "start")

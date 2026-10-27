@@ -40,6 +40,7 @@ func (sb sandbox) outsideAnswer(t *testing.T, dir, agent, command string) string
 }
 
 func TestUS019APathOutsideTheRepositoryIsNotTheLoopsInTheSandbox(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	tree := sb.tree()
 	sb.works(t, sb.repo, "", "", "start")

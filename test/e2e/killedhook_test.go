@@ -28,6 +28,7 @@ import (
 // straight after describing the killed call, with nothing to say the
 // promise is about a different, finished one.
 func TestAC2AndAC4ATimingLineIsNeverWrittenForAKilledHook(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	debugFile := filepath.Join(t.TempDir(), "hook.log")
 

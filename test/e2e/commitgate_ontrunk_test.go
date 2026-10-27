@@ -149,6 +149,7 @@ func gateLands(s *ontoStory, main checkout, head string) {
 // and the commit gate names the story's three commits, says nothing of the
 // loop's configuration, and the next stop lands the story.
 func TestAC3AndAC10TheCommitGateRunAgainAfterTheStopsOwnReplayNamesOnlyTheStorysCommits(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := gateRepository(t, binary)
@@ -211,6 +212,7 @@ func TestAC3AndAC10TheCommitGateRunAgainAfterTheStopsOwnReplayNamesOnlyTheStorys
 // again names the story's two commits, says nothing of the loop's
 // configuration, and the stop lands the story.
 func TestAC3AndAC10TheCommitGateRunAgainAfterARebaseByHandNamesOnlyTheStorysCommits(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})

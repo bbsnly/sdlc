@@ -39,6 +39,7 @@ func lbChain(t *testing.T, dir, name string, n int, target string) string {
 }
 
 func TestTheSandboxRefusesAtTheLinkBoundsUnderTheirCodesAndLogsNoWordOfTheCommand(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	tree := sb.tree()
 	sb.works(t, sb.repo, "", "", "start")

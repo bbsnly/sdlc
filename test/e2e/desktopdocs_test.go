@@ -34,6 +34,7 @@ func readDesktopPage(t *testing.T) string {
 }
 
 func TestAC13TheClaudeDesktopPageCoversWhatAPersonThereNeeds(t *testing.T) {
+	parallel(t)
 	page := readDesktopPage(t)
 
 	t.Run("AC-13 install from the plugin browser", func(t *testing.T) {
@@ -72,6 +73,7 @@ func TestAC13TheClaudeDesktopPageCoversWhatAPersonThereNeeds(t *testing.T) {
 // The slash commands the page names are commands a person can type: each is a
 // skill the plugin ships.
 func TestAC13TheClaudeDesktopPageNamesOnlySlashCommandsThePluginHas(t *testing.T) {
+	parallel(t)
 	page := readDesktopPage(t)
 	named := regexp.MustCompile(`/sdlc:([a-z][a-z-]*)`).FindAllStringSubmatch(page, -1)
 	if len(named) == 0 {
@@ -88,6 +90,7 @@ func TestAC13TheClaudeDesktopPageNamesOnlySlashCommandsThePluginHas(t *testing.T
 // An approval typed as /sdlc:approve is the page's example; the sandbox's story
 // is US-001, handed to a person as spec_unclear.
 func TestAC13TheOutputTheClaudeDesktopPageQuotesIsWhatTheAppShows(t *testing.T) {
+	parallel(t)
 	page := readDesktopPage(t)
 	sb := newSandbox(t)
 	main, tree := sb.repo, sb.tree()

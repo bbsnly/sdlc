@@ -152,6 +152,7 @@ func mapNobodyBetween(t *testing.T, main checkout, id string) {
 // the stop before it left, and trunk's map ends with each section once and
 // whole.
 func TestAC9ThreeStoriesEachWithAMapChangeAtTheSamePlaceLandWithNobodyBetween(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := mapRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2}, spec{id: "US-003", priority: 3})
@@ -275,6 +276,7 @@ func TestAC9ThreeStoriesEachWithAMapChangeAtTheSamePlaceLandWithNobodyBetween(t 
 // the story's section over trunk's, and --drop discards the change with no
 // commit.
 func TestAC6AStoryWhoseMapChangeNoLongerAppliesStillLandsAndOnlyAPersonRepairsIt(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := mapRepository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2}, spec{id: "US-003", priority: 3})
@@ -436,6 +438,7 @@ func TestAC6AStoryWhoseMapChangeNoLongerAppliesStillLandsAndOnlyAPersonRepairsIt
 // the bookkeeper stores sections, the stop makes the map change on trunk after
 // the story has landed, and what is left over is a person's `sdlc remap`.
 func TestAC9TheLoopPageTroubleshootingTheBookkeeperAndTheRunbookDescribeTheNewOrder(t *testing.T) {
+	parallel(t)
 	read := func(t *testing.T, parts ...string) string {
 		t.Helper()
 		text := readFile(t, filepath.Join(append([]string{"..", ".."}, parts...)...))

@@ -82,6 +82,7 @@ func objectKeys(t *testing.T, raw []byte, visit func(path, key string, repeated 
 // without the story as well, so the file is first asked for its blocks: without
 // them the test would say nothing about the story.
 func TestAC3SdlcInitThenSdlcDoctorReportsTheConfigurationWithItsBlocksAsOK(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	for _, stack := range []struct {
 		name  string

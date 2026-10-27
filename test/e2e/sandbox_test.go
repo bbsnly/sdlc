@@ -84,17 +84,7 @@ func moduleRoot(t *testing.T) string {
 // exit code and streams are what a test sees.
 func sandboxProgram(t *testing.T) string {
 	t.Helper()
-	name := "sandbox"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	out := filepath.Join(t.TempDir(), name)
-	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", out, "./internal/tools/sandbox")
-	cmd.Dir = moduleRoot(t)
-	if combined, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("the sandbox program, internal/tools/sandbox, does not build: %v\n%s", err, combined)
-	}
-	return out
+	return builtOnce(t, "sandbox", "../../internal/tools/sandbox", "the sandbox program, internal/tools/sandbox, does not build")
 }
 
 // goEnv is one of go's own settings, as the test process has it. The build

@@ -76,6 +76,7 @@ func agProject(t *testing.T) (a sandbox, printed []string) {
 
 // AC-10: the loop in a project with AGENTS.md and no CLAUDE.md.
 func TestAC10AProjectThatKeepsAGENTSmdRunsTheLoopAndHoldsIt(t *testing.T) {
+	parallel(t)
 	a, _ := agProject(t)
 	a.works(t, a.repo, "", "", "start")
 	tree := a.tree()
@@ -134,6 +135,7 @@ func (sb sandbox) agReason(t *testing.T, dir, path string) (string, bool) {
 // sandbox's own directory is above the repository and its worktree; a
 // directory beside the repository is not.
 func TestAC12AndAC13TheSandboxHoldsCLAUDElocalmdAndTheInstructionFilesAboveIt(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	sb.works(t, sb.repo, "", "", "start")
 	tree := sb.tree()
@@ -196,6 +198,7 @@ func agQuoted(page string) []string {
 // AC-9: the guides quote init and doctor on AGENTS.md, and each line they
 // quote is one the commands printed in the AC-10 project.
 func TestAC9WhatTheGuidesQuoteOfInitAndDoctorOnAGENTSmdIsWhatTheyPrint(t *testing.T) {
+	parallel(t)
 	_, printed := agProject(t)
 	seen := map[string]bool{}
 	for _, out := range printed {
@@ -230,6 +233,7 @@ func TestAC9WhatTheGuidesQuoteOfInitAndDoctorOnAGENTSmdIsWhatTheyPrint(t *testin
 // option does not write CLAUDE.md or the configuration. Each was let through
 // by the released hook when the reviewers tried it.
 func TestAC14AC15AndAC16TheSandboxRefusesAGlobALinkAndAWritingProgram(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	sb.works(t, sb.repo, "", "", "start")
 	tree := sb.tree()

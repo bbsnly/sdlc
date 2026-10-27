@@ -58,6 +58,7 @@ var ruleIn = regexp.MustCompile(`\[([a-z-]+)\]\s*$`)
 // put to the hook while a story is being worked on. It passes today and is a
 // guard for the command that replaces it.
 func TestAC1TheHookAllowsTheCoverageCommandInitWrote(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("the POSIX launcher does not run here; internal/plugin holds sdlc-hook.cmd to the same answers")
 	}
@@ -82,6 +83,7 @@ func TestAC1TheHookAllowsTheCoverageCommandInitWrote(t *testing.T) {
 // with the command's key, the rule the hook names for it, and a fix; and it is
 // the same command and the same rule the hook gives an agent that runs it.
 func TestAC3SdlcDoctorReportsAConfiguredCommandTheHookWouldRefuse(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	root := project(t, binary)
 
@@ -151,6 +153,7 @@ func TestAC3SdlcDoctorReportsAConfiguredCommandTheHookWouldRefuse(t *testing.T) 
 // the Go command left .sdlc/state/cover.out, which the gate refused as
 // uncommitted work (SDLC-E0032).
 func TestAC4RunningTheCoverageCommandAfterTheCommitDoesNotStopTheCommitGate(t *testing.T) {
+	parallel(t)
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("no sh to run the coverage command with; sdlc runs it through Git's sh on Windows")

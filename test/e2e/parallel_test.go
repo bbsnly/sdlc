@@ -24,6 +24,7 @@ import (
 )
 
 func TestAC4TheShippedHookRefusesParallelFromAModelAndTheBinaryRefusesAModelSession(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := storyRepository(t, binary, spec{id: "US-001", priority: 1})
 
@@ -74,6 +75,7 @@ func quote(s string) string {
 }
 
 func TestAC8AnInterruptEndsEverySessionTheRunStartedAndLeavesTheRecordsAsTheyWere(t *testing.T) {
+	parallel(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("os.Interrupt cannot be sent to a process on Windows, and the fake claude is a POSIX script")
 	}

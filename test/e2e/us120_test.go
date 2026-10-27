@@ -13,6 +13,7 @@ import (
 // putting an instruction file there. The unit rows are in internal/shellpolicy
 // and internal/hook; these are one of each family, end to end.
 func TestUS120TheSandboxRefusesTheShellSpellingsThatGotPastTheRules(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	sb.works(t, sb.repo, "", "", "start")
 	tree := sb.tree()

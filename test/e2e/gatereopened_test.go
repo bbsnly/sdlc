@@ -63,6 +63,7 @@ func (sb sandbox) recordsVerificationAgain(t *testing.T, args ...string) (stdout
 }
 
 func TestAC1ARecordedGateNamesWhatItReopenedWhenTheBuiltBinaryIsDriven(t *testing.T) {
+	parallel(t)
 	t.Run("AC-1 --json names every gate under reopened", func(t *testing.T) {
 		stdout, lost := finishedInASandbox(t).recordsVerificationAgain(t, "--json")
 		var out struct {

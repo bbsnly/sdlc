@@ -15,6 +15,7 @@ import (
 // command's environment; the session under test has its attempt put to the hook
 // first, which refuses it.
 func TestAC1APersonRejectsEscalatedWorkWithAReasonAndTheSessionCarriesOnFromThere(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	main, tree := sb.repo, sb.tree()
 	sb.works(t, main, "", "", "start")

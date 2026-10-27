@@ -174,6 +174,7 @@ var ccTamperings = []struct {
 // waits for a person, is refused by `sdlc stop` with SDLC-E0037, and trunk's
 // ref is where it was.
 func TestAC1AStopRefusesAStoryWhoseCommitsWereChangedAfterTheCommitGateAndLandsNothing(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	for _, tc := range ccTamperings {
@@ -191,6 +192,7 @@ func TestAC1AStopRefusesAStoryWhoseCommitsWereChangedAfterTheCommitGateAndLandsN
 // CODEMAP.md alone, still lands above the recorded range. Passes before the
 // fix as well; it is here so that the fix cannot close the runbook.
 func TestAC1ACodemapOnlyCommitAboveTheRecordedRangeStillLandsThroughTheBinary(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ccRepository(t, binary, "high")
@@ -209,6 +211,7 @@ func TestAC1ACodemapOnlyCommitAboveTheRecordedRangeStillLandsThroughTheBinary(t 
 // AC-1 non-goal: a story in a tier that does not wait for a person is judged
 // as before. The amended tip lands. Passes before the fix.
 func TestAC1AStoryInATierThatDoesNotWaitLandsAnAmendedTipAsBefore(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ccRepository(t, binary, "low")
@@ -230,6 +233,7 @@ func TestAC1AStoryInATierThatDoesNotWaitLandsAnAmendedTipAsBefore(t *testing.T) 
 // another person's; the approval stands and nobody is asked again. Passes
 // before the fix: it is the half that must stay true.
 func TestAC2TheStopsOwnReplayKeepsEachCommitsMessageAndAuthorAndTheApprovalStands(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ccRepository(t, binary, "high")
@@ -262,6 +266,7 @@ func TestAC2TheStopsOwnReplayKeepsEachCommitsMessageAndAuthorAndTheApprovalStand
 // is refused with SDLC-E0037, trunk stays at the commit that moved it, and the
 // story's branch is not replayed.
 func TestAC2ATamperedTipIsRefusedWhenTrunkMovedAndTheReplayDoesNotLaunderIt(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	for _, tc := range ccTamperings[:2] {

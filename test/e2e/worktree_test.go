@@ -604,6 +604,7 @@ func skipWithoutTheLauncher(t *testing.T) {
 // records are the main checkout's, and the copy git put in the worktree is
 // neither read nor written (D5).
 func TestAC1ACommandInALinkedWorktreeUsesTheMainCheckoutsBacklogAndRecords(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 
 	for _, layout := range []struct {
@@ -727,6 +728,7 @@ func TestAC1ACommandInALinkedWorktreeUsesTheMainCheckoutsBacklogAndRecords(t *te
 // ---------------------------------------------------------------- AC-2
 
 func TestAC2StartInAnotherCheckoutSkipsAStoryHeldElsewhere(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 
 	t.Run("AC-2 a story under way in the main checkout is neither resumed nor picked", func(t *testing.T) {
@@ -797,6 +799,7 @@ func TestAC2StartInAnotherCheckoutSkipsAStoryHeldElsewhere(t *testing.T) {
 // ---------------------------------------------------------------- AC-3
 
 func TestAC3NamingAStoryAnotherCheckoutHoldsIsRefusedAndChangesNothing(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := repository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
 	wt := worktree(t, main, "wt").as(sessionWorktree)
@@ -874,6 +877,7 @@ func TestAC3NamingAStoryAnotherCheckoutHoldsIsRefusedAndChangesNothing(t *testin
 // ---------------------------------------------------------------- AC-4
 
 func TestAC4StartsAtTheSameMomentInThreeCheckoutsNeverShareAStory(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := repository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2},
 		spec{id: "US-003", priority: 3})
@@ -954,6 +958,7 @@ func perCheckout(t *testing.T, c checkout) map[string]string {
 }
 
 func TestAC5WhatOneCheckoutDoesLeavesTheOthersFreezeSessionAndStopCount(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := repository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
 	wt := worktree(t, main, "wt")
@@ -1027,6 +1032,7 @@ func TestAC5WhatOneCheckoutDoesLeavesTheOthersFreezeSessionAndStopCount(t *testi
 // ---------------------------------------------------------------- AC-6
 
 func TestAC6StatusStoryListAndDoctorReportEveryStoryAndWhoHoldsIt(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := repository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2},
 		spec{id: "US-003", priority: 3})
@@ -1129,6 +1135,7 @@ func checkNamed(checks []check, name string) check {
 }
 
 func TestAC6LogInAnyCheckoutListsAStoryCommittedInAnotherAndWhoHoldsIt(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := repository(t, binary, spec{id: "US-001", priority: 1})
 	wt := worktree(t, main, "wt").as(sessionWorktree)
@@ -1246,6 +1253,7 @@ var routes = []route{
 }
 
 func TestAC7TheHookRefusesAHeldSessionTheMainCheckoutsBacklogRecordsAndClaim(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := repository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
@@ -1404,6 +1412,7 @@ func shellLine(args []string) string {
 }
 
 func TestAC8AClaimWhoseCheckoutIsGoneIsRefusedUntilAPersonReleasesIt(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := repository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2},
@@ -1488,6 +1497,7 @@ func bareWorktree(t *testing.T, binary string, withLoop bool) checkout {
 }
 
 func TestAC9ARepositoryWithNoMainCheckoutIsRefusedWithACodeOfItsOwn(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	wt := bareWorktree(t, binary, true).as(sessionWorktree)
 
@@ -1653,6 +1663,7 @@ var (
 // released tool at 64e7b4d, which story worktrees turned off keep (US-029.2
 // AC-9): project turns them off.
 func TestAC10ASingleCheckoutPrintsAndLeavesWhatTheReleasedToolDoes(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	root := project(t, binary)
 	addSecondStory(t, root)
@@ -1763,6 +1774,7 @@ const (
 // A record of the claim that git reported as untracked would turn that into
 // SDLC-E0032.
 func TestAC10TheCommitGateOfASingleCheckoutIsNotRefusedOverTheClaim(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	root := project(t, binary)
 	writeFile(t, filepath.Join(root, ".gitignore"), "/.sdlc/state/\n/.sdlc/stories/\n")
@@ -1782,6 +1794,7 @@ func TestAC10TheCommitGateOfASingleCheckoutIsNotRefusedOverTheClaim(t *testing.T
 // claim. It carries on as it did, and it keeps its story from every other
 // checkout from then on.
 func TestAC10AnIterationRunningAtUpgradeCarriesOnAndKeepsItsStory(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := repository(t, binary, spec{id: "US-001", priority: 1}, spec{id: "US-002", priority: 2})
 	// What the released tool leaves after `sdlc start`, and nothing more.
@@ -1804,6 +1817,7 @@ func TestAC10AnIterationRunningAtUpgradeCarriesOnAndKeepsItsStory(t *testing.T) 
 // person changed by hand, is resumed as today in a single checkout and ignored
 // where the repository has a linked worktree.
 func TestAC10AnActiveAPersonSetAsideIsResumedOnlyInASingleCheckout(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	for _, layout := range []struct {
 		name   string
@@ -1832,6 +1846,7 @@ func TestAC10AnActiveAPersonSetAsideIsResumedOnlyInASingleCheckout(t *testing.T)
 // retro and `sdlc stop` start refuses with "run sdlc stop", and stop ends the
 // iteration and lifts the finished story's freeze, on the story's one record.
 func TestAC10AFinishedStoryInAWorktreeIsPutDownWithSdlcStop(t *testing.T) {
+	parallel(t)
 	binary := build(t)
 	main := repository(t, binary, spec{id: "US-001", priority: 1})
 	wt := worktree(t, main, "wt").as(sessionWorktree)

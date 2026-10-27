@@ -148,6 +148,7 @@ func (sb sandbox) sameAsAPerson(t *testing.T, session, dir, name, args string, a
 }
 
 func TestAC14EachPersonOnlySlashCommandTypedInTheAppMakesThePersonsDecisionThroughTheLauncher(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	main, tree := sb.repo, sb.tree()
 
@@ -246,6 +247,7 @@ func TestAC14EachPersonOnlySlashCommandTypedInTheAppMakesThePersonsDecisionThrou
 // story: the one place `sdlc staffing assign` itself refuses to run (it sees
 // the session), so the hook has to run it as a terminal would, with none.
 func TestAC14AssignTypedInTheAppRecordsThePersonsStaffingThroughTheLauncher(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	sb.turnsTheStaffingOn(t)
 	main, tree := sb.repo, sb.tree()

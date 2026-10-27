@@ -78,6 +78,7 @@ func heldWithItsSession(t *testing.T, s *ontoStory, main checkout, when string) 
 // in the worktree, the rework and its commit, the gates again, and `sdlc
 // stop`, which lands the story with nobody but the session having acted.
 func TestAC6ACommandThatFailsOnTheTreeAStopMadeLeavesTheStoryWithItsSessionToReworkAndLand(t *testing.T) {
+	parallel(t)
 	skipWithoutTheLauncher(t)
 	binary := build(t)
 	main := ontoRepository(t, binary, spec{id: "US-001", priority: 1})

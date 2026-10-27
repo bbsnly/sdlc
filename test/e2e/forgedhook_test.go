@@ -16,6 +16,7 @@ import (
 )
 
 func TestAC14AModelsBashThatFeedsTheHookAForgedApprovalIsRefusedAndTheStoryStillWaits(t *testing.T) {
+	parallel(t)
 	sb := newSandbox(t)
 	main, tree := sb.repo, sb.tree()
 	sb.works(t, main, "", "", "start")
