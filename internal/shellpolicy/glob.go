@@ -64,52 +64,81 @@ func withGlobs(words []string, shapes func() []string) []string {
 }
 
 // globbed is what one word can name among the shapes, each written out.
+//
+// Each segment of the word is read by find's reader once, the first time a
+// shape asks about it, and each shape is split once: read again for every
+// shape and every place in the word a shape could start, the reader's copies
+// were three fifths of all that internal/shellpolicy's tests allocated.
 func globbed(word string, shapes []string) []string {
 	var out []string
+	var wants [][]string
 	for _, w := range braces(strings.TrimPrefix(clean(word), "./")) {
 		if !strings.ContainsAny(w, "*?[") {
 			out = append(out, w)
 			continue
 		}
-		pattern := strings.Split(w, "/")
-		for _, s := range shapes {
-			out = append(out, matchShape(pattern, s)...)
+		if wants == nil {
+			wants = make([][]string, len(shapes))
+			for i, s := range shapes {
+				wants[i] = strings.Split(s, "/")
+			}
+		}
+		texts := strings.Split(w, "/")
+		pattern := make([]globSegment, len(texts))
+		for i, text := range texts {
+			pattern[i].text = text
+		}
+		for _, want := range wants {
+			out = append(out, matchShape(pattern, want)...)
 		}
 	}
 	return out
 }
 
-// matchShape is the paths a pattern names as the shape, wherever in the pattern
-// the shape starts. What comes before it is the directory it is in, and what
-// comes after is kept as written: whether that is still protected is for the
-// rules to say, as it is for a path with no glob in it.
-func matchShape(pattern []string, shape string) []string {
-	want := strings.Split(shape, "/")
+// matchShape is the paths a pattern names as the shape want, wherever in the
+// pattern the shape starts. What comes before it is the directory it is in,
+// and what comes after is kept as written: whether that is still protected is
+// for the rules to say, as it is for a path with no glob in it.
+func matchShape(pattern []globSegment, want []string) []string {
 	var out []string
 	for at := 0; at+len(want) <= len(pattern); at++ {
-		named := append([]string{}, pattern[:at]...)
-		matched := true
+		if !shapeAt(pattern[at:at+len(want)], want) {
+			continue
+		}
+		named := make([]string, 0, len(pattern))
+		for _, p := range pattern[:at] {
+			named = append(named, p.text)
+		}
 		for i, name := range want {
-			p := pattern[at+i]
 			if name == "*" {
-				named = append(named, p)
-				continue
-			}
-			// A segment with nothing written in it names everything, and
-			// CLAUDE.md is protected wherever it is: read as naming it, `rm -rf
-			// build/*` was refused. The shape has to be asked for by name,
-			// which namedFirst decides for the first segment.
-			if i == 0 && !namedFirst(p, name) || i > 0 && !segmentMatches(p, name) {
-				matched = false
-				break
+				name = pattern[at+i].text
 			}
 			named = append(named, name)
 		}
-		if matched {
-			out = append(out, strings.Join(append(named, pattern[at+len(want):]...), "/"))
+		for _, p := range pattern[at+len(want):] {
+			named = append(named, p.text)
 		}
+		out = append(out, strings.Join(named, "/"))
 	}
 	return out
+}
+
+// shapeAt reports whether the segments of a pattern, one for each of want's,
+// name the shape, in which a `*` is any one name.
+func shapeAt(pattern []globSegment, want []string) bool {
+	for i, name := range want {
+		if name == "*" {
+			continue
+		}
+		// A segment with nothing written in it names everything, and
+		// CLAUDE.md is protected wherever it is: read as naming it, `rm -rf
+		// build/*` was refused. The shape has to be asked for by name,
+		// which first decides for the first segment.
+		if i == 0 && !pattern[i].first(name) || i > 0 && !pattern[i].matches(name) {
+			return false
+		}
+	}
+	return true
 }
 
 // climbsPastGlobstar reports whether a word, as clean leaves it (which keeps
@@ -169,15 +198,48 @@ func climbedGlobstar(word string) string {
 // `*` and `?` do not match a leading dot; the reading with one of them set is
 // written out apart, as braces (shellGlobReading).
 func segmentMatches(pattern, name string) bool {
-	g := findPattern(pattern)
+	return (&globSegment{text: pattern}).matches(name)
+}
+
+// globSegment is one segment of a glob, read by find's reader the first time
+// it is asked about, so that a word matched against many shapes reads each of
+// its segments once.
+type globSegment struct {
+	text string
+	read bool
+	g    *globPattern
+}
+
+// pattern is findPattern of the segment.
+func (s *globSegment) pattern() *globPattern {
+	if !s.read {
+		s.g, s.read = findPattern(s.text), true
+	}
+	return s.g
+}
+
+// matches is segmentMatches of the segment.
+func (s *globSegment) matches(name string) bool {
+	g := s.pattern()
 	if g == nil {
 		// A segment the reader cannot read is judged as before the reader.
 		// Counted as matching everything, such a segment would name
 		// CLAUDE.md, and a find from a directory holding only a frozen test
 		// would be refused for a file it did not name.
-		return pathMatches(pattern, name)
+		return pathMatches(s.text, name)
 	}
-	return g.matchesName(pattern, name)
+	return g.matchesName(s.text, name)
+}
+
+// first reports whether the segment, the first of a glob, names name. One in
+// which the reader finds a character of its own is read as find reads it, so
+// `[]C]LAUDE.md` names CLAUDE.md; any other is judged by hasLiteral and
+// path.Match, as before the reader.
+func (s *globSegment) first(name string) bool {
+	if g := s.pattern(); g != nil && g.literal {
+		return s.matches(name)
+	}
+	return hasLiteral(s.text) && pathMatches(s.text, name)
 }
 
 // matchesName is the match of a read pattern against a name, which a leading
@@ -218,24 +280,13 @@ func ownRune(pattern string) bool {
 	return g != nil && g.literal
 }
 
-// namedFirst reports whether the first segment of a glob names name. One in
-// which the reader finds a character of its own is read as find reads it, so
-// `[]C]LAUDE.md` names CLAUDE.md; any other is judged by hasLiteral and
-// path.Match, as before the reader.
-func namedFirst(pattern, name string) bool {
-	if ownRune(pattern) {
-		return segmentMatches(pattern, name)
-	}
-	return hasLiteral(pattern) && pathMatches(pattern, name)
-}
-
 // hasLiteral reports whether a glob segment has a character of its own, outside
 // `*`, `?` and a `[...]` class.
 //
 // It ends a class at its first `]`, as it did before find's reader, which is
 // not how find reads one. It is kept as it was because `literals` and
-// `namedFirst` ask it beside the reader rather than in its place, so that a
-// glob it counted as having a character of its own still counts as one.
+// `globSegment.first` ask it beside the reader rather than in its place, so
+// that a glob it counted as having a character of its own still counts as one.
 func hasLiteral(pattern string) bool {
 	for i := 0; i < len(pattern); i++ {
 		switch pattern[i] {

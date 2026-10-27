@@ -813,12 +813,14 @@ handed the builtin as before.
 
 Package `shellpolicy`. The shell's own globs and brace lists, read without
 listing a directory. `withGlobs` adds every protected shape that a word with
-`*?[{` in it can name (`globbed`, `matchShape`). `segmentMatches` uses the same
+`*?[{` in it can name (`globbed`, `matchShape`), reading each segment of the
+word once for every shape (`globSegment`). `segmentMatches` uses the same
 reader as find's `-name`, matches a leading dot only to a pattern that has one,
 and gives `pathMatches` (`path.Match`) for a segment the reader cannot read. In
 `matchShape`, a first segment names a shape through the reader only when the
-reader finds a character of its own in it (`ownRune`, `namedFirst`); any other
-keeps the bracket scan in `hasLiteral` and `pathMatches`, as before the reader.
+reader finds a character of its own in it (`ownRune`, `globSegment.first`); any
+other keeps the bracket scan in `hasLiteral` and `pathMatches`, as before the
+reader.
 `globHolding` in `directory.go` and the checkout tree in `takeaway.go` use
 `segmentMatches` as well. `braces` expands at most `maxBraces` (64) words.
 
