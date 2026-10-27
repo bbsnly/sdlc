@@ -1234,7 +1234,15 @@ line it is asked about: the command as written, and `nameOnly`'s `asked`,
 command as written as any other reading is, so no word of it is placed unless
 it is that command word for word. A command whose `asked` or `named` differs
 from it has `sdlc` or `git` as a program, which `plainProgram` does not know;
-`lenient` can differ in a command of plain programs alone.
+`lenient` can differ in a command of plain programs alone. Each reading has a
+`memo` of its own, which `inspectEach` makes afresh with only what is a
+function of its input carried over, and `inspection.readingsOf`
+(considered.go) makes the readings once for the whole of one Inspect; the
+config memos, `configNothing` keyed by `configAsk` and `configLines` keyed by
+`configLineAsk` (claudeconfig.go), keep only what found nothing, and each key
+holds everything its answer turns on but the State and the line, so that one
+segment's answer is reused only by a segment where it could not differ
+(configmemo_test.go has a row for each field).
 
 For each reading `memo.readAlike` compares `memo.whole` with the walk's
 segments, word for word and redirect for redirect (`pathWalk.alike`), and

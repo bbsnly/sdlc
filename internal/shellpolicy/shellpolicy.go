@@ -3293,7 +3293,8 @@ type memo struct {
 	resolved map[string]string    // what Resolve said of a word
 	landed   map[string][]Landing // what Shared said of a word
 	folded   []string             // the freeze, folded
-	line     []string             // the words of the whole command
+	line     []string             // the words of the whole command lineFor
+	lineFor  string
 	split    bool
 	disk     *diskAnswers // what the hook said of the checkouts, for every reading
 	whole    []plainRun   // the command as the plain reader read it, or nil; see plainCommand
@@ -3394,10 +3395,14 @@ func (m *memo) first(rule, spelling string) bool {
 	return true
 }
 
-// words is wordsIn(line), worked out once: line is the whole command.
+// words is wordsIn(line), worked out once for line, the whole command. A memo
+// is one reading's, and every rule asks it of that reading's command, but the
+// words kept for another line are not trusted, as configAsked does not trust
+// its set: kept from the first line asked, a second line would be answered
+// with the first one's words.
 func (m *memo) words(line string) []string {
-	if !m.split {
-		m.line, m.split = wordsIn(line), true
+	if !m.split || m.lineFor != line {
+		m.line, m.lineFor, m.split = wordsIn(line), line, true
 	}
 	return m.line
 }
