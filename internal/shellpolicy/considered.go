@@ -50,6 +50,36 @@ type inspection struct {
 	line string
 	// cdpath is what line says of CDPATH, read the first time a cd asks.
 	cdpath *cdpathRead
+	// read is what readings made of each command it was given.
+	read map[readingsAsked][]pair
+}
+
+// readingsAsked is what readings is given.
+type readingsAsked struct {
+	command    string
+	powerShell bool
+}
+
+// readingsOf is readings, made once a command for the whole of one Inspect.
+// readings is a function of what it is given, and every rule set and the
+// reading of a second session ask it of the same command: each took the
+// here-strings out of an 8 KB PowerShell command again, a scan that lexes a
+// later line for every here-string before it, and those were most of what
+// the hook-time leg's here-string shape cost.
+func (in *inspection) readingsOf(command string, powerShell bool) []pair {
+	if in == nil {
+		return readings(command, powerShell)
+	}
+	asked := readingsAsked{command: command, powerShell: powerShell}
+	if read, ok := in.read[asked]; ok {
+		return read
+	}
+	if in.read == nil {
+		in.read = map[readingsAsked][]pair{}
+	}
+	read := readings(command, powerShell)
+	in.read[asked] = read
+	return read
 }
 
 // lineCdpath is what the command Inspect was given says of CDPATH, read once

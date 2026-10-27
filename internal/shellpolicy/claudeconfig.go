@@ -899,11 +899,17 @@ var terminalGivers = map[string]bool{
 // one with a literal prompt that names no person's command, `claude
 // --version` and `claude mcp list` are not.
 func checkSecondSession(command string, powerShell bool) (Finding, bool) {
+	return checkSecondSessionRead(command, powerShell, readings)
+}
+
+// checkSecondSessionRead is checkSecondSession with the readings of the
+// command made by read.
+func checkSecondSessionRead(command string, powerShell bool, read func(string, bool) []pair) (Finding, bool) {
 	lower := strings.ToLower(command)
 	if !strings.ContainsAny(command, "$%`*?[") && !mayNameClaude(lower) {
 		return Finding{}, false
 	}
-	runs, named := everyRun(command, powerShell)
+	runs, named := everyRun(read(command, powerShell), powerShell)
 	// What can type into a session later: `tmux new 'claude'`, then send-keys.
 	given := slices.ContainsFunc(wordsIn(lower), func(w string) bool { return terminalGivers[base(w)] })
 	for _, run := range runs {
@@ -963,11 +969,11 @@ func copiesAProgram(r ran) bool {
 	return false
 }
 
-// everyRun is every command each reading of a line runs, and whether a
+// everyRun is every command each of a line's readings runs, and whether a
 // person's slash command is named anywhere in it, in a reading or in the words
 // of a command one runs.
-func everyRun(command string, powerShell bool) (all []ran, named bool) {
-	for _, r := range readings(command, powerShell) {
+func everyRun(read []pair, powerShell bool) (all []ran, named bool) {
+	for _, r := range read {
 		runs, _ := programsAt(r.text, powerShell)
 		all = append(all, runs...)
 		named = named || namesAPersonsCommand(r.text)
@@ -1064,8 +1070,8 @@ var secondSessionFinding = Finding{
 
 // secondSession is checkSecondSession, whose refusal is read from the command
 // as it arrived.
-func secondSession(command string, powerShell bool) (Finding, bool) {
-	f, ok := checkSecondSession(command, powerShell)
+func secondSession(command string, powerShell bool, read func(string, bool) []pair) (Finding, bool) {
+	f, ok := checkSecondSessionRead(command, powerShell, read)
 	if ok {
 		f.Via = viaReleased
 	}

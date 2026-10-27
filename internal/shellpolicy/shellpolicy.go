@@ -518,7 +518,7 @@ func Inspect(command string, s State) (Finding, bool) {
 	// After every rule a command was refused under before there was this one:
 	// the Claude Code sessions checkNestedSession does not read as one, where
 	// they would expand a person's command.
-	return secondSession(command, s.PowerShell)
+	return secondSession(command, s.PowerShell, s.seen.readingsOf)
 }
 
 // inspectNamed is Inspect without the reading of a second session, with the
@@ -583,7 +583,7 @@ func inspectAs(asked, named string, s State) (Finding, bool) {
 // inspectEach puts every reading of a line to one set of rules, in the order
 // readings gives them.
 func inspectEach(line string, s State, m *memo, rules func(pair, State, *memo) (Finding, bool)) (Finding, bool) {
-	for _, r := range readings(line, s.PowerShell) {
+	for _, r := range s.seen.readingsOf(line, s.PowerShell) {
 		// With a branch move found, a reading is started only within the
 		// bound, and its text is charged to it before it is parsed.
 		if s.hold.charge(len(r.text)) {
@@ -1487,7 +1487,7 @@ func HumanDecisions(command string, powerShell bool, storyWaits func(dir string)
 	// slash command makes the decision as surely as the command would, in a
 	// session that holds no story as in the one that does. Asked after the
 	// decisions, so that each keeps the name it was reported under.
-	return secondSession(command, powerShell)
+	return secondSession(command, powerShell, readings)
 }
 
 // humanDecisionsNamed is HumanDecisions without the reading of a second
