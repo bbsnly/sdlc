@@ -4472,7 +4472,15 @@ func clean(word string) string {
 // unquote is a word as the shell hands it over: without its quotes, wherever
 // they are in it. Only the ends were taken off, so `'.sdlc'/state/active` and
 // `.sd"lc"/state/active` were no path the rules knew. `$'...'` is quoted too.
+//
+// Every quote the replacer takes out has `'` or `"` in it, so a word with
+// neither is returned as it is. The replacer copies the word however little
+// it changes, and clean asks this of every spelling of every word: on a 45 KB
+// command that was 87 MB of copies, two fifths of what one Inspect allocated.
 func unquote(f string) string {
+	if !strings.ContainsAny(f, `'"`) {
+		return f
+	}
 	return quotes.Replace(f)
 }
 
