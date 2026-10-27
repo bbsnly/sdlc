@@ -2003,7 +2003,8 @@ refused the same way. The hook refused the command; nothing ran. The refusal quo
 and its reason says which it was. After a `cd` it quotes the word as you typed it after the `cd`;
 it names the `cd`'s directory only when that directory alone is past the limit. From a working
 directory reached through too many links, every command is refused and the refusal names the
-working directory; `cd` to the place it leads to by a path without the links.
+working directory; `cd` to a directory with a shorter path, one that names the place without the
+links, then run the command again, or ask the person to run it.
 
 The hook places every word a command writes before it decides, by following the links on the way
 as the filesystem does. Past either limit it cannot be sure where the word lands, so it refuses
@@ -2062,8 +2063,8 @@ on the way. So it refuses rather than guess.
 To go on, make the full path shorter, by moving or renaming the directories on the way to it,
 and name it again. Running the command from a directory nearer the file does not help: the hook
 reads the full path whichever way the command names it. From a working directory whose own path
-is that long, every command is refused; `cd` to a directory with a shorter path first. If you
-are an assistant, ask the person.
+is that long, every command is refused; `cd` to a directory with a shorter path, then run the
+command again. If you are an assistant, ask the person to run it.
 
 ## Warnings the hook prints
 

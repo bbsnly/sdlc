@@ -8,6 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/pathrules"
 )
 
@@ -17,9 +18,15 @@ import (
 
 // stateFiles are the files the store keeps in .sdlc/state, which only a name
 // can pick out of the directory.
-var stateFiles = []string{
-	".sdlc/state/active", ".sdlc/state/session", ".sdlc/state/tests.lock", ".sdlc/state/stop-blocks.json",
-	".sdlc/state/acknowledged",
+var stateFiles = statePaths(model.StateFiles())
+
+// statePaths are names in the loop's state directory, as held paths.
+func statePaths(names []string) []string {
+	paths := make([]string, 0, len(names))
+	for _, n := range names {
+		paths = append(paths, loopStateDir+"/"+n)
+	}
+	return paths
 }
 
 // findArguments are the directories find starts from, and the patterns it picks

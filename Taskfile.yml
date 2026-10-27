@@ -39,7 +39,7 @@ vars:
   # times what the tree took when they were set, so that a change which halves
   # the input needed to reach the deadline, four times the time, fails. One
   # figure for all three would let the two cheaper ones get eight times slower
-  # unseen. The five shapes US-035 added are held to the perl figure and take
+  # unseen. The six shapes US-035 added are held to the perl figure and take
   # none of their own. A person raises one, and the same figure in
   # test/checklegs/hooktime_test.go with it, only as CONTRIBUTING.md says.
   HOOK_PERL_BUDGET_MS: 3000
@@ -628,7 +628,7 @@ tasks:
         echo "init: ${total} ms (budget {{.INIT_BUDGET_MS}} ms)"
 
   hook-time:
-    desc: Assert the classifier answers eight slow commands inside their budgets
+    desc: Assert the classifier answers nine slow commands inside their budgets
     silent: true
     cmds:
       # One command with nothing around it, so the program's exit is the leg's.

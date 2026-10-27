@@ -17,7 +17,7 @@ import (
 
 // stopFile counts the stops the Stop hook has sent back on the story being
 // worked on.
-const stopFile = stateDir + "/stop-blocks.json"
+const stopFile = stateDir + "/" + model.StopBlocksFile
 
 // StopCount is how many times in a row the session has tried to stop mid-story
 // with nothing new on the story's record. Progress is the record by content when

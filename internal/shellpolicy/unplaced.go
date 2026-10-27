@@ -7,13 +7,22 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/pathrules"
 )
+
+// This file is what the walk knows after a `cd` it cannot place, and how the
+// rules are asked then: from each place the shell could be, and from each
+// directory that would make a word a held path. The CDPATH such a `cd`
+// searches is read in cdpath.go.
 
 // lostPlace is what is known of a walk that a `cd` lost: the absolute
 // directories it could be in (dirs), the part of where it is that the `cd`
 // spelt after what it could not place (tail), and, where neither is known,
-// the `cd` as written and why it cannot be placed (why), for the refusal.
+// the `cd` as written and why it cannot be placed (why), for the refusal,
+// with how to let the hook place it where an absolute `cd` is not that
+// (fix). anywhere is whether the shell could be in any directory at all, as
+// after a `cd` that searches a CDPATH the hook does not read.
 //
 // The walk read every `cd` it could not place as somewhere unknown, and a
 // relative write after one by its name alone, as the project's: so CDPATH,
@@ -23,24 +32,33 @@ type lostPlace struct {
 	dirs      []string
 	tail      string
 	cd, why   string
+	fix       string
 	unplacing bool
+	anywhere  bool
+	// searched are the places a CDPATH entry could have sent a lost walk,
+	// beside the places it falls back to where no entry holds the directory;
+	// asked as dirs are, they never count as knowing where the walk is.
+	searched []string
 }
 
 // after is what is known of the walk once a `cd` moves it from dir, and
 // whether the walk is lost where changedDir places it: given CDPATH, a
 // relative `cd` is lost wherever it starts, and a two-word `cd` (zsh's
 // `cd old new`) is somewhere its first word does not say.
-func (l lostPlace) after(dir string, lost bool, words []string, cdpath string) (lostPlace, bool) {
+func (l lostPlace) after(dir string, lost bool, words []string, cdpath searchPath) (lostPlace, bool) {
 	to, next, unplaced, lostHere := unplacedCd(words)
 	if unplaced {
 		return next, lostHere
 	}
 	switch {
+	case to == "~" || strings.HasPrefix(to, "~/"):
+		return homeCd(words, to), false
 	case strings.HasPrefix(to, "~"):
 		return lostPlace{}, false
-	case cdpath != "" && !isAbsolute(to) && to != "." && to != ".." &&
-		!strings.HasPrefix(to, "./") && !strings.HasPrefix(to, "../"):
-		return underCdpath(dir, lost, to, cdpath), true
+	case cdpath.unread && searchesCdpath(to):
+		return anywhereAfter(words, to, cdpathUnread, cdpathFix), true
+	case cdpath.searched() && searchesCdpath(to):
+		return l.underCdpath(words, dir, lost, to, cdpath), true
 	case climbsPastGlobstar(to):
 		// A `**` can be no directories, so the `..` after it climbs from
 		// the part before it; the walk is lost, as for any glob, and could
@@ -49,7 +67,9 @@ func (l lostPlace) after(dir string, lost bool, words []string, cdpath string) (
 		switch {
 		case isAbsolute(to):
 			next.dirs = []string{climbedGlobstar(to)}
-		case !lost && dir != "":
+		case !lost:
+			// dir is "" at the project's root, which is a place too
+			// (underCdpath).
 			next.dirs = []string{climbedGlobstar(path.Join(dir, to))}
 		}
 		return next, false
@@ -79,7 +99,7 @@ func unplacedCd(words []string) (to string, l lostPlace, unplaced, lost bool) {
 	}
 	switch {
 	case len(args) == 0:
-		return "", lostPlace{cd: cd, why: "it goes to the home directory, which the hook does not place", unplacing: true}, true, false
+		return "", lostPlace{cd: cd, why: "it goes to the home directory, which the command can change", unplacing: true}, true, false
 	case len(args) > 1:
 		return "", lostPlace{cd: cd, why: "zsh reads a `cd` of two words as a substitution in the directory it is in", unplacing: true}, true, true
 	}
@@ -99,54 +119,80 @@ func unplacedCd(words []string) (to string, l lostPlace, unplaced, lost bool) {
 	return to, lostPlace{}, false, false
 }
 
-// underCdpath is where a relative `cd` given CDPATH could be: the shell
-// looks for the directory under each entry first, and only then where it is.
-func underCdpath(dir string, lost bool, to, cdpath string) lostPlace {
-	next := lostPlace{tail: to}
-	for entry := range strings.SplitSeq(cdpath, ":") {
-		switch {
-		case isAbsolute(entry):
-			next.dirs = append(next.dirs, path.Join(entry, to))
-		case !lost && dir != "":
-			next.dirs = append(next.dirs, path.Join(dir, entry, to))
-		}
-	}
-	if !lost && dir != "" {
-		next.dirs = append(next.dirs, path.Join(dir, to))
+// homeCd is what is known of a walk after a `cd` to the home, `~` or a path
+// below it: nothing of where the home is, since the command can set HOME
+// before it, and what the cd spelt after ~ is still where the walk is below
+// it, as after a variable. Taken as the person's home, `cd ~ && rm -rf state`
+// was let through with HOME set to .sdlc earlier on the line (US-035,
+// verifier round 9).
+func homeCd(words []string, to string) lostPlace {
+	next := lostPlace{cd: strings.Join(words, " "), why: "it goes to the home directory, which the command can change",
+		unplacing: true}
+	if rest, ok := strings.CutPrefix(to, "~/"); ok && rest != "" && !strings.ContainsAny(rest, "$*?[`") {
+		next.why = "it starts at the home directory, which the command can change"
+		next.tail = rest
 	}
 	return next
+}
+
+// homeRooted reports whether from, where a cd left a lost walk, is spelt
+// from the person's home: ~ or a path below it, not another user's ~name.
+func homeRooted(from string) bool {
+	return from == "~" || strings.HasPrefix(from, "~/")
 }
 
 // below is a lost walk after a relative `cd`: below each place it could be.
 func (l lostPlace) below(to string) lostPlace {
 	next := l
-	for i, d := range l.dirs {
-		if i == 0 {
-			next.dirs = nil
-		}
-		next.dirs = append(next.dirs, path.Join(d, to))
-	}
+	next.dirs, next.searched = joinedAll(l.dirs, to), joinedAll(l.searched, to)
 	if l.tail != "" {
 		next.tail = path.Join(l.tail, to)
 	}
 	return next
 }
 
-// cdpath is the CDPATH a `cd` in segment searches: set in front of it, set
-// or exported earlier on the line, or in the environment the session
-// started in. Read anywhere on the line, the refusing direction.
-func (w *pathWalk) cdpath(segment string) string {
-	for _, text := range []string{segment, w.command} {
-		for f := range strings.FieldsSeq(text) {
-			if v, ok := strings.CutPrefix(f, "CDPATH="); ok && strings.Trim(v, `"'`) != "" {
-				return strings.Trim(v, `"'`)
-			}
+// joinedAll is each of dirs with to joined below it, in a slice of its own.
+func joinedAll(dirs []string, to string) []string {
+	var out []string
+	for _, d := range dirs {
+		out = addPlace(out, path.Join(d, to))
+	}
+	return out
+}
+
+// placeKey is how a place is compared: `.`, which path.Join leaves for `a/..`,
+// is the project's root, "".
+func placeKey(d string) string {
+	if d == "." {
+		return ""
+	}
+	return d
+}
+
+// addPlace is list with d added, unless the place is in it already. Counted
+// with repeats, eight round trips of `cd a && make; cd ..` under one CDPATH
+// were refused for more places than the hook follows, where the shell can be
+// in two (US-035, verifier round 13). The bound keeps list short, so the scan
+// is too.
+func addPlace(list []string, d string) []string {
+	for _, e := range list {
+		if placeKey(e) == placeKey(d) {
+			return list
 		}
 	}
-	if w.s.Carried != nil {
-		return w.s.Carried("CDPATH")
+	return append(list, d)
+}
+
+// placeCount is how many places a lost walk could be in: its dirs, and each
+// searched place that is not one of them.
+func (l lostPlace) placeCount() int {
+	n := len(l.dirs)
+	for _, d := range l.searched {
+		if len(addPlace(l.dirs, d)) > len(l.dirs) {
+			n++
+		}
 	}
-	return ""
+	return n
 }
 
 // judge asks the path rules of a segment once more from each place a lost
@@ -156,13 +202,8 @@ func (w *pathWalk) cdpath(segment string) string {
 // it names relatively is refused, since that directory could be any, one
 // above the project among them.
 func (l lostPlace) judge(j segmentRules, segment string, run invocation, dir string) (Finding, bool) {
-	for _, d := range l.dirs {
-		k := j
-		k.dir, k.lost, k.from, k.certain = d, false, "", false
-		k.away.dir, k.away.lost = d, false
-		if f, ok := k.judge(segment, run); ok {
-			return f, true
-		}
+	if f, ok := judgedFrom(j, segment, run, distinctPlaces(l.dirs, l.searched)); ok {
+		return f, true
 	}
 	if l.tail != "" {
 		k := j
@@ -171,9 +212,16 @@ func (l lostPlace) judge(j segmentRules, segment string, run invocation, dir str
 			return f, true
 		}
 	}
+	if f, ok := judgedFrom(j, segment, run, homeDirs(j)); ok {
+		return f, true
+	}
 	// A walk lost in an absolute glob is placed from the glob, and one spelt
-	// from ~ from the home, by checkFillsAbove.
-	if !l.unplacing || len(l.dirs) > 0 || isAbsolute(dir) || j.from != "" || j.s.Root == "" || len(run.words) == 0 {
+	// from ~ from the home, by checkFillsAbove. One spelt from the person's
+	// own home is not placed by it alone: the same command can set HOME first,
+	// and `export HOME=$PWD/.sdlc && cd && rm -rf state` took the loop's
+	// state away once a bare cd was spelt ~ (US-035, verifier round 9).
+	if !l.unplacing || len(l.dirs) > 0 || isAbsolute(dir) || j.from != "" && !homeRooted(j.from) ||
+		j.s.Root == "" || len(run.words) == 0 {
 		return Finding{}, false
 	}
 	for _, d := range filledDirs(run, segment) {
@@ -181,14 +229,69 @@ func (l lostPlace) judge(j segmentRules, segment string, run invocation, dir str
 			return Finding{
 				Rule:   ruleAbove,
 				Reason: "after `" + bounded(l.cd) + "`, which the hook cannot place because " + l.why + unplacedFillReason,
-				Route:  unplacedFillRoute,
+				Route:  l.fillRoute(),
 			}, true
 		}
 	}
 	if f, ok := l.fromHeld(j, segment, run); ok {
 		return f, true
 	}
-	return l.globRefusal(j, run)
+	if f, ok := l.globRefusal(j, run); ok {
+		return f, true
+	}
+	return l.anywhereRefusal(j, run)
+}
+
+// distinctPlaces is the places of lists, in order, each once: a CDPATH that
+// names one directory many times, or an empty entry beside the place a cd
+// falls back to, judged every segment as often (US-035, performance review,
+// design review round 5).
+func distinctPlaces(lists ...[]string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, l := range lists {
+		for _, d := range l {
+			if !seen[d] {
+				seen[d] = true
+				out = append(out, d)
+			}
+		}
+	}
+	return out
+}
+
+// judgedFrom asks the path rules of a segment from each of dirs, as a walk
+// placed there.
+func judgedFrom(j segmentRules, segment string, run invocation, dirs []string) (Finding, bool) {
+	for _, d := range dirs {
+		k := j
+		k.dir, k.lost, k.from, k.certain = d, false, "", false
+		k.away.dir, k.away.lost = d, false
+		if f, ok := k.judge(segment, run); ok {
+			return f, true
+		}
+	}
+	return Finding{}, false
+}
+
+// homeDirs are the places a lost walk spelt from ~ is, as the session's home
+// has them: the spelling itself, and the directory of the project it leads to
+// on disk, where a `..` after a link climbs from (`cd -P ~/l/.. && rm -rf
+// state`). Read only from somewhere unknown, `cd ~/l && rm -f active`, with l
+// a link in the home to the loop's state, took it away (US-035, security
+// review round 4). The command can set HOME first, so the rules for a cd the
+// hook cannot place are asked as well.
+func homeDirs(j segmentRules) []string {
+	if !homeRooted(j.from) {
+		return nil
+	}
+	dirs := []string{j.from}
+	if j.s.Resolve != nil {
+		if at := j.m.resolve(j.s, j.from); at != "" && at != "." {
+			dirs = append(dirs, at)
+		}
+	}
+	return dirs
 }
 
 // fromHeld asks the path rules from each directory of the project a relative
@@ -216,7 +319,7 @@ func (l lostPlace) fromHeld(j segmentRules, segment string, run invocation) (Fin
 		if hd.dir == loopStoriesDir {
 			f.Reason += j.storiesShortClause()
 		}
-		f.Route = unplacedCdRoute(f.Route)
+		f.Route = l.route(f.Route)
 		return f, true
 	}
 	return Finding{}, false
@@ -241,9 +344,41 @@ func (l lostPlace) globRefusal(j segmentRules, run invocation) (Finding, bool) {
 				Reason: "after `" + bounded(l.cd) + "`, which the hook cannot place because " + l.why +
 					", `" + bounded(graphic(first)) + "` could match an instruction file or the loop's own " +
 					"state in whatever directory the shell is in, which the hook cannot tell apart",
-				Route: unplacedCdRoute("name the files you mean"),
+				Route: l.route("name the files you mean"),
 			}, true
 		}
+	}
+	return Finding{}, false
+}
+
+// anywhereRefusal refuses a relative write or removal after a `cd` that could
+// have left the shell in any directory at all. Held paths are not all a list
+// a word can be matched with: judged as after any other unplaced cd,
+// `CDPATH+=<the git directory>; cd objects && rm -rf 12` took objects from
+// the repository (US-035, security review, design review round 3).
+func (l lostPlace) anywhereRefusal(j segmentRules, run invocation) (Finding, bool) {
+	if !l.anywhere {
+		return Finding{}, false
+	}
+	// writtenTo reads every operand of a program it does not know as written,
+	// so a program that changes no file is asked of its redirects alone:
+	// `cd x` and `ls x` after the cd write nothing.
+	words := j.redirects
+	if changesFiles(run.words) {
+		words = writtenOrRemoved(run, j.redirects)
+	}
+	for _, w := range words {
+		c := clean(w)
+		if c == "" || isAbsolute(c) || strings.HasPrefix(c, "~") || strings.HasPrefix(c, "-") {
+			continue
+		}
+		return Finding{
+			Rule: ruleDirectoryUnknown,
+			Reason: "after `" + bounded(l.cd) + "`, which the hook cannot place because " + l.why +
+				", the shell could be in any directory, so `" + bounded(graphic(c)) + "` could be an instruction " +
+				"file, or in the git directory or the loop's own state, which the hook cannot tell apart",
+			Route: l.route("name the files by an absolute path"),
+		}, true
 	}
 	return Finding{}, false
 }
@@ -251,12 +386,28 @@ func (l lostPlace) globRefusal(j segmentRules, run invocation) (Finding, bool) {
 // loopStoriesDir is the directory the story records are kept in.
 const loopStoriesDir = ".sdlc/stories"
 
-// unplacedCdRoute adds to a rule's route how to place the shell, so a model
-// does not read "there" as the held directory the reason just named (human
-// advocate r4 finding 1, r5 finding 1).
-func unplacedCdRoute(route string) string {
-	return route + "; or, if the command is meant for another directory, `cd` to it by an absolute path with no " +
-		"variable or glob, so the hook can place the shell"
+// route adds to a rule's route how to let the hook place the shell, so a
+// model does not read "there" as the held directory the reason just named
+// (human advocate r4 finding 1, r5 finding 1): `cd` by an absolute path, or
+// for a `cd` that is no help after, l's own fix. An absolute path does not
+// take a `cd` out of eval (human advocate, design review round 3).
+func (l lostPlace) route(route string) string {
+	return route + "; or, if the command is meant for another directory, " + l.placing() +
+		", so the hook can place the shell"
+}
+
+// fillRoute is the route of a fill after l, which could be above the project.
+func (l lostPlace) fillRoute() string {
+	if l.fix == "" {
+		return unplacedFillRoute
+	}
+	return "spell the directory out with an absolute path, or " + l.fix +
+		"; otherwise say what you would copy there and why, and stop"
+}
+
+// placing is how to let the hook place the shell after l.
+func (l lostPlace) placing() string {
+	return cmp.Or(l.fix, "`cd` to it by an absolute path with no variable or glob")
 }
 
 // storiesShortClause says, where the listing of .sdlc/stories could not be
@@ -334,7 +485,7 @@ func (j segmentRules) heldFrom(run invocation, tail string) []heldDir {
 	}
 	var dirs []heldDir
 	held := slices.Concat([]string{loopStateDir, loopConfigFile, ".sdlc/claude-progress.json", j.s.Backlog},
-		j.s.Frozen, j.storyRecords(firsts))
+		j.s.Frozen, j.storyRecords(firsts), j.stateEntries(firsts))
 	for _, h := range held {
 		segs := strings.Split(h, "/")
 		for i := 1; i < len(segs); i++ {
@@ -354,6 +505,29 @@ func (j segmentRules) heldFrom(run invocation, tail string) []heldDir {
 type heldDir struct {
 	dir   string
 	first string
+}
+
+// stateEntries are the names in the loop's state directory, as held paths, so
+// that a word could be one of them after a `cd` into the directory itself:
+// only its parent was asked, and `cd "$D" && rm -f active`, with D the state
+// directory, took it away (US-035, code review round 4). They are the files
+// the store keeps there, which a write can make before they exist (US-035,
+// red team, design review round 3), and what the disk lists. Where the
+// listing came back short, each of the words' first names could be one it
+// left out.
+func (j segmentRules) stateEntries(firsts map[string]bool) []string {
+	if len(firsts) == 0 {
+		return nil
+	}
+	names := model.StateFiles()
+	if j.s.disk.Entries != nil {
+		l := j.s.disk.Entries(loopStateDir)
+		names = append(names, l.Names...)
+		if !l.Complete {
+			names = append(names, slices.Collect(maps.Keys(firsts))...)
+		}
+	}
+	return statePaths(names)
 }
 
 // storyRecords are the story directories, as held paths, that the disk

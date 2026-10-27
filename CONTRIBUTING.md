@@ -83,7 +83,7 @@ working tree itself.
 gets slower refuses, for time, long commands it used to answer. The leg times
 `shellpolicy.Inspect` in process, with the test matchers and the path resolver
 wired as the hook wires them for an implementer whose story has frozen tests,
-on eight commands that are slow by construction. All but the last are the
+on nine commands that are slow by construction. All but `links` are the
 longest whole command of their shape that fits in 8,192 bytes, and the leg
 prints them by these names:
 
@@ -105,6 +105,9 @@ prints them by these names:
   of that count. Where no link can be made, as on Windows without Developer Mode
   or an administrator, the leg skips the `links` shape, prints a line that says
   so and why, and times and judges the others as usual.
+- `cdpath`: 500 assignments `CDPATH=a`, then `true;` and 614 of `cd x;`: 8,190
+  bytes, allowed. It times how `CDPATH` is read on a line of many assignments
+  and many relative `cd`s.
 
 The shapes are timed in turn, five times each, and a shape's fastest run counts.
 A line for each shape gives that time, the time of its first run and its
@@ -112,8 +115,8 @@ budget. The first run is there because the hook is a new process for every
 command and pays for the first; it is not compared with anything. The budgets
 are `HOOK_PERL_BUDGET_MS`, `HOOK_HERESTRING_BUDGET_MS` and
 `HOOK_DOTGLOB_BUDGET_MS`, beside `INIT_BUDGET_MS` in the vars of
-`Taskfile.yml`. The single-dash and `links` shapes take no budget of their
-own: each is held to the `perl` budget.
+`Taskfile.yml`. The single-dash, `links` and `cdpath` shapes take no budget of
+their own: each is held to the `perl` budget.
 
 The leg fails when a shape's fastest run is over its budget. It also fails,
 however fast the shape was, when `Inspect` allows the `dot-glob` or `links`

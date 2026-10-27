@@ -348,6 +348,25 @@ type Artifact struct {
 // here rather than in the store because the rules that protect it need it too.
 const RecordFile = "gate-record.json"
 
+// The files the store keeps in the loop's state directory, by name. They are
+// named here rather than in the store for the same reason: the rules that
+// protect them need them before they exist. Held only as the disk listed the
+// directory, a write after a `cd` the hook cannot place could make a state
+// file that was not there yet (US-035, red team, design review round 3).
+const (
+	ActiveFile       = "active"
+	SessionFile      = "session"
+	FreezeFile       = "tests.lock"
+	StopBlocksFile   = "stop-blocks.json"
+	AcknowledgedFile = "acknowledged"
+)
+
+// StateFiles are the files the store keeps in the loop's state directory, by
+// name, in a slice of the caller's own.
+func StateFiles() []string {
+	return []string{ActiveFile, SessionFile, FreezeFile, StopBlocksFile, AcknowledgedFile}
+}
+
 // InstructionFiles are the files Claude Code, and the agent tools that read
 // AGENTS.md, load as instructions. Both rule packages hold them at any depth
 // in the project, and the instructions-above-the-project rule holds them in

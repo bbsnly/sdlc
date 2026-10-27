@@ -187,6 +187,27 @@ func nameOverLimit(name string) bool {
 	return units > nameMax
 }
 
+// linuxPathMax is PATH_MAX on Linux, the length in bytes, its terminating
+// zero counted, of a path the system looks up in one go.
+const linuxPathMax = 4096
+
+// notThereOn reports whether the system's "name too long" for a path
+// fullPathBytes long whose last name is name means that name cannot be there,
+// rather than that the path is too long to look up. A name over nameMax in
+// UTF-16 units is over it in bytes too, and no system holds it. On Linux a
+// name over 255 bytes is refused as well, and inside the path length that is
+// the only reason the lookup failed, so a relative write cannot succeed where
+// it failed: `python3 -c` code holding 200 Cyrillic letters was refused as a
+// path too long (US-035, code review round 3). At or past the path length the
+// path is too long whatever the name, which keeps a mount that holds longer
+// names refused.
+func notThereOn(name string, fullPathBytes int, linux bool) bool {
+	if nameOverLimit(name) {
+		return true
+	}
+	return linux && len(name) > nameMax && fullPathBytes < linuxPathMax
+}
+
 // there reports whether p is on disk, its last element not followed.
 func (res Resolver) there(p string) bool { return res.lstat(p).there }
 
@@ -206,7 +227,7 @@ func (res Resolver) lstat(p string) entry {
 			symlink: info.Mode()&fs.ModeSymlink != 0, dir: info.IsDir()}
 	case lookupLimit(err):
 		e.unreadable = true
-	case pathTooLong(err) && !nameOverLimit(filepath.Base(p)):
+	case pathTooLong(err) && !notThereOn(filepath.Base(p), len(p), runtime.GOOS == "linux"):
 		// The system gives the same answer for one name longer than it can
 		// hold, and taken for a path too long, a word that was no path, as a
 		// long token in `python3 -c` code, refused the command (US-035,
@@ -837,7 +858,8 @@ func (res Resolver) existingPrefix(p string) (string, []string, string) {
 	existing := volume + sep
 	for i := range parts {
 		next := filepath.Join(existing, parts[i])
-		if e := res.lstat(next); !e.there {
+		e := res.lstat(next)
+		if !e.there {
 			if !e.unreadable {
 				return existing, parts[i:], ""
 			}
@@ -845,6 +867,14 @@ func (res Resolver) existingPrefix(p string) (string, []string, string) {
 			return existing, parts[i:], next
 		}
 		existing = next
+		// Once the command's budget is spent, the rest of a word below a link
+		// is read by name: the system follows every link on the way to each
+		// name it looks up, outside the budget, and 400 deep words below one
+		// chain of 31 links held the hook six seconds after the budget was
+		// spent (US-035, landing round). The command is refused by then.
+		if e.link && res.budget.spent() {
+			return existing, parts[i+1:], ""
+		}
 	}
 	return existing, nil, ""
 }

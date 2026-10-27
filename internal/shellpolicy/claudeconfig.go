@@ -50,6 +50,7 @@ func ClaudeConfigWrites(command string, s State) (Finding, bool) {
 	}
 	s.configOnly = true
 	s.seen = newInspection()
+	s.seen.line = command
 	return inspectAs(command, command, s)
 }
 
@@ -148,18 +149,39 @@ func checkConfig(q pathQuestion, k configKind) (Finding, bool) {
 // own spelling names the place is asked.
 func (q pathQuestion) writtenConfig(k configKind, spelt bool) (Finding, bool) {
 	inside, held := q.configWords()
+	// After a cd into the home, as `cd ~`, a bare `cd` or `cd $HOME/sub`, a
+	// relative word is asked from there as well as by its name: read by its
+	// name alone, `cd ~ && touch l/settings.json`, with l a link to
+	// ~/.claude, wrote the person's configuration (US-035, from US-120).
+	dirs := []string{q.dir}
+	if q.lost && (q.from == "~" || strings.HasPrefix(q.from, "~/")) {
+		dirs = append(dirs, q.from)
+	}
 	for _, group := range []struct {
 		words []string
 		held  bool
 	}{{inside, false}, {held, true}} {
-		for _, raw := range group.words {
+		// Operands first, so the refusal names the word the command acts on:
+		// asked in order, `cd ~/lc && rm -f x` named ~/lc/-f as the
+		// configuration (US-035, verifier round 12). Options are still asked.
+		for _, raw := range optionsLast(group.words) {
 			if spelt && !k.spells(raw) {
 				continue
 			}
-			for _, w := range q.m.spell(q.s, q.dir, []string{raw}) {
-				if f, ok := q.configWord(k, w, raw, group.held); ok {
-					return f, true
-				}
+			if f, ok := q.configWordFrom(k, dirs, raw, group.held); ok {
+				return f, true
+			}
+		}
+	}
+	return Finding{}, false
+}
+
+// configWordFrom is configWord of raw spelled from each of dirs in turn.
+func (q pathQuestion) configWordFrom(k configKind, dirs []string, raw string, held bool) (Finding, bool) {
+	for _, dir := range dirs {
+		for _, w := range q.m.spell(q.s, dir, []string{raw}) {
+			if f, ok := q.configWord(k, w, raw, held); ok {
+				return f, true
 			}
 		}
 	}
@@ -204,7 +226,14 @@ func (q pathQuestion) configWord(k configKind, w, raw string, held bool) (Findin
 		return Finding{}, false
 	}
 	if k.in(w) || held && k.held != nil && k.held(w) {
-		return Finding{Rule: k.rule, Reason: c + " is " + k.what, Route: k.route}, true
+		return Finding{Rule: k.rule, Reason: shortened(c) + " is " + k.what, Route: k.route}, true
+	}
+	// A glob is placed by the directory the words spell before it: with l a
+	// link in the home to ~/.claude, `rm -f ~/l/*` named nothing the hook
+	// could place, nor the configuration, and was let through (US-035,
+	// security review round 4).
+	if dir, ok := globDir(c); ok && k.in(dir) {
+		return Finding{Rule: k.rule, Reason: shortened(c) + " is " + k.what, Route: k.route}, true
 	}
 	// A glob names the configuration only in the word it is written in, and
 	// only where the shell expands it; elsewhere on the line only a name
@@ -215,13 +244,28 @@ func (q pathQuestion) configWord(k configKind, w, raw string, held bool) (Findin
 		(q.m.namesConfig(q.line, k.agents, false) || namesConfigAs(raw, true, k.agents) && q.expandsAGlob(raw)) {
 		return Finding{
 			Rule: k.rule,
-			Reason: c + " is not known until the shell runs the command, which names " +
+			Reason: shortened(c) + " is not known until the shell runs the command, which names " +
 				k.named + ", so it could be " + k.what,
 			Route: "write it with the path spelled out, if it is not " + k.named + "; " +
 				"otherwise " + k.route,
 		}, true
 	}
 	return Finding{}, false
+}
+
+// globDir is the directory a cleaned word spells before the first of its
+// names that holds a glob, where it spells one with no variable in it.
+func globDir(c string) (string, bool) {
+	segs := strings.Split(c, "/")
+	i := slices.IndexFunc(segs, func(seg string) bool { return strings.ContainsAny(seg, "*?[") })
+	if i <= 0 {
+		return "", false
+	}
+	dir := strings.Join(segs[:i], "/")
+	if dir == "" || strings.ContainsAny(dir, "$%`") {
+		return "", false
+	}
+	return dir, true
 }
 
 // runsCode reports whether the segment's command runs a program it is handed

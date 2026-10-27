@@ -44,6 +44,25 @@ type inspection struct {
 	// fifth of its time.
 	keys map[string]string
 	hits []linkHit
+	// line is the command as Inspect was given it, whichever reading is
+	// walked: a script handed to a shell is read on its own, and the CDPATH
+	// the line sets before it is in the shell's environment (pathWalk.cdpath).
+	line string
+	// cdpath is what line says of CDPATH, read the first time a cd asks.
+	cdpath *cdpathRead
+}
+
+// lineCdpath is what the command Inspect was given says of CDPATH, read once
+// for every walk of it.
+func (in *inspection) lineCdpath() cdpathRead {
+	if in == nil {
+		return cdpathRead{}
+	}
+	if in.cdpath == nil {
+		r := cdpathAssigned(in.line)
+		in.cdpath = &r
+	}
+	return *in.cdpath
 }
 
 func newInspection() *inspection {

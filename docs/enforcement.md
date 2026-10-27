@@ -521,17 +521,52 @@ stop, or write the files inside the project instead.
 Some `cd`s leave the shell somewhere the words do not say:
 
 - one given `CDPATH`, on the line or in the environment the session started
-  in, which looks for a relative directory under each entry first;
+  in, which looks for a relative directory under each entry first; where the
+  line names `CDPATH` in a way the hook does not read as a value, such as
+  `CDPATH+=`, from a variable, with `read`, or through zsh's `cdpath` array, a
+  relative `cd` could be anywhere (a read such as `$CDPATH`, `unset CDPATH`, or
+  a longer word such as a file called `cdpath.go` does not do that; any other
+  mention of the name, a search for it or a comment included, is read as one
+  that may set it); a relative entry is searched from where the shell is, and
+  where the hook cannot place that, the `cd` could be anywhere too, and the
+  reason says whether the entry came from the line or from the environment the
+  session started in; and a `cd` that, through `CDPATH`, could leave the shell
+  in more than 16 places, each counted once and counting those it could
+  already be in, could be anywhere as well, so that the hook's work keeps in
+  step with the command's length. A directory the shell could reach more than
+  one way counts once, and where the command or the line sets `CDPATH`, and
+  neither unsets it nor sets it empty, a `cd` from a directory an entry holds,
+  to the same name again, is not counted below itself where the search
+  certainly reaches the entry first, since the shell finds that directory
+  there; a value the session started with is not enough for that, because the
+  hook cannot tell it is the one your shell holds;
 - `cd -` and `popd`, which go back to a directory the command does not show;
 - a `cd` of two words, which zsh reads as a substitution in the directory it
   is in;
 - one that starts with a variable, such as `cd "$(git rev-parse
   --show-toplevel)"`;
+- a bare `cd`, and one to `~` or a path below it, which go to the home
+  directory, wherever the command set `HOME` to before it;
+- one under `eval`, and one in a script handed to a shell inside another
+  script, such as `bash -c "sh -c 'cd x'"`, which the hook does not read;
 - one into a `**` with a `..` after it, or a `cd ..` after one.
+
+A `cd` in a script handed to a shell, as in `bash -c 'cd build && rm -rf
+out'`, moves the rest of that script and not the command around it; the
+script's words are judged from where it started as well. A `cd` inside a
+quoted word of a command that is no shell, as in `echo 'x; cd /tmp'`, does
+not move the command. The hook reads the command's quotes to tell these
+apart, and where that reading leaves the shell somewhere other than every
+`cd` would, what follows is judged from both places.
 
 After such a `cd`, a relative write is judged as written and also below each
 directory the shell could be in: given `CDPATH=<root>`, `cd .sdlc && rm -rf
 state` is refused as [`loop-state-through-the-tool`](#loop-state-through-the-tool).
+The reason quotes the `cd` that lost the place, which may come before the one
+you think of as the cause: a later `cd` that searches a `CDPATH` does not
+restore the place, since where no entry holds the directory the shell stays
+below wherever it was. A refusal of a removal names the operand, not an
+option such as `-rf`, wherever an operand is held too.
 A copy or extraction is placed from each such directory, and where none is
 known it is refused under this rule, because it may fill a directory above the
 project:
@@ -546,7 +581,31 @@ CLAUDE.local.md and AGENTS.md from every directory above the one it starts in
 
 *Instead:* spell the directory out with an absolute path, or `cd` to the
 directory you mean by an absolute path with no variable or glob; otherwise say
-what you would copy there and why, and stop.
+what you would copy there and why, and stop. Where an absolute `cd` would not
+help, the route names the fix for the cause instead:
+
+- for a `cd` under `eval`: move the `cd` out of the eval;
+- for one in a script inside another script: move the `cd` out of the inner
+  script;
+- for one after a `CDPATH` the hook does not read: set `CDPATH` as one plain
+  assignment (`CDPATH=/a:/b`), or leave the name `CDPATH` out of the command;
+- for one that searches a relative `CDPATH` entry from where the hook cannot
+  place the shell: spell each entry as an absolute path, or leave `CDPATH`
+  out;
+- for one that could leave the shell in more places than the hook follows:
+  spell the `cd`s by absolute paths, which search no `CDPATH`; or leave
+  `CDPATH` out of the command, and ask the person to leave it out of the
+  environment the session starts in, such as their shell's startup file.
+
+A command that sets `CDPATH` once, as in `export CDPATH=/a:/b:.;`, and then
+runs several `cd`s is not counted that way: the hook does not tell which `cd`s
+come after the assignment, and one before it searches the value the session
+started with, or none. Put the value in front of each `cd` instead, as in
+`CDPATH=/a:/b:. cd x`.
+`unset CDPATH;` is not offered, because a `readonly CDPATH` makes it fail and
+the `cd`s after it still search. The environment the session starts in is the
+person's to change, not the assistant's: an assistant that meets a `CDPATH`
+there should use absolute `cd`s, or ask the person to change it.
 
 Where nothing places the shell, a relative write or removal is also judged
 from each directory of the project that would make the word a held path, or a
@@ -563,8 +622,8 @@ a story `US-7` exists; where that listing cannot be read in full the reason
 says so and that any name there could be a story's record. To this refusal the
 route adds that, if the command is meant for another directory, you can `cd` to
 it by an absolute path with no variable or glob so the hook can place the
-shell. A directory that is held is not one of them, or every name would be
-refused as inside `.sdlc/state`.
+shell, or the fix for the cause named above. A directory that is held is not
+one of them, or every name would be refused as inside `.sdlc/state`.
 
 A relative write or removal whose first name is a glob is refused too, under
 [`directory-entries-unknown`](#directory-entries-unknown), because the glob
@@ -572,6 +631,13 @@ could match an instruction file or the loop's own state in whatever directory
 the shell is in. A plain `cd "$D" && rm -rf build`, which fills nothing, names
 no held path and has no glob, is judged as before; so is `rm -rf $D/*`, whose
 ambiguity is the variable directory `$D` rather than the lost shell.
+
+After a `cd` that searches a `CDPATH` the hook does not read, a relative entry
+from where the hook cannot place the shell, or more places than the hook
+follows, the shell could be in any
+directory at all, the git directory among them, so every relative
+write or removal is refused under
+[`directory-entries-unknown`](#directory-entries-unknown), whatever its name.
 
 ### `write-outside-repository`
 
@@ -2562,7 +2628,10 @@ where a chain of links leads without the hook.
 
 *Instead:* name the place a path leads to directly, without the links, or ask
 the person where it leads. For a command past 512, split it into several, each
-naming fewer paths through links.
+naming fewer paths through links. From a working directory reached through
+too many links, `cd` to a directory with a shorter path, one that names
+the place without the links, then run the command again, or ask the person to
+run it.
 
 ### `path-too-long`
 
@@ -2583,7 +2652,9 @@ The refusal carries the code `SDLC-E0083`, which
 
 *Instead:* make the full path shorter, by moving or renaming the directories on
 the way to it, or ask the person to run the command. Running it from a nearer
-directory does not help: the hook reads the full path either way.
+directory does not help: the hook reads the full path either way. From a
+working directory whose own path is that long, `cd` to a directory with a
+shorter path, then run the command again, or ask the person to run it.
 
 ## A repository with more than one checkout
 

@@ -15,6 +15,9 @@ package main
 //     cannot make a link (Windows without the privilege), that shape is
 //     skipped and the leg says so and why, and the others are still timed and
 //     judged (decided D5).
+//   - the cdpath shape (design review round 3): 500 assignments of CDPATH,
+//     `true; ` and then `cd x; ` to the longest whole command within 8,192
+//     bytes, 8,190. Allowed: it writes nothing.
 //
 // Run through the real Inspect under the race detector, the calls take
 // minutes, so nothing here does that. The tests hand the program an Inspect
@@ -80,13 +83,17 @@ const (
 	sdSed      = "single-dash-sed"
 	sdTee      = "single-dash-tee"
 	links      = "links"
-	unknown    = "a command of none of the shapes"
+	// cdpath is the shape the design review's round 3 asked for: CDPATH
+	// assigned many times in front of many relative cds, read again for every
+	// cd until it was read once for the line (US-035, performance review).
+	cdpathShape = "cdpath"
+	unknown     = "a command of none of the shapes"
 )
 
 // shapeNames are every shape; withoutLinks the ones that need no link made.
 var (
-	shapeNames   = []string{perl, hereString, dotGlob, sdTouch, sdCp, sdSed, sdTee, links}
-	withoutLinks = []string{perl, hereString, dotGlob, sdTouch, sdCp, sdSed, sdTee}
+	shapeNames   = []string{perl, hereString, dotGlob, sdTouch, sdCp, sdSed, sdTee, links, cdpathShape}
+	withoutLinks = []string{perl, hereString, dotGlob, sdTouch, sdCp, sdSed, sdTee, cdpathShape}
 	singleDash   = []string{sdTouch, sdCp, sdSed, sdTee}
 )
 
@@ -113,6 +120,8 @@ var described = map[string]string{
 	sdCp:    "cp -" + strings.Repeat("a", 8183) + " file",
 	sdSed:   "sed -" + strings.Repeat("a", 8182) + " file",
 	sdTee:   "tee -" + strings.Repeat("a", 8182) + " file",
+	// 500 assignments of CDPATH to a, `true; `, and 614 of `cd x; `.
+	cdpathShape: strings.Repeat("CDPATH=a ", 500) + "true; " + strings.Repeat("cd x; ", 614),
 }
 
 // The lengths AC-1 and AC-10 give, as figures, so that a slip in the table
@@ -120,6 +129,7 @@ var described = map[string]string{
 var describedLength = map[string]int{
 	perl: 8192, hereString: 8190, dotGlob: 8191,
 	sdTouch: 8192, sdCp: 8192, sdSed: 8192, sdTee: 8192,
+	cdpathShape: 8190,
 }
 
 // The answer the leg expects of Inspect: the removal refused, and the words
@@ -128,7 +138,7 @@ var describedLength = map[string]int{
 var refusedToday = map[string]bool{
 	perl: false, hereString: false, dotGlob: true,
 	sdTouch: false, sdCp: false, sdSed: false, sdTee: false,
-	links: true,
+	links: true, cdpathShape: false,
 }
 
 // budgetFlag is the budget each shape is held to: its own, or the perl shape's
@@ -136,6 +146,7 @@ var refusedToday = map[string]bool{
 var budgetFlag = map[string]string{
 	perl: perl, hereString: hereString, dotGlob: dotGlob,
 	sdTouch: perl, sdCp: perl, sdSed: perl, sdTee: perl, links: perl,
+	cdpathShape: perl,
 }
 
 func shapeOf(command string) string {
@@ -156,6 +167,8 @@ func shapeOf(command string) string {
 		return sdTee
 	case strings.HasPrefix(command, "touch "):
 		return links
+	case strings.HasPrefix(command, "CDPATH="):
+		return cdpathShape
 	}
 	return unknown
 }
@@ -864,29 +877,31 @@ func TestAC2OneLineForEachShapeGivesItsNameItsFastestOfFiveRunsAndItsBudget(t *t
 			name:    "the story's budgets",
 			budgets: []int{3000, 1000, 1000},
 			took: map[string][]time.Duration{
-				perl:       ms(1049, 1093, 1062, 1077, 1055),
-				hereString: ms(401, 284, 277, 283, 290),
-				dotGlob:    ms(408, 372, 361, 399, 352),
-				sdTouch:    ms(1101, 1102, 1103, 1104, 1105),
-				sdCp:       ms(1206, 1202, 1203, 1204, 1205),
-				sdSed:      ms(1306, 1307, 1308, 1309, 1301),
-				sdTee:      ms(1406, 1407, 1401, 1409, 1408),
+				perl:        ms(1049, 1093, 1062, 1077, 1055),
+				hereString:  ms(401, 284, 277, 283, 290),
+				dotGlob:     ms(408, 372, 361, 399, 352),
+				sdTouch:     ms(1101, 1102, 1103, 1104, 1105),
+				sdCp:        ms(1206, 1202, 1203, 1204, 1205),
+				sdSed:       ms(1306, 1307, 1308, 1309, 1301),
+				sdTee:       ms(1406, 1407, 1401, 1409, 1408),
+				cdpathShape: ms(1508, 1506, 1505, 1502, 1507),
 			},
-			fastest: map[string]float64{perl: 1049, hereString: 277, dotGlob: 352, sdTouch: 1101, sdCp: 1202, sdSed: 1301, sdTee: 1401},
+			fastest: map[string]float64{perl: 1049, hereString: 277, dotGlob: 352, sdTouch: 1101, sdCp: 1202, sdSed: 1301, sdTee: 1401, cdpathShape: 1502},
 		},
 		{
 			name:    "other budgets and other timings",
 			budgets: []int{2999, 998, 997},
 			took: map[string][]time.Duration{
-				perl:       ms(2100, 2050, 2998, 2001, 1234),
-				hereString: ms(321, 900, 800, 700, 600),
-				dotGlob:    ms(950, 940, 456, 930, 920),
-				sdTouch:    ms(2501, 2502, 2503, 2504, 1511),
-				sdCp:       ms(1612, 2502, 2503, 2504, 2505),
-				sdSed:      ms(2501, 1713, 2503, 2504, 2505),
-				sdTee:      ms(2501, 2502, 2503, 1814, 2505),
+				perl:        ms(2100, 2050, 2998, 2001, 1234),
+				hereString:  ms(321, 900, 800, 700, 600),
+				dotGlob:     ms(950, 940, 456, 930, 920),
+				sdTouch:     ms(2501, 2502, 2503, 2504, 1511),
+				sdCp:        ms(1612, 2502, 2503, 2504, 2505),
+				sdSed:       ms(2501, 1713, 2503, 2504, 2505),
+				sdTee:       ms(2501, 2502, 2503, 1814, 2505),
+				cdpathShape: ms(2501, 2502, 1915, 2504, 2505),
 			},
-			fastest: map[string]float64{perl: 1234, hereString: 321, dotGlob: 456, sdTouch: 1511, sdCp: 1612, sdSed: 1713, sdTee: 1814},
+			fastest: map[string]float64{perl: 1234, hereString: 321, dotGlob: 456, sdTouch: 1511, sdCp: 1612, sdSed: 1713, sdTee: 1814, cdpathShape: 1915},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -912,7 +927,7 @@ func TestAC6AC10TheNewShapesAreHeldToThePerlBudgetAndPrintIt(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d with every fastest run inside its budget; stderr:\n%s", code, stderr)
 	}
-	fastest := map[string]float64{perl: 1, hereString: 1, dotGlob: 1, sdTouch: 1, sdCp: 1, sdSed: 1, sdTee: 1, links: 75}
+	fastest := map[string]float64{perl: 1, hereString: 1, dotGlob: 1, sdTouch: 1, sdCp: 1, sdSed: 1, sdTee: 1, links: 75, cdpathShape: 1}
 	passingLines(t, stdout, shapeNames, fastest, func(shape string) int { return budgetFor(shape, 2999, 998, 997) })
 	if skipped := skipLines(stdout + stderr); len(skipped) != 0 {
 		t.Errorf("the links shape was timed and also said to be skipped: %q", skipped)
@@ -936,6 +951,7 @@ func TestAC3AShapeWhoseFastestRunIsOverItsBudgetFailsTheLegAndSaysWhatToDo(t *te
 		{sdSed, ms(4100, 3900, 3800, 3700, 3600), 3600, 3000},
 		{sdTee, ms(5000, 4000, 3001.5, 4500, 4600), 3001.5, 3000},
 		{links, ms(22800, 22700, 22600, 22500, 22400), 22400, 3000},
+		{cdpathShape, ms(3600, 3500, 3502, 3700, 3800), 3500, 3000},
 	} {
 		t.Run(tc.shape, func(t *testing.T) {
 			l := legFor(t, tc.shape == links)
@@ -1134,7 +1150,7 @@ func TestAC3ABudgetThatIsMissingOrIsNotAWholeNumberAboveZeroFailsBeforeAnythingI
 func TestAC6AC10EachTimedShapeIsTheCommandItsCriterionDescribes(t *testing.T) {
 	t.Run("AC-6 the commands this test expects are the longest whole ones not over 8,192 bytes", func(t *testing.T) {
 		// One more unit of each shape: a letter, a block, a segment.
-		step := map[string]int{perl: 1, hereString: len("$s = @'\nx\n'@\n"), dotGlob: len("a/"), sdTouch: 1, sdCp: 1, sdSed: 1, sdTee: 1}
+		step := map[string]int{perl: 1, hereString: len("$s = @'\nx\n'@\n"), dotGlob: len("a/"), sdTouch: 1, sdCp: 1, sdSed: 1, sdTee: 1, cdpathShape: len("cd x; ")}
 		for _, shape := range withoutLinks {
 			n := len(described[shape])
 			if n != describedLength[shape] {

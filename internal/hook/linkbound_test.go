@@ -518,6 +518,13 @@ func TestAC5AC7FromAWorkingDirectoryPastTheLookupLimitTheHookNamesIt(t *testing.
 				t.Errorf("want it refused under %s saying %q, got:\n%s", lbWordCode, want, reason)
 			}
 		})
+		t.Run("AC-5 the route is a cd that names the place without the links, "+session, func(t *testing.T) {
+			reason := lbAskIn(t, deep, session, "echo ok")
+			const want = "cd to a directory with a shorter path, one that names the place without the links"
+			if !strings.Contains(reason, want) {
+				t.Errorf("the refusal does not say %q:\n%s", want, reason)
+			}
+		})
 		t.Run("AC-11 echo ok, 10 links deep, "+session, func(t *testing.T) {
 			if reason := lbAskIn(t, shallow, session, "echo ok"); reason != "" {
 				t.Errorf("refused:\n%s", reason)
@@ -818,4 +825,753 @@ func TestAC5FromAWorkingDirectoryPastTheLengthTheRefusalNamesNeitherLinksNorAnOp
 			}
 		})
 	}
+	t.Run("AC-5 the route is a cd to a shorter path", func(t *testing.T) {
+		reason := lbAskIn(t, deep, working, "echo ok")
+		if !strings.Contains(reason, "the working directory") || !strings.Contains(reason, "cd to a directory with a shorter path") {
+			t.Errorf("want the working directory named and a cd to a shorter path as the route, got:\n%.400s", reason)
+		}
+		if strings.Contains(reason, "renam") {
+			t.Errorf("the route still says to rename directories:\n%.400s", reason)
+		}
+	})
+}
+
+// AC-5 and AC-7 through the hook: a cd to the person's home, spelled any of
+// the ways a shell reads it, and then a write through a link there into their
+// Claude Code configuration is refused under the configuration's rule. The
+// word after the cd was placed in the project, where the link is not (US-035,
+// landing round, carried from US-120). A write after the same cd that leads
+// nowhere protected is allowed. HOME is a scratch directory.
+func TestAC5AC7ACdToTheHomeThenAWriteThroughALinkIntoTheConfigurationIsRefused(t *testing.T) {
+	config := claudeHome(t)
+	home := filepath.Dir(config)
+	if err := os.MkdirAll(config, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lbLink(t, config, filepath.Join(home, "cl1"))
+	root := lbProject(t)
+	const rule = "[claude-config-is-the-persons]"
+	for _, cmd := range []string{
+		"cd ~ && touch cl1/settings.json",
+		"cd && touch cl1/settings.json",
+		"cd $HOME && touch cl1/settings.json",
+		`cd "$HOME" && touch cl1/settings.json`,
+		"cd ${HOME} && touch cl1/settings.json",
+		"cd ~/cl1 && touch settings.json",
+	} {
+		for _, session := range []string{working, "session-b"} {
+			t.Run("AC-7 "+cmd+", "+session, func(t *testing.T) {
+				if reason := lbAskIn(t, root, session, cmd); !strings.Contains(reason, rule) {
+					t.Errorf("want it refused under %s, got:\n%.400s", rule, reason)
+				}
+			})
+		}
+	}
+	for _, session := range []string{working, "session-b"} {
+		t.Run("AC-11 cd ~ && touch notes.txt, "+session, func(t *testing.T) {
+			if reason := lbAskIn(t, root, session, "cd ~ && touch notes.txt"); reason != "" {
+				t.Errorf("refused:\n%.400s", reason)
+			}
+		})
+	}
+}
+
+// AC-5, AC-7 and AC-11 through the hook: after a cd to the person's home,
+// spelt any of the ways the shell reads from HOME, a glob write or a write to
+// a held name is refused, as on trunk, because the same command can point
+// HOME at the loop's own directory first. Read as the home, `export
+// HOME=$PWD/.sdlc && cd && rm -rf state` was allowed, and took the loop's
+// state away (US-035, verifier round 9). HOME in the hook's own environment,
+// set or unset, does not change it. `ls`, and a write to an ordinary name,
+// after the same cd stay allowed.
+func TestAC5AC7AC11AfterACdToTheHomeAWriteToAHeldNameIsRefusedThroughTheHook(t *testing.T) {
+	root := lbProject(t)
+	write(t, root, ".sdlc/stories/A-1/PLAN.md", "plan\n")
+	cds := []string{"cd", "cd ~", "cd -- ~", "pushd ~", "builtin cd", "cd $HOME", `cd "$HOME"`, "cd ${HOME}", "cd -P $HOME"}
+	sets := []string{"", "export HOME=$PWD/.sdlc && ", "HOME=$PWD/.sdlc; ",
+		"export HOME=" + filepath.ToSlash(filepath.Join(root, ".sdlc", "state")) + "; "}
+	for _, home := range []string{"set", "unset"} {
+		t.Run("AC-11 HOME "+home, func(t *testing.T) {
+			scratch := t.TempDir()
+			t.Setenv("HOME", scratch)
+			t.Setenv("USERPROFILE", scratch)
+			if home == "unset" {
+				if err := os.Unsetenv("HOME"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Unsetenv("USERPROFILE"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, cd := range cds {
+				for _, set := range sets {
+					for _, then := range []string{"rm -f *", "rm -rf state", "touch stories/A-1/PLAN.md"} {
+						cmd := set + cd + " && " + then
+						reason := lbAskIn(t, root, working, cmd)
+						if !strings.Contains(reason, "which the hook cannot place because") {
+							t.Errorf("%s: want it refused for a cd the hook cannot place, got:\n%.300s", cmd, reason)
+						}
+					}
+				}
+				if reason := lbAskIn(t, root, working, cd+" && ls"); reason != "" {
+					t.Errorf("%s && ls: refused:\n%.300s", cd, reason)
+				}
+			}
+			for _, cmd := range []string{"cd ~ && touch notes.txt", "cd && touch notes.txt", "cd ~/sub && touch x"} {
+				if reason := lbAskIn(t, root, working, cmd); reason != "" {
+					t.Errorf("%s: refused:\n%.300s", cmd, reason)
+				}
+			}
+		})
+	}
+}
+
+// The rows below are the Gate 7 round 4 fixes (security review B1 and notes
+// 2a and 2b, and the verifier's variable and script cds), held to under the
+// scout rule in files this story changes. They are on disk through the hook,
+// not in internal/shellpolicy: what they turn on is where a link in a scratch
+// home leads and which directories are there, which only the hook's resolver
+// reads. SECURITY.md applies: each row names the class, not a recipe.
+
+// lbG10 is a project held by the session and a scratch home, laid out for
+// these rows. In the home, lc leads to the person's Claude Code configuration,
+// la to their ~/.agents, ls to the loop's state, and sub/lc to the
+// configuration again; in the project, st leads to the loop's state. tmp and
+// vars are scratch directories outside both, for a script to cd into.
+type lbG10 struct{ root, home, tmp, vars string }
+
+// lbG10Setup lays out lbG10, or skips where links cannot be made.
+func lbG10Setup(t *testing.T) lbG10 {
+	t.Helper()
+	config := claudeHome(t)
+	home := filepath.Dir(config)
+	root := lbProject(t)
+	for _, d := range []string{config, filepath.Join(home, ".agents"), filepath.Join(home, "sub"), filepath.Join(home, "proj")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []string{"build/.keep", "build/out/.keep", "src/.keep", "web/.keep", "internal/.keep"} {
+		write(t, root, f, "")
+	}
+	state := filepath.Join(root, ".sdlc", "state")
+	lbLink(t, config, filepath.Join(home, "lc"))
+	lbLink(t, filepath.Join(home, ".agents"), filepath.Join(home, "la"))
+	lbLink(t, state, filepath.Join(home, "ls"))
+	lbLink(t, config, filepath.Join(home, "sub", "lc"))
+	lbLink(t, state, filepath.Join(root, "st"))
+	g := lbG10{root: root, home: home, tmp: t.TempDir(), vars: t.TempDir()}
+	for _, d := range []string{filepath.Join(g.tmp, "x"), filepath.Join(g.tmp, "scratch")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return g
+}
+
+// expand puts the layout's paths in a row's placeholders: <ROOT> the project,
+// <LOOP> its .sdlc, <STATE> the loop's state, <HOME> the scratch home, and
+// <TMP> and <VAR> the scratch directories, <GIT> the project's git
+// directory, and <L> the loop's directory spelt relative to the project.
+func (g lbG10) expand(row string) string {
+	slash := filepath.ToSlash
+	return strings.NewReplacer(
+		"<STATE>", slash(filepath.Join(g.root, ".sdlc", "state")),
+		"<LOOP>", slash(filepath.Join(g.root, ".sdlc")),
+		"<L>", ".sdlc",
+		"<GIT>", slash(filepath.Join(g.root, ".git")),
+		"<ROOT>", slash(g.root),
+		"<HOME>", slash(g.home),
+		"<TMP>", slash(g.tmp),
+		"<VAR>", slash(g.vars),
+	).Replace(row)
+}
+
+// rows asks each refused row and each allowed row of a group from cwd, a
+// directory relative to the project, in the session holding the story.
+func (g lbG10) rows(t *testing.T, cwd string, refused, allowed []string) {
+	t.Helper()
+	dir := filepath.Join(g.root, filepath.FromSlash(cwd))
+	for _, row := range refused {
+		t.Run("AC-7 refused: "+row, func(t *testing.T) {
+			if reason := lbAskIn(t, dir, working, g.expand(row)); reason == "" {
+				t.Errorf("allowed; want it refused")
+			}
+		})
+	}
+	for _, row := range allowed {
+		t.Run("AC-11 allowed: "+row, func(t *testing.T) {
+			if reason := lbAskIn(t, dir, working, g.expand(row)); reason != "" {
+				t.Errorf("refused:\n%.400s", reason)
+			}
+		})
+	}
+}
+
+// AC-5 and AC-7 (security review round 4, B1): CDPATH set on the line before
+// a relative cd is read wherever and however the line sets it. The reader split
+// the raw line on spaces, so an assignment ended by `;` or `|` was read with
+// the separator in its value, and the cd was placed under a directory that is
+// not there: `rm -f active` in the loop's state was allowed, which turns every
+// rule off for the rest of the session. An assignment whose value cannot be
+// read, appended, from a variable or read in, leaves the cd unplaced. A CDPATH
+// that leads nowhere held, or one only echoed, changes nothing.
+func TestAC5AC7ACdpathSetOnTheLineBeforeACdIsReadAsTheShellReadsIt(t *testing.T) {
+	g := lbG10Setup(t)
+	g.rows(t, ".", []string{
+		"CDPATH=<LOOP>;cd state && rm -f active",
+		"export CDPATH=<LOOP>; cd state && rm -f session",
+		"CDPATH=<LOOP>; pushd state && rm -f active",
+		"CDPATH=<LOOP>|cd state && rm -f active",
+		`CDPATH="<LOOP>";cd state && rm -f active`,
+		"CDPATH='<LOOP>'&&cd state && rm -f active",
+		"declare -x CDPATH=<LOOP>; cd state && rm -f active",
+		"CDPATH+=:<LOOP>; cd state && rm -f active",
+		"CDPATH=$X; cd state && rm -f active",
+		"read CDPATH; cd state && rm -f active",
+	}, []string{
+		"CDPATH=<ROOT> cd build && rm -rf src",
+		"CDPATH=<ROOT>;cd build && touch x",
+		"export CDPATH=/nonexistent; cd build && rm -f x",
+		"echo $CDPATH && cd build && rm -f x",
+	})
+}
+
+// AC-5 and AC-7 (security review round 4, note 2): a glob below a link in the
+// home that leads into the person's configuration or their ~/.agents is
+// judged where the link leads, with or without a cd to the home first. The
+// glob was read under the home, where nothing is held, unless the line named
+// the configuration. A glob in a directory of the home with no such link is
+// left alone.
+func TestAC5AC7AGlobBelowALinkIntoThePersonsConfigurationIsJudgedWhereItLeads(t *testing.T) {
+	g := lbG10Setup(t)
+	g.rows(t, ".", []string{
+		"rm -f ~/lc/*",
+		"rm -f ~/la/*",
+		"cd ~ && rm -f lc/*",
+		"cd <HOME> && rm -f lc/*",
+	}, []string{
+		"rm -f ~/sub/*",
+		"cd ~ && rm -f sub/*",
+	})
+}
+
+// AC-5 and AC-7 (security review round 4, note 2): a cd through a link, in the
+// home or in the project, into the loop's state or its directory, followed by
+// a bare name or a climb, is judged where the shell is. With -P the shell is
+// where the link leads, and `..` climbs from there; without it, `..` climbs
+// the path as spelt. The cd was placed under the home by its name, and a bare
+// `active` after it was allowed.
+func TestAC5AC7ACdThroughALinkIntoTheLoopsStateIsJudgedWhereTheShellIs(t *testing.T) {
+	g := lbG10Setup(t)
+	g.rows(t, ".", []string{
+		"cd ~/ls && rm -f active",
+		"cd -P ~/ls && rm -f active",
+		"cd ~/sub && cd ../ls && rm active",
+		"cd ~ && cd ls && touch active",
+		"cd -P ~/ls/.. && rm -rf state",
+		"cd -P ~/ls && cd .. && rm -rf state",
+		"cd ~/ls && cd -P .. && rm -rf state",
+		"cd -P <HOME>/ls/.. && rm -rf state",
+		"cd -P <HOME>/ls && cd .. && rm -rf state",
+		"cd st && touch ../config.json",
+		"cd ~/ls && rm -rf ../state",
+	}, nil)
+}
+
+// AC-5 and AC-7 (verifier, Gate 7 round 4): a cd into a directory spelt from
+// a variable, from the home a line can set, or back with `cd -`, leaves the
+// shell where the hook cannot place it, so a held name after it is refused,
+// whatever the variable was set to on the line. A name nothing holds stays
+// allowed after the same cd.
+func TestAC5AC7AfterACdTheHookCannotPlaceAHeldNameIsRefused(t *testing.T) {
+	g := lbG10Setup(t)
+	g.rows(t, ".", []string{
+		`D=<STATE>; cd "$D" && rm -f active`,
+		"D=<ROOT>; cd $D/.sdlc/state && rm -f active",
+		"export HOME=$PWD/.sdlc && cd ~/state && rm -f active",
+		"export HOME=<STATE>; cd && rm -f active",
+		"cd - && rm -f active",
+	}, []string{
+		"cd - && rm -rf build",
+		`cd "$D" && rm -rf build`,
+	})
+}
+
+// AC-5: after a cd below the home, the refusal says the home is a place the
+// command can change, which is why the hook does not place it.
+func TestAC5AfterACdBelowTheHomeTheRefusalSaysTheCommandCanChangeIt(t *testing.T) {
+	g := lbG10Setup(t)
+	reason := lbAskIn(t, g.root, working, "cd ~/proj && rm -f *.o")
+	if want := "starts at the home directory, which the command can change"; !strings.Contains(reason, want) {
+		t.Errorf("AC-5: the refusal does not say %q:\n%.400s", want, reason)
+	}
+}
+
+// AC-5 and AC-7 (verifier, Gate 7 round 4): a cd inside a script a shell
+// runs, as `bash -c`, `sh -c`, `zsh -c`, ssh, watch, sudo, a nested shell or
+// eval, is read where the script runs, CDPATH given to it included, so a held
+// name after it in the script is refused. A cd in a script does not move the
+// shell after it, which is why the rows from internal, through the project's
+// link st, are refused; a quote in the line before, a redirect or a subshell
+// round the script does not change that. Ordinary scripts stay allowed.
+func TestAC5AC7ACdInsideAScriptIsReadWhereTheScriptRuns(t *testing.T) {
+	g := lbG10Setup(t)
+	g.rows(t, ".", []string{
+		"bash -c 'cd <STATE> && rm -f active'",
+		"sh -c 'cd <STATE>; rm -f active'",
+		`zsh -c "cd <STATE> && rm -f active"`,
+		"bash -c 'cd <LOOP> && rm -rf state'",
+		`bash -c 'cd "<STATE>" && rm -f active'`,
+		`bash -c 'cd <STATE> && rm -f "active"'`,
+		"bash -c $'cd <STATE> && rm -f active'",
+		"ssh localhost 'cd <STATE> && rm -f active'",
+		"watch -n1 'cd <STATE> && rm -f active'",
+		"sudo sh -c 'cd <STATE> && rm -f active'",
+		`bash -c "bash -c 'cd <STATE> && rm -f active'"`,
+		"eval 'cd <STATE> && rm -f active'",
+		"eval cd <STATE>; rm -f active",
+		"CDPATH=<LOOP> bash -c 'cd state && rm -f active'",
+		"export CDPATH=<LOOP>; bash -c 'cd state && rm -f active'",
+		"env CDPATH=<LOOP> bash -c 'cd state && rm -f active'",
+		"env CDPATH=<LOOP> sh -c 'cd state; rm -f active'",
+	}, []string{
+		"bash -c 'cd build && rm -rf out'",
+		"sh -c 'cd web && npm install'",
+		"bash -c 'cd <TMP> && rm -rf x' && rm -rf build/out",
+		`bash -c 'echo "a; b"' && ls`,
+		"echo 'x; cd <TMP>' && rm -rf build/out",
+		"bash -c 'cd build' && make",
+		"zsh -c 'cd build && ls'",
+		"bash -lc 'cd build && make test'",
+		"eval echo hi",
+		"bash -c 'cd <TMP> && rm -rf scratch'",
+	})
+	g.rows(t, "internal", []string{
+		"bash -c 'cd <TMP>' && rm -f ../st/active",
+		"(bash -c 'cd <TMP>') && rm -f ../st/active",
+		"bash -c 'cd <TMP>' > log.txt && rm -f ../st/active",
+		`echo "it's" && bash -c 'cd <TMP>' && rm -f ../st/active`,
+		`bash -c 'cd <TMP> && bash -c "cd <VAR>"' && rm -f ../st/active`,
+		`bash -c "cd <TMP> && echo \"x\"" && rm -f ../st/active`,
+		"bash -c 'cd <TMP> && (cd <VAR>' && rm -f ../st/active",
+		"echo 'a; cd <TMP>' && rm -f ../st/active",
+		`bash -c 'cd <TMP> && echo \'' && rm -f ../st/active`,
+	}, nil)
+}
+
+// The rows below are the Gate 4 round 3 fixes (design review round 3), held
+// to as the rows above are.
+
+// AC-5 and AC-7 (design review round 3): zsh ties the array cdpath to the
+// search path CDPATH names, so a relative cd after `cdpath=(<dir>)` is read as
+// one after CDPATH set to it. Read by its capitals alone, the cd was placed
+// in the project, and `rm -f active` after it took the loop's state away.
+func TestAC5AC7AZshCdpathSetOnTheLineBeforeACdIsReadAsCdpath(t *testing.T) {
+	g := lbG10Setup(t)
+	g.rows(t, ".", []string{
+		"cdpath=(<LOOP>); cd state && rm -f active",
+		"cdpath+=(<LOOP>); cd state && rm -f active",
+	}, nil)
+}
+
+// AC-5 and AC-7 (design review round 3): where the line sets CDPATH in a way
+// the hook does not read, appended to here, a relative cd after it could be
+// anywhere, so a relative write after it is refused whatever it names: the
+// git directory's objects were taken away by a name nothing holds.
+func TestAC5AC7AfterACdpathTheHookDoesNotReadARelativeWriteIsRefused(t *testing.T) {
+	g := lbG10Setup(t)
+	write(t, g.root, ".git/objects/12/obj", "")
+	g.rows(t, ".", []string{
+		"export CDPATH+=:<GIT>/objects; cd 12 && rm -f obj",
+		"CDPATH+=<GIT>/objects; pushd 12 && rm -f obj",
+		"CDPATH+=<GIT>; cd objects && rm -rf 12",
+	}, nil)
+}
+
+// AC-5 (design review round 3): a refusal for a cd the hook could not place
+// says what to change so that it can: the cd out of the eval or the inner
+// script, or CDPATH set as one plain assignment. The nested script's refusal
+// says the hook does not read it.
+func TestAC5ARefusalForACdTheHookCannotPlaceSaysWhatToChange(t *testing.T) {
+	g := lbG10Setup(t)
+	for _, row := range []struct{ cmd, route, reason string }{
+		{"eval cd <STATE>; rm -f active", "move the `cd` out of the eval", ""},
+		{`bash -c "true; sh -c 'cd <TMP>; rm -f active'"`, "move the `cd` out of the inner script", "which the hook does not read"},
+		{"CDPATH+=:<TMP>; cd x && rm -f notes.txt", "set CDPATH as one plain assignment", ""},
+	} {
+		t.Run("AC-5 "+row.cmd, func(t *testing.T) {
+			reason := lbAskIn(t, g.root, working, g.expand(row.cmd))
+			if reason == "" {
+				t.Fatal("allowed; want it refused")
+			}
+			for _, want := range []string{row.route, row.reason} {
+				if !strings.Contains(reason, want) {
+					t.Errorf("the refusal does not say %q:\n%.600s", want, reason)
+				}
+			}
+		})
+	}
+}
+
+// The rows below are the Gate 7 round 5 fixes (code review round 5, and the
+// security review's advice on CDPATH mentions), held to as the rows above are.
+// <L> spells the loop's directory relative to the project; each row is asked
+// from the project's root.
+
+// AC-5 and AC-7 (code review round 5): a relative CDPATH entry is searched
+// from where the shell is, the project's root included. Dropped there, `CDPATH=
+// <L> cd state && rm -f active` was read as a plain relative cd, and took the
+// loop's state away; trunk has the same hole. A relative entry that leads
+// nowhere held, or a cd with nothing written after it, is left alone.
+func TestAC5AC7ARelativeCdpathEntryIsSearchedFromTheProjectRoot(t *testing.T) {
+	g := lbG10Setup(t)
+	g.rows(t, ".", []string{
+		"CDPATH=<L> cd state && rm -f active",
+		"CDPATH=./<L> cd state && rm -f active",
+		"CDPATH=:<L> cd state && rm -f active",
+		"CDPATH=x:<L> cd state && touch active",
+		"CDPATH=<L>; cd state && rm -f active",
+		"export CDPATH=<L>; cd state && echo x > active",
+		"declare -x CDPATH=<L>; cd state && rm -f active",
+		"env CDPATH=<L> bash -c 'cd state && rm -f active'",
+		"CDPATH=<L> cd stories && rm -f -r x",
+	}, []string{
+		"CDPATH=<L> cd build",
+		"CDPATH=x cd build && rm -rf out",
+		"CDPATH=build cd out && rm -f y",
+	})
+}
+
+// AC-5 and AC-7 (code review round 5): after a cd the hook cannot place, a cd
+// that searches a relative CDPATH entry could be anywhere, so a write after
+// it is refused, and the refusal says how to let the hook place it.
+func TestAC5AC7AfterACdTheHookCannotPlaceARelativeCdpathEntryLeavesTheCdUnplaced(t *testing.T) {
+	g := lbG10Setup(t)
+	const row = "D=x; cd $D && CDPATH=<L> cd state && rm -f active"
+	reason := lbAskIn(t, g.root, working, g.expand(row))
+	if reason == "" {
+		t.Fatalf("AC-7: %s was allowed; want it refused", row)
+	}
+	if want := "spell each CDPATH entry as an absolute path"; !strings.Contains(reason, want) {
+		t.Errorf("AC-5: the refusal does not say %q:\n%.600s", want, reason)
+	}
+	g.rows(t, ".", []string{
+		"D=x; cd $D && CDPATH=x cd build && touch y",
+	}, []string{
+		"D=x; cd $D && CDPATH=x cd build && ls",
+	})
+}
+
+// AC-5 and AC-7 (SDET, unfreeze 12): a CDPATH with no relative entry, or only
+// empty ones and `.`, does not place a cd the hook could not place before it.
+// The shell searches each entry and then where it is, so after `cd $D`, `cd
+// state` with CDPATH set to a directory that holds no state still lands below
+// $D, which could be the loop's directory: as without the CDPATH, a held name
+// after it is refused. trunk allows all of these, and so did the tree this
+// row was written against: only the plain line, with no CDPATH, was refused.
+func TestAC5AC7ACdpathWithNoRelativeEntryDoesNotPlaceACdTheHookCannotPlace(t *testing.T) {
+	g := lbG10Setup(t)
+	g.rows(t, ".", []string{
+		"D=x; cd $D && cd state && rm -f active",
+		"D=x; cd $D && CDPATH=: cd state && rm -f active",
+		"D=x; cd $D && CDPATH=. cd state && rm -f active",
+		"D=x; cd $D && CDPATH=/nonexistent cd state && rm -f active",
+		"D=x; cd $D && CDPATH=<TMP> cd state && rm -f active",
+		"cd - && CDPATH=/nonexistent cd state && rm -f active",
+	}, []string{
+		"D=x; cd $D && CDPATH=/nonexistent cd build && rm -f y",
+	})
+}
+
+// AC-5 and AC-7 (security review, code review round 5): a mention of CDPATH,
+// in any case, that the hook cannot read as a value leaves every relative cd
+// after it unplaced, so a write after it is refused: an assigning expansion,
+// or a command the hook does not know sets it, a grep included. A read of it,
+// an unset of it, or a longer word that holds it, as a file name, changes
+// nothing.
+func TestAC5AC7AMentionOfCdpathTheHookCannotReadLeavesARelativeCdUnplaced(t *testing.T) {
+	g := lbG10Setup(t)
+	g.rows(t, ".", []string{
+		"CDPATH=${CDPATH:=<L>} cd state && rm -f active",
+		"grep -rn cdpath internal > notes.txt; cd build && touch stamp",
+	}, []string{
+		"unset CDPATH; cd build && rm -rf out",
+		"unset -v CDPATH; cd build && touch y",
+		"cd internal/shellpolicy && rm -f cdpath.go.orig",
+		"echo ${#CDPATH} && cd build && touch y",
+		"echo $CDPATH && cd build && rm -f x",
+	})
+}
+
+// AC-11 (code review round 5): an escaped dollar before a quote opens a plain
+// quote, not a `$'...'` string, and a subshell after a script or a quoted cd
+// is read where the shell is. None of these is refused.
+func TestAC11AnEscapedDollarQuoteAndASubshellAfterAScriptAreAllowed(t *testing.T) {
+	g := lbG10Setup(t)
+	g.rows(t, ".", nil, []string{
+		`echo \$'x' && cd build && touch y`,
+		"(cd build && make) && rm -rf out",
+		"bash -c 'cd build && make' && (cd build && touch y)",
+		"echo 'a; cd build' && (cd out && touch y)",
+	})
+}
+
+// The rows below are the verifier's rounds 12 and 13 (unfreeze 13), held to
+// as the rows above are: the bound on the places a cd that searches CDPATH
+// may leave the shell in, counted as places and not as entries; the .claude
+// tail after an unplaced cd; and the operand a refusal names.
+
+// lbAskWith puts command to the hook from the session holding the story, in
+// cwd, with the session's environment holding vars, and returns the reason it
+// was refused for, or "" where it was allowed.
+func lbAskWith(t *testing.T, cwd, cmd string, vars map[string]string) string {
+	t.Helper()
+	r := call(t, toolCallFrom(working, cwd, "Bash", map[string]any{"command": cmd}), env(vars))
+	if !denied(r) {
+		return ""
+	}
+	return r.HookSpecificOutput.PermissionDecisionReason
+}
+
+// lbRoundTrips is n of `cd <dir> && make; cd ..; `, with dir the directory
+// each names.
+func lbRoundTrips(n int, dir func(i int) string) string {
+	var b strings.Builder
+	for i := 1; i <= n; i++ {
+		fmt.Fprintf(&b, "cd %s && make; cd ..; ", dir(i))
+	}
+	return b.String()
+}
+
+// lbDistinctCdpathCds is n of `CDPATH=/a:/b cd xI; `, each to a name of its
+// own, x1 to xn.
+func lbDistinctCdpathCds(n int) string {
+	var b strings.Builder
+	for i := 1; i <= n; i++ {
+		fmt.Fprintf(&b, "CDPATH=/a:/b cd x%d; ", i)
+	}
+	return b.String()
+}
+
+// AC-5, AC-6 and AC-7 (verifier round 12): after a cd the hook cannot place,
+// each relative cd that searches CDPATH adds the places its entries could
+// send the shell, and every segment was judged from all of them: 600 of
+// `CDPATH=/a:/b cd x; ` ran to the hook's deadline and was refused for time.
+// The places are counted once each and bounded. Each cd to a name of its own
+// adds two more (/a/xI and /b/xI) beside where the others lead below, so ten,
+// twenty or 600 of them pass the bound, and a relative write after them is
+// refused for the places, at once, and not for time.
+//
+// A cd to the same name again adds none only where every shell searches the
+// entries before its own directory. bash does; zsh tries its own directory
+// first unless CDPATH holds `.` or an empty entry, so from /a/x, `CDPATH=/a
+// cd x` lands in /a/x in bash and /a/x/x in zsh, and repeated it leaves zsh
+// ever deeper (measured with bash 5.3 and zsh 5.9, unfreeze 15). The hook
+// cannot tell the shells apart: with `:.` after the absolute entries, 600 cds
+// to the same name are allowed, as on trunk; without it, 20 cds to build,
+// each followed by a write, pass the bound and are refused for the places.
+// Three to names of their own, and two to the same one, stay within it.
+func TestAC5AC6AC7ManyCdpathCdsAfterAnUnplacedCdAreRefusedForThePlacesNotForTime(t *testing.T) {
+	g := lbG10Setup(t)
+	refused := []struct{ name, cmd string }{
+		{"20 placed CDPATH cds to build with no . entry", strings.Repeat("CDPATH=/a:/b cd build && touch y; ", 20)},
+	}
+	for _, n := range []int{10, 20, 600} {
+		refused = append(refused, struct{ name, cmd string }{
+			fmt.Sprintf("%d CDPATH cds to names of their own after an unplaced cd", n),
+			"D=x; cd $D; " + lbDistinctCdpathCds(n) + "touch y",
+		})
+	}
+	for _, row := range refused {
+		cmd := row.cmd
+		t.Run("AC-7 "+row.name, func(t *testing.T) {
+			reason := lbAskIn(t, g.root, working, cmd)
+			if reason == "" {
+				t.Fatalf("%d bytes allowed; want it refused for the places the cds could leave the shell in", len(cmd))
+			}
+			if want := "more places than the hook follows"; !strings.Contains(reason, want) {
+				t.Errorf("AC-6: the refusal does not say %q:\n%.600s", want, reason)
+			}
+			if strings.Contains(reason, "not-checked-in-time") {
+				t.Errorf("AC-6: refused for time, not for the places:\n%.600s", reason)
+			}
+		})
+	}
+	g.rows(t, ".", nil, []string{
+		"D=x; cd $D; CDPATH=/a:/b cd x; CDPATH=/a:/b cd x; touch y",
+		"D=x; cd $D; " + lbDistinctCdpathCds(3) + "touch y",
+		"D=x; cd $D; " + strings.Repeat("CDPATH=/a:/b:. cd x; ", 600) + "touch y",
+	})
+}
+
+// AC-11 (verifier round 13): the bound counts the places a cd could leave
+// the shell in, not the entries searched to get there. A cd into a directory
+// and back, with CDPATH in the session's environment or set on the line,
+// leaves the shell in one of two places however often it is done, into the
+// same directory or eight different ones, in bash and zsh alike, since `cd
+// ..` searches no CDPATH; so does a cd placed by absolute CDPATH entries
+// followed by `.`, which zsh then searches before its own directory.
+// Counted with repeats, eight round trips were refused for "more places than
+// the hook follows", where trunk allows them.
+func TestAC11ACdpathCdRepeatedDoesNotCountItsPlacesAgain(t *testing.T) {
+	g := lbG10Setup(t)
+	for i := 1; i <= 8; i++ {
+		write(t, g.root, fmt.Sprintf("s%d/.keep", i), "")
+	}
+	write(t, g.root, "a/.keep", "")
+	same := func(int) string { return "a" }
+	each := func(i int) string { return fmt.Sprintf("s%d", i) }
+	for _, row := range []struct{ name, cmd, cdpath string }{
+		{"8 round trips, CDPATH in the environment", lbRoundTrips(8, same) + "touch stamp", "/w"},
+		{"20 round trips, CDPATH in the environment", lbRoundTrips(20, same) + "touch stamp", "/w"},
+		{"8 round trips, CDPATH exported on the line", "export CDPATH=/w; " + lbRoundTrips(8, same) + "touch stamp", ""},
+		{"20 round trips, CDPATH exported on the line", "export CDPATH=/w; " + lbRoundTrips(20, same) + "touch stamp", ""},
+		{"8 round trips into build, CDPATH set on the line", "CDPATH=/w; " + lbRoundTrips(8, func(int) string { return "build" }) + "touch stamp", ""},
+		{"8 different directories, CDPATH in the environment", lbRoundTrips(8, each) + "touch stamp", "/w"},
+		{"8 different directories, CDPATH exported on the line", "export CDPATH=/w; " + lbRoundTrips(8, each) + "touch stamp", ""},
+		{"8 round trips, CDPATH of . and the home", lbRoundTrips(8, same) + "touch stamp", ".:" + g.home},
+		{"7 round trips", lbRoundTrips(7, same) + "touch stamp", "/w"},
+		{"20 subshells", strings.Repeat("(cd a && make); ", 20) + "touch stamp", "/w"},
+		{"20 placed CDPATH cds", strings.Repeat("CDPATH=/a:/b:. cd build && touch y; ", 20), ""},
+	} {
+		t.Run("AC-11 "+row.name, func(t *testing.T) {
+			vars := map[string]string{}
+			if row.cdpath != "" {
+				vars["CDPATH"] = row.cdpath
+			}
+			if reason := lbAskWith(t, g.root, row.cmd, vars); reason != "" {
+				t.Errorf("refused:\n%.600s", reason)
+			}
+		})
+	}
+}
+
+// AC-5 and AC-7 (verifier round 13): after a cd the hook cannot place, a cd
+// to .claude that searches CDPATH could still be the project's .claude, where
+// the shell goes when no entry holds it. Started afresh from the entries, the
+// walk knew nothing of the cd's own words, and `python3 tool.py x` there was
+// allowed in round 12; trunk refuses it.
+func TestAC5AC7AfterAnUnplacedCdACdpathCdToClaudeIsStillReadAsTheProjects(t *testing.T) {
+	g := lbG10Setup(t)
+	g.rows(t, ".", []string{
+		"D=x; cd $D && CDPATH=/tmp cd .claude && python3 tool.py x",
+		"D=x; cd $D && CDPATH=/nonexistent cd .claude && python3 tool.py x",
+		"D=x; cd $D && CDPATH=<HOME> cd .claude && python3 tool.py x",
+	}, nil)
+}
+
+// AC-5 and AC-7 (red team, design review round 5, vector 3): a place a CDPATH
+// entry sent a lost walk to is carried through the cds after it, a `.` and a
+// `./` one included, so a write in the git directory's objects after them is
+// refused.
+func TestAC5AC7APlaceACdpathEntrySentALostWalkToIsCarriedThroughLaterCds(t *testing.T) {
+	g := lbG10Setup(t)
+	write(t, g.root, ".git/objects/12/obj", "")
+	g.rows(t, ".", []string{
+		"D=x; cd $D && CDPATH=<GIT> cd objects && cd 12 && rm -f obj",
+		"D=x; cd $D && CDPATH=<GIT> cd objects && cd ./12 && rm -f obj",
+		"D=x; cd $D && CDPATH=<GIT> cd objects && cd . && cd ./12 && rm -f obj",
+	}, nil)
+}
+
+// AC-5 (verifier rounds 12 and 13): a refusal names the operand the command
+// writes, read after its options and after `--`, and never an option: `rm
+// -rf x` after a cd into the loop's stories was refused naming
+// .sdlc/stories/-rf, and in the person's configuration naming `f`.
+func TestAC5ARefusalNamesTheOperandNotAnOption(t *testing.T) {
+	g := lbG10Setup(t)
+	for _, row := range []struct{ cmd, names, notNames string }{
+		{"cd <L>/stories && rm -rf x", "<L>/stories/x", "<L>/stories/-"},
+		{"CDPATH=<L> cd stories && rm -f -r x", "<L>/stories/x", "<L>/stories/-"},
+		{"cd <L>/stories && rm -rf -- -x", "<L>/stories/-x", "<L>/stories/-r"},
+		{"cd ~/.claude && rm -rf settings.json", "settings.json", "-rf"},
+		{"cd ~/.claude && rm -rf -- -x", "~/.claude/-x", "-rf"},
+	} {
+		t.Run("AC-5 "+row.cmd, func(t *testing.T) {
+			reason := lbAskIn(t, g.root, working, g.expand(row.cmd))
+			if reason == "" {
+				t.Fatal("allowed; want it refused")
+			}
+			if names := g.expand(row.names); !strings.Contains(reason, names) {
+				t.Errorf("the refusal does not name %q:\n%.600s", names, reason)
+			}
+			if not := g.expand(row.notNames); strings.Contains(reason, not) {
+				t.Errorf("the refusal names an option, %q:\n%.600s", not, reason)
+			}
+			if strings.HasPrefix(reason, "f ") {
+				t.Errorf("the refusal names the option letter f:\n%.600s", reason)
+			}
+		})
+	}
+}
+
+// AC-5 (verifier round 12): a line that only names CDPATH, as a grep for it,
+// is refused for the relative writes after it, and the reason says the line
+// names it and may set it: it said the line sets it, which sent the person
+// looking for an assignment that is not there.
+func TestAC5ARefusalForAMentionOfCdpathSaysTheLineNamesIt(t *testing.T) {
+	g := lbG10Setup(t)
+	reason := lbAskIn(t, g.root, working, "grep -rn cdpath internal > notes.txt; cd build && touch stamp")
+	if reason == "" {
+		t.Fatal("allowed; want it refused")
+	}
+	if want := "names CDPATH"; !strings.Contains(reason, want) {
+		t.Errorf("the refusal does not say %q:\n%.600s", want, reason)
+	}
+	if strings.Contains(reason, "sets CDPATH") {
+		t.Errorf("the refusal says the line sets CDPATH, which it does not:\n%.600s", reason)
+	}
+}
+
+// AC-5 and AC-7 (verifier round 14, unfreeze 16): after a cd the hook cannot
+// place, a place a cd that searches CDPATH certainly leaves for an entry's
+// directory is dropped (reachedFirst), and only then: where the entry is in
+// every value the cd could search, only absolute entries come before it, an
+// empty or `.` entry comes after it, the line neither unsets CDPATH nor
+// assigns it empty, and the line, not only the session, sets it. Each row
+// breaks one condition, so the shell, standing in <ROOT>/sub/x, can go on to
+// <ROOT>/sub/x/x, where lc is a link into the person's Claude Code
+// configuration; only the place catches the write, since no name in it is
+// held. With conditions 2 or 4 removed, every other test passed and these
+// writes were allowed. The session's value alone is never taken as the
+// shell's, since the hook reads its own environment. The same CDPATH twice
+// drops the place and is allowed, as is one cd: the link is two levels down.
+func TestAC5AC7ACdpathPlaceIsDroppedOnlyWhereTheShellCertainlyLeavesIt(t *testing.T) {
+	g := lbG10Setup(t)
+	if err := os.MkdirAll(filepath.Join(g.root, "sub", "x", "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lbLink(t, filepath.Join(g.home, ".claude"), filepath.Join(g.root, "sub", "x", "x", "lc"))
+	const first = "D=x; cd $D; CDPATH=<ROOT>/sub:. cd x; "
+	const exported = "D=x; cd $D; export CDPATH=<ROOT>/sub:.; cd x; "
+	for _, row := range []struct{ name, cmd, session string }{
+		{"S1, the second cd's own CDPATH lacks the entry", first + "CDPATH=/nonexistent:. cd x; touch lc/new.json", ""},
+		{"S1, a later export lacks the entry", exported + "export CDPATH=/nonexistent:.; cd x; touch lc/new.json", ""},
+		{"S1, a later assignment lacks the entry", "D=x; cd $D; CDPATH=<ROOT>/sub:.; cd x; CDPATH=/nonexistent:.; cd x; touch lc/new.json", ""},
+		{"S2, an empty entry first", first + "CDPATH=:<ROOT>/sub:. cd x; touch lc/new.json", ""},
+		{"S2b, . first", first + "CDPATH=.:<ROOT>/sub:. cd x; touch lc/new.json", ""},
+		{"S3, unset CDPATH between", exported + "unset CDPATH; cd x; touch lc/new.json", ""},
+		{"S3b, CDPATH= in front of the second cd", exported + "CDPATH= cd x; touch lc/new.json", ""},
+		{"S3b, CDPATH= exported between", exported + "export CDPATH=; cd x; touch lc/new.json", ""},
+		// The session's CDPATH the same as the line's, so that only the unset
+		// or the empty assignment keeps the place.
+		{"S3, unset CDPATH between, the session's CDPATH the same", exported + "unset CDPATH; cd x; touch lc/new.json", "<ROOT>/sub:."},
+		{"S3b, CDPATH= in front of the second cd, the session's CDPATH the same", exported + "CDPATH= cd x; touch lc/new.json", "<ROOT>/sub:."},
+		{"only the session's CDPATH", "D=x; cd $D; cd x; cd x; touch lc/new.json", "<ROOT>/sub:."},
+	} {
+		t.Run("AC-7 "+row.name, func(t *testing.T) {
+			vars := map[string]string{}
+			if row.session != "" {
+				vars["CDPATH"] = g.expand(row.session)
+			}
+			if reason := lbAskWith(t, g.root, g.expand(row.cmd), vars); reason == "" {
+				t.Errorf("allowed; the shell can reach lc/new.json in the person's configuration")
+			}
+		})
+	}
+	g.rows(t, ".", nil, []string{
+		first + "CDPATH=<ROOT>/sub:. cd x; touch lc/new.json",
+		first + "touch lc/new.json",
+	})
 }

@@ -91,7 +91,51 @@ func (s State) bounded() State {
 		*f = askedFirst(*f, ask)
 	}
 	s.Checkouts = placedAfter(s.Checkouts, ask)
+	s.disk = s.disk.bounded(func(word string) bool { return in.readable(bound, word) })
 	return s
+}
+
+// pastLinkBound is the cause a read of the disk gives where its word is past
+// a bound on the links sdlc follows.
+const pastLinkBound = "the path goes through more symbolic links than sdlc follows"
+
+// bounded is d with each read asked of readable first. The system follows a
+// path's links again on every read, outside the budget: a command of 2,000
+// globs below one chain of 31 links, each link padded with `./`, held the
+// hook for six seconds after its budget was spent, and one long enough would
+// have run it out of time (US-035, landing round). A word not read is
+// answered as cut short, and a directory, which can only add a refusal; the
+// command is refused for the bound in any case.
+func (d Disk) bounded(readable func(string) bool) Disk {
+	if entries := d.Entries; entries != nil {
+		d.Entries = func(dir string) Listing {
+			if !readable(dir) {
+				return Listing{Cause: pastLinkBound}
+			}
+			return entries(dir)
+		}
+	}
+	if archive := d.Archive; archive != nil {
+		d.Archive = func(file string) Listing {
+			if !readable(file) {
+				return Listing{Cause: pastLinkBound}
+			}
+			return archive(file)
+		}
+	}
+	if isDir := d.IsDir; isDir != nil {
+		d.IsDir = func(word string) bool { return !readable(word) || isDir(word) }
+	}
+	return d
+}
+
+// readable reports whether the disk may be read at word: it is within the
+// bound of one word, and asking it did not find the command's budget spent.
+func (in *inspection) readable(bound func(string) error, word string) bool {
+	if !in.within(bound, word) {
+		return false
+	}
+	return !errors.Is(in.bounds[in.keys[word]], pathrules.ErrLinkBudget)
 }
 
 // askedFirst is check with ask said first, nil where check is.
@@ -233,7 +277,7 @@ func (in *inspection) linkFinding(s State, line string) (Finding, bool) {
 	// verifier round 7).
 	switch {
 	case errors.Is(hit.err, pathrules.ErrLinkBudget):
-	case pastWordBound(s.DirBound) && strings.HasPrefix(hit.word, s.Dir+"/"):
+	case s.Dir != "" && pastWordBound(s.DirBound) && strings.HasPrefix(hit.word, s.Dir+"/"):
 		hit.err, hit.quote = s.DirBound, workingDirectory
 	default:
 		hit = in.dirQuote(s, hit, line)
@@ -319,6 +363,16 @@ func (h *linkHit) finding() Finding {
 		f.Route = "make the full path shorter, by moving or renaming the directories on the way to it, " +
 			"or ask the person to run the command"
 		f.Code = sdlcerr.PathTooLong.String()
+	}
+	// From a working directory past a bound every command is refused, and
+	// renaming the directories on the way would move the place the person
+	// works in, when the command runs as well from a shorter spelling of it.
+	if h.quote == workingDirectory && f.Code != sdlcerr.LinkBudgetSpent.String() {
+		f.Route = "cd to a directory with a shorter path, then run the command again, or ask the person to run it"
+		if f.Code == sdlcerr.TooManyLinks.String() {
+			f.Route = "cd to a directory with a shorter path, one that names the place without the links, " +
+				"then run the command again, or ask the person to run it"
+		}
 	}
 	return f
 }

@@ -844,24 +844,61 @@ func joinAbove(start, dir string) string {
 
 // movedFrom is where a cd leaves a lost walk, as the command spells it, where
 // that spelling starts at ~: the target itself, or a relative one joined to
-// where the walk was, while that still starts at ~. Only aboveDir reads it:
-// a rule that joined relative words to it would read `cd ~ && rm
-// .sdlc/state/active`, refused by name today, as a file in the home.
+// where the walk was, while that still starts at ~. A bare `cd`, and one to
+// `$HOME` or `${HOME}`, go to the home as `cd ~` does and are spelt ~ too.
+// aboveDir reads it, and the configuration rules read a relative word joined
+// to it besides the word itself (writtenConfig); a rule that read only the
+// joined word would read `cd ~ && rm .sdlc/state/active`, refused by name
+// today, as a file in the home.
 func movedFrom(from string, lost bool, words []string) string {
 	args := cdOperands(words[1:])
 	if len(args) == 0 {
+		if goesHome(words) {
+			return "~"
+		}
 		return ""
 	}
-	to := clean(args[0])
+	to := homeSpelt(clean(args[0]))
 	switch {
 	case to == "-":
 		// The directory before, which no spelling here says.
 	case strings.HasPrefix(to, "~") && !shellDirectory(to):
 		return to
 	case lost && from != "" && !isAbsolute(to):
-		if joined := path.Join(from, to); strings.HasPrefix(joined, "~") {
+		joined := path.Join(from, to)
+		// A `..` is kept: after a link it climbs from where the link leads,
+		// which lostPlace.judge asks the disk (US-035, security review round 4).
+		if slices.Contains(strings.Split(to, "/"), "..") {
+			joined = from + "/" + to
+		}
+		if strings.HasPrefix(joined, "~") {
 			return joined
 		}
 	}
 	return ""
+}
+
+// goesHome reports whether words, a cd with no directory after its options,
+// go to the home: cd, chdir, Set-Location and sl do, while a bare pushd swaps
+// the top two directories of its stack instead.
+func goesHome(words []string) bool {
+	switch strings.ToLower(base(words[0])) {
+	case "cd", "chdir", "set-location", "sl":
+		return true
+	}
+	return false
+}
+
+// homeSpelt is to with the home spelt ~ where a variable spells it, `$HOME`
+// or `${HOME}` with or without a path after it, as the hook reads the same
+// spellings when it places a word: after `cd $HOME`, a write through a link
+// into ~/.claude was a relative word from somewhere unknown, and let through
+// (US-035, from US-120).
+func homeSpelt(to string) string {
+	for _, v := range []string{"$HOME", "${HOME}"} {
+		if rest, ok := strings.CutPrefix(to, v); ok && (rest == "" || rest[0] == '/') {
+			return "~" + rest
+		}
+	}
+	return to
 }

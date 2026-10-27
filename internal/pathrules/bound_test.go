@@ -361,35 +361,64 @@ func TestAC7ABudgetedResolverBoundsAWordWhoseFullPathIsTooLong(t *testing.T) {
 	})
 }
 
-// AC-7: a name is over the system's limit on one name only where it is over
-// 255 both in bytes and in UTF-16 units. Linux holds 255 bytes, and macOS and
-// NTFS 255 UTF-16 units, so a name over one and not the other may be there on
-// some system. Counted in bytes alone, a legal name of 130 "é" (260 bytes) on
-// the way to a path past the system's length made that path read as not there,
-// and a relative write through a link into the loop's state was allowed again
-// (US-035, verifier round 7).
-func TestAC7ANameIsOverTheLimitOnlyWhereItIsOver255InBytesAndInUnits(t *testing.T) {
+// AC-7: whether a lookup refused as too long, ending in name, reads as not
+// there. A name over 255 UTF-16 units is held by no system the hook runs on,
+// so it is not there anywhere. macOS and NTFS hold 255 units, so a name within
+// them may be there and the path is too long (SDLC-E0083). Linux holds 255
+// bytes, so there a name over 255 bytes is not there, unless the full path is
+// 4,096 bytes or more, where the path is past the system's length whatever the
+// name. Counted in bytes alone on every system, a legal macOS name of 130 "é"
+// (260 bytes) on the way to a path past the length made that path read as not
+// there, and a relative write through a link into the loop's state was allowed
+// (US-035, verifier round 7). Counted in units alone on Linux, a word that is
+// no path, as `python3 -c` code holding 200 Cyrillic letters, would read as a
+// path too long and be refused, as every long word was in round 6. The rows
+// with linux false are the ones this test held as nameOverLimit's before the
+// landing, unchanged.
+func TestAC7ANameIsNotThereOnlyWhereTheSystemCannotHoldIt(t *testing.T) {
 	const emoji = "\U0001F600" // 4 bytes, 2 UTF-16 units
 	for _, tc := range []struct {
-		name string
-		in   string
-		want bool
+		name  string
+		in    string
+		full  int
+		linux bool
+		want  bool
 	}{
-		{"no name", "", false},
-		{"255 ASCII", strings.Repeat("x", 255), false},
-		{"256 ASCII", strings.Repeat("x", 256), true},
-		{"130 é, 260 bytes", strings.Repeat("é", 130), false},
-		{"255 é, 510 bytes", strings.Repeat("é", 255), false},
-		{"256 é", strings.Repeat("é", 256), true},
-		{"127 emoji, 254 units", strings.Repeat(emoji, 127), false},
-		{"128 emoji, 256 units", strings.Repeat(emoji, 128), true},
-		{"255 CJK, 765 bytes", strings.Repeat("中", 255), false},
-		{"256 CJK", strings.Repeat("中", 256), true},
-		{"254 ASCII and one emoji, 256 units in 258 bytes", strings.Repeat("x", 254) + emoji, true},
-		{"253 ASCII and one emoji, 255 units in 257 bytes", strings.Repeat("x", 253) + emoji, false},
+		{"no name", "", 1000, false, false},
+		{"no name", "", 1000, true, false},
+		{"255 ASCII", strings.Repeat("x", 255), 1000, false, false},
+		{"255 ASCII", strings.Repeat("x", 255), 1000, true, false},
+		{"256 ASCII", strings.Repeat("x", 256), 1000, false, true},
+		{"256 ASCII", strings.Repeat("x", 256), 1000, true, true},
+		{"256 ASCII", strings.Repeat("x", 256), 5000, true, true},
+		{"130 é, 260 bytes", strings.Repeat("é", 130), 1000, false, false},
+		{"130 é, 260 bytes", strings.Repeat("é", 130), 1000, true, true},
+		{"130 é, 260 bytes", strings.Repeat("é", 130), 4095, true, true},
+		{"130 é, 260 bytes", strings.Repeat("é", 130), 4096, true, false},
+		{"130 é, 260 bytes", strings.Repeat("é", 130), 5000, true, false},
+		{"255 é, 510 bytes", strings.Repeat("é", 255), 1000, false, false},
+		{"255 é, 510 bytes", strings.Repeat("é", 255), 1000, true, true},
+		{"255 é, 510 bytes", strings.Repeat("é", 255), 4096, true, false},
+		{"256 é", strings.Repeat("é", 256), 1000, false, true},
+		{"256 é", strings.Repeat("é", 256), 5000, true, true},
+		{"127 emoji, 254 units", strings.Repeat(emoji, 127), 1000, false, false},
+		{"127 emoji, 254 units", strings.Repeat(emoji, 127), 1000, true, true},
+		{"127 emoji, 254 units", strings.Repeat(emoji, 127), 4096, true, false},
+		{"128 emoji, 256 units", strings.Repeat(emoji, 128), 1000, false, true},
+		{"128 emoji, 256 units", strings.Repeat(emoji, 128), 5000, true, true},
+		{"200 Cyrillic, 400 bytes", strings.Repeat("ж", 200), 1000, false, false},
+		{"200 Cyrillic, 400 bytes", strings.Repeat("ж", 200), 1000, true, true},
+		{"200 Cyrillic, 400 bytes", strings.Repeat("ж", 200), 4095, true, true},
+		{"200 Cyrillic, 400 bytes", strings.Repeat("ж", 200), 4096, true, false},
+		{"255 CJK, 765 bytes", strings.Repeat("中", 255), 1000, false, false},
+		{"255 CJK, 765 bytes", strings.Repeat("中", 255), 1000, true, true},
+		{"256 CJK", strings.Repeat("中", 256), 1000, false, true},
+		{"254 ASCII and one emoji, 256 units in 258 bytes", strings.Repeat("x", 254) + emoji, 1000, false, true},
+		{"253 ASCII and one emoji, 255 units in 257 bytes", strings.Repeat("x", 253) + emoji, 1000, false, false},
+		{"253 ASCII and one emoji, 255 units in 257 bytes", strings.Repeat("x", 253) + emoji, 1000, true, true},
 	} {
-		if got := nameOverLimit(tc.in); got != tc.want {
-			t.Errorf("AC-7: nameOverLimit(%s) = %v, want %v", tc.name, got, tc.want)
+		if got := notThereOn(tc.in, tc.full, tc.linux); got != tc.want {
+			t.Errorf("AC-7: notThereOn(%s, %d bytes, linux %v) = %v, want %v", tc.name, tc.full, tc.linux, got, tc.want)
 		}
 	}
 }
@@ -469,4 +498,57 @@ func TestAC7APathPastTheLengthThroughALegalMultibyteNameIsBounded(t *testing.T) 
 			}
 		})
 	}
+}
+
+// AC-6: once the command's budget is spent, a word below a link is not looked
+// up name by name past the link; the rest of it is read by name. The system
+// follows every link on the way to each name it looks up, outside the budget,
+// and 400 deep words below one chain of 31 links held the hook six seconds
+// after the budget was spent (US-035, landing round). The memoised resolver
+// keeps every path it asked the disk about, so what the walk asked is read
+// from it, not timed. Within the budget, the walk goes down as it did, and
+// Rel's answer is the unbudgeted resolver's.
+func TestAC6OnceTheBudgetIsSpentAWordBelowALinkIsReadByNamePastIt(t *testing.T) {
+	root := project(t)
+	if err := os.MkdirAll(filepath.Join(root, "real", "a", "b", "c", "d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "L")); err != nil {
+		t.Skipf("this platform will not make a link here: %v", err)
+	}
+	spender := filepath.Join(root, lbChainAtOneName(t, root, "s", 3, lbTarget(t, root)))
+	word := filepath.Join(root, "L", "a", "b", "c", "d", "x")
+	below := filepath.Join(root, "L") + string(filepath.Separator)
+	askedBelow := func(res Resolver) []string {
+		var asked []string
+		for p := range res.disk.there {
+			if strings.HasPrefix(p, below) {
+				asked = append(asked, p)
+			}
+		}
+		return asked
+	}
+	plainRel, plainOutside := NewResolver(root).Rel(word)
+
+	t.Run("AC-6 the budget spent", func(t *testing.T) {
+		res := NewResolver(root).Memoised().Budgeted(2)
+		if err := res.Bound(spender); !errors.Is(err, ErrLinkBudget) {
+			t.Fatalf("Bound(a word through 3 links) on a budget of 2 = %v, want %v", err, ErrLinkBudget)
+		}
+		// Past the budget Rel answers by name, as it did; the command is refused.
+		res.Rel(word)
+		if asked := askedBelow(res); len(asked) != 0 {
+			t.Errorf("the walk looked up %d paths below the link after the budget was spent: %q", len(asked), asked)
+		}
+	})
+	t.Run("AC-11 within the budget", func(t *testing.T) {
+		res := NewResolver(root).Memoised().Budgeted(CommandLinks)
+		rel, outside := res.Rel(word)
+		if len(askedBelow(res)) == 0 {
+			t.Error("the walk looked up nothing below the link within the budget, so the row above shows nothing")
+		}
+		if rel != plainRel || outside != plainOutside {
+			t.Errorf("Rel = %q, %v; without a budget %q, %v", rel, outside, plainRel, plainOutside)
+		}
+	})
 }

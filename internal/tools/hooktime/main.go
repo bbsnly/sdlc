@@ -1,4 +1,4 @@
-// Command hooktime times the hook's classifier on eight commands that are slow
+// Command hooktime times the hook's classifier on nine commands that are slow
 // by construction, and fails when one takes longer than its budget. `./task
 // hook-time` runs it, and `./task check` runs that.
 //
@@ -14,12 +14,14 @@
 // the race detector, where the three US-038 named took two minutes and not
 // nine seconds.
 //
-// The three US-038 named have budgets of their own. The five US-035 added are
+// The three US-038 named have budgets of their own. The six US-035 added are
 // held to the perl shape's: four single-dash words, one for each tool whose
-// spellings of one were once thousands of paths (US-103), and a command of
-// fifty words, each through a chain of 255 links of its own, which the bound on
-// links refuses (US-052). That one needs links made on disk, and is skipped,
-// saying why, where none can be.
+// spellings of one were once thousands of paths (US-103); a command of fifty
+// words, each through a chain of 255 links of its own, which the bound on
+// links refuses (US-052); and 500 assignments of CDPATH in front of 614
+// relative cds, which the CDPATH reader once read again for every cd. The
+// links one needs links made on disk, and is skipped, saying why, where none
+// can be.
 package main
 
 import (
@@ -73,7 +75,7 @@ type shape struct {
 	linked bool
 }
 
-// shapes are the eight commands, built here and handed to Inspect as a string.
+// shapes are the nine commands, built here and handed to Inspect as a string.
 // They are never run, and never written into a command line: one of them is a
 // removal.
 func shapes() []shape {
@@ -104,8 +106,22 @@ func shapes() []shape {
 			name: "links", heldTo: perlBudget, linked: true, refused: true,
 			command: "touch " + strings.Join(linkWords(), " "),
 		},
+		// The design review's round 3 found the CDPATH reader read the line
+		// again for every cd: this shape took three and a half seconds.
+		{
+			name: "cdpath", heldTo: perlBudget,
+			command: strings.Repeat(cdpathHead, cdpathAssignments) + cdpathRest +
+				strings.Repeat(cdpathStep, (size-len(cdpathHead)*cdpathAssignments-len(cdpathRest))/len(cdpathStep)),
+		},
 	}
 }
+
+// The cdpath shape: cdpathAssignments of cdpathHead, then cdpathRest, then as
+// many of cdpathStep as fit, 8,190 bytes in all.
+const (
+	cdpathHead, cdpathRest, cdpathStep = "CDPATH=a ", "true; ", "cd x; "
+	cdpathAssignments                  = 500
+)
 
 // perlBudget is the perl shape's name, and the budget the shapes US-035 added
 // are held to.

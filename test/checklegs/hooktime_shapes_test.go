@@ -37,6 +37,7 @@ func TestAC6AC10ContributingNamesTheShapesThisStoryAddsAndTheSkip(t *testing.T) 
 		{"the links shape, by the name the leg prints", "links"},
 		{"the 255 links each word goes through", "255"},
 		{"that the links shape is skipped where no link can be made", "skip"},
+		{"the cdpath shape, by the name the leg prints", "cdpath"},
 	} {
 		t.Run("AC-10 "+want.word, func(t *testing.T) {
 			if !strings.Contains(said, want.word) {

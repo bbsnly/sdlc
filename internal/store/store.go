@@ -46,15 +46,15 @@ const (
 const (
 	stateDir   = config.Dir + "/state"
 	storiesDir = config.Dir + "/stories"
-	activeFile = stateDir + "/active"
+	activeFile = stateDir + "/" + model.ActiveFile
 	// sessionFile names the Claude Code session working the story: the one
 	// `sdlc start` last ran in. The hook holds that session to the story, and
 	// leaves every other session in the repository alone.
-	sessionFile = stateDir + "/session"
+	sessionFile = stateDir + "/" + model.SessionFile
 	// AcknowledgedFile names the last commit a person has read the log up to.
 	// `sdlc log` starts after it.
-	AcknowledgedFile = stateDir + "/acknowledged"
-	lockFile         = stateDir + "/tests.lock"
+	AcknowledgedFile = stateDir + "/" + model.AcknowledgedFile
+	lockFile         = stateDir + "/" + model.FreezeFile
 	reviewsDir       = "reviews"
 	recordFile       = model.RecordFile
 )

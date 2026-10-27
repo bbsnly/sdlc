@@ -511,6 +511,7 @@ func addDecodedReadings(out []pair, shell string) []pair {
 // not, and the refusal of a path it writes said the path might only be named.
 func Inspect(command string, s State) (Finding, bool) {
 	s.seen = newInspection()
+	s.seen.line = command
 	if f, refused := inspectNamed(command, s); refused {
 		return f, true
 	}
@@ -642,6 +643,7 @@ func inspectPaths(r pair, s State, m *memo) (Finding, bool) {
 		w.filled = markedSegments(pathTextIn(text, s.PowerShell, true))
 	}
 	w.alike = m.readAlike(w.plain)
+	w.unbalanced = quotesLeftOpen(w.plain, s.PowerShell)
 	for idx, marked := range w.plain {
 		if s.hold.charge(1) {
 			return s.hold.finding, true
@@ -681,6 +683,7 @@ type walkPlace struct {
 	old  string
 	from string
 	near lostPlace
+	kept string
 }
 
 // pathWalk is the path rules part way through one reading of a command: the
@@ -712,9 +715,27 @@ type pathWalk struct {
 	from string
 	// near is what is known of a lost walk: where it could be, and why it
 	// is lost (lostPlace).
-	near   lostPlace
-	outer  []walkPlace
-	ticked bool
+	near lostPlace
+	// kept is where a placed walk is as its cds spelt it, each `..` kept
+	// rather than cleaned against the name before it, which a link can make
+	// another directory (linkedWalk); empty where that is dir.
+	kept string
+	// quote is the quote the command is inside where the segment read last
+	// ends, and script the script handed to a shell the walk is in, which
+	// leaving says the segment being read ends; unbalanced is whether the
+	// command's quotes are left open at its end, when none of them is read.
+	quote      byte
+	script     *scriptScope
+	leaving    bool
+	unbalanced bool
+	// unquoted is where the walk would be had it not read the quotes
+	// (unquotedWalk), where that is somewhere else; cdpathOf is the CDPATH
+	// command, the line and the session's environment give, read the first
+	// time a cd asks.
+	unquoted *unquotedWalk
+	cdpathOf *searchPath
+	outer    []walkPlace
+	ticked   bool
 	// plain is the command's segments as spelled, and scan the reader of
 	// the finds among them, made the first time a segment runs find.
 	plain []string
@@ -730,16 +751,29 @@ type pathWalk struct {
 // segment applies the path rules to one segment of the command, and then
 // follows a `cd` it makes.
 func (w *pathWalk) segment(idx int, marked string) (Finding, bool) {
+	w.leaving = false
+	f, ok := w.read(idx, marked)
+	if w.leaving {
+		w.leaveScript()
+	}
+	return f, ok
+}
+
+// read is segment, before the walk leaves a script the segment ends.
+func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 	s := w.s
 	segment, opens, closes := subshellMarks(marked, &w.ticked)
 	if !s.PowerShell {
 		w.subshells(opens, closes)
+		w.unquoted.subshells(opens, closes)
 	}
+	quoted := w.quoting(segment)
 	words, redirects, _ := parse(segment)
 	if len(words) == 0 {
 		return Finding{}, false
 	}
 	run, evals := underEval(program(words))
+	w.enters(run, quoted)
 	run.cut = w.cutWords(idx, marked)
 	s.seen.tell(s, run.words)
 	// A find's expression is read once, here, for every rule that asks.
@@ -792,12 +826,13 @@ func (w *pathWalk) segment(idx int, marked string) (Finding, bool) {
 	if f, ok := w.beyondWords(j, segment, run, found); ok {
 		return f, true
 	}
-	// A script handed to a shell runs in a process of its own, and its cd is
-	// movesInAScript's. With the eval builtin taken off, a string that opened
-	// a subshell around a move was read as moving the shell, and a command
-	// that is refused where it stands was read from a directory the shell was
-	// never in, and allowed.
-	w.follow(run, evals, segment)
+	// A script handed to a shell runs in a process of its own: its cd moves
+	// the rest of the script, and the walk goes back where the script ends
+	// (scriptScope). With the eval builtin taken off, a string that opened a
+	// subshell around a move was read as moving the shell, and a command that
+	// is refused where it stands was read from a directory the shell was
+	// never in, and allowed; so a cd under eval is one the hook cannot place.
+	w.follow(run, evals, segment, quoted)
 	return Finding{}, false
 }
 
@@ -826,7 +861,38 @@ func (w *pathWalk) beyondWords(j segmentRules, segment string, run invocation, f
 	if f, ok := judgeExecs(j, segment, run, found); ok {
 		return f, true
 	}
-	return w.lostWalk(j, segment, run)
+	if f, ok := w.linkedWalk(j, segment, run); ok {
+		return f, true
+	}
+	if f, ok := w.scriptStart(j, segment, run); ok {
+		return f, true
+	}
+	if f, ok := w.lostWalk(j, segment, run); ok {
+		return f, true
+	}
+	return w.fromUnquoted(j, segment, run)
+}
+
+// linkedWalk asks the path rules of a segment once more from where the
+// walk's directory leads on disk, where that is another directory of the
+// project. A word's `..` climbs from where the shell is, not from the name a
+// cd gave it: with st a link to the loop's state, `cd st && touch
+// ../config.json` wrote the loop's configuration, read as the project's own
+// config.json (US-035, code review round 4).
+func (w *pathWalk) linkedWalk(j segmentRules, segment string, run invocation) (Finding, bool) {
+	// Only after a cd: where the command starts is placed by the hook as the
+	// disk has it.
+	if w.lost || w.kept == "" || w.dir == "" || run.chdir != "" || j.s.Resolve == nil {
+		return Finding{}, false
+	}
+	at := j.m.resolve(j.s, w.kept)
+	if at == "" || at == "." || at == clean(w.dir) {
+		return Finding{}, false
+	}
+	k := j
+	k.dir, k.certain = at, false
+	k.away.dir = at
+	return k.judge(segment, run)
 }
 
 // judgeExecs asks the path rules of each command a find's -exec runs, as they
@@ -890,32 +956,100 @@ func (w *pathWalk) lostWalk(j segmentRules, segment string, run invocation) (Fin
 }
 
 // follow moves the walk to where a `cd` among the segment's words leaves the
-// shell.
-func (w *pathWalk) follow(run invocation, evals int, segment string) {
-	if next, ok := changedDir(w.dir, run.words); ok && !run.shell && evals == 0 {
-		w.old = w.dir
-		if w.lost {
-			w.old = unknownDir
-		}
-		w.from = movedFrom(w.from, w.lost, run.words)
-		near, lost := w.near.after(w.dir, w.lost, run.words, w.cdpath(segment))
-		w.dir, w.lost, w.near = next, w.movedTo(next), near
-		if lost {
-			w.dir, w.lost = "", true
-		}
+// shell, and the unquoted walk to where it would be had the quotes not been
+// read.
+func (w *pathWalk) follow(run invocation, evals int, segment string, quoted bool) {
+	_, ok := changedDir(w.dir, run.words)
+	before := w.place()
+	moved, unplaced := w.followed(run, evals, segment, quoted, ok)
+	plain := ok && !run.shell && evals == 0
+	w.keepUnquoted(before, run.words, segment, plain, unplaced || moved != plain)
+}
+
+// followed is follow for the walk itself: whether it moved by the cd, and
+// whether it lost the walk at a cd the hook does not follow.
+func (w *pathWalk) followed(run invocation, evals int, segment string, quoted, ok bool) (moved, unplaced bool) {
+	switch {
+	case !ok || w.unbalanced && run.shell:
+		// No cd, or one in a command whose quotes do not close, where no
+		// script is read: the walk stays, as the unquoted walk does.
+		return false, false
+	case quoted && w.script == nil:
+		// A cd in a quoted word of a command that is no shell does not move
+		// it. The unquoted walk is moved, and judged from as well, so that a
+		// quote the tracker misread costs a refusal and not an allow.
+		return false, false
+	case evals > 0:
+		w.unplaced(run.words, "it runs under eval, whose words the hook does not follow", "move the `cd` out of the eval")
+		return false, true
+	case w.script != nil && w.script.untracked:
+		w.unplaced(run.words, "it is in a script handed to a shell inside another one, which the hook does not read",
+			"move the `cd` out of the inner script")
+		return false, true
 	}
+	w.setPlace(w.moved(w.place(), run.words, segment))
+	return true, false
+}
+
+// moved is where the cd words make, in segment, leaves a walk at p.
+func (w *pathWalk) moved(p walkPlace, words []string, segment string) walkPlace {
+	next, _ := changedDir(p.dir, words)
+	q := p
+	q.old = p.dir
+	if p.lost {
+		q.old = unknownDir
+	}
+	q.from = movedFrom(p.from, p.lost, words)
+	near, lost := p.near.after(p.dir, p.lost, words, w.cdpath(segment))
+	q.kept = keptDir(cmp.Or(p.kept, p.dir), p.lost, words)
+	q.dir, q.lost, q.near = next, lostAt(p.lost, next), near
+	if lost {
+		q.dir, q.lost = "", true
+	}
+	if q.lost {
+		q.kept = ""
+	}
+	return q
+}
+
+// unplaced loses the walk at a cd the hook does not follow, for why, which
+// fix says how to let the hook follow.
+func (w *pathWalk) unplaced(words []string, why, fix string) {
+	w.old = unknownDir
+	w.dir, w.lost, w.from, w.kept = "", true, "", ""
+	w.near = lostPlace{cd: strings.Join(words, " "), why: why, fix: fix, unplacing: true}
+}
+
+// keptDir is where a cd moves a placed walk from dir, as kept: dir and the
+// directory the cd names joined, each `..` left in, or "" where the cd names
+// none or the walk was lost.
+func keptDir(dir string, lost bool, words []string) string {
+	args := cdOperands(words[1:])
+	if len(args) > 1 && strings.EqualFold(args[0], "/d") {
+		args = args[1:]
+	}
+	if lost || len(args) == 0 {
+		return ""
+	}
+	to := clean(args[0])
+	switch {
+	case to == "" || to == "-" || strings.HasPrefix(to, "~") || strings.HasPrefix(to, "$"):
+		return ""
+	case isAbsolute(to) || dir == "":
+		return to
+	}
+	return dir + "/" + to
 }
 
 // subshells takes the walk out of the subshells a segment closes, back to
 // where the command was when each opened, and into those it opens.
 func (w *pathWalk) subshells(opens, closes int) {
 	for ; closes > 0 && len(w.outer) > 0; closes-- {
-		top := w.outer[len(w.outer)-1]
-		w.dir, w.lost, w.old, w.from, w.near = top.dir, top.lost, top.old, top.from, top.near
+		w.setPlace(w.outer[len(w.outer)-1])
 		w.outer = w.outer[:len(w.outer)-1]
 	}
 	for ; opens > 0; opens-- {
-		w.outer = append(w.outer, walkPlace{w.dir, w.lost, w.old, w.from, w.near})
+		w.outer = append(w.outer, w.place())
 	}
 }
 
@@ -939,7 +1073,12 @@ func (w *pathWalk) find(idx int, segment string, run invocation, evals int) foun
 // as written, so that the paths under it are matched as globs too:
 // dropped, `cd .sdl? && rm state/active` was a file at the root.
 func (w *pathWalk) movedTo(next string) bool {
-	return next == "" || strings.ContainsAny(next, "*?[") || w.lost && !isAbsolute(next)
+	return lostAt(w.lost, next)
+}
+
+// lostAt is movedTo for a walk that is lost or not.
+func lostAt(lost bool, next string) bool {
+	return next == "" || strings.ContainsAny(next, "*?[") || lost && !isAbsolute(next)
 }
 
 // segmentRules is the path rules as one segment asks them: the command it
@@ -1881,13 +2020,36 @@ func checkLoopState(q pathQuestion) (Finding, bool) {
 	if f, ok := q.takesAnotherCheckout(); ok {
 		return f, true
 	}
-	if f, ok := q.namesLoopFiles(candidates, picked); ok {
+	if f, ok := q.namesLoopFiles(optionsLast(candidates), picked); ok {
 		return f, true
 	}
 	// A glob given to find that cannot be read could pick any of the loop's own
 	// files, from a directory that can come to them; and so could an expression
 	// the reader cannot follow at all.
 	return q.unreadFind(ruleLoopState, nil, func(string) string { return "the loop's own files" })
+}
+
+// optionsLast is words with the options, those that start with `-` before a
+// `--`, moved after the rest, each kept: an option word can still spell a
+// file. Asked in the order given, the option of `cd .sdlc/stories && rm -rf
+// x` was the first name there, any of which is a story's record, and the
+// refusal named .sdlc/stories/-rf, not x (US-035, SDET, unfreeze #12); and
+// with the files after `--` moved too, `rm -rf -- -x` named the f that -rf
+// spells as a short option's value (US-035, verifier round 12).
+func optionsLast(words []string) []string {
+	out := make([]string, 0, len(words))
+	var options []string
+	ended := false
+	for _, w := range words {
+		switch {
+		case ended || !strings.HasPrefix(w, "-"):
+			out = append(out, w)
+		default:
+			ended = w == "--"
+			options = append(options, w)
+		}
+	}
+	return append(out, options...)
 }
 
 // addWritten adds to candidates what a command that changes files is given
@@ -3076,16 +3238,25 @@ func namedBy(w string) []string {
 	// more than maxName letters before its first separator, which is no name
 	// a program can open, and a word of 8 KB of letters made 8,000 spellings
 	// of 8 KB each: 100 MB handed to the rules, and 3 s, for one word (US-103).
-	if len(w) > 2 && w[0] == '-' && w[1] != '-' {
-		run := 1
-		for run < len(w) && isLetter(w[run]) {
-			run++
-		}
-		for i := max(2, run-maxName); i < len(w) && isLetter(w[i-1]); i++ {
-			named = append(named, w[i:])
-		}
+	return append(named, shortOptionValues(w)...)
+}
+
+// shortOptionValues are the values a word of short options could give the
+// last of them without a space: the rest of the word after each letter, from
+// maxName letters before the end of the run of letters it starts with.
+func shortOptionValues(w string) []string {
+	if len(w) <= 2 || w[0] != '-' || w[1] == '-' {
+		return nil
 	}
-	return named
+	run := 1
+	for run < len(w) && isLetter(w[run]) {
+		run++
+	}
+	var values []string
+	for i := max(2, run-maxName); i < len(w) && isLetter(w[i-1]); i++ {
+		values = append(values, w[i:])
+	}
+	return values
 }
 
 // maxName is the longest name of one file or directory on every filesystem
