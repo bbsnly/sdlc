@@ -1,0 +1,11 @@
+# Findings gitleaks reports in history that are not credentials. History cannot
+# change, so each is listed by its fingerprint; the working tree no longer
+# matches. Add a line only for a value you have checked is not a secret.
+#
+# A credential-shaped fixture the hook's log tests use to prove a token never
+# reaches the log; the literal is now split.
+b84d08de9f64e395f05d4cef22f3f64172c0a01c:internal/hook/panicked_test.go:github-pat:19
+b84d08de9f64e395f05d4cef22f3f64172c0a01c:internal/hook/visibility_test.go:github-pat:159
+b84d08de9f64e395f05d4cef22f3f64172c0a01c:test/e2e/sandbox_linkbound_test.go:github-pat:49
+# Prose in docs/configuration.md ("It has one key, `...`") read as an API key.
+0c87b90662d42c5422381382bb4942e917330a76:docs/configuration.md:generic-api-key:437

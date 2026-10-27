@@ -474,7 +474,7 @@ refused.
 
 ## `reviews`
 
-`reviews` changes how much a reviewer's word counts. It has one key,
+`reviews` changes how much a reviewer's word counts. Its one key is
 `gate7_advisory`.
 
 ### `reviews.gate7_advisory`

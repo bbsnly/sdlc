@@ -46,7 +46,8 @@ func TestTheSandboxRefusesAtTheLinkBoundsUnderTheirCodesAndLogsNoWordOfTheComman
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	const secret = "ghp_zq7SecretShapedToken0123456789abcdefXYZ"
+	// Split so that the secrets scan does not take the fixture for a token.
+	const secret = "ghp_" + "zq7SecretShapedToken0123456789abcdefXYZ"
 	logFile := filepath.Join(sb.own(t, "logs"), "hook.log")
 	ruleID := regexp.MustCompile(`\[[a-z0-9]+(?:-[a-z0-9]+)*\]`)
 

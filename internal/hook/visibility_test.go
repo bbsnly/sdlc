@@ -156,7 +156,7 @@ func TestAC3ARefusalIsLoggedWithItsRuleAndTheReadingThatDecided(t *testing.T) {
 // vzSecret is shaped like a credential, and vzPrivate like a path; neither may
 // reach the log, which is a file anyone on the machine may read (0644).
 const (
-	vzSecret  = "ghp_zq7SecretShapedToken0123456789abcdefXYZ"
+	vzSecret  = "ghp_" + "zq7SecretShapedToken0123456789abcdefXYZ" // split so the secrets scan does not take it for a token
 	vzPrivate = "private/zq7-notes.txt"
 )
 
