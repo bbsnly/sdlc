@@ -207,6 +207,28 @@ fetch() {
     [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || true)" = 1 ]; then
     arch=arm64
   fi
+  # The same holds for Git Bash on Windows arm64: its MSYS runtime is an x64
+  # build run under emulation, so `uname -m` says x86_64 and the launcher asked
+  # for the amd64 archive on windows-11-arm. The environment cannot be trusted
+  # either: an emulated x64 process is a 64-bit process, so WOW64's
+  # PROCESSOR_ARCHITEW6432 is not set for it and PROCESSOR_ARCHITECTURE may say
+  # AMD64. The machine's own value is in the registry, which an x64 process
+  # sees unredirected and MSYS exposes as files; the variables are the fallback.
+  if [ "${os}" = windows ]; then
+    host=''
+    regval='/proc/registry/HKEY_LOCAL_MACHINE/SYSTEM/CurrentControlSet/Control/Session Manager/Environment/PROCESSOR_ARCHITECTURE'
+    if [ -r "${regval}" ]; then
+      host="$(tr -d '\000\r\n' <"${regval}" 2>/dev/null || true)"
+    fi
+    case "${host}" in
+      ARM64 | AMD64) ;;
+      *) host="${PROCESSOR_ARCHITEW6432:-${PROCESSOR_ARCHITECTURE:-}}" ;;
+    esac
+    case "${host}" in
+      ARM64 | arm64) arch=arm64 ;;
+      AMD64 | amd64) arch=amd64 ;;
+    esac
+  fi
   if [ -z "${os}" ] || [ -z "${arch}" ]; then
     why="no release of sdlc is built for this operating system and processor"
     fix="${platform_fix}"
