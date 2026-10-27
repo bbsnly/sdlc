@@ -179,6 +179,27 @@ Package `shellpolicy`. Works out what `env`, `flock` and `script` run, so that
 `--split-string`, whose string is read as a command line. Standard library
 only.
 
+## internal/shellpolicy/cdpath.go
+
+Package `shellpolicy`. Reads the CDPATH a relative `cd` searches: what the
+line, the command and the session's environment set it to. `cdpathAssigned`,
+called from `considered.go`, reads the line's assignments, and says when the
+line names CDPATH in a way the hook does not read as a value. `unplaced.go`
+then leaves such a cd unplaced (`lostPlace`), through `searchesCdpath` and
+`anywhereAfter`, with the reason `cdpathUnread` and the fix `cdpathFix`.
+Standard library only.
+
+## internal/shellpolicy/script.go
+
+Package `shellpolicy`. Follows a script handed to a shell, such as
+`sh -c 'cd x && rm y'`, whose cds move the rest of the script and not the
+command around it. `scriptScope` is where the walk in `shellpolicy.go` was when
+the script began; the walk goes back there where the script's quote closes. A
+shell handed a script inside a script is not followed. `unquotedWalk` keeps
+where the walk would be had it not read the quotes, and judges each segment
+from there as well, so that a misread quote costs a refusal and not an allow.
+`quotesLeftOpen` and `quoteAfter` are the quote reader. Standard library only.
+
 ## internal/cli/landing.go
 
 Package `cli`. Runs the landing a finished worktree story's `sdlc stop`
