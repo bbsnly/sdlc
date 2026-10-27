@@ -3316,6 +3316,12 @@ type memo struct {
 	spelledFor         string
 	spelled, unspelled []string
 	globbed            map[string]bool
+	// configNothing is the words configWordFrom found nothing in, by what
+	// its answer turns on, for the line configFor.
+	configNothing map[configAsk]bool
+	configFor     string
+	// namesWord is what wordNamesConfig said of a word.
+	namesWord map[configName]bool
 }
 
 // diskAnswers is what State.Checkouts said, asked once for a command, and where

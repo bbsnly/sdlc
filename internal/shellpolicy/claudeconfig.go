@@ -165,7 +165,7 @@ func (q pathQuestion) writtenConfig(k configKind, spelt bool) (Finding, bool) {
 		// asked in order, `cd ~/lc && rm -f x` named ~/lc/-f as the
 		// configuration (US-035, verifier round 12). Options are still asked.
 		for _, raw := range optionsLast(group.words) {
-			if spelt && !k.spells(raw) {
+			if spelt && !q.spells(k, raw) {
 				continue
 			}
 			if f, ok := q.configWordFrom(k, dirs, raw, group.held); ok {
@@ -177,7 +177,19 @@ func (q pathQuestion) writtenConfig(k configKind, spelt bool) (Finding, bool) {
 }
 
 // configWordFrom is configWord of raw spelled from each of dirs in turn.
+//
+// A word it found nothing in is not asked again with the same answer to give:
+// a line fed on standard input hands every word of it to each segment that
+// writes, so `echo <20 paths> | xargs rm;` a hundred times asked 2000 words
+// from each of 100 segments, twice over for ~/.agents and ~/.claude, and
+// took three quarters of the time Inspect spent on that 45 KB command. Only
+// what found nothing is kept, so the first word refused is the one it always
+// was.
 func (q pathQuestion) configWordFrom(k configKind, dirs []string, raw string, held bool) (Finding, bool) {
+	ask := q.configAskOf(k, raw, held)
+	if q.m.configAsked(q.line)[ask] {
+		return Finding{}, false
+	}
 	for _, dir := range dirs {
 		for _, w := range q.m.spell(q.s, dir, []string{raw}) {
 			if f, ok := q.configWord(k, w, raw, held); ok {
@@ -185,13 +197,71 @@ func (q pathQuestion) configWordFrom(k configKind, dirs []string, raw string, he
 			}
 		}
 	}
+	q.m.configNothing[ask] = true
 	return Finding{}, false
+}
+
+// configAsk is everything configWordFrom's answer for one word turns on but
+// the State and the line, which are one for a memo: where the walk is, lost
+// or not and spelt from ~ (writtenConfig's dirs, and configUnplaced), and,
+// for a word that names the place, whether the shell expands a glob in it in
+// this segment (expandsAGlob), the one question configWord asks of the
+// segment.
+type configAsk struct {
+	rule, dir, from, raw string
+	lost, held           bool
+	glob                 int8
+}
+
+// configAskOf is the configAsk of raw, asked of k from where q is.
+func (q pathQuestion) configAskOf(k configKind, raw string, held bool) configAsk {
+	ask := configAsk{rule: k.rule, dir: q.dir, from: q.from, raw: raw, lost: q.lost, held: held}
+	if q.m.wordNamesConfig(raw, k.agents) {
+		ask.glob = 1
+		if q.expandsAGlob(raw) {
+			ask.glob = 2
+		}
+	}
+	return ask
+}
+
+// configAsked is the words configWordFrom found nothing in, for line: the
+// memo is one reading's, and its line is one command, but a set kept for
+// another line is not trusted.
+func (m *memo) configAsked(line string) map[configAsk]bool {
+	if m.configNothing == nil || m.configFor != line {
+		m.configNothing, m.configFor = map[configAsk]bool{}, line
+	}
+	return m.configNothing
 }
 
 // spells reports whether a word spells the configuration out by its name,
 // and does not climb back out of ~/.agents to land beside it.
-func (k configKind) spells(raw string) bool {
-	return namesConfigAs(raw, true, k.agents) && (!k.agents || !climbsOutOf(raw, ".agents"))
+func (q pathQuestion) spells(k configKind, raw string) bool {
+	return q.m.wordNamesConfig(raw, k.agents) && (!k.agents || !climbsOutOf(raw, ".agents"))
+}
+
+// wordNamesConfig is namesConfigAs of one word, with globs read as names,
+// worked out once a word: the words of a whole line are asked it again for
+// each segment that writes, and lowering and splitting each one again was
+// most of what configWordFrom had left to do on a 45 KB command.
+func (m *memo) wordNamesConfig(raw string, agents bool) bool {
+	key := configName{raw: raw, agents: agents}
+	named, ok := m.namesWord[key]
+	if !ok {
+		named = namesConfigAs(raw, true, agents)
+		if m.namesWord == nil {
+			m.namesWord = map[configName]bool{}
+		}
+		m.namesWord[key] = named
+	}
+	return named
+}
+
+// configName is a word wordNamesConfig is asked, and of which place.
+type configName struct {
+	raw    string
+	agents bool
 }
 
 // climbsOutOf reports whether a word that names a directory called name
@@ -241,7 +311,7 @@ func (q pathQuestion) configWord(k configKind, w, raw string, held bool) (Findin
 	// question first: the word is on the line, so where that finds nothing
 	// neither can the others.
 	if q.configUnplaced(c) && q.m.namesConfig(q.line, k.agents, true) &&
-		(q.m.namesConfig(q.line, k.agents, false) || namesConfigAs(raw, true, k.agents) && q.expandsAGlob(raw)) {
+		(q.m.namesConfig(q.line, k.agents, false) || q.m.wordNamesConfig(raw, k.agents) && q.expandsAGlob(raw)) {
 		return Finding{
 			Rule: k.rule,
 			Reason: shortened(c) + " is not known until the shell runs the command, which names " +
