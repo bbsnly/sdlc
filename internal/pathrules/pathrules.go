@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
@@ -1028,8 +1029,26 @@ func Under(rel, dir string) bool {
 // it: `.sdlc.` is `.sdlc` there. So is a trailing `::$DATA`, NTFS's name for a
 // file's main stream. On a filesystem that keeps them, this refuses
 // a name that is genuinely different, which is the safe way to be wrong.
+//
+// The shell rules fold every word of a command many times over, and nearly
+// every word is ASCII: through golang.org/x/text each call made a Caser and
+// three copies of the string, half of all the classifier allocated on the
+// find tests, and the collections that garbage cost are what held the
+// shellpolicy tests on a macOS runner past go test's twenty minutes.
+// Decomposing, folding and recomposing an ASCII string gives its ASCII lower
+// case and nothing else, so that is taken directly; and a path with no
+// segment to trim is returned as it is. The two ways are held to one answer
+// by TestFoldGivesWhatTheUnicodeFoldGivesForEveryPath.
 func Fold(p string) string {
-	folded := norm.NFC.String(cases.Fold().String(norm.NFD.String(p)))
+	var folded string
+	if isASCII(p) {
+		folded = strings.ToLower(p)
+	} else {
+		folded = norm.NFC.String(cases.Fold().String(norm.NFD.String(p)))
+	}
+	if !trimsASegment(folded) {
+		return folded
+	}
 	parts := strings.Split(folded, "/")
 	for i, part := range parts {
 		// On NTFS `name::$DATA` is the file's own content under another
@@ -1044,6 +1063,33 @@ func Fold(p string) string {
 		}
 	}
 	return strings.Join(parts, "/")
+}
+
+// isASCII reports whether every byte of s is ASCII.
+func isASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+// trimsASegment reports whether Fold's loop over the segments of folded could
+// change one: only a `:` starts a stream suffix, and only a dot or a space at
+// the end of a segment is trimmed.
+func trimsASegment(folded string) bool {
+	for i := range len(folded) {
+		switch folded[i] {
+		case ':':
+			return true
+		case '.', ' ':
+			if i+1 == len(folded) || folded[i+1] == '/' {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // SameName reports whether a and b are one path to a filesystem that folds
