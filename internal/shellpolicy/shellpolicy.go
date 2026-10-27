@@ -2038,15 +2038,26 @@ func checkLoopState(q pathQuestion) (Finding, bool) {
 // spells as a short option's value (US-035, verifier round 12).
 func optionsLast(words []string) []string {
 	out := make([]string, 0, len(words))
-	var options []string
+	for _, i := range optionsLastOrder(words) {
+		out = append(out, words[i])
+	}
+	return out
+}
+
+// optionsLastOrder is optionsLast as the index of each word, so that a caller
+// can pass over some of them where they stand: taken out first, a `--` among
+// them would no longer end the options of the words after it.
+func optionsLastOrder(words []string) []int {
+	out := make([]int, 0, len(words))
+	var options []int
 	ended := false
-	for _, w := range words {
+	for i, w := range words {
 		switch {
 		case ended || !strings.HasPrefix(w, "-"):
-			out = append(out, w)
+			out = append(out, i)
 		default:
 			ended = w == "--"
-			options = append(options, w)
+			options = append(options, i)
 		}
 	}
 	return append(out, options...)
@@ -3322,6 +3333,11 @@ type memo struct {
 	configFor     string
 	// namesWord is what wordNamesConfig said of a word.
 	namesWord map[configName]bool
+	// configLines is where writtenConfig found nothing in the words of the
+	// line configFor, and lineClaude and lineAgents whether a word of it
+	// names the one place or the other: 0 not yet asked, 1 yes, -1 no.
+	configLines            map[configLineAsk]bool
+	lineClaude, lineAgents int8
 }
 
 // diskAnswers is what State.Checkouts said, asked once for a command, and where

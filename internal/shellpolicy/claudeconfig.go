@@ -148,7 +148,21 @@ func checkConfig(q pathQuestion, k configKind) (Finding, bool) {
 // the place, or a directory that holds it. With spelt set, only a word whose
 // own spelling names the place is asked.
 func (q pathQuestion) writtenConfig(k configKind, spelt bool) (Finding, bool) {
-	inside, held := q.configWords()
+	inside, held, line := q.configWordsOf()
+	// The words of the whole line, which a segment fed on standard input is
+	// given, are passed over where every one of them has been asked from
+	// here already and none names the place: each would find nothing, as it
+	// did (see configWordFrom), and they keep their places in the order, so
+	// the first word refused is the same. Looking each one up in the words
+	// found nothing in still left a 45 KB command of 100 such segments
+	// asking 2000 of them in every segment, which was half of what it cost
+	// under the race detector.
+	lineAsk := configLineAsk{rule: k.rule, dir: q.dir, from: q.from, lost: q.lost, spelt: spelt}
+	hasLine := line[1] > line[0]
+	skip := [2]int{}
+	if hasLine && q.m.configLinesAsked(q.line)[lineAsk] {
+		skip, hasLine = line, false
+	}
 	// After a cd into the home, as `cd ~`, a bare `cd` or `cd $HOME/sub`, a
 	// relative word is asked from there as well as by its name: read by its
 	// name alone, `cd ~ && touch l/settings.json`, with l a link to
@@ -157,23 +171,65 @@ func (q pathQuestion) writtenConfig(k configKind, spelt bool) (Finding, bool) {
 	if q.lost && (q.from == "~" || strings.HasPrefix(q.from, "~/")) {
 		dirs = append(dirs, q.from)
 	}
-	for _, group := range []struct {
-		words []string
-		held  bool
-	}{{inside, false}, {held, true}} {
-		// Operands first, so the refusal names the word the command acts on:
-		// asked in order, `cd ~/lc && rm -f x` named ~/lc/-f as the
-		// configuration (US-035, verifier round 12). Options are still asked.
-		for _, raw := range optionsLast(group.words) {
-			if spelt && !q.spells(k, raw) {
-				continue
-			}
-			if f, ok := q.configWordFrom(k, dirs, raw, group.held); ok {
-				return f, true
-			}
+	if f, ok := q.configWordsFrom(k, dirs, inside, false, spelt, skip); ok {
+		return f, true
+	}
+	if hasLine && !q.m.lineNamesConfig(q.line, k.agents) {
+		q.m.configLines[lineAsk] = true
+	}
+	return q.configWordsFrom(k, dirs, held, true, spelt, [2]int{})
+}
+
+// configWordsFrom is configWordFrom of each of words, but those from skip[0]
+// up to skip[1], until one is refused.
+func (q pathQuestion) configWordsFrom(k configKind, dirs, words []string, held, spelt bool, skip [2]int) (Finding, bool) {
+	// Operands first, so the refusal names the word the command acts on:
+	// asked in order, `cd ~/lc && rm -f x` named ~/lc/-f as the
+	// configuration (US-035, verifier round 12). Options are still asked.
+	for _, i := range optionsLastOrder(words) {
+		if i >= skip[0] && i < skip[1] {
+			continue
+		}
+		raw := words[i]
+		if spelt && !q.spells(k, raw) {
+			continue
+		}
+		if f, ok := q.configWordFrom(k, dirs, raw, held); ok {
+			return f, true
 		}
 	}
 	return Finding{}, false
+}
+
+// configLineAsk is everything the answers for the words of a whole line turn
+// on, where no word of the line names the place: what configAsk holds but
+// the word, and whether only the words that spell the place were asked.
+type configLineAsk struct {
+	rule, dir, from string
+	lost, spelt     bool
+}
+
+// configLinesAsked is the places writtenConfig found nothing in the words of
+// line from, kept as configAsked keeps its words.
+func (m *memo) configLinesAsked(line string) map[configLineAsk]bool {
+	m.configAsked(line)
+	return m.configLines
+}
+
+// lineNamesConfig reports whether any word of line, the whole command, names
+// the place as wordNamesConfig reads it, worked out once a reading.
+func (m *memo) lineNamesConfig(line string, agents bool) bool {
+	cache := &m.lineClaude
+	if agents {
+		cache = &m.lineAgents
+	}
+	if *cache == 0 {
+		*cache = -1
+		if slices.ContainsFunc(m.words(line), func(w string) bool { return m.wordNamesConfig(w, agents) }) {
+			*cache = 1
+		}
+	}
+	return *cache > 0
 }
 
 // configWordFrom is configWord of raw spelled from each of dirs in turn.
@@ -231,6 +287,7 @@ func (q pathQuestion) configAskOf(k configKind, raw string, held bool) configAsk
 func (m *memo) configAsked(line string) map[configAsk]bool {
 	if m.configNothing == nil || m.configFor != line {
 		m.configNothing, m.configFor = map[configAsk]bool{}, line
+		m.configLines, m.lineClaude, m.lineAgents = map[configLineAsk]bool{}, 0, 0
 	}
 	return m.configNothing
 }
@@ -491,6 +548,13 @@ func (q pathQuestion) configUnplaced(c string) bool {
 // they are in it or hold it, which only a command that writes a whole
 // directory's worth or takes one away can do to a home.
 func (q pathQuestion) configWords() (inside, held []string) {
+	inside, held, _ = q.configWordsOf()
+	return inside, held
+}
+
+// configWordsOf is configWords, and where among inside the words of the whole
+// line are, from line[0] up to line[1]; the two are equal where it has none.
+func (q pathQuestion) configWordsOf() (inside, held []string, line [2]int) {
 	run, m := q.run, q.m
 	words := run.words
 	inside = append(inside, q.redirects...)
@@ -503,9 +567,11 @@ func (q pathQuestion) configWords() (inside, held []string) {
 	}
 	// The file a program opens is inside a string, and a command fed on
 	// standard input is given words from elsewhere on the line.
+	line[0] = len(inside)
 	if q.runsCode() || run.piped && changesFiles(words) {
 		inside = append(inside, m.words(q.line)...)
 	}
+	line[1] = len(inside)
 	inside = append(inside, q.pipedLandings()...)
 	inside = append(inside, q.directoryLandings()...)
 	listed, _ := q.listedNames()
@@ -516,7 +582,7 @@ func (q pathQuestion) configWords() (inside, held []string) {
 		roots, _, _ := findArguments(words[1:])
 		held = append(held, roots...)
 	}
-	return inside, held
+	return inside, held, line
 }
 
 // configWritten is what a command writes, as writtenTo has it, except that a
