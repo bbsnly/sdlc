@@ -40,7 +40,7 @@ func TestFoldGivesWhatTheUnicodeFoldGivesForEveryPath(t *testing.T) {
 	paths = append(paths,
 		"", "/", "//", ".", "..", "./", "a/./b", ". .", ".sdlc.", ".SDLC. /State /Active.",
 		".sdlc/state/active::$DATA", "::$DATA", ".sdlc::$INDEX_ALLOCATION/state",
-		".sdlc:$I30:$INDEX_ALLOCATION/state", "a:b", "C:/Users/X/Project/.Sdlc",
+		".sdlc:$I30:$INDEX_ALLOCATION/state", "a:b", "C:/Users/dev/Project/.Sdlc",
 		"CLAUDE.md", "Claude.MD", "internal/X_TEST.go", "rm", "RM.EXE", "./Git",
 		// And what is not ASCII, which keeps the long way.
 		".ſdlc/state/active", "invoice_teﬆ.go", ".sdlc/ﬆate/active", "\u212aey", "e\u0301", "é.",
