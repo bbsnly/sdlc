@@ -510,6 +510,12 @@ func TestAC3TheStopHonoursAnExemptionOnTrunkThatTheStorysWorktreeNeverHad(t *tes
 	const file = "docs/merging.md"
 	body := cmkText(cmkJoin([]string{"# Merging", ""}, cmkSet())...)
 	main, wt, _ := cmkLate(t, map[string]string{file: body})
+	// The stop puts the story's commits onto trunk itself here, because trunk
+	// moved, and a rebase needs a committer. The tests' git has no identity of
+	// its own (testenv), so a runner without one refused it: "Committer
+	// identity unknown" on ubuntu-24.04-arm. The other tests that reach that
+	// replay give the repository one the same way.
+	otIdentity(t, main)
 
 	swRefused(t, cmkCode, wt, ldSession, "stop")
 
