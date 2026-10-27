@@ -26,6 +26,8 @@ vars:
   GOLICENSES_VERSION: 2.0.1
   SYFT_VERSION: 1.51.1
   SHELLCHECK_VERSION: 0.11.0
+  # golang.org/x/perf tags no releases, so benchstat's pin is a pseudo-version.
+  BENCHSTAT_VERSION: 0.0.0-20261009192801-be2c69fb417e
 
   # A hook runs on every matching tool call, so package init is on the
   # latency path of the user's whole session. Budget in milliseconds.
@@ -46,10 +48,15 @@ vars:
   HOOK_HERESTRING_BUDGET_MS: 1000
   HOOK_DOTGLOB_BUDGET_MS: 1000
 
+  # go test's limit for one package, which `test` and `check-linux` give it.
+  # Its reasons are in `test`.
+  TEST_TIMEOUT: 20m
+
   GOLICENSES: go run github.com/google/go-licenses/v2@v{{.GOLICENSES_VERSION}}
   GOLANGCI: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v{{.GOLANGCI_VERSION}}
   ACTIONLINT: go run github.com/rhysd/actionlint/cmd/actionlint@v{{.ACTIONLINT_VERSION}}
   GITLEAKS: go run github.com/zricethezav/gitleaks/v8@v{{.GITLEAKS_VERSION}}
+  BENCHSTAT: go run golang.org/x/perf/cmd/benchstat@v{{.BENCHSTAT_VERSION}}
 
   # A scratch directory, wherever the platform keeps them. On Windows task runs
   # its own mktemp in place of the one on PATH, and that one knows only TMPDIR
@@ -325,7 +332,19 @@ tasks:
         # room to spare, and short enough that a real hang is reported by go
         # test, with the test's name, before the CI job's thirty minutes end it
         # with none.
-        out=$(go test -race -timeout 20m ./... 2>&1) || {
+        #
+        # The limit only ever went up, because nothing said a package was
+        # nearing it until one passed it. So go test writes events, and
+        # testtime prints from them what go test would have, then each
+        # package's time, the slowest tests, and every package over half the
+        # limit. If testtime cannot run, the events are printed as they are:
+        # what failed is still in them.
+        dir=$({{.MKTEMP_DIR}})
+        trap 'rm -rf "$dir"' EXIT
+        status=0
+        go test -race -json -timeout {{.TEST_TIMEOUT}} ./... > "$dir/test.json" 2>&1 || status=$?
+        out=$(GOFLAGS= go run ./internal/tools/testtime -limit {{.TEST_TIMEOUT}} < "$dir/test.json" 2>&1) || out=$(cat "$dir/test.json")
+        [ "$status" -eq 0 ] || {
           # go test's failure lines carry only a test file's bare name, which
           # cannot be matched against a full path, and two packages can hold a
           # file of the same name. So say, per failing package, whether every
@@ -408,7 +427,12 @@ tasks:
               mkdir -p "$HOME"
               git clone -q /src.bundle /tmp/work
               cd /tmp/work
-              go test -race -timeout 20m ./...
+              # As `test` runs them, so that the times printed are the ones
+              # a Linux runner would print.
+              s=0
+              go test -race -json -timeout {{.TEST_TIMEOUT}} ./... > /tmp/test.json 2>&1 || s=$?
+              go run ./internal/tools/testtime -limit {{.TEST_TIMEOUT}} < /tmp/test.json || cat /tmp/test.json
+              exit $s
             ' || status=1
         done
         exit $status
@@ -420,6 +444,63 @@ tasks:
     # guard in test/e2e is what fails.
     cmds:
       - go run ./internal/tools/testreport
+
+  profile:
+    desc: Profile one package's tests and print their slowest tests and where the CPU and memory went (PKG=./internal/cli, RUN=regexp, FLAGS=-race)
+    silent: true
+    # Not a leg of check. `test` names a package that is getting slow; this
+    # says why. go test profiles one package at a time, so one is named.
+    cmds:
+      - |
+        pkg='{{.PKG}}'
+        if [ -z "$pkg" ]; then
+          echo "sdlc: name the package to profile, as a directory: ./task profile PKG=./internal/cli" >&2
+          exit 2
+        fi
+        dir=$({{.MKTEMP_DIR}})
+        status=0
+        # The test binary is kept beside the profiles: pprof needs it to name
+        # what it read.
+        GOFLAGS= go test -count=1 -json -timeout 30m {{.FLAGS}} -run '{{.RUN | default "."}}' -o "$dir/pkg.test" \
+          -cpuprofile "$dir/cpu.out" -memprofile "$dir/mem.out" "$pkg" > "$dir/test.json" 2>&1 || status=$?
+        GOFLAGS= go run ./internal/tools/testtime -n 25 < "$dir/test.json" || cat "$dir/test.json"
+        if [ -s "$dir/cpu.out" ]; then
+          echo
+          echo "== CPU, by the function it was spent in"
+          go tool pprof -top -nodecount=25 "$dir/pkg.test" "$dir/cpu.out" 2>/dev/null
+          echo
+          echo "== CPU, by the function it was spent under"
+          go tool pprof -top -cum -nodecount=25 "$dir/pkg.test" "$dir/cpu.out" 2>/dev/null
+          echo
+          echo "== memory allocated, by the function that allocated it"
+          go tool pprof -top -sample_index=alloc_space -nodecount=15 "$dir/pkg.test" "$dir/mem.out" 2>/dev/null
+        fi
+        echo
+        echo "The profiles are in $dir, kept for a closer look:"
+        echo "  go tool pprof -http=: $dir/pkg.test $dir/cpu.out"
+        echo "CPU is this process's only: a test that waits for git or the binary shows"
+        echo "as time in the slowest tests above and not here."
+        exit $status
+
+  bench:
+    desc: Run the benchmarks with their allocations, COUNT times each, for benchstat (PKG=./..., BENCH=regexp, COUNT=10)
+    silent: true
+    # Not a leg of check: a benchmark's time is the machine's as much as the
+    # code's, so it is compared, never held to a figure. CONTRIBUTING.md says
+    # how to compare two trees with `benchstat`.
+    cmds:
+      - GOFLAGS= go test -run '^$' -bench '{{.BENCH | default "."}}' -benchmem -count {{.COUNT | default "10"}} {{.PKG | default "./..."}}
+
+  benchstat:
+    desc: Compare two saved runs of ./task bench (OLD=file NEW=file)
+    silent: true
+    cmds:
+      - |
+        if [ -z '{{.OLD}}' ] || [ -z '{{.NEW}}' ]; then
+          echo "sdlc: name the two runs to compare: ./task benchstat OLD=old.txt NEW=new.txt" >&2
+          exit 2
+        fi
+        {{.BENCHSTAT}} '{{.OLD}}' '{{.NEW}}'
 
   npm-test:
     desc: Test the npm installer package

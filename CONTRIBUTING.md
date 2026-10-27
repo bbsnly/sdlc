@@ -153,6 +153,51 @@ The leg is the last in `./task check` and adds about ten seconds to it on a
 quiet laptop, and on macOS several more to make and remove the links shape's
 12,750 links.
 
+### How long the tests take
+
+go test kills a package that runs past its limit, `TEST_TIMEOUT` in the vars
+of `Taskfile.yml`, and names the test that was running. Long before that,
+`./task test` says a package is getting slow: after go test's own lines it
+prints each package's time, slowest first, then the twenty slowest tests, and
+a line for every package that took more than half the limit. Such a package
+passed, but a loaded runner can take twice as long, so it is made faster
+before it reaches the limit, not given a higher one. `./task check-linux`
+prints the same, for Linux.
+
+To find out why a package is slow:
+
+```console
+$ ./task profile PKG=./internal/cli
+$ ./task profile PKG=./internal/cli RUN=TestLanding FLAGS=-race
+```
+
+It runs the package's tests once, prints its slowest tests, and then where its
+CPU and its memory went, from `go tool pprof -top`. `RUN` narrows the tests as
+`-run` does, and `FLAGS` passes go test anything else, such as `-race`, which
+`./task test` runs under and which changes where the time goes. The profiles
+are kept in a temporary directory the task names, for `go tool pprof -http=:`.
+A profile is of the test process alone: a test that spends its time waiting
+for git or the built binary shows in the slowest tests and not in the CPU.
+
+The classifier the hook runs on every Bash and PowerShell call has benchmarks:
+`BenchmarkInspect` in `internal/shellpolicy`, on commands of the kind a session
+runs all day, and in `internal/tools/hooktime`, on the nine shapes the
+`hook-time` leg times. To see what a change does to them, run the benchmarks
+on trunk and on the change, and compare the two with benchstat, which the
+Taskfile pins:
+
+```console
+$ ./task bench PKG="./internal/shellpolicy ./internal/tools/hooktime" > old.txt
+$ ./task bench PKG="./internal/shellpolicy ./internal/tools/hooktime" > new.txt
+$ ./task benchstat OLD=old.txt NEW=new.txt
+```
+
+Run the first in a second checkout of trunk, or before the change, on a quiet
+machine. `COUNT` (10 by default) is how often each benchmark runs, which is what
+benchstat needs to say whether a difference is more than noise, and `BENCH`
+narrows them as `-bench` does. Neither `bench` nor `profile` is part of
+`./task check`: a benchmark's time is the machine's as much as the code's.
+
 ### Linux and Windows before trunk
 
 A test can pass on your machine and fail on a runner because it read your
