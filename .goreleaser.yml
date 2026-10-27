@@ -140,7 +140,7 @@ release:
     ## Install
 
     ```sh
-    curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/{{ .Tag }}/install.sh | sh
+    curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/{{ .Tag }}/install.sh | sh
     ```
 
     Windows PowerShell:

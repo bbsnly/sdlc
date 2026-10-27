@@ -77,7 +77,7 @@ jobs:
           EXPECTED: ${{ steps.published.outputs.release }}
         run: |
           set -euo pipefail
-          curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
+          curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
           got=$("${SDLC_INSTALL_DIR}/sdlc" version --short)
           if [ "${got#v}" != "${EXPECTED}" ]; then
             echo "::error::install.sh installed ${got}, and the release is ${EXPECTED}"
@@ -173,8 +173,8 @@ jobs:
           esac
           version="${EXPECTED}" asset="sdlc_${EXPECTED}_${platform}.tar.gz"
           mkdir -p "${RUNNER_TEMP}/manual" && cd "${RUNNER_TEMP}/manual"
-          curl -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/${asset}"
-          curl -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/checksums.txt"
+          curl --proto '=https' --tlsv1.2 -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/${asset}"
+          curl --proto '=https' --tlsv1.2 -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/checksums.txt"
           if command -v shasum >/dev/null 2>&1; then
             grep " ${asset}\$" checksums.txt | shasum -a 256 -c -
           else

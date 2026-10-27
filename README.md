@@ -84,7 +84,7 @@ No Node? Any one of these gives you the same binary:
 
 | Route | Command |
 | --- | --- |
-| macOS, Linux | `curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh \| sh` |
+| macOS, Linux | `curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh \| sh` |
 | Windows PowerShell | `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 \| iex` |
 | Go 1.26 or newer | `go install github.com/bbsnly/sdlc/cmd/sdlc@latest` |
 | By hand | the prebuilt archive for your platform from [Releases](https://github.com/bbsnly/sdlc/releases), checked against `checksums.txt`, [step by step](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md#by-hand-from-a-release) |

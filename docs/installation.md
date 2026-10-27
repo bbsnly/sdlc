@@ -148,7 +148,7 @@ the binary in the default directory either way.
 ### macOS and Linux
 
 ```console
-$ curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
+$ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
 ```
 
 It downloads the latest release built for your machine, checks it against
@@ -157,7 +157,7 @@ the release's `checksums.txt`, and installs a single static binary into
 the version or the directory, pass them as options:
 
 ```console
-$ curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh -s -- --version 0.1.0 --dir ~/.local/bin
+$ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh -s -- --version 0.1.0 --dir ~/.local/bin
 ```
 
 `--dir` can point anywhere you can write. Somewhere like `/usr/local/bin` needs
@@ -201,8 +201,8 @@ On macOS or Linux:
 
 ```console
 $ version=0.1.0 asset=sdlc_0.1.0_darwin_arm64.tar.gz
-$ curl -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/${asset}"
-$ curl -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/checksums.txt"
+$ curl --proto '=https' --tlsv1.2 -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/${asset}"
+$ curl --proto '=https' --tlsv1.2 -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/checksums.txt"
 $ grep " ${asset}\$" checksums.txt | shasum -a 256 -c -
 $ tar -xzf "${asset}" sdlc
 $ mkdir -p ~/.local/bin && mv sdlc ~/.local/bin/
@@ -387,7 +387,7 @@ The same works on an install script, which is worth doing if you would rather
 read one before running it:
 
 ```console
-$ curl -fsSLO https://raw.githubusercontent.com/bbsnly/sdlc/v0.1.0/install.sh
+$ curl --proto '=https' --tlsv1.2 -fsSLO https://raw.githubusercontent.com/bbsnly/sdlc/v0.1.0/install.sh
 $ gh attestation verify install.sh --repo bbsnly/sdlc
 ```
 

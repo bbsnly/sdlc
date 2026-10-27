@@ -41,7 +41,7 @@ npx @bbsnly/sdlc install --dir /usr/local/bin
 ## Other ways to install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
 go install github.com/bbsnly/sdlc/cmd/sdlc@latest
 ```
 

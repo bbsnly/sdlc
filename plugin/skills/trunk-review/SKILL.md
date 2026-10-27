@@ -25,9 +25,19 @@ sdlc status --json
 
 - If the command is not found at all, the tool this review reads is not installed. Offer to
   install it, and wait for an answer. On macOS or Linux that is
-  `curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh`; on Windows,
-  `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex`. If they say yes,
-  run it and then run `sdlc status --json` again. If it is still not found, say which directory
+
+  ```sh
+  curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
+  ```
+
+  and on Windows
+
+  ```powershell
+  irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex
+  ```
+
+  If they say yes, run it and then run `sdlc status --json` again. If it is still not found, say
+  which directory
   the installer reported and that a new session will see it, and stop. Do not review from git
   history alone: the log is what says which stories landed and what each one went through.
 - If it fails with `SDLC-E0002`, this project has not been set up, so nothing has been committed

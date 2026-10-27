@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install sdlc.
 #
-#   curl -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
+#   curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
 #
 # Downloads the release archive for this machine, checks it against the
 # release's checksums.txt, and puts a single static binary on your PATH.
