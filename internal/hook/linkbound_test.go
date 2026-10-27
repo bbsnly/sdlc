@@ -504,14 +504,21 @@ func lbAskIn(t *testing.T, cwd, session, cmd string) string {
 // one cd at a time past the system's lookup limit, every command is refused,
 // echo included, and the refusal said only "a path this command reaches"
 // (US-035, security review). It names the working directory, in the session
-// holding the story and in one that does not. 41 links, one in each directory,
-// is past what macOS (32) and Linux (40) follow in one lookup.
+// holding the story and in one that does not. 42 links, one in each directory,
+// is past what macOS (32) and Linux (40) follow in one lookup, the directory's
+// own last link counted out: the walk there looks up each name on the way, and
+// a lookup of the last name does not follow its link, which the walk follows
+// itself from the directory before. One link past the limit, the hook places
+// the working directory where it leads and judges each word from there, so
+// with 41 links Linux rightly let `echo ok` through (CI on 2492472), and a
+// write to the loop state at the end of such a chain is refused as one.
 func TestAC5AC7FromAWorkingDirectoryPastTheLookupLimitTheHookNamesIt(t *testing.T) {
 	root := lbProject(t)
-	deep := filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, "wd41", 41, "elsewhere", "")))
+	deep := filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, "wd42", 42, "elsewhere", "")))
+	state := filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, "st41", 41, ".sdlc/state", "")))
 	shallow := filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, "wd10", 10, "elsewhere", "")))
 	for _, session := range []string{working, "session-b"} {
-		t.Run("AC-7 echo ok, 41 links deep, "+session, func(t *testing.T) {
+		t.Run("AC-7 echo ok, 42 links deep, "+session, func(t *testing.T) {
 			reason := lbAskIn(t, deep, session, "echo ok")
 			want := "the working directory goes through more links than this system follows in one lookup"
 			if !strings.Contains(reason, want) || !strings.Contains(reason, lbWordCode) {
@@ -531,6 +538,14 @@ func TestAC5AC7FromAWorkingDirectoryPastTheLookupLimitTheHookNamesIt(t *testing.
 			}
 		})
 	}
+	// Only the session holding the story is held on the loop state, from the
+	// root as from the chain.
+	t.Run("AC-7 touch active, 41 links deep into .sdlc/state, "+working, func(t *testing.T) {
+		reason := lbAskIn(t, state, working, "touch active")
+		if !strings.Contains(reason, ".sdlc/state is the loop's own record") && !strings.Contains(reason, lbWordCode) {
+			t.Errorf("want it refused as the loop state or under %s, got:\n%s", lbWordCode, reason)
+		}
+	})
 }
 
 // AC-5 and AC-6 through the hook, from a session whose working directory is a
