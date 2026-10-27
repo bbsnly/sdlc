@@ -153,6 +153,36 @@ The leg is the last in `./task check` and adds about ten seconds to it on a
 quiet laptop, and on macOS several more to make and remove the links shape's
 12,750 links.
 
+### Linux and Windows before trunk
+
+A test can pass on your machine and fail on a runner because it read your
+machine: your git identity, your `HOME`, your shell. `./task check-linux` runs
+the Go tests the way CI's Linux jobs do, in Docker, so a Mac finds those
+failures before trunk does:
+
+```console
+$ ./task check-linux
+$ ./task check-linux PLATFORMS="linux/arm64 linux/amd64"
+```
+
+It needs a running Docker engine. Each platform gets a fresh clone of `HEAD`,
+with no git identity, a `HOME` of its own and no `SHELL`, run as your user and
+not as root, in the `golang` image of the `toolchain` in `go.mod`. It clones
+`HEAD`, so commit first; what is not committed is not tested. The build and
+module caches are kept in `~/.cache/sdlc-check-linux`, so a second run takes
+minutes, not tens of them. With no `PLATFORMS` it runs the Docker engine's own
+architecture, `linux/arm64` on an Apple silicon Mac. The other one runs under
+emulation, several times slower: there `internal/cli` reaches go test's
+twenty-minute limit and the timing tests fail on time alone, so its result
+says something only about the tests that finished and do not time anything.
+
+Docker on macOS or Linux cannot run Windows. Work goes straight to trunk, so
+Windows is first checked there, by CI's `windows-latest` and `windows-11-arm`
+jobs; a red job is fixed on trunk, and a release is tagged only on a trunk
+commit whose every job is green. To find a Windows failure before trunk, run
+`task.cmd check` in a Windows 11 virtual machine. On an Apple silicon Mac that
+is Windows 11 on Arm, the same as the `windows-11-arm` runner.
+
 ## Testing in a sandbox
 
 A sandbox, here, is a throwaway directory to try a change to sdlc in: a new git

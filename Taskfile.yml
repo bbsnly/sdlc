@@ -356,6 +356,63 @@ tasks:
         }
         printf '%s\n' "$out"
 
+  check-linux:
+    desc: Run the Go tests on Linux in Docker, against a clone of HEAD, as CI's Linux jobs do (PLATFORMS="linux/arm64 linux/amd64" for both)
+    silent: true
+    cmds:
+      - |
+        # 2492472 passed every test on a Mac and failed three on both Linux
+        # runners: the tests read the developer's own machine as much as the
+        # code. This runs them where CI does, a fresh clone with no git
+        # identity and no HOME of the developer's, as a user who is not root,
+        # so the next one is found before trunk. It clones HEAD, so commit
+        # first: what is not committed is not tested. Windows cannot run in
+        # Docker on a Mac; CONTRIBUTING.md says what covers it.
+        if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+          echo "check-linux needs a running Docker engine: https://docs.docker.com/get-started/get-docker/" >&2
+          exit 1
+        fi
+        toolchain=$(awk '/^toolchain /{print $2; exit}' go.mod)
+        image="golang:${toolchain#go}"
+        cache="${XDG_CACHE_HOME:-$HOME/.cache}/sdlc-check-linux"
+        mkdir -p "$cache"
+        # A bundle, not the checkout mounted: in a worktree .git is a file
+        # naming a directory outside the mount, and the clone failed on it.
+        git bundle create -q "$cache/head.bundle" HEAD --tags
+        # The engine's own architecture unless told otherwise. The other one
+        # runs under emulation: on an Apple silicon Mac linux/amd64 took over
+        # twenty minutes for internal/cli alone and failed every timing test,
+        # which says nothing about the code.
+        platforms='{{.PLATFORMS}}'
+        if [ -z "$platforms" ]; then
+          # The engine's, not an image's: a golang image pulled earlier for
+          # linux/amd64 answered amd64 on an arm64 engine.
+          case $(docker info 2>/dev/null | awk '/Architecture:/{print $2; exit}') in
+            aarch64 | arm64) platforms=linux/arm64 ;;
+            x86_64 | amd64) platforms=linux/amd64 ;;
+            *) echo "check-linux could not read the Docker engine's architecture; name it: PLATFORMS=linux/arm64" >&2; exit 1 ;;
+          esac
+        fi
+        status=0
+        for platform in $platforms; do
+          arch=${platform#linux/}
+          mkdir -p "$cache/$arch"
+          echo "== $platform ($image)"
+          docker pull -q --platform "$platform" "$image" >/dev/null
+          docker run --rm --platform "$platform" \
+            --user "$(id -u):$(id -g)" \
+            -v "$cache/head.bundle:/src.bundle:ro" -v "$cache/$arch:/cache" \
+            -e HOME=/tmp/home -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod \
+            -e GOTOOLCHAIN=local -e GOFLAGS= \
+            "$image" sh -ceu '
+              mkdir -p "$HOME"
+              git clone -q /src.bundle /tmp/work
+              cd /tmp/work
+              go test -race -timeout 20m ./...
+            ' || status=1
+        done
+        exit $status
+
   test-report:
     desc: Print the commands and gate record keys no test through the built binary runs, and the tests in each package
     silent: true
