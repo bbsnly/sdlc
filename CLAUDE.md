@@ -28,12 +28,21 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
 - Out of scope unless a story names it: the binary making network calls of its own (only the
   installers and a `git` subprocess touch the network), a stack for `sdlc init` beyond Go, Rust,
   Node and Python, and anything that pushes.
+- sdlc is a framework for agents, skills and the loop that manages them, not an integration tool.
+  No code writes, checks or calls an outside tool's configuration or API: an agent host's
+  settings or hooks, a model provider, a tracker, a forge or an MCP client. A guide says what
+  the person sets up by hand. A story does not lift this; only a change to this contract does.
 
 ### Architecture rules (the design reviewer blocks on these)
 
 - Dependency direction: `cmd/sdlc` → `cli`, `hook` → `store`, `scaffold`, `policy`,
   `shellpolicy`, `testset` → `config`, `model` → `pathrules`, `sdlcerr`, and the leaves (`fsx`,
-  `gitx`, `shellx`, `logging`, `version`). `parallel` sits beside `store`: only `cli` imports it,
+  `gitx`, `shellx`, `logging`, `version`, `host`). `host` holds the shape of a host profile as
+  data and imports nothing of this module. A host's own profile sits at the edge in
+  `internal/hook/<host>` (today `claudecode`): only `cmd/sdlc` imports it, outside tests, and
+  builds the set it passes to `cli` and `hook`. New code elsewhere names no agent host, its
+  files, its variables or its tools; what still does is being moved out, not a pattern to
+  follow. `parallel` sits beside `store`: only `cli` imports it,
   and it imports `shellpolicy`, `model`, `sdlcerr` and `shellx`. `guard` sits between `cli`,
   `hook` and the layer below: both import it, it imports `store`, `policy`, `shellpolicy` and
   `testset`, and it never imports `cli` or `hook`. Never upward, and `cli` and `hook` never
