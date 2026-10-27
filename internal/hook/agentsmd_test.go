@@ -916,7 +916,19 @@ func TestAC15LnAndInstallAreRefusedThroughTheHookWhereCpToTheSamePlaceIs(t *test
 		{"install " + x + "/invoice_test.go pkg.v2", "cp " + x + "/invoice_test.go pkg.v2/"},
 	} {
 		t.Run("AC-15 "+row.cmd, func(t *testing.T) {
-			agHeldUnder(t, "AC-15", root, row.cmd, agTwinRule(t, root, row.twin))
+			rules := []string{agTwinRule(t, root, row.twin)}
+			// ln and install are never read whole (shellpolicy/outside.go), so
+			// their source is not placed outside, and is read by its name before
+			// the place it lands: a test name the freeze does not hold is a new
+			// test. cp is read whole, and with no link on the way its source is
+			// placed outside and let go, so the frozen test it replaces is what
+			// refuses it. Under /tmp on Linux the twin was refused as the frozen
+			// test and the row as a new one; on macOS the temporary directory is
+			// reached through a link and both were new (CI on 2492472).
+			if strings.Contains(row.cmd, "_test.go") {
+				rules = append(rules, "no-new-test-after-the-freeze")
+			}
+			agHeldUnder(t, "AC-15", root, row.cmd, rules...)
 		})
 	}
 	for _, cmd := range []string{
