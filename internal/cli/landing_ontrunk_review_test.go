@@ -15,6 +15,7 @@ package cli
 // Helpers carry the ot prefix of that file.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,27 +23,61 @@ import (
 	"testing"
 
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/store"
 )
 
 const otTaxBase = "package internal\n"
 
+// What a story's own Gate 3 does to trunk's test file, internal/tax_test.go,
+// before the tests are frozen: otOwnGate3 takes one of these.
+const (
+	// otGate3Writes writes the file again, otOwn.
+	otGate3Writes = "writes"
+	// otGate3Removes removes it through git, so that the index no longer names
+	// the file: the freeze reads every test file git knows of.
+	otGate3Removes = "removes"
+	// otGate3Renames moves it to otRenamedTest through git.
+	otGate3Renames = "renames"
+	otRenamedTest  = "internal/duty_test.go"
+)
+
 // otOwnGate3 is US-001 in its worktree, in a repository whose trunk holds
-// internal/tax_test.go, with gate3 having had its way with the worktree's
-// tests before they were frozen, as the test author does. The story is taken
-// to the implementation with its work written, and through the retro where
-// finished is set.
-func otOwnGate3(t *testing.T, gate3 func(wt string), finished bool) (main, wt string) {
+// internal/tax_test.go, with what gate3 names having had its way with the
+// worktree's tests before they were frozen, as the test author does. The story
+// is taken to the implementation with its work written, and through the retro
+// where finished is set.
+//
+// It is a walked template per gate3 and finished, made by the real commands
+// once per package run.
+func otOwnGate3(t *testing.T, gate3 string, finished bool) (main, wt string) {
 	t.Helper()
-	main = ldRepository(t, func(root string) { writeFile(t, root, otTaxTest, otTaxBase) })
-	otIdentity(t, main)
-	wt = swCheckStarted(t, main, "US-001", ldSession, swStarted(t, main, ldSession))
-	swReach(t, wt, ldSession, model.GateTestsFrozen)
-	gate3(wt)
-	swPass(t, wt, ldSession, model.GateTestsFrozen, model.GateImplementation)
-	ldWork(t, wt)
-	if finished {
-		swPass(t, wt, ldSession, model.GateImplementation, "")
-	}
+	main, _ = walkedCopyNoted(t, fmt.Sprintf("trunk's test file, after a Gate 3 that %s it, finished %v", gate3, finished),
+		func(t *testing.T, root string) map[string]string {
+			t.Helper()
+			ldRepositoryAt(t, root, func(root string) { writeFile(t, root, otTaxTest, otTaxBase) })
+			otIdentity(t, root)
+			wt := swCheckStarted(t, root, "US-001", ldSession, swStarted(t, root, ldSession))
+			swReach(t, wt, ldSession, model.GateTestsFrozen)
+			switch gate3 {
+			case otGate3Writes:
+				writeFile(t, wt, otTaxTest, otOwn)
+			case otGate3Removes:
+				swGit(t, wt, "rm", "--quiet", "--", otTaxTest)
+			case otGate3Renames:
+				swGit(t, wt, "mv", "--", otTaxTest, otRenamedTest)
+			default:
+				t.Fatalf("a Gate 3 that %q the test file is not one this knows", gate3)
+			}
+			swPass(t, wt, ldSession, model.GateTestsFrozen, model.GateImplementation)
+			ldWork(t, wt)
+			if finished {
+				swPass(t, wt, ldSession, model.GateImplementation, "")
+			}
+			return nil
+		})
+	wt = swWorktreeOf(main, "US-001")
+	chdir(t, wt)
+	setenv(t, store.SessionEnv, ldSession)
 	return main, wt
 }
 
@@ -67,7 +102,7 @@ func TestAC4AFrozenTestTheStoryChangedAndPutBackIsABrokenFreezeNeverTrunksOwn(t 
 	t.Parallel()
 	t.Run("AC-4 at a gate, never rebased", func(t *testing.T) {
 		t.Parallel()
-		main, wt := otOwnGate3(t, func(wt string) { writeFile(t, wt, otTaxTest, otOwn) }, false)
+		main, wt := otOwnGate3(t, otGate3Writes, false)
 		if _, held := lockOnDisk(t, wt).Files[otTaxTest]; !held {
 			t.Fatalf("precondition: the story's freeze does not hold %s", otTaxTest)
 		}
@@ -93,7 +128,7 @@ func TestAC4AFrozenTestTheStoryChangedAndPutBackIsABrokenFreezeNeverTrunksOwn(t 
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt := otOwnGate3(t, func(wt string) { writeFile(t, wt, otTaxTest, otOwn) }, true)
+			main, wt := otOwnGate3(t, otGate3Writes, true)
 			ldBookkeeping(t, wt)
 			if tc.moved {
 				ldMoveTrunk(t, main)
@@ -131,27 +166,15 @@ func TestAC4AFrozenTestTheStoryChangedAndPutBackIsABrokenFreezeNeverTrunksOwn(t 
 // ends without the file.
 func TestAC1AStoryWhoseOwnGate3RemovedOrRenamedATestFileStillPassesAndLands(t *testing.T) {
 	t.Parallel()
-	const renamed = "internal/duty_test.go"
 	for _, kind := range []string{"removed", "renamed"} {
-		gate3 := func(t *testing.T) func(wt string) {
-			t.Helper()
-			// Through git, so that the index no longer names the file: the
-			// freeze reads every test file git knows of.
-			return func(wt string) {
-				if kind == "renamed" {
-					swGit(t, wt, "mv", "--", otTaxTest, renamed)
-				} else {
-					swGit(t, wt, "rm", "--quiet", "--", otTaxTest)
-				}
-			}
-		}
+		gate3 := map[string]string{"removed": otGate3Removes, "renamed": otGate3Renames}[kind]
 		landedWithout := func(t *testing.T, main, tip string) {
 			t.Helper()
 			if _, there := otAt(t, main, tip, otTaxTest); there {
 				t.Errorf("trunk holds %s after the landing, and the story's Gate 3 took it away", otTaxTest)
 			}
-			if _, there := otAt(t, main, tip, renamed); there != (kind == "renamed") {
-				t.Errorf("trunk holds %s: %v, want %v", renamed, there, kind == "renamed")
+			if _, there := otAt(t, main, tip, otRenamedTest); there != (kind == "renamed") {
+				t.Errorf("trunk holds %s: %v, want %v", otRenamedTest, there, kind == "renamed")
 			}
 			otNothingReopened(t, main)
 		}
@@ -159,7 +182,7 @@ func TestAC1AStoryWhoseOwnGate3RemovedOrRenamedATestFileStillPassesAndLands(t *t
 			how := map[bool]string{false: "the stop alone", true: "after a rebase by hand"}[byHand]
 			t.Run("AC-1 "+kind+", "+how, func(t *testing.T) {
 				t.Parallel()
-				main, wt := otOwnGate3(t, gate3(t), true)
+				main, wt := otOwnGate3(t, gate3, true)
 				ldBookkeeping(t, wt)
 				moved := ldMoveTrunk(t, main)
 				if byHand {
@@ -170,7 +193,7 @@ func TestAC1AStoryWhoseOwnGate3RemovedOrRenamedATestFileStillPassesAndLands(t *t
 		}
 		t.Run("AC-1 "+kind+", rebased before its commit gate", func(t *testing.T) {
 			t.Parallel()
-			main, wt := otOwnGate3(t, gate3(t), false)
+			main, wt := otOwnGate3(t, gate3, false)
 			swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
 			commitEverything(t, wt)
 			moved := ldMoveTrunk(t, main)
