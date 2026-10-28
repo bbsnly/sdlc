@@ -7,7 +7,7 @@ go 1.26.0
 // current that day, and nobody can reproduce a released archive. CI runs with
 // GOTOOLCHAIN=local, so this must also be new enough to build the pinned
 // GoReleaser, whose own go.mod asks for 1.27.1; the cross-build job checks it.
-toolchain go1.27.1
+toolchain go1.27.3
 
 require (
 	github.com/spf13/cobra v1.10.2
