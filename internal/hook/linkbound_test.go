@@ -530,10 +530,12 @@ func lbAskIn(t *testing.T, cwd, session, cmd string) string {
 // with 41 links Linux rightly let `echo ok` through (CI on 2492472), and a
 // write to the loop state at the end of such a chain is refused as one.
 //
-// Windows follows 63 reparse points in one lookup, so the working directory
-// it will not look up is 65 links deep, past the bound of one word as well,
-// and is named for that: with no such directory there between the two, 42
-// links were placed where they lead and `echo ok` was allowed (CI on 38e0ed0).
+// Windows follows 63 reparse points in one lookup and will not look up a
+// working directory 64 links deep either, but the walk follows that
+// directory's own last link itself, so it meets the limit only with a name
+// below. There the working directory is named at 65 links, for the bound of
+// one word, and one 42 links deep is placed where it leads, so `echo ok` from
+// it is allowed (CI on 38e0ed0).
 func TestAC5AC7FromAWorkingDirectoryPastTheLookupLimitTheHookNamesIt(t *testing.T) {
 	root := lbProject(t)
 	depth, want := 42, "the working directory goes through more links than this system follows in one lookup"
@@ -542,7 +544,10 @@ func TestAC5AC7FromAWorkingDirectoryPastTheLookupLimitTheHookNamesIt(t *testing.
 	}
 	deep := filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, fmt.Sprintf("wd%d", depth), depth, "elsewhere", "")))
 	state := filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, "st41", 41, ".sdlc/state", "")))
-	shallow := filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, "wd10", 10, "elsewhere", "")))
+	allowed := map[int]string{10: filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, "wd10", 10, "elsewhere", "")))}
+	if runtime.GOOS == "windows" {
+		allowed[42] = filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, "wd42", 42, "elsewhere", "")))
+	}
 	for _, session := range []string{working, "session-b"} {
 		t.Run(fmt.Sprintf("AC-7 echo ok, %d links deep, %s", depth, session), func(t *testing.T) {
 			reason := lbAskIn(t, deep, session, "echo ok")
@@ -557,11 +562,13 @@ func TestAC5AC7FromAWorkingDirectoryPastTheLookupLimitTheHookNamesIt(t *testing.
 				t.Errorf("the refusal does not say %q:\n%s", want, reason)
 			}
 		})
-		t.Run("AC-11 echo ok, 10 links deep, "+session, func(t *testing.T) {
-			if reason := lbAskIn(t, shallow, session, "echo ok"); reason != "" {
-				t.Errorf("refused:\n%s", reason)
-			}
-		})
+		for links, cwd := range allowed {
+			t.Run(fmt.Sprintf("AC-11 echo ok, %d links deep, %s", links, session), func(t *testing.T) {
+				if reason := lbAskIn(t, cwd, session, "echo ok"); reason != "" {
+					t.Errorf("refused:\n%s", reason)
+				}
+			})
+		}
 	}
 	// Only the session holding the story is held on the loop state, from the
 	// root as from the chain.
