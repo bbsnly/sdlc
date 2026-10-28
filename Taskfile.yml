@@ -689,11 +689,12 @@ tasks:
       # run. To bump it, change the version in
       # .github/tools/markdownlint/package.json and run
       # `npm install --package-lock-only --ignore-scripts` there.
-      # package.json overrides two packages below markdownlint-cli2 0.23.3, each
-      # held at a version with an advisory against it: smol-toml, which it pins
-      # at 1.8.0 (drop the override once it pins 1.9.0 or later), and katex,
-      # which markdownlint 0.41.1 reaches through its math extension (drop it
-      # once that resolves to 0.18.2 or later).
+      # package.json overrides one package below markdownlint-cli2 0.24.0:
+      # katex, which markdownlint 0.42.0 reaches through its math extension
+      # (micromark-extension-math 3.1.0 asks for ^0.16.0, a range with an
+      # advisory against it; drop the override once that resolves to 0.18.2 or
+      # later). The smol-toml and markdown-it overrides were dropped when
+      # markdownlint-cli2 began to pin smol-toml 1.9.1 and markdown-it 15.0.3.
       - npm ci --prefix .github/tools/markdownlint --ignore-scripts --no-audit --no-fund
       - |
         out=$(node .github/tools/markdownlint/node_modules/markdownlint-cli2/markdownlint-cli2-bin.mjs 2>&1) || {
