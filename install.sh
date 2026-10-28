@@ -169,12 +169,15 @@ expected=$(tr -d '\r' < "$tmp/checksums.txt" |
   "why  the release is missing the build for this platform" \
   "fix  report it at https://github.com/$repo/issues"
 
+# The archive is hashed from stdin, so no tool prints its name: sha256sum
+# starts its line with a backslash for a name that holds one, which the
+# plugin's launcher read as the hash under Git Bash on Windows.
 if command -v sha256sum >/dev/null 2>&1; then
-  actual=$(sha256sum "$tmp/$archive" | awk '{print $1}')
+  actual=$(sha256sum <"$tmp/$archive" | awk '{print $1}')
 elif command -v shasum >/dev/null 2>&1; then
-  actual=$(shasum -a 256 "$tmp/$archive" | awk '{print $1}')
+  actual=$(shasum -a 256 <"$tmp/$archive" | awk '{print $1}')
 elif command -v openssl >/dev/null 2>&1; then
-  actual=$(openssl dgst -sha256 "$tmp/$archive" | awk '{print $NF}')
+  actual=$(openssl dgst -sha256 <"$tmp/$archive" | awk '{print $NF}')
 else
   die "no sha256 tool found (sha256sum, shasum or openssl)." \
     "why  this script refuses to install a binary it cannot verify" \
