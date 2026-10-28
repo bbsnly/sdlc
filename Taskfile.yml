@@ -372,7 +372,18 @@ tasks:
           echo "sdlc: go list could not find every package NO_RACE_PKGS names, {{.NO_RACE_PKGS}}, so which packages run without -race is not known. Correct the list in Taskfile.yml." >&2
           exit 1
         fi
-        raced=$(go list ./... | grep -vxF "$plain") || raced=
+        # The list goes to grep in a file. As an argument it held newlines, and
+        # on windows-latest the argument reached the msys grep unquoted (Go
+        # quotes only spaces, tabs and quotes when it builds a Windows command
+        # line), so grep read its second and third lines as file names, listed
+        # no package for -race, and go test fell back to "." and failed with
+        # "no Go files".
+        printf '%s\n' "$plain" > "$dir/plain.txt"
+        raced=$(go list ./... | grep -vxF -f "$dir/plain.txt") || raced=
+        if [ -z "$raced" ]; then
+          echo "sdlc: go list ./... gave no package outside NO_RACE_PKGS, so nothing would run under -race. Check that go list works and that NO_RACE_PKGS in Taskfile.yml is not every package." >&2
+          exit 1
+        fi
         go test -json -timeout {{.TEST_TIMEOUT}} $plain > "$dir/plain.json" 2>&1 &
         plain_pid=$!
         go test -race -json -timeout {{.TEST_TIMEOUT}} $raced > "$dir/raced.json" 2>&1 &
@@ -471,7 +482,14 @@ tasks:
                 echo "sdlc: go list could not find every package NO_RACE_PKGS names, {{.NO_RACE_PKGS}}, so which packages run without -race is not known. Correct the list in Taskfile.yml." >&2
                 exit 1
               }
-              raced=$(go list ./... | grep -vxF "$plain")
+              # The list goes to grep in a file, as `test` does it, for the
+              # reason given there.
+              printf "%s\n" "$plain" > /tmp/plain.txt
+              raced=$(go list ./... | grep -vxF -f /tmp/plain.txt) || raced=
+              if [ -z "$raced" ]; then
+                echo "sdlc: go list ./... gave no package outside NO_RACE_PKGS, so nothing would run under -race. Check that go list works and that NO_RACE_PKGS in Taskfile.yml is not every package." >&2
+                exit 1
+              fi
               go test -json -timeout {{.TEST_TIMEOUT}} $plain > /tmp/plain.json 2>&1 &
               plain_pid=$!
               go test -race -json -timeout {{.TEST_TIMEOUT}} $raced > /tmp/raced.json 2>&1 &
