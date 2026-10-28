@@ -149,14 +149,23 @@ func swGit(t *testing.T, dir string, args ...string) string {
 }
 
 // swRev is the commit rev names in dir's repository.
+//
+// HEAD and a full branch name are read from the repository's files; any other
+// expression (HEAD~1, a hash, ^{tree}) is git's to evaluate.
 func swRev(t *testing.T, dir, rev string) string {
 	t.Helper()
+	if id, ok := gfRev(dir, rev); ok {
+		return id
+	}
 	return swGit(t, dir, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
 }
 
 // swHasBranch reports whether the repository at dir has the branch.
 func swHasBranch(t *testing.T, dir, branch string) bool {
 	t.Helper()
+	if has, ok := gfHasBranch(dir, branch); ok {
+		return has
+	}
 	_, ok := swGitTry(t, dir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
 	return ok
 }
@@ -164,6 +173,9 @@ func swHasBranch(t *testing.T, dir, branch string) bool {
 // swWorktrees is every working tree git lists for the repository at dir.
 func swWorktrees(t *testing.T, dir string) []string {
 	t.Helper()
+	if listed, ok := gfWorktrees(dir); ok {
+		return listed
+	}
 	var out []string
 	for line := range strings.Lines(swGit(t, dir, "worktree", "list", "--porcelain")) {
 		if p, ok := strings.CutPrefix(strings.TrimSpace(line), "worktree "); ok {
@@ -182,7 +194,31 @@ func swListed(t *testing.T, main, dir string) bool {
 // swRefs is every branch of the repository at dir, with the commit it is on.
 func swRefs(t *testing.T, dir string) string {
 	t.Helper()
+	if refs, ok := gfRefs(dir); ok {
+		return refs
+	}
 	return swGit(t, dir, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads")
+}
+
+// swBranchOn is the branch dir has checked out, or what git says when it has
+// none.
+func swBranchOn(t *testing.T, dir string) string {
+	t.Helper()
+	if branch, ok := gfBranchOn(dir); ok {
+		return branch
+	}
+	branch, _ := swGitTry(t, dir, "symbolic-ref", "--short", "HEAD")
+	return branch
+}
+
+// swStashes is what dir's repository has stashed, in a form that changes when
+// the stashes do: the stash reflog, or git's list of it.
+func swStashes(t *testing.T, dir string) string {
+	t.Helper()
+	if log, ok := gfStashes(dir); ok {
+		return log
+	}
+	return swGit(t, dir, "stash", "list")
 }
 
 // swCommitFile commits one file on whatever dir has checked out, and nothing
@@ -280,7 +316,7 @@ func swCheckStarted(t *testing.T, main, id, session string, got swStart) string 
 	if !swListed(t, main, wt) {
 		t.Fatalf("git does not list %s as a working tree of the repository: %v", wt, swWorktrees(t, main))
 	}
-	if head, _ := swGitTry(t, wt, "symbolic-ref", "--short", "HEAD"); head != swBranchOf(id) {
+	if head := swBranchOn(t, wt); head != swBranchOf(id) {
 		t.Errorf("the worktree is on %q, want %q", head, swBranchOf(id))
 	}
 	if active := strings.TrimSpace(wtRead(t, filepath.Join(wt, ".sdlc", "state", "active"))); active != id {

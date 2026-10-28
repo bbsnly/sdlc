@@ -256,12 +256,15 @@ func otSnap(t *testing.T, main, wt string, files ...string) otSnapshot {
 		Worktrees: strings.Join(swWorktrees(t, main), "\n"),
 		Head:      swRev(t, wt, "HEAD"),
 		Status:    swGitRaw(t, wt, "status", "--porcelain=v1", "--untracked-files=all"),
-		Stashes:   swGit(t, wt, "stash", "list"),
+		Stashes:   swStashes(t, wt),
 		Files:     map[string]string{},
 	}
-	s.On, _ = swGitTry(t, wt, "symbolic-ref", "--short", "HEAD")
+	s.On = swBranchOn(t, wt)
 	for _, name := range []string{"rebase-merge", "rebase-apply", "REBASE_HEAD", "CHERRY_PICK_HEAD", "MERGE_HEAD"} {
-		p := swGit(t, wt, "rev-parse", "--git-path", name)
+		p, ok := gfOwnPath(wt, name)
+		if !ok {
+			p = swGit(t, wt, "rev-parse", "--git-path", name)
+		}
 		if !filepath.IsAbs(p) {
 			p = filepath.Join(wt, p)
 		}
