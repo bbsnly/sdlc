@@ -74,33 +74,41 @@ const (
 // test's commands run in the worktree from ldSession.
 func cmWalked(t *testing.T) (main, wt, cut string) {
 	t.Helper()
-	main, notes := walkedCopyNoted(t, "codemap: one finished story on a map of two sections", func(t *testing.T, root string) map[string]string {
-		t.Helper()
-		ldRepositoryAt(t, root, func(root string) { writeFile(t, root, cmFile, cmMap) })
-		cut := ldTrunk(t, root)
-		ldFinished(t, root)
-		return map[string]string{"cut": cut}
-	})
-	otIdentity(t, main)
+	main, notes := walkedCopyNoted(t, cmWalkedKey, cmWalkedBuilder)
 	wt = swWorktreeOf(main, "US-001")
 	chdir(t, wt)
 	setenv(t, store.SessionEnv, ldSession)
 	return main, wt, notes["cut"]
 }
 
+const cmWalkedKey = "codemap: one finished story on a map of two sections"
+
+func cmWalkedBuilder(t *testing.T, root string) map[string]string {
+	t.Helper()
+	ldRepositoryAt(t, root, func(root string) { writeFile(t, root, cmFile, cmMap) })
+	cut := ldTrunk(t, root)
+	ldFinished(t, root)
+	otIdentity(t, root)
+	return map[string]string{"cut": cut}
+}
+
+// cmWalkedAt is cmWalked's copy in root, an empty directory, for the builder
+// of a template that takes the story on from there. It returns the story's
+// worktree.
+func cmWalkedAt(t *testing.T, root string) (wt string) {
+	t.Helper()
+	walkedCopyNotedAt(t, cmWalkedKey, root, cmWalkedBuilder)
+	wt = swWorktreeOf(root, "US-001")
+	chdir(t, wt)
+	setenv(t, store.SessionEnv, ldSession)
+	return wt
+}
+
 // cmTwoWalked is cmWalked with US-002 worked beside it by another session,
 // both begun from the same trunk commit and neither stopped.
 func cmTwoWalked(t *testing.T) (main, first, second, cut string) {
 	t.Helper()
-	main, notes := walkedCopyNoted(t, "codemap: two finished stories on a map of two sections", func(t *testing.T, root string) map[string]string {
-		t.Helper()
-		ldRepositoryAt(t, root, func(root string) { writeFile(t, root, cmFile, cmMap) }, wtStory{id: "US-001"}, wtStory{id: "US-002"})
-		cut := ldTrunk(t, root)
-		ldFinished(t, root)
-		otSecondStory(t, root)
-		return map[string]string{"cut": cut}
-	})
-	otIdentity(t, main)
+	main, notes := walkedCopyNoted(t, cmTwoWalkedKey, cmTwoWalkedBuilder)
 	first, second = swWorktreeOf(main, "US-001"), swWorktreeOf(main, "US-002")
 	for _, wt := range []string{first, second} {
 		if got := swGit(t, wt, "merge-base", "HEAD", "refs/heads/main"); got != notes["cut"] {
@@ -110,6 +118,18 @@ func cmTwoWalked(t *testing.T) (main, first, second, cut string) {
 	chdir(t, first)
 	setenv(t, store.SessionEnv, ldSession)
 	return main, first, second, notes["cut"]
+}
+
+const cmTwoWalkedKey = "codemap: two finished stories on a map of two sections"
+
+func cmTwoWalkedBuilder(t *testing.T, root string) map[string]string {
+	t.Helper()
+	ldRepositoryAt(t, root, func(root string) { writeFile(t, root, cmFile, cmMap) }, wtStory{id: "US-001"}, wtStory{id: "US-002"})
+	cut := ldTrunk(t, root)
+	ldFinished(t, root)
+	otSecondStory(t, root)
+	otIdentity(t, root)
+	return map[string]string{"cut": cut}
 }
 
 // cmSectionsFile is where a story's sections are kept until they are on trunk.
@@ -324,12 +344,18 @@ func cmPerson(t *testing.T, main string, args ...string) result {
 // kept; the person's edit is taken back, so that the kept change now applies.
 func cmStopped(t *testing.T) (main, landed string) {
 	t.Helper()
-	main, wt, _ := cmWalked(t)
-	cmStores(t, wt, ldSession, cmRefund)
-	writeFile(t, main, cmFile, cmMap+"\nA person's line, not committed.\n")
-	cmLandedWithoutMap(t, main, "US-001", wtRun(t, wt, ldSession, "", "stop"))
-	writeFile(t, main, cmFile, cmMap)
-	return main, ldTrunk(t, main)
+	main, notes := walkedCopyNoted(t, "codemap: stopped over a person's uncommitted edit to the map", func(t *testing.T, root string) map[string]string {
+		t.Helper()
+		wt := cmWalkedAt(t, root)
+		cmStores(t, wt, ldSession, cmRefund)
+		writeFile(t, root, cmFile, cmMap+"\nA person's line, not committed.\n")
+		cmLandedWithoutMap(t, root, "US-001", wtRun(t, wt, ldSession, "", "stop"))
+		writeFile(t, root, cmFile, cmMap)
+		return map[string]string{"landed": ldTrunk(t, root)}
+	})
+	chdir(t, swWorktreeOf(main, "US-001"))
+	setenv(t, store.SessionEnv, ldSession)
+	return main, notes["landed"]
 }
 
 // ---------------------------------------------------------------- storing
@@ -638,17 +664,10 @@ func TestAC7InAProjectWithNoMapNothingIsAddedUnlessTheBookkeeperStoredSections(t
 		name := map[bool]string{false: "AC-7 nothing stored", true: "AC-7 sections stored"}[stored]
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			main := ldRepository(t, func(root string) {
-				if err := os.Remove(filepath.Join(root, cmFile)); err != nil {
-					t.Fatal(err)
-				}
-			})
-			otIdentity(t, main)
-			cut := ldTrunk(t, main)
+			main, wt, cut := otWalked(t, ldWalk{finished: true, noMap: true})
 			if _, has := cmTrunkMap(t, main); has {
 				t.Fatal("precondition: trunk has a CODEMAP.md")
 			}
-			wt := ldFinished(t, main)
 			tip := swRev(t, wt, "HEAD")
 			if !stored {
 				if landed := otLands(t, main, wt, cut); landed.tip != tip {
@@ -1157,13 +1176,20 @@ func TestAC6ThePlainRepairAppliesTheKeptChangeWhereItStillApplies(t *testing.T) 
 // bookkeeper saw. It returns trunk's tip and the kept set.
 func cmSecondKept(t *testing.T) (main, trunk, kept string) {
 	t.Helper()
-	main, first, second, _ := cmTwoWalked(t)
 	kept = cmReplaceLine + "\n## billing.go\n\nKeeps the accounts and, since US-002, shipping.\n" + "\n" + cmShipping
-	cmStores(t, first, ldSession, cmBilling)
-	cmStores(t, second, otSecondSession, kept)
-	cmLandedWithMap(t, main, "US-001", wtRun(t, first, ldSession, "", "stop"))
-	cmLandedWithoutMap(t, main, "US-002", wtRun(t, second, otSecondSession, "", "stop"))
-	return main, ldTrunk(t, main), kept
+	main, notes := walkedCopyNoted(t, "codemap: US-001 replaced billing.go's section, US-002's set is kept", func(t *testing.T, root string) map[string]string {
+		t.Helper()
+		walkedCopyNotedAt(t, cmTwoWalkedKey, root, cmTwoWalkedBuilder)
+		first, second := swWorktreeOf(root, "US-001"), swWorktreeOf(root, "US-002")
+		cmStores(t, first, ldSession, cmBilling)
+		cmStores(t, second, otSecondSession, kept)
+		cmLandedWithMap(t, root, "US-001", wtRun(t, first, ldSession, "", "stop"))
+		cmLandedWithoutMap(t, root, "US-002", wtRun(t, second, otSecondSession, "", "stop"))
+		return map[string]string{"trunk": ldTrunk(t, root)}
+	})
+	chdir(t, swWorktreeOf(main, "US-001"))
+	setenv(t, store.SessionEnv, ldSession)
+	return main, notes["trunk"], kept
 }
 
 // The sixth answer: where a section is not what the bookkeeper saw the plain
