@@ -345,6 +345,9 @@ func systemPath(t *testing.T) string {
 // mirror to fetch from. Nothing comes from the environment the tests run in.
 type session struct {
 	home, root, data, project, base string
+	// debug, where set, is the file the launcher notes what it did in, for a
+	// failure to quote.
+	debug string
 }
 
 func (s session) env(t *testing.T, path string) []string {
@@ -376,6 +379,9 @@ func (s session) hook(t *testing.T, l hookLauncher, event string, payload map[st
 	cmd.Env = append(s.env(t, systemPath(t)),
 		"CLAUDE_PLUGIN_ROOT="+s.root, "CLAUDE_PLUGIN_DATA="+s.data, "CLAUDE_PROJECT_DIR="+s.project,
 		"CLAUDE_CODE_SESSION_ID="+fmt.Sprint(payload["session_id"]))
+	if s.debug != "" {
+		cmd.Env = append(cmd.Env, "SDLC_DEBUG_FILE="+s.debug)
+	}
 	cmd.Dir = s.project
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -402,6 +408,30 @@ func (s session) bash(t *testing.T, l hookLauncher, command string) (string, err
 	cmd.Dir = s.project
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// fetched is what a failure to find the fetched sdlc needs to say why: what
+// the launcher noted it did, what the plugin's bin directory holds, and the
+// PATH the model's shell saw. On windows-11-arm the shell found no sdlc after
+// a fetch that asked the mirror, and the reply alone did not say whether the
+// fetch had installed anything (CI on 38e0ed0).
+func (s session) fetched(t *testing.T, l hookLauncher) string {
+	t.Helper()
+	var b strings.Builder
+	notes, err := os.ReadFile(s.debug)
+	fmt.Fprintf(&b, "the launcher noted (%v):\n%s", err, notes)
+	entries, err := os.ReadDir(filepath.Join(s.root, "bin"))
+	fmt.Fprintf(&b, "the plugin's bin directory holds (%v):", err)
+	for _, e := range entries {
+		fmt.Fprintf(&b, " %s", e.Name())
+	}
+	show := `echo "$PATH"`
+	if l.name == "cmd" {
+		show = "echo %PATH%"
+	}
+	path, err := s.bash(t, l, show)
+	fmt.Fprintf(&b, "\nthe shell's PATH (%v): %s", err, path)
+	return b.String()
 }
 
 // hookReply is every field a launcher's answer may carry.
@@ -528,7 +558,8 @@ func TestAC9OnTheFirstSessionStartTheLauncherFetchesThePluginsReleaseAndTheHookA
 			m := serveMirror(t, releaseDir)
 			home := tempDir(t)
 			s := session{home: home, root: installedPlugin(t, home, pinsFor(version, sum)),
-				data: mkdirs(t, home, ".claude", "plugins", "data", "sdlc"), project: freshRepository(t), base: m.base}
+				data: mkdirs(t, home, ".claude", "plugins", "data", "sdlc"), project: freshRepository(t), base: m.base,
+				debug: filepath.Join(home, "launcher.log")}
 
 			started := s.hook(t, l, "SessionStart", sessionStart(s.project, "session-a"))
 			if m.archiveAsks() == 0 {
@@ -538,7 +569,7 @@ func TestAC9OnTheFirstSessionStartTheLauncherFetchesThePluginsReleaseAndTheHookA
 
 			out, err := s.bash(t, l, "sdlc version")
 			if err != nil {
-				t.Fatalf("the model's Bash found no sdlc after the first SessionStart: %v\n%s", err, out)
+				t.Fatalf("the model's Bash found no sdlc after the first SessionStart: %v\n%s\n%s", err, out, s.fetched(t, l))
 			}
 			if !strings.Contains(out, version) {
 				t.Errorf("the model's Bash found an sdlc that is not the plugin's version %s: %q", version, out)
