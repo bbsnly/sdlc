@@ -130,11 +130,18 @@ var hoCauses = []hoCause{
 }
 
 // hoEachCause runs body once for each cause that can be produced here.
+//
+// A cause made with permissions changes nothing outside its own repository, so
+// its run is parallel. The one that takes git off PATH changes the process's,
+// which Go refuses in a parallel test, so it runs first and alone, and the
+// tests that call this are not parallel either: a parallel subtest waits for
+// its parent's function to return, by when PATH is back.
 func hoEachCause(t *testing.T, body func(t *testing.T, cause hoCause)) {
 	t.Helper()
 	for _, cause := range hoCauses {
 		t.Run(cause.name, func(t *testing.T) {
 			if cause.permissions {
+				t.Parallel()
 				skipIfPermissionsDoNotBind(t)
 			}
 			body(t, cause)
@@ -238,9 +245,13 @@ func hoGateAtTheLimit(t *testing.T) string {
 
 var hoDorFailed = model.GateEvent(model.GateDoR, model.GateFail)
 
-// ---------------------------------------------------------------- AC-1, AC-5
+// ---------------------------------------------------------- AC-1, AC-2, AC-5
 
-func TestAC1AGateFailureWhoseHandOverCannotBeCompletedLeavesTheRecordByteForByte(t *testing.T) {
+// One run for each cause carries AC-1, AC-2 and AC-5: they start from the same
+// story at the limit and the same refused command, and differ in what they
+// read afterwards, so a cause is set up and refused once and every one of them
+// reads it.
+func TestAC1AC2AC5AGateFailureWhoseHandOverCannotBeCompletedLeavesTheRecordByteForByteSaysSoAndIsCountedOnceWhenRunAgain(t *testing.T) {
 	hoEachCause(t, func(t *testing.T, cause hoCause) {
 		t.Helper()
 		root := hoGateAtTheLimit(t)
@@ -254,6 +265,8 @@ func TestAC1AGateFailureWhoseHandOverCannotBeCompletedLeavesTheRecordByteForByte
 		if strings.Contains(r.stdout, "handed to a person") {
 			t.Errorf("the refused command says the story was handed over:\n%s", r.stdout)
 		}
+		// AC-5: it says the failure was not recorded and running it again is safe.
+		hoSaysNothingWasRecorded(t, r.stderr)
 		hoStillBeingWorked(t, root, before)
 
 		// The reproduction ran it twice: each refusal used to add a failure.
@@ -262,74 +275,31 @@ func TestAC1AGateFailureWhoseHandOverCannotBeCompletedLeavesTheRecordByteForByte
 		}
 		hoStillBeingWorked(t, root, before)
 
+		// AC-5: --json is how a script reads a refusal, and it is told the same.
+		j := run(t, "gate", "dor", "fail", "--note", "AC-2 is still not testable", "--json")
+		if j.code == 0 {
+			t.Fatalf("the gate was recorded and the story was not handed over:\n%s", j.stdout)
+		}
+		hoSaysNothingWasRecorded(t, j.stdout)
+		hoStillBeingWorked(t, root, before)
+
 		mend()
 		if active := hoActive(t); active != "US-001" {
 			t.Errorf("the refused command ended the iteration: active = %q, want US-001", active)
 		}
 		record := readRecord(t, root, "US-001")
 		if n := record.SinceDecision(model.EventGate, hoDorFailed); n != 1 {
-			t.Errorf("two refused attempts left %d dor failures on the record, want the 1 that was there", n)
+			t.Errorf("three refused attempts left %d dor failures on the record, want the 1 that was there", n)
 		}
-	})
-}
 
-func TestAC5TheRefusedGateFailureSaysItWasNotRecordedAndIsSafeToRunAgain(t *testing.T) {
-	hoEachCause(t, func(t *testing.T, cause hoCause) {
-		t.Helper()
-		root := hoGateAtTheLimit(t)
-		cause.stop(t, root)
-
-		r := run(t, "gate", "dor", "fail", "--note", "AC-2 is still not testable")
-		if r.code == 0 {
-			t.Fatalf("the gate was recorded and the story was not handed over:\n%s", r.stdout)
-		}
-		hoSaysNothingWasRecorded(t, r.stderr)
-
-		// --json is how a script reads a refusal, and it is told the same.
-		j := run(t, "gate", "dor", "fail", "--note", "AC-2 is still not testable", "--json")
-		if j.code == 0 {
-			t.Fatalf("the gate was recorded and the story was not handed over:\n%s", j.stdout)
-		}
-		hoSaysNothingWasRecorded(t, j.stdout)
-	})
-}
-
-// A refusal that has nothing to do with a hand-over says nothing about one: a
-// sentence added to every refusal would be wrong wherever it was not true.
-func TestAC5ARefusalThatIsNotAHandOverDoesNotSayAFailureWentUnrecorded(t *testing.T) {
-	t.Parallel()
-	gitProjectInitialised(t)
-	mustRun(t, "start")
-
-	r := run(t, "gate", "plan", "pass")
-	if r.code == 0 {
-		t.Fatal("the plan gate passed before the gates in front of it")
-	}
-	if strings.Contains(strings.ToLower(r.stderr), "not recorded") {
-		t.Errorf("a gate refused for its order talks of a failure that was not recorded:\n%s", r.stderr)
-	}
-}
-
-// ---------------------------------------------------------------- AC-2
-
-func TestAC2TheGateFailureRunAgainAfterTheCauseIsRemovedIsCountedOnceAndHandsTheStoryOver(t *testing.T) {
-	hoEachCause(t, func(t *testing.T, cause hoCause) {
-		t.Helper()
-		root := hoGateAtTheLimit(t)
-		mend := cause.stop(t, root)
-		for range 2 {
-			if r := run(t, "gate", "dor", "fail", "--note", "AC-2 is still not testable"); r.code == 0 {
-				t.Fatalf("the gate was recorded and the story was not handed over:\n%s", r.stdout)
-			}
-		}
-		mend()
-
+		// AC-2: the same command with the cause removed hands the story over,
+		// and counts the failure once.
 		got := decode[gatePayload](t, mustRun(t, "gate", "dor", "fail", "--note", "AC-2 is still not testable", "--json"))
 		if got.HandedOver != "gate_failing" {
 			t.Fatalf("the same command, with the cause removed, did not hand the story over: %+v", got)
 		}
 
-		record := readRecord(t, root, "US-001")
+		record = readRecord(t, root, "US-001")
 		if n := record.SinceDecision(model.EventGate, hoDorFailed); n != 2 {
 			t.Errorf("the record counts %d dor failures, want 2: one before, and the one handed over, once", n)
 		}
@@ -358,6 +328,22 @@ func TestAC2TheGateFailureRunAgainAfterTheCauseIsRemovedIsCountedOnceAndHandsThe
 	})
 }
 
+// A refusal that has nothing to do with a hand-over says nothing about one: a
+// sentence added to every refusal would be wrong wherever it was not true.
+func TestAC5ARefusalThatIsNotAHandOverDoesNotSayAFailureWentUnrecorded(t *testing.T) {
+	t.Parallel()
+	gitProjectInitialised(t)
+	mustRun(t, "start")
+
+	r := run(t, "gate", "plan", "pass")
+	if r.code == 0 {
+		t.Fatal("the plan gate passed before the gates in front of it")
+	}
+	if strings.Contains(strings.ToLower(r.stderr), "not recorded") {
+		t.Errorf("a gate refused for its order talks of a failure that was not recorded:\n%s", r.stderr)
+	}
+}
+
 // ---------------------------------------------------------------- AC-3
 
 // hoBlockedOnce is a story at the design review, one architect's block below
@@ -375,7 +361,10 @@ var (
 	hoSecondBlock      = []string{"review", "add", "design_review", "architect", "block", "--note", "AC-3 still has no step"}
 )
 
-func TestAC3ABlockWhoseHandOverCannotBeCompletedLeavesTheRecordAndNoReviewFile(t *testing.T) {
+// One run for each cause holds both halves of AC-3: they start from the same
+// story and the same refused block, and differ in what they read, before the
+// cause is removed and after.
+func TestAC3ABlockWhoseHandOverCannotBeCompletedLeavesTheRecordAndNoReviewFileAndIsCountedOnceWhenRunAgain(t *testing.T) {
 	hoEachCause(t, func(t *testing.T, cause hoCause) {
 		t.Helper()
 		root := hoBlockedOnce(t)
@@ -408,20 +397,6 @@ func TestAC3ABlockWhoseHandOverCannotBeCompletedLeavesTheRecordAndNoReviewFile(t
 		if active := hoActive(t); active != "US-001" {
 			t.Errorf("the refused command ended the iteration: active = %q, want US-001", active)
 		}
-	})
-}
-
-func TestAC3TheBlockRunAgainAfterTheCauseIsRemovedIsCountedOnceAndHandsTheStoryOver(t *testing.T) {
-	hoEachCause(t, func(t *testing.T, cause hoCause) {
-		t.Helper()
-		root := hoBlockedOnce(t)
-		mend := cause.stop(t, root)
-		for range 2 {
-			if r := runWith(t, "# architect\n\nrefused: AC-3 still has no step.\n", hoSecondBlock...); r.code == 0 {
-				t.Fatalf("the block was recorded and the story was not handed over:\n%s", r.stdout)
-			}
-		}
-		mend()
 
 		const kept = "# architect\n\nAC-3 still has no step.\n"
 		got := decode[reviewPayload](t, mustRunWith(t, kept, append(slices.Clone(hoSecondBlock), "--json")...))
