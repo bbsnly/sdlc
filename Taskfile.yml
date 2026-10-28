@@ -325,13 +325,15 @@ tasks:
     cmds:
       - |
         # go test gives a package ten minutes unless told otherwise, and under
-        # the race detector internal/shellpolicy took six on a fast machine: on
-        # a loaded macOS runner it reached the ten and was killed mid-test. Its
-        # slowest tests now run in parallel, but the slowest package on the
-        # slowest runner still takes eight minutes, so the limit is twenty:
-        # room to spare, and short enough that a real hang is reported by go
-        # test, with the test's name, before the CI job's thirty minutes end it
-        # with none.
+        # the race detector internal/shellpolicy once reached that on a loaded
+        # macOS runner and was killed mid-test. The limit is twenty, short
+        # enough that a real hang is reported by go test, with the test's
+        # name, before the CI job's thirty minutes end it with none. It is not
+        # lower because internal/cli is not fast enough: in CI run 40600769689
+        # it took 325s on ubuntu-latest and 1055s on macos-latest, and on
+        # windows-latest go test killed it at the twenty minutes. Its time is
+        # the git processes the commands under test start, about 88,000 in a
+        # run of its tests, and a shorter limit waits on fewer of them.
         #
         # The limit only ever went up, because nothing said a package was
         # nearing it until one passed it. So go test writes events, and
