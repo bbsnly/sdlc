@@ -350,6 +350,22 @@ func TestTheFileReadingHelpersLeaveWhatTheyCannotReadToGit(t *testing.T) {
 		}
 	})
 
+	t.Run("a directory that is gone", func(t *testing.T) {
+		t.Parallel()
+		dir := filepath.Join(t.TempDir(), "main")
+		gfInit(t, dir)
+		gone := filepath.Join(dir, ".sdlc", "worktrees", "US-001")
+		if _, ok := gfRev(gone, "HEAD"); ok {
+			t.Error("HEAD was read from files for a directory that does not exist")
+		}
+		if _, ok := gfBranchOn(gone); ok {
+			t.Error("the branch was read from files for a directory that does not exist")
+		}
+		if _, ok := gfRefs(gone); ok {
+			t.Error("the branches were listed from files for a directory that does not exist")
+		}
+	})
+
 	t.Run("a file that is not what git writes", func(t *testing.T) {
 		t.Parallel()
 		dir := filepath.Join(t.TempDir(), "damaged")

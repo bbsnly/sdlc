@@ -39,6 +39,12 @@ func gfOpen(dir string) (gfRepo, bool) {
 	if err != nil {
 		return gfRepo{}, false
 	}
+	// git cannot start in a directory that is gone, so neither does this. The
+	// walk up would otherwise answer for a removed story worktree with the main
+	// checkout's HEAD, and a test of a kept worktree could pass on main's.
+	if fi, err := os.Stat(d); err != nil || !fi.IsDir() {
+		return gfRepo{}, false
+	}
 	for {
 		// A directory inside a .git directory is not a place git discovers
 		// the repository from the way it does from a working tree.
@@ -306,7 +312,8 @@ func gfHasBranch(dir, branch string) (has, ok bool) {
 // gfRefs is every branch with its commit, as for-each-ref prints them with
 // "%(refname) %(objectname)" over refs/heads: sorted by name, a loose ref over
 // a packed one. A symbolic ref among them, or a name it does not read, is left
-// to git.
+// to git. A branch whose commit is missing is listed here where for-each-ref
+// skips it as broken; no test makes one.
 func gfRefs(dir string) (string, bool) {
 	r, ok := gfOpen(dir)
 	if !ok {
