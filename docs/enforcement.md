@@ -2549,7 +2549,7 @@ the person's Claude Code configuration:
 - a copy, link or install into a directory that holds it, by the name it lands
   under: `cp x/.claude.json ~`, and an `ln -s` of it into the home spelled out
   in full, both write `~/.claude.json`, even where the home's name holds a dot;
-- `xargs` fed from a pipe whose words name it;
+- `xargs` or GNU `parallel` fed from a pipe whose words name it;
 - Claude Code's own commands that change it: `claude config set`, `add` and
   `remove` (or `rm`); `claude mcp add`, `add-json`, `add-from-claude-desktop`
   and `remove`; `claude plugin` (or `plugins`) `install` (or `i`), `uninstall`,
@@ -2561,7 +2561,11 @@ the person's Claude Code configuration:
 A path is placed as the shell would place it: `~`, `$HOME`, `${HOME}`,
 `$env:HOME`, `$env:USERPROFILE`, `%USERPROFILE%` and `%HOMEDRIVE%%HOMEPATH%`,
 `CLAUDE_CONFIG_DIR` in each of those forms, and a relative path from the
-directory the command runs in. A word written to that cannot be placed, such as
+directory the command runs in. A word `xargs` or `parallel` is fed from
+elsewhere on the line is placed the same way, as the shell hands it over, quoted
+or escaped: `echo ~/.claude/settings.json | xargs rm` is refused as `rm
+~/.claude/settings.json` is, and `echo '~/.claude/settings.json' | xargs rm` as
+`rm '~/.claude/settings.json'` is. A word written to that cannot be placed, such as
 a variable or a glob, is refused where the command names the configuration by
 name, `.claude` or `.claude.json`, or by one of the two variables, or where the
 word is itself a glob the shell expands, such as `.*`, that could match them. So

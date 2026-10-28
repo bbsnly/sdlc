@@ -1102,6 +1102,13 @@ interpreter given inline code (`runsInlineCode`), a writer fed by `xargs` or
 GNU `parallel` (`addWritten`, `addFrozenWritten`), and, for the freeze alone,
 `awk`, `gawk` and `sed` (`addProgramWords`). `wordsIn` keeps letters, digits,
 `./_-` and anything beyond ASCII, so `':(exclude).sdlc'` is the word `.sdlc`.
+A writer `xargs` or `parallel` feeds, the configuration rules, `pipedCopy`, and
+a program on a line that holds a pipe or a `<` (`programWords`) are handed
+`memo.handedWords` instead: those words, each once, and then every word of the
+line as `parse` reads it, unquoted, where it holds a character `wordsIn` ends a
+path at, so that `~/.claude`, `"$HOME"/.agents` and `.sd''lc` reach them whole.
+A program's own text is not read that way: cut at its blanks, a
+`expanduser("~/.agents/x")` named a `.agents` in the project.
 
 `HumanDecisions` never asks a path rule, and of the program rules it asks
 only `checkAssign`, `checkAck`, `checkRemap`, `checkRelease`, `checkParallel`,

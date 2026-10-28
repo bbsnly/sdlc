@@ -225,7 +225,7 @@ func (m *memo) lineNamesConfig(line string, agents bool) bool {
 	}
 	if *cache == 0 {
 		*cache = -1
-		if slices.ContainsFunc(m.words(line), func(w string) bool { return m.wordNamesConfig(w, agents) }) {
+		if slices.ContainsFunc(m.handedWords(line), func(w string) bool { return m.wordNamesConfig(w, agents) }) {
 			*cache = 1
 		}
 	}
@@ -566,10 +566,14 @@ func (q pathQuestion) configWordsOf() (inside, held []string, line [2]int) {
 		}
 	}
 	// The file a program opens is inside a string, and a command fed on
-	// standard input is given words from elsewhere on the line.
+	// standard input is given words from elsewhere on the line. Both are
+	// asked the handed words, one list for the line, so that what was found
+	// in it is kept by one key: a piece of a program's text cut at its
+	// blanks is placed in the person's home only where the line names the
+	// place, and such a program checkConfig has refused already.
 	line[0] = len(inside)
 	if q.runsCode() || run.piped && changesFiles(words) {
-		inside = append(inside, m.words(q.line)...)
+		inside = append(inside, m.handedWords(q.line)...)
 	}
 	line[1] = len(inside)
 	inside = append(inside, q.pipedLandings()...)

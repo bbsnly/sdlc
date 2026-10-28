@@ -439,7 +439,7 @@ func (q pathQuestion) pipedCopy() (to string, sources []string, ok bool) {
 	if !ok {
 		return "", nil, false
 	}
-	for _, w := range q.m.words(q.line) {
+	for _, w := range q.m.handedWords(q.line) {
 		if strings.Contains(w, "/") && !strings.HasPrefix(w, "-") {
 			sources = append(sources, w)
 		}

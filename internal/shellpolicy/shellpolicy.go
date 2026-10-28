@@ -1988,7 +1988,7 @@ func findChanges(words []string) bool {
 
 // checkLoopState stops the shell being the way around every other rule.
 func checkLoopState(q pathQuestion) (Finding, bool) {
-	line, segment, run, m := q.line, q.segment, q.run, q.m
+	segment, run := q.segment, q.run
 	if q.findsOutside() {
 		// find does not leave where it starts: only where its output is sent
 		// is left to ask about.
@@ -2002,7 +2002,7 @@ func checkLoopState(q pathQuestion) (Finding, bool) {
 	if runsInlineCode(run.words, segment) {
 		// The file a program opens is inside a string, as it is for the
 		// freeze below.
-		candidates = append(candidates, m.words(line)...)
+		candidates = append(candidates, q.programWords()...)
 	}
 	// A word placed outside the repository names none of the loop's files: from
 	// a directory outside it, `.sdlc/state/active` is that directory's.
@@ -2084,9 +2084,36 @@ func (q pathQuestion) addWritten(candidates []string) []string {
 		// another segment altogether. The line is read once from each
 		// directory: every word of it was spelled again for each `xargs`
 		// in it, and a hundred of them took most of a 60 KB command's time.
-		candidates = append(candidates, q.m.words(q.line)...)
+		candidates = append(candidates, q.m.handedWords(q.line)...)
 	}
 	return candidates
+}
+
+// programWords are the words of the whole line a program written on it is
+// read for: what it opens is in its text as written, and where the line can
+// feed it on standard input, through a pipe or a `<` anywhere on it, what it
+// reads there is a word of the line as the shell hands it over. Read in its
+// text alone, `echo .sd"lc"/state/active | python3 -c 'import os;
+// os.remove(input())'` took the loop's record away. The whole line and not the
+// segment, which ends at the `;` inside the program: `python3 -c 'import os;
+// os.remove(input())' <<< .sd"lc"/state/active` is a segment with no `<`.
+func (q pathQuestion) programWords() []string {
+	if q.m.fedOn(q.line) {
+		return q.m.handedWords(q.line)
+	}
+	return q.m.words(q.line)
+}
+
+// fedOn reports whether a line holds a pipe or a `<`, worked out once for the
+// line.
+func (m *memo) fedOn(line string) bool {
+	if m.feeds == 0 {
+		m.feeds = -1
+		if strings.ContainsAny(line, "|<") {
+			m.feeds = 1
+		}
+	}
+	return m.feeds > 0
 }
 
 // loopFilesFound is the loop's own files and the protected paths a find that
@@ -2406,7 +2433,7 @@ func (q pathQuestion) addProgramWords(candidates []string) []string {
 		// them is left out.
 		plain = nil
 	}
-	for _, w := range q.m.words(q.line) {
+	for _, w := range q.programWords() {
 		if !plain[w] {
 			candidates = append(candidates, w)
 		}
@@ -2428,7 +2455,7 @@ func (q pathQuestion) addFrozenWritten(candidates []string) (added, removed []st
 		candidates = append(candidates, q.written()...)
 	}
 	if run.piped {
-		candidates = append(candidates, q.m.words(q.line)...)
+		candidates = append(candidates, q.m.handedWords(q.line)...)
 	}
 	return candidates, removed
 }
@@ -3298,6 +3325,14 @@ type memo struct {
 	split    bool
 	disk     *diskAnswers // what the hook said of the checkouts, for every reading
 	whole    []plainRun   // the command as the plain reader read it, or nil; see plainCommand
+	// handed is handedWords of the whole command handedFor, and handedOK
+	// whether it was worked out.
+	handed    []string
+	handedFor string
+	handedOK  bool
+	// feeds is whether the line holds a pipe or a `<`: 0 not yet asked, 1 it
+	// does, -1 it does not.
+	feeds int8
 	// claudeNamed is whether the line names the person's Claude Code
 	// configuration: 0 not yet asked, 1 it does, -1 it does not.
 	claudeNamed int8
@@ -3395,17 +3430,76 @@ func (m *memo) first(rule, spelling string) bool {
 	return true
 }
 
-// words is wordsIn(line), worked out once for line, the whole command. A memo
-// is one reading's, and every rule asks it of that reading's command, but the
-// words kept for another line are not trusted, as configAsked does not trust
-// its set: kept from the first line asked, a second line would be answered
-// with the first one's words.
+// words is wordsIn(line), worked out once for line, the whole command: the
+// path-shaped words of a program's text, which a program opens as they are
+// written. A memo is one reading's, and every rule asks it of that reading's
+// command, but the words kept for another line are not trusted, as configAsked
+// does not trust its set: kept from the first line asked, a second line would
+// be answered with the first one's words.
 func (m *memo) words(line string) []string {
 	if !m.split || m.lineFor != line {
 		m.line, m.lineFor, m.split = wordsIn(line), line, true
 	}
 	return m.line
 }
+
+// handedWords is handedWords(line), worked out once for line as words is.
+func (m *memo) handedWords(line string) []string {
+	if !m.handedOK || m.handedFor != line {
+		m.handed, m.handedFor, m.handedOK = handedWords(m.words(line), line), line, true
+	}
+	return m.handed
+}
+
+// handedWords are the words of a whole command a segment can be handed from
+// elsewhere on it, through xargs or GNU parallel: words, wordsIn(line), and
+// after them each word of each segment as parse reads it, unquoted, where it
+// holds a character wordsIn ends a path at.
+//
+// words alone took the `~` and the `$` off the front of a word, and split it
+// at a quote: `echo ~/.claude/settings.json | xargs rm` and `echo
+// $HOME/.agents | xargs rm -rf` handed rm /.claude/settings.json and
+// HOME/.agents, which no rule places in the person's home, and took their
+// configuration away from any session; `echo .sd"lc"/state/active | xargs rm`
+// named .sd, lc and /state/active, and took the loop's record away. Read as
+// parse reads a segment's own words, the same spellings were always refused
+// there. They come after words, so that a line refused before is refused at
+// the same word.
+//
+// A program's text is not read this way: what it opens is in its text as
+// written, and cut at its blanks, `open(os.path.expanduser("~/.agents/x"))`
+// was a .agents inside the project.
+//
+// Each word is kept once, where it first stands, which can change no answer:
+// a rule asks the same word the same question. A line that names the same
+// paths in segment after segment handed every segment fed on standard input
+// all of them again: a hundred `echo <20 paths> | xargs rm;` handed each rm
+// 2000 words of which 20 differ, and with the shell's spellings added that
+// took half as long again as it had. Kept once, it takes a tenth.
+func handedWords(words []string, line string) []string {
+	out := make([]string, 0, len(words))
+	seen := make(map[string]bool, len(words))
+	add := func(w string) {
+		if w != "" && !seen[w] {
+			seen[w] = true
+			out = append(out, w)
+		}
+	}
+	for _, w := range words {
+		add(w)
+	}
+	for _, segment := range segments(line) {
+		for _, f := range spacedFields(segment) {
+			if f.text != ">" && f.text != "<" && strings.ContainsFunc(f.text, endsAPath) {
+				add(unquote(f.text))
+			}
+		}
+	}
+	return out
+}
+
+// endsAPath is whether wordsIn ends a path at r.
+func endsAPath(r rune) bool { return !inAPath(r) }
 
 // frozen matches a word from a command line against the frozen set, allowing
 // for the spellings the same file arrives under: as written, with a ./ in
