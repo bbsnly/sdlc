@@ -121,7 +121,13 @@ type diskAnswers struct {
 	resolved map[string]string
 	followed map[[2]string]followed
 	counted  map[[2]string]followed
-	past     map[string]bool
+	past     map[string]pastAnswer
+}
+
+// pastAnswer is what pastTheLimit found of a directory.
+type pastAnswer struct {
+	past bool
+	at   string
 }
 
 // entry is what Lstat said of a path: whether it is there, and whether it is a
@@ -141,7 +147,7 @@ func NewResolver(project string) Resolver {
 // change: a Resolver kept while files come and go would answer from before.
 func (res Resolver) Memoised() Resolver {
 	res.disk = &diskAnswers{there: map[string]entry{}, resolved: map[string]string{},
-		followed: map[[2]string]followed{}, counted: map[[2]string]followed{}, past: map[string]bool{}}
+		followed: map[[2]string]followed{}, counted: map[[2]string]followed{}, past: map[string]pastAnswer{}}
 	return res
 }
 
@@ -254,6 +260,13 @@ func (res Resolver) lstat(p string) entry {
 // word was taken by name 64 links in, within the bound, and `touch` through
 // 65 links, one in each directory, was allowed on Windows (CI on 38e0ed0).
 //
+// A directory the system will not look up within the limit is read link by
+// link as well, and where the name is there, the system hid it, and next is
+// unreadable too: Windows will not go through a link made as a link to a
+// file, so `e0/x`, with e0 such a link to d and d\x a link into the loop's
+// state, read as not there and was placed at d\x by name, where a shell that
+// follows the links itself writes through (review of b0cfef3).
+//
 // Once the command's budget is spent it is refused, and nothing more is
 // followed for it.
 func (res Resolver) lookUp(next string, below bool) entry {
@@ -261,8 +274,14 @@ func (res Resolver) lookUp(next string, below bool) entry {
 	if !limitUnsaid || !below || e.there || e.unreadable || res.budget.spent() {
 		return e
 	}
-	if !res.pastTheLimit(filepath.Dir(next)) {
-		return e
+	past, at := res.pastTheLimit(filepath.Dir(next))
+	if !past {
+		if at == "" {
+			return e
+		}
+		if hidden := res.lstat(joinName(at, filepath.Base(next))); !hidden.there && !hidden.unreadable {
+			return e
+		}
 	}
 	e.unreadable = true
 	if res.disk != nil {
@@ -288,28 +307,41 @@ func hidingTheLimit() bool { return limitUnsaid && !limitReadsAsNotThere }
 // memoised, and its links charged once: every name not there in a directory
 // below a link asks it, and each word in the same directory walked and
 // charged the same links again.
-func (res Resolver) pastTheLimit(dir string) bool {
+//
+// Only a dir more links away than one lookup follows is past the limit. A
+// system lookup fails short of it too: Windows will not go through a link to
+// a file, which Go's os.Symlink and MSYS's ln -s make where the target is not
+// there yet, and with any failure read as the limit, every word through two
+// such links was refused under SDLC-E0081 (CI on 8618433). Where dir is
+// reached link by link within the limit, at is where.
+func (res Resolver) pastTheLimit(dir string) (past bool, at string) {
 	if res.disk != nil {
-		if past, asked := res.disk.past[dir]; asked {
-			return past
+		if a, asked := res.disk.past[dir]; asked {
+			return a.past, a.at
 		}
 	}
-	past := false
 	if _, err := os.Stat(dir); err != nil {
-		var links int
-		past, links = res.reachable(dir)
+		there, links, to := res.reachable(dir)
 		res.budget.charge(links)
+		switch {
+		case !there:
+		case links > lookupLinks():
+			past = true
+		default:
+			at = to
+		}
 	}
 	if res.disk != nil {
-		res.disk.past[dir] = past
+		res.disk.past[dir] = pastAnswer{past, at}
 	}
-	return past
+	return past, at
 }
 
 // reachable reports whether dir is there with every link on the way followed
 // one at a time from the root, junctions as well as symlinks, so that no
 // lookup crosses more than one link; or whether the walk passed maxLinks
-// first, which the bound refuses anyway; and how many links it followed. A
+// first, which the bound refuses anyway; how many links it followed; and, where
+// dir is there, the place the links lead it to. A
 // reparse point that names no other place is passed through as Windows passes
 // through it. Where a name on the way is not there, dir is not, and a name
 // below it is not there either, unless the links followed to that name are
@@ -317,7 +349,7 @@ func (res Resolver) pastTheLimit(dir string) bool {
 // name up, and dir reads as there, to be refused. Read as not there, a chain
 // of 40 links to nothing was allowed under Windows' answer, where macOS gives
 // ELOOP and refuses it (review of 8b8658c).
-func (res Resolver) reachable(dir string) (there bool, links int) {
+func (res Resolver) reachable(dir string) (there bool, links int, at string) {
 	dest, rest := dir[:rootLen(dir)], dir[rootLen(dir):]
 	for rest != "" {
 		var name string
@@ -332,7 +364,7 @@ func (res Resolver) reachable(dir string) (there bool, links int) {
 		next := joinName(dest, name)
 		e := res.lstat(next)
 		if !e.there {
-			return links > lookupLinks(), links
+			return links > lookupLinks(), links, ""
 		}
 		target, ok := linkTarget(next, e)
 		if !ok {
@@ -340,7 +372,7 @@ func (res Resolver) reachable(dir string) (there bool, links int) {
 			continue
 		}
 		if links++; links > maxLinks {
-			return true, links
+			return true, links, ""
 		}
 		v := rootLen(target)
 		dest, rest = filepath.Dir(next), target[v:]+rest
@@ -348,7 +380,7 @@ func (res Resolver) reachable(dir string) (there bool, links int) {
 			dest = target[:v]
 		}
 	}
-	return true, links
+	return true, links, dest
 }
 
 // firstName is the first name in rest, after any separators it starts with,

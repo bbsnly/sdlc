@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -68,7 +69,7 @@ func TestReachableFollowsEachLinkOnItsOwnAndSaysWhereTheWayEnds(t *testing.T) {
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			for name, res := range acResolvers(root) {
-				there, links := res.reachable(filepath.Join(root, filepath.FromSlash(row.dir)))
+				there, links, _ := res.reachable(filepath.Join(root, filepath.FromSlash(row.dir)))
 				if there != row.there || links != row.links {
 					t.Errorf("%s: reachable(%s) = (%v, %d), want (%v, %d)", name, row.dir, there, links, row.there, row.links)
 				}
@@ -86,7 +87,7 @@ func TestPastTheLimitChargesTheLinksItFollowsOnceForEachDirectory(t *testing.T) 
 	dir := filepath.Join(root, "dangling")
 	res := NewResolver(root).Memoised().Budgeted(100)
 	for range 3 {
-		if res.pastTheLimit(dir) {
+		if past, _ := res.pastTheLimit(dir); past {
 			t.Fatalf("pastTheLimit(%s) is true for 3 links to nothing", dir)
 		}
 	}
@@ -134,6 +135,47 @@ func TestAC5AC7WithWindowsLookupsAWordPastTheSystemsLimitIsRefusedWhereverItLead
 			if err := res.Bound(word); err != nil {
 				t.Errorf("AC-7 %s: %s: Bound(%s) = %v, want nil", name, row, word, err)
 			}
+		}
+	}
+}
+
+// reachable says where the links lead a directory it reaches, which lookUp
+// asks the name in when the system would not look the directory up.
+func TestReachableSaysWhereTheLinksLeadTheDirectory(t *testing.T) {
+	root := project(t)
+	elsewhere := lbTarget(t, root)
+	word := lbChainAtOneName(t, root, "chain", 3, elsewhere)
+	for name, res := range acResolvers(root) {
+		if there, _, at := res.reachable(filepath.Join(root, filepath.Dir(filepath.FromSlash(word)))); !there || at != elsewhere {
+			t.Errorf("%s: reachable(chain) = (%v, %q), want (true, %q)", name, there, at, elsewhere)
+		}
+	}
+}
+
+// Windows will not go through a link to a file, which os.Symlink makes where
+// the target is not there yet, so a lookup below one comes back not there
+// whatever the directory it leads to holds. A name that is there, past such a
+// link, is refused or placed where it leads; read as not there, `e0/x` was
+// placed at d/x by name, though x is a link on into the project (review of
+// b0cfef3).
+func TestAC5ANameBehindALinkWindowsWillNotGoThroughIsNotReadAsNotThere(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("only Windows makes a link to a file that it will not go through as a directory")
+	}
+	root := project(t)
+	if err := os.WriteFile(filepath.Join(root, "secret"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	llSymlink(t, "d", filepath.Join(root, "e0"))
+	if err := os.Mkdir(filepath.Join(root, "d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	llSymlink(t, filepath.Join(root, "secret"), filepath.Join(root, "d", "x"))
+	for name, res := range acResolvers(root) {
+		err := res.Bound("e0/x")
+		rel, outside := res.Rel("e0/x")
+		if !errors.Is(err, ErrTooManyLinks) && (outside || rel != "secret") {
+			t.Errorf("%s: Bound(e0/x) = %v and Rel(e0/x) = (%q, outside %v); want it refused, or placed at secret", name, err, rel, outside)
 		}
 	}
 }
