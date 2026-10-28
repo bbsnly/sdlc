@@ -56,6 +56,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1202,12 +1203,16 @@ func TestAC6AC10EachTimedShapeIsTheCommandItsCriterionDescribes(t *testing.T) {
 // linksCrossed is how many symbolic links the OS follows to place word, read
 // from root as the shell would, with every link and the place it was met
 // added to seen. It is a walk of its own, in this test, so that the program's
-// fixture is held to what is on disk and not to the resolver it times.
-func linksCrossed(t *testing.T, root, word string, seen map[string]int, owner int) int {
+// fixture is held to what is on disk and not to the resolver it times. disk is
+// what this check has read of it so far.
+func linksCrossed(t *testing.T, root, word string, seen map[string]int, owner int, disk *onDisk) int {
 	t.Helper()
 	dest := root
 	rest := strings.Split(filepath.ToSlash(word), "/")
 	crossed := 0
+	// fromTop is whether dest was reached from the top of the volume, and so
+	// names no link: root, where the walk starts, is taken as given.
+	fromTop := false
 	for len(rest) > 0 && crossed <= 10000 {
 		name := rest[0]
 		rest = rest[1:]
@@ -1219,12 +1224,15 @@ func linksCrossed(t *testing.T, root, word string, seen map[string]int, owner in
 			continue
 		}
 		next := filepath.Join(dest, name)
-		info, err := os.Lstat(next)
-		if err != nil {
+		there, link, target := disk.read(t, next)
+		if !there {
 			return crossed // the rest is not there, and holds no link
 		}
-		if info.Mode()&os.ModeSymlink == 0 {
+		if !link {
 			dest = next
+			if fromTop {
+				disk.plain[next] = true
+			}
 			continue
 		}
 		crossed++
@@ -1232,21 +1240,77 @@ func linksCrossed(t *testing.T, root, word string, seen map[string]int, owner in
 			t.Errorf("word %d goes through %s, a link of word %d's chain: the words share their links", owner+1, next, before+1)
 		}
 		seen[next] = owner
-		target, err := os.Readlink(next)
-		if err != nil {
-			t.Fatalf("readlink %s: %v", next, err)
-		}
-		// An absolute target starts again at the root of its own volume, and
-		// the volume is not a name to walk: kept, `C:` was looked up below
-		// `C:\`, and on Windows every word went through 1 link (CI on
-		// 38e0ed0).
 		if filepath.IsAbs(target) {
+			fromTop = true
+			// An absolute target starts again at the root of its own volume, and
+			// the volume is not a name to walk: kept, `C:` was looked up below
+			// `C:\`, and on Windows every word went through 1 link (CI on
+			// 38e0ed0).
 			volume := filepath.VolumeName(target)
+			// A walk that has already gone down to the target's directory, in
+			// this check, without meeting a link, would go the same way again.
+			if dir, base := filepath.Split(target); disk.plain[filepath.Clean(dir)] {
+				dest = filepath.Clean(dir)
+				rest = append([]string{base}, rest...)
+				continue
+			}
 			dest, target = volume+string(filepath.Separator), target[len(volume):]
 		}
 		rest = append(strings.Split(filepath.ToSlash(target), "/"), rest...)
 	}
 	return crossed
+}
+
+// onDisk is what linksCrossed has read of the disk for one check: each
+// directory a walk went through, listed once, the target of each link, and
+// each path a walk went down from the top of the volume without a link.
+//
+// Each link's target is an absolute path fifty directories deep, so a walk
+// went down the same fifty directories again at every link, and the five
+// checks of a run asked os.Lstat about four million times: forty seconds of a
+// sixty-eight-second package under the race detector. A directory is listed
+// instead, the first time a walk enters it, which gives what every name in it
+// is in one read; each link is read once; and a target whose directory a walk
+// has gone down to before starts there. A check is made for every call of
+// Inspect, and reads the disk afresh.
+type onDisk struct {
+	dirs  map[string]map[string]fs.FileMode
+	links map[string]string
+	plain map[string]bool
+}
+
+func newOnDisk() *onDisk {
+	return &onDisk{dirs: map[string]map[string]fs.FileMode{}, links: map[string]string{}, plain: map[string]bool{}}
+}
+
+// read says whether path is there and is a link, and if it is, where to. A
+// directory that is not there, or is not a directory, lists as empty.
+func (d *onDisk) read(t *testing.T, path string) (there, link bool, target string) {
+	t.Helper()
+	parent, name := filepath.Split(path)
+	types, ok := d.dirs[parent]
+	if !ok {
+		types = map[string]fs.FileMode{}
+		if entries, err := os.ReadDir(parent); err == nil {
+			for _, e := range entries {
+				types[e.Name()] = e.Type()
+			}
+		}
+		d.dirs[parent] = types
+	}
+	mode, there := types[name]
+	if !there || mode&fs.ModeSymlink == 0 {
+		return there, false, ""
+	}
+	if target, ok := d.links[path]; ok {
+		return true, true, target
+	}
+	target, err := os.Readlink(path)
+	if err != nil {
+		t.Fatalf("readlink %s: %v", path, err)
+	}
+	d.links[path] = target
+	return true, true, target
 }
 
 // AC-6: the links shape is touch and many words, at least fifty, each through a
@@ -1267,9 +1331,10 @@ func TestAC6TheLinksShapeIsManyWordsEachThroughAChainOf255LinksOfItsOwn(t *testi
 		}
 		seen := map[string]int{}
 		distinct := map[string]bool{}
+		disk := newOnDisk()
 		for i, word := range words {
 			distinct[word] = true
-			if n := linksCrossed(t, filepath.FromSlash(s.Root), word, seen, i); n != 255 {
+			if n := linksCrossed(t, filepath.FromSlash(s.Root), word, seen, i, disk); n != 255 {
 				t.Errorf("word %d of the links shape, %s, goes through %d links, want 255", i+1, word, n)
 			}
 		}
