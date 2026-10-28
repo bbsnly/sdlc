@@ -133,7 +133,11 @@ func (s *Store) StoriesWithMapSections() ([]string, error) {
 		return nil, err
 	}
 	entries, err := os.ReadDir(dir)
-	if err != nil && !os.IsNotExist(err) {
+	// A directory that is not there holds no sections; a file in its place is
+	// asked again, since Windows answers it with ENOTDIR, which is
+	// ERROR_PATH_NOT_FOUND there and so reads as not there: a file at
+	// codemap was listed as no sections on windows-latest (CI on 38e0ed0).
+	if err != nil && (!os.IsNotExist(err) || inTheWay(dir)) {
 		return nil, sdlcerr.New(sdlcerr.StateUnreadable,
 			theMapSections+" could not be listed",
 			quote(dir)+" could not be read").WithCause(err)
@@ -146,4 +150,12 @@ func (s *Store) StoriesWithMapSections() ([]string, error) {
 	}
 	slices.Sort(out)
 	return out, nil
+}
+
+// inTheWay is whether something is at path, through a link, though it could
+// not be listed as a directory. A link to nothing is not: like a directory
+// that is not there, it holds no sections.
+func inTheWay(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
