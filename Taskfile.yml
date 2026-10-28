@@ -24,7 +24,7 @@ vars:
   GITLEAKS_VERSION: 8.30.1
   GORELEASER_VERSION: 2.18.3
   GOLICENSES_VERSION: 2.0.1
-  SYFT_VERSION: 1.51.1
+  SYFT_VERSION: 1.55.0
   SHELLCHECK_VERSION: 0.11.0
   # golang.org/x/perf tags no releases, so benchstat's pin is a pseudo-version.
   BENCHSTAT_VERSION: 0.0.0-20261009192801-be2c69fb417e

@@ -4,5 +4,5 @@
 # file fails the lookup rather than passing with a stale hash.
 #
 # Regenerate with: ./task syft-checksums
-8fcb33017a0dc1058298c923c436d19dfa68ae93968e0b423248542e3afb9fc3  syft_1.51.1_linux_amd64.tar.gz
-a7fd2b784e6664acd44719270574f6cd8c6864fc2b1700bf9099bd1cccda7d7f  syft_1.51.1_linux_arm64.tar.gz
+bb65249542db5fedeeb4d3f9b018b75e7264dbfbbb10486f044581a92f90490d  syft_1.55.0_linux_amd64.tar.gz
+929bd163db2d7cd2255d3bcb8967208079813d7b46b0c952f7b794d8e2c7d304  syft_1.55.0_linux_arm64.tar.gz
