@@ -186,7 +186,10 @@ func runTask(t *testing.T, fixtureRoot, name string) (string, error) {
 	requireGoModule(t, "github.com/go-task/task/v3", version,
 		"run any ./task command once with network access to fetch it")
 
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	// Five minutes, not one: on windows-latest in CI run 40688726752 the
+	// markdownlint leg's npm ci alone took a minute, and the kill at sixty
+	// seconds failed a leg that had already passed.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", "run",
 		"github.com/go-task/task/v3/cmd/task@v"+version,

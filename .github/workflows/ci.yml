@@ -27,9 +27,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     # A stalled step -- a module fetch, an installer test, a release download --
     # otherwise holds the runner for GitHub's default of six hours. On
-    # 7e94c69 check took 19 minutes on macOS, and passed go test's limit of
-    # twenty for internal/cli on Windows.
-    timeout-minutes: 30
+    # 7e94c69 check took 19 minutes on macOS. On Windows go test's limit is
+    # forty-five, not twenty (Taskfile.yml says why), so the job has an hour.
+    timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 60 || 30 }}
     strategy:
       fail-fast: false
       matrix:
@@ -305,7 +305,7 @@ jobs:
   install:
     name: install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 60 || 30 }}
     strategy:
       fail-fast: false
       matrix:
@@ -342,5 +342,7 @@ jobs:
           # and which are slow enough not to want twice. The limit is the one
           # `task test` gives: internal/cli passed in over eight minutes on
           # windows-11-arm and then, with more tests, was killed at go test's
-          # default ten with nothing hung.
-          go list ./... | grep -v '/test/install$' | xargs go test -count=1 -timeout 20m
+          # default ten with nothing hung. On Windows it is forty-five, as there.
+          limit=20m
+          if [ "$RUNNER_OS" = Windows ]; then limit=45m; fi
+          go list ./... | grep -v '/test/install$' | xargs go test -count=1 -timeout "$limit"
