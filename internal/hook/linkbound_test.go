@@ -1482,10 +1482,39 @@ func TestAC11ACdpathCdRepeatedDoesNotCountItsPlacesAgain(t *testing.T) {
 			if row.cdpath != "" {
 				vars["CDPATH"] = row.cdpath
 			}
-			if reason := lbAskWith(t, g.root, row.cmd, vars); reason != "" {
+			reason := lbAskWith(t, g.root, row.cmd, vars)
+			if lbDriveInCdpath(row.cdpath) {
+				lbRefusedForADrivesColon(t, reason, "searches a relative entry of the CDPATH")
+				return
+			}
+			if reason != "" {
 				t.Errorf("refused:\n%.600s", reason)
 			}
 		})
+	}
+}
+
+// lbDriveInCdpath reports whether a CDPATH value, or a CDPATH assigned in a
+// command, holds a path spelt with a drive, as every absolute path of the
+// project and the home is on Windows.
+func lbDriveInCdpath(text string) bool {
+	return lbCdpathDrive.MatchString(filepath.ToSlash(text))
+}
+
+// lbCdpathDrive is a drive at the start of a CDPATH entry.
+var lbCdpathDrive = regexp.MustCompile(`(?:^|[=:])[A-Za-z]:/`)
+
+// lbRefusedForADrivesColon holds a reason to the refusal of a cd through a
+// CDPATH whose entry is spelt with a drive. Bash, Git Bash's too, ends a CDPATH
+// entry at every colon, so `C:/p/sub:.` is the entries `C`, `/p/sub` and `.`,
+// and `C` is a relative entry the hook rightly cannot place after a cd it
+// could not place either. Rows written for a path with no colon in it were
+// allowed on macOS and Linux and refused on Windows for this (CI on 38e0ed0);
+// there they hold the hook to reading the colon as the shell does.
+func lbRefusedForADrivesColon(t *testing.T, reason, want string) {
+	t.Helper()
+	if !strings.Contains(reason, want) {
+		t.Errorf("a CDPATH entry spelt with a drive is two entries to the shell, the first relative: want it refused saying %q, got:\n%.600s", want, reason)
 	}
 }
 
@@ -1612,8 +1641,17 @@ func TestAC5AC7ACdpathPlaceIsDroppedOnlyWhereTheShellCertainlyLeavesIt(t *testin
 			}
 		})
 	}
-	g.rows(t, ".", nil, []string{
+	allowed := []string{
 		first + "CDPATH=<ROOT>/sub:. cd x; touch lc/new.json",
 		first + "touch lc/new.json",
-	})
+	}
+	if !lbDriveInCdpath(g.expand(first)) {
+		g.rows(t, ".", nil, allowed)
+		return
+	}
+	for _, row := range allowed {
+		t.Run("AC-7 a drive in CDPATH: "+row, func(t *testing.T) {
+			lbRefusedForADrivesColon(t, lbAskIn(t, g.root, working, g.expand(row)), "searches a relative CDPATH entry")
+		})
+	}
 }
