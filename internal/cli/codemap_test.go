@@ -456,6 +456,7 @@ func TestAC4AndAC3TheStopPutsTheMapChangeOnTrunkInACommitOfItsOwnAndTheRecordNam
 		{"AC-4 stop --json", []string{"stop", "--json"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, cut := cmWalked(t)
 			tip := swRev(t, wt, "HEAD")
 			cmStores(t, wt, ldSession, cmRefund)
@@ -636,6 +637,7 @@ func TestAC7InAProjectWithNoMapNothingIsAddedUnlessTheBookkeeperStoredSections(t
 	for _, stored := range []bool{false, true} {
 		name := map[bool]string{false: "AC-7 nothing stored", true: "AC-7 sections stored"}[stored]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main := ldRepository(t, func(root string) {
 				if err := os.Remove(filepath.Join(root, cmFile)); err != nil {
 					t.Fatal(err)
@@ -865,6 +867,7 @@ func TestAC5AC6AMapChangeThatCannotBeMadeLeavesTheLandingStandingAndSaysWhatToRu
 				name += ", stop --json"
 			}
 			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 				main, wt, _ := cmWalked(t)
 				if tc.bare {
 					swGit(t, main, "config", "--unset", "user.email")
@@ -1242,6 +1245,7 @@ func TestAC6RepairWithDropDiscardsTheKeptChangeWithNoCommit(t *testing.T) {
 	for _, applies := range []bool{true, false} {
 		name := map[bool]string{true: "AC-6 where it still applies", false: "AC-6 where a section is not what the bookkeeper saw"}[applies]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			var main, trunk string
 			id := "US-001"
 			if applies {
@@ -1359,6 +1363,7 @@ func TestAKeptChangeEditedBeforeTheRepairIsRefusedAndNotCommitted(t *testing.T) 
 		"nothing":                            "",
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main, landed := cmStopped(t)
 			writeFile(t, main, ".git/sdlc/codemap/US-001.md", edited)
 			for _, args := range [][]string{{"remap", "US-001"}, {"remap", "US-001", "--replace"}} {
@@ -1382,6 +1387,7 @@ func TestAKeptChangeEditedBeforeTheRepairIsRefusedAndNotCommitted(t *testing.T) 
 func TestARepairThatCannotCommitKeepsTheChange(t *testing.T) {
 	t.Parallel()
 	t.Run("no committer", func(t *testing.T) {
+		t.Parallel()
 		main, landed := cmStopped(t)
 		swGit(t, main, "config", "--unset", "user.email")
 		swGit(t, main, "config", "--unset", "user.name")
@@ -1396,6 +1402,7 @@ func TestARepairThatCannotCommitKeepsTheChange(t *testing.T) {
 		}
 	})
 	t.Run("a person's uncommitted CODEMAP.md", func(t *testing.T) {
+		t.Parallel()
 		main, landed := cmStopped(t)
 		mine := cmMap + "\nA person's line, not committed.\n"
 		writeFile(t, main, cmFile, mine)
@@ -1411,6 +1418,7 @@ func TestARepairThatCannotCommitKeepsTheChange(t *testing.T) {
 		}
 	})
 	t.Run("AC-5 trunk's CODEMAP.md became a directory", func(t *testing.T) {
+		t.Parallel()
 		main, _ := cmStopped(t)
 		swGit(t, main, "rm", "--quiet", "--", cmFile)
 		writeFile(t, main, "CODEMAP.md/notes.md", "kept by hand\n")

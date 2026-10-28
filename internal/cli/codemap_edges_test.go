@@ -537,6 +537,7 @@ func TestARepairWhereTheKeptSectionsAreNoFileIsRefusedWhateverTheForm(t *testing
 func TestAC4TheRepairWithJSONNamesTheMapCommitAndTheDropSaysItDropped(t *testing.T) {
 	t.Parallel()
 	t.Run("AC-4 the plain repair", func(t *testing.T) {
+		t.Parallel()
 		main, landed := cmStopped(t)
 		r := cmPerson(t, main, "remap", "US-001", "--json")
 		if r.code != 0 {
@@ -550,6 +551,7 @@ func TestAC4TheRepairWithJSONNamesTheMapCommitAndTheDropSaysItDropped(t *testing
 		cmMapCommit(t, main, got.CodemapCommit, landed, "US-001")
 	})
 	t.Run("AC-6 the drop", func(t *testing.T) {
+		t.Parallel()
 		main, landed := cmStopped(t)
 		r := cmPerson(t, main, "remap", "US-001", "--drop", "--json")
 		if r.code != 0 {
