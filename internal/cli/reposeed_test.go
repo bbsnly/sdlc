@@ -183,9 +183,16 @@ func gitProjectInitialisedAt(t *testing.T, root string) {
 // .git/worktrees/<name>/gitdir. A copy has every spelling of the template's
 // checkout path rewritten to its own, and fails if a file still names the
 // template's checkout. A test that read a record naming another test's
-// checkout would be testing something else, not just running faster. Each
-// checkout's index is then refreshed: a copied file has a new inode and new
-// times, and git would read every tracked file as changed until it looked.
+// checkout would be testing something else, not just running faster.
+//
+// A copied file has a new inode and new times, so the index a copy holds
+// reads every tracked file as possibly changed until git looks. The copy does
+// not make git look: `git status`, a commit, a rebase and the rest refresh the
+// index themselves, and the landing's diff-index, which does not, hashes the
+// content of the few paths it is about to write when the index cannot vouch
+// for them, and gets the same answer. Refreshing each checkout after every
+// copy was about 1,300 git processes a run for nothing a test could see; a test
+// that reads the index's stat data itself would have to refresh it first.
 
 // walkedTemplate is one walked story, built at most once per package run: the
 // files of the checkout it was built in, that checkout's path as t.TempDir
@@ -282,9 +289,7 @@ func (tpl *walkedTemplate) copyInto(t *testing.T, key, raw, root string) map[str
 		files[i] = f
 	}
 	materialise(t, root, files)
-	for _, checkout := range checkoutsIn(t, root) {
-		wtGit(t, checkout, "update-index", "-q", "--refresh")
-	}
+	checkoutsIn(t, root)
 	notes := maps.Clone(tpl.notes)
 	for k, v := range notes {
 		notes[k] = string(rewrite([]byte(v)))
@@ -390,8 +395,7 @@ func namesCheckout(data []byte, raw, root string) bool {
 // store, whose files are compressed and never hold a path as written, or is a
 // git index. An index can name its checkout in its untracked cache, which git
 // drops by itself when the checkout's path is not the one it names; and a byte
-// rewritten inside an index breaks its checksum. The refresh after the copy
-// writes each index again.
+// rewritten inside an index breaks its checksum.
 func inObjectStore(rel string) bool {
 	if rel == ".git/index" || (strings.HasPrefix(rel, ".git/worktrees/") && strings.HasSuffix(rel, "/index")) {
 		return true
