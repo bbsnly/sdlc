@@ -598,6 +598,7 @@ func TestAC4ACommandThatFailsOnTheRebasedTreeKeepsTheStoryOffTrunk(t *testing.T)
 	t.Parallel()
 	for _, key := range ldQuality {
 		t.Run("AC-4 commands."+key, func(t *testing.T) {
+			t.Parallel()
 			commands := ldPassing()
 			switch key {
 			case "coverage":
@@ -656,6 +657,7 @@ func TestAC4ATestFileTheStoryChangedAfterARebaseBreaksTheFreezeAndNothingIsFroze
 		{"a frozen test the story changed", ldFrozenMoved, "internal/tax_test.go"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true, taxTest: true})
 			ldBookkeeping(t, wt)
 			lock := wtRead(t, filepath.Join(wt, ".sdlc", "state", "tests.lock"))
@@ -712,6 +714,7 @@ func TestAC5AChangeThatIsNotTheOneTheReviewersSawIsRefusedAsStale(t *testing.T) 
 		{"AC-5 a CODEMAP.md below the root", "docs/CODEMAP.md", "# not the bookkeeper's\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true})
 			ldBookkeeping(t, wt)
 			ldMoveTrunk(t, main)
@@ -801,6 +804,7 @@ func TestAC6WhatTheMainCheckoutHoldsIsInTheWayOnlyWhereTheLandingWrites(t *testi
 		{"T7 an untracked file where the story adds one", "refund.go", "package billing // a person's own\n", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true})
 			tip := ldBookkeeping(t, wt)
 			cut := ldTrunk(t, main)
@@ -1022,6 +1026,7 @@ func TestAC10TheRecordNamesWhatReachedTrunkAndLogPrintsItInEveryCheckout(t *test
 	for _, rebase := range []bool{false, true} {
 		name := map[bool]string{false: "AC-10 landed as it was", true: "AC-10 landed rebased"}[rebase]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true, stories: []wtStory{{id: "US-001"}, {id: "US-002"}}})
 			old := ldBookkeeping(t, wt)
 			tip := old
@@ -1069,6 +1074,7 @@ func TestAC11WithWorktreesOffTheCommitGateAndStopAreTheReleasedOnes(t *testing.T
 	for _, asJSON := range []bool{true, false} {
 		name := map[bool]string{true: "AC-11 the commit gate as JSON, stop as text", false: "AC-11 the commit gate as text, stop as JSON"}[asJSON]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			root := wtRepository(t, wtStory{id: "US-001"})
 			wtStarted(t, root, ldSession)
 			swReach(t, root, ldSession, model.GateCommit)

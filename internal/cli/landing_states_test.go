@@ -117,6 +117,7 @@ var lxAt = time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
 func TestAC4AChangedChangeHasTheCommandsRunWithoutARebase(t *testing.T) {
 	t.Parallel()
 	t.Run("AC-4 they pass", func(t *testing.T) {
+		t.Parallel()
 		mark, ran := lxMarker(t)
 		main := lxRepository(t, map[string]string{"test": mark}, nil)
 		wt := ldFinished(t, main)
@@ -130,6 +131,7 @@ func TestAC4AChangedChangeHasTheCommandsRunWithoutARebase(t *testing.T) {
 		}
 	})
 	t.Run("AC-4 one fails", func(t *testing.T) {
+		t.Parallel()
 		main, wt := ldWalked(t, ldWalk{finished: true, lx: true, set: map[string]string{"test": "exit 1"}})
 		ldBookkeeping(t, wt)
 		lxChangeAfterTheReviews(t, wt)
@@ -179,6 +181,7 @@ func TestO3ARefusedFastForwardLeavesTheRecordAsItWas(t *testing.T) {
 		{"O3 an untracked file in the way", "refund.go", "package billing // a person's own\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true})
 			ldBookkeeping(t, wt)
 			before := lxRecord(t, main)
@@ -219,6 +222,7 @@ func TestB2ABacklogChangeOnTheStorysBranchIsRefusedAtTheLanding(t *testing.T) {
 	for _, already := range []bool{false, true} {
 		name := map[bool]string{false: "B2 trunk at the cut", true: "B2 trunk already holding the tip"}[already]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{stories: []wtStory{{id: "US-001"}, {id: "US-002"}}, spike: true})
 			ldWork(t, wt)
 			wtSetStatus(t, wt, "US-002", model.StatusDone)
@@ -284,6 +288,7 @@ func TestAC4TheNumberJudgedIsTheLastOnePrintedOnStdout(t *testing.T) {
 		{name: "AC-4 no number against a zero threshold", command: "exit 0", thresholds: zero, lands: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main := lxRepository(t, map[string]string{"coverage": tc.command}, tc.thresholds)
 			wt := ldFinished(t, main)
 			ldBookkeeping(t, wt)
@@ -474,6 +479,7 @@ func TestLandingRefusesEachStateWithItsCode(t *testing.T) {
 			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true, lx: true, set: tc.commands, spike: tc.spike})
 			ldBookkeeping(t, wt)
 			tc.prepare(t, main, wt)
@@ -552,6 +558,7 @@ func TestAC3WhereTrunkNoLongerHoldsTheReviewedBaseTheFixIsAPersons(t *testing.T)
 	for _, rewritten := range []bool{true, false} {
 		name := map[bool]string{true: "AC-3 trunk rewritten", false: "AC-3 trunk gone back behind the base"}[rewritten]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true, trunkMoved: true, spike: true})
 			ldBookkeeping(t, wt)
 			back := swRev(t, main, cut+"~1")
@@ -582,6 +589,7 @@ func TestAC3WhereTrunkNoLongerHoldsTheReviewedBaseTheFixIsAPersons(t *testing.T)
 func TestAFinishedStoryHandedToAPersonLandsOnlyOnceTheyApprove(t *testing.T) {
 	t.Parallel()
 	t.Run("pending, then approved", func(t *testing.T) {
+		t.Parallel()
 		main, wt := ldWalked(t, ldWalk{finished: true})
 		tip := ldBookkeeping(t, wt)
 		wtMust(t, wt, ldSession, "", "escalate", "landing", "--message", "land it now?")
@@ -602,6 +610,7 @@ func TestAFinishedStoryHandedToAPersonLandsOnlyOnceTheyApprove(t *testing.T) {
 		}
 	})
 	t.Run("rejected", func(t *testing.T) {
+		t.Parallel()
 		main, wt := ldWalked(t, ldWalk{finished: true})
 		ldBookkeeping(t, wt)
 		before := ldTrunk(t, main)
@@ -628,23 +637,27 @@ func TestWhatALandingSaysItDid(t *testing.T) {
 		return r.stdout + r.stderr
 	}
 	t.Run("trunk checked out in the main checkout", func(t *testing.T) {
+		t.Parallel()
 		_, wt, from := ldWalkedFrom(t, ldWalk{finished: true})
 		tip := ldBookkeeping(t, wt)
 		suSays(t, said(t, wt), "main moved from "+from[:12]+" to "+tip[:12]+" by fast-forward", "moved with it",
 			"Removed .sdlc/worktrees/US-001", "not committed")
 	})
 	t.Run("no checkout with trunk checked out", func(t *testing.T) {
+		t.Parallel()
 		_, wt := ldWalked(t, ldWalk{finished: true, spike: true})
 		ldBookkeeping(t, wt)
 		suSays(t, said(t, wt), "only the branch moved")
 	})
 	t.Run("already on trunk", func(t *testing.T) {
+		t.Parallel()
 		main, wt := ldWalked(t, ldWalk{finished: true, spike: true})
 		tip := ldBookkeeping(t, wt)
 		swGit(t, main, "update-ref", "refs/heads/main", tip)
 		suSays(t, said(t, wt), "US-001 was already on main at "+tip[:12])
 	})
 	t.Run("kept", func(t *testing.T) {
+		t.Parallel()
 		_, wt := ldWalked(t, ldWalk{finished: true})
 		ldBookkeeping(t, wt)
 		writeFile(t, wt, "scratch.txt", "a thought\n")
@@ -696,6 +709,7 @@ func TestAFinishedStoryInItsWorktreeIsSaidToWaitToLand(t *testing.T) {
 func TestTheChangeIsRecordedAtTheCommitGateFromTheRightBase(t *testing.T) {
 	t.Parallel()
 	t.Run("D4 as cut", func(t *testing.T) {
+		t.Parallel()
 		main, _, cut := ldWalkedFrom(t, ldWalk{finished: true})
 		r := lxRecord(t, main)
 		if r["cut"] != cut || r["change_base"] != cut {
@@ -709,6 +723,7 @@ func TestTheChangeIsRecordedAtTheCommitGateFromTheRightBase(t *testing.T) {
 		}
 	})
 	t.Run("D4 rebased onto a trunk that holds the cut", func(t *testing.T) {
+		t.Parallel()
 		main, wt, cut := ldWalkedFrom(t, ldWalk{})
 		ldWork(t, wt)
 		swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
@@ -727,6 +742,7 @@ func TestTheChangeIsRecordedAtTheCommitGateFromTheRightBase(t *testing.T) {
 		}
 	})
 	t.Run("D4 rebased where HEAD no longer holds the cut", func(t *testing.T) {
+		t.Parallel()
 		main, wt, cut := ldWalkedFrom(t, ldWalk{trunkMoved: true, spike: true})
 		ldWork(t, wt)
 		swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
@@ -742,6 +758,7 @@ func TestTheChangeIsRecordedAtTheCommitGateFromTheRightBase(t *testing.T) {
 		}
 	})
 	t.Run("AC-11 a single checkout", func(t *testing.T) {
+		t.Parallel()
 		root := wtRepository(t, wtStory{id: "US-001"})
 		wtStarted(t, root, ldSession)
 		swReach(t, root, ldSession, "")

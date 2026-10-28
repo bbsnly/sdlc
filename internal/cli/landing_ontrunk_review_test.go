@@ -66,6 +66,7 @@ func otBrokenFreeze(t *testing.T, wt string) {
 func TestAC4AFrozenTestTheStoryChangedAndPutBackIsABrokenFreezeNeverTrunksOwn(t *testing.T) {
 	t.Parallel()
 	t.Run("AC-4 at a gate, never rebased", func(t *testing.T) {
+		t.Parallel()
 		main, wt := otOwnGate3(t, func(wt string) { writeFile(t, wt, otTaxTest, otOwn) }, false)
 		if _, held := lockOnDisk(t, wt).Files[otTaxTest]; !held {
 			t.Fatalf("precondition: the story's freeze does not hold %s", otTaxTest)
@@ -91,6 +92,7 @@ func TestAC4AFrozenTestTheStoryChangedAndPutBackIsABrokenFreezeNeverTrunksOwn(t 
 		{name: "AC-4 at the stop alone, on a trunk that moved", moved: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := otOwnGate3(t, func(wt string) { writeFile(t, wt, otTaxTest, otOwn) }, true)
 			ldBookkeeping(t, wt)
 			if tc.moved {
@@ -156,6 +158,7 @@ func TestAC1AStoryWhoseOwnGate3RemovedOrRenamedATestFileStillPassesAndLands(t *t
 		for _, byHand := range []bool{false, true} {
 			how := map[bool]string{false: "the stop alone", true: "after a rebase by hand"}[byHand]
 			t.Run("AC-1 "+kind+", "+how, func(t *testing.T) {
+				t.Parallel()
 				main, wt := otOwnGate3(t, gate3(t), true)
 				ldBookkeeping(t, wt)
 				moved := ldMoveTrunk(t, main)
@@ -166,6 +169,7 @@ func TestAC1AStoryWhoseOwnGate3RemovedOrRenamedATestFileStillPassesAndLands(t *t
 			})
 		}
 		t.Run("AC-1 "+kind+", rebased before its commit gate", func(t *testing.T) {
+			t.Parallel()
 			main, wt := otOwnGate3(t, gate3(t), false)
 			swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
 			commitEverything(t, wt)
@@ -196,6 +200,7 @@ func TestAC3AndAC4ATrunksTestFileEditedBehindAnIndexFlagIsStillRefused(t *testin
 			{"AC-4 a frozen test trunk changed", otTaxTest, otTaxV2, otTaxV3, ldFrozenMoved},
 		} {
 			t.Run(tc.name+", edited under "+flag, func(t *testing.T) {
+				t.Parallel()
 				main, wt, _ := otFinished(t)
 				moved := swCommitFile(t, main, tc.file, tc.trunk, "another story's test")
 				ldRebase(t, wt)
@@ -255,6 +260,7 @@ func TestAC3ATrunksTestFileThatIsNoLongerAPlainFileOfTrunksModeIsStillRefused(t 
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otFinished(t)
 			moved := swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
 			ldRebase(t, wt)
@@ -308,6 +314,7 @@ func TestAC3AnUnrebasedStoryThatAddsTheTestFileTrunkGainedSinceIsRefused(t *test
 	t.Parallel()
 	for _, gate := range []model.Gate{model.GateImplementation, model.GateCommit} {
 		t.Run("AC-3 "+string(gate), func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otWalked(t, ldWalk{taxTest: true})
 			ldWork(t, wt)
 			swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
@@ -431,6 +438,7 @@ func TestAC10TheSameLinesSomewhereElseAreNotTheReviewedChange(t *testing.T) {
 		for _, moved := range []bool{false, true} {
 			where := map[bool]string{false: "trunk where it was", true: "trunk moved"}[moved]
 			t.Run(tc.name+", "+where, func(t *testing.T) {
+				t.Parallel()
 				main := lxRepository(t, nil, nil)
 				otIdentity(t, main)
 				swCommitFile(t, main, "book.go", otBook, "the book")
@@ -499,6 +507,7 @@ func TestAC10AnApprovalThatAnsweredAnEarlierQuestionDoesNotStandForTheOneBeforeT
 	for _, byHand := range []bool{true, false} {
 		name := map[bool]string{true: "AC-10 after a rebase by hand", false: "AC-10 the stop alone"}[byHand]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otWalked(t, ldWalk{})
 			wtMust(t, wt, ldSession, "", "escalate", "spec_unclear", "--message", "which one?")
 			wtMust(t, wt, "", "", "approve", "US-001")
@@ -558,6 +567,7 @@ func TestAC9AMergeDriverTheRepositoryConfiguresDoesNotDecideWhatTheStopLands(t *
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main := lxRepository(t, nil, nil)
 			otIdentity(t, main)
 			swCommitFile(t, main, "ledger.go", otLedger, "the ledger")

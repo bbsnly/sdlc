@@ -265,6 +265,7 @@ func TestAC1TrunkOnACommitOfTheStorysOwnLeavesItsTestFilesTheStorysAtTheCommitGa
 	} {
 		for pos := range row.steps {
 			t.Run("AC-1 "+row.name+", trunk on commit "+string(rune('1'+pos)), func(t *testing.T) {
+				t.Parallel()
 				s, commits := tsWorked(t, "AC-1 "+row.name, row.after, row.steps, row.hooked)
 				files := []string{otLaterTest, otTaxTest, otInvoiceTest}
 				before := tsCommitGate(t, s.wt)
@@ -303,6 +304,7 @@ func TestAC1TheGatesBeforeTheCommitAnswerAsBeforeWhenTrunkIsOnACommitOfTheStorys
 	const moved = "SDLC-E0046"
 	for _, gate := range []model.Gate{model.GatePlan, model.GateImplementation, model.GateVerification} {
 		t.Run("AC-1 "+string(gate), func(t *testing.T) {
+			t.Parallel()
 			main := ldRepository(t, func(root string) { writeFile(t, root, otTaxTest, "package internal\n") })
 			otIdentity(t, main)
 			wt := swCheckStarted(t, main, "US-001", ldSession, swStarted(t, main, ldSession))
@@ -346,6 +348,7 @@ func TestAC1TheStopRefusesAHandMadeCommitsTestFileWhereverTrunkIsOnTheStorysComm
 	t.Parallel()
 	for pos, name := range []string{"the work", "the hand-made commit", "the tip"} {
 		t.Run("AC-1 trunk on "+name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, commits := tsFinishedWithAHandCommit(t)
 			before := tsRun(t, wt, "stop")
 			tsRefused(t, "the stop with trunk at the cut", before, ldUnfrozenTest, otLaterTest)
@@ -388,6 +391,7 @@ func TestAC1ACommitOfTrunksOwnOnTopOfAStoryCommitDoesNotHideItsTestFile(t *testi
 	for _, byHand := range []bool{false, true} {
 		name := map[bool]string{false: "AC-1 the stop alone", true: "AC-1 after a rebase by hand"}[byHand]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, commits := tsFinishedWithAHandCommit(t)
 			tsMoveTrunk(t, main, commits[1])
 			f := swCommitFile(t, main, "CHANGES.md", "another story's work\n", "another story lands on top")
@@ -423,6 +427,7 @@ func TestAC1ATrunkMovedOntoARebasedStoryCommitStillRefusesTheStorysTestAndNotTru
 	t.Parallel()
 	for pos, name := range []string{"the first rebased commit", "the tip"} {
 		t.Run("AC-1 trunk on "+name, func(t *testing.T) {
+			t.Parallel()
 			s, _ := tsWorked(t, "a test added after the freeze in the first commit, then rebased",
 				func(t *testing.T, wt string) { t.Helper(); writeFile(t, wt, otLaterTest, otOwn) },
 				[]tsStep{{"tests", []string{otInvoiceTest, otLaterTest}}, {"code", nil}}, false)
@@ -559,6 +564,7 @@ func TestAC2TestFilesTrunkGainedAreStillTrunksWhereverTheStoryGotOntoThem(t *tes
 	} {
 		for _, how := range []string{"the stop's own replay", "a rebase by hand", "a rebase by hand and the commit gate run again"} {
 			t.Run("AC-2 "+row.name+", "+how, func(t *testing.T) {
+				t.Parallel()
 				main, wt, _ := otFinished(t)
 				moved := row.trunk(t, main)
 				switch how {
@@ -681,6 +687,7 @@ func TestAC2ARecordFromBeforeTheFieldTakesNothingForTrunksAndSaysWhy(t *testing.
 	} {
 		for _, how := range []string{"the stop", "a rebase by hand and the commit gate"} {
 			t.Run("AC-2 "+row.name+", "+how, func(t *testing.T) {
+				t.Parallel()
 				main, wt, _ := otFinished(t)
 				moved := row.trunk(t, main)
 				tsStripped(t, main, tsDropped)
@@ -719,6 +726,7 @@ func TestAC2ARecordFromBeforeTheFieldStillLandsAStoryWhoseTrunkGainedNoTestFile(
 	for _, moves := range []bool{false, true} {
 		name := map[bool]string{false: "AC-2 trunk did not move", true: "AC-2 trunk gained a source file"}[moves]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otFinished(t)
 			moved := ldTrunk(t, main)
 			if moves {
@@ -760,6 +768,7 @@ func TestAC1EvidenceEmptiedOrMalformedIsRefusedLikeEvidenceThatIsGone(t *testing
 		{"set to a value of the wrong kind", func(any) (any, bool) { return 7, true }, true},
 	} {
 		t.Run("AC-1 the field "+row.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otFinished(t)
 			moved := swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
 			if n := tsStripped(t, main, row.how); n == 0 {

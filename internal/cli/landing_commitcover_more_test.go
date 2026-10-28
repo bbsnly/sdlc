@@ -135,6 +135,7 @@ func TestAC2ATipAmendedBetweenTwoReplaysIsRefused(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s, _, marker, _, _ := ccCutShort(t, "")
 			tc.tamper(t, s.wt)
 			again := cmTrunkMoves(t, s.main)
@@ -207,6 +208,7 @@ func TestAC2AForgedOrShortenedEarlierReplayedEventIsRefusedNeverSkipped(t *testi
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s, _, marker, _, _ := ccCutShort(t, "")
 			doc := ccRecordJSON(t, s.main)
 			tc.edit(t, doc, s.cut)
@@ -337,6 +339,7 @@ func TestAC1AnAnswerCoversOneCommitGatePassHoweverTheGateWasReopened(t *testing.
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s := ccFinished(t)
 			ccAmend(t, s.wt, "-m", "feat: something else")
 			amended := swRev(t, s.wt, "HEAD")
@@ -362,6 +365,7 @@ func TestAC1AnAnswerCoversOneCommitGatePassHoweverTheGateWasReopened(t *testing.
 		})
 	}
 	t.Run("AC-1 the gate recorded as failed and passed again with nothing amended passes without a person", func(t *testing.T) {
+		t.Parallel()
 		s := ccFinished(t)
 		wtMust(t, s.wt, ldSession, "", "gate", "commit", "fail", "--note", "reopened")
 		wtMust(t, s.wt, ldSession, "", "gate", "commit", "pass", "--note", "nothing changed")
@@ -379,6 +383,7 @@ func TestAC1AnAnswerCoversOneCommitGatePassHoweverTheGateWasReopened(t *testing.
 func TestAC1ARejectionAfterTheRefusalLeavesTheStopAndTheGateRefused(t *testing.T) {
 	t.Parallel()
 	t.Run("AC-1 a rejection and nothing before it", func(t *testing.T) {
+		t.Parallel()
 		s := ccFinished(t)
 		ccAmend(t, s.wt, "-m", "feat: something else")
 		ccRefusedAndNothingLanded(t, s)
@@ -394,6 +399,7 @@ func TestAC1ARejectionAfterTheRefusalLeavesTheStopAndTheGateRefused(t *testing.T
 		swRefused(t, ldNotApproved, s.wt, ldSession, "gate", "commit", "pass", "--story", "US-001", "--note", "after a rejection")
 	})
 	t.Run("AC-1 an approval and then a rejection", func(t *testing.T) {
+		t.Parallel()
 		s := ccFinished(t)
 		ccAmend(t, s.wt, "-m", "feat: something else")
 		ccRefusedAndNothingLanded(t, s)
@@ -434,6 +440,7 @@ func TestAC1AUnreadableRecordedCommitIsRefusedNotWavedThrough(t *testing.T) {
 	t.Parallel()
 	zeros := strings.Repeat("0", 40)
 	t.Run("AC-1 forty zeros as the recorded commit", func(t *testing.T) {
+		t.Parallel()
 		s := ccFinished(t)
 		doc := ccRecordJSON(t, s.main)
 		doc["commit"] = zeros
@@ -443,6 +450,7 @@ func TestAC1AUnreadableRecordedCommitIsRefusedNotWavedThrough(t *testing.T) {
 		suSays(t, cmFlat(out), notApprovedAsCommitted("US-001"))
 	})
 	t.Run("AC-1 forty zeros as the commit a person's answer names", func(t *testing.T) {
+		t.Parallel()
 		s := ccFinished(t)
 		ccAmend(t, s.wt, "-m", "feat: something else")
 		ccRefusedAndNothingLanded(t, s)
@@ -486,6 +494,7 @@ func TestAC1ACommitAddedOnTopAfterTheGatePassedIsRefusedWhenTheGateIsRunAgain(t 
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s := ccFinished(t)
 			tc.add(t, s.wt)
 
@@ -552,10 +561,12 @@ func TestAC1APassThatLeavesNoRangeStandsOnAPersonsAnswerAndTheStopHoldsTheTipToI
 		return s
 	}
 	t.Run("AC-1 the tip the answer was given for lands", func(t *testing.T) {
+		t.Parallel()
 		s := pass(t)
 		ldLanded(t, s.main, s.wt, s.second)
 	})
 	t.Run("AC-1 the tip amended after the answer is refused", func(t *testing.T) {
+		t.Parallel()
 		s := pass(t)
 		ccAmend(t, s.wt, "-m", "feat: something else")
 		out := swRefused(t, ldNotApproved, s.wt, ldSession, "stop")
@@ -624,6 +635,7 @@ func TestAC1ACommitAboveTheRangeThatIsNotTheBookkeepersIsRefused(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s := ccFinished(t)
 			tc.above(t, s.wt)
 
@@ -673,6 +685,7 @@ func cmHashObject(t *testing.T, dir, file string) string {
 func TestAC1ApproveNamesTheTipOfTheStorysBranchAndPrintsItInATierThatWaits(t *testing.T) {
 	t.Parallel()
 	t.Run("AC-1 the commits as the gate recorded them", func(t *testing.T) {
+		t.Parallel()
 		s := ccFinished(t)
 		wtMust(t, s.wt, ldSession, "", "escalate", "pre_commit_approval", "--message", "ready to land?")
 		r := wtMust(t, s.wt, "", "", "approve", "US-001")
@@ -686,6 +699,7 @@ func TestAC1ApproveNamesTheTipOfTheStorysBranchAndPrintsItInATierThatWaits(t *te
 		}
 	})
 	t.Run("AC-1 commits changed since the gate passed", func(t *testing.T) {
+		t.Parallel()
 		s := ccFinished(t)
 		ccAmend(t, s.wt, "-m", "feat: something else")
 		tip := swRev(t, s.wt, "HEAD")
@@ -700,6 +714,7 @@ func TestAC1ApproveNamesTheTipOfTheStorysBranchAndPrintsItInATierThatWaits(t *te
 		}
 	})
 	t.Run("AC-1 with --json the answer carries the commit", func(t *testing.T) {
+		t.Parallel()
 		s := ccFinished(t)
 		wtMust(t, s.wt, ldSession, "", "escalate", "pre_commit_approval", "--message", "ready to land?")
 		r := wtMust(t, s.wt, "", "", "approve", "US-001", "--json")
@@ -742,6 +757,7 @@ func TestAC1ApproveWithTheWorktreeDetachedBelowTheStorysCommitsRecordsNoCommit(t
 func TestAC1ApproveSaysNothingOfTheCommitsInATierThatDoesNotWait(t *testing.T) {
 	t.Parallel()
 	t.Run("AC-1 the worktree on the story's branch", func(t *testing.T) {
+		t.Parallel()
 		main, wt, _ := otWalked(t, ldWalk{finished: true})
 		ccAmend(t, wt, "-m", "feat: something else")
 		wtMust(t, wt, ldSession, "", "escalate", "pre_commit_approval", "--message", "ready to land?")
@@ -755,6 +771,7 @@ func TestAC1ApproveSaysNothingOfTheCommitsInATierThatDoesNotWait(t *testing.T) {
 		ldLanded(t, main, wt, swRev(t, wt, "HEAD"))
 	})
 	t.Run("AC-1 the worktree detached", func(t *testing.T) {
+		t.Parallel()
 		_, wt, _ := otWalked(t, ldWalk{finished: true})
 		ccGit(t, wt, "switch", "--quiet", "--detach", "HEAD")
 		wtMust(t, wt, ldSession, "", "escalate", "pre_commit_approval", "--message", "ready to land?")
@@ -794,6 +811,7 @@ func TestAC1NothingASessionChoseIsPrintedByARefusalAnAnswerOrTheRecord(t *testin
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s := ccFinished(t)
 			tc.tamper(t, s.wt)
 

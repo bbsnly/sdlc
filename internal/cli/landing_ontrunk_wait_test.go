@@ -168,6 +168,7 @@ func TestAC13AStopWhoseStoryLandedWhileItWaitedSaysSoAndLandsNothingTwice(t *tes
 	for _, json := range []bool{false, true} {
 		name := map[bool]string{false: "AC-13 as a person reads it", true: "AC-13 with --json"}[json]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otWalked(t, ldWalk{finished: true})
 			ldBookkeeping(t, wt)
 			moved := ldMoveTrunk(t, main)

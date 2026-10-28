@@ -390,6 +390,7 @@ func TestAC1APassedGateThatAcceptsTrunksTestFilesLeavesThemOnTheRecordBeforeTheC
 		{model.GateVerification, ktChangesTax},
 	} {
 		t.Run("AC-1 "+string(row.gate)+" where "+row.move.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ktCommitted(t)
 			moved := ktReworkedFrom(t, main, wt, row.move, row.gate)
 			want := ktTook(moved, row.move)
@@ -442,6 +443,7 @@ func TestAC1TheRecordStillNamesThemAfterEveryLaterGateThatDoesNotJudgeThemAgain(
 		}},
 	} {
 		t.Run("AC-1 "+row.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ktCommitted(t)
 			moved := ktReworkedFrom(t, main, wt, row.move, row.from)
 			want := ktTook(moved, row.move)
@@ -492,6 +494,7 @@ func TestAC1ALaterGateThatAcceptsOtherFilesOrAnotherTrunkCommitReplacesWhatTheRe
 			want: ktMove{files: []string{otRefundTest, otLaterTest}, gone: []string{otTaxTest}}},
 	} {
 		t.Run("AC-1 "+row.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, first, _ := ktReworked(t, row.first, model.GateCommit)
 			was := ktTook(first, row.first)
 			ktHolds(t, main, "after the first rework's gates, the code review among them", was, 1)
@@ -537,6 +540,7 @@ func TestAC1ALaterGuardedGateThatAcceptsNothingEmptiesWhatTheRecordNamesWithNoEv
 	t.Parallel()
 	for _, gate := range []model.Gate{model.GateImplementation, model.GateTestsFrozen} {
 		t.Run("AC-1 D2 "+string(gate), func(t *testing.T) {
+			t.Parallel()
 			main, wt, first, _ := ktReworked(t, ktGainsRefund, model.GateCommit)
 			ktHolds(t, main, "after the first rework's gates", ktTook(first, ktGainsRefund), 1)
 
@@ -607,6 +611,7 @@ func TestAC2ALaterGateThatAcceptsTheSameFilesAgainstTheSameTrunkCommitAddsNoFurt
 		{model.GateImplementation, ktRemovesTax},
 	} {
 		t.Run("AC-2 reworked from "+string(row.from)+" where "+row.move.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ktCommitted(t)
 			moved := ktReworkedFrom(t, main, wt, row.move, row.from)
 			want := ktTook(moved, row.move)
@@ -694,6 +699,7 @@ func TestAC2OnlyTheSameTrunkCommitFilesAndGoneAreTheSameAcceptance(t *testing.T)
 			named: func(_ string, want ktWant) ktWant { want.gone = []string{otInvoiceTest}; return want }},
 	} {
 		t.Run("AC-2 the record names "+row.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, moved, cut := ktReworked(t, ktRemovesTax, model.GateVerification)
 			want := ktTook(moved, ktRemovesTax)
 			if got := len(ktEvents(t, main)); got != 1 {
@@ -732,6 +738,7 @@ func TestAC3TheCommitGateOpenedAgainEmptiesTheRecordsTrunkTestsWithTheRestItReco
 		{model.GateDesignReview, model.GatePass, ktGainsRefund},
 	} {
 		t.Run("AC-3 "+string(row.gate)+" recorded "+string(row.status)+" where "+row.move.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, moved := ktFinished(t, row.move)
 			ktMarked(t, main, wt, moved)
 			ktHolds(t, main, "on the finished story", ktTook(moved, row.move), 1)
@@ -769,6 +776,7 @@ func TestAC3AGuardedGatePassedWhileTheCommitGateStandsLeavesTheRecordNamingWhatI
 		{model.GateImplementation, ktRemovesTax},
 	} {
 		t.Run("AC-3 D1 "+string(row.gate)+" accepts what the commit gate had, where "+row.move.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, moved := ktFinished(t, row.move)
 			ktMarked(t, main, wt, moved)
 			want := ktTook(moved, row.move)
@@ -784,6 +792,7 @@ func TestAC3AGuardedGatePassedWhileTheCommitGateStandsLeavesTheRecordNamingWhatI
 	}
 
 	t.Run("AC-3 D1 a guarded gate accepts other files on a later trunk commit", func(t *testing.T) {
+		t.Parallel()
 		main, wt, moved := ktFinished(t, ktGainsRefund)
 		ktMarked(t, main, wt, moved)
 		ktHolds(t, main, "on the finished story", ktTook(moved, ktGainsRefund), 1)
@@ -799,6 +808,7 @@ func TestAC3AGuardedGatePassedWhileTheCommitGateStandsLeavesTheRecordNamingWhatI
 	})
 
 	t.Run("AC-3 D1 a guarded gate accepts nothing", func(t *testing.T) {
+		t.Parallel()
 		main, wt, moved := ktFinished(t, ktGainsRefund)
 		ktMarked(t, main, wt, moved)
 		ktHolds(t, main, "on the finished story", ktTook(moved, ktGainsRefund), 1)
@@ -845,6 +855,7 @@ func TestAC3APersonsUnfreezeEmptiesTheRecordsTrunkTestsWhetherOrNotTheCommitGate
 	}
 
 	t.Run("AC-3 D3 the commit gate stood", func(t *testing.T) {
+		t.Parallel()
 		main, wt, moved := ktFinished(t, ktRemovesTax)
 		ktMarked(t, main, wt, moved)
 		ktHolds(t, main, "on the finished story", ktTook(moved, ktRemovesTax), 1)
@@ -862,6 +873,7 @@ func TestAC3APersonsUnfreezeEmptiesTheRecordsTrunkTestsWhetherOrNotTheCommitGate
 		{"tests_frozen put back to pending", ktGainsRefund, model.GateCommit, []model.GateStatus{model.GatePending}},
 	} {
 		t.Run("AC-3 D3 the commit gate did not stand, "+row.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, moved, _ := ktReworked(t, row.move, row.upTo)
 			want := ktTook(moved, row.move)
 			for _, status := range row.then {
@@ -894,6 +906,7 @@ func TestAC1TheStopLeavesTheLandedRecordNamingWhatWasAcceptedWithAndWithoutItsOw
 		}
 	}
 	t.Run("AC-1 trunk where the commit gate judged it", func(t *testing.T) {
+		t.Parallel()
 		main, wt, moved := ktFinished(t, ktRemovesTax)
 		want := ktTook(moved, ktRemovesTax)
 		ktHolds(t, main, "on the finished story", want, 1)
@@ -903,6 +916,7 @@ func TestAC1TheStopLeavesTheLandedRecordNamingWhatWasAcceptedWithAndWithoutItsOw
 		ktHolds(t, main, "on the landed record", want, 1)
 	})
 	t.Run("AC-1 trunk moved again, and the stop put the story onto it", func(t *testing.T) {
+		t.Parallel()
 		main, wt, moved := ktFinished(t, ktGainsRefund)
 		ktHolds(t, main, "on the finished story", ktTook(moved, ktGainsRefund), 1)
 		ktGainsTwo.do(t, main)

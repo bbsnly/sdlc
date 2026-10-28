@@ -131,6 +131,7 @@ func TestB1AnOddRootCodemapIsRefusedOnTheUnmovedPath(t *testing.T) {
 	t.Parallel()
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true})
 			ldBookkeeping(t, wt)
 			kind.stage(t, wt)
@@ -159,6 +160,7 @@ func TestB1AnOddRootCodemapIsRefusedOnTheRebasedPath(t *testing.T) {
 	t.Parallel()
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true})
 			ldBookkeeping(t, wt)
 			kind.stage(t, wt)
@@ -188,6 +190,7 @@ func TestB1AnOddRootCodemapIsRefusedOnTheAlreadyLandedPath(t *testing.T) {
 	t.Parallel()
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true, spike: true})
 			ldBookkeeping(t, wt)
 			tip := kind.stage(t, wt)
@@ -211,11 +214,13 @@ func TestB1AnOddRootCodemapIsRefusedOnTheAlreadyLandedPath(t *testing.T) {
 func TestB1APlainOrExecutableRootCodemapStillLands(t *testing.T) {
 	t.Parallel()
 	t.Run("plain", func(t *testing.T) {
+		t.Parallel()
 		main, wt := ldWalked(t, ldWalk{finished: true})
 		tip := ldBookkeeping(t, wt)
 		ldLanded(t, main, wt, tip)
 	})
 	t.Run("executable", func(t *testing.T) {
+		t.Parallel()
 		main, wt := ldWalked(t, ldWalk{finished: true})
 		tip := lrExecutableCodemap(t, wt)
 		ldLanded(t, main, wt, tip)
@@ -310,6 +315,7 @@ func TestE0025AndE0043sFreezeFixesNameTheAnswerFirstRouteAndTheWorktree(t *testi
 		{"E0043 a test file the story added", ldUnfrozenTest, "internal/refund_test.go"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true, taxTest: true})
 			ldBookkeeping(t, wt)
 			swCommitFile(t, wt, tc.rel, "package internal\n\n// changed by the story\n", "the story's own change to a test")
@@ -385,6 +391,7 @@ func TestLandingReadsACoverageFigureWithinTheLast64KBOfStdout(t *testing.T) {
 		{"padded past the window", 64<<10 + 1024, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			pad := lrPadFile(t, tc.padAfter)
 			command := "printf '95'; cat " + suSh(pad)
 			main := lxRepository(t, map[string]string{"coverage": command}, nil)

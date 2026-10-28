@@ -214,6 +214,7 @@ func TestAC1InATierThatWaitsTheApprovalDoesNotStandForATipTheReplayMarkDoesNotNa
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, moved, open := hcApprovedAndReplayed(t)
 			replayed := swRev(t, wt, "HEAD")
 			lines := swGitRaw(t, wt, "diff", moved, replayed)
@@ -445,6 +446,7 @@ func TestAC2EitherLineForLineComparisonFailingOnItsOwnMakesTheReviewsStale(t *te
 			story: hcIndented, trunk: hcBlockIn, storys: true, trunks: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main := lxRepository(t, nil, nil)
 			otIdentity(t, main)
 			fork := swCommitFile(t, main, hcShapeFile, hcShapeBase, "the shape")
@@ -589,6 +591,7 @@ func TestAC4AnAttributeNobodyCommittedDoesNotJoinAConflictInTheStopsOwnReplay(t 
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otWalked(t, ldWalk{finished: true})
 			tip := ldBookkeeping(t, wt)
 			moved := swCommitFile(t, main, "billing.go", ldBilling+"\n// Ledger is what another story adds.\ntype Ledger struct{}\n", "another story's ledger")
@@ -903,6 +906,7 @@ func TestAC10ADirectoryAgainstAFileAndARenameAgainstADeleteAreConflictsNamedAndL
 			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main := lxRepository(t, nil, nil)
 			otIdentity(t, main)
 			wt := ldStarted(t, main)

@@ -233,6 +233,7 @@ func TestAC1AStoryCommitChangedAfterTheCommitGateIsRefusedAndNothingLands(t *tes
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s := ccFinished(t)
 			before := swRecord(t, s.main, "US-001")
 			tc.tamper(t, s)
@@ -405,12 +406,14 @@ func TestAC1ARecordWithNoCommitRecordedIsJudgedAsToday(t *testing.T) {
 func TestAC1AStoryInATierThatDoesNotWaitIsJudgedAsToday(t *testing.T) {
 	t.Parallel()
 	t.Run("AC-1 the amended tip lands", func(t *testing.T) {
+		t.Parallel()
 		main, wt, _ := otWalked(t, ldWalk{finished: true})
 		ccAmend(t, wt, "-m", "feat: something else", "--author", "Mallory <mallory@example.com>")
 
 		ldLanded(t, main, wt, swRev(t, wt, "HEAD"))
 	})
 	t.Run("AC-1 the commit gate run again passes", func(t *testing.T) {
+		t.Parallel()
 		main, wt, _ := otWalked(t, ldWalk{finished: true})
 		ccAmend(t, wt, "-m", "feat: something else")
 		amended := swRev(t, wt, "HEAD")
@@ -486,6 +489,7 @@ func TestAC2ATipTamperedWithBeforeTheStopsReplayIsRefusedNotLaundered(t *testing
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s := ccFinished(t)
 			tc.tamper(t, s)
 			moved := ldMoveTrunk(t, s.main)
@@ -578,6 +582,7 @@ func TestAC2ATipAmendedAfterTheStopsReplayIsRefusedAtTheNextStop(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s, moved, marker, _, _ := ccCutShort(t, "")
 			tc.tamper(t, s.wt)
 			// The command would now pass: the refusal that matters is not its.

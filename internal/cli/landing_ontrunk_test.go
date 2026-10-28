@@ -331,6 +331,7 @@ func TestAC8TheOneStopPutsAFinishedStoryOntoTheTrunkThatMovedAndLandsIt(t *testi
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, cut := otWalked(t, ldWalk{finished: true})
 			old := ldBookkeeping(t, wt)
 			subjects := otSubjects(t, wt, cut, old)
@@ -432,6 +433,7 @@ func TestAC9TheReviewsStandWhenTrunkChangedLinesBesideTheStorysOwn(t *testing.T)
 		{"AC-9 far from the story's change", "// one\n", "// one, as trunk has it\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main := lxRepository(t, nil, nil)
 			otIdentity(t, main)
 			swCommitFile(t, main, "ledger.go", otLedger, "the ledger")
@@ -571,6 +573,7 @@ func TestAC11ACommandThatFailsOnTheNewTreeLandsNothingAndLeavesTheStoryWithItsSe
 		{"coverage", "if test -f CHANGES.md; then echo 50; else echo 95; fi"},
 	} {
 		t.Run("AC-11 commands."+tc.key, func(t *testing.T) {
+			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true, lx: true, set: map[string]string{tc.key: tc.command}})
 			otIdentity(t, main)
 			ldBookkeeping(t, wt)
@@ -624,6 +627,7 @@ func TestAC12AConflictLeavesTheWorktreeAndBranchAsTheyWereAndHandsTheStoryToAPer
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otWalked(t, ldWalk{finished: true})
 			tip := ldBookkeeping(t, wt)
 			tc.trunk(t, main)
@@ -909,6 +913,7 @@ func TestAC1AndAC5TestFilesTrunkGainedAreTakenForTrunksAndTheStoryLands(t *testi
 	for _, byHand := range []bool{false, true} {
 		name := map[bool]string{false: "AC-1 AC-5 the stop alone", true: "AC-1 AC-5 after a rebase by hand"}[byHand]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otFinished(t)
 			lock := wtRead(t, filepath.Join(wt, ".sdlc", "state", "tests.lock"))
 			if lock == "" {
@@ -984,6 +989,7 @@ func TestAC2AFrozenTestTrunkChangedOrRemovedDoesNotBreakTheFreeze(t *testing.T) 
 		{name: "AC-2 removed on trunk, after a rebase by hand", removed: true, byHand: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otFinished(t)
 			if _, held := lockOnDisk(t, wt).Files[otTaxTest]; !held {
 				t.Fatalf("precondition: the story's freeze does not hold %s", otTaxTest)
@@ -1032,6 +1038,7 @@ func TestAC3ATestFileThatIsNotTrunksIsRefusedAtEveryGateTheFreezeGuards(t *testi
 	t.Parallel()
 	for _, gate := range []model.Gate{model.GateTestsFrozen, model.GatePlan, model.GateImplementation, model.GateVerification, model.GateCommit} {
 		t.Run("AC-3 "+string(gate), func(t *testing.T) {
+			t.Parallel()
 			main := ldRepository(t, func(root string) { writeFile(t, root, otTaxTest, "package internal\n") })
 			otIdentity(t, main)
 			wt := swCheckStarted(t, main, "US-001", ldSession, swStarted(t, main, ldSession))
@@ -1067,6 +1074,7 @@ func TestAC3TheStopRefusesATestFileThatIsNotTrunksThoughItTakesTrunksOwn(t *test
 	for _, byHand := range []bool{false, true} {
 		name := map[bool]string{false: "AC-3 the stop alone", true: "AC-3 after a rebase by hand"}[byHand]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otFinished(t)
 			moved := swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
 			if byHand {
@@ -1203,6 +1211,7 @@ func TestAC3ATestFileThatOnlyLooksLikeTrunksIsStillRefused(t *testing.T) {
 			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otFinished(t)
 			tc.trunk(t, main)
 			moved := ldTrunk(t, main)
@@ -1259,6 +1268,7 @@ func TestAC3WithoutAStoryWorktreeACommittedTestFileIsNeverTakenForTrunks(t *test
 	for _, own := range []bool{false, true} {
 		name := map[bool]string{false: "AC-3 one checkout", true: "AC-3 a worktree a person made"}[own]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			root := wtRepository(t, wtStory{id: "US-001"})
 			if own {
 				root = wtWorktree(t, root, "wt")
@@ -1287,6 +1297,7 @@ func TestAC3AStoryThatTakesAwayATestFileTrunkGainedDoesNotLand(t *testing.T) {
 	for _, byHand := range []bool{true, false} {
 		name := map[bool]string{true: "AC-3 removed after a rebase by hand", false: "AC-3 the stop alone, on a trunk that moved again"}[byHand]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otFinished(t)
 			swCommitFile(t, main, otRefundTest, otRefundV1, "another story's test")
 			ldRebase(t, wt)
@@ -1391,6 +1402,7 @@ func TestAC4AFrozenTestThatIsNeitherAsFrozenNorTrunksBreaksTheFreeze(t *testing.
 			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt, _ := otFinished(t)
 			tc.trunk(t, main)
 			moved := ldTrunk(t, main)
