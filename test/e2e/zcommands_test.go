@@ -84,6 +84,8 @@ func knownGaps() map[string]string {
 	}
 	if runtime.GOOS == "windows" {
 		gaps["parallel"] = "its one real run starts sessions through a fake claude that waits on FIFOs, which need a POSIX shell and mkfifo"
+		gaps["codemap write"] = "its cases land stories through the POSIX launcher (skipWithoutTheLauncher)"
+		gaps["remap"] = "its cases land stories through the POSIX launcher (skipWithoutTheLauncher)"
 	}
 	return gaps
 }
