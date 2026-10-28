@@ -7,7 +7,7 @@ changes because of that: how the plugin gets its binary, the slash commands
 that stand for the commands only a person runs, where to set the variables the
 hook reads, and what still needs a terminal.
 
-The slash commands need an `sdlc` released after 0.4.0; see
+The slash commands need `sdlc` 0.5.0 or later; see
 [Which release you need](#which-release-you-need).
 
 ## Install the plugin from the plugin browser
@@ -112,7 +112,7 @@ it again once the landing has finished.
 
 ## Which release you need
 
-The slash commands are run by an `sdlc` released after 0.4.0. An `sdlc` 0.4.0
+The slash commands are run by `sdlc` 0.5.0 or later. An `sdlc` 0.4.0
 does not know them: typing one with it runs nothing, and the model, reading
 the command's text, tells you it did not run and why that usually is.
 To see which release you have, ask the assistant to run `sdlc version`, or run

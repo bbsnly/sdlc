@@ -7,6 +7,229 @@ All notable changes to this project are documented here. The format follows
 Error codes are part of the interface: once published, a code's meaning does
 not change and it is never reused.
 
+## [0.5.0](https://github.com/bbsnly/sdlc/releases/tag/v0.5.0) - 2026-10-28
+
+### Added
+
+- A person can run the whole loop from Claude Desktop's Code tab, which has no terminal. The
+  plugin ships `/sdlc:approve`, `/sdlc:unfreeze`, `/sdlc:ack`, `/sdlc:remap`, `/sdlc:release` and
+  `/sdlc:assign` (for `sdlc staffing assign`), with `/sdlc:doctor` and `/sdlc:init` beside them. The
+  hook runs a slash command when the person types it and refuses it when another Claude Code
+  session typed it. `docs/claude-desktop.md` says how to set it up. Breaking: `approve`,
+  `unfreeze`, `ack`, `remap`, `release`, `parallel` and `staffing assign` now refuse with the new
+  `SDLC-E0079` when run inside a Claude Code session, whether from a `!` line or the model's
+  shell, and every refusal that sent a person to a terminal now names the slash command first.
+- A project that keeps its instructions in `AGENTS.md` can run the loop without a `CLAUDE.md`.
+  `sdlc init` appends the contract to `AGENTS.md` where that is the only instruction file, and
+  `sdlc doctor` names the file that holds the contract and reports a layout Claude Code would not
+  read: a `CLAUDE.md` or `CLAUDE.local.md` that does not import an `AGENTS.md`-only contract, or
+  project instructions turned off in the person's settings. Breaking: `AGENTS.md` and
+  `CLAUDE.local.md` are now held like `CLAUDE.md`, in any case and at any depth, from the file
+  tools and the shell, and so is a `CLAUDE.md` below the project root. A `.agents` directory and
+  `~/.agents` are held like `.claude` and `~/.claude`. A write to `.agents`, `~/.agents` or a whole
+  home that holds no checkout is refused as `agents-config-is-the-persons`, and a shell write to
+  an instruction file in a directory above the project as `instructions-above-the-project`; some
+  refusals that were released change rule id. `docs/agents.md` is now `docs/the-agents.md`.
+- A story's change to `CODEMAP.md` no longer collides with another story's. The bookkeeper stores
+  its change as whole named sections with `sdlc codemap write`, and `sdlc stop` applies them to
+  `CODEMAP.md` as the landing left it on trunk, in a commit of its own that the gate record names
+  (`codemap_commit`). A map step that cannot be made leaves the landing standing: the stop exits 0
+  with the warning `SDLC-E0076`, the change is kept under the git directory, and later commands
+  say so until a person runs `sdlc remap <ID> [--replace | --drop]`. `SDLC-E0077` refuses a remap
+  for a story with nothing waiting, and `SDLC-E0078` refuses a set of sections that was not sent as
+  asked. `sdlc status` names each landed story whose change is waiting. Breaking: what `sdlc stop`
+  prints changes (a map commit line or the `SDLC-E0076` warning, and `codemap_commit` or
+  `codemap_kept` in its `--json`), and the bookkeeper no longer commits `CODEMAP.md` on the
+  story's branch.
+- `sdlc stop` lands a finished story on a trunk that has moved, without a rebase by hand. It puts
+  the story onto trunk itself, by a rebase that runs nothing the repository configures, behind one
+  landing lock for the project, and runs the project's commands on the new tree before trunk
+  moves. A test file that is byte for byte trunk's, where trunk changed it since the story's cut,
+  no longer counts against the freeze. Reviews and the approval stand for the tip the stop's own
+  replay made, where the change is the same line for line. A conflict is `SDLC-E0075` and a
+  person's, with the worktree left as it was. Breaking: `sdlc stop` no longer answers
+  `SDLC-E0054` for a trunk that only moved forward, and the gate record gains `trunk_tests` and
+  `replay`.
+- A story whose commits add an unresolved conflict's markers is refused. `sdlc stop` and the
+  commit gate scan the story's net change and refuse with `SDLC-E0080` when it adds a whole set of
+  markers at column 0, naming each file and the line of each marker.
+  `paths.conflict_markers_intended` lists the paths where markers are meant to be, and `sdlc
+  doctor` prints that list, or `none`, on its configuration check. Breaking: `sdlc doctor` output
+  gains that line, and a stop or commit gate that passed such a story before now exits 1.
+- `sdlc init` explains every setting in the `config.json` it writes: a comment block above each
+  of the twelve top-level settings, as a key named `_` plus the setting's name, saying what it
+  controls, what changing it costs and where `docs/configuration.md` describes it. Values are
+  unchanged. The `_commands` block replaces `_commands_doc`.
+- `sdlc doctor` reports a configured command the hook may refuse, by putting each one to the
+  hook's own classifier, naming the command's key and the rule and pointing at the rule's section
+  of the enforcement guide. Breaking: `sdlc doctor` exits 1 on such a command, and `sdlc init` now
+  writes coverage commands for Go and Python that keep the profile in a temporary file removed
+  when the shell exits, instead of under `.sdlc/state` or as `.coverage` in the working
+  directory.
+- `sdlc status` names the story that is landing, since when and its process, and each stop waiting
+  to land; `--json` gains `landing` and `waiting_to_land`. Breaking: `sdlc status` output changes.
+- `sdlc gate` says which later gates a recorded gate reopened, as a `reopened` line and a
+  `reopened` array in `--json`, the key `sdlc unfreeze` already uses. Output is unchanged when
+  nothing is reopened. Breaking: the new line and key.
+
+### Changed
+
+- Breaking: a stop and a commit gate hold a story to the commits the commit gate recorded. In a
+  tier that waits for a person, a commit reworded, squashed or reordered after the commit gate,
+  with the approved tree, now exits 1 with `SDLC-E0037` where it landed before. `sdlc approve`
+  records the story branch's tip on the answer and prints it, so a person's answer clears the
+  refusal for the commits as they stand. `gate-record.json` gains an optional `commit` on an
+  approval and a `commit_recorded` event.
+- Breaking: a failure that reaches `loop.max_rework_rounds` or `loop.max_review_rounds`, from
+  `sdlc gate <gate> fail` or `sdlc review add <gate> <role> block`, is handed over all or nothing.
+  If the hand-over cannot be made, the failure is no longer recorded, the refusal adds to its
+  `why` and `fix` that running the same command again is safe, and retries no longer count one
+  failure two or three times. Exit codes, `SDLC-E` codes and on-disk formats are unchanged. A
+  review file that exists but cannot be read is refused with `SDLC-E0005`. If a write cannot be
+  put back, the refusal says the story is only partly handed over and not to run the command again
+  until `sdlc status` has been read. `sdlc escalate` gets the same guarantee.
+- Breaking: the story's record gains a top-level `forks` key, a list of the story's own commits,
+  so that trunk pointed at one of the story's commits no longer makes a test file added after the
+  freeze count as trunk's. A record without a usable list takes no test file as trunk's: a story
+  in flight is refused with `SDLC-E0043` or `SDLC-E0025` where trunk added or changed a test file
+  since its cut, until a person unfreezes and freezes again.
+- Breaking: `trunk_tests` in a story's record is filled at the first gate that accepts a test
+  file as trunk's, not only once the commit gate has passed, and `sdlc unfreeze` and a reopened
+  commit gate empty it. The record holds fewer `trunk_tests` events, and within one command the
+  event follows `gates_reopened`.
+- Breaking: once trunk has moved, the commit gate measures from the trunk commit the story sits
+  on, so the range it prints and records, `committed on story/<ID> in <start>..<end>`, holds only
+  the story's own commits, and the loop-files warning names a file only when one of them changes
+  it. The refusal texts of `SDLC-E0054`, of `SDLC-E0006` while a landing is in progress, and of a
+  stop that finds trunk moved under its landing now say to stop again up to three times before
+  escalating. A story brought onto trunk by hand from a later commit is no longer recorded as
+  landed with nothing run: `sdlc stop` runs the configured commands first, and a failure there is
+  `SDLC-E0055`.
+- Breaking: `sdlc stop` says when a dead stop's landing lock is taken. A stop killed while it
+  landed no longer leaves a story that needs lock directories deleted by hand: the waiting line
+  says the holder is not running on this machine and when its lock can be taken (two minutes after
+  its last refresh), the story's own landing lock left by a process that is not running is taken
+  at once while a stop holds the landing lock, and a running holder is never taken from. The fixes
+  of `SDLC-E0006` and the landing lock's refusals no longer send anyone to delete a lock whose
+  holder runs, and `sdlc remap` labels the landing lock as a remap. The fix of `SDLC-E0037` says
+  what a person types and, after it, what an assistant does. Refusal text and `sdlc status` output
+  change.
+- Breaking: the stop names the driver key it refuses. A merge or diff driver whose name holds an
+  equals sign, `{sdlc-private}` or a byte that is not UTF-8 is refused under `SDLC-E0055` in one
+  wording that names the keys and says to rename or remove the driver. A stop now refuses a
+  repository whose diff driver has such a name, where it landed before. The text of this
+  `SDLC-E0055` refusal changes.
+- Breaking: the `why` of `SDLC-E0021` when git gives no error message, and of `SDLC-E0005` for a
+  story's plan or gate record, has new wording that names the git subcommand or the file that
+  failed. The codes, and when either failure happens, are unchanged.
+- Breaking: the hook lets through commands that only name a protected path, and says more where it
+  cannot place one. A message, note, reason or reject text handed to `sdlc`, an exclusion pathspec
+  under `git diff`, `log`, `show`, `status`, `ls-files`, `grep`, `diff-tree`, `diff-index` or
+  `diff-files`, and a request for `sdlc` help are no longer refused for naming one. Where the hook
+  is not sure, the refusal stands and now says that it cannot tell, why, and how to write the
+  command so that it can. The project manager is refused a help flag beside a substitution or a
+  variable.
+- Breaking: the hook gives one answer for a path outside the repository. A shell command on paths
+  it can place outside the repository goes through, so removing a copy of the tests in a scratch
+  directory is no longer refused as touching the frozen tests. A plain copy or move is read by
+  where it lands, so one that lands on a protected path of the repository is refused, as is a plain
+  copy or move of an outside contract or backlog file onto the repository directory. The refusals
+  of the three test rules carry new words in their reason and way on. `docs/enforcement.md` lists
+  the commands the hook reads whole and the known limits.
+- The documentation is reorganised around what a reader needs first. npm is the quick install,
+  the guides start from the job and put `doctor` after the first commit, the commands a person
+  types come first with each refusal's code named, the configuration reference has a full
+  contents list, every enforcement rule can be found, each troubleshooting entry says what went
+  wrong and what to run, and `docs/enforcement.md` says how to let unattended sessions use one
+  more command.
+- The hook decides a long command sooner: it reads a command's words once for all its rules and
+  passes over the words that name no place it holds.
+- The binary is built with Go 1.27.3, which fixes GO-2026-6604 in the standard library's `os`
+  package, reachable from the binary on Go 1.27.1. The workflows use Node 26.12.1, and the
+  tooling moves to golangci-lint 2.14.0, Task 3.54.0, GoReleaser 2.18.3, syft 1.55.0 and
+  markdownlint-cli2 0.24.0. `golang.org/x/text` is v0.43.0.
+- For contributors, the test suite runs much of itself in parallel and from copies of prepared
+  repositories, the packages with no goroutines run without `-race`, `./task check-linux` runs
+  the Go tests on Linux in Docker, and `./task test` prints each package's time and the slowest
+  tests. Tests that failed only on Windows are fixed.
+
+### Fixed
+
+- `sdlc doctor` no longer splits a configured command inside quotes. An `awk` or `sed` script in
+  quotes was read as further commands, so a working command with
+  `awk '/^toolchain /{print $2; exit}'` was reported as needing a program called `exit}'` and
+  `doctor` exited 1. A command substitution is still searched, also inside double quotes.
+- A refusal at a failure limit that could not be handed over said twice that nothing was
+  recorded, and the `SDLC-E0006` introduction in `docs/troubleshooting.md` said nothing is left
+  half-finished without naming the one state in which a story is. Each now says it once and names
+  that state.
+- A git command that failed without writing to stderr was explained as `git ls-files did not
+  finish`, whichever subcommand ran; the reason now names the subcommand that ran. A plan or a
+  gate record that could not be opened was explained with the freeze's sentence about test files
+  and now says which file could not be opened and what to check.
+- The npm installer read a line of `checksums.txt` in quadratic time when it held a long run of
+  spaces. It now reads the line without backtracking, with the same result for every line, and
+  keeps the unpacked binary private until it is installed.
+- `install.sh` finishes the install when `SHELL` is unset, as in a container or a bare CI step,
+  where it ended with `SHELL: parameter not set` and exit 2 after the binary was in place.
+- On Windows, the launcher run from Git Bash fetches the arm64 build on a Windows arm64 machine,
+  and checks a fetched release whose path holds backslashes. Before, it asked for the amd64
+  archive, then compared a backslash-prefixed checksum with the pin and installed nothing. The
+  launcher and `install.sh` now hash the archive from standard input.
+- On Windows, `sdlc` says that the map sections cannot be listed when a file is in the way of
+  the directory, where it listed none.
+- On Windows, a `Microsoft` directory that a program leaves at the top of the cache directory is
+  no longer counted among the leftovers of an installer test run.
+
+### Removed
+
+- darwin/amd64 is no longer built for the release or run in the install jobs. Both installers
+  answer a Mac that is not Apple silicon as they answer any machine there is no build for, and a
+  shell under Rosetta still gets the arm64 build.
+
+### Security
+
+- Breaking: the hook refuses a call it could not check in time. Claude Code stops a `PreToolUse`
+  hook that runs past the timeout in `plugin/hooks/hooks.json` and lets the call go ahead, so a
+  call the hook had not finished checking ran unchecked. The hook now keeps a deadline of 25
+  seconds, five short of that timeout, and a call it has not decided by then is refused under the
+  rule name `not-checked-in-time`, in words that say it ran out of time. `SDLC_HOOK_DEADLINE_MS`
+  can shorten the deadline and cannot lengthen it or turn it off. A hook stopped before it has
+  learnt whether it checks the call still lets the call through; the docs name the limit.
+- Breaking: the hook bounds the symbolic links it follows. A word that goes through more than 64
+  links is refused under `SDLC-E0081`, and a command whose words spend more than 512 links in all
+  under `SDLC-E0082`, instead of the hook walking every link until Claude Code's time ran out.
+  `SDLC-E0083` closes a hole where a relative write through a link into the loop's state, whose
+  full path was longer than the system looks up, read as a harmless name and was allowed. On
+  Windows, which follows 63 links in one lookup, a word or a chain to nothing past that limit is
+  held to the same bound, and the links are charged to the budget once. The hook's debug log now
+  names, for each decision, the candidate it read, how it read it and the rule that decided, with
+  no command text.
+- Breaking: the hook closes more shell spellings that reached loop state, frozen tests, protected
+  paths and instruction files where the plain spelling is refused. It refuses commands the last
+  release allowed: a glob removal after a `cd` it cannot place (`cd "$D" && rm -f *`), copies or
+  moves above the project from a source it cannot read, and extractions it cannot read in full.
+  Compressors, decompressors, extractors, `shuf` and `split` are judged by what they write and
+  where; a `**/..` or symlink climb, a dotted project root, `.agents/..` and an option bundle
+  ending in `t` are judged where they land; an extraction whose options come from `UNZIP`,
+  `UNZIPOPT` or `TAR_OPTIONS`, or that renames members with `-j`, is refused as
+  `archive-members-unknown`. New rules `directory-entries-unknown` and `archive-members-unknown`;
+  the instructions-above-the-project refusal appends a clause naming an unread source.
+- Breaking: the hook follows a `cd` through `CDPATH` as bash and zsh do, so a `cd` that reaches
+  the loop's own record through it is placed there. A whole-word mention of `CDPATH` the hook
+  cannot read refuses the relative writes after it, a `cd` that could leave the shell in more
+  than 16 places is treated as able to land anywhere, and a `cd` into the
+  home directory is unplaced, so `cd ~/src && tar -xzf` and similar relative writes after it are
+  refused where they were allowed. A removal's refusal names its operand rather than an option
+  such as `-rf`.
+- The hook also refuses writes to the person's Claude Code configuration, forged hook payloads,
+  and the macOS `/System/Volumes/Data` and differently-cased spellings of protected paths.
+- Breaking: a word that `xargs` or GNU `parallel`, or a program written on the line, is fed is
+  read as the shell hands it over, so a path to the person's configuration, the project's held
+  paths, the loop's state or a frozen test is refused in any spelling the shell expands to it.
+  On Windows a piped `cp` or `ln` whose sources are given with a drive is refused where it lands
+  in a held place.
+
 ## [0.4.0](https://github.com/bbsnly/sdlc/releases/tag/v0.4.0) - 2026-10-10
 
 ### Added

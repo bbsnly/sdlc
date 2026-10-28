@@ -363,13 +363,13 @@ immediately rather than during a release.
    any other it refuses before it builds.
 
 5. When the release is published, pin its checksums in the plugin, which checks
-   every binary it fetches against them. Check that the pins name the six
+   every binary it fetches against them. Check that the pins name the five
    archives of this release before you commit them:
 
    ```console
    $ gh release download v0.1.0 --repo bbsnly/sdlc --pattern checksums.txt --output plugin/checksums.txt --clobber
    $ grep -cE '_0\.1\.0_[a-z0-9_]+\.(tar\.gz|zip)$' plugin/checksums.txt
-   6
+   5
    $ ./task check
    $ git commit -m "chore(plugin): pin the checksums of v0.1.0" -- plugin/checksums.txt
    ```

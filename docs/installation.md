@@ -157,7 +157,7 @@ the release's `checksums.txt`, and installs a single static binary into
 the version or the directory, pass them as options:
 
 ```console
-$ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh -s -- --version 0.1.0 --dir ~/.local/bin
+$ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh -s -- --version 0.5.0 --dir ~/.local/bin
 ```
 
 `--dir` can point anywhere you can write. Somewhere like `/usr/local/bin` needs
@@ -200,7 +200,7 @@ the other, and put the binary somewhere on your `PATH`.
 On macOS or Linux:
 
 ```console
-$ version=0.1.0 asset=sdlc_0.1.0_darwin_arm64.tar.gz
+$ version=0.5.0 asset=sdlc_0.5.0_darwin_arm64.tar.gz
 $ curl --proto '=https' --tlsv1.2 -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/${asset}"
 $ curl --proto '=https' --tlsv1.2 -fsSLO "https://github.com/bbsnly/sdlc/releases/download/v${version}/checksums.txt"
 $ grep " ${asset}\$" checksums.txt | shasum -a 256 -c -
@@ -217,7 +217,7 @@ quarantine what it downloads.
 On Windows, in PowerShell:
 
 ```powershell
-$version = '0.1.0'; $asset = "sdlc_${version}_windows_amd64.zip"
+$version = '0.5.0'; $asset = "sdlc_${version}_windows_amd64.zip"
 $base = "https://github.com/bbsnly/sdlc/releases/download/v$version"
 Invoke-WebRequest "$base/$asset" -OutFile $asset
 Invoke-WebRequest "$base/checksums.txt" -OutFile checksums.txt
@@ -380,14 +380,14 @@ The `Source code (zip)` and `Source code (tar.gz)` entries GitHub adds to every
 release are not ours and are neither attested nor listed in `checksums.txt`.
 
 ```console
-$ gh attestation verify sdlc_0.1.0_darwin_arm64.tar.gz --repo bbsnly/sdlc
+$ gh attestation verify sdlc_0.5.0_darwin_arm64.tar.gz --repo bbsnly/sdlc
 ```
 
 The same works on an install script, which is worth doing if you would rather
 read one before running it:
 
 ```console
-$ curl --proto '=https' --tlsv1.2 -fsSLO https://raw.githubusercontent.com/bbsnly/sdlc/v0.1.0/install.sh
+$ curl --proto '=https' --tlsv1.2 -fsSLO https://raw.githubusercontent.com/bbsnly/sdlc/v0.5.0/install.sh
 $ gh attestation verify install.sh --repo bbsnly/sdlc
 ```
 
