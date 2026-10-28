@@ -188,9 +188,11 @@ func cmkCommitAll(t *testing.T, wt, message string) string {
 }
 
 // cmkLate is a finished story with its bookkeeper's change committed and a
-// commit of its own after the reviews, adding files, and the reviews recorded
-// again on the change as it now is; so that the markers are the one thing in
-// the way of the landing. It returns trunk as it was.
+// commit of its own after the reviews, adding files. The reviews are not
+// recorded again: the stop looks for the markers before it asks whether the
+// reviews are of this change, so every refusal for markers here is also the
+// one that wins over stale reviews, and a test that goes on to land the story
+// records them itself, once the markers are out. It returns trunk as it was.
 func cmkLate(t *testing.T, files map[string]string) (main, wt, trunk string) {
 	t.Helper()
 	main, wt = ldWalked(t, ldWalk{finished: true, bookkept: true})
@@ -198,7 +200,6 @@ func cmkLate(t *testing.T, files map[string]string) (main, wt, trunk string) {
 		writeFile(t, wt, rel, body)
 	}
 	cmkCommitAll(t, wt, "late: files after the reviews")
-	ldReviewAgain(t, wt)
 	return main, wt, ldTrunk(t, main)
 }
 
@@ -262,7 +263,6 @@ func TestAC1AndAC4AStoryRebasedByHandWithTheConflictLeftHalfResolvedIsRefusedByT
 	}
 	swGit(t, wt, "add", "--", file)
 	swGit(t, wt, "-c", "user.email=t@example.com", "-c", "user.name=Test", "-c", "core.editor=true", "rebase", "--continue")
-	ldReviewAgain(t, wt)
 
 	out := swRefused(t, cmkCode, wt, ldSession, "stop")
 	cmkHoldsNamed(t, out, file, held)
@@ -341,7 +341,6 @@ func TestAC1TheStopRefusesAConflictInAFileWithCRLFLineEndingsLeftByAHandRebase(t
 	}
 	swGit(t, wt, "add", "--", file)
 	swGit(t, wt, "-c", "user.email=t@example.com", "-c", "user.name=Test", "-c", "core.editor=true", "rebase", "--continue")
-	ldReviewAgain(t, wt)
 
 	out := swRefused(t, cmkCode, wt, ldSession, "stop")
 	cmkHoldsNamed(t, out, file, held)
@@ -429,7 +428,6 @@ func TestAC2AFileThatAlreadyHoldsASetOnTrunkLandsAndASecondSetInItIsRefusedByIts
 
 	added := cmkText(cmkJoin(held, []string{"tail one", "tail two"}, cmkSet())...)
 	swCommitFile(t, wt, file, added, "a second conflict")
-	ldReviewAgain(t, wt)
 	trunk := ldTrunk(t, main)
 
 	out := swRefused(t, cmkCode, wt, ldSession, "stop")
@@ -471,7 +469,6 @@ func TestAC2AndDecision4AMovedFileThatHoldsASetAddsNoneButASecondInItIsRefused(t
 	swGit(t, wt, "mv", "notes.txt", "archive/notes.txt")
 	writeFile(t, wt, "archive/notes.txt", cmkText(cmkJoin(held, cmkSet())...))
 	cmkCommitAll(t, wt, "move the file, and add a conflict to it")
-	ldReviewAgain(t, wt)
 
 	out := swRefused(t, cmkCode, wt, ldSession, "stop")
 	if !wtNames(out, "archive/notes.txt") {
@@ -516,6 +513,7 @@ func TestAC3TheStopHonoursAnExemptionOnTrunkThatTheStorysWorktreeNeverHad(t *tes
 
 	cmkPathsOnDisk(t, main, []string{"docs/**"})
 	suCommit(t, main, "a person lists where conflict markers are meant", ".sdlc/config.json")
+	ldReviewAgain(t, wt)
 	got := decode[stopPayload](t, wtMust(t, wt, ldSession, "", "stop", "--json"))
 	if !got.OK || got.Story != "US-001" || !got.Done {
 		t.Errorf("stop --json = %+v, want US-001 done", got)
@@ -540,7 +538,6 @@ func TestAC3AnExemptionOnlyTheStorysWorktreeHasDoesNotSurviveTheStop(t *testing.
 		t.Fatalf("precondition: the worktree's configuration does not list the path:\n%s", got)
 	}
 	swCommitFile(t, wt, file, body, "late: a document about conflicts")
-	ldReviewAgain(t, wt)
 	cmkPathsOnDisk(t, main, nil)
 	suCommit(t, main, "a person takes the listing off again", ".sdlc/config.json")
 	trunk := ldTrunk(t, main)
@@ -799,6 +796,7 @@ func TestAC1AndDecision8AStoryThatTrunkAlreadyHoldsIsNotRefusedForItsMarkers(t *
 	body := cmkText(cmkJoin(cmkFiller(1, 3), cmkSet())...)
 	main, wt, _ := cmkLate(t, map[string]string{"notes.txt": body})
 	swRefused(t, cmkCode, wt, ldSession, "stop")
+	ldReviewAgain(t, wt)
 
 	tip := swRev(t, wt, "HEAD")
 	swGit(t, main, "merge", "--quiet", "--ff-only", "story/US-001")

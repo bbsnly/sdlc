@@ -398,7 +398,6 @@ func TestAC1ACommitOfTrunksOwnOnTopOfAStoryCommitDoesNotHideItsTestFile(t *testi
 			if byHand {
 				ldRebase(t, wt)
 			}
-			ldReviewAgain(t, wt)
 			snapshot := otSnap(t, main, wt, "CODEMAP.md", otLaterTest)
 
 			a := tsRun(t, wt, "stop")

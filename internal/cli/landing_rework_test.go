@@ -316,7 +316,6 @@ func TestE0025AndE0043sFreezeFixesNameTheAnswerFirstRouteAndTheWorktree(t *testi
 			t.Parallel()
 			main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true, taxTest: true})
 			swCommitFile(t, wt, tc.rel, "package internal\n\n// changed by the story\n", "the story's own change to a test")
-			ldReviewAgain(t, wt)
 			before := ldTrunk(t, main)
 
 			out := swRefused(t, tc.code, wt, ldSession, "stop")

@@ -724,7 +724,6 @@ func TestAC4ATestFileTheStoryChangedAfterARebaseBreaksTheFreezeAndNothingIsFroze
 			ldMoveTrunk(t, main)
 			ldRebase(t, wt)
 			swCommitFile(t, wt, tc.rel, "package internal\n\n// changed by the story\n", "the story's own change to a test")
-			ldReviewAgain(t, wt)
 			before := ldTrunk(t, main)
 
 			swRefused(t, tc.code, wt, ldSession, "stop")

@@ -137,7 +137,6 @@ func TestAC4AFrozenTestTheStoryChangedAndPutBackIsABrokenFreezeNeverTrunksOwn(t 
 				ldRebase(t, wt)
 			}
 			swCommitFile(t, wt, otTaxTest, otTaxBase, "put the frozen test back as trunk has it")
-			ldReviewAgain(t, wt)
 			trunk := ldTrunk(t, main)
 			if got, _ := otAt(t, main, trunk, otTaxTest); got != otTaxBase {
 				t.Fatalf("precondition: trunk's %s is %q, and the case is the worktree's copy being trunk's", otTaxTest, got)

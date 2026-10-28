@@ -1080,7 +1080,6 @@ func TestAC3TheStopRefusesATestFileThatIsNotTrunksThoughItTakesTrunksOwn(t *test
 				ldRebase(t, wt)
 			}
 			swCommitFile(t, wt, otLaterTest, otOwn, "a test written after the freeze")
-			ldReviewAgain(t, wt)
 
 			out := swRefused(t, ldUnfrozenTest, wt, ldSession, "stop")
 			said, _ := ldRefusal(t, out, ldUnfrozenTest)
@@ -1220,7 +1219,6 @@ func TestAC3ATestFileThatOnlyLooksLikeTrunksIsStillRefused(t *testing.T) {
 				if dirty := swGitRaw(t, wt, "status", "--porcelain"); dirty != "" {
 					otCommitAll(t, wt, "what the session made")
 				}
-				ldReviewAgain(t, wt)
 			}
 
 			out := swRefused(t, ldUnfrozenTest, wt, ldSession, "stop")
@@ -1408,7 +1406,6 @@ func TestAC4AFrozenTestThatIsNeitherAsFrozenNorTrunksBreaksTheFreeze(t *testing.
 			ldRebase(t, wt)
 			tc.story(t, wt)
 			otCommitAll(t, wt, "what the session made of a frozen test")
-			ldReviewAgain(t, wt)
 
 			status := decode[statusPayload](t, wtMust(t, wt, ldSession, "", "status", "--json"))
 			if status.Freeze == nil || status.Freeze.Intact {
