@@ -188,6 +188,7 @@ func TestAC3ABaseTheRecordNamesIsResolvedBeforeItReachesGit(t *testing.T) {
 		{"AC-1 a base abbreviated, as a person writes one down", "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			root, base, commit := landedStory(t)
 			watched(t, root, base)
 			from := tc.base

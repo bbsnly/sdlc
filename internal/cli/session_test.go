@@ -74,6 +74,7 @@ func TestAStoryIsChangedOnlyFromTheSessionWorkingIt(t *testing.T) {
 		{"stop", "", []string{"stop"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			root := storyUnderWay(t)
 			setenv(t, store.SessionEnv, other)
 			before := projectFiles(t, root)

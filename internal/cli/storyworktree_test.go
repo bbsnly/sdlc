@@ -478,6 +478,7 @@ func TestAC3AStoryBeginsInAWorktreeWhateverTheMainCheckoutIsOnOrHasNotCommitted(
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main := swRepository(t, wtStory{id: "US-001"})
 			tc.prepare(t, main)
 			trunk := swRev(t, main, "refs/heads/main")
@@ -703,6 +704,7 @@ func TestAC4AWorktreeThatCannotBeMadeIsRefusedWithSDLCE0053AndLeavesNothingBehin
 		}, nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main := swRepository(t, wtStory{id: tc.id}, wtStory{id: "US-900"})
 			kept := tc.prepare(t, main)
 			refs, worktrees := swRefs(t, main), swWorktrees(t, main)
@@ -1121,6 +1123,7 @@ func TestAC5AndAC8APlainStartPassesOverAStoppedStoryItsWorktreeHoldsAndNamingItR
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 			wt := swCheckStarted(t, main, "US-001", swSessionA, swStarted(t, main, swSessionA))
 			wtMust(t, wt, "", "", "stop")
@@ -1347,6 +1350,7 @@ func TestD7ARecordWrittenFromAWorktreeNamesNoCheckoutPath(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			main, wt := tc.start(t)
 			swReach(t, wt, swSessionA, model.GateCommit)
 			wtMust(t, wt, swSessionA, "", "stop")

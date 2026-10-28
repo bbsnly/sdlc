@@ -73,27 +73,29 @@ func TestAC5TheOrdinaryOneCommitStoryRecordsTheRangeItAlwaysDid(t *testing.T) {
 // end.
 func TestAC4TheGateRefusesANoteNamingACommitItsRangeDoesNotHold(t *testing.T) {
 	t.Parallel()
-	root, base, commit := landedStory(t)
-
 	for _, tc := range []struct {
-		name, note string
-		refused    bool
+		name string
+		// note is the gate's note, made from the story's base and the commit
+		// that carries its work, which each case's own repository has.
+		note    func(base, commit string) string
+		refused bool
 	}{
-		{"AC-4 a note with no commit in it, which is what the runbook asks for", "on trunk", false},
-		{"AC-4 the range's own end, in full", "landed in " + commit, false},
-		{"AC-4 the range's own end, in seven characters", "landed in " + commit[:7], false},
-		{"AC-4 forty hexadecimal characters git has never heard of", "reverts " + strings.Repeat("a", 40), false},
-		{"AC-4 six characters of a commit outside the range are prose, not a sha", "see " + base[:6], false},
-		{"AC-4 a hexadecimal word git would read as an option", "see -" + strings.Repeat("a", 40), false},
-		{"AC-4 a commit the range does not hold", "landed in " + base, true},
-		{"AC-4 two commits, one of them outside the range", commit + " and " + base, true},
+		{"AC-4 a note with no commit in it, which is what the runbook asks for", func(_, _ string) string { return "on trunk" }, false},
+		{"AC-4 the range's own end, in full", func(_, commit string) string { return "landed in " + commit }, false},
+		{"AC-4 the range's own end, in seven characters", func(_, commit string) string { return "landed in " + commit[:7] }, false},
+		{"AC-4 forty hexadecimal characters git has never heard of", func(_, _ string) string { return "reverts " + strings.Repeat("a", 40) }, false},
+		{"AC-4 six characters of a commit outside the range are prose, not a sha", func(base, _ string) string { return "see " + base[:6] }, false},
+		{"AC-4 a hexadecimal word git would read as an option", func(_, _ string) string { return "see -" + strings.Repeat("a", 40) }, false},
+		{"AC-4 a commit the range does not hold", func(base, _ string) string { return "landed in " + base }, true},
+		{"AC-4 two commits, one of them outside the range", func(base, commit string) string { return commit + " and " + base }, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// The gate's own pass writes the record, so the tree the next note
-			// is tried against is put back the way the commit left it.
-			defer gitOut(t, root, "checkout", "--", ".sdlc")
+			t.Parallel()
+			// A repository of its own: a pass writes the record into the one it
+			// runs in, so cases that shared one would judge each other's notes.
+			root, base, commit := landedStory(t)
 
-			r := run(t, "gate", "commit", "pass", "--note", tc.note)
+			r := run(t, "gate", "commit", "pass", "--note", tc.note(base, commit))
 			if !tc.refused {
 				if r.code != 0 {
 					t.Fatalf("a note naming no commit outside the range was refused (%d):\n%s", r.code, r.stderr)

@@ -523,6 +523,7 @@ func TestAC1InitInAWorktreeWritesTheStarterBacklogInTheMainCheckout(t *testing.T
 func TestAC2StartInAWorktreeSkipsAStoryTheMainCheckoutHolds(t *testing.T) {
 	t.Parallel()
 	t.Run("AC-2 a story under way is neither resumed nor picked", func(t *testing.T) {
+		t.Parallel()
 		main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 		wt := wtWorktree(t, main, "wt")
 		wtStarted(t, main, wtSessionMain)
@@ -535,6 +536,7 @@ func TestAC2StartInAWorktreeSkipsAStoryTheMainCheckoutHolds(t *testing.T) {
 	})
 
 	t.Run("AC-2 a story waiting on a person where it is held is skipped", func(t *testing.T) {
+		t.Parallel()
 		main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 		wt := wtWorktree(t, main, "wt")
 		wtStarted(t, main, wtSessionMain)
@@ -545,6 +547,7 @@ func TestAC2StartInAWorktreeSkipsAStoryTheMainCheckoutHolds(t *testing.T) {
 	})
 
 	t.Run("AC-2 a story stopped part-way stays held", func(t *testing.T) {
+		t.Parallel()
 		main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002"})
 		wt := wtWorktree(t, main, "wt")
 		wtStarted(t, main, wtSessionMain)
@@ -555,6 +558,7 @@ func TestAC2StartInAWorktreeSkipsAStoryTheMainCheckoutHolds(t *testing.T) {
 	})
 
 	t.Run("AC-2 a story waiting on a held story waits as if the held story were missing", func(t *testing.T) {
+		t.Parallel()
 		main := wtRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002", dependsOn: []string{"US-001"}},
 			wtStory{id: "US-003"})
 		wt := wtWorktree(t, main, "wt")
@@ -565,6 +569,7 @@ func TestAC2StartInAWorktreeSkipsAStoryTheMainCheckoutHolds(t *testing.T) {
 	})
 
 	t.Run("AC-2 with only the held story left there is nothing to start", func(t *testing.T) {
+		t.Parallel()
 		main := wtRepository(t, wtStory{id: "US-001"})
 		wt := wtWorktree(t, main, "wt")
 		wtStarted(t, main, wtSessionMain)

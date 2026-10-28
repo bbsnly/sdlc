@@ -41,6 +41,7 @@ func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
 	for _, advisory := range []bool{false, true} {
 		name := map[bool]string{false: "blocking by default", true: "advisory when configured"}[advisory]
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			root := gitProjectInitialised(t)
 			if advisory {
 				setConfigOnDisk(t, root, "reviews", map[string]any{"gate7_advisory": true})
@@ -289,6 +290,7 @@ func TestSecuritySensitivityDecidesWhetherSecurityBlocks(t *testing.T) {
 		{"never said", nil, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			root := gitProjectInitialised(t)
 			mustRun(t, "start")
 
