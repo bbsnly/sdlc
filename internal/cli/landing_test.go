@@ -177,40 +177,49 @@ func ldWalkedFrom(t *testing.T, w ldWalk) (main, wt, cut string) {
 	t.Helper()
 	main, notes := walkedCopyNoted(t, fmt.Sprintf("landing %+v", w), func(t *testing.T, root string) map[string]string {
 		t.Helper()
-		configure := func(root string) {
-			if w.tier != "" {
-				ldTier(t, root, w.tier)
-			}
-			if w.taxTest {
-				writeFile(t, root, "internal/tax_test.go", "package internal\n")
-			}
-		}
-		if w.lx {
-			if w.tier != "" || w.taxTest {
-				t.Fatalf("%+v: lxRepository takes no tier or test file of its own", w)
-			}
-			lxRepositoryAt(t, root, w.set, w.thresholds, w.stories...)
-		} else {
-			ldRepositoryAt(t, root, configure, w.stories...)
-		}
-		if w.trunkMoved {
-			swCommitFile(t, root, "README.md", "# Billing, before the story\n", "trunk before the story")
-		}
-		if w.spike {
-			swGit(t, root, "switch", "--quiet", "-c", "spike")
-		}
-		cut := ldTrunk(t, root)
-		if w.finished {
-			ldFinished(t, root)
-		} else {
-			ldStarted(t, root)
-		}
-		return map[string]string{"cut": cut}
+		return map[string]string{"cut": ldWalkAt(t, w, root)}
 	})
 	wt = swWorktreeOf(main, "US-001")
 	chdir(t, wt)
 	setenv(t, store.SessionEnv, ldSession)
 	return main, wt, notes["cut"]
+}
+
+// ldWalkAt is what ldWalkedFrom's template is made of, for a builder in root:
+// the repository w names, with US-001 started or finished in it, and trunk's
+// tip before the story started. A template that takes the story further starts
+// from here, so that it starts from what ldWalkedFrom's copies start from.
+func ldWalkAt(t *testing.T, w ldWalk, root string) (cut string) {
+	t.Helper()
+	configure := func(root string) {
+		if w.tier != "" {
+			ldTier(t, root, w.tier)
+		}
+		if w.taxTest {
+			writeFile(t, root, "internal/tax_test.go", "package internal\n")
+		}
+	}
+	if w.lx {
+		if w.tier != "" || w.taxTest {
+			t.Fatalf("%+v: lxRepository takes no tier or test file of its own", w)
+		}
+		lxRepositoryAt(t, root, w.set, w.thresholds, w.stories...)
+	} else {
+		ldRepositoryAt(t, root, configure, w.stories...)
+	}
+	if w.trunkMoved {
+		swCommitFile(t, root, "README.md", "# Billing, before the story\n", "trunk before the story")
+	}
+	if w.spike {
+		swGit(t, root, "switch", "--quiet", "-c", "spike")
+	}
+	cut = ldTrunk(t, root)
+	if w.finished {
+		ldFinished(t, root)
+	} else {
+		ldStarted(t, root)
+	}
+	return cut
 }
 
 // ldBookkeeping is the bookkeeper's CODEMAP.md change, committed on the story's

@@ -37,6 +37,7 @@ import (
 	"testing"
 
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/store"
 )
 
 // tsFile is a source file the story's last commit holds and the others do not.
@@ -70,16 +71,37 @@ type tsStory struct{ main, wt, cut string }
 // afterVerification is what is done to the tree once the verification has
 // passed: a test file written, or a frozen one changed, by a route the hook did
 // not see.
-func tsWorked(t *testing.T, afterVerification func(t *testing.T, wt string)) tsStory {
+//
+// Then the story's own commits are made, steps, each watched by the hook first
+// where hooked, and returned. Every row of these tests tries trunk on each of
+// its commits, from the same starting point, so this is a walked template
+// named key, which has to say what afterVerification and steps do.
+func tsWorked(t *testing.T, key string, afterVerification func(t *testing.T, wt string), steps []tsStep, hooked bool) (tsStory, []string) {
 	t.Helper()
-	main, wt, cut := otWalked(t, ldWalk{taxTest: true})
-	ldWork(t, wt)
-	swPass(t, wt, ldSession, model.GateImplementation, model.GateVerifierReview)
-	if afterVerification != nil {
-		afterVerification(t, wt)
-	}
-	swPass(t, wt, ldSession, model.GateVerifierReview, model.GateCommit)
-	return tsStory{main: main, wt: wt, cut: cut}
+	main, notes := walkedCopyNoted(t, "trunk on the story's own commit: "+key, func(t *testing.T, root string) map[string]string {
+		t.Helper()
+		cut := ldWalkAt(t, ldWalk{taxTest: true}, root)
+		wt := swWorktreeOf(root, "US-001")
+		otIdentity(t, root)
+		ldWork(t, wt)
+		swPass(t, wt, ldSession, model.GateImplementation, model.GateVerifierReview)
+		if afterVerification != nil {
+			afterVerification(t, wt)
+		}
+		swPass(t, wt, ldSession, model.GateVerifierReview, model.GateCommit)
+		var commits []string
+		for _, step := range steps {
+			if hooked {
+				watched(t, wt, swRev(t, wt, "HEAD"))
+			}
+			commits = append(commits, tsCommit(t, wt, step.message, step.paths...))
+		}
+		return map[string]string{"cut": cut, "commits": strings.Join(commits, " ")}
+	})
+	wt := swWorktreeOf(main, "US-001")
+	chdir(t, wt)
+	setenv(t, store.SessionEnv, ldSession)
+	return tsStory{main: main, wt: wt, cut: notes["cut"]}, strings.Fields(notes["commits"])
 }
 
 // tsCommit commits the paths named, or everything the worktree holds where none
@@ -243,14 +265,7 @@ func TestAC1TrunkOnACommitOfTheStorysOwnLeavesItsTestFilesTheStorysAtTheCommitGa
 	} {
 		for pos := range row.steps {
 			t.Run("AC-1 "+row.name+", trunk on commit "+string(rune('1'+pos)), func(t *testing.T) {
-				s := tsWorked(t, row.after)
-				var commits []string
-				for _, step := range row.steps {
-					if row.hooked {
-						watched(t, s.wt, swRev(t, s.wt, "HEAD"))
-					}
-					commits = append(commits, tsCommit(t, s.wt, step.message, step.paths...))
-				}
+				s, commits := tsWorked(t, "AC-1 "+row.name, row.after, row.steps, row.hooked)
 				files := []string{otLaterTest, otTaxTest, otInvoiceTest}
 				before := tsCommitGate(t, s.wt)
 				tsRefused(t, "the commit gate with trunk at the cut", before, row.code, row.named...)
@@ -408,9 +423,9 @@ func TestAC1ATrunkMovedOntoARebasedStoryCommitStillRefusesTheStorysTestAndNotTru
 	t.Parallel()
 	for pos, name := range []string{"the first rebased commit", "the tip"} {
 		t.Run("AC-1 trunk on "+name, func(t *testing.T) {
-			s := tsWorked(t, func(t *testing.T, wt string) { t.Helper(); writeFile(t, wt, otLaterTest, otOwn) })
-			tsCommit(t, s.wt, "tests", otInvoiceTest, otLaterTest)
-			tsCommit(t, s.wt, "code")
+			s, _ := tsWorked(t, "a test added after the freeze in the first commit, then rebased",
+				func(t *testing.T, wt string) { t.Helper(); writeFile(t, wt, otLaterTest, otOwn) },
+				[]tsStep{{"tests", []string{otInvoiceTest, otLaterTest}}, {"code", nil}}, false)
 			swCommitFile(t, s.main, "ledger.go", "package billing\n\n// Ledger is another story's.\ntype Ledger struct{}\n", "another story's code")
 			foreign := swCommitFile(t, s.main, otRefundTest, otRefundV1, "another story's test")
 			ldRebase(t, s.wt)

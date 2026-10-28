@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/store"
 )
 
 // ccStory is a finished story in a tier that waits for a person, with two
@@ -38,19 +39,33 @@ type ccStory struct {
 // ccFinished walks a story in tier high through the approval, two commits and
 // the commit gate and the retro. The docs commit of the bookkeeper is not
 // made: ldBookkeeping makes it where a test wants it.
+//
+// About thirty tests start here, so the walk is a walked template: the real
+// commands take the story this far once per package run, and each test gets a
+// copy, with the hashes and the trunk commit the walk read noted on the way.
 func ccFinished(t *testing.T) ccStory {
 	t.Helper()
-	main, wt, cut := otWalked(t, ldWalk{tier: "high"})
-	ldWork(t, wt)
-	swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
-	ldApproved(t, wt)
-	body, err := os.ReadFile(filepath.Join(wt, "refund.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	first := swCommitFile(t, wt, "refund.go", string(body), "feat: refunds")
-	swPass(t, wt, ldSession, model.GateCommit, "")
-	return ccStory{main: main, wt: wt, cut: cut, first: first, second: swRev(t, wt, "HEAD")}
+	main, notes := walkedCopyNoted(t, "commit cover: tier high, approved, two commits, through the retro",
+		func(t *testing.T, root string) map[string]string {
+			t.Helper()
+			cut := ldWalkAt(t, ldWalk{tier: "high"}, root)
+			wt := swWorktreeOf(root, "US-001")
+			otIdentity(t, root)
+			ldWork(t, wt)
+			swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
+			ldApproved(t, wt)
+			body, err := os.ReadFile(filepath.Join(wt, "refund.go"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := swCommitFile(t, wt, "refund.go", string(body), "feat: refunds")
+			swPass(t, wt, ldSession, model.GateCommit, "")
+			return map[string]string{"cut": cut, "first": first, "second": swRev(t, wt, "HEAD")}
+		})
+	wt := swWorktreeOf(main, "US-001")
+	chdir(t, wt)
+	setenv(t, store.SessionEnv, ldSession)
+	return ccStory{main: main, wt: wt, cut: notes["cut"], first: notes["first"], second: notes["second"]}
 }
 
 // ccIdentity is the committer every git command of these tests runs as.
