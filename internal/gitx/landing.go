@@ -162,7 +162,8 @@ func sealedEnviron(private string) []string {
 // writes the index; with no replacement objects; and with the file system
 // monitor, the commit-graph and automatic maintenance off, each of which is a
 // program or a file that would answer in the objects' place. A shallow file is
-// read as git reads it: it can only hide ancestry, and hidden ancestry refuses
+// read as git reads it, when git is first asked (answers keeps what it says of
+// full hashes): it can only hide ancestry, and hidden ancestry refuses
 // wherever ancestry is what was asked. The one question it answers otherwise is
 // HasCommit's: a commit it hides is a commit git does not have, and whoever
 // passes such a commit over has to refuse on something else the file hides
@@ -321,15 +322,17 @@ func IsAncestor(ctx context.Context, root, ancestor, descendant string) (bool, e
 	if err := fullHashes(ancestor, descendant); err != nil {
 		return false, err
 	}
-	_, err := sealed(ctx, root, "merge-base", "--is-ancestor", ancestor, descendant)
-	var exit *exec.ExitError
-	switch {
-	case err == nil:
-		return true, nil
-	case errors.As(err, &exit) && exit.ExitCode() == 1:
-		return false, nil
-	}
-	return false, err
+	return recall("is-ancestor", root, ancestor, descendant, func() (bool, error) {
+		_, err := sealed(ctx, root, "merge-base", "--is-ancestor", ancestor, descendant)
+		var exit *exec.ExitError
+		switch {
+		case err == nil:
+			return true, nil
+		case errors.As(err, &exit) && exit.ExitCode() == 1:
+			return false, nil
+		}
+		return false, err
+	})
 }
 
 // MergeBase is the nearest commit both a and b have in their history, and ""
@@ -338,15 +341,17 @@ func MergeBase(ctx context.Context, root, a, b string) (string, error) {
 	if err := fullHashes(a, b); err != nil {
 		return "", err
 	}
-	out, err := sealed(ctx, root, "merge-base", a, b)
-	var exit *exec.ExitError
-	switch {
-	case errors.As(err, &exit) && exit.ExitCode() == 1:
-		return "", nil
-	case err != nil:
-		return "", err
-	}
-	return firstLine(string(out)), nil
+	return recall("merge-base", root, a, b, func() (string, error) {
+		out, err := sealed(ctx, root, "merge-base", a, b)
+		var exit *exec.ExitError
+		switch {
+		case errors.As(err, &exit) && exit.ExitCode() == 1:
+			return "", nil
+		case err != nil:
+			return "", err
+		}
+		return firstLine(string(out)), nil
+	})
 }
 
 // HasMerges reports whether a merge commit lies in base..tip: in tip's
@@ -355,11 +360,13 @@ func HasMerges(ctx context.Context, root, base, tip string) (bool, error) {
 	if err := fullHashes(base, tip); err != nil {
 		return false, err
 	}
-	out, err := sealed(ctx, root, "rev-list", "--min-parents=2", "--max-count=1", base+".."+tip, "--")
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(string(out)) != "", nil
+	return recall("has-merges", root, base, tip, func() (bool, error) {
+		out, err := sealed(ctx, root, "rev-list", "--min-parents=2", "--max-count=1", base+".."+tip, "--")
+		if err != nil {
+			return false, err
+		}
+		return strings.TrimSpace(string(out)) != "", nil
+	})
 }
 
 // FirstAbove is the lowest commit on tip's own line, its first parents, that
@@ -369,8 +376,10 @@ func FirstAbove(ctx context.Context, root, base, tip string) (string, error) {
 	if err := fullHashes(base, tip); err != nil {
 		return "", err
 	}
-	out, err := sealed(ctx, root, "rev-list", "--first-parent", "--reverse", base+".."+tip, "--")
-	return firstLine(string(out)), err
+	return recall("first-above", root, base, tip, func() (string, error) {
+		out, err := sealed(ctx, root, "rev-list", "--first-parent", "--reverse", base+".."+tip, "--")
+		return firstLine(string(out)), err
+	})
 }
 
 // HasCommit reports whether git has the commit among its objects here. One it
@@ -450,12 +459,15 @@ func ChangedBetween(ctx context.Context, root, base, tip string) ([]string, erro
 	if err := fullHashes(base, tip); err != nil {
 		return nil, err
 	}
-	out, err := sealed(ctx, root, "diff-tree", "-r", "-z", argNoRenames, "--name-only",
-		argIgnoreSubmodNone, base, tip, "--")
-	if err != nil {
-		return nil, err
-	}
-	return nulSeparated(out), nil
+	changed, err := recall("changed-between", root, base, tip, func() ([]string, error) {
+		out, err := sealed(ctx, root, "diff-tree", "-r", "-z", argNoRenames, "--name-only",
+			argIgnoreSubmodNone, base, tip, "--")
+		if err != nil {
+			return nil, err
+		}
+		return nulSeparated(out), nil
+	})
+	return slices.Clone(changed), err
 }
 
 // atOrUnder reports whether the slash path name is the path made of dir's
@@ -512,22 +524,26 @@ func FileAt(ctx context.Context, root, commit, path string) ([]byte, error) {
 			strconv.Quote(path)+" cannot be read from a commit here",
 			"a path with a line break in it cannot be handed to git a line at a time")
 	}
-	// One call: the commit first, so that a commit git does not have is told
-	// apart from a path the commit does not have.
-	out, err := sealedCall(ctx, root, nil, []byte(commit+"^{commit}\n"+commit+":"+path+"\n"), nil,
-		"cat-file", "--batch")
-	if err != nil {
-		return nil, err
-	}
-	rest := out
-	var body []byte
-	for i, want := range []string{"commit", "blob"} {
-		var err error
-		if body, rest, err = batchObject(rest, want, i == 1, path, commit); err != nil {
+	body, err := recall("file-at", root, commit, path, func() ([]byte, error) {
+		// One call: the commit first, so that a commit git does not have is
+		// told apart from a path the commit does not have.
+		out, err := sealedCall(ctx, root, nil, []byte(commit+"^{commit}\n"+commit+":"+path+"\n"), nil,
+			"cat-file", "--batch")
+		if err != nil {
 			return nil, err
 		}
-	}
-	return body, nil
+		rest := out
+		var body []byte
+		for i, want := range []string{"commit", "blob"} {
+			var err error
+			if body, rest, err = batchObject(rest, want, i == 1, path, commit); err != nil {
+				return nil, err
+			}
+		}
+		// The kept body holds only the blob, not the whole of git's output.
+		return slices.Clone(body), nil
+	})
+	return slices.Clone(body), err
 }
 
 // Uncommitted is every path git status lists in checkout: each tracked file
