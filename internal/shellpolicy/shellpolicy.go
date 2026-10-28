@@ -3647,10 +3647,35 @@ func isAbsolute(p string) bool {
 }
 
 // wordsIn pulls every path-shaped run of characters out of a piece of text, so
-// that a filename quoted inside a program is still a filename.
+// that a filename quoted inside a program is still a filename. The colon of a
+// drive, one letter and then `:/`, stays on its word: cut there, `ls C:/p/* |
+// xargs cp -t .` handed xargs the sources `C` and `/p/`, a driveless path the
+// hook joined onto the project, so on windows-latest the listing came back
+// empty and the copy into the project was allowed.
 func wordsIn(text string) []string {
-	return strings.FieldsFunc(text, func(r rune) bool { return !inAPath(r) })
+	var words []string
+	start := -1
+	for i, r := range text {
+		switch {
+		case inAPath(r):
+			if start < 0 {
+				start = i
+			}
+		case r == ':' && start >= 0 && i == start+1 && isDriveLetter(text[start]) &&
+			i+1 < len(text) && text[i+1] == '/':
+			// The colon of a drive stays on its word.
+		case start >= 0:
+			words = append(words, text[start:i])
+			start = -1
+		}
+	}
+	if start >= 0 {
+		words = append(words, text[start:])
+	}
+	return words
 }
+
+func isDriveLetter(b byte) bool { return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' }
 
 // inAPath reports whether a rune can appear in a path this cares about.
 func inAPath(r rune) bool {
