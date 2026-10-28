@@ -8,6 +8,7 @@ import (
 )
 
 func TestProcessAliveReportsThisProcessAsRunning(t *testing.T) {
+	t.Parallel()
 	if !processAlive(os.Getpid()) {
 		t.Error("processAlive said the running test process is not alive")
 	}
@@ -15,6 +16,7 @@ func TestProcessAliveReportsThisProcessAsRunning(t *testing.T) {
 
 // A process that has exited: signal 0 fails, and processAlive says so.
 func TestProcessAliveIsFalseForAProcessThatHasExited(t *testing.T) {
+	t.Parallel()
 	if processAlive(deadPID(t)) {
 		t.Error("processAlive said a process that has exited is still running")
 	}

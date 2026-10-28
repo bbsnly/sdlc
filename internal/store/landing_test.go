@@ -73,6 +73,7 @@ func slStatus(t *testing.T, dir string) string {
 // PLAN.md step 8: what the loop writes into a story's worktree is not a
 // change git sees there, where trunk's .gitignore says nothing about it.
 func TestEnsureStateIgnoredKeepsTheLoopsStateOutOfTheWorktreesChanges(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{})
 	ignore := slIgnoring(t, clStore(main))
 	if err := ignore.EnsureStateIgnored(wt); err != nil {
@@ -98,6 +99,7 @@ func TestEnsureStateIgnoredKeepsTheLoopsStateOutOfTheWorktreesChanges(t *testing
 // Asked again, it changes nothing, and an ignore file a person wrote there is
 // theirs.
 func TestEnsureStateIgnoredWritesOnlyWhereThereIsNone(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{})
 	ignore := slIgnoring(t, clStore(main))
 	if err := ignore.EnsureStateIgnored(wt); err != nil {
@@ -128,6 +130,7 @@ func TestEnsureStateIgnoredWritesOnlyWhereThereIsNone(t *testing.T) {
 // Ignoring never untracks: a file trunk tracks in the state directory is
 // still one git sees change, which is what doctor warns of (PLAN.md step 14).
 func TestEnsureStateIgnoredLeavesATrackedFileTracked(t *testing.T) {
+	t.Parallel()
 	main, _ := clRepository(t, map[string]model.Status{})
 	clWrite(t, filepath.Join(main, ".sdlc", "state", "tracked.json"), "{}\n")
 	commitAll(t, main, "state trunk tracks")

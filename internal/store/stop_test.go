@@ -12,6 +12,7 @@ import (
 )
 
 func TestStopCountIsEmptyBeforeAnythingIsSaved(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if got := s.StopCount(); got != (StopCount{}) {
 		t.Errorf("StopCount = %+v, want the zero value", got)
@@ -19,6 +20,7 @@ func TestStopCountIsEmptyBeforeAnythingIsSaved(t *testing.T) {
 }
 
 func TestSaveStopCountThenStopCountRoundTrips(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	want := StopCount{Story: "A-1", Blocks: 2, Progress: "abc123"}
 	if err := s.SaveStopCount(want); err != nil {
@@ -32,6 +34,7 @@ func TestSaveStopCountThenStopCountRoundTrips(t *testing.T) {
 // A count that will not read counts nothing: the next one written replaces
 // it, rather than a bad file wedging every future stop.
 func TestStopCountReadsAsZeroWhenTheFileIsMissingOrBroken(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	path := filepath.Join(s.root, filepath.FromSlash(stopFile))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -49,6 +52,7 @@ func TestStopCountReadsAsZeroWhenTheFileIsMissingOrBroken(t *testing.T) {
 // there, so one far enough below zero never reached the limit and the story
 // was never handed over.
 func TestStopCountReadsAsZeroWhenBlocksIsNegative(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if err := s.SaveStopCount(StopCount{Story: "A-1", Blocks: -1}); err != nil {
 		t.Fatal(err)
@@ -106,6 +110,7 @@ func stopFileKeys(t *testing.T, s *Store) []string {
 }
 
 func TestAC5TheStopCountKeepsWhenTheWaitBeganUnderWaitingSince(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	want := StopCount{Story: "A-1", Blocks: 2, Progress: "abc123", WaitingSince: aWaitBegan}
 	if err := s.SaveStopCount(want); err != nil {
@@ -130,6 +135,7 @@ func TestAC5TheStopCountKeepsWhenTheWaitBeganUnderWaitingSince(t *testing.T) {
 // A project that never sees a subagent keeps the file every release so far has
 // written: three keys, and no fourth that says nothing.
 func TestAC5AStopCountWithNoWaitBegunIsWrittenAsItAlwaysWas(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if err := s.SaveStopCount(StopCount{Story: "A-1", Blocks: 2, Progress: "abc123"}); err != nil {
 		t.Fatal(err)
@@ -142,6 +148,7 @@ func TestAC5AStopCountWithNoWaitBegunIsWrittenAsItAlwaysWas(t *testing.T) {
 // A count file an earlier release wrote has no time in it, and reads as a count
 // whose wait has not begun: the count it holds is kept.
 func TestAC5AStopCountFileWithoutTheTimeReadsAsNoWaitBegun(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeStopFile(t, s, `{"story":"A-1","blocks":2,"progress":"abc123"}`+"\n")
 	if got, want := s.StopCount(), (StopCount{Story: "A-1", Blocks: 2, Progress: "abc123"}); got != want {
@@ -157,6 +164,7 @@ func TestAC5AStopCountFileWithoutTheTimeReadsAsNoWaitBegun(t *testing.T) {
 // thirty minutes; read as it is, the hook counts the stop. The count beside it
 // is kept either way.
 func TestAC5AStoredTimeIsHandedBackAsItWasWrittenWhateverItSays(t *testing.T) {
+	t.Parallel()
 	for _, since := range []string{"yesterday", " ", "2026-10-08", "9999-12-31T23:59:59Z", "0001-01-01T00:00:00Z", "1791460200"} {
 		s := newStore(t)
 		raw, err := json.Marshal(map[string]any{"story": "A-1", "blocks": 2, "progress": "abc123", "waiting_since": since})
@@ -173,6 +181,7 @@ func TestAC5AStoredTimeIsHandedBackAsItWasWrittenWhateverItSays(t *testing.T) {
 // A count below zero is no stop's, and the time written beside it goes with it:
 // the whole count starts again.
 func TestAC5ANegativeStopCountTakesItsTimeWithIt(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if err := s.SaveStopCount(StopCount{Story: "A-1", Blocks: -1, WaitingSince: aWaitBegan}); err != nil {
 		t.Fatal(err)
@@ -183,6 +192,7 @@ func TestAC5ANegativeStopCountTakesItsTimeWithIt(t *testing.T) {
 }
 
 func TestAC5ClearingTheStopCountClearsWhenTheWaitBegan(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if err := s.SaveStopCount(StopCount{Story: "A-1", Blocks: 3, WaitingSince: aWaitBegan}); err != nil {
 		t.Fatal(err)
@@ -196,6 +206,7 @@ func TestAC5ClearingTheStopCountClearsWhenTheWaitBegan(t *testing.T) {
 }
 
 func TestClearStopCountRemovesTheFile(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if err := s.SaveStopCount(StopCount{Story: "A-1", Blocks: 1}); err != nil {
 		t.Fatal(err)
@@ -213,6 +224,7 @@ func TestClearStopCountRemovesTheFile(t *testing.T) {
 }
 
 func TestClearStopCountFailsWhenTheFileCannotBeRemoved(t *testing.T) {
+	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
 	s := newStore(t)
 	if err := s.SaveStopCount(StopCount{Story: "A-1", Blocks: 1}); err != nil {
@@ -232,6 +244,7 @@ func TestClearStopCountFailsWhenTheFileCannotBeRemoved(t *testing.T) {
 // RecordProgress is the record's hash by content: a different answer means
 // something was written to it since the last count was taken.
 func TestRecordProgressChangesWhenTheRecordChanges(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	r, err := s.Record("A-1")
 	if err != nil {
@@ -266,6 +279,7 @@ func TestRecordProgressChangesWhenTheRecordChanges(t *testing.T) {
 // work as it stands, moves the story to awaiting_human, and ends the
 // iteration if it was the story running.
 func TestEscalateRecordsTheQuestionEndsTheIterationAndMarksTheStoryWaiting(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	initGit(t, s.root)
 	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"in_progress"}]}`)
@@ -305,6 +319,7 @@ func TestEscalateRecordsTheQuestionEndsTheIterationAndMarksTheStoryWaiting(t *te
 
 // Escalating a story other than the one under way leaves the iteration alone.
 func TestEscalatingAnotherStoryLeavesTheIterationRunning(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	initGit(t, s.root)
 	writeBacklog(t, s, `{"stories":[
@@ -324,6 +339,7 @@ func TestEscalatingAnotherStoryLeavesTheIterationRunning(t *testing.T) {
 }
 
 func TestEscalateFailsWhenTheStoryIsNotInTheBacklog(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	initGit(t, s.root)
 	writeBacklog(t, s, `{"stories":[]}`)
@@ -334,6 +350,7 @@ func TestEscalateFailsWhenTheStoryIsNotInTheBacklog(t *testing.T) {
 }
 
 func TestEscalateFailsWhenTheTreeCannotBeMeasured(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	// No git repository: ReviewSubject falls through to gitx.TreeHash, which
 	// needs one.
@@ -344,6 +361,7 @@ func TestEscalateFailsWhenTheTreeCannotBeMeasured(t *testing.T) {
 }
 
 func TestEscalateFailsWhenActiveStateCannotBeRead(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	initGit(t, s.root)
 	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"in_progress"}]}`)
@@ -361,6 +379,7 @@ func TestEscalateFailsWhenActiveStateCannotBeRead(t *testing.T) {
 }
 
 func TestEscalateFailsWhenTheRecordCannotBeRead(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	initGit(t, s.root)
 	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"in_progress"}]}`)
@@ -375,6 +394,7 @@ func TestEscalateFailsWhenTheRecordCannotBeRead(t *testing.T) {
 }
 
 func TestEscalateFailsWhenTheRecordCannotBeSaved(t *testing.T) {
+	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
 	s := newStore(t)
 	initGit(t, s.root)
@@ -400,6 +420,7 @@ func TestEscalateFailsWhenTheRecordCannotBeSaved(t *testing.T) {
 // SetStoryStatus is the step after the record is saved, and can still fail on
 // its own: the backlog is a different file in a different directory.
 func TestEscalateFailsWhenTheStoryStatusCannotBeSet(t *testing.T) {
+	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
 	s := newStore(t)
 	initGit(t, s.root)
@@ -423,6 +444,7 @@ func TestEscalateFailsWhenTheStoryStatusCannotBeSet(t *testing.T) {
 // The iteration is ended last, and can still fail: it removes files of its
 // own, under .sdlc/state, a directory the story's record does not touch.
 func TestEscalateFailsWhenTheIterationCannotBeEnded(t *testing.T) {
+	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
 	s := newStore(t)
 	initGit(t, s.root)

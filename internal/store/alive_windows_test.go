@@ -12,6 +12,7 @@ import (
 // process left was waited out instead of broken, and on a busy runner the test
 // that breaks one saw its dead holder alive.
 func TestAProcessThatHasExitedIsNotRunningWhileAHandleToItIsOpen(t *testing.T) {
+	t.Parallel()
 	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

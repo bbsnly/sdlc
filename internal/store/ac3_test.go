@@ -41,6 +41,7 @@ func pqSlashSeparated(t *testing.T, msg, path string) {
 
 // AC-3: the worktrees .gitignore refusal names the .gitignore slash-separated.
 func TestAC3TheWorktreesGitignoreRefusalNamesItsPathSlashSeparated(t *testing.T) {
+	t.Parallel()
 	main := clTempDir(t)
 	err := EnsureWorktreesIgnored(main)
 	if err == nil {
@@ -53,6 +54,7 @@ func TestAC3TheWorktreesGitignoreRefusalNamesItsPathSlashSeparated(t *testing.T)
 // AC-3: a story held by another checkout names that checkout's path
 // slash-separated, in both what happened and why.
 func TestAC3TheHeldElsewhereRefusalNamesTheCheckoutSlashSeparated(t *testing.T) {
+	t.Parallel()
 	checkout := clTempDir(t)
 	err := HeldElsewhereError("US-001", Holder{Checkout: checkout, Live: true}, "a reason")
 	e := clError(t, err, sdlcerr.StoryHeldElsewhere)
@@ -85,6 +87,7 @@ func TestAC3TheLandingLockRefusalNamesItsPathSlashSeparated(t *testing.T) {
 // pass every check above and still let a crafted path forge text in a
 // refusal the model reads; this is what catches that.
 func TestAC3APathsOwnQuoteAndNewlineStayEscaped(t *testing.T) {
+	t.Parallel()
 	checkout := `/elsewhere/say "please" and` + "\n" + `look again`
 	err := HeldElsewhereError("US-001", Holder{Checkout: checkout, Live: true}, "a reason")
 	e := clError(t, err, sdlcerr.StoryHeldElsewhere)

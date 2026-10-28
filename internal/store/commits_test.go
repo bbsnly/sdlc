@@ -92,6 +92,7 @@ func otherSchema(t *testing.T, good []byte) string {
 // What one process watched is read back by another as the evidence for what a
 // story committed, so the round trip is the whole of this format's job.
 func TestObservedCommitsHoldsEveryHeadTheLoopWatchedAndNothingElse(t *testing.T) {
+	t.Parallel()
 	s := observing(t)
 	if got := observed(t, s, "A-1"); len(got) != 0 {
 		t.Errorf("a story nobody watched has observations %v", got)
@@ -129,6 +130,7 @@ func TestObservedCommitsHoldsEveryHeadTheLoopWatchedAndNothingElse(t *testing.T)
 // range built from another story's commits attributes that story's work to this
 // one, and nothing in the record would say so.
 func TestObservationsBelongToOneStoryAndAreClearedWithIt(t *testing.T) {
+	t.Parallel()
 	s := observing(t)
 	for id, head := range map[string]string{"A-1": headOne, "B-2": headTwo} {
 		if err := s.ObserveCommit(t.Context(), id, head); err != nil {
@@ -155,6 +157,7 @@ func TestObservationsBelongToOneStoryAndAreClearedWithIt(t *testing.T) {
 // Each body below names a head the story never committed on, so a reader that
 // believes one of them says so by listing it.
 func TestAnObservationThatCannotBeRecognisedIsReadAsNoneRatherThanAsEvidence(t *testing.T) {
+	t.Parallel()
 	s := observing(t)
 	if err := s.ObserveCommit(t.Context(), "A-1", headOne); err != nil {
 		t.Fatal(err)
@@ -202,6 +205,7 @@ func TestAnObservationThatCannotBeRecognisedIsReadAsNoneRatherThanAsEvidence(t *
 // would be trapping a finished story on its own note to itself. Where this goes
 // is not a matter of taste, and this is the measurement that decides it.
 func TestWritingDownWhatWasWatchedLeavesTheWorkingTreeClean(t *testing.T) {
+	t.Parallel()
 	s := observing(t)
 	if err := s.ObserveCommit(t.Context(), "A-1", headOne); err != nil {
 		t.Fatal(err)
@@ -223,6 +227,7 @@ func TestWritingDownWhatWasWatchedLeavesTheWorkingTreeClean(t *testing.T) {
 // A story id becomes part of a path, and it arrives here from a state file the
 // hook read, on the fast path of every allowed commit.
 func TestAnObservationCannotEscapeTheStoryItBelongsTo(t *testing.T) {
+	t.Parallel()
 	s := observing(t)
 	for _, id := range []string{"../../../etc", "..", "a/b", "", "x/../../y"} {
 		if err := s.ObserveCommit(t.Context(), id, headOne); err == nil {
@@ -242,6 +247,7 @@ func TestAnObservationCannotEscapeTheStoryItBelongsTo(t *testing.T) {
 // observation is named by a commit. No commit ever has it as a first parent --
 // a root commit has none at all -- so a range built on it is built on nothing.
 func TestTheAllZeroHeadIsNeverAnObservation(t *testing.T) {
+	t.Parallel()
 	s := observing(t)
 	// Refusing to write it and ignoring it on the way back both answer this;
 	// what must not happen is a range being built from it. The real head
@@ -261,6 +267,7 @@ func TestTheAllZeroHeadIsNeverAnObservation(t *testing.T) {
 // to read has to answer "nothing was watched" rather than something the gate
 // would weigh as evidence.
 func TestObservingOutsideARepositoryFailsAndReadsAsNothingWatched(t *testing.T) {
+	t.Parallel()
 	s := newStore(t) // no git repository at all
 	if err := s.ObserveCommit(t.Context(), "A-1", headOne); err == nil {
 		t.Error("an observation was written outside a repository")

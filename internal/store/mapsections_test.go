@@ -66,6 +66,7 @@ func msWritten(t *testing.T, s *Store, id, content string) {
 }
 
 func TestMapSectionsAreKeptInTheCommonGitDirectoryAndReadBackAsWritten(t *testing.T) {
+	t.Parallel()
 	main, _ := swNested(t)
 	s := clStore(main)
 
@@ -90,6 +91,7 @@ func TestMapSectionsAreKeptInTheCommonGitDirectoryAndReadBackAsWritten(t *testin
 // the place is the one every checkout shares, never the worktree's own git
 // directory or its working tree.
 func TestMapSectionsStoredInAStoryWorktreeAreTheMainCheckoutsToRead(t *testing.T) {
+	t.Parallel()
 	main, wt := swNested(t)
 	status := func(dir string) string {
 		t.Helper()
@@ -134,6 +136,7 @@ func TestMapSectionsStoredInAStoryWorktreeAreTheMainCheckoutsToRead(t *testing.T
 // Storing again replaces what was stored: the bookkeeper puts a refused set
 // right, and one story has one change, not two.
 func TestWritingMapSectionsAgainReplacesThem(t *testing.T) {
+	t.Parallel()
 	main, wt := swNested(t)
 	s := clStore(wt)
 	msWritten(t, s, "US-001", msSections)
@@ -152,6 +155,7 @@ func TestWritingMapSectionsAgainReplacesThem(t *testing.T) {
 }
 
 func TestOneStorysMapSectionsAreNotAnothers(t *testing.T) {
+	t.Parallel()
 	main, _ := swNested(t)
 	s := clStore(main)
 	msWritten(t, s, "US-001", msSections)
@@ -178,6 +182,7 @@ func TestOneStorysMapSectionsAreNotAnothers(t *testing.T) {
 // git directory for the story. Dropping what is not there is not a failure:
 // the caller drops after a commit whether or not a kill came between.
 func TestDroppingMapSectionsLeavesNothingAndDroppingNothingIsNotAFailure(t *testing.T) {
+	t.Parallel()
 	main, _ := swNested(t)
 	s := clStore(main)
 	if err := s.DropMapSections("US-001"); err != nil {
@@ -200,6 +205,7 @@ func TestDroppingMapSectionsLeavesNothingAndDroppingNothingIsNotAFailure(t *test
 // THREATS T4: a path built from a story id needs CheckID first. None of these
 // reaches the disk, in any of the three calls.
 func TestAStoryIDThatIsNotSafeNeverBecomesAPathForMapSections(t *testing.T) {
+	t.Parallel()
 	main, _ := swNested(t)
 	s := clStore(main)
 	clWrite(t, filepath.Join(main, ".git", "outside.md"), "git's own\n")
@@ -253,6 +259,7 @@ func msTree(t *testing.T, dir string) []string {
 // is told, with a code a person can look up, and nothing half-written is left
 // for the stop to read as a set.
 func TestMapSectionsThatCannotBeWrittenAreAnErrorAPersonCanRead(t *testing.T) {
+	t.Parallel()
 	t.Run("the directory's place is taken by a file", func(t *testing.T) {
 		main, _ := swNested(t)
 		clWrite(t, filepath.Join(main, ".git", "sdlc", "codemap"), "in the way\n")
@@ -298,6 +305,7 @@ func TestMapSectionsThatCannotBeWrittenAreAnErrorAPersonCanRead(t *testing.T) {
 // A file that is there and cannot be read is not "nothing stored": read as
 // nothing, a story's map change would vanish with nobody told (THREATS T6).
 func TestMapSectionsThatCannotBeReadAreAnErrorAndNotNothing(t *testing.T) {
+	t.Parallel()
 	t.Run("a directory where the file goes", func(t *testing.T) {
 		main, _ := swNested(t)
 		clWrite(t, filepath.Join(msFile(main), "inside.txt"), "in the way\n")
@@ -324,6 +332,7 @@ func TestMapSectionsThatCannotBeReadAreAnErrorAndNotNothing(t *testing.T) {
 // The sections are bytes to the store, kept as given: an empty set is still a
 // set somebody stored, and it is the caller that refuses it.
 func TestTheStoreKeepsWhateverBytesItIsGiven(t *testing.T) {
+	t.Parallel()
 	main, _ := swNested(t)
 	s := clStore(main)
 	for name, content := range map[string]string{
@@ -341,6 +350,7 @@ func TestTheStoreKeepsWhateverBytesItIsGiven(t *testing.T) {
 // THREATS T6: the next command has to be able to say which stories have a map
 // change that never reached trunk, without knowing their ids beforehand.
 func TestStoriesWithMapSectionsListsEachStoryThatHasThemAndNothingElse(t *testing.T) {
+	t.Parallel()
 	main, wt := swNested(t)
 	s := clStore(main)
 
@@ -376,6 +386,7 @@ func TestStoriesWithMapSectionsListsEachStoryThatHasThemAndNothingElse(t *testin
 }
 
 func TestStoriesWithMapSectionsSaysSoWhenTheDirectoryCannotBeListed(t *testing.T) {
+	t.Parallel()
 	main, _ := swNested(t)
 	clWrite(t, filepath.Join(main, ".git", "sdlc", "codemap"), "in the way\n")
 	got, err := clStore(main).StoriesWithMapSections()
@@ -389,6 +400,7 @@ func TestStoriesWithMapSectionsSaysSoWhenTheDirectoryCannotBeListed(t *testing.T
 // directory to keep anything in: each call says so rather than write beside
 // the project.
 func TestMapSectionsOutsideARepositoryAreAnError(t *testing.T) {
+	t.Parallel()
 	root := clTempDir(t)
 	s := clStore(root)
 	if err := s.WriteMapSections("US-001", []byte(msSections)); err == nil {

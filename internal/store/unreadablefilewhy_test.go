@@ -54,6 +54,7 @@ func ufNotTheFreeze(t *testing.T, what string, e *sdlcerr.Error) {
 // ---------------------------------------------------------------- AC-3
 
 func TestAC3APlanThatCannotBeOpenedIsSaidToBeThePlanAndNotTheFreeze(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	plan, ok := model.FindArtifact("plan")
 	if !ok {
@@ -79,6 +80,7 @@ func TestAC3APlanThatCannotBeOpenedIsSaidToBeThePlanAndNotTheFreeze(t *testing.T
 // ---------------------------------------------------------------- AC-4
 
 func TestAC4AGateRecordThatCannotBeOpenedIsNotBlamedOnTheFreeze(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	_, err := s.RecordProgress("A-1")
 	if err == nil {
@@ -95,6 +97,7 @@ func TestAC4AGateRecordThatCannotBeOpenedIsNotBlamedOnTheFreeze(t *testing.T) {
 // ---------------------------------------------------------------- AC-5 (guard: passes today)
 
 func TestAC5TheFreezeStillSaysItRecordsWhatATestFileContainsAndThisOneCouldNotBeOpened(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	_, err := s.HashFile("internal/invoice_test.go")
 	if err == nil {
@@ -117,6 +120,7 @@ func TestAC5TheFreezeStillSaysItRecordsWhatATestFileContainsAndThisOneCouldNotBe
 // What the freeze says about a file that is a test is not given to a document
 // by the change that took it from the others: the three callers differ.
 func TestAC5TheFreezesSentenceBelongsToTheFreezeAlone(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	plan, _ := model.FindArtifact("plan")
 	_, testErr := s.HashFile("a_test.go")

@@ -493,6 +493,7 @@ func TestAnInterruptedCommandGivesTheLockBack(t *testing.T) {
 // heldBy is the one message that has to explain a wait, and still has to say
 // something with no readable owner behind it.
 func TestHeldByNamesTheHolderOrSaysAnotherCommand(t *testing.T) {
+	t.Parallel()
 	if got := heldBy(filepath.Join(t.TempDir(), "missing")); got != "another command" {
 		t.Errorf("heldBy on a missing lock = %q, want %q", got, "another command")
 	}
@@ -523,6 +524,7 @@ func TestHeldByNamesTheHolderOrSaysAnotherCommand(t *testing.T) {
 // holderAlive judges a lock with no readable owner as gone: there is nobody to
 // wait for.
 func TestHolderAliveIsFalseWithoutAReadableOwnerFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if holderAlive(dir) {
 		t.Error("holderAlive is true with no owner file at all")
@@ -536,6 +538,7 @@ func TestHolderAliveIsFalseWithoutAReadableOwnerFile(t *testing.T) {
 }
 
 func TestBreakIfStaleRetriesWhenTheLockIsAlreadyGone(t *testing.T) {
+	t.Parallel()
 	if !breakIfStale(filepath.Join(t.TempDir(), "missing")) {
 		t.Error("breakIfStale did not say to retry when the lock was already gone by the time it looked")
 	}

@@ -55,6 +55,7 @@ func hoUnderWay(t *testing.T) (*Store, string) {
 }
 
 func TestAC1AnEscalationThatCannotBeCompletedLeavesTheRecordTheBacklogAndTheIterationAsTheyWere(t *testing.T) {
+	t.Parallel()
 	for _, stopped := range hoStopped {
 		t.Run(stopped.name, func(t *testing.T) {
 			skipIfPermissionsDoNotBind(t)
@@ -101,6 +102,7 @@ func TestAC1AnEscalationThatCannotBeCompletedLeavesTheRecordTheBacklogAndTheIter
 }
 
 func TestAC2AnEscalationRefusedAndThenMadeAgainAsksItsQuestionOnce(t *testing.T) {
+	t.Parallel()
 	for _, stopped := range hoStopped {
 		t.Run(stopped.name, func(t *testing.T) {
 			skipIfPermissionsDoNotBind(t)

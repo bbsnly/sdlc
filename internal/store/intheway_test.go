@@ -11,6 +11,7 @@ import (
 // were not there. macOS and Linux never ask it that, so it is held here on
 // every platform.
 func TestInTheWayIsTrueOnlyWhereSomethingIsThereThroughALink(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "codemap")
 	if err := os.WriteFile(file, []byte("in the way\n"), 0o644); err != nil {

@@ -16,6 +16,7 @@ import (
 // writes as a story moves. Waiting for a person and resuming must not disturb
 // it; the story itself must.
 func TestReviewSubjectIsStableAcrossAStatusMoveButNotOverTheStoryItself(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	initGit(t, s.root)
 	writeBacklog(t, s, "{\"stories\":[{\"id\":\"A-1\",\"title\":\"One\",\"status\":\"ready\"}]}\n")
@@ -62,6 +63,7 @@ const pinnedSubject = "2fdf8b115ee0e77d4f1b964dd024e169510fc661"
 // core.fileMode, which git init writes differently on Windows), so the tree is
 // the same everywhere.
 func TestReviewSubjectNeverChangesForTheSameTreeAndBacklog(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	initGit(t, s.root)
 	runGit(t, s.root, "config", "core.autocrlf", "false")
@@ -128,6 +130,7 @@ func TestReviewSubjectNeverChangesForTheSameTreeAndBacklog(t *testing.T) {
 // A backlog kept outside the repository cannot be hashed with an override in
 // its place, so the whole tree is what stands in for it.
 func TestReviewSubjectFallsBackToTheWholeTreeWhenTheBacklogIsOutsideTheRepository(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	initGit(t, s.root)
 	if err := os.WriteFile(filepath.Join(s.root, "README.md"), []byte("x\n"), 0o644); err != nil {
@@ -154,6 +157,7 @@ func TestReviewSubjectFallsBackToTheWholeTreeWhenTheBacklogIsOutsideTheRepositor
 }
 
 func TestReviewSubjectFallsBackToTheWholeTreeWhenTheBacklogCannotBeRead(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	initGit(t, s.root)
 	if err := os.WriteFile(filepath.Join(s.root, "README.md"), []byte("x\n"), 0o644); err != nil {
@@ -176,6 +180,7 @@ func TestReviewSubjectFallsBackToTheWholeTreeWhenTheBacklogCannotBeRead(t *testi
 }
 
 func TestReviewSubjectFallsBackToTheWholeTreeWhenTheBacklogDoesNotParse(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	initGit(t, s.root)
 	writeBacklog(t, s, "not json")
@@ -195,6 +200,7 @@ func TestReviewSubjectFallsBackToTheWholeTreeWhenTheBacklogDoesNotParse(t *testi
 }
 
 func TestReviewSubjectFailsWithoutAGitRepository(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[]}`)
 	if _, err := s.ReviewSubject(t.Context()); codeOf(t, err) != sdlcerr.RepositoryUnreadable {
@@ -207,6 +213,7 @@ func TestReviewSubjectFailsWithoutAGitRepository(t *testing.T) {
 // untouched. Both refuse rather than guess when the bytes are not what a
 // backlog with a "stories" array of objects would be.
 func TestEditStoryFailsSafelyOnBytesItDoesNotExpect(t *testing.T) {
+	t.Parallel()
 	change1 := change{"status", jsonString("done")}
 	for name, data := range map[string]string{
 		"not an object":                          `["stories"]`,
@@ -229,6 +236,7 @@ func TestEditStoryFailsSafelyOnBytesItDoesNotExpect(t *testing.T) {
 // A story without the id being edited, or whose id does not match, is passed
 // over rather than edited: editStory reports that nothing was found.
 func TestEditStoryReportsNoMatchWhenTheIDIsNotInTheBytes(t *testing.T) {
+	t.Parallel()
 	for name, data := range map[string]string{
 		"a different id": `{"stories":[{"id":"B-2","status":"ready"}]}`,
 		"no id at all":   `{"stories":[{"status":"ready"}]}`,
@@ -242,6 +250,7 @@ func TestEditStoryReportsNoMatchWhenTheIDIsNotInTheBytes(t *testing.T) {
 }
 
 func TestWithoutStoryFieldsFailsSafelyOnBytesItDoesNotExpect(t *testing.T) {
+	t.Parallel()
 	for name, data := range map[string]string{
 		"not an object":                          `["stories"]`,
 		"no stories key":                         `{"foo":1}`,
@@ -266,6 +275,7 @@ func TestWithoutStoryFieldsFailsSafelyOnBytesItDoesNotExpect(t *testing.T) {
 // differs by whether it comes first: firstStoryField takes the comma before
 // it when there is one, the comma after it when the match is first.
 func TestWithoutStoryFieldsRemovesAMatchedKeyWhicheverPositionItIsIn(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, data, want string }{
 		{
 			name: "the matched key is first among several",

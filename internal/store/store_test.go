@@ -93,6 +93,7 @@ func skipIfPermissionsDoNotBind(t *testing.T) {
 // A story id becomes a directory name, and ids come from a file an assistant
 // may have written.
 func TestCheckIDRejectsAnythingThatCouldEscapeTheStoriesDirectory(t *testing.T) {
+	t.Parallel()
 	for _, id := range []string{
 		"", ".", "..", "../escape", "a/b", `a\b`, "/absolute", "C:\\windows",
 		"has space", "tab\there", "null\x00byte", "-leading-dash",
@@ -109,6 +110,7 @@ func TestCheckIDRejectsAnythingThatCouldEscapeTheStoriesDirectory(t *testing.T) 
 }
 
 func TestCheckIDAcceptsTheIdsPeopleActuallyUse(t *testing.T) {
+	t.Parallel()
 	for _, id := range []string{"US-001", "AUTH-3", "PROJ-12.4", "a", "billing_2", "9LIVES-1", strings.Repeat("x", 64)} {
 		if err := CheckID(id); err != nil {
 			t.Errorf("CheckID(%q) rejected a reasonable id: %v", id, err)
@@ -117,6 +119,7 @@ func TestCheckIDAcceptsTheIdsPeopleActuallyUse(t *testing.T) {
 }
 
 func TestStoryDirRefusesAnUnsafeID(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if _, err := s.StoryDir("../../etc"); err == nil {
 		t.Fatal("StoryDir built a path from an id that escapes")
@@ -124,6 +127,7 @@ func TestStoryDirRefusesAnUnsafeID(t *testing.T) {
 }
 
 func TestBacklogMissing(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	_, err := s.Backlog()
 	if err == nil {
@@ -138,6 +142,7 @@ func TestBacklogMissing(t *testing.T) {
 }
 
 func TestBacklogRejectsBrokenJSON(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories": [`)
 	if _, err := s.Backlog(); codeOf(t, err) != sdlcerr.BacklogUnreadable {
@@ -148,6 +153,7 @@ func TestBacklogRejectsBrokenJSON(t *testing.T) {
 // A status the loop does not know was read as no status: the story was never
 // picked, never listed as waiting, and nothing said why.
 func TestBacklogRefusesAStatusTheLoopDoesNotKnow(t *testing.T) {
+	t.Parallel()
 	for _, story := range []string{
 		`{"id":"B-2","title":"Two","status":"Ready"}`,
 		`{"id":"B-2","title":"Two"}`,
@@ -172,6 +178,7 @@ func TestBacklogRefusesAStatusTheLoopDoesNotKnow(t *testing.T) {
 }
 
 func TestBacklogNamesTheStoryThatIsMissingAField(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"Fine","status":"ready"},{"id":"B-2","status":"ready"}]}`)
 
@@ -187,6 +194,7 @@ func TestBacklogNamesTheStoryThatIsMissingAField(t *testing.T) {
 // A second story with an id was never read: every lookup found the first, so
 // starting the backlog moved the other one, and doctor called the backlog fine.
 func TestBacklogRefusesTwoStoriesWithOneID(t *testing.T) {
+	t.Parallel()
 	for _, second := range []string{"A-1", "a-1"} {
 		s := newStore(t)
 		writeBacklog(t, s, `{"stories":[{"id":"B-0","title":"Other","status":"ready"},`+
@@ -212,6 +220,7 @@ func TestBacklogRefusesTwoStoriesWithOneID(t *testing.T) {
 }
 
 func TestBacklogRejectsAStoryWhoseIDWouldEscape(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[{"id":"../../oops","title":"Sneaky","status":"ready"}]}`)
 
@@ -225,6 +234,7 @@ func TestBacklogRejectsAStoryWhoseIDWouldEscape(t *testing.T) {
 }
 
 func TestStoryNotFoundListsWhatIsThere(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"ready"},{"id":"B-2","title":"Two","status":"ready"}]}`)
 
@@ -242,6 +252,7 @@ func TestStoryNotFoundListsWhatIsThere(t *testing.T) {
 }
 
 func TestSetStoryStatusSurvivesARoundTripAndKeepsUnknownFields(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeBacklog(t, s, `{"_schema":"x.json","stories":[
 	  {"id":"A-1","title":"One","status":"ready","priority":1,
@@ -281,6 +292,7 @@ func TestSetStoryStatusSurvivesARoundTripAndKeepsUnknownFields(t *testing.T) {
 // updated time, and nothing else: not the fields the tool has no name for, not
 // the order of the keys, not the way the file is laid out.
 func TestMovingAStoryChangesOnlyItsStatusAndUpdatedTime(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, before, after string
 	}{
@@ -374,6 +386,7 @@ func TestMovingAStoryChangesOnlyItsStatusAndUpdatedTime(t *testing.T) {
 // and linked into the project was replaced by a copy, leaving the file it
 // pointed to as it was; a private one became readable by everybody.
 func TestMovingAStoryKeepsTheBacklogALinkWithItsPermissions(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	target := filepath.Join(t.TempDir(), "stories.json")
 	if err := os.WriteFile(target, []byte(`{"stories":[{"id":"A-1","title":"One","status":"ready"}]}`+"\n"), 0o600); err != nil {
@@ -410,6 +423,7 @@ func TestMovingAStoryKeepsTheBacklogALinkWithItsPermissions(t *testing.T) {
 // so that waiting for a person and resuming does not make every review stale.
 // It leaves out nothing else.
 func TestTheBacklogReadsTheSameForReviewAfterAStoryWaitsAndResumes(t *testing.T) {
+	t.Parallel()
 	later := func() time.Time { return fixedTime.Add(48 * time.Hour) }
 	for _, before := range []string{
 		"{\n  \"stories\": [\n    {\n      \"id\": \"A-1\",\n      \"status\": \"ready\",\n" +
@@ -468,6 +482,7 @@ func TestTheBacklogReadsTheSameForReviewAfterAStoryWaitsAndResumes(t *testing.T)
 }
 
 func TestActiveIsEmptyBeforeAnIterationStarts(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	id, err := s.Active()
 	if err != nil {
@@ -479,6 +494,7 @@ func TestActiveIsEmptyBeforeAnIterationStarts(t *testing.T) {
 }
 
 func TestSetActivePropagatesAnUnsafeID(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if err := s.SetActive("../../etc"); codeOf(t, err) != sdlcerr.UnsafeStoryID {
 		t.Errorf("code = %v, want %s", err, sdlcerr.UnsafeStoryID)
@@ -486,6 +502,7 @@ func TestSetActivePropagatesAnUnsafeID(t *testing.T) {
 }
 
 func TestSetActiveThenClearActive(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if err := s.SetActive("A-1"); err != nil {
 		t.Fatal(err)
@@ -509,6 +526,7 @@ func TestSetActiveThenClearActive(t *testing.T) {
 // The session working the story is recorded while it is under way, and goes
 // with the iteration.
 func TestTheSessionWorkingTheStoryEndsWithTheIteration(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	path := filepath.Join(s.root, filepath.FromSlash(sessionFile))
 	recorded := func() string {
@@ -556,6 +574,7 @@ func TestTheSessionWorkingTheStoryEndsWithTheIteration(t *testing.T) {
 }
 
 func TestActiveRefusesATamperedStateFile(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	path := filepath.Join(s.root, filepath.FromSlash(activeFile))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -580,6 +599,7 @@ func TestActiveRefusesATamperedStateFile(t *testing.T) {
 // an empty one as naming no story and enforces nothing, so reading it here as
 // "no iteration" would have doctor report all well while nothing was enforced.
 func TestActiveRefusesAnEmptyStateFile(t *testing.T) {
+	t.Parallel()
 	for _, body := range []string{"", "\n", "  \n"} {
 		s := newStore(t)
 		path := filepath.Join(s.root, filepath.FromSlash(activeFile))
@@ -596,6 +616,7 @@ func TestActiveRefusesAnEmptyStateFile(t *testing.T) {
 }
 
 func TestRecordStartsFreshAndThenPersists(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 
 	r, err := s.Record("A-1")
@@ -625,6 +646,7 @@ func TestRecordStartsFreshAndThenPersists(t *testing.T) {
 }
 
 func TestRecordReportsACorruptFileAsABugRatherThanAnEdit(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	dir, _ := s.StoryDir("A-1")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -643,6 +665,7 @@ func TestRecordReportsACorruptFileAsABugRatherThanAnEdit(t *testing.T) {
 // An interrupted write must leave the previous file intact, never a truncated
 // one: these files are the loop's memory.
 func TestWriteLeavesNoTemporaryFilesBehind(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if err := s.SetActive("A-1"); err != nil {
 		t.Fatal(err)
@@ -662,6 +685,7 @@ func TestWriteLeavesNoTemporaryFilesBehind(t *testing.T) {
 }
 
 func TestWriteReplacesTheOldContentCompletely(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if err := s.SetActive("LONGER-STORY-ID"); err != nil {
 		t.Fatal(err)
@@ -679,6 +703,7 @@ func TestWriteReplacesTheOldContentCompletely(t *testing.T) {
 }
 
 func TestWriteFailureNamesThePathRelativeToTheRepository(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	// A file where a directory needs to be: the write cannot create its parent.
 	blocked := filepath.Join(s.root, config.Dir)
@@ -701,6 +726,7 @@ func TestWriteFailureNamesThePathRelativeToTheRepository(t *testing.T) {
 // A gate that ran twice has one record, not two: the second document replaces
 // the first, in place, where the next gate is already looking for it.
 func TestWritingADocumentTwiceLeavesTheSecondOne(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	analysis, _ := model.FindArtifact("analysis")
 
@@ -730,6 +756,7 @@ func TestWritingADocumentTwiceLeavesTheSecondOne(t *testing.T) {
 // The story id reaches this from a file an assistant may have written, and it
 // becomes a directory name.
 func TestADocumentCannotEscapeTheStoriesDirectory(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	analysis, _ := model.FindArtifact("analysis")
 
@@ -743,6 +770,7 @@ func TestADocumentCannotEscapeTheStoriesDirectory(t *testing.T) {
 // The hook refuses an id with ".." in it and enforces nothing for that
 // iteration. `sdlc start A..1` succeeded, so the loop ran with every rule off.
 func TestAStoryIDWithTwoDotsIsRefusedLikeTheHookRefusesIt(t *testing.T) {
+	t.Parallel()
 	for _, id := range []string{"A..1", "..", "A-1/..", "..A"} {
 		if CheckID(id) == nil {
 			t.Errorf("CheckID accepted %q, which the hook refuses", id)
@@ -759,6 +787,7 @@ func TestAStoryIDWithTwoDotsIsRefusedLikeTheHookRefusesIt(t *testing.T) {
 // link to a directory outside the repository, the stop hook wrote its count
 // there, and every other write of the loop's state would have followed it.
 func TestStateIsNotWrittenThroughALinkOutOfTheRepository(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	outside := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(s.root, ".sdlc"), 0o755); err != nil {
@@ -799,6 +828,7 @@ func TestStateIsNotWrittenThroughALinkOutOfTheRepository(t *testing.T) {
 // ---------------------------------------------------------------- Root, Config, CommitPause, StorySubject
 
 func TestConfigReturnsWhatTheStoreWasOpenedWith(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	cfg := config.Default()
 	cfg.Git.TrunkBranch = "trunk-x"
@@ -812,6 +842,7 @@ func TestConfigReturnsWhatTheStoreWasOpenedWith(t *testing.T) {
 }
 
 func TestCommitPauseReportsTheStorysRiskTierAndWhetherItWaits(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[
 		{"id":"A-1","title":"One","status":"ready"},
@@ -841,6 +872,7 @@ func TestCommitPauseReportsTheStorysRiskTierAndWhetherItWaits(t *testing.T) {
 // StorySubject is what a review is stamped with: the story's own content,
 // without the status and updated time the loop writes as it moves.
 func TestStorySubjectIsStableAcrossAMoveButChangesWithTheStory(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"ready","priority":1}]}`)
 	before, err := s.StorySubject("A-1")
@@ -874,6 +906,7 @@ func TestStorySubjectIsStableAcrossAMoveButChangesWithTheStory(t *testing.T) {
 }
 
 func TestStoryPropagatesABacklogReadError(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if _, _, err := s.Story("A-1"); codeOf(t, err) != sdlcerr.BacklogMissing {
 		t.Errorf("code = %v, want %s", err, sdlcerr.BacklogMissing)
@@ -883,6 +916,7 @@ func TestStoryPropagatesABacklogReadError(t *testing.T) {
 // ---------------------------------------------------------------- more backlog reading
 
 func TestBacklogFailsWhenTheFileCannotBeOpened(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	path := s.cfg.BacklogPath(s.root)
 	if err := os.MkdirAll(path, 0o755); err != nil { // a directory, not a file
@@ -894,6 +928,7 @@ func TestBacklogFailsWhenTheFileCannotBeOpened(t *testing.T) {
 }
 
 func TestBacklogRefusesAStoryWithNoID(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"ready"},{"title":"No id","status":"ready"}]}`)
 	_, err := s.Backlog()
@@ -910,6 +945,7 @@ func TestBacklogRefusesAStoryWithNoID(t *testing.T) {
 }
 
 func TestStoryNotFoundSaysTheBacklogIsEmpty(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[]}`)
 	_, _, err := s.Story("A-1")
@@ -925,6 +961,7 @@ func TestStoryNotFoundSaysTheBacklogIsEmpty(t *testing.T) {
 // describeBacklog shows only the first 8 ids and a count of the rest, so the
 // message stays readable against a backlog with hundreds of stories.
 func TestStoryNotFoundSummarisesALongBacklog(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	var stories []string
 	for i := 1; i <= 10; i++ {
@@ -947,6 +984,7 @@ func TestStoryNotFoundSummarisesALongBacklog(t *testing.T) {
 
 // One more than shown is "1 other", not "1 others".
 func TestStoryNotFoundUsesTheSingularForExactlyOneMoreStory(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	var stories []string
 	for i := 1; i <= 9; i++ {
@@ -967,6 +1005,7 @@ func TestStoryNotFoundUsesTheSingularForExactlyOneMoreStory(t *testing.T) {
 // ---------------------------------------------------------------- more SetStoryStatus
 
 func TestSetStoryStatusPropagatesABacklogReadError(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if err := s.SetStoryStatus("A-1", model.StatusInProgress); codeOf(t, err) != sdlcerr.BacklogMissing {
 		t.Errorf("code = %v, want %s", err, sdlcerr.BacklogMissing)
@@ -974,6 +1013,7 @@ func TestSetStoryStatusPropagatesABacklogReadError(t *testing.T) {
 }
 
 func TestSetStoryStatusOnAnUnknownStoryFails(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"ready"}]}`)
 	if err := s.SetStoryStatus("Z-9", model.StatusInProgress); codeOf(t, err) != sdlcerr.StoryNotFound {
@@ -985,6 +1025,7 @@ func TestSetStoryStatusOnAnUnknownStoryFails(t *testing.T) {
 // is what a review is stamped with, and a write that changed only a timestamp
 // would send a reviewer back to work that had not changed.
 func TestSetStoryStatusToItsCurrentStatusWritesNothing(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	body := `{"stories":[{"id":"A-1","title":"One","status":"ready"}]}`
 	writeBacklog(t, s, body)
@@ -1003,6 +1044,7 @@ func TestSetStoryStatusToItsCurrentStatusWritesNothing(t *testing.T) {
 }
 
 func TestMovingAStoryFailsWhenTheBacklogDirectoryIsNotWritable(t *testing.T) {
+	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
 	s := newStore(t)
 	writeBacklog(t, s, `{"stories":[{"id":"A-1","title":"One","status":"ready"}]}`)
@@ -1021,6 +1063,7 @@ func TestMovingAStoryFailsWhenTheBacklogDirectoryIsNotWritable(t *testing.T) {
 // ---------------------------------------------------------------- Acknowledge
 
 func TestAcknowledgedIsEmptyBeforeAnythingIsRecorded(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	sha, ok, err := s.Acknowledged()
 	if err != nil {
@@ -1032,6 +1075,7 @@ func TestAcknowledgedIsEmptyBeforeAnythingIsRecorded(t *testing.T) {
 }
 
 func TestAcknowledgeRecordsTheCommitAndAcknowledgedReadsItBack(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if err := s.Acknowledge("deadbeef"); err != nil {
 		t.Fatal(err)
@@ -1046,6 +1090,7 @@ func TestAcknowledgeRecordsTheCommitAndAcknowledgedReadsItBack(t *testing.T) {
 }
 
 func TestAcknowledgedFailsWhenTheFileCannotBeRead(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	path := filepath.Join(s.root, filepath.FromSlash(AcknowledgedFile))
 	if err := os.MkdirAll(path, 0o755); err != nil { // a directory, not a file
@@ -1059,6 +1104,7 @@ func TestAcknowledgedFailsWhenTheFileCannotBeRead(t *testing.T) {
 // ---------------------------------------------------------------- Active
 
 func TestActiveFailsWhenTheFileCannotBeOpened(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	path := filepath.Join(s.root, filepath.FromSlash(activeFile))
 	if err := os.MkdirAll(path, 0o755); err != nil { // a directory, not a file
@@ -1070,6 +1116,7 @@ func TestActiveFailsWhenTheFileCannotBeOpened(t *testing.T) {
 }
 
 func TestClearActiveFailsWhenTheStateCannotBeRemoved(t *testing.T) {
+	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
 	s := newStore(t)
 	if err := s.SetActive("A-1"); err != nil {
@@ -1141,6 +1188,7 @@ func TestBindSessionWithNoEnvironmentLeavesOrClearsTheRecord(t *testing.T) {
 }
 
 func TestWorkingSessionIsFalseForAnUnsafeValue(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	path := filepath.Join(s.root, filepath.FromSlash(sessionFile))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -1155,6 +1203,7 @@ func TestWorkingSessionIsFalseForAnUnsafeValue(t *testing.T) {
 }
 
 func TestBindSessionFailsWhenTheSessionFileCannotBeRemoved(t *testing.T) {
+	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
 	s := newStore(t)
 	if err := s.bindSession("session-a"); err != nil {
@@ -1176,6 +1225,7 @@ func TestBindSessionFailsWhenTheSessionFileCannotBeRemoved(t *testing.T) {
 // with no session to record: clearing whatever is there, rather than writing
 // one.
 func TestBindSessionDoesNotClearThroughALinkOutOfTheRepository(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	outside := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(s.root, ".sdlc"), 0o755); err != nil {
@@ -1199,6 +1249,7 @@ func TestBindSessionDoesNotClearThroughALinkOutOfTheRepository(t *testing.T) {
 // ---------------------------------------------------------------- the freeze
 
 func TestLockIsNilBeforeTheTestsAreFrozen(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	l, err := s.Lock()
 	if err != nil {
@@ -1210,6 +1261,7 @@ func TestLockIsNilBeforeTheTestsAreFrozen(t *testing.T) {
 }
 
 func TestSaveLockThenLockRoundTripsAndClearLockRemovesIt(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	want := model.NewLock("A-1", map[string]string{"a_test.go": "deadbeef"}, s.Now())
 	if err := s.SaveLock(want); err != nil {
@@ -1237,6 +1289,7 @@ func TestSaveLockThenLockRoundTripsAndClearLockRemovesIt(t *testing.T) {
 }
 
 func TestLockRejectsUnreadableOrCorruptFiles(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	path := filepath.Join(s.root, filepath.FromSlash(lockFile))
 	if err := os.MkdirAll(path, 0o755); err != nil { // a directory, not a file
@@ -1261,6 +1314,7 @@ func TestLockRejectsUnreadableOrCorruptFiles(t *testing.T) {
 }
 
 func TestClearLockFailsWhenTheFileCannotBeRemoved(t *testing.T) {
+	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
 	s := newStore(t)
 	if err := s.SaveLock(model.NewLock("A-1", nil, s.Now())); err != nil {
@@ -1280,6 +1334,7 @@ func TestClearLockFailsWhenTheFileCannotBeRemoved(t *testing.T) {
 // ---------------------------------------------------------------- HashFile
 
 func TestHashFileHashesContentAndFailsWhenItCannotBeRead(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	rel := "some/file_test.go"
 	path := filepath.Join(s.root, filepath.FromSlash(rel))
@@ -1308,6 +1363,7 @@ func TestHashFileHashesContentAndFailsWhenItCannotBeRead(t *testing.T) {
 // ---------------------------------------------------------------- records
 
 func TestRecordPropagatesAnUnsafeID(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	if _, err := s.Record("../../etc"); codeOf(t, err) != sdlcerr.UnsafeStoryID {
 		t.Errorf("code = %v, want %s", err, sdlcerr.UnsafeStoryID)
@@ -1315,6 +1371,7 @@ func TestRecordPropagatesAnUnsafeID(t *testing.T) {
 }
 
 func TestRecordFailsWhenTheFileCannotBeOpened(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	dir, _ := s.StoryDir("A-1")
 	recordPath := filepath.Join(dir, recordFile)
@@ -1327,6 +1384,7 @@ func TestRecordFailsWhenTheFileCannotBeOpened(t *testing.T) {
 }
 
 func TestRecordFillsInGatesWhenTheFileHasNone(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	dir, _ := s.StoryDir("A-1")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -1349,6 +1407,7 @@ func TestRecordFillsInGatesWhenTheFileHasNone(t *testing.T) {
 }
 
 func TestSaveRecordPropagatesAnUnsafeID(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	r := model.NewRecord("../../etc", s.Now())
 	if err := s.SaveRecord(r); codeOf(t, err) != sdlcerr.UnsafeStoryID {
@@ -1359,6 +1418,7 @@ func TestSaveRecordPropagatesAnUnsafeID(t *testing.T) {
 // ---------------------------------------------------------------- StoriesOnDisk
 
 func TestStoriesOnDiskListsOnlyDirectoriesWithSafeIDs(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	ids, err := s.StoriesOnDisk()
 	if err != nil {
@@ -1401,6 +1461,7 @@ func TestStoriesOnDiskListsOnlyDirectoriesWithSafeIDs(t *testing.T) {
 // Go maps to fs.ErrNotExist (syscall_windows.go), so StoriesOnDisk must not
 // take that as "no stories" (store.go:618-619 does today).
 func TestStoriesOnDiskFailsWhenTheDirectoryCannotBeReadAC2(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	storiesRoot := filepath.Join(s.root, filepath.FromSlash(storiesDir))
 	if err := os.MkdirAll(filepath.Dir(storiesRoot), 0o755); err != nil {
@@ -1422,6 +1483,7 @@ func TestStoriesOnDiskFailsWhenTheDirectoryCannotBeReadAC2(t *testing.T) {
 // ---------------------------------------------------------------- artifacts and reviews
 
 func TestArtifactStoredReportsWhetherTheFileIsOnDisk(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	analysis, _ := model.FindArtifact("analysis")
 	if s.ArtifactStored("A-1", analysis) {
@@ -1441,6 +1503,7 @@ func TestArtifactStoredReportsWhetherTheFileIsOnDisk(t *testing.T) {
 }
 
 func TestWriteArtifactFailsWhenTheFileCannotBeWritten(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	analysis, _ := model.FindArtifact("analysis")
 	dir, _ := s.StoryDir("A-1")
@@ -1454,6 +1517,7 @@ func TestWriteArtifactFailsWhenTheFileCannotBeWritten(t *testing.T) {
 }
 
 func TestWriteReviewKeepsEachRoundAndReviewPathAgrees(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	path1, err := s.WriteReview("A-1", model.GateDesignReview, "architect", 1, []byte("first\n"))
 	if err != nil {
@@ -1487,6 +1551,7 @@ func TestWriteReviewKeepsEachRoundAndReviewPathAgrees(t *testing.T) {
 }
 
 func TestWriteReviewFailsWhenTheFileCannotBeWritten(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	dir, _ := s.StoryDir("A-1")
 	reviewPath := filepath.Join(dir, reviewsDir, reviewName(model.GateDesignReview, "architect", 1))
@@ -1501,6 +1566,7 @@ func TestWriteReviewFailsWhenTheFileCannotBeWritten(t *testing.T) {
 // ---------------------------------------------------------------- small helpers
 
 func TestRelativeFallsBackToTheFullPathWhenItWouldLeaveTheRoot(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "x")
 	if got := relative(root, outside); got != outside {

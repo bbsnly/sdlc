@@ -79,6 +79,7 @@ func suRefusedNotIgnored(t *testing.T, err error, main, why string) {
 // ---------------------------------------------------------------- AC-1
 
 func TestAC1AStorysBranchIsStorySlashItsID(t *testing.T) {
+	t.Parallel()
 	for id, want := range map[string]string{"US-001": "story/US-001", "A-1": "story/A-1", "x.y_z": "story/x.y_z"} {
 		if got := StoryBranch(id); got != want {
 			t.Errorf("StoryBranch(%q) = %q, want %q", id, got, want)
@@ -89,6 +90,7 @@ func TestAC1AStorysBranchIsStorySlashItsID(t *testing.T) {
 // The worktree is .sdlc/worktrees/<ID> of the main checkout whichever checkout
 // asks: one path for every start, so that two of them cannot make two.
 func TestAC1AStorysWorktreeIsUnderTheMainCheckoutWhicheverCheckoutAsks(t *testing.T) {
+	t.Parallel()
 	main, wt := swNested(t)
 	elsewhere := clWorktree(t, main, "elsewhere")
 	want := filepath.Join(suWorktreesDir(main), "US-002")
@@ -106,6 +108,7 @@ func TestAC1AStorysWorktreeIsUnderTheMainCheckoutWhicheverCheckoutAsks(t *testin
 // An id that could leave .sdlc/worktrees is refused before it becomes a path,
 // and a checkout whose main checkout cannot be found has no place for one.
 func TestAC1AStoryWorktreeIsNotPlacedForAnUnsafeIDOrWithoutAMainCheckout(t *testing.T) {
+	t.Parallel()
 	main := suMain(t)
 	for _, id := range []string{"", "..", "../escape", "a/b", "-x"} {
 		if got, err := clStore(main).StoryWorktree(id); err == nil {
@@ -134,6 +137,7 @@ func TestAC1AStoryWorktreeIsNotPlacedForAnUnsafeIDOrWithoutAMainCheckout(t *test
 // worktree a person made elsewhere, and one under .sdlc/worktrees that is not
 // named for a story or not directly in it are not.
 func TestAC5OnlyTheWorktreeStartMakesIsAStorysOwnWorktree(t *testing.T) {
+	t.Parallel()
 	main, wt := swNested(t)
 	if id, ok := clStore(wt).StoryWorktreeOf(); !ok || id != "US-001" {
 		t.Errorf("the story worktree reads as %q, %v; want US-001's", id, ok)
@@ -174,6 +178,7 @@ func TestAC5OnlyTheWorktreeStartMakesIsAStorysOwnWorktree(t *testing.T) {
 // A start from the main checkout resumes a story where its worktree runs it,
 // and that is read from the worktree's own active.
 func TestAC5ActiveInIsTheStoryTheCheckoutAtDirIsRunning(t *testing.T) {
+	t.Parallel()
 	main, wt := swNested(t)
 	clState(t, wt, "US-001", "sess-wt")
 	if got := ActiveIn(wt); got != "US-001" {
@@ -194,6 +199,7 @@ func TestAC5ActiveInIsTheStoryTheCheckoutAtDirIsRunning(t *testing.T) {
 // checkout in one command, so the worktree is opened with the configuration
 // it reads and the same clock.
 func TestAC1AtOpensAnotherCheckoutWithItsOwnConfigurationAndTheSameClock(t *testing.T) {
+	t.Parallel()
 	main, wt := swNested(t)
 	clWrite(t, filepath.Join(wt, ".sdlc", "config.json"), `{"version": 1, "git": {"trunk_branch": "trunk-of-the-worktree"}}`)
 
@@ -222,6 +228,7 @@ func TestAC1AtOpensAnotherCheckoutWithItsOwnConfigurationAndTheSameClock(t *test
 }
 
 func TestAtRefusesACheckoutWhoseConfigurationDoesNotRead(t *testing.T) {
+	t.Parallel()
 	main, wt := swNested(t)
 	if _, err := clStore(main).At(wt); err == nil {
 		t.Error("At opened a checkout with no .sdlc/config.json")
@@ -332,6 +339,7 @@ func TestAC8LockStoryRefusesAnIDThatCannotNameAWorktree(t *testing.T) {
 // The file start writes hides every story worktree, and itself, from the main
 // checkout's git status, and changes neither .gitignore nor info/exclude.
 func TestAC2EnsureWorktreesIgnoredHidesEveryStoryWorktreeFromTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	main := suMain(t)
 	clWrite(t, filepath.Join(suWorktreesDir(main), "US-001", "work.go"), "package work\n")
 	if !strings.Contains(suStatus(t, main), ".sdlc/worktrees/") {
@@ -368,6 +376,7 @@ func TestAC2EnsureWorktreesIgnoredHidesEveryStoryWorktreeFromTheMainCheckout(t *
 // A .gitignore that is already there is read, never rewritten: every spelling
 // that hides everything passes, and one that does not is refused and kept.
 func TestAC4AGitignoreAlreadyThereIsKeptAndRefusedUnlessItHidesEverything(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, body string
 		hides      bool
@@ -409,6 +418,7 @@ func TestAC4AGitignoreAlreadyThereIsKeptAndRefusedUnlessItHidesEverything(t *tes
 // Before the first worktree there is nothing to check; where .sdlc/worktrees
 // is not a directory, making the worktree refuses it, and nothing is written.
 func TestAC4CheckWorktreesIgnoredLeavesWhatIsNotThereYetToTheStart(t *testing.T) {
+	t.Parallel()
 	main := suMain(t)
 	if err := CheckWorktreesIgnored(main); err != nil {
 		t.Errorf("with no .sdlc/worktrees yet: %v", err)
@@ -434,6 +444,7 @@ func TestAC4CheckWorktreesIgnoredLeavesWhatIsNotThereYetToTheStart(t *testing.T)
 // where there is none, not into a file, and not through a link to somewhere
 // else.
 func TestAC4EnsureWorktreesIgnoredWritesOnlyInARealDirectoryOfTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	t.Run("AC-4 no directory", func(t *testing.T) {
 		main := suMain(t)
 		suRefusedNotIgnored(t, EnsureWorktreesIgnored(main), main, "not a directory")
@@ -478,6 +489,7 @@ func TestAC4EnsureWorktreesIgnoredWritesOnlyInARealDirectoryOfTheMainCheckout(t 
 
 // What the file system refuses is said, as the file that could not be kept.
 func TestAC4AGitignoreThatCannotBeReadOrWrittenIsRefused(t *testing.T) {
+	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
 	t.Run("AC-4 the directory cannot be written", func(t *testing.T) {
 		main := suMain(t)
@@ -521,6 +533,7 @@ func TestAC4AGitignoreThatCannotBeReadOrWrittenIsRefused(t *testing.T) {
 // so what the refusal names is filepath.ToSlash(main), not main's own spelling
 // (which on Windows uses "\" and would otherwise be doubled by quoting it).
 func TestAC4ARefusedGitignoreIsSDLCE0053(t *testing.T) {
+	t.Parallel()
 	main := suMain(t)
 	clWrite(t, suIgnore(main), "!keep\n")
 	err := CheckWorktreesIgnored(main)

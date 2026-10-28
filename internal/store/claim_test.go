@@ -121,6 +121,7 @@ func clExists(path string) bool {
 // never shows, commits or pushes it, and says which story and which checkout,
 // and nothing else.
 func TestAClaimIsKeptWhereGitNeverShowsItAndNamesOnlyTheStoryAndTheCheckout(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{"US-001": model.StatusInProgress})
 	s := clStore(wt)
 	if err := s.Claim("US-001"); err != nil {
@@ -175,6 +176,7 @@ func TestAClaimIsKeptWhereGitNeverShowsItAndNamesOnlyTheStoryAndTheCheckout(t *t
 // its checkout is an absolute path; anything else says nothing reliable about
 // whose state to read.
 func TestT5AClaimFileThatDoesNotReadIsNoClaim(t *testing.T) {
+	t.Parallel()
 	statuses := map[string]model.Status{}
 	for i := 1; i <= 6; i++ {
 		statuses["US-00"+strconv.Itoa(i)] = model.StatusInProgress
@@ -201,6 +203,7 @@ func TestT5AClaimFileThatDoesNotReadIsNoClaim(t *testing.T) {
 // the first writing command then sweeps it away, and writes the claim for an
 // iteration held by its active alone.
 func TestD3AClaimOnAFinishedStoryHoldsNothingAndIsTidiedAway(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{
 		"US-001": model.StatusInProgress, "US-002": model.StatusInProgress, "US-004": model.StatusInProgress,
 	})
@@ -235,6 +238,7 @@ func TestD3AClaimOnAFinishedStoryHoldsNothingAndIsTidiedAway(t *testing.T) {
 // Housekeeping fails soft: a backlog that will not read is the next command's
 // to report, not the tidying's.
 func TestTidyClaimsLeavesEverythingAsItWasWhenItCannotRead(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{"US-001": model.StatusDone})
 	clWrite(t, clClaimFile(main, "US-001"), `{"schema":"sdlc/claim/1","story":"US-001","checkout":`+strconv.Quote(wt)+"}\n")
 	clWrite(t, filepath.Join(main, "user_stories.json"), "{ not a backlog")
@@ -247,6 +251,7 @@ func TestTidyClaimsLeavesEverythingAsItWasWhenItCannotRead(t *testing.T) {
 // D4: an active nobody's claim covers holds its story while the backlog has
 // the story in progress or waiting for a person, and not otherwise.
 func TestD4AnActiveAloneHoldsAStoryOnlyWhileTheBacklogHasItUnderWay(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		status model.Status
 		held   bool
@@ -275,6 +280,7 @@ func TestD4AnActiveAloneHoldsAStoryOnlyWhileTheBacklogHasItUnderWay(t *testing.T
 // tie, which adopts nobody, is refused to each, and names each contender with
 // what a person needs to tell them apart. The fix is fixed text (T9).
 func TestD4TwoCheckoutsNamingOneUnclaimedStoryTieAndNeitherHoldsIt(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{"US-001": model.StatusInProgress})
 	clState(t, main, "US-001", "sess-main")
 	clState(t, wt, "US-001", "")
@@ -322,6 +328,7 @@ func TestD4TwoCheckoutsNamingOneUnclaimedStoryTieAndNeitherHoldsIt(t *testing.T)
 // gone or never one, is not live, and its story is refused with SDLC-E0051,
 // naming the path and not in the fix.
 func TestAC8AClaimWhoseCheckoutIsNotACheckoutOfThisRepositoryIsNotLive(t *testing.T) {
+	t.Parallel()
 	stranger := clTempDir(t)
 	initGit(t, stranger)
 	for _, tc := range []struct {
@@ -360,6 +367,7 @@ func TestAC8AClaimWhoseCheckoutIsNotACheckoutOfThisRepositoryIsNotLive(t *testin
 // Step 6: a live holder elsewhere is refused with SDLC-E0050, naming the
 // checkout and why the command is that checkout's to run.
 func TestAC3AStoryALiveCheckoutHoldsElsewhereIsRefusedNamingItAndTheReason(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{"US-001": model.StatusInProgress})
 	if err := clStore(wt).Claim("US-001"); err != nil {
 		t.Fatal(err)
@@ -380,6 +388,7 @@ func TestAC3AStoryALiveCheckoutHoldsElsewhereIsRefusedNamingItAndTheReason(t *te
 }
 
 func TestReleaseClaimLetsTheStoryGoAndReleasingNothingIsNotAnError(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{"US-001": model.StatusInProgress})
 	s := clStore(main)
 	if err := clStore(wt).Claim("US-001"); err != nil {
@@ -409,6 +418,7 @@ func TestReleaseClaimLetsTheStoryGoAndReleasingNothingIsNotAnError(t *testing.T)
 
 // Step 5: a start that cannot write its claim fails; it is not soft.
 func TestAClaimThatCannotBeWrittenOrRemovedIsTheCommandsFailure(t *testing.T) {
+	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
 	main, wt := clRepository(t, map[string]model.Status{"US-001": model.StatusInProgress, "US-002": model.StatusInProgress})
 	s := clStore(wt)
@@ -431,6 +441,7 @@ func TestAClaimThatCannotBeWrittenOrRemovedIsTheCommandsFailure(t *testing.T) {
 // checkout holds the story its active names (architect R1-1). The checkouts
 // claims name are all read, whatever the limit on the others (R2-B1).
 func TestSessionHolderIsTheCheckoutHoldingTheStoryItsActiveNames(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{
 		"US-001": model.StatusInProgress, "US-002": model.StatusInProgress,
 	})
@@ -473,6 +484,7 @@ func TestSessionHolderIsTheCheckoutHoldingTheStoryItsActiveNames(t *testing.T) {
 // C13 and AC-10: holders are named where the repository has another checkout,
 // or a claim names one that is not the main checkout, and not otherwise.
 func TestShowsHoldersOnlyWhereThereIsAnotherCheckout(t *testing.T) {
+	t.Parallel()
 	single := clTempDir(t)
 	initGit(t, single)
 	clBacklog(t, single, map[string]model.Status{"US-001": model.StatusInProgress})
@@ -514,6 +526,7 @@ func TestShowsHoldersOnlyWhereThereIsAnotherCheckout(t *testing.T) {
 // to another checkout; and a story another checkout holds is handed to a person
 // from that checkout.
 func TestD3EscalatingKeepsTheClaimAndIsRefusedForAStoryHeldElsewhere(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{"US-001": model.StatusInProgress})
 	clState(t, wt, "US-001", "sess-wt")
 
@@ -531,6 +544,7 @@ func TestD3EscalatingKeepsTheClaimAndIsRefusedForAStoryHeldElsewhere(t *testing.
 // main checkout's; with no main checkout every shared path refuses with
 // SDLC-E0052, and the lock falls back to the checkout itself.
 func TestAWorktreesSharedPathsAndLockAreTheMainCheckouts(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{"US-001": model.StatusInProgress})
 	s := clStore(wt)
 	if err := s.SharedErr(); err != nil {
@@ -579,6 +593,7 @@ func TestAWorktreesSharedPathsAndLockAreTheMainCheckouts(t *testing.T) {
 // perf R1-1: the hook finds the checkout once, and the store it opens uses that
 // answer rather than finding it again.
 func TestNewInUsesTheCheckoutItIsGiven(t *testing.T) {
+	t.Parallel()
 	_, wt := clRepository(t, nil)
 	given := errors.New("the hook could not find it")
 	s := NewIn(&config.Project{Root: wt, Config: config.Default()}, config.Checkout{Root: wt}, given)
@@ -593,6 +608,7 @@ func TestNewInUsesTheCheckoutItIsGiven(t *testing.T) {
 // A clone brings links with everything else: the main checkout's records
 // reached through a link out of it are not written, from a worktree either.
 func TestARecordInTheMainCheckoutIsNotWrittenThroughALinkOutOfIt(t *testing.T) {
+	t.Parallel()
 	main, wt := clRepository(t, map[string]model.Status{"US-001": model.StatusInProgress})
 	elsewhere := clTempDir(t)
 	if err := os.MkdirAll(filepath.Join(main, ".sdlc"), 0o755); err != nil {

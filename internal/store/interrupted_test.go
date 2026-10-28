@@ -11,6 +11,7 @@ import (
 // A backlog linked into the project is written where the link points, so a
 // write of it that was killed leaves its file there, not beside the link.
 func TestAnInterruptedWriteOfALinkedBacklogIsClearedWhereItWasMade(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	target := filepath.Join(t.TempDir(), "stories.json")
 	if err := os.WriteFile(target, []byte(`{"stories":[]}`), 0o644); err != nil {
@@ -31,6 +32,7 @@ func TestAnInterruptedWriteOfALinkedBacklogIsClearedWhereItWasMade(t *testing.T)
 }
 
 func TestAnInterruptedWriteOfLoopStateIsCleared(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	left := filepath.Join(s.root, ".sdlc", "state", ".active.tmp3")
 	if err := os.MkdirAll(filepath.Dir(left), 0o755); err != nil {
@@ -49,6 +51,7 @@ func TestAnInterruptedWriteOfLoopStateIsCleared(t *testing.T) {
 // With .sdlc a link out of the repository, as a clone can bring one, the files
 // where it leads are somebody else's, and none of them is removed.
 func TestInterruptedWritesAreNotClearedThroughALinkOutOfTheRepository(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	outside := t.TempDir()
 	kept := []string{
@@ -79,6 +82,7 @@ func TestInterruptedWritesAreNotClearedThroughALinkOutOfTheRepository(t *testing
 // the directory is not writable -- is logged and left rather than crashing
 // the rest of the sweep.
 func TestClearInterruptedWritesDoesNotFailWhenALeftoverCannotBeRemoved(t *testing.T) {
+	t.Parallel()
 	skipIfPermissionsDoNotBind(t)
 	s := newStore(t)
 	dir := filepath.Join(s.root, filepath.FromSlash(stateDir))

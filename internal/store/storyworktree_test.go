@@ -31,6 +31,7 @@ func swNested(t *testing.T) (main, wt string) {
 }
 
 func TestAC1AStoryWorktreeInsideTheMainCheckoutSharesTheMainCheckoutsBacklogRecordsAndLock(t *testing.T) {
+	t.Parallel()
 	main, wt := swNested(t)
 	s := clStore(wt)
 	if err := s.SharedErr(); err != nil {
@@ -63,6 +64,7 @@ func TestAC1AStoryWorktreeInsideTheMainCheckoutSharesTheMainCheckoutsBacklogReco
 }
 
 func TestAC8AStoryWorktreeInsideTheMainCheckoutHoldsItsStoryAndItsSession(t *testing.T) {
+	t.Parallel()
 	main, wt := swNested(t)
 	clState(t, wt, "US-001", "sess-wt")
 	if err := clStore(wt).Claim("US-001"); err != nil {
