@@ -18,7 +18,7 @@ vars:
   # Pinned tool versions. Bump by hand -- Dependabot covers neither `go run`
   # pins nor the markdownlint lockfile. The `task` wrapper scripts read
   # TASK_VERSION from here.
-  TASK_VERSION: 3.53.1
+  TASK_VERSION: 3.54.0
   GOLANGCI_VERSION: 2.14.0
   ACTIONLINT_VERSION: 1.7.12
   GITLEAKS_VERSION: 8.30.1
