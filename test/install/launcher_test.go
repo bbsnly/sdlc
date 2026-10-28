@@ -591,6 +591,38 @@ func TestAC9OnTheFirstSessionStartTheLauncherFetchesThePluginsReleaseAndTheHookA
 	}
 }
 
+// AC-9: the sh launcher installs the genuine release under a plugin root whose
+// name holds a backslash, as every root does that Claude Code hands Git Bash
+// on Windows. GNU sha256sum starts its line with a backslash for such a name,
+// the launcher read that as the checksum, and the release it fetched never
+// matched its pin: on windows-11-arm the model's Bash found no sdlc (CI on
+// 38e0ed0). Here a name holds one on any system, so Linux, whose sha256sum is
+// GNU's, holds the launcher to it as well.
+func TestAC9TheLauncherInstallsTheReleaseUnderAPluginRootWhoseNameHoldsABackslash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a backslash separates names here: every root on Windows is this case, and the AC-9 test above runs it")
+	}
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("there is no sh here to run the launcher")
+	}
+	l := hookLauncher{name: "sh",
+		argv:  func(root, event string) []string { return []string{sh, filepath.Join(root, "bin", "sdlc-hook"), event} },
+		shell: func(command string) []string { return []string{sh, "-c", command} }}
+	releaseDir := t.TempDir()
+	sum := releaseArchive(t, releaseDir, versionedBuild(t))
+	m := serveMirror(t, releaseDir)
+	home := mkdirs(t, tempDir(t), `back\slash`)
+	s := session{home: home, root: installedPlugin(t, home, pinsFor(version, sum)),
+		data: mkdirs(t, home, ".claude", "plugins", "data", "sdlc"), project: freshRepository(t), base: m.base,
+		debug: filepath.Join(home, "launcher.log")}
+
+	oneObject(t, s.hook(t, l, "SessionStart", sessionStart(s.project, "session-a")))
+	if info, err := os.Stat(filepath.Join(s.root, "bin", "sdlc")); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("the first SessionStart installed no sdlc under a root named with a backslash: %v\n%s", err, s.fetched(t, l))
+	}
+}
+
 // AC-9: an archive that does not match the checksum pinned in the plugin is
 // never run, nor left where a later call would run it -- even from a mirror
 // that serves a checksums file vouching for it. And the session is told.
