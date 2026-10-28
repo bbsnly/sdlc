@@ -170,6 +170,7 @@ func lgStoryWork(t *testing.T, root string) (wt, tip string) {
 // checked out moves with it, so that the person's working tree shows the
 // story's work rather than the story's work reversed (THREATS T1).
 func TestAC1FastForwardMovesTrunkAndTheCheckoutThatHasItCheckedOut(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
 
@@ -200,6 +201,7 @@ func TestAC1FastForwardMovesTrunkAndTheCheckoutThatHasItCheckedOut(t *testing.T)
 // AC-1 and THREATS T7: where no checkout has trunk checked out, only the ref
 // moves, and the checkout that is on another branch is left as it was.
 func TestAC1FastForwardWhereNoCheckoutHasTrunkMovesOnlyTheRef(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
 	run(t, root, "switch", "--quiet", "-c", "spike")
@@ -224,6 +226,7 @@ func TestAC1FastForwardWhereNoCheckoutHasTrunkMovesOnlyTheRef(t *testing.T) {
 // AC-8: never a move to a commit that is not a descendant of where trunk was,
 // and never a new commit to make one.
 func TestAC8FastForwardRefusesACommitThatIsNotADescendantOfTrunk(t *testing.T) {
+	t.Parallel()
 	root, first := lgRepo(t)
 	write(t, root, "notes.txt", "trunk moved on\n")
 	lgCommit(t, root, "trunk moves on")
@@ -258,6 +261,7 @@ func TestAC8FastForwardRefusesACommitThatIsNotADescendantOfTrunk(t *testing.T) {
 // caller read. Trunk that moved in between is a refusal, never a move onto
 // wherever trunk has got to.
 func TestAC8AndT4FastForwardRefusesWhenTrunkIsNoLongerWhereItWasRead(t *testing.T) {
+	t.Parallel()
 	root, read := lgRepo(t)
 	_, to := lgStoryWork(t, root)
 	write(t, root, "notes.txt", "somebody else landed first\n")
@@ -280,6 +284,7 @@ func TestAC8AndT4FastForwardRefusesWhenTrunkIsNoLongerWhereItWasRead(t *testing.
 // person's changes stay as they were. So is an untracked file where the
 // fast-forward puts one, and a change that is only staged (THREATS T7).
 func TestAC6FastForwardRefusesOverUncommittedChangesToWhatItWritesAndNamesThem(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		prepare func(t *testing.T, root string)
@@ -326,6 +331,7 @@ func TestAC6FastForwardRefusesOverUncommittedChangesToWhatItWritesAndNamesThem(t
 // AC-6, the other side: a change to a file the fast-forward does not write is
 // not in its way, and is still there afterwards.
 func TestAC6FastForwardKeepsUncommittedChangesToWhatItDoesNotWrite(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
 	write(t, root, "notes.txt", "notes, a person's edit\n")
@@ -351,6 +357,7 @@ func TestAC6FastForwardKeepsUncommittedChangesToWhatItDoesNotWrite(t *testing.T)
 // THREATS T7: trunk checked out in a linked worktree other than the main
 // checkout is held to the same as the main checkout.
 func TestT7FastForwardHoldsALinkedWorktreeWithTrunkCheckedOutToTheSame(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
 	run(t, root, "switch", "--quiet", "-c", "spike")
@@ -381,6 +388,7 @@ func TestT7FastForwardHoldsALinkedWorktreeWithTrunkCheckedOutToTheSame(t *testin
 
 // AC-8: landing never reaches a remote.
 func TestAC8FastForwardNeverPushes(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	origin := filepath.Join(lgTempDir(t), "origin.git")
 	run(t, root, "init", "--quiet", "--bare", origin)
@@ -402,6 +410,7 @@ func TestAC8FastForwardNeverPushes(t *testing.T) {
 // THREATS T6: the repository's hooks are the session's to write, and none of
 // them runs when the tool moves trunk.
 func TestT6FastForwardRunsNoHookOfTheRepository(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the hooks here are shell scripts marked executable, which Windows does not run as such")
 	}
@@ -431,6 +440,7 @@ func TestT6FastForwardRunsNoHookOfTheRepository(t *testing.T) {
 // Every value FastForward hands git has been read by the caller, and one that
 // git would read as an option, or none at all, is refused before git sees it.
 func TestT10FastForwardRefusesANameOrCommitGitWouldReadAsAnOption(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
 	refs := lgRefs(t, root)
@@ -517,6 +527,7 @@ func lgFingerprint(t *testing.T, root, base, tip string, leaveOut ...string) str
 // reviewers saw. Trunk changed another file, and a line of billing.go far from
 // the story's own, so every line number in the story's hunk moved.
 func TestAC4TheSameChangeRebasedOntoAMovedTrunkHasTheSameFingerprint(t *testing.T) {
+	t.Parallel()
 	root, t0 := lgRepo(t)
 	wt := lgStory(t, root)
 	write(t, wt, "billing.go", lgFile(lgInsert(lgLines(), 26, "// story line A", "// story line B")))
@@ -545,6 +556,7 @@ func TestAC4TheSameChangeRebasedOntoAMovedTrunkHasTheSameFingerprint(t *testing.
 // a person would see in the code has another fingerprint -- whitespace, where
 // the lines go, a file's mode and binary content included.
 func TestAC5AChangeThatDiffersInAnyWayHasAnotherFingerprint(t *testing.T) {
+	t.Parallel()
 	c := lgChangesOn(t)
 	reviewed := lgFingerprint(t, c.root, c.t0, c.story)
 	if again := lgFingerprint(t, c.root, c.t0, c.story); again != reviewed {
@@ -573,6 +585,7 @@ func TestAC5AChangeThatDiffersInAnyWayHasAnotherFingerprint(t *testing.T) {
 // AC-5, a link and a submodule's commit are content too, set here straight in
 // the index so that the test runs where links cannot be made.
 func TestAC5ALinksTargetAndASubmodulesCommitArePartOfTheChange(t *testing.T) {
+	t.Parallel()
 	root, t0 := lgRepo(t)
 	blob := func(body string) string {
 		t.Helper()
@@ -653,6 +666,7 @@ func TestT3AndT6TheRepositorysConfigurationDoesNotMoveOrBlurTheFingerprint(t *te
 // one file, where the ref names another. The fingerprint is of the objects the
 // commits really have.
 func TestT6TheFingerprintIsOfTheObjectsAndNotOfTheirReplacements(t *testing.T) {
+	t.Parallel()
 	c := lgChangesOn(t)
 	reviewed := lgFingerprint(t, c.root, c.t0, c.story)
 	changed := lgFingerprint(t, c.root, c.t0, c.extraLine)
@@ -675,6 +689,7 @@ func TestT6TheFingerprintIsOfTheObjectsAndNotOfTheirReplacements(t *testing.T) {
 // and the bookkeeper's CODEMAP.md at the root, which the retro commits after
 // the reviews (the analysis's route R1). A CODEMAP.md anywhere else is code.
 func TestAC5TheFingerprintLeavesOutWhatItIsToldToAndNothingElse(t *testing.T) {
+	t.Parallel()
 	c := lgChangesOn(t)
 	leave := []string{".sdlc", "CODEMAP.md"}
 	reviewed := lgFingerprint(t, c.root, c.t0, c.story, leave...)
@@ -712,6 +727,7 @@ func TestAC5TheFingerprintLeavesOutWhatItIsToldToAndNothingElse(t *testing.T) {
 // P1: the fingerprint is of commits, not of whatever the checkout it is read
 // in has uncommitted.
 func TestAC5TheFingerprintIsOfTheCommitsNotTheWorkingTree(t *testing.T) {
+	t.Parallel()
 	c := lgChangesOn(t)
 	reviewed := lgFingerprint(t, c.root, c.t0, c.story)
 	write(t, c.root, "billing.go", "package billing // uncommitted\n")
@@ -722,6 +738,7 @@ func TestAC5TheFingerprintIsOfTheCommitsNotTheWorkingTree(t *testing.T) {
 }
 
 func TestFingerprintRefusesARevisionThatIsNoneOrAnOption(t *testing.T) {
+	t.Parallel()
 	c := lgChangesOn(t)
 	missing := strings.Repeat("0", 39) + "1"
 	for _, tc := range []struct{ base, tip string }{
@@ -743,6 +760,7 @@ func TestFingerprintRefusesARevisionThatIsNoneOrAnOption(t *testing.T) {
 // The ref check reads refs/heads/<branch> and nothing else: not a tag that
 // shares trunk's name, not an abbreviation git would guess at.
 func TestBranchTipIsTheCommitTheBranchIsOnAndNothingElse(t *testing.T) {
+	t.Parallel()
 	root, first := lgRepo(t)
 	write(t, root, "notes.txt", "second\n")
 	tip := lgCommit(t, root, "second")
@@ -797,6 +815,7 @@ func lgListed(t *testing.T, root, dir string) bool {
 // else does. Files git ignores are not somebody's uncommitted work, and do not
 // keep it: the loop's own state is among them.
 func TestAC7RemoveLandedWorktreeTakesAwayAWorktreeWithNothingUncommittedAndItsBranch(t *testing.T) {
+	t.Parallel()
 	root, wt, tip := lgLanded(t)
 	write(t, wt, "build/out", "build output\n")
 
@@ -824,6 +843,7 @@ func TestAC7RemoveLandedWorktreeTakesAwayAWorktreeWithNothingUncommittedAndItsBr
 // AC-7: uncommitted and untracked files keep the worktree, and are said, by
 // the name git has for each, however odd.
 func TestAC7RemoveLandedWorktreeKeepsAWorktreeHoldingUncommittedOrUntrackedFilesAndSaysWhich(t *testing.T) {
+	t.Parallel()
 	root, wt, tip := lgLanded(t)
 	write(t, wt, "a.txt", "a, changed after the story landed\n")
 	write(t, wt, "notes/idea.md", "half a thought\n")
@@ -856,6 +876,7 @@ func TestAC7RemoveLandedWorktreeKeepsAWorktreeHoldingUncommittedOrUntrackedFiles
 // THREATS T8: the branch is deleted only at the commit that landed. One that
 // moved on holds commits trunk does not, and they are not lost.
 func TestT8RemoveLandedWorktreeDeletesTheBranchOnlyAtTheLandedCommit(t *testing.T) {
+	t.Parallel()
 	root, wt, tip := lgLanded(t)
 	write(t, wt, "late.go", "package billing\n")
 	late := lgCommit(t, wt, "after the landing")
@@ -871,6 +892,7 @@ func TestT8RemoveLandedWorktreeDeletesTheBranchOnlyAtTheLandedCommit(t *testing.
 // THREATS T8: only the story's own worktree, on its branch, is taken away,
 // and never by force.
 func TestT8RemoveLandedWorktreeRefusesWhatIsNotALandedStorysWorktree(t *testing.T) {
+	t.Parallel()
 	t.Run("T8 the main checkout", func(t *testing.T) {
 		root, _, tip := lgLanded(t)
 		if _, err := RemoveLandedWorktree(t.Context(), root, root, "main", tip); err == nil {

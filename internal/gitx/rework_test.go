@@ -33,6 +33,7 @@ func rwSubmodule(t *testing.T, root, path string) {
 // plain file and an executable file, which land, from a directory, a link and
 // a submodule entry, which are refused, by reading this alone.
 func TestModeAtNamesTheKindOfEntryAtEachPath(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	run(t, root, "symbolic-ref", "HEAD", "refs/heads/main")
 	write(t, root, "plain.go", "package x\n")
@@ -92,6 +93,7 @@ func TestModeAtNamesTheKindOfEntryAtEachPath(t *testing.T) {
 // reach: a commit that holds nothing at all still answers every path with "",
 // not an error.
 func TestModeAtIsEmptyInAnEmptyCommit(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	run(t, root, "symbolic-ref", "HEAD", "refs/heads/main")
 	empty := lgCommit(t, root, "nothing yet")
@@ -109,6 +111,7 @@ func TestModeAtIsEmptyInAnEmptyCommit(t *testing.T) {
 // CODEMAP.md from a plain file into a directory, so the override taken from an
 // earlier commit -- where it was still a plain file -- cannot stand in for it.
 func TestTreeHashReturnsErrOverrideNotAFileWhenTheOverridesPathHoldsFilesBeneathIt(t *testing.T) {
+	t.Parallel()
 	root, _ := lgRepo(t)
 	write(t, root, "CODEMAP.md", "# map\n")
 	at := lgCommit(t, root, "map, as a plain file")
@@ -139,6 +142,7 @@ func TestTreeHashReturnsErrOverrideNotAFileWhenTheOverridesPathHoldsFilesBeneath
 // entry beneath it is already staged -- but that failure is an ordinary one,
 // not ErrOverrideNotAFile, because nothing here asked the question.
 func TestTreeHashWithAContentOverrideIsNotToldApartFromADirectoryByErrOverrideNotAFile(t *testing.T) {
+	t.Parallel()
 	root, _ := lgRepo(t)
 	write(t, root, "CODEMAP.md/evil.go", "package evil\n")
 
@@ -155,6 +159,7 @@ func TestTreeHashWithAContentOverrideIsNotToldApartFromADirectoryByErrOverrideNo
 // TestHoldsBeneathTellsEntriesUnderThePathFromThePathItself is holdsBeneath's
 // own table: ls-files --stage's shape, a line per entry, tab before the name.
 func TestHoldsBeneathTellsEntriesUnderThePathFromThePathItself(t *testing.T) {
+	t.Parallel()
 	const mode = "100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0"
 	for _, tc := range []struct {
 		name, staged string

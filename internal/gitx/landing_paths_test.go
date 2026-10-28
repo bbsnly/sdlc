@@ -44,6 +44,7 @@ func lpSkipIfPermissionsDoNotBind(t *testing.T) {
 // (already held), but one that is syntactically a dash-free word and still no
 // branch git will make, such as one holding "..".
 func TestFastForwardRefusesATrunkNameGitDoesNotTakeForABranch(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
 	refs := lgRefs(t, root)
@@ -61,6 +62,7 @@ func TestFastForwardRefusesATrunkNameGitDoesNotTakeForABranch(t *testing.T) {
 // says so with more than exit status 1, and FastForward passes that failure
 // on rather than reading it as "no".
 func TestFastForwardRefusesAToThatIsNotARealCommit(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	fake := strings.Repeat("f", 40)
 
@@ -75,6 +77,7 @@ func TestFastForwardRefusesAToThatIsNotARealCommit(t *testing.T) {
 // A trunk name that is a perfectly good branch name, and simply is not one
 // here, is fs.ErrNotExist, and nothing moves.
 func TestFastForwardRefusesATrunkBranchThatDoesNotExist(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
 
@@ -94,6 +97,7 @@ func TestFastForwardRefusesATrunkBranchThatDoesNotExist(t *testing.T) {
 // own directory is removed by hand rather than by "git worktree remove", is
 // silently left out, and is no reason to refuse.
 func TestCheckedOutLeavesOutAWorktreeWhoseDirectoryIsGone(t *testing.T) {
+	t.Parallel()
 	root, _ := lgRepo(t)
 	gone := luForced(t, root, "main")
 	if err := os.RemoveAll(gone); err != nil {
@@ -119,6 +123,7 @@ func TestCheckedOutLeavesOutAWorktreeWhoseDirectoryIsGone(t *testing.T) {
 // there", but permission refused -- is the checkout's own failure to report,
 // never silence.
 func TestPartWayRefusesAGitDirectoryItCannotRead(t *testing.T) {
+	t.Parallel()
 	lpSkipIfPermissionsDoNotBind(t)
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o000); err != nil {
@@ -142,6 +147,7 @@ func TestPartWayRefusesAGitDirectoryItCannotRead(t *testing.T) {
 // write phase is, after the earlier checkout has already been moved. putBack
 // must undo that earlier move, and trunk must be left exactly where it was.
 func TestFastForwardPutsBackAnEarlierCheckoutWhenALaterOnesIndexCannotBeWritten(t *testing.T) {
+	t.Parallel()
 	lpSkipIfPermissionsDoNotBind(t)
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
@@ -179,6 +185,7 @@ func TestFastForwardPutsBackAnEarlierCheckoutWhenALaterOnesIndexCannotBeWritten(
 // holds and ask checkCheckout to hash the file itself, and a file it cannot
 // then read is a refusal, not a held path silently dropped.
 func TestFastForwardRefusesAPathItCannotReadToHash(t *testing.T) {
+	t.Parallel()
 	lpSkipIfPermissionsDoNotBind(t)
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
@@ -204,6 +211,7 @@ func TestFastForwardRefusesAPathItCannotReadToHash(t *testing.T) {
 // standard input; a line break in the path itself is refused before git ever
 // sees it, rather than read as two lines.
 func TestFileAtRefusesAPathWithALineBreakInIt(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	if _, err := FileAt(t.Context(), root, from, "bad\npath"); err == nil {
 		t.Fatal("FileAt read a path with a line break in it")
@@ -217,6 +225,7 @@ func TestFileAtRefusesAPathWithALineBreakInIt(t *testing.T) {
 // print one is not plausible, but the parser does not trust that -- stops the
 // read rather than reading the next field as a path.
 func TestParseRawStopsAtARecordWithTooFewFields(t *testing.T) {
+	t.Parallel()
 	out := []byte(":100644 100644 " + strings.Repeat("a", 40) + "\x00short\x00")
 	if got := parseRaw(out); got != nil {
 		t.Errorf("parseRaw(%q) = %v, want nil on a record with too few fields", out, got)
@@ -229,6 +238,7 @@ func TestParseRawStopsAtARecordWithTooFewFields(t *testing.T) {
 // without a trailing newline: the fingerprint of a patch git printed without
 // one at the end of the file is not silently dropped.
 func TestHashPatchKeepsTheLastLineWithNoTrailingNewline(t *testing.T) {
+	t.Parallel()
 	in := bufio.NewReader(strings.NewReader(
 		"diff --git a/x b/x\n" +
 			"index " + strings.Repeat("a", 40) + ".." + strings.Repeat("b", 40) + " 100644\n" +
@@ -246,6 +256,7 @@ func TestHashPatchKeepsTheLastLineWithNoTrailingNewline(t *testing.T) {
 // A line longer than the reader's own buffer is carried whole across as many
 // reads as it takes, not cut at the buffer's edge.
 func TestHashPatchCarriesALineAcrossTheReadersBuffer(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("x", 40)
 	in := bufio.NewReaderSize(strings.NewReader("+"+long+"\n"), 16)
 	var out bytes.Buffer
@@ -277,6 +288,7 @@ func (r *lpFailingReader) Read(p []byte) (int, error) {
 // A read error that is not EOF stops hashPatch, and is the error a caller
 // sees: the change could not be read, not a truncated one read as whole.
 func TestHashPatchStopsAtAReadErrorThatIsNotEOF(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("boom")
 	in := bufio.NewReader(&lpFailingReader{body: []byte("no newline yet"), err: boom})
 	var out bytes.Buffer
@@ -292,6 +304,7 @@ func TestHashPatchStopsAtAReadErrorThatIsNotEOF(t *testing.T) {
 // two-tree merge runs; where that first write cannot be made, FastForward
 // refuses before read-tree is ever called, and trunk does not move.
 func TestFastForwardRefusesWhenTakingAPathInCannotWriteTheIndex(t *testing.T) {
+	t.Parallel()
 	lpSkipIfPermissionsDoNotBind(t)
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
@@ -318,6 +331,7 @@ func TestFastForwardRefusesWhenTakingAPathInCannotWriteTheIndex(t *testing.T) {
 // before the attempt, on disk and in the index alike, not left at whatever
 // the reversed two-tree merge happened to leave there.
 func TestFastForwardPutsBackHeldContentOnDiskAndInTheIndex(t *testing.T) {
+	t.Parallel()
 	lpSkipIfPermissionsDoNotBind(t)
 	root, from := lgRepo(t)
 	wt, to := lgStoryWork(t, root)
@@ -362,6 +376,7 @@ func TestFastForwardPutsBackHeldContentOnDiskAndInTheIndex(t *testing.T) {
 // takes the read past the empty case every other call in this file leaves it
 // at.
 func TestFingerprintOverridesADiffDriversOwnConfiguredAlgorithm(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
 	run(t, root, "config", "diff.custom.algorithm", "patience")
@@ -381,6 +396,7 @@ func TestFingerprintOverridesADiffDriversOwnConfiguredAlgorithm(t *testing.T) {
 // trunk itself: here it reaches trunk only through the commit FastForward is
 // asked to move to, on a branch of its own, and from stays untouched.
 func TestFastForwardRefusesAMergeCommitBetweenFromAndTo(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	run(t, root, "switch", "--quiet", "-c", "topic", "main")
 	write(t, root, "topic.txt", "topic work\n")
@@ -424,6 +440,7 @@ func TestSealedRefusesWhenNoTemporaryDirectoryCanBeMade(t *testing.T) {
 // for a rename or a copy, so the name it had is skipped rather than read as a
 // path of its own.
 func TestStatusPathsSkipsTheOldNameOfARenameOrACopy(t *testing.T) {
+	t.Parallel()
 	out := []byte("R  new.txt\x00old.txt\x00M  other.txt\x00")
 	got := statusPaths(out)
 	want := []string{"new.txt", "other.txt"}
@@ -439,6 +456,7 @@ func TestStatusPathsSkipsTheOldNameOfARenameOrACopy(t *testing.T) {
 // not the blob content a plain rehash reads, so it is refused rather than
 // written through.
 func TestFastForwardRefusesATrackedPathReplacedByASymbolicLink(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("making a symbolic link needs a privilege Windows does not give by default")
 	}

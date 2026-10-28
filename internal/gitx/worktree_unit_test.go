@@ -104,6 +104,7 @@ func wuFakeGit(t *testing.T, out string) {
 // ---------------------------------------------------------------- AC-4, T6: refused before anything is made
 
 func TestAC4AddWorktreeRefusesARelativePathAndMakesNothing(t *testing.T) {
+	t.Parallel()
 	root, _, _ := wtTrunk(t)
 	err := AddWorktree(t.Context(), root, filepath.Join(".sdlc", "worktrees", "US-1"), "story/US-1", "main")
 	wuSays(t, wuRefusal(t, err, "AddWorktree to a relative path"), "not an absolute path")
@@ -118,6 +119,7 @@ func TestAC4AddWorktreeRefusesARelativePathAndMakesNothing(t *testing.T) {
 // Nothing start makes goes through a link or over a file: git would make the
 // worktree wherever the link led.
 func TestAC4AndT6AddWorktreeNeverMakesTheWorktreeThroughALinkOrOverAFile(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		// prepare puts something in the way, and returns the directory a
@@ -185,6 +187,7 @@ func TestAC4AndT6AddWorktreeNeverMakesTheWorktreeThroughALinkOrOverAFile(t *test
 // A worktree asked for outside the checkout is held to the same: the
 // directory it goes in is not a link.
 func TestT6AddWorktreeOutsideTheCheckoutRefusesALinkAboveIt(t *testing.T) {
+	t.Parallel()
 	root, _, _ := wtTrunk(t)
 	outside := t.TempDir()
 	link := filepath.Join(outside, "linked")
@@ -201,6 +204,7 @@ func TestT6AddWorktreeOutsideTheCheckoutRefusesALinkAboveIt(t *testing.T) {
 // A place start cannot look into may hold somebody's work: it is refused, and
 // said, rather than written over.
 func TestAC4AddWorktreeRefusesAPlaceItCannotReadAndLeavesItAsItWas(t *testing.T) {
+	t.Parallel()
 	wuSkipIfPermissionsDoNotBind(t)
 	t.Run("AC-4 the story's directory cannot be read", func(t *testing.T) {
 		root, _, _ := wtTrunk(t)
@@ -250,6 +254,7 @@ func TestAC4AddWorktreeRefusesAPlaceItCannotReadAndLeavesItAsItWas(t *testing.T)
 // creating at that moment, which holds its lock, is in the way, and nothing is
 // made; the other git's lock is left for it.
 func TestAC4AndT6ABranchAnotherGitIsCreatingIsInTheWayAndNothingIsMade(t *testing.T) {
+	t.Parallel()
 	root, _, _ := wtTrunk(t)
 	wuFilesRefs(t, root)
 	lock := filepath.Join(root, ".git", "refs", "heads", "story", "US-1.lock")
@@ -273,6 +278,7 @@ func TestAC4AndT6ABranchAnotherGitIsCreatingIsInTheWayAndNothingIsMade(t *testin
 // checkout has the worktree registered and the branch made. AddWorktree takes
 // both away, and the directory, and the checkout it ran from is as it was.
 func TestAC4AWorktreeGitFailsToFinishIsTakenAwayWithItsBranch(t *testing.T) {
+	t.Parallel()
 	root, _, _ := wtTrunk(t)
 	wuHook(t, root, "echo 'post-checkout: refused by the test' >&2\nexit 1")
 	before := wtSnapshot(t, root)
@@ -305,6 +311,7 @@ func TestAC4AWorktreeGitFailsToFinishIsTakenAwayWithItsBranch(t *testing.T) {
 // An empty directory a person left where the worktree goes is theirs: it is
 // there again after the rollback, and empty.
 func TestAC4AndT6TheRollbackPutsBackAnEmptyDirectoryThatWasThere(t *testing.T) {
+	t.Parallel()
 	root, _, _ := wtTrunk(t)
 	wuHook(t, root, "exit 1")
 	dir := wtStoryDir(root, "US-1")
@@ -330,6 +337,7 @@ func TestAC4AndT6TheRollbackPutsBackAnEmptyDirectoryThatWasThere(t *testing.T) {
 // something else moved -- here the hook, committing on it -- holds work that
 // is not start's, and is kept and named.
 func TestAC4AndT6TheRollbackKeepsABranchSomethingElseMovedAndSaysSo(t *testing.T) {
+	t.Parallel()
 	root, _, tip := wtTrunk(t)
 	wuHook(t, root, "git -c user.email=a@b -c user.name=t commit --quiet --allow-empty -m 'the hook'\nexit 1")
 	dir := wtStoryDir(root, "US-1")
@@ -354,6 +362,7 @@ func TestAC4AndT6TheRollbackKeepsABranchSomethingElseMovedAndSaysSo(t *testing.T
 // A worktree git will not remove -- the hook locked it -- is named as still
 // registered, and the directory and branch start made still go.
 func TestAC4TheRollbackNamesAWorktreeGitWouldNotRemove(t *testing.T) {
+	t.Parallel()
 	root, _, _ := wtTrunk(t)
 	wuHook(t, root, `git worktree lock --reason "held by the test" .`+"\nexit 1")
 	dir := wtStoryDir(root, "US-1")
@@ -371,6 +380,7 @@ func TestAC4TheRollbackNamesAWorktreeGitWouldNotRemove(t *testing.T) {
 
 // A directory that cannot be removed is named as still there.
 func TestAC4TheRollbackNamesADirectoryThatCouldNotBeRemoved(t *testing.T) {
+	t.Parallel()
 	wuSkipIfPermissionsDoNotBind(t)
 	root, _, _ := wtTrunk(t)
 	wuHook(t, root, "mkdir -p stuck/inner && touch stuck/inner/file && chmod 555 stuck/inner\nexit 1")
@@ -390,6 +400,7 @@ func TestAC4TheRollbackNamesADirectoryThatCouldNotBeRemoved(t *testing.T) {
 // The rollback is handed a path and a branch, and a wrong one must not become
 // a deletion: each refusal leaves everything where it was.
 func TestAC4AndT6RemoveWorktreeRefusesWhatStartDidNotMake(t *testing.T) {
+	t.Parallel()
 	root, _, tip := wtTrunk(t)
 	dir := wtStoryDir(root, "US-1")
 	if err := AddWorktree(t.Context(), root, dir, "story/US-1", "main"); err != nil {
@@ -431,6 +442,7 @@ func TestAC4AndT6RemoveWorktreeRefusesWhatStartDidNotMake(t *testing.T) {
 // A worktree git will not remove, and a branch git will not delete, are each
 // said, with what is still there.
 func TestAC4RemoveWorktreeSaysWhatItCouldNotTakeAway(t *testing.T) {
+	t.Parallel()
 	t.Run("AC-4 a locked worktree", func(t *testing.T) {
 		root, _, _ := wtTrunk(t)
 		dir := wtStoryDir(root, "US-1")
@@ -475,6 +487,7 @@ func TestAC4RemoveWorktreeSaysWhatItCouldNotTakeAway(t *testing.T) {
 // A branch holding commits trunk does not have is a story's work, which start
 // and doctor never tell anybody to remove.
 func TestAheadCountsTheCommitsABranchHasThatTrunkDoesNot(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root, first, tip := wtTrunk(t)
 	run(t, root, "branch", "story/US-1", tip)
@@ -511,6 +524,7 @@ func TestAheadCountsTheCommitsABranchHasThatTrunkDoesNot(t *testing.T) {
 // What a new worktree cut from trunk has is what trunk commits, not what the
 // checkout has on disk.
 func TestHoldsIsWhetherACommitHasAFile(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root, _, _ := wtTrunk(t)
 	write(t, root, "only-on-disk.txt", "not committed\n")
@@ -537,6 +551,7 @@ func TestHoldsIsWhetherACommitHasAFile(t *testing.T) {
 // Version is the git doctor holds to the oldest one the worktree commands
 // work with.
 func TestVersionIsTheMajorAndMinorVersionOfTheGitOnPath(t *testing.T) {
+	t.Parallel()
 	major, minor, err := Version(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -587,6 +602,7 @@ func TestVersionReadsWhatEachBuildOfGitPrints(t *testing.T) {
 // Worktrees is what doctor reads each story worktree from: where it is, its
 // branch without refs/heads/, and whether its directory is gone.
 func TestWorktreesListsEveryCheckoutWithItsBranchAndWhetherItIsGone(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root, first, _ := wtTrunk(t)
 	story, detached, gone := wtStoryDir(root, "US-1"), wtStoryDir(root, "US-2"), wtStoryDir(root, "US-3")
@@ -631,6 +647,7 @@ func TestWorktreesListsEveryCheckoutWithItsBranchAndWhetherItIsGone(t *testing.T
 // sees it, and a remote that cannot be fetched is a failure, counted from a
 // trunk the repository does have.
 func TestAC3BehindRefusesAnOptionAndFailsWhereTheRemoteCannotBeFetched(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root := repo(t)
 	run(t, root, "symbolic-ref", "HEAD", "refs/heads/main")
@@ -651,6 +668,7 @@ func TestAC3BehindRefusesAnOptionAndFailsWhereTheRemoteCannotBeFetched(t *testin
 
 // HEAD on something that is not a branch is on no branch.
 func TestBranchIsNothingWhereHeadIsNotOnABranch(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	run(t, root, "symbolic-ref", "HEAD", "refs/heads/main")
 	commit(t, root, "first")
@@ -667,6 +685,7 @@ func TestBranchIsNothingWhereHeadIsNotOnABranch(t *testing.T) {
 // A revision git would read as an option, or none at all, is refused before
 // git sees it.
 func TestCommitsBetweenRefusesAnEmptyRevisionOrAnOption(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	tip := commit(t, root, "first")
 	for _, tc := range []struct{ base, end string }{{"", tip}, {tip, ""}, {"--all", tip}, {tip, "-n1"}} {

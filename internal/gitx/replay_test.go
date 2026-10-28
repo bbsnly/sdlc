@@ -165,6 +165,7 @@ func rpNoneRan(t *testing.T, marks string) {
 // checked out, both sides' lines in the file both changed, nothing part-way
 // and nothing uncommitted. The change is the one that was there before.
 func TestReplayPutsTheStorysCommitsOntoTheTrunkThatMoved(t *testing.T) {
+	t.Parallel()
 	root, fork := rpRepo(t)
 	wt, before := rpStory(t, root)
 	trunk := rpTrunkMoves(t, root)
@@ -213,6 +214,7 @@ func TestReplayPutsTheStorysCommitsOntoTheTrunkThatMoved(t *testing.T) {
 // hash -- a name that could move, a short hash, an option, nothing -- is
 // refused before git sees it, with the checkout as it was.
 func TestReplayRefusesAnythingButWholeCommitHashes(t *testing.T) {
+	t.Parallel()
 	root, fork := rpRepo(t)
 	wt, _ := rpStory(t, root)
 	trunk := rpTrunkMoves(t, root)
@@ -306,6 +308,7 @@ func rpApply(t *testing.T, dir, message string, files map[string]string) string 
 // commit, the index, the tracked files, an untracked file and a stash exactly
 // as they were before the replay began.
 func TestAReplayThatConflictsNamesThePathsAndIsAbandonedWithoutATrace(t *testing.T) {
+	t.Parallel()
 	for _, tc := range rpConflicts {
 		t.Run(tc.name, func(t *testing.T) {
 			root, fork := rpRepo(t)
@@ -354,6 +357,7 @@ func TestAReplayThatConflictsNamesThePathsAndIsAbandonedWithoutATrace(t *testing
 
 // Unmerged with nothing in conflict names nothing, and is no error.
 func TestUnmergedNamesNothingWhereNothingIsInConflict(t *testing.T) {
+	t.Parallel()
 	root, _ := rpRepo(t)
 	wt, _ := rpStory(t, root)
 	write(t, wt, "a.txt", "changed and not committed\n")
@@ -366,6 +370,7 @@ func TestUnmergedNamesNothingWhereNothingIsInConflict(t *testing.T) {
 // error, and what it leaves is either nothing or a rebase AbandonReplay
 // clears: the checkout ends exactly as it began, and trunk where it was.
 func TestAReplayWithNoCommitterFailsAndLeavesTheCheckoutAsItWas(t *testing.T) {
+	t.Parallel()
 	root, fork := rpRepo(t)
 	wt, _ := rpStory(t, root)
 	trunk := rpTrunkMoves(t, root)
@@ -396,6 +401,7 @@ func TestAReplayWithNoCommitterFailsAndLeavesTheCheckoutAsItWas(t *testing.T) {
 // is set aside for it, whatever the repository's rebase.autoStash says: a
 // stash the tool made is a change of the session's that the tool then owns.
 func TestReplayNeverStashesAnUncommittedChange(t *testing.T) {
+	t.Parallel()
 	root, fork := rpRepo(t)
 	wt, tip := rpStory(t, root)
 	trunk := rpTrunkMoves(t, root)
@@ -427,6 +433,7 @@ func TestReplayNeverStashesAnUncommittedChange(t *testing.T) {
 // not the patch-applying one, which names no unmerged path for some conflicts
 // and takes a fork point from the reflog.
 func TestReplayUsesTheMergeBackendWhateverTheRepositoryConfigures(t *testing.T) {
+	t.Parallel()
 	root, fork := rpRepo(t)
 	wt := lgStory(t, root)
 	rpApply(t, wt, "US-001", rpConflicts[0].story)
@@ -589,6 +596,7 @@ func rpNear(story, trunk bool) string {
 // from the other side, what the replay put under the story is what trunk
 // made. These two equalities are how the landing knows its own replay.
 func TestLinesFingerprintIsTheSameChangeAcrossAReplayBesideTrunksLines(t *testing.T) {
+	t.Parallel()
 	root, fork := rpRepo(t)
 	story := rpCommitOn(t, root, fork, "the story", map[string]string{"billing.go": rpNear(true, false), "invoice.go": "package billing\n"})
 	trunk := rpCommitOn(t, root, fork, "trunk", map[string]string{"billing.go": rpNear(false, true), "other.go": "package billing\n"})
@@ -614,6 +622,7 @@ func TestLinesFingerprintIsTheSameChangeAcrossAReplayBesideTrunksLines(t *testin
 // trunk's change under the story against trunk's change on top of it -- every
 // one of these fails at least one of the two.
 func TestLinesFingerprintFromBothSidesSeesAChangeThatIsNotTheOneReplayed(t *testing.T) {
+	t.Parallel()
 	root, _ := rpRepo(t)
 	// A base whose billing.go holds one line twice, far apart.
 	twice := lgInsert(lgInsert(lgLines(), 20, "// the same line"), 8, "// the same line")
@@ -670,6 +679,7 @@ func TestLinesFingerprintFromBothSidesSeesAChangeThatIsNotTheOneReplayed(t *test
 // A change that differs in any way has another fingerprint: a line more, a
 // space, a tab, a mode, a binary file's bytes.
 func TestLinesFingerprintDiffersForAChangeThatDiffersInAnyWay(t *testing.T) {
+	t.Parallel()
 	c := lgChangesOn(t)
 	reviewed := rpLines(t, c.root, c.t0, c.story)
 	for name, tip := range map[string]string{

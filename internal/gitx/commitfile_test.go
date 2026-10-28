@@ -119,6 +119,7 @@ func cfRefused(t *testing.T, commit string, err error, root, before string) {
 // AC-3 and AC-4: the commit has the one parent it was given and differs from
 // it at CODEMAP.md alone, as a plain file holding exactly the content.
 func TestAC3AC4CommitFileMakesACommitOnItsParentThatChangesTheOnePath(t *testing.T) {
+	t.Parallel()
 	root, tip := cfRepo(t)
 	content := cfBody + "\n## refund.go\n\nKeeps refunds.\n"
 
@@ -143,6 +144,7 @@ func TestAC3AC4CommitFileMakesACommitOnItsParentThatChangesTheOnePath(t *testing
 // The fourth answer: where trunk has no CODEMAP.md the commit adds it, and
 // that is still one path.
 func TestAC4CommitFileAddsTheFileWhereItsParentHasNone(t *testing.T) {
+	t.Parallel()
 	root, tip := rpRepo(t)
 	commit, err := CommitFile(t.Context(), root, tip, cfMap, []byte(cfBody), "docs: map US-001")
 	if err != nil {
@@ -154,6 +156,7 @@ func TestAC4CommitFileAddsTheFileWhereItsParentHasNone(t *testing.T) {
 // A message of more than one line is the commit's message, whole: the record
 // of who wrote the text and that nobody read it goes there (THREATS T7).
 func TestCommitFileKeepsAMessageOfSeveralLines(t *testing.T) {
+	t.Parallel()
 	root, tip := cfRepo(t)
 	message := "docs: map US-001\n\nWritten by the story's bookkeeper and applied by sdlc stop.\n-- not an option\n"
 	commit, err := CommitFile(t.Context(), root, tip, cfMap, []byte(cfBody+"\nMore.\n"), message)
@@ -169,6 +172,7 @@ func TestCommitFileKeepsAMessageOfSeveralLines(t *testing.T) {
 // nothing a checkout holds. No ref moves, HEAD stays, and the index and the
 // working tree are as they were, with whatever a person left in them.
 func TestAC4CommitFileMovesNoRefAndTouchesNoIndexOrWorkingTree(t *testing.T) {
+	t.Parallel()
 	root, tip := cfRepo(t)
 	// A person's work in the checkout that has trunk checked out: an edit to
 	// the map itself, a staged file, an untracked one. THREATS T8.
@@ -197,6 +201,7 @@ func TestAC4CommitFileMovesNoRefAndTouchesNoIndexOrWorkingTree(t *testing.T) {
 // The landing runs in the story's worktree, whose index and HEAD are the
 // story's. The commit is the same from there.
 func TestCommitFileFromALinkedWorktreeBuildsOnTheParentAndNotOnThatCheckout(t *testing.T) {
+	t.Parallel()
 	root, tip := cfRepo(t)
 	wt := lgStory(t, root)
 	write(t, wt, "story.go", "package billing\n")
@@ -219,6 +224,7 @@ func TestCommitFileFromALinkedWorktreeBuildsOnTheParentAndNotOnThatCheckout(t *t
 // given. No clean filter, no end-of-line conversion and no attribute of the
 // repository sees them, so the caller's own checks are the only ones.
 func TestCommitFileCommitsTheBytesAsGivenPastEveryFilter(t *testing.T) {
+	t.Parallel()
 	root, _ := cfRepo(t)
 	bin, marks := lgTempDir(t), lgTempDir(t)
 	run(t, root, "config", "filter.steer.clean", "'"+rpScript(t, bin, marks, "clean", "cat")+"'")
@@ -309,6 +315,7 @@ func TestCommitFileRunsNoHookSignsNothingAndAsksNoEditor(t *testing.T) {
 // person can read, a failed map step for the caller, and never a commit under
 // a name made up from the machine's.
 func TestAC6CommitFileWithNoCommitterFailsAndMakesNothing(t *testing.T) {
+	t.Parallel()
 	root, tip := cfRepo(t)
 	run(t, root, "config", "--unset", "user.email")
 	run(t, root, "config", "--unset", "user.name")
@@ -326,6 +333,7 @@ func TestAC6CommitFileWithNoCommitterFailsAndMakesNothing(t *testing.T) {
 // CODEMAP.md is a directory, putting a file there takes every path beneath it
 // away, so there is no commit and the error names those paths.
 func TestAC5CommitFileRefusesWhereThePathIsADirectoryAndNamesWhatIsBeneathIt(t *testing.T) {
+	t.Parallel()
 	root, _ := rpRepo(t)
 	write(t, root, "CODEMAP.md/notes.md", "kept by hand\n")
 	write(t, root, "CODEMAP.md/deeper/more.md", "and more\n")
@@ -340,6 +348,7 @@ func TestAC5CommitFileRefusesWhereThePathIsADirectoryAndNamesWhatIsBeneathIt(t *
 // AC-6: a link or a submodule at the path changes no other path, and is still
 // not a plain file to put text in. Git's own objects say which it is.
 func TestAC6CommitFileRefusesWhereThePathIsALinkOrASubmodule(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, mode string }{
 		{"a symbolic link", "120000"},
 		{"a submodule", "160000"},
@@ -372,6 +381,7 @@ func TestAC6CommitFileRefusesWhereThePathIsALinkOrASubmodule(t *testing.T) {
 // A commit that changes nothing is not a change to the map: the caller is told
 // rather than handed a commit trunk would move to for no reason.
 func TestCommitFileRefusesContentTheParentAlreadyHolds(t *testing.T) {
+	t.Parallel()
 	root, tip := cfRepo(t)
 	before := cfState(t, root)
 	commit, err := CommitFile(t.Context(), root, tip, cfMap, []byte(cfBody), "docs: map US-001")
@@ -383,6 +393,7 @@ func TestCommitFileRefusesContentTheParentAlreadyHolds(t *testing.T) {
 // would resolve for it: a branch can move between the read and the commit, and
 // a word that starts with a dash is an option.
 func TestCommitFileRefusesAParentThatIsNotACommitsFullHash(t *testing.T) {
+	t.Parallel()
 	root, tip := cfRepo(t)
 	tree := wtGitOut(t, root, "rev-parse", tip+"^{tree}")
 	before := cfState(t, root)
@@ -411,6 +422,7 @@ func TestCommitFileRefusesAParentThatIsNotACommitsFullHash(t *testing.T) {
 // that leaves the repository, names git's own directory, or reads as an
 // option is refused before git sees it.
 func TestCommitFileRefusesAPathThatIsNotAPlainOneInsideTheRepository(t *testing.T) {
+	t.Parallel()
 	root, tip := cfRepo(t)
 	before := cfState(t, root)
 	for name, path := range map[string]string{
@@ -435,6 +447,7 @@ func TestCommitFileRefusesAPathThatIsNotAPlainOneInsideTheRepository(t *testing.
 }
 
 func TestCommitFileRefusesAnEmptyMessage(t *testing.T) {
+	t.Parallel()
 	root, tip := cfRepo(t)
 	before := cfState(t, root)
 	for _, message := range []string{"", "\n\n", "   "} {
@@ -445,6 +458,7 @@ func TestCommitFileRefusesAnEmptyMessage(t *testing.T) {
 
 // A directory that is no repository is an error, not a commit somewhere else.
 func TestCommitFileOutsideARepositoryFails(t *testing.T) {
+	t.Parallel()
 	_, tip := cfRepo(t)
 	commit, err := CommitFile(t.Context(), lgTempDir(t), tip, cfMap, []byte(cfBody), "docs: map US-001")
 	if err == nil || commit != "" {

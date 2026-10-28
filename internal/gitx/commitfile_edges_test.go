@@ -12,6 +12,7 @@ import (
 // AC-4: a parent whose tree is empty still gets the file, and the commit is
 // that one path.
 func TestAC4CommitFileAddsTheFileToAParentThatHoldsNothing(t *testing.T) {
+	t.Parallel()
 	root, _ := rpRepo(t)
 	mktree := wtExec(t, root, "mktree")
 	mktree.Stdin = strings.NewReader("")
@@ -39,6 +40,7 @@ func TestAC4CommitFileAddsTheFileToAParentThatHoldsNothing(t *testing.T) {
 // that no such checkout can hold. There is no commit, and the error names the
 // file the parent has.
 func TestAC5CommitFileRefusesWhereTheParentHasThePathInAnotherCase(t *testing.T) {
+	t.Parallel()
 	root, _ := rpRepo(t)
 	write(t, root, "codemap.md", "# the map, by another name\n")
 	tip := lgCommit(t, root, "the map in lower case")

@@ -6,11 +6,13 @@ import (
 )
 
 func TestChangesOutsideARepositoryFails(t *testing.T) {
+	t.Parallel()
 	_, err := Changes(t.Context(), t.TempDir())
 	wantUnreadable(t, err, "Changes on a directory that is not a repository")
 }
 
 func TestChangesNamesEveryPathNotCommitted(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	write(t, root, "moved.txt", "a\n")
 	write(t, root, "kept.txt", "k\n")

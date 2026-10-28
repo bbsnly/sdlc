@@ -41,6 +41,7 @@ func sameDir(t *testing.T, a, b string) bool {
 // leave the tree dirty and the gate would refuse the story on its own
 // bookkeeping.
 func TestTheGitDirectoryIsWhereARepositoryKeepsWhatIsNotInTheTree(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	commit(t, root, "first")
 
@@ -86,6 +87,7 @@ func TestTheGitDirectoryIsWhereARepositoryKeepsWhatIsNotInTheTree(t *testing.T) 
 // is settled by what each one was made on, so every commit arrives with its
 // first parent beside it.
 func TestCommitsBetweenListsTheRangeNewestFirstWithEachCommitsFirstParent(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	base := commit(t, root, "base")
 	first := commit(t, root, "first")
@@ -124,6 +126,7 @@ func TestCommitsBetweenListsTheRangeNewestFirstWithEachCommitsFirstParent(t *tes
 // tell which commits the session made, and it needs to see that the range holds
 // more than those before it believes the range.
 func TestAMergeCarriesItsFirstParentAndItsRangeCarriesTheWholeSideBranch(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	base := commitFile(t, root, "base.txt", "base")
 	ours := commitFile(t, root, "ours.txt", "ours")

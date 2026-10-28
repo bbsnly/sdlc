@@ -47,6 +47,7 @@ func write(t *testing.T, root, rel, body string) {
 // committed, and must not see build output. Both halves are why this asks git
 // instead of walking the tree.
 func TestTheWorkingTreeIsTrackedFilesPlusWhatIsNotIgnored(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	write(t, root, ".gitignore", "dist/\n*.log\n")
 	write(t, root, "main.go", "package main\n")
@@ -79,6 +80,7 @@ func TestTheWorkingTreeIsTrackedFilesPlusWhatIsNotIgnored(t *testing.T) {
 // An override hashes a file as other content, and stands in only for a file the
 // tree already has: it must not bring in one git ignores or the loop leaves out.
 func TestAnOverrideStandsInOnlyForAFileTheTreeHas(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	write(t, root, ".gitignore", "*.log\n")
 	write(t, root, "main.go", "package main\n")
@@ -174,6 +176,7 @@ func pinnedFixture(t *testing.T) (root, commit string) {
 }
 
 func TestTreeHashNeverChangesForTheSameTree(t *testing.T) {
+	t.Parallel()
 	root, commit := pinnedFixture(t)
 	for _, tc := range []struct {
 		name      string
@@ -215,6 +218,7 @@ func TestTreeHashNeverChangesForTheSameTree(t *testing.T) {
 }
 
 func TestOutsideARepositoryTheFailureExplainsItself(t *testing.T) {
+	t.Parallel()
 	_, err := Files(t.Context(), t.TempDir())
 	if err == nil {
 		t.Fatal("a directory that is not a repository listed files")
@@ -235,6 +239,7 @@ func TestOutsideARepositoryTheFailureExplainsItself(t *testing.T) {
 // not a repository at all fails there, the same way every other command here
 // does.
 func TestTreeHashOutsideARepositoryFails(t *testing.T) {
+	t.Parallel()
 	_, err := TreeHash(t.Context(), t.TempDir())
 	wantUnreadable(t, err, "TreeHash outside a repository")
 }
@@ -260,6 +265,7 @@ func TestTreeHashFailsWhenNoTemporaryDirectoryIsReachable(t *testing.T) {
 // Clean is what the commit gate means by "committed": nothing left over,
 // tracked or not.
 func TestCleanReportsWhetherAnythingIsUncommitted(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	commit(t, root, "first")
 
@@ -281,6 +287,7 @@ func TestCleanReportsWhetherAnythingIsUncommitted(t *testing.T) {
 // outside a repository -- the three states the freeze and the commit gate
 // tell apart.
 func TestHeadIsTheCommitHeadIsOnOrNoCommitsYet(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	if got, err := Head(t.Context(), root); err != nil || got != NoCommits {
 		t.Errorf("Head before any commit = %q, %v; want %s", got, err, NoCommits)
@@ -300,6 +307,7 @@ func TestHeadIsTheCommitHeadIsOnOrNoCommitsYet(t *testing.T) {
 // so with no error: a detached checkout is not a failure to read the
 // repository.
 func TestBranchIsEmptyWithADetachedHead(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	head := commit(t, root, "first")
 	run(t, root, "checkout", "--quiet", head)
@@ -317,6 +325,7 @@ func TestBranchIsEmptyWithADetachedHead(t *testing.T) {
 // from the repository: a project on master got "main", and its first `sdlc
 // start` was refused for not being on trunk.
 func TestTrunkIsWhatTheRepositoryCallsIt(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 
 	unborn := t.TempDir()

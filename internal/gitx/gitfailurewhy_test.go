@@ -192,6 +192,7 @@ func TestAC2WhenGitWritesToStderrTheReasonIsWhatItSaidOnItsFirstLine(t *testing.
 }
 
 func TestAC2WhenRealGitWritesToStderrTheReasonQuotesIt(t *testing.T) {
+	t.Parallel()
 	_, err := Files(t.Context(), t.TempDir())
 	e := fgRefusal(t, "Files outside a repository", err)
 	if !strings.HasPrefix(e.Why, "git said: ") || strings.Contains(e.Why, "\n") || len(e.Why) == len("git said: ") {

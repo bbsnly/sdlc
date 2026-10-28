@@ -104,6 +104,7 @@ func TestAC2TheEmptyDiffDriverNameIsOverriddenWithTheOthersByBothMeasures(t *tes
 // refusal is the cli's, raised before it measures. Each name has a measure
 // that works, for the same change, with a hash and no error.
 func TestAC2TheMeasuresDoNotRefuseADiffDriverWhoseNameTheCommandLineCannotCarry(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"st=eer", "st{sdlc-private}eer", "{sdlc-private}", "St=EER"} {
 		t.Run("AC-2 "+name, func(t *testing.T) {
 			root, from := lgRepo(t)

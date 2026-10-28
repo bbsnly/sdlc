@@ -55,6 +55,7 @@ func TestResolveNamesACommitInFullOrRefuses(t *testing.T) {
 // code and the fix -- to render a message, say -- can still reach it by
 // unwrapping past NamesNoCommit's own check.
 func TestAFailedResolveStillCarriesTheUnderlyingCode(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	_, err := Resolve(t.Context(), root, "nope")
 	if !NamesNoCommit(err) {
@@ -70,6 +71,7 @@ func TestAFailedResolveStillCarriesTheUnderlyingCode(t *testing.T) {
 }
 
 func TestIsAncestorTellsNoFromAFailure(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	first := commit(t, root, "first")
 	second := commit(t, root, "second")
@@ -95,6 +97,7 @@ func TestIsAncestorTellsNoFromAFailure(t *testing.T) {
 // run git at all, let alone read every commit's message against an empty
 // string.
 func TestCommitsNamingWithNoWordFindsNothing(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	commit(t, root, "first")
 	got, err := CommitsNaming(t.Context(), root, "")
@@ -106,6 +109,7 @@ func TestCommitsNamingWithNoWordFindsNothing(t *testing.T) {
 // A repository with no commits yet has no HEAD for git log to start from, and
 // that failure is passed on rather than read as no commits naming the word.
 func TestCommitsNamingFailsWithNoHead(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run(t, root, "init", "--quiet")
 	_, err := CommitsNaming(t.Context(), root, "US-1")
@@ -115,6 +119,7 @@ func TestCommitsNamingFailsWithNoHead(t *testing.T) {
 // A story id is found as a whole word: the story US-1 is not the story US-10,
 // and a sentence can end in its name.
 func TestCommitsNamingWantsTheWholeWord(t *testing.T) {
+	t.Parallel()
 	root := repo(t)
 	root0 := commit(t, root, "US-1: the first part")
 	commit(t, root, "US-10 and XUS-1 and US-1.2 are other stories")

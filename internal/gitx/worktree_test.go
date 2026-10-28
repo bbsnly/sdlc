@@ -151,6 +151,7 @@ func wtWantRefusal(t *testing.T, err error, what, why string) {
 // and not from a tag that happens to share trunk's name -- and the checkout it
 // was made from keeps its branch, its commit, its index and its files (AC-2).
 func TestAC1AddWorktreeCutsANewBranchFromTheTipOfTrunkWhereverHeadIs(t *testing.T) {
+	t.Parallel()
 	root, _, tip := wtTrunk(t)
 	before := wtSnapshot(t, root)
 	dir := wtStoryDir(root, "US-1")
@@ -190,6 +191,7 @@ func TestAC1AddWorktreeCutsANewBranchFromTheTipOfTrunkWhereverHeadIs(t *testing.
 // T6: a story branch that is already there -- a person's, or one a crash left
 // -- is refused, never reused and never reset to trunk, and nothing is made.
 func TestAC4AndT6AddWorktreeRefusesABranchThatIsAlreadyThereAndLeavesItWhereItWas(t *testing.T) {
+	t.Parallel()
 	root, first, _ := wtTrunk(t)
 	run(t, root, "branch", "story/US-1", first)
 	dir := wtStoryDir(root, "US-1")
@@ -211,6 +213,7 @@ func TestAC4AndT6AddWorktreeRefusesABranchThatIsAlreadyThereAndLeavesItWhereItWa
 // T6: a directory with something in it at the story's path is refused, what is
 // in it stays, and no branch is left behind for it.
 func TestAC4AndT6AddWorktreeRefusesADirectoryWithSomethingInItAndLeavesWhatIsThere(t *testing.T) {
+	t.Parallel()
 	root, _, _ := wtTrunk(t)
 	dir := wtStoryDir(root, "US-1")
 	write(t, dir, "keep.txt", "a person's work\n")
@@ -232,6 +235,7 @@ func TestAC4AndT6AddWorktreeRefusesADirectoryWithSomethingInItAndLeavesWhatIsThe
 // T6: two starts of one story race to make its worktree. The second is
 // refused, and in failing it takes nothing away from the first.
 func TestAC4AndT6ASecondAddOfTheSameStoryFailsAndLeavesTheFirstStanding(t *testing.T) {
+	t.Parallel()
 	root, _, tip := wtTrunk(t)
 	dir := wtStoryDir(root, "US-1")
 	if err := AddWorktree(t.Context(), root, dir, "story/US-1", "main"); err != nil {
@@ -259,6 +263,7 @@ func TestAC4AndT6ASecondAddOfTheSameStoryFailsAndLeavesTheFirstStanding(t *testi
 // T9: an id the store accepts can still be a name git will not take as a ref.
 // The refusal is AC-4's, and nothing is left behind.
 func TestAC4AndT9AddWorktreeRefusesABranchNameGitWillNotTakeAndLeavesNothing(t *testing.T) {
+	t.Parallel()
 	for _, id := range []string{"A..B", "X.lock"} {
 		t.Run("T9 "+id, func(t *testing.T) {
 			root, _, _ := wtTrunk(t)
@@ -278,6 +283,7 @@ func TestAC4AndT9AddWorktreeRefusesABranchNameGitWillNotTakeAndLeavesNothing(t *
 // AC-4: a trunk the repository does not have is a worktree that cannot be
 // made, and nothing is left behind.
 func TestAC4AddWorktreeFromATrunkTheRepositoryDoesNotHaveLeavesNothing(t *testing.T) {
+	t.Parallel()
 	root, _, _ := wtTrunk(t)
 	dir := wtStoryDir(root, "US-1")
 	err := AddWorktree(t.Context(), root, dir, "story/US-1", "trunk-nobody-made")
@@ -289,6 +295,7 @@ func TestAC4AddWorktreeFromATrunkTheRepositoryDoesNotHaveLeavesNothing(t *testin
 // neither is handed to git where it could be read as an option: a trunk called
 // --no-checkout made a worktree from HEAD with nothing checked out.
 func TestT8AddWorktreeNeverHandsGitAValueItWouldReadAsAnOption(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, branch, trunk string }{
 		{"T8 a trunk that is an option", "story/US-1", "--no-checkout"},
 		{"T8 a trunk that is a short option", "story/US-1", "-f"},
@@ -314,6 +321,7 @@ func TestT8AddWorktreeNeverHandsGitAValueItWouldReadAsAnOption(t *testing.T) {
 // made, even with what the smoke check left in it, and nothing else: the
 // checkout it was made from and another story's worktree stay as they were.
 func TestAC4RemoveWorktreeTakesAwayTheWorktreeAndItsBranchAndNothingElse(t *testing.T) {
+	t.Parallel()
 	root, _, tip := wtTrunk(t)
 	before := wtSnapshot(t, root)
 	dir, kept := wtStoryDir(root, "US-1"), wtStoryDir(root, "US-2")
@@ -353,6 +361,7 @@ func TestAC4RemoveWorktreeTakesAwayTheWorktreeAndItsBranchAndNothingElse(t *test
 // deletion. Asked to remove the main checkout, it refuses, and trunk -- which
 // git would let it delete, with HEAD on another branch -- stays.
 func TestAC4AndT6RemoveWorktreeRefusesTheMainCheckoutAndKeepsItsBranch(t *testing.T) {
+	t.Parallel()
 	root, _, tip := wtTrunk(t)
 	before := wtSnapshot(t, root)
 
@@ -374,6 +383,7 @@ func TestAC4AndT6RemoveWorktreeRefusesTheMainCheckoutAndKeepsItsBranch(t *testin
 // checkout on a branch that has origin's commits hid a trunk two behind, and
 // one on an old branch refused a trunk that was level.
 func TestAC3BehindCountsFromTrunkNotFromHead(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	origin := repo(t)
 	run(t, origin, "symbolic-ref", "HEAD", "refs/heads/main")
@@ -403,6 +413,7 @@ func TestAC3BehindCountsFromTrunkNotFromHead(t *testing.T) {
 // A trunk this checkout does not have locally has no tip to cut a story from,
 // and is a failure rather than "behind by none".
 func TestAC3BehindFailsWhenTrunkIsNotABranchHere(t *testing.T) {
+	t.Parallel()
 	origin := repo(t)
 	run(t, origin, "symbolic-ref", "HEAD", "refs/heads/main")
 	commit(t, origin, "first")

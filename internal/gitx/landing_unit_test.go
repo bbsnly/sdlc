@@ -344,6 +344,7 @@ func TestSealedCallsLeaveNothingInTheTemporaryDirectory(t *testing.T) {
 // T10: each small read refuses a value git would read as an option, and a
 // commit that is not a full hash, before git sees it.
 func TestTheSmallReadsRefuseWhatGitWouldReadAsAnOption(t *testing.T) {
+	t.Parallel()
 	root, c := luHistory(t)
 	ctx := t.Context()
 	good := c[3]
@@ -385,6 +386,7 @@ func TestTheSmallReadsRefuseWhatGitWouldReadAsAnOption(t *testing.T) {
 // ---------------------------------------------------------------- reads
 
 func TestMergeBaseIsTheNearestCommitBothHold(t *testing.T) {
+	t.Parallel()
 	root, c := luHistory(t)
 	side := luCommitOf(t, root, c[1], map[string]string{"side.txt": "side\n"})
 	ctx := t.Context()
@@ -407,6 +409,7 @@ func TestMergeBaseIsTheNearestCommitBothHold(t *testing.T) {
 
 // AC-8: a merge commit in base..tip is found, and one before base is not.
 func TestHasMergesSaysWhetherTheRangeHoldsAMergeCommit(t *testing.T) {
+	t.Parallel()
 	root, c := luHistory(t)
 	side := luCommitOf(t, root, c[1], map[string]string{"side.txt": "side\n"})
 	merge := luGit(t, root, nil, "", "-c", "user.email=t@example.com", "-c", "user.name=Test",
@@ -446,6 +449,7 @@ func TestHasMergesSaysWhetherTheRangeHoldsAMergeCommit(t *testing.T) {
 // and "src/naïve name.go" -- a name git quotes whenever it writes names
 // without -z -- keeps "read whole" live on Windows.
 func TestChangedUnderIsWhatChangedAtOrUnderAPathCaseFolded(t *testing.T) {
+	t.Parallel()
 	root, _ := lgRepo(t)
 	base := luCommitOf(t, root, "", map[string]string{
 		".sdlc/config.json": "{}\n",
@@ -533,6 +537,7 @@ func TestChangedUnderIsWhatChangedAtOrUnderAPathCaseFolded(t *testing.T) {
 // commit does not have is fs.ErrNotExist, which the landing tells apart from
 // a read that failed.
 func TestFileAtIsTheFileAsTheCommitHasIt(t *testing.T) {
+	t.Parallel()
 	root, first := lgRepo(t)
 	write(t, root, ".sdlc/config.json", "{\"commands\":{\"test\":\"exit 1\"}}\n")
 	committed := lgCommit(t, root, "configuration")
@@ -555,6 +560,7 @@ func TestFileAtIsTheFileAsTheCommitHasIt(t *testing.T) {
 // a cherry-pick, a revert, a bisect -- is said, and none is said once it is
 // over.
 func TestInProgressSaysWhenAnOperationIsPartWay(t *testing.T) {
+	t.Parallel()
 	conflict := func(t *testing.T) (root, other string, c []string) {
 		t.Helper()
 		root, c = luHistory(t)
@@ -606,6 +612,7 @@ func TestInProgressSaysWhenAnOperationIsPartWay(t *testing.T) {
 // branch ref. A tag with trunk's short name makes the short name another
 // ref, and the full name still is trunk.
 func TestResolvesToIsTheRefGitReadsTheNameAs(t *testing.T) {
+	t.Parallel()
 	root, c := luHistory(t)
 	run(t, root, "branch", "other", c[1])
 	ctx := t.Context()
@@ -631,6 +638,7 @@ func TestResolvesToIsTheRefGitReadsTheNameAs(t *testing.T) {
 // checkout on another branch, detached with nothing part-way, or gone, does
 // not hold it.
 func TestCheckedOutIsEveryCheckoutThatHoldsTheBranch(t *testing.T) {
+	t.Parallel()
 	root, c := luHistory(t)
 	ctx := t.Context()
 	list := func() []string {
@@ -674,6 +682,7 @@ func TestCheckedOutIsEveryCheckoutThatHoldsTheBranch(t *testing.T) {
 
 // T8: a locked worktree is said to be, so that the landing keeps it.
 func TestWorktreesSaysWhichAreLocked(t *testing.T) {
+	t.Parallel()
 	root, _ := lgRepo(t)
 	locked := lgStory(t, root)
 	run(t, root, "worktree", "lock", "--reason", "a person's", locked)
@@ -696,6 +705,7 @@ func TestWorktreesSaysWhichAreLocked(t *testing.T) {
 // so the review subject can take the bookkeeper's CODEMAP.md as HEAD has it,
 // whatever is on disk.
 func TestTreeHashWithAnOverrideAtACommitHashesThePathAsThatCommitHasIt(t *testing.T) {
+	t.Parallel()
 	root, _ := lgRepo(t)
 	write(t, root, "CODEMAP.md", "# one\n")
 	one := lgCommit(t, root, "map one")
@@ -731,6 +741,7 @@ func TestTreeHashWithAnOverrideAtACommitHashesThePathAsThatCommitHasIt(t *testin
 // added one, staged or not. The landing takes it in and the checkout ends
 // clean at the story's tip.
 func TestO1FastForwardTakesInWhatAlreadyHoldsTheTargetContent(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		paths []string
@@ -768,6 +779,7 @@ func TestO1FastForwardTakesInWhatAlreadyHoldsTheTargetContent(t *testing.T) {
 // or rebasing or bisecting trunk, or with its index locked, is refused, named,
 // and nothing anywhere is written.
 func TestAC6FastForwardRefusesACheckoutPartWayThroughSomethingAndWritesNothing(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		set   func(t *testing.T, root, trunk string) (named string)
@@ -833,6 +845,7 @@ func TestAC6FastForwardRefusesACheckoutPartWayThroughSomethingAndWritesNothing(t
 // Red team O2: where git refuses in a later checkout, every checkout already
 // written is put back, and trunk does not move.
 func TestO2AFastForwardRefusedInALaterCheckoutPutsTheEarlierOnesBack(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	_, to := lgStoryWork(t, root)
 	later := luForced(t, root, "main")
@@ -862,6 +875,7 @@ func TestO2AFastForwardRefusedInALaterCheckoutPutsTheEarlierOnesBack(t *testing.
 // landing adds is in the way where the file system folds case, and not where
 // it does not.
 func TestAC6FastForwardFindsAnUntrackedNameThatDiffersOnlyInCase(t *testing.T) {
+	t.Parallel()
 	root, from := lgRepo(t)
 	wt := lgStory(t, root)
 	write(t, wt, "Invoice.go", "package billing\n")
@@ -891,6 +905,7 @@ func TestAC6FastForwardFindsAnUntrackedNameThatDiffersOnlyInCase(t *testing.T) {
 // PLAN.md step 3: an untracked link where the landing adds a directory is in
 // the way, and nothing is written through it.
 func TestAC6FastForwardRefusesAnUntrackedLinkInPlaceOfADirectoryItAdds(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("making a symbolic link needs a privilege Windows does not give by default")
 	}

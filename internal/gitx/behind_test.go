@@ -18,6 +18,7 @@ func clone(t *testing.T, origin, dir string) {
 // which is how the loop tells a person their trunk has moved on without
 // prompting them for a password git has not been given.
 func TestBehindCountsCommitsOnTheRemoteThatHeadDoesNotHave(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	origin := repo(t)
 	run(t, origin, "symbolic-ref", "HEAD", "refs/heads/main")
@@ -47,6 +48,7 @@ func TestBehindCountsCommitsOnTheRemoteThatHeadDoesNotHave(t *testing.T) {
 // Behind never prompts: a remote it cannot reach is a failure, not a
 // password dialogue nobody would see.
 func TestBehindFailsWhenTheRemoteCannotBeFetched(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root := repo(t)
 	commit(t, root, "first")
@@ -58,6 +60,7 @@ func TestBehindFailsWhenTheRemoteCannotBeFetched(t *testing.T) {
 // An unborn branch has no HEAD to count the fetched commits against, and that
 // failure is reported rather than misread as being behind by none.
 func TestBehindFailsOnAnUnbornBranch(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	origin := repo(t)
 	run(t, origin, "symbolic-ref", "HEAD", "refs/heads/main")

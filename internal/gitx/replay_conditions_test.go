@@ -66,6 +66,7 @@ func rcUnionTree(t *testing.T, root string) string {
 // same rebase run by hand in the same checkout does join them, which is what
 // the replay kept out.
 func TestAC4AnAttributeNobodyCommittedDoesNotChangeHowTheReplayMergesAFile(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		set  func(t *testing.T, root string)
@@ -162,6 +163,7 @@ func rcRan(t *testing.T, marks string) {
 // key, no rebase begun, the checkout exactly as it was, and the driver not
 // run. Run by hand, the same rebase does run it.
 func TestAC11AMergeDriverWhoseNameTheCommandLineCannotCarryIsRefusedBeforeGitRuns(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the driver here is a shell script marked executable, which Windows does not run as such")
 	}
@@ -219,6 +221,7 @@ func TestAC11AMergeDriverWhoseNameTheCommandLineCannotCarryIsRefusedBeforeGitRun
 // the replay leaves the checkout as it was. Run by hand, the same rebase does
 // run it.
 func TestAC11TheMergeDriverWithAnEmptyNameDoesNotRunAndItsPathStopsAsAConflict(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the driver here is a shell script marked executable, which Windows does not run as such")
 	}
