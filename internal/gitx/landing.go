@@ -273,15 +273,16 @@ func notAnOption(what, v string) error {
 }
 
 // branchName refuses a branch name that is empty, starts with a dash, or is
-// one git does not take for a branch.
-func branchName(ctx context.Context, root, branch string) error {
+// one git does not take for a branch: refs/heads/<branch> is held to git's
+// check-ref-format, which refnameRule asks without starting git.
+func branchName(branch string) error {
 	if err := notAnOption("a branch", branch); err != nil {
 		return err
 	}
-	if _, err := sealed(ctx, root, "check-ref-format", headsPrefix+branch); err != nil {
+	if rule := refnameRule(headsPrefix + branch); rule != "" {
 		return sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			strconv.Quote(branch)+" is not a name git takes for a branch",
-			failure(err, "git check-ref-format refused it")).WithCause(err)
+			strconv.Quote(headsPrefix+branch)+" "+rule+", and git takes no ref name that does")
 	}
 	return nil
 }
@@ -290,7 +291,7 @@ func branchName(ctx context.Context, root, branch string) error {
 // tag that shares its name, and not a ref git would guess at from an
 // abbreviation. A branch that is not there is fs.ErrNotExist.
 func BranchTip(ctx context.Context, root, branch string) (string, error) {
-	if err := branchName(ctx, root, branch); err != nil {
+	if err := branchName(branch); err != nil {
 		return "", err
 	}
 	out, err := sealed(ctx, root, "show-ref", argVerify, "--hash", headsPrefix+branch)

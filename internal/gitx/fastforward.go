@@ -107,7 +107,7 @@ func FastForward(ctx context.Context, root, trunk, from, to string) error {
 // checkMove refuses a move of trunk from from to to that is not
 // fast-forward along a line of commits, or whose from is not where trunk is.
 func checkMove(ctx context.Context, root, trunk, from, to string) error {
-	if err := branchName(ctx, root, trunk); err != nil {
+	if err := branchName(trunk); err != nil {
 		return err
 	}
 	if err := fullHashes(from, to); err != nil {

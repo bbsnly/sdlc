@@ -175,7 +175,7 @@ const NoCommits = "0000000000000000000000000000000000000000"
 // yet. Read as "", which a record from before HEAD was kept also holds, the
 // first story of a new project was held to no HEAD at all.
 func Head(ctx context.Context, root string) (string, error) {
-	out, err := git(ctx, root, nil, argRevParse, argVerify, argQuiet, "HEAD")
+	out, err := git(ctx, root, nil, argRevParse, argVerify, argQuiet, argHead)
 	if err != nil {
 		// A repository with no commits is still on a branch; a directory that
 		// is not a repository is on none.
@@ -285,7 +285,7 @@ func CommitsNaming(ctx context.Context, root, word string) ([]Commit, error) {
 	// -z ends each commit with a NUL, which no commit message can hold; the
 	// first line is the commit and its parents, and the rest is the message.
 	out, err := git(ctx, root, nil, "log", "-z", "--fixed-strings", "--grep="+word,
-		"--format=%H %P%n%B", "HEAD", "--")
+		"--format=%H %P%n%B", argHead, "--")
 	if err != nil {
 		return nil, err
 	}
@@ -372,15 +372,15 @@ func Changes(ctx context.Context, root string) ([]string, error) {
 // shares to heads/<name>, so with a tag called main, HEAD on main read as a
 // branch called heads/main.
 func Branch(ctx context.Context, root string) (string, error) {
-	out, err := git(ctx, root, nil, "symbolic-ref", argQuiet, "HEAD")
+	out, err := git(ctx, root, nil, "symbolic-ref", argQuiet, argHead)
 	if err == nil {
 		if name, ok := strings.CutPrefix(firstLine(string(out)), headsPrefix); ok {
 			return name, nil
 		}
 		return "", nil
 	}
-	if head, headErr := git(ctx, root, nil, argRevParse, "--abbrev-ref", "HEAD"); headErr == nil &&
-		firstLine(string(head)) == "HEAD" {
+	if head, headErr := git(ctx, root, nil, argRevParse, "--abbrev-ref", argHead); headErr == nil &&
+		firstLine(string(head)) == argHead {
 		return "", nil
 	}
 	return "", err

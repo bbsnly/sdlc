@@ -47,7 +47,7 @@ func AddWorktree(ctx context.Context, root, dir, branch, trunk string) error {
 	if err := checkAddRequest(root, dir, branch, trunk); err != nil {
 		return err
 	}
-	if _, err := git(ctx, root, nil, "check-ref-format", "--branch", branch); err != nil {
+	if err := takesAsBranch(ctx, root, branch); err != nil {
 		return notMade(strconv.Quote(branch)+" is not a name git takes for a branch",
 			failure(err, "a story's branch is named for it, and git refuses this name"), ErrBranchName)
 	}
@@ -366,7 +366,7 @@ func parseWorktrees(out []byte) []listedWorktree {
 		case key == "worktree":
 			listed = append(listed, listedWorktree{path: filepath.FromSlash(value)})
 		case len(listed) == 0:
-		case key == "HEAD":
+		case key == argHead:
 			listed[len(listed)-1].head = value
 		case key == "branch":
 			listed[len(listed)-1].branch = value

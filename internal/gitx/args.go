@@ -5,6 +5,7 @@ package gitx
 // with.
 const (
 	headsPrefix = "refs/heads/"
+	argHead     = "HEAD"
 
 	argRevParse         = "rev-parse"
 	argUpdateRef        = "update-ref"
