@@ -774,8 +774,11 @@ func TestAC5ADeadlineThatPassesWhileTheCommandIsReadIsRefusedWithoutWaitingForTh
 		if readingTheCommand(k) {
 			once.Do(func() {
 				f.move(hookDeadline + time.Second)
-				f.fire()
+				// Before the timer fires, not after: the hook answers the
+				// moment it does, on another goroutine, and a test that read
+				// reached then found it open on CI (CI on 386977a, ubuntu).
 				close(reached)
+				f.fire()
 				<-letGo
 			})
 		}
@@ -818,8 +821,11 @@ func TestAC5ADeadlineThatPassesWhileTheTreeIsMeasuredIsRefusedWithoutWaitingForT
 		}
 		once.Do(func() {
 			f.move(hookDeadline + time.Second)
-			f.fire()
+			// Before the timer fires, as in the test above it: the hook
+			// answers the moment it does, and a test that read reached
+			// before this ran closed it said the clock was never read.
 			close(reached)
+			f.fire()
 			<-letGo
 		})
 	}
