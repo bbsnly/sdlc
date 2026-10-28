@@ -616,6 +616,10 @@ func TestAC1ACommitAboveTheRangeThatIsNotTheBookkeepersIsRefused(t *testing.T) {
 			blob := strings.TrimSpace(cmHashObject(t, wt, "refund.go"))
 			ccGit(t, wt, "update-index", "--add", "--cacheinfo", "120000,"+blob+",CODEMAP.md")
 			ccGit(t, wt, "commit", "--quiet", "-m", "docs: a link")
+			// Where the platform has no links, git keeps the mode an entry has
+			// in the index: added over the link, the file stayed one, and the
+			// landing refused the tip with SDLC-E0055 (windows-latest).
+			ccGit(t, wt, "rm", "--cached", "--quiet", "--", "CODEMAP.md")
 			swCommitFile(t, wt, "CODEMAP.md", "# map\n", "docs: a map again")
 		}},
 	} {
