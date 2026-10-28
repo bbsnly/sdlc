@@ -131,19 +131,38 @@ func stfSection() map[string]any {
 func stfProject(t *testing.T) string {
 	t.Helper()
 	root := gitProjectInitialised(t)
-	setConfigOnDisk(t, root, "staffing", stfSection())
-	commitEverything(t, root)
+	stfProjectFrom(t, root)
 	return root
 }
 
+// stfProjectFrom turns on the staffing in root, a project gitProjectInitialised
+// made, and commits it.
+func stfProjectFrom(t *testing.T, root string) {
+	t.Helper()
+	setConfigOnDisk(t, root, "staffing", stfSection())
+	commitEverything(t, root)
+}
+
 // stfBegun is stfProject with its story started and found ready: where the
-// runbook delegates to the project manager.
+// runbook delegates to the project manager. Every test of the staffing that
+// does not walk the start itself begins here, so it is a walked template: the
+// real commands make it once per package run.
 func stfBegun(t *testing.T) string {
 	t.Helper()
-	root := stfProject(t)
+	root, _ := walkedCopyNoted(t, stfBegunKey, stfBegunBuilder)
+	chdir(t, root)
+	return root
+}
+
+const stfBegunKey = "staffing: started, the definition of ready passed"
+
+func stfBegunBuilder(t *testing.T, root string) map[string]string {
+	t.Helper()
+	gitProjectInitialisedAt(t, root)
+	stfProjectFrom(t, root)
 	mustRun(t, "start")
 	mustRun(t, "gate", "dor", "pass", "--note", "the criteria are testable")
-	return root
+	return nil
 }
 
 // stfFull is a staffing that names every agent, each needed at sonnet and
@@ -327,15 +346,23 @@ func stfThrough(t *testing.T, root string, upTo model.Gate, out ...string) {
 // stfStaffed is a story with the staffing recorded and the analysis passed as
 // not security-sensitive, with everybody in out left out: security by an
 // amendment once the analysis has said the story is not sensitive, the others
-// in the staffing itself.
+// in the staffing itself. It is a walked template per out, made from stfBegun's
+// by the real commands.
 func stfStaffed(t *testing.T, out ...string) string {
 	t.Helper()
-	root := stfBegun(t)
-	stfSet(t, stfFull(slices.DeleteFunc(slices.Clone(out), func(n string) bool { return n == "security" })...))
-	stfAnalysed(t, false)
-	if slices.Contains(out, "security") {
-		mustRun(t, "staffing", "amend", "security", "--left-out", "--reason", "nothing here crosses a trust boundary")
-	}
+	root, _ := walkedCopyNoted(t, "staffing: recorded, the analysis passed, without "+strings.Join(out, ", "),
+		func(t *testing.T, root string) map[string]string {
+			t.Helper()
+			walkedCopyNotedAt(t, stfBegunKey, root, stfBegunBuilder)
+			chdir(t, root)
+			stfSet(t, stfFull(slices.DeleteFunc(slices.Clone(out), func(n string) bool { return n == "security" })...))
+			stfAnalysed(t, false)
+			if slices.Contains(out, "security") {
+				mustRun(t, "staffing", "amend", "security", "--left-out", "--reason", "nothing here crosses a trust boundary")
+			}
+			return nil
+		})
+	chdir(t, root)
 	return root
 }
 
