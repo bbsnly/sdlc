@@ -20,13 +20,16 @@ package cli
 // Helpers carry a cg prefix, for commit gate.
 
 import (
+	"fmt"
 	"maps"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/store"
 )
 
 const (
@@ -185,16 +188,37 @@ func (h cgHow) sees(t *testing.T, wt string) {
 // onto a trunk another story moved, reviewed again there, and the commit gate
 // run again. own, where given, commits something more of the story's before
 // trunk moves.
+//
+// Where own is not given the scene is a walked template per how, made by the
+// real commands once per package run: every test of it then starts from the
+// same story, rebased and gated the same way, and reads the commits and what
+// the gate printed from the template's notes.
 func cgByHand(t *testing.T, how cgHow, own func(wt string)) cgScene {
 	t.Helper()
-	main, wt, cut := otWalked(t, ldWalk{finished: true, lx: how.set != nil, set: how.set})
+	w := ldWalk{finished: true, lx: how.set != nil, set: how.set, identified: true, bookkept: !how.hooked}
+	if own != nil {
+		main, wt, cut := ldWalkedFrom(t, w)
+		return cgByHandOn(t, how, own, main, wt, cut)
+	}
+	return cgSceneOf(t, "commit gate: rebased by hand, "+fmt.Sprintf("%+v", how), func(t *testing.T, root string) cgScene {
+		t.Helper()
+		cut := ldWalkAt(t, w, root)
+		return cgByHandOn(t, how, nil, root, swWorktreeOf(root, "US-001"), cut)
+	})
+}
+
+// cgByHandOn is cgByHand from the story ldWalk{finished, identified} leaves in
+// main and its worktree wt, cut from the commit cut: the bookkeeper's commit
+// is made here where the hook watches the story first.
+func cgByHandOn(t *testing.T, how cgHow, own func(wt string), main, wt, cut string) cgScene {
+	t.Helper()
 	if how.hooked {
 		// The story's work was committed on the commit its branch was cut
 		// from, and its bookkeeper's commit on that one.
 		watched(t, wt, cut)
+		how.sees(t, wt)
+		ldBookkeeping(t, wt)
 	}
-	how.sees(t, wt)
-	ldBookkeeping(t, wt)
 	if own != nil {
 		own(wt)
 	}
@@ -204,39 +228,66 @@ func cgByHand(t *testing.T, how cgHow, own func(wt string)) cgScene {
 	return cgScene{main: main, wt: wt, cut: cut, on: on, head: head, gate: cgGateAgain(t, wt)}
 }
 
+// cgSceneOf is a scene made by build in the empty directory a walked template
+// is made in, and copied into a new directory of t's: the commits it names and
+// what the gate printed are noted with the template and read back from the
+// copy. The test's commands run in the story's worktree from ldSession.
+func cgSceneOf(t *testing.T, key string, build func(t *testing.T, root string) cgScene) cgScene {
+	t.Helper()
+	main, notes := walkedCopyNoted(t, key, func(t *testing.T, root string) map[string]string {
+		t.Helper()
+		s := build(t, root)
+		return map[string]string{"cut": s.cut, "on": s.on, "head": s.head,
+			"stdout": s.gate.stdout, "stderr": s.gate.stderr, "code": strconv.Itoa(s.gate.code)}
+	})
+	code, err := strconv.Atoi(notes["code"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := swWorktreeOf(main, "US-001")
+	chdir(t, wt)
+	setenv(t, store.SessionEnv, ldSession)
+	return cgScene{main: main, wt: wt, cut: notes["cut"], on: notes["on"], head: notes["head"],
+		gate: result{stdout: notes["stdout"], stderr: notes["stderr"], code: code}}
+}
+
 // cgByTheStop is a finished story that `sdlc stop` put onto a trunk another
 // story moved and then refused, because commands.test fails on that tree
 // (SDLC-E0055). The session does what the refusal's fix says: it records the
 // implementation as failed, puts the story right in a commit of its own, takes
-// it through the gates again, and runs the commit gate.
+// it through the gates again, and runs the commit gate. It is a walked template
+// per how, as cgByHand's is.
 func cgByTheStop(t *testing.T, how cgHow) cgScene {
 	t.Helper()
 	set := map[string]string{"test": cgNeedsFixed}
 	maps.Copy(set, how.set)
-	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true, lx: true, set: set})
-	otIdentity(t, main)
-	if how.hooked {
-		watched(t, wt, cut)
-	}
-	how.sees(t, wt)
-	ldBookkeeping(t, wt)
-	on := cgTrunkMoves(t, main)
+	return cgSceneOf(t, "commit gate: put onto trunk by the stop's replay, "+fmt.Sprintf("%+v", how), func(t *testing.T, root string) cgScene {
+		t.Helper()
+		cut := ldWalkAt(t, ldWalk{finished: true, lx: true, set: set, identified: true}, root)
+		main, wt := root, swWorktreeOf(root, "US-001")
+		if how.hooked {
+			watched(t, wt, cut)
+		}
+		how.sees(t, wt)
+		ldBookkeeping(t, wt)
+		on := cgTrunkMoves(t, main)
 
-	swRefused(t, ldCheckFailed, wt, ldSession, "stop")
-	if got := ldTrunk(t, main); got != on {
-		t.Fatalf("precondition: the refused stop moved trunk to %s", got)
-	}
-	if _, ok := swGitTry(t, wt, "merge-base", "--is-ancestor", on, "HEAD"); !ok {
-		t.Fatalf("precondition: the refused stop did not leave the story on trunk at %s", on[:12])
-	}
+		swRefused(t, ldCheckFailed, wt, ldSession, "stop")
+		if got := ldTrunk(t, main); got != on {
+			t.Fatalf("precondition: the refused stop moved trunk to %s", got)
+		}
+		if _, ok := swGitTry(t, wt, "merge-base", "--is-ancestor", on, "HEAD"); !ok {
+			t.Fatalf("precondition: the refused stop did not leave the story on trunk at %s", on[:12])
+		}
 
-	wtMust(t, wt, ldSession, "", "gate", "implementation", "fail", "--note", "commands.test fails on trunk as it is now")
-	writeFile(t, wt, "FIXED.md", "what trunk's change asked of the story\n")
-	swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
-	how.sees(t, wt)
-	satisfy(t, wt, model.GateCommit)
-	head := swRev(t, wt, "HEAD")
-	return cgScene{main: main, wt: wt, cut: cut, on: on, head: head, gate: cgGateAgain(t, wt)}
+		wtMust(t, wt, ldSession, "", "gate", "implementation", "fail", "--note", "commands.test fails on trunk as it is now")
+		writeFile(t, wt, "FIXED.md", "what trunk's change asked of the story\n")
+		swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
+		how.sees(t, wt)
+		satisfy(t, wt, model.GateCommit)
+		head := swRev(t, wt, "HEAD")
+		return cgScene{main: main, wt: wt, cut: cut, on: on, head: head, gate: cgGateAgain(t, wt)}
+	})
 }
 
 // cgRetro passes the retro again: the commit gate recorded again reopens it,
@@ -295,8 +346,7 @@ func TestAC3TheCommitGateRunAgainNamesTheStorysOwnCommitsWhereTheHookWatchedThem
 // AC-3, trunk moved by more than one commit: none of them is in the range.
 func TestAC3TheRangeLeavesOutEveryCommitTrunkGainedNotOnlyTheLast(t *testing.T) {
 	t.Parallel()
-	main, wt, cut := otWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt, cut := otWalked(t, ldWalk{finished: true, bookkept: true})
 	cgTrunkMoves(t, main)
 	swCommitFile(t, main, "NOTES.md", "a second story's work\n", "a second story lands")
 	on := swCommitFile(t, main, "LATER.md", "a third story's work\n", "a third story lands")
@@ -327,8 +377,7 @@ func TestAC3TheLogReadsTheStorysOwnRangeAfterTheGateRunAgain(t *testing.T) {
 // This passes before the story is built and has to go on passing.
 func TestAC3WhereTheTrunkCommitTheStorySitsOnCannotBeWorkedOutTheGateStartsAtTheCutAsBefore(t *testing.T) {
 	t.Parallel()
-	main, wt, cut := otWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt, cut := otWalked(t, ldWalk{finished: true, bookkept: true})
 	cgTrunkMoves(t, main)
 	head := ldRebase(t, wt)
 	ldReviewAgain(t, wt)
@@ -369,8 +418,7 @@ func TestAC10TheCommitGateDoesNotWarnOfTheLoopsFilesOnlyTrunksCommitsChanged(t *
 	})
 	t.Run("AC-10 trunk changed the backlog", func(t *testing.T) {
 		t.Parallel()
-		main, wt, _ := otWalked(t, ldWalk{finished: true})
-		ldBookkeeping(t, wt)
+		main, wt, _ := otWalked(t, ldWalk{finished: true, bookkept: true})
 		writeFile(t, main, "CHANGES.md", "another story's work\n")
 		writeFile(t, main, cgBacklog, wtRead(t, filepath.Join(main, cgBacklog))+"\n")
 		swGit(t, main, "add", "--", cgBacklog, "CHANGES.md")
