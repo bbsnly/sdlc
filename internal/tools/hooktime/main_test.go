@@ -1205,7 +1205,6 @@ func TestAC6AC10EachTimedShapeIsTheCommandItsCriterionDescribes(t *testing.T) {
 // fixture is held to what is on disk and not to the resolver it times.
 func linksCrossed(t *testing.T, root, word string, seen map[string]int, owner int) int {
 	t.Helper()
-	volume := filepath.VolumeName(root)
 	dest := root
 	rest := strings.Split(filepath.ToSlash(word), "/")
 	crossed := 0
@@ -1237,8 +1236,13 @@ func linksCrossed(t *testing.T, root, word string, seen map[string]int, owner in
 		if err != nil {
 			t.Fatalf("readlink %s: %v", next, err)
 		}
+		// An absolute target starts again at the root of its own volume, and
+		// the volume is not a name to walk: kept, `C:` was looked up below
+		// `C:\`, and on Windows every word went through 1 link (CI on
+		// 38e0ed0).
 		if filepath.IsAbs(target) {
-			dest = volume + string(filepath.Separator)
+			volume := filepath.VolumeName(target)
+			dest, target = volume+string(filepath.Separator), target[len(volume):]
 		}
 		rest = append(strings.Split(filepath.ToSlash(target), "/"), rest...)
 	}
