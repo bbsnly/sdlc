@@ -114,17 +114,6 @@ jobs:
           fi
           echo "${RUNNER_TEMP}/shellcheck" >> "${GITHUB_PATH}"
 
-      # Defender scans every process a test starts, and the tests start tens
-      # of thousands of git processes: on 8618433 internal/hook took 748 s on
-      # windows-latest against 75 s on macOS, and internal/cli passed go test's
-      # limit of twenty minutes. The runner is thrown away after the job.
-      - name: Leave the tests' processes unscanned
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction Continue
-          "real-time scanning off: $((Get-MpPreference).DisableRealtimeMonitoring)"
-
       - name: task check
         shell: bash
         run: ./task check
@@ -336,17 +325,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26.12.1'
-
-      # Defender scans every process a test starts, and the tests start tens
-      # of thousands of git processes: on 8618433 internal/hook took 748 s on
-      # windows-latest against 75 s on macOS, and internal/cli passed go test's
-      # limit of twenty minutes. The runner is thrown away after the job.
-      - name: Leave the tests' processes unscanned
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction Continue
-          "real-time scanning off: $((Get-MpPreference).DisableRealtimeMonitoring)"
 
       - name: Say which platform this actually is
         shell: bash
