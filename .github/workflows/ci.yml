@@ -26,8 +26,9 @@ jobs:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # A stalled step -- a module fetch, an installer test, a release download --
-    # otherwise holds the runner for GitHub's default of six hours. The
-    # slowest job, check on Windows, takes about eight minutes.
+    # otherwise holds the runner for GitHub's default of six hours. On
+    # 7e94c69 check took 19 minutes on macOS, and passed go test's limit of
+    # twenty for internal/cli on Windows.
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -112,6 +113,17 @@ jobs:
             tar -xJf "${RUNNER_TEMP}/${asset}" -C "${RUNNER_TEMP}/shellcheck" --strip-components=1
           fi
           echo "${RUNNER_TEMP}/shellcheck" >> "${GITHUB_PATH}"
+
+      # Defender scans every process a test starts, and the tests start tens
+      # of thousands of git processes: on 8618433 internal/hook took 748 s on
+      # windows-latest against 75 s on macOS, and internal/cli passed go test's
+      # limit of twenty minutes. The runner is thrown away after the job.
+      - name: Leave the tests' processes unscanned
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction Continue
+          "real-time scanning off: $((Get-MpPreference).DisableRealtimeMonitoring)"
 
       - name: task check
         shell: bash
@@ -324,6 +336,17 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '26.8.2'
+
+      # Defender scans every process a test starts, and the tests start tens
+      # of thousands of git processes: on 8618433 internal/hook took 748 s on
+      # windows-latest against 75 s on macOS, and internal/cli passed go test's
+      # limit of twenty minutes. The runner is thrown away after the job.
+      - name: Leave the tests' processes unscanned
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction Continue
+          "real-time scanning off: $((Get-MpPreference).DisableRealtimeMonitoring)"
 
       - name: Say which platform this actually is
         shell: bash
