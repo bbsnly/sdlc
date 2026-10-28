@@ -79,26 +79,33 @@ func TestReachableFollowsEachLinkOnItsOwnAndSaysWhereTheWayEnds(t *testing.T) {
 }
 
 // pastTheLimit asks reachable once for each directory where the resolver is
-// memoised, and charges what it followed to the budget once: each name not
-// there in a directory below a link asks it.
-func TestPastTheLimitChargesTheLinksItFollowsOnceForEachDirectory(t *testing.T) {
+// memoised, and charges what it followed to the budget once, and only for a
+// directory past the limit: within it, the walk there has counted its links.
+func TestPastTheLimitChargesTheLinksItFollowsOnceForEachDirectoryPastTheLimit(t *testing.T) {
 	root := project(t)
+	past := lookupLinks() + 1
 	lbChainAtOneName(t, root, "dangling", 3, filepath.Join(root, "nothing"))
-	dir := filepath.Join(root, "dangling")
-	res := NewResolver(root).Memoised().Budgeted(100)
+	lbChainAtOneName(t, root, "over", past, filepath.Join(root, "nothing"))
+	within, over := filepath.Join(root, "dangling"), filepath.Join(root, "over")
+	res := NewResolver(root).Memoised().Budgeted(1000)
 	for range 3 {
-		if past, _ := res.pastTheLimit(dir); past {
-			t.Fatalf("pastTheLimit(%s) is true for 3 links to nothing", dir)
+		if p, _ := res.pastTheLimit(within); p {
+			t.Fatalf("pastTheLimit(%s) is true for 3 links to nothing", within)
+		}
+		if p, _ := res.pastTheLimit(over); !p {
+			t.Fatalf("pastTheLimit(%s) is false for %d links to nothing", over, past)
 		}
 	}
-	if got := res.budget.left; got != 97 {
-		t.Errorf("the budget has %d links left after 3 links asked three times, want 97", got)
+	if got, want := res.budget.left, 1000-past; got != want {
+		t.Errorf("the budget has %d links left after 3 and %d links asked three times, want %d", got, past, want)
 	}
-	unmemoised := NewResolver(root).Budgeted(100)
-	unmemoised.pastTheLimit(dir)
-	unmemoised.pastTheLimit(dir)
-	if got := unmemoised.budget.left; got != 94 {
-		t.Errorf("unmemoised, the budget has %d links left after 3 links asked twice, want 94", got)
+	unmemoised := NewResolver(root).Budgeted(1000)
+	for range 2 {
+		unmemoised.pastTheLimit(within)
+		unmemoised.pastTheLimit(over)
+	}
+	if got, want := unmemoised.budget.left, 1000-2*past; got != want {
+		t.Errorf("unmemoised, the budget has %d links left after 3 and %d links asked twice, want %d", got, past, want)
 	}
 }
 

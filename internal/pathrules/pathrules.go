@@ -304,9 +304,12 @@ func hidingTheLimit() bool { return limitUnsaid && !limitReadsAsNotThere }
 // pastTheLimit reports whether dir, which a lookup said is not there, is there
 // once its links are followed one at a time, and so a directory the system
 // would not look up in one go. It is asked once for each dir where res is
-// memoised, and its links charged once: every name not there in a directory
-// below a link asks it, and each word in the same directory walked and
-// charged the same links again.
+// memoised: every name not there in a directory below a link asks it.
+//
+// Its links are charged to the budget only where dir is past the limit, and
+// then once. Within it, they are links the walk to dir has already counted:
+// charged again, on windows-latest a word through 6 links went over a budget
+// of 10, and a command of 18 words over 512 at its ninth (CI on 7e94c69).
 //
 // Only a dir more links away than one lookup follows is past the limit. A
 // system lookup fails short of it too: Windows will not go through a link to
@@ -322,11 +325,11 @@ func (res Resolver) pastTheLimit(dir string) (past bool, at string) {
 	}
 	if _, err := os.Stat(dir); err != nil {
 		there, links, to := res.reachable(dir)
-		res.budget.charge(links)
 		switch {
 		case !there:
 		case links > lookupLinks():
 			past = true
+			res.budget.charge(links)
 		default:
 			at = to
 		}
