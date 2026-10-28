@@ -551,6 +551,7 @@ func protectedWrite(project, id string) map[string]any {
 // the plugin's own version, once; the model's Bash then finds that sdlc on its
 // PATH, and the hook runs it.
 func TestAC9OnTheFirstSessionStartTheLauncherFetchesThePluginsReleaseAndTheHookAndBashFindIt(t *testing.T) {
+	t.Parallel()
 	for _, l := range hookLaunchers(t) {
 		t.Run("AC-9 "+l.name, func(t *testing.T) {
 			releaseDir := t.TempDir()
@@ -627,6 +628,7 @@ func TestAC9TheLauncherInstallsTheReleaseUnderAPluginRootWhoseNameHoldsABackslas
 // never run, nor left where a later call would run it -- even from a mirror
 // that serves a checksums file vouching for it. And the session is told.
 func TestAC9TheLauncherNeverRunsABinaryThatFailsItsPinnedChecksum(t *testing.T) {
+	t.Parallel()
 	for _, l := range hookLaunchers(t) {
 		t.Run("AC-9 "+l.name, func(t *testing.T) {
 			genuine := releaseArchive(t, t.TempDir(), versionedBuild(t))
@@ -679,6 +681,7 @@ func TestAC9TheLauncherNeverRunsABinaryThatFailsItsPinnedChecksum(t *testing.T) 
 // SDLC_BIN in Desktop's local environment editor is the one route that always
 // works from inside the app.
 func TestAC11WhenNoSdlcCanBeFetchedASessionStartIsToldWhatHappenedAndHowToPutItRightInTheApp(t *testing.T) {
+	t.Parallel()
 	for _, l := range hookLaunchers(t) {
 		for _, c := range []struct {
 			name, says string
@@ -713,6 +716,7 @@ func TestAC11WhenNoSdlcCanBeFetchedASessionStartIsToldWhatHappenedAndHowToPutItR
 			}, false},
 		} {
 			t.Run(l.name+"/"+c.name, func(t *testing.T) {
+				t.Parallel()
 				releaseDir := t.TempDir()
 				pins, base := c.setUp(t, releaseDir)
 				m := serveMirror(t, releaseDir)
@@ -737,6 +741,7 @@ func TestAC11WhenNoSdlcCanBeFetchedASessionStartIsToldWhatHappenedAndHowToPutItR
 // found is told, in a project that takes part or one that does not yet; a
 // command that is not the plugin's still hears nothing from it.
 func TestAC11ASlashCommandTypedWhenNoSdlcCanBeFoundTellsThePersonHowToPutItRightInTheApp(t *testing.T) {
+	t.Parallel()
 	for _, l := range hookLaunchers(t) {
 		for _, c := range []struct {
 			name    string

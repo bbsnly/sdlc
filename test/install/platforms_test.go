@@ -42,6 +42,7 @@ var shipped = []struct {
 }
 
 func TestTheShellInstallerInstallsEveryPlatformWeShip(t *testing.T) {
+	t.Parallel()
 	skipUnlessPOSIX(t)
 	for _, target := range shipped {
 		for _, machine := range target.unameMs {
@@ -78,6 +79,7 @@ func TestTheShellInstallerInstallsEveryPlatformWeShip(t *testing.T) {
 // a machine there is no build for. Only the arm64 archive is published here,
 // so naming any other fails outright.
 func TestTheShellInstallerInstallsTheNativeBuildUnderRosetta(t *testing.T) {
+	t.Parallel()
 	skipUnlessPOSIX(t)
 	binary, mirror := crossRelease(t, "darwin", "arm64")
 	dir := t.TempDir()
@@ -99,6 +101,7 @@ func TestTheShellInstallerInstallsTheNativeBuildUnderRosetta(t *testing.T) {
 // A machine we publish nothing for must be told so, rather than given a
 // 404 from a URL it built out of a name it did not recognise.
 func TestTheShellInstallerSaysSoOnAPlatformWeDoNotShip(t *testing.T) {
+	t.Parallel()
 	skipUnlessPOSIX(t)
 	for _, unrecognised := range []struct{ what, s, m string }{
 		{"operating system", "FreeBSD", "x86_64"},

@@ -302,6 +302,7 @@ func nothingInstalled(t *testing.T, dir string) {
 }
 
 func TestTheShellInstallerPutsAWorkingBinaryOnDisk(t *testing.T) {
+	t.Parallel()
 	skipUnlessPOSIX(t)
 	dir := t.TempDir()
 	out, err := run(t, serve(t, release(t, false)), dir, "sh", "install.sh")
@@ -333,6 +334,7 @@ func TestTheShellInstallerFinishesWhenSHELLIsUnset(t *testing.T) {
 }
 
 func TestTheShellInstallerRefusesADownloadThatDoesNotMatchItsChecksum(t *testing.T) {
+	t.Parallel()
 	skipUnlessPOSIX(t)
 	dir := t.TempDir()
 	out, err := run(t, serve(t, release(t, true)), dir, "sh", "install.sh")
@@ -346,6 +348,7 @@ func TestTheShellInstallerRefusesADownloadThatDoesNotMatchItsChecksum(t *testing
 }
 
 func TestThePowerShellInstallerPutsAWorkingBinaryOnDisk(t *testing.T) {
+	t.Parallel()
 	skipUnlessWindows(t)
 	dir := t.TempDir()
 	out, err := run(t, serve(t, release(t, false)), dir,
@@ -357,6 +360,7 @@ func TestThePowerShellInstallerPutsAWorkingBinaryOnDisk(t *testing.T) {
 }
 
 func TestThePowerShellInstallerRefusesADownloadThatDoesNotMatchItsChecksum(t *testing.T) {
+	t.Parallel()
 	skipUnlessWindows(t)
 	dir := t.TempDir()
 	out, err := run(t, serve(t, release(t, true)), dir,
@@ -371,6 +375,7 @@ func TestThePowerShellInstallerRefusesADownloadThatDoesNotMatchItsChecksum(t *te
 }
 
 func TestTheNpmInstallerPutsAWorkingBinaryOnDisk(t *testing.T) {
+	t.Parallel()
 	skipUnlessNode(t)
 	dir := t.TempDir()
 	out, err := run(t, serve(t, release(t, false)), dir, "node", "npm/bin/sdlc-install.js", "install")
@@ -381,6 +386,7 @@ func TestTheNpmInstallerPutsAWorkingBinaryOnDisk(t *testing.T) {
 }
 
 func TestTheNpmInstallerRefusesADownloadThatDoesNotMatchItsChecksum(t *testing.T) {
+	t.Parallel()
 	skipUnlessNode(t)
 	dir := t.TempDir()
 	out, err := run(t, serve(t, release(t, true)), dir, "node", "npm/bin/sdlc-install.js", "install")
@@ -399,6 +405,7 @@ func TestTheNpmInstallerRefusesADownloadThatDoesNotMatchItsChecksum(t *testing.T
 // failed -- and that one's checksums came from the same place as its download.
 // Here the newest release is one the mirror does not even serve.
 func TestThePublishedNpmPackageInstallsTheReleaseItCarriesChecksumsFor(t *testing.T) {
+	t.Parallel()
 	skipUnlessNode(t)
 	dir := release(t, false)
 	pkg := filepath.Join(t.TempDir(), "npm")
@@ -482,6 +489,7 @@ func skipUnlessNode(t *testing.T) {
 // It was the one branch of all three installers that no test ran, and the
 // PowerShell one reads the redirect differently on 5.1 and on 7.
 func TestEachInstallerResolvesTheLatestVersionForItself(t *testing.T) {
+	t.Parallel()
 	base := serve(t, release(t, false))
 	for _, route := range installRoutes() {
 		t.Run(route.name, func(t *testing.T) {
@@ -503,6 +511,7 @@ func TestEachInstallerResolvesTheLatestVersionForItself(t *testing.T) {
 // the refusal has to leave nothing behind -- the same promise as a bad
 // checksum, on a path that reaches a different line of code.
 func TestEachInstallerRefusesAReleaseThatDoesNotListThisPlatform(t *testing.T) {
+	t.Parallel()
 	base := serve(t, releaseMissingThisPlatform(t))
 	for _, route := range installRoutes() {
 		t.Run(route.name, func(t *testing.T) {

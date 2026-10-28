@@ -70,6 +70,7 @@ func goInstalled(t *testing.T, gobin string) string {
 }
 
 func TestGoInstallFromSourcePutsAWorkingBinaryOnDisk(t *testing.T) {
+	t.Parallel()
 	gobin := t.TempDir()
 	cmd := exec.CommandContext(t.Context(), "go", "install", "./cmd/sdlc")
 	cmd.Dir = ".." + string(filepath.Separator) + ".."
@@ -97,6 +98,7 @@ func TestGoInstallFromSourcePutsAWorkingBinaryOnDisk(t *testing.T) {
 // module from a file proxy is the only way to install a real version of it
 // without tagging one.
 func TestGoInstallAtAVersionReportsThatVersion(t *testing.T) {
+	t.Parallel()
 	gobin := t.TempDir()
 	// Everything Go caches about a module is keyed on module@version and
 	// never revalidated, because a real version is immutable. This one is

@@ -10,6 +10,7 @@ import (
 // $ErrorActionPreference = 'Stop' stayed set in the user's session afterwards,
 // along with its variables, and nothing ran the piped route to notice.
 func TestThePipedPowerShellInstallerLeavesTheSessionAsItWas(t *testing.T) {
+	t.Parallel()
 	skipUnlessWindows(t)
 	dir := t.TempDir()
 	// Single quotes only: a double quote in a -Command argument is at the mercy

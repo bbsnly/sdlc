@@ -13,6 +13,7 @@ import (
 // what goreleaser builds, so the one file people pipe into a shell was the one
 // file with nothing behind it -- while the documentation said otherwise.
 func TestEveryReleaseAssetIsAttested(t *testing.T) {
+	t.Parallel()
 	root := repoRoot(t)
 	attested := subjectPaths(t, filepath.Join(root, ".github", "workflows", "release.yml"))
 	for _, asset := range extraFiles(t, filepath.Join(root, ".goreleaser.yml")) {
