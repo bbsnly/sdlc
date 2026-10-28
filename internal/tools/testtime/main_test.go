@@ -221,7 +221,9 @@ func packages(out string) []string {
 	var blocks []string
 	var b, compiler strings.Builder
 	for l := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
-		if strings.HasPrefix(l, "# example.com/") || strings.HasPrefix(l, "c/c_test.go:") {
+		// The compiler names the file with the system's separator: on
+		// windows-11-arm, c\c_test.go was read into another package's block.
+		if strings.HasPrefix(l, "# example.com/") || strings.HasPrefix(l, "c/c_test.go:") || strings.HasPrefix(l, `c\c_test.go:`) {
 			compiler.WriteString(l + "\n")
 			continue
 		}
