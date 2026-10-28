@@ -50,7 +50,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26.12.1'
 
@@ -232,7 +232,7 @@ jobs:
           echo "version=${floor}" >> "${GITHUB_OUTPUT}"
           echo "the package claims Node ${floor} and up"
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ steps.floor.outputs.version }}
 
@@ -333,7 +333,7 @@ jobs:
 
       # The npm installer is one of the routes under test, so node has to be
       # here for it to be tested rather than skipped.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26.12.1'
 
