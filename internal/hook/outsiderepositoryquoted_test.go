@@ -36,6 +36,7 @@ var orRepositoryTargets = []orTarget{
 // follows a `cd` that the shell reads as text, the relative name after it is
 // read from an outside directory when the shell runs it in the repository.
 func TestAC1AndAC2ASeparatorInsideQuotesThenACdThenARelativeNameStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	var rows []orEvasion
 	for _, prefix := range []string{
@@ -67,6 +68,7 @@ func TestAC1AndAC2ASeparatorInsideQuotesThenACdThenARelativeNameStaysRefusedByTh
 // shell where it was, so what follows `&&` after it is read from the
 // repository, whatever the `cd` named.
 func TestAC1AndAC2APipeAsTheJoinerBeforeARelativeNameStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	var rows []orEvasion
 	for _, prefix := range []string{
@@ -119,6 +121,7 @@ func orDotted(t *testing.T) orWorld {
 // are the ones the released tool lets through and the story closes: the landing
 // is what the write is, not the source's name.
 func TestAC1AndAC2ACopyOrMoveOfAnOutsideFileLandingInTheRepositoryStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orDotted(t)
 	orRun(t, w, []orEvasion{
 		// A relative source, from an outside copy of the project.
@@ -163,6 +166,7 @@ func TestAC1AndAC2ACopyOrMoveOfAnOutsideFileLandingInTheRepositoryStaysRefusedBy
 // word read from an outside directory, `..` in a word through a link, and a
 // glob in the operand of a `cd`.
 func TestAC1AndAC2AClausesThatKeepAWordOutOfTheOutsideStayRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	orLinks(t, w)
 	orSymlink(t, w.parent, filepath.Join(w.out, "up"))
@@ -207,6 +211,7 @@ func TestAC1AndAC2AClausesThatKeepAWordOutOfTheOutsideStayRefusedByTheHook(t *te
 // that was not looking at test names. Held with the name by itself, with a
 // symbolic link of that name to the frozen test and with a hard link.
 func TestAC1AndAC2ASingleQuotedBackslashNameWithATestLikeEndStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("a backslash is a separator in a Windows path, so no file has one in its name")
 	}
@@ -237,6 +242,7 @@ func TestAC1AndAC2ASingleQuotedBackslashNameWithATestLikeEndStaysRefusedByTheHoo
 // word as written and the root, as the freeze rule's refusals are held in
 // TestAC3AFrozenTestRefusalNamesTheWordOrRootAndTheRepository.
 func TestAC4ARefusalOfAnOutsidePathInACommandThatIsNotPlainNamesTheWordAndTheRepository(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	for _, agent := range orAgents {
 		for _, c := range []struct{ command, word string }{

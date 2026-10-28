@@ -71,6 +71,7 @@ func slashBefore(text string, i int, q, slash, terminal string) bool {
 }
 
 func TestAC3AModelsShellThatRunsTheHookOnAUserPromptExpansionIsRefusedThroughTheHook(t *testing.T) {
+	t.Parallel()
 	const rule = "[slash-command-is-a-human-decision]"
 	root := loopProject(t)
 	for _, c := range []struct{ tool, cmd string }{

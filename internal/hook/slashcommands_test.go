@@ -323,6 +323,7 @@ func personsCases() []personsCase {
 // CLI refuses a session that does not hold the story as SessionElsewhere, and
 // refuses `staffing assign` from any session as StaffingAssignInSession.
 func TestAC1EachPersonOnlySlashCommandMakesTheTerminalsChangeAndShowsItsOutput(t *testing.T) {
+	t.Parallel()
 	for _, c := range personsCases() {
 		t.Run(c.name, func(t *testing.T) {
 			byHand := c.project(t)
@@ -365,6 +366,7 @@ func TestAC1EachPersonOnlySlashCommandMakesTheTerminalsChangeAndShowsItsOutput(t
 // session in its environment, as a terminal has none, and with nothing on
 // standard input: the payload is the hook's, not the command's.
 func TestAC1ASlashCommandIsRunFromTheSessionsDirectoryWithNoSessionAndNothingOnStandardInput(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	below := filepath.Join(root, "internal")
 	if err := os.MkdirAll(below, 0o755); err != nil {
@@ -407,6 +409,7 @@ func TestAC1ASlashCommandIsRunFromTheSessionsDirectoryWithNoSessionAndNothingOnS
 // AC-10: /sdlc:init and /sdlc:doctor are not a person's decisions, and come
 // out as `sdlc init` and `sdlc doctor` do.
 func TestAC10InitAndDoctorTypedAsSlashCommandsComeOutAsTheTerminalCommandsDo(t *testing.T) {
+	t.Parallel()
 	fresh := func(t *testing.T) string {
 		t.Helper()
 		root := t.TempDir()
@@ -462,6 +465,7 @@ func TestAC10InitAndDoctorTypedAsSlashCommandsComeOutAsTheTerminalCommandsDo(t *
 // The genuine command is the control: without it every row below passes on a
 // hook that handles nothing at all.
 func TestAC3AnExpansionThatIsNotThisPluginsOwnTypedCommandRecordsNothing(t *testing.T) {
+	t.Parallel()
 	waiting := waitingProject
 
 	t.Run("AC-3 control: /sdlc:approve from the plugin records the approval", func(t *testing.T) {
@@ -523,6 +527,7 @@ func TestAC3AnExpansionThatIsNotThisPluginsOwnTypedCommandRecordsNothing(t *test
 // action did not run and what to do, and leaves the session going: exit 0 and
 // one JSON answer, never a crash Claude Code reads as "carry on".
 func TestAC4AHookThatFailsOnASlashCommandRecordsNothingAndSaysTheActionDidNotRun(t *testing.T) {
+	t.Parallel()
 	waiting := waitingProject
 	panics := func(string, func(string) string, []string, io.Reader, io.Writer, io.Writer) int {
 		panic("forced by the test: the command gave way before it wrote anything")
@@ -571,6 +576,7 @@ func TestAC4AHookThatFailsOnASlashCommandRecordsNothingAndSaysTheActionDidNotRun
 // them: nothing in them is run, expanded or redirected, and a quote groups a
 // phrase into one word as it would on a command line.
 func TestAC5TheTypedArgumentsReachTheCommandAsWordsAndNeverAShell(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name, slash, args string
 		want              []string
@@ -619,6 +625,7 @@ func TestAC5TheTypedArgumentsReachTheCommandAsWordsAndNeverAShell(t *testing.T) 
 // AC-5 with the real command: what a shell would have run is not run, and
 // nothing is written where a shell would have written it.
 func TestAC5ShellWordsTypedAfterASlashCommandRunNothingAndWriteNothing(t *testing.T) {
+	t.Parallel()
 	for _, args := range []string{
 		"A-1; touch pwned",
 		"A-1 && touch pwned",

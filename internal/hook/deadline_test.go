@@ -430,6 +430,7 @@ func calledFrom(name string) bool {
 // already past when the hook learns it is one of them. Today Claude Code kills
 // a hook that late and the call runs with no rule applied.
 func TestAC1ACallTheHookWasGoingToCheckIsRefusedOnceTheDeadlineHasPassed(t *testing.T) {
+	t.Parallel()
 	for _, c := range checkedCalls(t) {
 		t.Run(c.name, func(t *testing.T) {
 			f := newFakeDeadline()
@@ -457,6 +458,7 @@ func TestAC1ACallTheHookWasGoingToCheckIsRefusedOnceTheDeadlineHasPassed(t *test
 // case the story is named for: the answer is the refusal, and it is given
 // while the decision has not been made.
 func TestAC1AndAC3ACallStillBeingDecidedWhenTheDeadlinePassesIsRefusedWithOneAnswer(t *testing.T) {
+	t.Parallel()
 	calls := checkedCalls(t)
 	// One the hook would refuse on its own account, so that a deadline refusal
 	// here is known not to be that decision under another name.
@@ -485,6 +487,7 @@ func TestAC1AndAC3ACallStillBeingDecidedWhenTheDeadlinePassesIsRefusedWithOneAns
 // ------------------------------------------------------------------ AC-2
 
 func TestAC2TheRefusalSaysTheHookRanOutOfTimeInWordsThatFollowTheTool(t *testing.T) {
+	t.Parallel()
 	said := map[bool]map[string]bool{true: {}, false: {}}
 	for _, c := range checkedCalls(t) {
 		f := newFakeDeadline()
@@ -533,6 +536,7 @@ func TestAC2TheRefusalSaysTheHookRanOutOfTimeInWordsThatFollowTheTool(t *testing
 // and the ones the shell policy gives. This rule is neither, so nothing else
 // would notice it had no section to look it up in.
 func TestAC2TheRuleForRunningOutOfTimeIsItsOwnAndHasASectionInTheEnforcementPage(t *testing.T) {
+	t.Parallel()
 	if !regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)+$`).MatchString(deadlineRule) {
 		t.Errorf("the rule is named %q, which is not spelled as every other rule name is", deadlineRule)
 	}
@@ -569,6 +573,7 @@ func TestAC2TheRuleForRunningOutOfTimeIsItsOwnAndHasASectionInTheEnforcementPage
 // The decision first: the timer never fires, and what is written is what the
 // hook writes with no clock handed in.
 func TestAC3OneAnswerIsWrittenWhenTheDecisionComesFirst(t *testing.T) {
+	t.Parallel()
 	calls := checkedCalls(t)
 	root := loopProject(t)
 	calls = append(calls,
@@ -601,6 +606,7 @@ func TestAC3OneAnswerIsWrittenWhenTheDecisionComesFirst(t *testing.T) {
 // looks at either. Which one answers is the hook's to choose, and it answers
 // once.
 func TestAC3OneAnswerIsWrittenWhenTheDecisionAndTheDeadlineAreBothThere(t *testing.T) {
+	t.Parallel()
 	for _, c := range checkedCalls(t) {
 		t.Run(c.name, func(t *testing.T) {
 			var decision bytes.Buffer
@@ -654,6 +660,7 @@ func preToolUseTimeouts(t *testing.T) []time.Duration {
 // The five seconds are for what the deadline cannot see: the launcher finding
 // the binary, the process starting, and the answer being written and read.
 func TestAC4TheDeadlineIsAtLeastFiveSecondsShortOfTheTimeoutClaudeCodeGivesTheHook(t *testing.T) {
+	t.Parallel()
 	const margin = 5 * time.Second
 	if hookDeadline <= 0 {
 		t.Fatalf("the deadline is %s", hookDeadline)
@@ -676,6 +683,7 @@ func TestAC4TheDeadlineIsAtLeastFiveSecondsShortOfTheTimeoutClaudeCodeGivesTheHo
 // One figure: with nothing in the environment, the timer the hook sets for a
 // call it checks is the fixed figure and no other.
 func TestAC4WithNothingSetTheDeadlineInForceIsTheFixedFigure(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	f := newFakeDeadline()
 	a := f.ask(t, strings.NewReader(command(root, "", "ls")), noEnv)
@@ -695,6 +703,7 @@ func TestAC4WithNothingSetTheDeadlineInForceIsTheFixedFigure(t *testing.T) {
 // checks: nothing is handed to a worker, so no command is read and no head is
 // written down for a call that was refused.
 func TestAC5ADeadlinePassedWhileTheInputWasReadIsRefusedWhenTheHookLearnsItChecksTheCall(t *testing.T) {
+	t.Parallel()
 	for _, c := range checkedCalls(t) {
 		t.Run(c.name, func(t *testing.T) {
 			f := newFakeDeadline()
@@ -709,6 +718,7 @@ func TestAC5ADeadlinePassedWhileTheInputWasReadIsRefusedWhenTheHookLearnsItCheck
 
 // Stage two, finding the loop.
 func TestAC5ADeadlinePassedWhileTheLoopWasFoundIsRefusedWhenTheHookLearnsItChecksTheCall(t *testing.T) {
+	t.Parallel()
 	for _, c := range checkedCalls(t) {
 		t.Run(c.name, func(t *testing.T) {
 			f := newFakeDeadline()
@@ -725,6 +735,7 @@ func TestAC5ADeadlinePassedWhileTheLoopWasFoundIsRefusedWhenTheHookLearnsItCheck
 // call is: time spent reading the input and finding the loop comes off what is
 // left for the decision.
 func TestAC5TheClockStartsWhenTheHookStartsAndTheTimerIsSetForWhatIsLeft(t *testing.T) {
+	t.Parallel()
 	for _, c := range checkedCalls(t) {
 		t.Run(c.name, func(t *testing.T) {
 			reading, finding := 10*time.Second, 5*time.Second
@@ -753,6 +764,7 @@ func TestAC5TheClockStartsWhenTheHookStartsAndTheTimerIsSetForWhatIsLeft(t *test
 // from the environment, the deadline passes, and the refusal is given while
 // the classifier is still there.
 func TestAC5ADeadlineThatPassesWhileTheCommandIsReadIsRefusedWithoutWaitingForTheDecision(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	f := newFakeDeadline()
 	reached, letGo := make(chan struct{}), make(chan struct{})
@@ -903,6 +915,7 @@ func uncheckedCalls(t *testing.T) []uncheckedCase {
 // passed long ago, not when the timer has fired, and not when the deadline is
 // a millisecond.
 func TestAC7TheDeadlineRefusesNothingWhereTheHookHasNothingToCheck(t *testing.T) {
+	t.Parallel()
 	for _, c := range uncheckedCalls(t) {
 		for _, variable := range []string{"", "1"} {
 			t.Run(c.name+", SDLC_HOOK_DEADLINE_MS="+variable, func(t *testing.T) {
@@ -1011,6 +1024,7 @@ func TestAC6ADeadlinePassedBeforeTheHookKnowsIsSaidInTheDebugLogAndNowhereElse(t
 // never moves. The warnings are here because the worker raises them and the
 // answer carries them.
 func TestAC8ACallDecidedInsideTheDeadlineIsAnsweredByteForByteAsItWasBefore(t *testing.T) {
+	t.Parallel()
 	const (
 		configWarning = ".sdlc/config.json could not be read, so tests are being recognised by the default " +
 			"patterns until it can be. Run `sdlc doctor` to see why."
@@ -1102,6 +1116,7 @@ func TestAC8ACallDecidedInsideTheDeadlineIsAnsweredByteForByteAsItWasBefore(t *t
 // the hook sets for a call it checks, on a clock that has not moved: the whole
 // of the deadline in force, to the nanosecond.
 func TestAC11TheVariableShortensTheDeadlineAndNothingElse(t *testing.T) {
+	t.Parallel()
 	figure := int64(hookDeadline / time.Millisecond)
 	if time.Duration(figure)*time.Millisecond != hookDeadline || figure < 3 {
 		t.Fatalf("the fixed figure is %s, which is not a whole number of milliseconds above 2", hookDeadline)
@@ -1165,6 +1180,7 @@ func TestAC11TheVariableShortensTheDeadlineAndNothingElse(t *testing.T) {
 // And the shortened deadline is the one the hook refuses by, on either side of
 // it; a value it does not take refuses nothing early.
 func TestAC11AShortenedDeadlineRefusesWhereTheFixedFigureWouldNot(t *testing.T) {
+	t.Parallel()
 	if hookDeadline <= 6*time.Second {
 		t.Fatalf("the deadline is %s, which this test took to be more than six seconds", hookDeadline)
 	}
@@ -1201,6 +1217,7 @@ func TestAC11AShortenedDeadlineRefusesWhereTheFixedFigureWouldNot(t *testing.T) 
 // The variable alone refuses nothing: a millisecond's deadline on a clock that
 // has not moved, with a timer that does not fire, is a call decided in time.
 func TestAC11AShortDeadlineThatHasNotPassedRefusesNothing(t *testing.T) {
+	t.Parallel()
 	for _, c := range checkedCalls(t) {
 		var want bytes.Buffer
 		Run([]string{"PreToolUse"}, strings.NewReader(c.stdin), &want, io.Discard, noEnv)
@@ -1224,6 +1241,7 @@ func TestAC11AShortDeadlineThatHasNotPassedRefusesNothing(t *testing.T) {
 // to be refused, and the session would be told to try shorter parts of a
 // command the hook cannot read at any length.
 func TestAPanicWhileTheCommandIsReadAnswersCarryOnAndNeverARefusal(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, late := range []bool{false, true} {
 		f := newFakeDeadline()

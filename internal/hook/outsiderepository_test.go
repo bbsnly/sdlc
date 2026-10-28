@@ -92,6 +92,7 @@ type orRow struct{ dir, command string }
 // copy there is shaped, for the main conversation and for the implementer, from
 // a directory in the repository and from one outside it.
 func TestAC1AndAC2AFrozenLookingNameOutsideTheRepositoryIsNotRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	rows := []orRow{
 		// From the repository, naming the outside copy in full.
@@ -156,6 +157,7 @@ func TestAC1AndAC2AFrozenLookingNameOutsideTheRepositoryIsNotRefusedByTheHook(t 
 // destination is not the repository's. `mv` takes its source away and stays
 // refused; both are held below.
 func TestAC1AndAC2CopyingAFrozenTestOutOfTheRepositoryIsNotRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	for _, agent := range orAgents {
 		for _, command := range []string{
@@ -186,6 +188,7 @@ func TestAC1AndAC2CopyingAFrozenTestOutOfTheRepositoryIsNotRefusedByTheHook(t *t
 // What no rule refused before is still let through, so a test that only passes
 // because everything is allowed is held by the refusals below it.
 func TestAC1APathOutsideTheRepositoryThatNoRuleReadsIsStillAllowedUnchanged(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	for _, agent := range orAgents {
 		for _, command := range []string{
@@ -207,6 +210,7 @@ func TestAC1APathOutsideTheRepositoryThatNoRuleReadsIsStillAllowedUnchanged(t *t
 // that is the one place an outside path is refused, and for the reason that it
 // is outside.
 func TestAC1TheWriteToolStillRefusesAnOutsidePathAsOutsideUnchanged(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	const reason = "this path is outside the repository, and the loop only governs what it can review"
 	const route = "work inside the repository; if you need a file elsewhere, ask the user to create it"
@@ -238,6 +242,7 @@ func TestAC1TheWriteToolStillRefusesAnOutsidePathAsOutsideUnchanged(t *testing.T
 // sentence around them, or whether a frozen test named plainly inside the
 // repository says them too.
 func TestAC3AFrozenTestRefusalNamesTheWordOrRootAndTheRepository(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	for _, c := range []struct{ dir, command, word string }{
 		{"", `find "$S" -name '*_test*' -delete`, "$S"},
@@ -270,6 +275,7 @@ func TestAC3AFrozenTestRefusalNamesTheWordOrRootAndTheRepository(t *testing.T) {
 // AC-3: a find from the repository itself, or from a root above it, is refused
 // naming the repository, and the root where the root has a name of its own.
 func TestAC3AFindRootedInOrAboveTheRepositoryIsRefusedNamingTheRepository(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	for _, c := range []struct{ dir, command string }{
 		{"", "find . -name '*_test*' -delete"},
@@ -297,6 +303,7 @@ func TestAC3AFindRootedInOrAboveTheRepositoryIsRefusedNamingTheRepository(t *tes
 // in a story's worktree is told that worktree's root, and not the other
 // story's, which it has no reason to be told.
 func TestAC3TheRepositoryNamedIsTheCheckoutTheSessionIsHeldIn(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	o := swOpenings(l)[0]
 	r := swCall(t, swHeld, swBash("find from a variable", o, `find "$S" -name '*_test*' -delete`), nil)
@@ -335,6 +342,7 @@ func TestAC3AWordTheRefusalNamesIsPrintedAsWrittenAndBounded(t *testing.T) {
 // AC-1 and AC-3: a word the hook cannot place is judged by its name, with the
 // text it has always had, for loop state and for a protected path.
 func TestAC3TheLoopStateAndProtectedPathRefusalsOfAnUnplacedWordAreUnchanged(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	for _, agent := range orAgents {
 		r := w.ask(t, agent, "", `printf x > "$S/copy/.sdlc/state/active"`)
@@ -374,6 +382,7 @@ func orLinks(t *testing.T, w orWorld) {
 // however it is spelled. Each of these is refused today, and none of them may
 // be let through by letting the paths placed outside go.
 func TestAC1WhatReachesTheRepositoryFromOutsideStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	orLinks(t, w)
 	rows := []orRow{
@@ -494,6 +503,7 @@ func TestAC1WhatReachesTheRepositoryFromOutsideStaysRefusedByTheHook(t *testing.
 // leads to, the by-its-end match refuses it today, and has to go on refusing it:
 // the one thing a placed-outside word is no longer matched by is its end.
 func TestAC1ALinkMadeAndUsedInOneCommandStaysRefused(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	for _, agent := range orAgents {
 		for _, command := range []string{
@@ -514,6 +524,7 @@ func TestAC1ALinkMadeAndUsedInOneCommandStaysRefused(t *testing.T) {
 // refused for where it lands, under the freeze's rule, and does not call the
 // outside source the repository's.
 func TestAC2ACopyFromOutsideOverAFrozenTestIsRefusedForTheDestination(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	for _, c := range []orRow{
 		{"", "cp {out}/flat/x_test.go internal/x_test.go"},
@@ -545,6 +556,7 @@ func TestAC2ACopyFromOutsideOverAFrozenTestIsRefusedForTheDestination(t *testing
 // The same checkout, and one beside it on the disk, from the story's worktree
 // and from the main checkout.
 func TestAC1AFrozenPathInAnotherCheckoutOfTheRepositoryStaysRefused(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	beside := filepath.Join(wtTempDir(t), "beside")
 	wtGit(t, l.main, "worktree", "add", "--quiet", "-b", "beside", beside, "main")

@@ -40,6 +40,7 @@ func remapRefused(t *testing.T, who, cmd string, r reply) {
 }
 
 func TestAC6TheSessionWorkingAStoryIsRefusedRemapInEveryForm(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, cmd := range remapCommands {
 		remapRefused(t, "the session working the story", cmd, call(t, command(root, "", cmd), noEnv))
@@ -48,6 +49,7 @@ func TestAC6TheSessionWorkingAStoryIsRefusedRemapInEveryForm(t *testing.T) {
 }
 
 func TestAC6AnotherSessionOfTheProjectIsRefusedRemapWhileAStoryIsUnderWay(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, cmd := range remapCommands {
 		remapRefused(t, "another session, while a story was under way,", cmd, call(t, inSession(command(root, "", cmd), "session-b"), noEnv))
@@ -57,6 +59,7 @@ func TestAC6AnotherSessionOfTheProjectIsRefusedRemapWhileAStoryIsUnderWay(t *tes
 // The state the repair is for: the story has landed, so nothing is being
 // worked and nothing waits for a decision. Remap is refused all the same.
 func TestAC6ASessionIsRefusedRemapWithNoStoryBeingWorkedOn(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
 		t.Fatal(err)
@@ -74,6 +77,7 @@ func TestAC6ASessionIsRefusedRemapWithNoStoryBeingWorkedOn(t *testing.T) {
 // The bookkeeper's own command stores the sections and decides nothing: it
 // goes through, as does what only names the repair.
 func TestAC1StoringSectionsAndNamingTheRepairAreNotRefusedWhereTheRepairIs(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	remapRefused(t, "the bookkeeper", "sdlc remap US-001", call(t, command(root, "bookkeeper", "sdlc remap US-001"), noEnv))
 	for _, cmd := range []string{

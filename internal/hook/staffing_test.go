@@ -77,6 +77,7 @@ var everyone = []string{
 }
 
 func TestAC8TheSessionWorkingAStoryIsRefusedStaffingAssignWhoeverRunsIt(t *testing.T) {
+	t.Parallel()
 	for name, root := range map[string]string{"the staffing on": staffedProject(t), "the staffing off": loopProject(t)} {
 		for _, cmd := range assignCommands {
 			for _, agent := range everyone {
@@ -95,6 +96,7 @@ func who(agent string) string {
 }
 
 func TestAC8AnotherSessionOfTheProjectIsRefusedStaffingAssignWhileAStoryIsUnderWay(t *testing.T) {
+	t.Parallel()
 	root := staffedProject(t)
 	for _, cmd := range assignCommands {
 		refusedUnder(t, call(t, inSession(command(root, "", cmd), "session-b"), noEnv),
@@ -106,6 +108,7 @@ func TestAC8AnotherSessionOfTheProjectIsRefusedStaffingAssignWhileAStoryIsUnderW
 // been started, so a session is still refused: an assignment is not a decision
 // on a story that waits, and nothing is asked about one.
 func TestAC8ASessionIsRefusedStaffingAssignWithNoStoryBeingWorkedOn(t *testing.T) {
+	t.Parallel()
 	for _, root := range []string{staffedProject(t), loopProject(t)} {
 		if err := os.Remove(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
 			t.Fatal(err)
@@ -129,6 +132,7 @@ func TestAC8ASessionIsRefusedStaffingAssignWithNoStoryBeingWorkedOn(t *testing.T
 // What only names the command goes through, and reading the staffing is
 // anyone's.
 func TestAC8OrdinaryCommandsAboutTheStaffingAreNotRefused(t *testing.T) {
+	t.Parallel()
 	root := staffedProject(t)
 	for _, cmd := range []string{
 		"sdlc staffing show",
@@ -167,6 +171,7 @@ var recordCommands = []string{
 // AC-6: the session running the runbook does not write or amend the staffing
 // itself, and neither does any agent the staffing is about.
 func TestAC6OnlyTheProjectManagerRecordsOrAmendsTheStaffing(t *testing.T) {
+	t.Parallel()
 	root := staffedProject(t)
 	for _, cmd := range recordCommands {
 		for _, agent := range everyone {
@@ -189,6 +194,7 @@ func TestAC6OnlyTheProjectManagerRecordsOrAmendsTheStaffing(t *testing.T) {
 // records a gate or a review, and decision 10 has the hook refuse it every
 // other sdlc command that writes.
 func TestAC12TheProjectManagerRunsNoOtherSdlcCommandThatWrites(t *testing.T) {
+	t.Parallel()
 	root := staffedProject(t)
 	for cmd, rules := range map[string][]string{
 		"sdlc gate analysis pass --security-sensitive=false": {"project-manager-only-staffs"},
@@ -247,6 +253,7 @@ func TestAC12TheProjectManagerRunsNoOtherSdlcCommandThatWrites(t *testing.T) {
 }
 
 func TestAC12TheProjectManagerReadsAndStaffsAndNothingStopsIt(t *testing.T) {
+	t.Parallel()
 	root := staffedProject(t)
 	for _, cmd := range []string{
 		"sdlc staffing show --json",
@@ -371,6 +378,7 @@ func TestAC3ACommitIsNotHeldToTheStaleReviewOfAReviewerTheStaffingLeavesOut(t *t
 // it does everywhere: it does not stop answering, and it does not let a
 // person's command through.
 func TestAC5TheHookStillAnswersWhenTheStaffingSectionCannotBeUsed(t *testing.T) {
+	t.Parallel()
 	for name, section := range map[string]string{
 		"no models":            `{"enabled":true,"models":[],"efforts":["low"]}`,
 		"a lowest not allowed": `{"enabled":true,"models":["opus"],"efforts":["low"],"lowest":{"verifier":{"model":"fable"}}}`,

@@ -135,17 +135,20 @@ func ac18ProjectSpellingsAgree(t *testing.T, root, respelledRoot, spelling strin
 }
 
 func TestAC18AFileToolPathThroughTheDataVolumeFirmlinkIsTheProjectPathItNames(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	ac18ProjectSpellingsAgree(t, root, throughFirmlink(t, root), "through /System/Volumes/Data")
 }
 
 func TestAC18AFileToolPathInAnotherCaseIsTheProjectPathItNames(t *testing.T) {
+	t.Parallel()
 	foldsCase(t)
 	root := loopProject(t)
 	ac18ProjectSpellingsAgree(t, root, strings.ToUpper(root), "in capitals")
 }
 
 func TestAC18AFileToolPathThroughTheFirmlinkInAnotherCaseIsTheProjectPathItNames(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	through := throughFirmlink(t, root)
 	ac18ProjectSpellingsAgree(t, root, strings.ToUpper(through), "through /SYSTEM/VOLUMES/DATA in capitals")

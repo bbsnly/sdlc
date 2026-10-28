@@ -57,12 +57,6 @@ func wtTempDir(t *testing.T) string {
 // holds nothing.
 func wtCheckouts(t *testing.T) (main, wt string) {
 	t.Helper()
-	for _, name := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"} {
-		t.Setenv(name, "")
-		if err := os.Unsetenv(name); err != nil {
-			t.Fatal(err)
-		}
-	}
 	main = wtTempDir(t)
 	wtGit(t, main, "init", "--quiet", "--initial-branch=main")
 	write(t, main, ".sdlc/config.json", `{"version":1}`)
@@ -142,6 +136,7 @@ func wtWrites(main string) []struct {
 // checkout's evidence. From the worktree, and from a call made wholly inside
 // the main checkout, where it holds nothing.
 func TestAC7AndT2ASessionHeldInAWorktreeIsRefusedTheMainCheckoutsRecordsByEveryRoute(t *testing.T) {
+	t.Parallel()
 	main, wt := wtCheckouts(t)
 	for _, w := range wtWrites(main) {
 		t.Run("T2 "+w.name, func(t *testing.T) {
@@ -162,6 +157,7 @@ func TestAC7AndT2ASessionHeldInAWorktreeIsRefusedTheMainCheckoutsRecordsByEveryR
 // escalated in, a session held to nothing is refused the approval, as it is
 // in a single checkout today.
 func TestT1ApproveIsRefusedInAWorktreeWhileItsStoryWaitsInTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	main, wt := wtCheckouts(t)
 	at := time.Now()
 	record := model.NewRecord("A-1", at)
@@ -227,6 +223,7 @@ func TestT3GitsVariablesDoNotMoveTheMainCheckoutTheHookProtects(t *testing.T) {
 // copy git checked out in the worktree, which says every gate has passed, is
 // not it (D5).
 func TestT12AMainCheckoutMadeUnfindableLeavesTheCommitRefusedAndTheFreezeHeld(t *testing.T) {
+	t.Parallel()
 	for _, damage := range []struct {
 		name string
 		do   func(t *testing.T, main, wt string)
@@ -266,6 +263,7 @@ func TestT12AMainCheckoutMadeUnfindableLeavesTheCommitRefusedAndTheFreezeHeld(t 
 // The Stop guard counts in the checkout the session is held in, and reads
 // where the story has got to from the story's one record.
 func TestAC5TheStopGuardInAWorktreeCountsThereAndReadsTheStoryFromTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	main, wt := wtCheckouts(t)
 	wtRecord(t, main, "A-1", model.GateDoR, model.GateAnalysis)
 

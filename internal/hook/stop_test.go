@@ -323,6 +323,7 @@ func TestAStopWithABrokenConfigurationStillUsesTheDefaultLimit(t *testing.T) {
 // gate record for the stop guard to measure progress from. That is a file
 // that has simply not been written yet, not a reason to hold the session.
 func TestAStopBeforeAnyGateRecordExistsFailsOpen(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	if r := stop(t, root, false, noEnv); r.Decision != "" {
 		t.Errorf("a stop before any gate record existed was held: %+v", r)
@@ -1510,6 +1511,7 @@ func TestAC5AWaitThatCannotBeWrittenDownStillLetsTheStopThrough(t *testing.T) {
 // The bound is a fixed thirty minutes, and docs/enforcement.md is where a
 // person finds it. The page states the number the code uses.
 func TestAC5TheEnforcementPageStatesTheWaitTheCodeUses(t *testing.T) {
+	t.Parallel()
 	if subagentWait != 30*time.Minute {
 		t.Errorf("the wait is %s, and the story fixes it at thirty minutes", subagentWait)
 	}

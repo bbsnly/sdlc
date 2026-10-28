@@ -119,6 +119,7 @@ func orHardLink(t *testing.T, old, at string) {
 // `cd` named: if the hook took the `cd` for made, a frozen test, the loop's own
 // record or the contract could be written from outside.
 func TestAC1AndAC2ACdTheShellDoesNotMakeThenARelativeNameStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	if err := os.MkdirAll(filepath.Join(w.out, "empty"), 0o755); err != nil {
 		t.Fatal(err)
@@ -166,6 +167,7 @@ func TestAC1AndAC2ACdTheShellDoesNotMakeThenARelativeNameStaysRefusedByTheHook(t
 // parent of the repository, or the repository's own name followed by a star,
 // expands to the repository. Only a root written out is outside or not.
 func TestAC1AndAC2AGlobAsTheLastSegmentOfAFindRootStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	orSymlink(t, w.parent, filepath.Join(w.out, "up"))
 	var rows []orEvasion
@@ -199,6 +201,7 @@ func TestAC1AndAC2AGlobAsTheLastSegmentOfAFindRootStaysRefusedByTheHook(t *testi
 // file on internal/x_test.go. Which rule speaks is not held: today it is the
 // outside source, named as a new test, and afterwards it may be either.
 func TestAC2ATargetDirectorySpellingCopyingAnOutsideSourceOverAFrozenTestStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	var rows []orEvasion
 	for _, command := range []string{
@@ -233,6 +236,7 @@ func TestAC2ATargetDirectorySpellingCopyingAnOutsideSourceOverAFrozenTestStaysRe
 // backslash, another program's name, a quoted name, a variable holding the name,
 // or a tool that carries a link already on the disk to a second place.
 func TestAC1AnAlternateSpellingOfALinkMakerThenAWriteThroughTheOutsideNameStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	orLinks(t, w)
 	var rows []orEvasion
@@ -267,6 +271,7 @@ func TestAC1AnAlternateSpellingOfALinkMakerThenAWriteThroughTheOutsideNameStaysR
 // the command, a named user is looked up by the shell, and `~PWD` is a user's
 // directory and not a variable. None of them is taken for outside.
 func TestAC1AAReassignedHomeOrAUserTheHookCannotPlaceStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	rows := []orEvasion{
 		{"", "export HOME={root} && rm -f ~/internal/x_test.go", orFrozenRule},
@@ -288,6 +293,7 @@ func TestAC1AAReassignedHomeOrAUserTheHookCannotPlaceStaysRefusedByTheHook(t *te
 // A program that changes directory itself does the first. The hook cannot know
 // which, so it takes neither for outside.
 func TestAC1ARelativeDotDotAfterALinkStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	orLinks(t, w)
 	var rows []orEvasion
@@ -319,6 +325,7 @@ func TestAC1ARelativeDotDotAfterALinkStaysRefusedByTheHook(t *testing.T) {
 // that file. `sed -i s/a/b/ <out>/w<repo>/internal/x_test.go` is a file outside
 // the repository to GNU sed and "write the repository's frozen test" to BSD sed.
 func TestAC1AndAC2ABSDSedWriteCommandInTheFirstFileWordStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	orRun(t, w, []orEvasion{
 		{"", "sed -i s/a/b/ {out}/w{root}/internal/x_test.go", orFrozenRule},
@@ -334,6 +341,7 @@ func TestAC1AndAC2ABSDSedWriteCommandInTheFirstFileWordStaysRefusedByTheHook(t *
 // outside writes the repository's. The disk says so by the link count and the
 // text of the path does not.
 func TestAC1AndAC2AFileOutsideThatIsASecondNameOfAFrozenTestStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	state := filepath.Join(w.root, ".sdlc", "state")
 	orHardLink(t, filepath.Join(w.root, "internal", "x_test.go"), filepath.Join(w.out, "flat", "hl_test.go"))
@@ -367,6 +375,7 @@ func TestAC1AndAC2AFileOutsideThatIsASecondNameOfAFrozenTestStaysRefusedByTheHoo
 // flat` goes to the repository's flat directory, though there is one beside the
 // session's too.
 func TestAC1ARelativeCdWithACDPATHCarriedStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	write(t, w.root, "flat/notes.txt", "notes\n")
 	for _, agent := range orAgents {

@@ -37,6 +37,7 @@ func orVolfs(t *testing.T, w orWorld) string {
 }
 
 func TestAC1AndAC2AFrozenTestByDeviceAndInodeStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	vol := orVolfs(t, w)
 	rows := []orEvasion{
@@ -52,6 +53,7 @@ func TestAC1AndAC2AFrozenTestByDeviceAndInodeStaysRefusedByTheHook(t *testing.T)
 }
 
 func TestAC1AndAC2AFrozenTestThroughTheDataVolumeStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	data := "/System/Volumes/Data" + slash(w.root)
 	if _, err := os.Stat(data + "/internal/x_test.go"); err != nil {

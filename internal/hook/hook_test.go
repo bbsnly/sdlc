@@ -116,6 +116,7 @@ func denied(r reply) bool { return r.HookSpecificOutput.PermissionDecision == "d
 // ------------------------------------------------------------------ shape
 
 func TestRunAlwaysEmitsExactlyOneJSONObject(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, stdin string
 		args        []string
@@ -160,6 +161,7 @@ func TestRunAlwaysEmitsExactlyOneJSONObject(t *testing.T) {
 // small. It names no session, so there is no telling whether the session that
 // made it is the one working the story, and nothing is said.
 func TestOversizedStdinIsNotCheckedAndNothingIsSaid(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	quoted, err := json.Marshal(root)
 	if err != nil {
@@ -185,6 +187,7 @@ func TestOversizedStdinIsNotCheckedAndNothingIsSaid(t *testing.T) {
 }
 
 func TestDenyCarriesItsReason(t *testing.T) {
+	t.Parallel()
 	d := Deny("tests are frozen at Gate 3 -- escalate rather than edit")
 	if d.Continue {
 		t.Error("Deny must not continue")
@@ -198,6 +201,7 @@ func TestDenyCarriesItsReason(t *testing.T) {
 
 // Outside a project that takes part, this does nothing at all.
 func TestAProjectWithNoConfigIsNotGoverned(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	r := call(t, event(root, "Write", "", ".git/config"), noEnv)
 	if denied(r) {
@@ -213,6 +217,7 @@ func TestAProjectWithNoConfigIsNotGoverned(t *testing.T) {
 }
 
 func TestNothingIsEnforcedWhileNoStoryIsBeingWorkedOn(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
 		t.Fatal(err)
@@ -265,6 +270,7 @@ var decisions = []string{
 // From a project where nothing waits, a move into one where a story does is
 // refused, and so is a move the hook cannot follow, which could lead anywhere.
 func TestADecisionOnAStoryIsKeptWhereTheCommandMovesTo(t *testing.T) {
+	t.Parallel()
 	parent := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(parent); err == nil {
 		parent = resolved
@@ -301,6 +307,7 @@ func TestADecisionOnAStoryIsKeptWhereTheCommandMovesTo(t *testing.T) {
 // A story directory linked in from elsewhere is read through the link, as
 // `sdlc approve` reads it.
 func TestAStoryLinkedInFromElsewhereStillWaits(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	escalated(t, root, false)
 	story := filepath.Join(root, ".sdlc", "stories", "A-1")
@@ -343,6 +350,7 @@ func escalated(t *testing.T, root string, answered bool) {
 // is under way, whoever holds it, and while one waits for a person's answer.
 // Acknowledging the log is kept for a person in every session too.
 func TestAPersonsDecisionOnAStoryIsKeptFromEverySession(t *testing.T) {
+	t.Parallel()
 	underWay := loopProject(t)
 	fromTerminal := loopProject(t)
 	if err := os.Remove(filepath.Join(fromTerminal, ".sdlc", "state", "session")); err != nil {
@@ -411,6 +419,7 @@ func inSession(stdin, session string) string {
 // loop's business; the session running the story, and its agents, which carry
 // its id, still are.
 func TestOnlyTheSessionWorkingTheStoryIsHeldToIt(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, ".sdlc/state/session", "session-a\n")
 	code := event(root, "Write", "", "internal/x.go")
@@ -459,6 +468,7 @@ func TestOnlyTheSessionWorkingTheStoryIsHeldToIt(t *testing.T) {
 // recorded, and where the record names nothing or cannot be read, no session
 // is the one working the story, so none is held.
 func TestAStoryNoSessionIsRecordedAsWorkingHoldsNoSession(t *testing.T) {
+	t.Parallel()
 	removeRecord := func(t *testing.T, root string) {
 		t.Helper()
 		if err := os.Remove(filepath.Join(root, ".sdlc", "state", "session")); err != nil {
@@ -561,6 +571,7 @@ func TestAPathInTheHomeDirectoryIsNotTheProjects(t *testing.T) {
 // ~name is that user's home, and the user running the session may be the one
 // named: read as somebody else's, a project under it was not protected.
 func TestAUsersNamedHomeIsWhereTheirProjectIs(t *testing.T) {
+	t.Parallel()
 	me, err := user.Current()
 	if err != nil || strings.ContainsAny(me.Username, `\/`) || me.HomeDir == "" {
 		t.Skip("no plain user name to write after ~")
@@ -572,6 +583,7 @@ func TestAUsersNamedHomeIsWhereTheirProjectIs(t *testing.T) {
 }
 
 func TestACommitInAnotherRepositoryIsNotHeldToTheStory(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	other := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(other); err == nil {
@@ -598,6 +610,7 @@ func TestACommitInAnotherRepositoryIsNotHeldToTheStory(t *testing.T) {
 // set this from the inside, which is what makes it an escape hatch rather than
 // a hole.
 func TestEnforcementCanBeTurnedOffFromTheEnvironment(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	getenv := env(map[string]string{"SDLC_ENFORCE": "0"})
 	if denied(call(t, event(root, "Write", "", ".git/config"), getenv)) {
@@ -610,6 +623,7 @@ func TestEnforcementCanBeTurnedOffFromTheEnvironment(t *testing.T) {
 // rule off -- silently, which is the worst way for a discipline tool to fail.
 // `cd backend && claude` was enough to do it.
 func TestASessionStartedBelowTheRootIsStillGoverned(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, below := range []string{"backend", "backend/services/api"} {
 		t.Run(below, func(t *testing.T) {
@@ -629,6 +643,7 @@ func TestASessionStartedBelowTheRootIsStillGoverned(t *testing.T) {
 // sit inside one taking part in the loop is not governed by it -- though the
 // loop's own files still are, wherever the session writing them sits.
 func TestTheWalkUpStopsAtTheRepository(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	inner := filepath.Join(root, "vendor", "other")
 	if err := os.MkdirAll(filepath.Join(inner, ".git"), 0o755); err != nil {
@@ -645,6 +660,7 @@ func TestTheWalkUpStopsAtTheRepository(t *testing.T) {
 }
 
 func TestClaudeProjectDirWinsOverTheReportedDirectory(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	getenv := env(map[string]string{"CLAUDE_PROJECT_DIR": root})
 
@@ -658,6 +674,7 @@ func TestClaudeProjectDirWinsOverTheReportedDirectory(t *testing.T) {
 // ------------------------------------------------------------------ decisions
 
 func TestAProtectedPathIsRefusedWithARouteAndARuleID(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	r := call(t, event(root, "Write", "sdlc-researcher", ".sdlc/state/active"), noEnv)
 
@@ -679,6 +696,7 @@ func TestAProtectedPathIsRefusedWithARouteAndARuleID(t *testing.T) {
 // implementer could lower it there to take away the person who approves the
 // commit. The backlog is protected wherever the configuration puts it.
 func TestTheBacklogIsNotEditedDuringAnIteration(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	r := call(t, event(root, "Edit", "sdlc-implementer", filepath.Join(root, "user_stories.json")), noEnv)
 	if !denied(r) || !strings.Contains(r.HookSpecificOutput.PermissionDecisionReason, "backlog-is-not-edited") {
@@ -700,6 +718,7 @@ func TestTheBacklogIsNotEditedDuringAnIteration(t *testing.T) {
 // backlog.path left empty in the configuration is not a backlog with no name:
 // the default backlog file is still protected.
 func TestABacklogPathLeftEmptyFallsBackToTheDefault(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, ".sdlc/config.json", `{"version":1,"backlog":{"path":""}}`)
 	if !denied(call(t, event(root, "Edit", "sdlc-implementer", "user_stories.json"), noEnv)) {
@@ -733,6 +752,7 @@ func TestALongCommandIsReadWellInsideTheHooksTime(t *testing.T) {
 // matches, as a short name such as SDLC~1 does on Windows. The shell rules read
 // the file a word is on disk.
 func TestAShellCommandThroughALinkIsReadAsTheFileItReaches(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, "CLAUDE.md", "# contract\n")
 	freeze(t, root, "A-1", "internal/x_test.go", "package x\n")
@@ -764,6 +784,7 @@ func TestAShellCommandThroughALinkIsReadAsTheFileItReaches(t *testing.T) {
 // loop's record was outside the project and nobody's to protect, and a commit
 // made there was another repository's.
 func TestTheProjectSpelledInAnotherCaseIsStillTheProject(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
 		t.Skip("this filesystem keeps case, so the path in capitals is another one")
 	}
@@ -782,6 +803,7 @@ func TestTheProjectSpelledInAnotherCaseIsStillTheProject(t *testing.T) {
 // In PowerShell a backtick escapes the character after it, so the hook reads a
 // PowerShell command with that in mind, and a Bash one without it.
 func TestAPowerShellCommandIsReadAsPowerShell(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	raw, err := json.Marshal(map[string]any{
 		"hook_event_name": "PreToolUse", "session_id": working, "tool_name": "PowerShell", "cwd": root,
@@ -798,6 +820,7 @@ func TestAPowerShellCommandIsReadAsPowerShell(t *testing.T) {
 // Claude Code on Windows writes `\repo\CLAUDE.md` to the project's own
 // CLAUDE.md, and the hook read it as `repo/CLAUDE.md`, a file nothing protects.
 func TestAPathRootedWithoutADriveIsGovernedOnWindows(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	volume := filepath.VolumeName(root)
 	if volume == "" {
@@ -812,6 +835,7 @@ func TestAPathRootedWithoutADriveIsGovernedOnWindows(t *testing.T) {
 // A backlog linked in from outside the repository resolved outside it, and was
 // left unprotected: the shell edited it through the link.
 func TestABacklogLinkedInFromElsewhereIsStillProtected(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	elsewhere := filepath.Join(t.TempDir(), "stories.json")
 	if err := os.WriteFile(elsewhere, []byte(`{"stories":[]}`), 0o644); err != nil {
@@ -830,6 +854,7 @@ func TestABacklogLinkedInFromElsewhereIsStillProtected(t *testing.T) {
 }
 
 func TestTheResearcherWorksInItsOwnStoryAndNowhereElse(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 
 	if denied(call(t, event(root, "Write", "sdlc-researcher", ".sdlc/stories/A-1/notes.md"), noEnv)) {
@@ -843,6 +868,7 @@ func TestTheResearcherWorksInItsOwnStoryAndNowhereElse(t *testing.T) {
 // A gate artifact is loop state, so it goes through the tool no matter who is
 // asking -- including the agent whose gate it is.
 func TestAGateArtifactIsNotWrittenInPlaceByAnyone(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 
 	for _, agent := range []string{"", "sdlc-researcher", "sdlc:researcher"} {
@@ -862,6 +888,7 @@ func TestAGateArtifactIsNotWrittenInPlaceByAnyone(t *testing.T) {
 // out, and ending the iteration turns every rule off: followed, it committed
 // work no gate had passed.
 func TestTheMainConversationIsToldToDelegate(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	r := call(t, event(root, "Edit", "", "internal/billing/invoice.go"), noEnv)
 
@@ -878,6 +905,7 @@ func TestTheMainConversationIsToldToDelegate(t *testing.T) {
 }
 
 func TestReadingIsNeverRefused(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, tool := range []string{"Read", "Grep", "Glob", "Bash"} {
 		if denied(call(t, event(root, tool, "", ".sdlc/state/active"), noEnv)) {
@@ -889,6 +917,7 @@ func TestReadingIsNeverRefused(t *testing.T) {
 // A relative path in the payload is resolved against the project, so a rule
 // written as ".git/config" catches it either way.
 func TestAnAbsolutePathIsResolvedAgainstTheProject(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	abs := filepath.Join(root, ".git", "config")
 	if !denied(call(t, event(root, "Write", "", abs), noEnv)) {
@@ -900,6 +929,7 @@ func TestAnAbsolutePathIsResolvedAgainstTheProject(t *testing.T) {
 // that: a settings file in the home directory is where hooks are turned off. A
 // symlink inside the repository leads to the same place by another name.
 func TestAWriteOutsideTheRepositoryIsRefused(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	elsewhere := t.TempDir()
 	if err := os.Symlink(elsewhere, filepath.Join(root, "link")); err != nil {
@@ -920,6 +950,7 @@ func TestAWriteOutsideTheRepositoryIsRefused(t *testing.T) {
 // be opened above the repository, or add it as another directory. The rules
 // still apply to what a tool call does inside it.
 func TestTheLoopIsFoundWhereTheToolCallActs(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	above := filepath.Dir(root)
 	session := env(map[string]string{"CLAUDE_PROJECT_DIR": above})
@@ -965,6 +996,7 @@ func TestTheLoopIsFoundWhereTheToolCallActs(t *testing.T) {
 // says it is not in a repository. The hook agrees, rather than applying the
 // rules of a project sdlc cannot see.
 func TestTheLoopIsNotLookedForAboveAGitCeiling(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	sub := filepath.Join(root, "sub")
 	if err := os.Mkdir(sub, 0o755); err != nil {
@@ -1005,6 +1037,7 @@ func TestTheLoopIsNotLookedForAboveAGitCeiling(t *testing.T) {
 }
 
 func TestANotebookPathIsGovernedToo(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	e := mustMarshal(map[string]any{
 		"hook_event_name": "PreToolUse", "session_id": working,
@@ -1022,6 +1055,7 @@ func TestANotebookPathIsGovernedToo(t *testing.T) {
 // The session working the story is told that nothing is being enforced, and no
 // other session hears a word about it.
 func TestATamperedActiveStoryTurnsEnforcementOffRatherThanBuildingABadPath(t *testing.T) {
+	t.Parallel()
 	for name, spoil := range map[string]func(t *testing.T, root string){
 		"naming no story": func(t *testing.T, root string) {
 			t.Helper()
@@ -1076,6 +1110,7 @@ func TestATamperedActiveStoryTurnsEnforcementOffRatherThanBuildingABadPath(t *te
 // their active story the same way produce the same warning text -- said once,
 // not once per project it happened in.
 func TestTheSameWarningIsNotSaidTwice(t *testing.T) {
+	t.Parallel()
 	a, b := t.TempDir(), t.TempDir()
 	for _, dir := range []string{a, b} {
 		write(t, dir, ".sdlc/config.json", `{"version":1}`)
@@ -1112,6 +1147,7 @@ func TestTheSameWarningIsNotSaidTwice(t *testing.T) {
 // event too, combined with whatever the stop guard itself has to say -- here,
 // nothing, since a story that failed open has nothing to report on stopping.
 func TestAStopStillCarriesTheLoopsOwnWarnings(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, ".sdlc/state/active", "not a valid id\n")
 
@@ -1128,6 +1164,7 @@ func TestAStopStillCarriesTheLoopsOwnWarnings(t *testing.T) {
 // value that cannot be marshalled still gets a plain "continue" rather than
 // broken output the host cannot parse.
 func TestEmitFallsBackToPlainContinueWhenTheValueWontMarshal(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	if code := emit(&out, make(chan int)); code != 0 {
 		t.Fatalf("exit %d", code)
@@ -1140,6 +1177,7 @@ func TestEmitFallsBackToPlainContinueWhenTheValueWontMarshal(t *testing.T) {
 // A tool that touches no file at all -- TodoWrite has no file_path and no
 // notebook_path -- is never mistaken for a test or a frozen one.
 func TestAToolWithNoFilePathIsNeverATestOrFrozen(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	raw, err := json.Marshal(map[string]any{
 		"hook_event_name": "PreToolUse", "session_id": working, "tool_name": "TodoWrite",
@@ -1161,6 +1199,7 @@ func TestAToolWithNoFilePathIsNeverATestOrFrozen(t *testing.T) {
 // working directory of its own at all, cannot be followed to know where it
 // ends up, so it is refused rather than assumed safe.
 func TestADecisionAfterAnUnknownMoveIsRefused(t *testing.T) {
+	t.Parallel()
 	a := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(a); err == nil {
 		a = resolved
@@ -1185,6 +1224,7 @@ func TestADecisionAfterAnUnknownMoveIsRefused(t *testing.T) {
 // whose record cannot be read for some other reason -- is skipped rather than
 // taken as waiting for a person, or as a reason the scan cannot finish.
 func TestAStoryDirectoryWithNoRecordYetIsNotTakenAsWaiting(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
 		t.Fatal(err)
@@ -1203,6 +1243,7 @@ func TestAStoryDirectoryWithNoRecordYetIsNotTakenAsWaiting(t *testing.T) {
 // nothing to check: the commit goes through with a warning instead of being
 // refused over a file that has nothing to do with the review.
 func TestACommitWithReviewsGoesThroughWhenFreshnessCannotBeChecked(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		spoil func(t *testing.T, root string)
@@ -1267,6 +1308,7 @@ func freeze(t *testing.T, root, story, rel, body string) {
 // where it matters: the rules are only reached with the state the hook worked
 // out from the project's own files.
 func TestAFrozenTestIsRefusedThroughTheHook(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	freeze(t, root, "A-1", "internal/invoice_test.go", "package internal\n")
 
@@ -1286,6 +1328,7 @@ func TestAFrozenTestIsRefusedThroughTheHook(t *testing.T) {
 // sdet may edit tests anyway, so a freeze applied to the wrong story, or a held
 // test taken for a new one by its case, passed every test there.
 func TestTheFreezeIsReadForItsOwnStoryAndByFoldedName(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	noWarning := func(string) {}
 	freeze(t, root, "OTHER-1", "internal/invoice_test.go", "package internal\n")
@@ -1310,6 +1353,7 @@ func TestTheFreezeIsReadForItsOwnStoryAndByFoldedName(t *testing.T) {
 // one's tests -- and must not be quietly ignored either, which is why the CLI
 // refuses to pass the gate on it.
 func TestAFreezeFromAnotherStoryDoesNotBiteHere(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	freeze(t, root, "OTHER-9", "internal/invoice_test.go", "package internal\n")
 
@@ -1321,6 +1365,7 @@ func TestAFreezeFromAnotherStoryDoesNotBiteHere(t *testing.T) {
 // Before the freeze, the test author writes tests. After it, a new test file is
 // the freeze with extra steps.
 func TestNewTestFilesAreOnlyRefusedAfterTheFreeze(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, "internal/invoice_test.go", "package internal\n")
 
@@ -1337,6 +1382,7 @@ func TestNewTestFilesAreOnlyRefusedAfterTheFreeze(t *testing.T) {
 // The project decides what a test file is. A project that names nothing has
 // nothing frozen, and the hook must not invent a convention for it.
 func TestWhatCountsAsATestComesFromTheProject(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, ".sdlc/config.json", `{"version":1,"paths":{"tests":{"dirs":[],"file_globs":["*.check.js"]}}}`)
 	write(t, root, "internal/invoice_test.go", "package internal\n")
@@ -1353,6 +1399,7 @@ func TestWhatCountsAsATestComesFromTheProject(t *testing.T) {
 // nothing to do with it. Failing open on everything is how a control quietly
 // stops being one.
 func TestABrokenConfigurationStillProtectsWhatItCan(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, ".sdlc/config.json", "{not json")
 	write(t, root, "invoice_test.go", "package x\n")
@@ -1386,6 +1433,7 @@ func TestABrokenConfigurationStillProtectsWhatItCan(t *testing.T) {
 // enforce. The warning has to be in systemMessage, because stderr from a hook
 // that exits 0 goes to Claude Code's debug log and is read by nobody.
 func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
+	t.Parallel()
 	corrupt := func(rel string) func(*testing.T, string) {
 		return func(t *testing.T, root string) {
 			t.Helper()
@@ -1445,6 +1493,7 @@ func TestTheHookSaysWhenItHasStoppedEnforcing(t *testing.T) {
 // A test file added after the freeze was refused from Write and allowed from a
 // redirect, and a test written after the implementation can be written to pass.
 func TestANewTestFileIsRefusedThroughTheShellUnlessTheProjectAllowsIt(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, "invoice_test.go", "package x\n")
 	write(t, root, ".sdlc/state/tests.lock", `{"story":"A-1","files":{"invoice_test.go":"abc"}}`)
@@ -1482,6 +1531,7 @@ func TestANewTestFileIsRefusedThroughTheShellUnlessTheProjectAllowsIt(t *testing
 // A freeze that cannot be read is not an absent freeze. Reading it as absent
 // made corrupting tests.lock the way to edit a frozen test, silently.
 func TestAnUnreadableFreezeStillProtectsTheTests(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, "invoice_test.go", "package x\n")
 	write(t, root, ".sdlc/state/tests.lock", "{not json")
@@ -1514,6 +1564,7 @@ func TestAnUnreadableFreezeStillProtectsTheTests(t *testing.T) {
 // The ordinary states are not warnings. Before Gate 3 there is no freeze, and
 // a hook that cried wolf on every tool call would be turned off by lunchtime.
 func TestTheHookIsQuietWhenNothingIsWrong(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for name, stdin := range map[string]string{
 		"a file write":    event(root, "Write", "sdlc:implementer", "invoice.go"),
@@ -1543,6 +1594,7 @@ func command(root, agent, cmd string) string {
 // Every other rule in this tool governs the file-writing tools. If the shell is
 // not covered, the whole set of them is one `cat >` away from irrelevant.
 func TestTheShellCannotWriteWhatTheToolsMayNot(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 
 	r := call(t, command(root, "sdlc-researcher", "cat x > .sdlc/stories/A-1/ANALYSIS.md"), noEnv)
@@ -1563,6 +1615,7 @@ func TestTheShellCannotWriteWhatTheToolsMayNot(t *testing.T) {
 // The reviewer a review names is the one who records it, as the agent prompts
 // have it. The implementer recording the code reviewer's approval is refused.
 func TestAReviewIsRecordedByTheReviewerItNames(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	add := "sdlc review add code_review code-reviewer approve --note fine <<'SDLC_DOCUMENT'\n" +
 		"looks good\nSDLC_DOCUMENT"
@@ -1580,6 +1633,7 @@ func TestAReviewIsRecordedByTheReviewerItNames(t *testing.T) {
 // The Bash tool keeps a cd from one call to the next, and the payload's cwd is
 // where it left the session. A relative path is read from there.
 func TestAShellCommandIsReadFromTheSessionsDirectory(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	e := map[string]any{
 		"hook_event_name": "PreToolUse", "session_id": working,
@@ -1596,6 +1650,7 @@ func TestAShellCommandIsReadFromTheSessionsDirectory(t *testing.T) {
 // Bash is not the only tool that runs a command. Monitor ran one the hook never
 // looked at, and so would PowerShell on Windows.
 func TestEveryToolThatRunsACommandMeetsTheShellRules(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, tool := range []string{"Bash", "Monitor", "PowerShell"} {
 		e := map[string]any{
@@ -1615,6 +1670,7 @@ func TestEveryToolThatRunsACommandMeetsTheShellRules(t *testing.T) {
 // commit itself, because by the time a commit has happened the gate has nothing
 // left to protect.
 func TestTheCommitGateStandsInFrontOfGitCommit(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, ".sdlc/stories/A-1/gate-record.json",
 		`{"story":"A-1","gates":{"dor":{"status":"pass","at":"2026-09-10T08:30:00Z"}}}`)
@@ -1650,6 +1706,7 @@ func TestTheCommitGateStandsInFrontOfGitCommit(t *testing.T) {
 // killed hook decides nothing: a commit it was checking goes through unchecked,
 // with no message. Each of the hook's own limits has to run out first.
 func TestClaudeCodeWaitsLongerThanTheHookDoes(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "plugin", "hooks", "hooks.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -1687,6 +1744,7 @@ func TestClaudeCodeWaitsLongerThanTheHookDoes(t *testing.T) {
 }
 
 func TestOnceEveryGateHasPassedTheCommitGoesThrough(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	gates := map[string]any{}
 	for _, g := range model.GateCommit.Before() {
@@ -1820,6 +1878,7 @@ func TestACommitIsNotRefusedBecauseTheStoryWaitedForAPerson(t *testing.T) {
 // `sdlc stop` part-way through a story could commit it ungated straight after.
 // The runbook's own `sdlc stop`, after the last gate, still goes through.
 func TestAStoryIsEndedPartWayOnlyByAPerson(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	if !denied(call(t, command(root, "", "sdlc stop"), noEnv)) {
 		t.Error("sdlc stop went through with the story's gates still to work")
@@ -1910,6 +1969,7 @@ func TestACommitOfAPausedStoryWaitsForAPersonsApproval(t *testing.T) {
 // reading it as "ready" made `rm` on the record the way to a commit no gate had
 // passed.
 func TestACommitWaitsForARecordThatReads(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		spoil func(t *testing.T, root string)
 		want  string

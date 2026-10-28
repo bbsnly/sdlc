@@ -92,6 +92,7 @@ func TestAC7AShellWriteToThePersonsClaudeConfigIsRefused(t *testing.T) {
 // a person's slash commands is refused, from both sessions, and kept in a
 // project that does not take part.
 func TestAC6ANestedSessionThatWouldExpandAPersonsCommandIsRefusedThroughTheHook(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	commands := []string{
 		`claude -p "/sdlc:approve US-001"`,

@@ -53,6 +53,7 @@ func contents(t *testing.T, root, rel string) string {
 
 // commands.fmt_file was written into the configuration and run by nothing.
 func TestAFileAToolWroteIsFormatted(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	withFormatter(t, root, `printf 'formatted\n' > "$FILE"`)
 	write(t, root, "internal/invoice.go", "package  invoice\n")
@@ -66,6 +67,7 @@ func TestAFileAToolWroteIsFormatted(t *testing.T) {
 }
 
 func TestAFormatterThatFailsIsReportedToTheSession(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	withFormatter(t, root, `echo "invoice.go:1:9: expected 'package'" >&2; exit 2`)
 	write(t, root, "invoice.go", "pakage invoice\n")
@@ -84,6 +86,7 @@ func TestAFormatterThatFailsIsReportedToTheSession(t *testing.T) {
 // A tool that runs a command rather than writing a file has no file_path at
 // all, and there is nothing for commands.fmt_file to be run on.
 func TestAPostToolUseEventWithNoFilePathIsIgnored(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	withFormatter(t, root, `printf 'formatted\n' > "$FILE"`)
 	raw, err := json.Marshal(map[string]any{
@@ -171,6 +174,7 @@ func TestAFileIsLeftUnformattedWhenFormattingCannotRun(t *testing.T) {
 }
 
 func TestOnlyTheStorysOwnFilesAreFormatted(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	withFormatter(t, root, `printf 'formatted\n' > "$FILE"`)
 	write(t, root, ".sdlc/stories/A-1/notes.md", "as written\n")

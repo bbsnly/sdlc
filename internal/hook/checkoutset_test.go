@@ -17,6 +17,7 @@ import (
 // AC-6 and T1: where the main checkout could not be found, the rule stands for
 // the project at least, and a word is still placed from it.
 func TestAC6WithoutTheMainCheckoutTheProjectIsStillACheckoutThatCannotBeTakenAway(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
 		t.Fatal(err)

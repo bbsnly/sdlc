@@ -35,6 +35,7 @@ func orVolfsOfFile(t *testing.T, file string) string {
 }
 
 func TestAC1AndAC2ACopyOntoAFrozenTestByDeviceAndInodeStaysRefusedByTheHook(t *testing.T) {
+	t.Parallel()
 	w := orMake(t)
 	file := orVolfsOfFile(t, filepath.Join(w.root, "internal", "x_test.go"))
 	dir := orVolfs(t, w)

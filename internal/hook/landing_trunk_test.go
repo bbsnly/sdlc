@@ -18,6 +18,7 @@ import "testing"
 // default; the rebase onto the configured trunk goes through, and onto the
 // default is refused.
 func TestAC9AndQ3TheRebaseIsOntoTheTrunkTheMainCheckoutConfigures(t *testing.T) {
+	t.Parallel()
 	l := lhFinished(t)
 	wtGit(t, l.main, "branch", "develop", "main")
 	write(t, l.main, ".sdlc/config.json", `{"version":1,"git":{"trunk_branch":"develop"}}`)
@@ -30,6 +31,7 @@ func TestAC9AndQ3TheRebaseIsOntoTheTrunkTheMainCheckoutConfigures(t *testing.T) 
 // the short name the tag; the rebase by it is refused, and by trunk's full
 // branch ref it goes through.
 func TestAC9AndQ3ARebaseByAShortNameATagAlsoHasIsRefused(t *testing.T) {
+	t.Parallel()
 	l := lhFinished(t)
 	wtGit(t, l.main, "tag", "main", "main")
 	in := swOpenings(l)[0]
@@ -41,6 +43,7 @@ func TestAC9AndQ3ARebaseByAShortNameATagAlsoHasIsRefused(t *testing.T) {
 // The first changed CODEMAP.md as HEAD has it, so the reviews no longer
 // cover a second.
 func TestT14ASecondCodemapCommitAfterTheRetroIsRefused(t *testing.T) {
+	t.Parallel()
 	l := lhFinished(t)
 	write(t, l.wt, "CODEMAP.md", "# CODEMAP\n\ninvoice.go keeps invoices.\n")
 	wtGit(t, l.wt, "add", "--", "CODEMAP.md")

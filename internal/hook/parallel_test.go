@@ -23,6 +23,7 @@ var parallelCommands = []string{
 }
 
 func TestAC4TheSessionWorkingAStoryIsRefusedParallel(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, cmd := range parallelCommands {
 		r := call(t, command(root, "", cmd), noEnv)
@@ -37,6 +38,7 @@ func TestAC4TheSessionWorkingAStoryIsRefusedParallel(t *testing.T) {
 }
 
 func TestAC4AnotherSessionOfTheProjectIsRefusedParallelWhileAStoryIsUnderWay(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, cmd := range parallelCommands {
 		if !denied(call(t, inSession(command(root, "", cmd), "session-b"), noEnv)) {
@@ -49,6 +51,7 @@ func TestAC4AnotherSessionOfTheProjectIsRefusedParallelWhileAStoryIsUnderWay(t *
 // refused all the same, as the log's acknowledgement is: starting sessions is
 // not a decision on a story.
 func TestAC4ASessionIsRefusedParallelWithNoStoryBeingWorkedOn(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
 		t.Fatal(err)
@@ -75,6 +78,7 @@ func TestAC4ASessionIsRefusedParallelWithNoStoryBeingWorkedOn(t *testing.T) {
 // What only names the command goes through, and the stories' own commands are
 // untouched by the rule.
 func TestAC4OrdinaryCommandsAboutParallelAreNotRefused(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	if err := os.Remove(filepath.Join(root, ".sdlc", "state", "active")); err != nil {
 		t.Fatal(err)

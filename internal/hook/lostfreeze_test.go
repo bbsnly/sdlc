@@ -11,6 +11,7 @@ import (
 // with nothing said, while the record still held the freeze -- so the edit was
 // caught at the next gate, but not stopped.
 func TestAFreezeTheRecordHoldsIsNotLiftedByRewritingTheLock(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, "invoice_test.go", "package x\n")
 	frozenOnRecord := `{"story":"A-1","gates":{},"events":[` +

@@ -201,6 +201,7 @@ func TestAC2TheLogHoldsNoWordOfTheCommandOnAnAllowOrARefusal(t *testing.T) {
 // that is right for them, a code to look up among them now that a refusal at a
 // bound carries one (D2), and at the log lines of AC-1 and AC-3.
 func TestAC4TheRefusalGuidePointsAtThePartsOfTheMessageAndTheNewLogLines(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile("../../docs/guides/why-was-i-refused.md")
 	if err != nil {
 		t.Fatal(err)

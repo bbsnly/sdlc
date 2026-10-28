@@ -56,6 +56,7 @@ func realHookEnv(root, session string, extra map[string]string) func(string) str
 // slash route that handed the CLI the hook's own environment would be refused
 // with SDLC-E0079 here, where a terminal outside Claude Code is not.
 func TestAC15EachPersonsSlashCommandStillRecordsWithTheMarkersARealHookCarries(t *testing.T) {
+	t.Parallel()
 	for _, c := range personsCases() {
 		t.Run(strings.Replace(c.name, "AC-1", "AC-15", 1), func(t *testing.T) {
 			byHand := c.project(t)
@@ -93,6 +94,7 @@ func TestAC15EachPersonsSlashCommandStillRecordsWithTheMarkersARealHookCarries(t
 // terminal's environment. What else the hook had (the project's directory,
 // the plugin's root) is not the marker check's to take away.
 func TestAC15TheCommandASlashCommandRunsIsHandedNoneOfClaudeCodesMarkers(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	seen := map[string]string{}
 	calls := 0
@@ -121,6 +123,7 @@ func TestAC15TheCommandASlashCommandRunsIsHandedNoneOfClaudeCodesMarkers(t *test
 // session started from a model's Bash; the one with AI_AGENT alone is a
 // model's shell that runs the hook itself.
 func TestAC17APersonsSlashCommandExpandedInASessionStartedFromAToolCallRecordsNothingAndSaysWhy(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, c := range []struct{ name, slash, args string }{
 		{"approve", "sdlc:approve", "A-1"},
@@ -170,6 +173,7 @@ func TestAC17APersonsSlashCommandExpandedInASessionStartedFromAToolCallRecordsNo
 // story waiting, where the same line typed in the person's own session answers
 // it.
 func TestAC17ANestedSessionsApproveLeavesTheStoryWaitingWhereThePersonsOwnAnswersIt(t *testing.T) {
+	t.Parallel()
 	nested := waitingProject(t)
 	before := alikeFiles(files(t, nested), nested)
 	calls := 0

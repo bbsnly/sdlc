@@ -50,12 +50,7 @@ func ckRecord(main string) string {
 
 // AC-10: a repository with one checkout is held exactly as it always was.
 func TestAC10ASingleCheckoutAsksNothingAboutOtherCheckouts(t *testing.T) {
-	for _, name := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"} {
-		t.Setenv(name, "")
-		if err := os.Unsetenv(name); err != nil {
-			t.Fatal(err)
-		}
-	}
+	t.Parallel()
 	dir := wtTempDir(t)
 	wtGit(t, dir, "init", "--quiet", "--initial-branch=main")
 	if l := newLandings(placeOf(dir), pathrules.NewResolver(dir)); l != nil {
@@ -71,6 +66,7 @@ func TestAC10ASingleCheckoutAsksNothingAboutOtherCheckouts(t *testing.T) {
 // T2, AC-7 and R2-4: from any checkout, the others' backlog, records, claims
 // and loop state are found where they are.
 func TestAC7AWordLandsInTheCheckoutOfThisRepositoryItNames(t *testing.T) {
+	t.Parallel()
 	main, wt := wtCheckouts(t)
 	wt2 := ckSecond(t, main)
 
@@ -109,6 +105,7 @@ func TestAC7AWordLandsInTheCheckoutOfThisRepositoryItNames(t *testing.T) {
 // says where it leads. A copy of a real worktree's pointer, anywhere else, is
 // not that worktree; worktree.useRelativePaths writes the way back relative.
 func TestT2APointerCopiedOutOfAWorktreeMakesNoCheckout(t *testing.T) {
+	t.Parallel()
 	main, wt := wtCheckouts(t)
 	wt2 := ckSecond(t, main)
 	l := ckLandings(t, wt)
@@ -143,6 +140,7 @@ func TestT2APointerCopiedOutOfAWorktreeMakesNoCheckout(t *testing.T) {
 // stopped at: `git init` over the main checkout's .sdlc, or a pointer file put
 // there, would otherwise hide the records beneath it.
 func TestT2ADecoyGitDirectoryInTheMainCheckoutIsWalkedPast(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		plant func(t *testing.T, main string)
@@ -178,6 +176,7 @@ func TestT2ADecoyGitDirectoryInTheMainCheckoutIsWalkedPast(t *testing.T) {
 // T12 and B1: core.bare, or a rewritten commondir, makes the main checkout
 // unfindable to the CLI and leaves everything in it protected.
 func TestT12WhatTheMainCheckoutKeepsIsFoundWhenItCannotBeEstablished(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		damage func(t *testing.T, main string)
@@ -211,6 +210,7 @@ func TestT12WhatTheMainCheckoutKeepsIsFoundWhenItCannotBeEstablished(t *testing.
 // Where not one candidate can be read, every word outside the checkout might
 // be the main checkout's, and is refused by name, with its own reason.
 func TestT12AWorktreeWhosePointerLeadsNowhereTreatsEveryOutsideWordAsUnplaced(t *testing.T) {
+	t.Parallel()
 	main, wt := wtCheckouts(t)
 	write(t, wt, ".git", "gitdir: "+filepath.Join(wtTempDir(t), "nowhere")+"\n")
 
@@ -235,6 +235,7 @@ func TestT12AWorktreeWhosePointerLeadsNowhereTreatsEveryOutsideWordAsUnplaced(t 
 // R2-5: `..` after a link is taken where the link leads, as the filesystem
 // takes it, not beside the link.
 func TestT2DotDotThroughALinkLandsWhereTheLinkLeads(t *testing.T) {
+	t.Parallel()
 	main, wt := wtCheckouts(t)
 	reviews := filepath.Join(main, ".sdlc", "stories", "A-1", "reviews")
 	if err := os.MkdirAll(reviews, 0o755); err != nil {
@@ -256,6 +257,7 @@ func TestT2DotDotThroughALinkLandsWhereTheLinkLeads(t *testing.T) {
 // 13(f): a commit made in another checkout records work its gates never saw,
 // whatever the gates say. Reading another checkout is not refused.
 func TestT2ACommitInAnotherCheckoutIsRefusedAndReadingItIsNot(t *testing.T) {
+	t.Parallel()
 	main, wt := wtCheckouts(t)
 	wt2 := ckSecond(t, main)
 

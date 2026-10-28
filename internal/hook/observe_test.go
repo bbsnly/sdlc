@@ -269,6 +269,7 @@ func observationOf(t *testing.T, root, head string) string {
 // The clock is handed in because the only honest way to test a deadline is to
 // move time, not to wait for it.
 func TestTheBudgetForGitStartsAtTheFirstCallAndNotWhenTheHookBegan(t *testing.T) {
+	t.Parallel()
 	at := time.Now()
 	budget, cancel := gitBudget(t.Context(), func() time.Time { return at })
 	defer cancel()

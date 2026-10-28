@@ -170,6 +170,7 @@ func lbRefusedForTheWord(t *testing.T, cmd, word, reason string) {
 // and wherever they lead, under SDLC-E0081, naming the word as typed. A word
 // through 30 is not.
 func TestAC5AC12AWordThroughMoreThan64LinksIsRefusedNamingTheWordAndTheLimit(t *testing.T) {
+	t.Parallel()
 	t.Run("AC-5 every link at its first name, to a directory nothing protects", func(t *testing.T) {
 		root := lbProject(t)
 		word := lbAtOneName(t, root, "lnk", 65, "elsewhere", "notes.txt")
@@ -221,6 +222,7 @@ func TestAC5AC12AWordThroughMoreThan64LinksIsRefusedNamingTheWordAndTheLimit(t *
 // no rule classifies, and install -D, which makes the directories it writes
 // into.
 func TestAC7AC12AProgramThatWalksADirectoryAtATimeIsRefusedPast64Links(t *testing.T) {
+	t.Parallel()
 	root := lbProject(t)
 	word := lbADirectoryAtATime(t, root, "walk", 65, "elsewhere", "made/deeper")
 	for _, cmd := range []string{"mkdir -p " + word, "install -D notes.txt " + word + "/notes.txt"} {
@@ -234,6 +236,7 @@ func TestAC7AC12AProgramThatWalksADirectoryAtATimeIsRefusedPast64Links(t *testin
 // by name. These rows are new: they were allowed before. Each is refused now,
 // under whichever rule refuses it, for every program that writes the word.
 func TestAC7AChainIntoTheLoopsStatePastTheOSLimitAndWithin64IsNotLetThrough(t *testing.T) {
+	t.Parallel()
 	for _, n := range []int{41, 50, 64} {
 		t.Run(fmt.Sprintf("AC-7 %d links", n), func(t *testing.T) {
 			root := lbProject(t)
@@ -268,6 +271,7 @@ func lbWords(t *testing.T, root, prefix string, count, n int) []string {
 // through 30 links, within every platform's own limit, so only the budget
 // can refuse it.
 func TestAC6AC12ACommandWhoseWordsFollowMoreLinksThanItsBudgetIsRefused(t *testing.T) {
+	t.Parallel()
 	root := lbProject(t)
 	words := lbWords(t, root, "w", pathrules.CommandLinks/30+2, 30)
 	cmd := "touch " + strings.Join(words, " ")
@@ -310,6 +314,7 @@ func TestAC6AC12ACommandWhoseWordsFollowMoreLinksThanItsBudgetIsRefused(t *testi
 // were allowed, and so was a write into the loop's state through one link
 // named -x (US-035, the verifier's first gap). Options are still options.
 func TestAC5AC7AC12AWordThatBeginsWithADashIsHeldToTheBoundThroughTheHook(t *testing.T) {
+	t.Parallel()
 	const lookup = "more links than this system follows in one lookup"
 	root := lbProject(t)
 	over := lbAtOneName(t, root, "-e65", 65, "elsewhere", "x")
@@ -361,6 +366,7 @@ func TestAC5AC7AC12AWordThatBeginsWithADashIsHeldToTheBoundThroughTheHook(t *tes
 // state/active` was allowed, and so was a cd through 65 links (US-035, the
 // verifier's second round).
 func TestAC5AC12TheDirectoryACdMovesToAfterDashDashIsPlacedThroughTheHook(t *testing.T) {
+	t.Parallel()
 	root := lbProject(t)
 	lbLink(t, filepath.Join(root, ".sdlc"), filepath.Join(root, "-x"))
 	over := strings.TrimSuffix(lbAtOneName(t, root, "-e65", 65, "elsewhere", "x"), "/x")
@@ -397,6 +403,7 @@ func TestAC5AC12TheDirectoryACdMovesToAfterDashDashIsPlacedThroughTheHook(t *tes
 // where it alone holds the links, as `cd -- e65`. 41 links at one name is past
 // what macOS (32) and Linux (40) follow in one lookup, and 64 past Windows' 63.
 func TestAC5AfterACdTheRefusalNamesTheWordAsTypedThroughTheHook(t *testing.T) {
+	t.Parallel()
 	const lookup = "goes through more links than this system follows in one lookup"
 	root := lbProject(t)
 	sub := filepath.Join(root, "sub")
@@ -537,6 +544,7 @@ func lbAskIn(t *testing.T, cwd, session, cmd string) string {
 // one word, and one 42 links deep is placed where it leads, so `echo ok` from
 // it is allowed (CI on 38e0ed0).
 func TestAC5AC7FromAWorkingDirectoryPastTheLookupLimitTheHookNamesIt(t *testing.T) {
+	t.Parallel()
 	root := lbProject(t)
 	depth, want := 42, "the working directory goes through more links than this system follows in one lookup"
 	if runtime.GOOS == "windows" {
@@ -586,6 +594,7 @@ func TestAC5AC7FromAWorkingDirectoryPastTheLookupLimitTheHookNamesIt(t *testing.
 // command past 512; E0081 quoted the joined word, not the one typed (US-035,
 // code review round 2).
 func TestAC5AC6FromASubdirectoryTheHookNamesTheWordAsTyped(t *testing.T) {
+	t.Parallel()
 	root := lbProject(t)
 	pkg := filepath.Join(root, "pkg")
 	write(t, root, "pkg/.keep", "")
@@ -619,6 +628,7 @@ func TestAC5AC6FromASubdirectoryTheHookNamesTheWordAsTyped(t *testing.T) {
 // round 5). 41 links at one name is past macOS (32) and Linux (40), and 64
 // past Windows' 63.
 func TestAC5AC7ACdIntoADirectoryPastTheLookupLimitIsNamedThroughTheHook(t *testing.T) {
+	t.Parallel()
 	root := lbProject(t)
 	dir := fmt.Sprintf("e%d", lbPastTheLookup(41))
 	lbAtOneName(t, root, dir, lbPastTheLookup(41), "elsewhere", "x")
@@ -795,6 +805,7 @@ func lbPastTheLengthOrSkip(t *testing.T, root string) int {
 // allowed again, and landed (US-035, verifier round 7, scen30). It is refused
 // from the directory past the length, and from one part of the way down.
 func TestAC5AC7APathPastTheLengthThroughALegalMultibyteNameIsRefusedThroughTheHook(t *testing.T) {
+	t.Parallel()
 	root := lbProject(t)
 	limit := lbPastTheLengthOrSkip(t, root)
 	names := lbPastTheLength(t, root, strings.Repeat("é", 130), filepath.Join(root, ".sdlc", "state"), limit)
@@ -826,6 +837,7 @@ func TestAC5AC7APathPastTheLengthThroughALegalMultibyteNameIsRefusedThroughTheHo
 // SDLC-E0083 (US-035, verifier round 6, scen24 and scen25). `touch` of a name
 // past the limit is allowed too: it cannot be there.
 func TestAC11ALongWordThatIsNoPathIsAllowedThroughTheHook(t *testing.T) {
+	t.Parallel()
 	root := lbProject(t)
 	run := strings.Repeat("x", 300)
 	for name, cmd := range map[string]string{
@@ -853,6 +865,7 @@ func TestAC11ALongWordThatIsNoPathIsAllowedThroughTheHook(t *testing.T) {
 // too long (US-035, verifier round 7). Names are ASCII, so this holds wherever
 // the length can be found.
 func TestAC5FromAWorkingDirectoryPastTheLengthTheRefusalNamesNeitherLinksNorAnOption(t *testing.T) {
+	t.Parallel()
 	root := lbProject(t)
 	limit := lbPastTheLengthOrSkip(t, root)
 	names := lbPastTheLength(t, root, strings.Repeat("a", 200), filepath.Join(root, "elsewhere"), limit)

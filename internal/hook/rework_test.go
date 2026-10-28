@@ -47,6 +47,7 @@ func rwCommitObject(t *testing.T, root, commit string) string {
 // become a directory since the reviews were stamped -- TreeHash's
 // ErrOverrideNotAFile, read by reviewsFresh's first branch.
 func TestACommitIsRefusedWhenTheRootCodemapHoldsFilesBeneathItAfterTheRetro(t *testing.T) {
+	t.Parallel()
 	l := lhFinished(t)
 	if err := os.Remove(filepath.Join(l.wt, "CODEMAP.md")); err != nil {
 		t.Fatal(err)
@@ -71,6 +72,7 @@ func TestACommitIsRefusedWhenTheRootCodemapHoldsFilesBeneathItAfterTheRetro(t *t
 // that failure without disturbing the working tree the plain measurement
 // reads.
 func TestACommitIsRefusedWhenCodemapsHistoricalOverrideCannotBeMeasuredButThePlainTreeDoes(t *testing.T) {
+	t.Parallel()
 	l := lhFinished(t)
 	reviewed := strings.TrimSpace(rwGitOut(t, l.wt, "rev-parse", "HEAD"))
 	obj := rwCommitObject(t, l.wt, reviewed)

@@ -88,6 +88,7 @@ func namedRun(t *testing.T, rows []namedRow) {
 }
 
 func TestAC1TheHookLetsThroughAPathInTheQuotedTextOfAnSdlcFlag(t *testing.T) {
+	t.Parallel()
 	namedRun(t, []namedRow{
 		{name: "AC-1 an escalation that says what was refused", command: `sdlc escalate spec_unclear --message "the hook refused; rm .sdlc/state/active was what I ran"`},
 		{name: "AC-1 an escalation with an arrow at the configuration", command: `sdlc escalate pre_commit_approval --message 'see -> .sdlc/config.json'`},
@@ -101,6 +102,7 @@ func TestAC1TheHookLetsThroughAPathInTheQuotedTextOfAnSdlcFlag(t *testing.T) {
 }
 
 func TestAC2TheHookLetsThroughAPathAPathspecExcludes(t *testing.T) {
+	t.Parallel()
 	namedRun(t, []namedRow{
 		{name: "AC-2 the loop's files left out of a diff a program reads", command: `git diff --numstat -- . ':(exclude).sdlc' | python3 -c 'import sys; print(sys.stdin.read())'`},
 		{name: "AC-2 the short form", command: `git log --oneline -- . ':!.sdlc' ':!CLAUDE.md' | perl -ne 'print'`},
@@ -113,6 +115,7 @@ func TestAC2TheHookLetsThroughAPathAPathspecExcludes(t *testing.T) {
 }
 
 func TestAC3TheHookLetsThroughARequestForHelp(t *testing.T) {
+	t.Parallel()
 	namedRun(t, []namedRow{
 		{name: "AC-3 the help of approve", command: `sdlc approve --help`},
 		{name: "AC-3 the short flag after the story", command: `sdlc approve A-1 -h`},
@@ -130,6 +133,7 @@ func TestAC3TheHookLetsThroughARequestForHelp(t *testing.T) {
 // A session that does not hold the story is asked only about a person's
 // decisions, and so is every session while the story waits for one.
 func TestAC3TheHookLetsAnotherSessionAskForHelpWhileAStoryWaitsForAPerson(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	escalated(t, root, false)
 	for _, command := range []string{`sdlc approve --help`, `sdlc approve A-1 -h`, `sdlc unfreeze --help`, `sdlc ack -h`, `sdlc release A-1 --help`} {
@@ -144,6 +148,7 @@ func TestAC3TheHookLetsAnotherSessionAskForHelpWhileAStoryWaitsForAPerson(t *tes
 }
 
 func TestAC5TheHookStillRefusesTheActNearestToEachMention(t *testing.T) {
+	t.Parallel()
 	namedRun(t, []namedRow{
 		{name: "AC-5 a redirect after the text", command: `sdlc escalate spec_unclear --message "x" > .sdlc/config.json`, rule: namedLoopState},
 		{name: "AC-5 a command after the text", command: `sdlc escalate spec_unclear --message "the hook refused"; rm .sdlc/state/active`, rule: namedLoopState},
@@ -177,6 +182,7 @@ func TestAC5TheHookStillRefusesTheActNearestToEachMention(t *testing.T) {
 }
 
 func TestAC6TheHookSaysItCouldNotTellWhereAnArgumentCannotBePlaced(t *testing.T) {
+	t.Parallel()
 	root := namedProject(t)
 	for _, c := range []namedRow{
 		{name: "AC-6 an abbreviated flag", command: `sdlc escalate spec_unclear --messag "see -> .sdlc/config.json"`, rule: namedLoopState},
@@ -229,6 +235,7 @@ var namedPathspecs = []struct {
 }
 
 func TestAC2GitLeavesThePathOutForEachPathspecTheTableCallsAnExclude(t *testing.T) {
+	t.Parallel()
 	root := wtTempDir(t)
 	wtGit(t, root, "init", "--quiet", "--initial-branch=main")
 	write(t, root, ".sdlc/config.json", `{"version":1}`)
@@ -256,6 +263,7 @@ func namedReadBesideAProgram(word string) string {
 }
 
 func TestAC2TheHookLetsThroughEveryPathspecGitReadsAsAnExclude(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, p := range namedPathspecs {
 		if p.excludes {
@@ -265,6 +273,7 @@ func TestAC2TheHookLetsThroughEveryPathspecGitReadsAsAnExclude(t *testing.T) {
 }
 
 func TestAC5TheHookStillRefusesEveryPathspecGitDoesNotReadAsAnExclude(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, p := range namedPathspecs {
 		if !p.excludes {
@@ -294,6 +303,7 @@ func namedRoute(t *testing.T, r reply) string {
 // story's directory in the checkout the session is in. The shell would write
 // the same file anywhere, code included, so the route may not offer it.
 func TestAC4TheMainConversationIsToldWhereAFileThatIsNotTheStorysWorkGoes(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, file := range []string{"commit-msg.txt", "notes/handoff.md", "internal/billing/invoice.go"} {
 		for _, tool := range []string{"Write", "Edit"} {
@@ -329,6 +339,7 @@ func namedOffersNoShell(t *testing.T, route string) {
 }
 
 func TestAC4TheStorysOwnDirectoryIsWhereTheMainConversationMayWrite(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, file := range []string{".sdlc/stories/A-1/commit-msg.txt", ".sdlc/stories/A-1/notes/handoff.md"} {
 		for _, tool := range []string{"Write", "Edit"} {
@@ -357,6 +368,7 @@ func TestAC4TheStorysOwnDirectoryIsWhereTheMainConversationMayWrite(t *testing.T
 // only the one in the session's checkout is the session's to write: the main
 // checkout's is outside the repository to a session in the worktree.
 func TestAC4TheRouteNamesTheStorysDirectoryInTheSessionsCheckout(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	inMain := filepath.ToSlash(filepath.Join(l.main, ".sdlc", "stories"))
 	for _, o := range swOpenings(l) {

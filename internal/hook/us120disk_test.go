@@ -156,6 +156,7 @@ func u120Lock(t *testing.T, dir string) {
 // nothing and is complete. A word it cannot place on the disk is a listing
 // that failed. Each directory is read once for a command.
 func TestAC6TheDirectoryReaderSaysWhetherItListedADirectoryToItsEnd(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	write(t, root, "build/a.txt", "x\n")
 	write(t, root, "build/b.txt", "x\n")
@@ -189,6 +190,7 @@ func TestAC6TheDirectoryReaderSaysWhetherItListedADirectoryToItsEnd(t *testing.T
 // short and incomplete, with the names read before the cut and the bound as
 // its cause. The bound is counted across every directory the command lists.
 func TestAC10TheDirectoryReaderStopsAtTheBoundForTheWholeCommand(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	write(t, root, "build/a.txt", "x\n")
 	write(t, root, "build/b.txt", "x\n")
@@ -206,6 +208,7 @@ func TestAC10TheDirectoryReaderStopsAtTheBoundForTheWholeCommand(t *testing.T) {
 // AC-10 (PLAN Step 9, exits 2 and 4): a directory that cannot be read, or a
 // path under one, is a listing that failed, never an empty one.
 func TestAC10ADirectoryThatCannotBeReadIsAListingThatFailed(t *testing.T) {
+	t.Parallel()
 	u120Unprivileged(t)
 	root := t.TempDir()
 	write(t, root, "locked/x.txt", "x\n")
@@ -219,6 +222,7 @@ func TestAC10ADirectoryThatCannotBeReadIsAListingThatFailed(t *testing.T) {
 // reads its destination: through a link, and false for a file, for nothing
 // there, and for a word it cannot place.
 func TestAC4TheDiskReaderSaysWhetherADestinationIsADirectory(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	write(t, root, "pkg.v2/x.go", "package x\n")
 	write(t, root, "notes.v2", "x\n")
@@ -246,6 +250,7 @@ func TestAC4TheDiskReaderSaysWhetherADestinationIsADirectory(t *testing.T) {
 // member, so it is not counted against the bytes a command may decompress;
 // a compressed one is.
 func TestAC10TheArchiveReaderReadsEachFormatByWhatTheFileHolds(t *testing.T) {
+	t.Parallel()
 	side := t.TempDir()
 	tarred := u120TarOf(t, "CLAUDE.md", "notes/a.txt")
 	u120File(t, filepath.Join(side, "plain.zip"), tarred)
@@ -289,6 +294,7 @@ func TestAC10TheArchiveReaderReadsEachFormatByWhatTheFileHolds(t *testing.T) {
 // short, one with a bad header after its first member, and a gzip, bzip2 or
 // zip that is malformed or cut short.
 func TestAC10AnArchiveTheReaderCannotReadToItsEndIsIncomplete(t *testing.T) {
+	t.Parallel()
 	side := t.TempDir()
 	two := u120TarOf(t, "a.txt", "b.txt")
 	u120File(t, filepath.Join(side, "garbage.bin"), bytes.Repeat([]byte("x"), 1024))
@@ -336,6 +342,7 @@ func TestAC10AnArchiveTheReaderCannotReadToItsEndIsIncomplete(t *testing.T) {
 // the refusal names the formats the hook reads instead of saying the archive
 // could not be read to its end.
 func TestAC10ASmallXzArchiveIsAnsweredAsAFormatTheReaderDoesNotRead(t *testing.T) {
+	t.Parallel()
 	side := t.TempDir()
 	u120File(t, filepath.Join(side, "p.tar.xz"), u120Bytes(t, u120Xz))
 	d := newDiskReader(side)
@@ -347,6 +354,7 @@ func TestAC10ASmallXzArchiveIsAnsweredAsAFormatTheReaderDoesNotRead(t *testing.T
 // what a command decompresses in all each cut the read short, as incomplete,
 // with the names read before the cut.
 func TestAC10AnArchivePastABoundIsIncomplete(t *testing.T) {
+	t.Parallel()
 	side := t.TempDir()
 	at := func(name string) string { return slash(filepath.Join(side, name)) }
 	many := make([]string, maxMembers+1)
@@ -419,6 +427,7 @@ func itoa(i int) string {
 // incomplete without being opened: a pipe would hold the decision until the
 // deadline, and a device such as /dev/null would read as an empty archive.
 func TestAC10AnArchiveThatIsNotARegularFileIsNotOpened(t *testing.T) {
+	t.Parallel()
 	side := t.TempDir()
 	d := newDiskReader(side)
 	notRegular := "it is not a regular file"
@@ -439,6 +448,7 @@ func TestAC10AnArchiveThatIsNotARegularFileIsNotOpened(t *testing.T) {
 // AC-10 (PLAN Step 13, exits 2 and 3): an archive whose directory cannot be
 // searched, or which cannot be opened, could not be read.
 func TestAC10AnArchiveThatCannotBeOpenedIsIncomplete(t *testing.T) {
+	t.Parallel()
 	u120Unprivileged(t)
 	side := t.TempDir()
 	u120File(t, filepath.Join(side, "locked/p.tar"), u120TarOf(t, "CLAUDE.md"))

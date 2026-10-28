@@ -85,6 +85,7 @@ func acLinkedWorktree(t *testing.T, kind string) (main, wt string) {
 // place, and a write to it is refused. Read by name first, it is a file
 // beside r in the worktree, which nothing protects.
 func TestAC1AWriteThroughALinkAndThenDotDotIntoAnotherCheckoutsRecordIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"symlink", "junction"} {
 		t.Run(kind, func(t *testing.T) {
 			main, wt := acLinkedWorktree(t, kind)
@@ -126,6 +127,7 @@ func TestAC1AWriteThroughALinkAndThenDotDotIntoAnotherCheckoutsRecordIsRefused(t
 // spelling with a drive is held only to the second, since Cygwin is said to
 // read that one by name first.
 func TestAC1TheHookReadsAWordThroughALinkAndThenDotDotWhereTheShellWritesIt(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"symlink", "junction"} {
 		t.Run(kind, func(t *testing.T) {
 			main, wt := acLinkedWorktree(t, kind)

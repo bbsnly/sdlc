@@ -55,14 +55,11 @@ func swBacklog(a1, b2, c3 string) string {
 		`{"id":"C-3","title":"Credit notes","status":"` + c3 + `"}]}` + "\n"
 }
 
+// GIT_DIR, GIT_WORK_TREE and GIT_COMMON_DIR are unset for the whole binary by
+// TestMain, so the layout is built as a person's shell without them builds it;
+// a test that sets one does so itself, and is then not parallel.
 func swCheckouts(t *testing.T) swLayout {
 	t.Helper()
-	for _, name := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"} {
-		t.Setenv(name, "")
-		if err := os.Unsetenv(name); err != nil {
-			t.Fatal(err)
-		}
-	}
 	main := wtTempDir(t)
 	wtGit(t, main, "init", "--quiet", "--initial-branch=main")
 	write(t, main, ".sdlc/config.json", `{"version":1}`)
@@ -248,6 +245,7 @@ func swLink(t *testing.T, target, name string) {
 // are refused to the file tools and to the shell, by an absolute path and by
 // the path relative to wherever the call runs.
 func TestAC6ASessionHeldInItsStoryWorktreeIsHeldToTheFreezeWhereverItWasOpened(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	frozen := filepath.Join(l.wt, "invoice_test.go")
 	for _, o := range swOpenings(l) {
@@ -286,6 +284,7 @@ func TestAC6ASessionHeldInItsStoryWorktreeIsHeldToTheFreezeWhereverItWasOpened(t
 // AC-6, the protected paths: the worktree's own loop state, configuration and
 // session settings, and the story's backlog and record in the main checkout.
 func TestAC6ASessionHeldInItsStoryWorktreeIsRefusedItsProtectedPathsWhereverItWasOpened(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	for _, o := range swOpenings(l) {
 		t.Run("AC-6 "+o.name, func(t *testing.T) {
@@ -314,6 +313,7 @@ func TestAC6ASessionHeldInItsStoryWorktreeIsRefusedItsProtectedPathsWhereverItWa
 // passed on the work as it stands. A commit of the main checkout is another
 // checkout's.
 func TestAC6ASessionHeldInItsStoryWorktreeMeetsTheCommitGateWhereverItWasOpened(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	openings := swOpenings(l)
 	inWorktree, fromMain, moved := openings[0], openings[1], openings[2]
@@ -336,6 +336,7 @@ func TestAC6ASessionHeldInItsStoryWorktreeMeetsTheCommitGateWhereverItWasOpened(
 // AC-6 holds the session to its rules, not away from its work: its own code,
 // reading anywhere, and listing the worktrees go through.
 func TestAC6TheSessionsOwnWorkAndReadingAreNotRefused(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	for _, o := range swOpenings(l) {
 		t.Run("AC-6 "+o.name, func(t *testing.T) {
@@ -371,6 +372,7 @@ func TestAC6TheSessionsOwnWorkAndReadingAreNotRefused(t *testing.T) {
 // relative, after a cd, through the variables and shorthands the shell has for
 // where it is, through a link, and through programs that remove for it.
 func TestAC6AndT1ASessionCannotEndItsHoldByTakingItsStoryWorktreeAway(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	openings := swOpenings(l)
 	w, m := openings[0], openings[1]
@@ -485,6 +487,7 @@ func TestAC6AndT1TheStoryWorktreeUnderHomeIsItselfByTilde(t *testing.T) {
 // opened in. Its uncommitted work would go with it, and its story would be
 // held by a checkout that no longer exists.
 func TestT2ASessionCannotRemoveOrMoveAnotherStorysWorktreeOrTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	openings := swOpenings(l)
 	w, m := openings[0], openings[1]
@@ -513,6 +516,7 @@ func TestT2ASessionCannotRemoveOrMoveAnotherStorysWorktreeOrTheMainCheckout(t *t
 // is protected by nothing. A held session may not make one there, in its own
 // checkout or another, by any spelling of the path or of git.
 func TestT5ASessionCannotAddAWorktreeIntoAProtectedPath(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	openings := swOpenings(l)
 	w, m := openings[0], openings[1]
@@ -551,6 +555,7 @@ func TestT5ASessionCannotAddAWorktreeIntoAProtectedPath(t *testing.T) {
 // session already carries, core.worktree, and a --work-tree add before the
 // commit, are each a commit in another checkout.
 func TestAC6AndT4ACommitPointedAtAnotherCheckoutIsRefusedWhateverTheGatesSay(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	swReady(t, l)
 	w := swOpenings(l)[0]
@@ -605,6 +610,7 @@ func TestAC6AndT4ACommitPointedAtAnotherCheckoutIsRefusedWhateverTheGatesSay(t *
 // repository -- its .git file leads here, only git's way back names where it
 // was -- and a commit there is still another checkout's.
 func TestAC6AndT2ACommitInALinkedWorktreeMovedByHandIsACommitInAnotherCheckout(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	swReady(t, l)
 	moved := filepath.Join(wtTempDir(t), "B-2-moved")
@@ -631,6 +637,7 @@ func TestAC6AndT2ACommitInALinkedWorktreeMovedByHandIsACommitInAnotherCheckout(t
 // writable. A file in a checkout nested in the one the session is held in is
 // not the session's.
 func TestT7ASessionHeldInTheMainCheckoutCannotWriteAStoryWorktreesFilesWithTheFileTools(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	write(t, l.main, "user_stories.json", swBacklog("in_progress", "in_progress", "in_progress"))
 	write(t, l.main, ".sdlc/state/active", "C-3\n")
@@ -671,6 +678,7 @@ func TestT7ASessionHeldInTheMainCheckoutCannotWriteAStoryWorktreesFilesWithTheFi
 // x beside the link, and the filesystem, once `mkdir -p d` had run, wrote it
 // where the link leads: the main checkout's record, or another story's state.
 func TestAC6DotDotAfterADirectoryMadeInTheSameCommandIsReadThroughTheLinkFromAStoryWorktree(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	swLink(t, filepath.Join(l.main, ".sdlc", "stories", "A-1"), filepath.Join(l.wt, "lnk"))
 	swLink(t, filepath.Join(l.other, ".sdlc", "state"), filepath.Join(l.wt, "lnk2"))
@@ -688,6 +696,7 @@ func TestAC6DotDotAfterADirectoryMadeInTheSameCommandIsReadThroughTheLinkFromASt
 // worktree nested in the main checkout, for the session's own entry and
 // another story's.
 func TestAC6WhatGitKeepsForEachWorktreeIsRefusedFromAStoryWorktree(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	w := swOpenings(l)[0]
 	entries := filepath.Join(l.main, ".git", "worktrees")
@@ -702,6 +711,7 @@ func TestAC6WhatGitKeepsForEachWorktreeIsRefusedFromAStoryWorktree(t *testing.T)
 // in the main checkout says the story waits, and a session in the story's
 // worktree nested there is refused the approval as it is in a single checkout.
 func TestAC6APersonsApprovalIsRefusedInANestedStoryWorktreeWhileTheStoryWaits(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	at := time.Now()
 	record := model.NewRecord("A-1", at)

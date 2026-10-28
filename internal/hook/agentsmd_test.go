@@ -173,6 +173,7 @@ func agAgentsMD(t *testing.T, command string, world []string, ask func(t *testin
 // and in any case, and to a CLAUDE.md below the root, is refused as protected,
 // with the fix CLAUDE.md at the root gets.
 func TestAC5AndAC6AFileToolsWriteToAGENTSmdOrANestedCLAUDEmdIsRefusedAsProtected(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	want := reasonOf(call(t, event(root, "Write", "sdlc-implementer", filepath.Join(root, "CLAUDE.md")), noEnv))
 	_, wantRoute, _ := strings.Cut(want, "Instead: ")
@@ -194,6 +195,7 @@ func TestAC5AndAC6AFileToolsWriteToAGENTSmdOrANestedCLAUDEmdIsRefusedAsProtected
 // AC-11: the project's .agents, at any depth and in any case, refused to the
 // file tools and the shell as .claude is.
 func TestAC11AWriteUnderTheProjectsDotAgentsIsRefusedThroughTheHook(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, rel := range []string{".agents/skills/x/SKILL.md", "sub/.agents/skills/x/SKILL.md", ".Agents/x.md", "sub/.claude/skills/x/SKILL.md"} {
 		for _, tool := range []string{"Write", "Edit", "NotebookEdit"} {
@@ -213,6 +215,7 @@ func TestAC11AWriteUnderTheProjectsDotAgentsIsRefusedThroughTheHook(t *testing.T
 
 // AC-5: TestAShellCommandThroughALinkIsReadAsTheFileItReaches, for AGENTS.md.
 func TestAC5AShellCommandThroughALinkToAGENTSmdIsReadAsAGENTSmd(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	write(t, root, "AGENTS.md", "# contract\n")
 	if err := os.Symlink(filepath.Join(root, "AGENTS.md"), filepath.Join(root, "brief.md")); err != nil {
@@ -225,6 +228,7 @@ func TestAC5AShellCommandThroughALinkToAGENTSmdIsReadAsAGENTSmd(t *testing.T) {
 
 // AC-5: TestAPowerShellCommandIsReadAsPowerShell, for AGENTS.md.
 func TestAC5AGENTSmdEscapedWithABacktickIsNotRemovableFromPowerShell(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	raw, err := json.Marshal(map[string]any{
 		"hook_event_name": "PreToolUse", "session_id": working, "tool_name": "PowerShell", "cwd": root,
@@ -240,6 +244,7 @@ func TestAC5AGENTSmdEscapedWithABacktickIsNotRemovableFromPowerShell(t *testing.
 
 // AC-5: TestAPathRootedWithoutADriveIsGovernedOnWindows, for AGENTS.md.
 func TestAC5AGENTSmdRootedWithoutADriveIsGovernedOnWindows(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	volume := filepath.VolumeName(root)
 	if volume == "" {
@@ -332,6 +337,7 @@ func TestAC11ALinkedDotAgentsIsHeldWhereItLeads(t *testing.T) {
 // refused to the file tools and the shell as CLAUDE.md is, with CLAUDE.md's
 // fix; a link to it is read as it.
 func TestAC12AWriteToCLAUDElocalmdIsRefusedAsTheSameWriteToCLAUDEmdIs(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	want := reasonOf(call(t, event(root, "Write", "sdlc-implementer", filepath.Join(root, "CLAUDE.md")), noEnv))
 	_, wantRoute, _ := strings.Cut(want, "Instead: ")
@@ -500,6 +506,7 @@ func TestAC11ThePersonsDotAgentsIsPlacedByEverySpellingOfTheHome(t *testing.T) {
 // pathrules.Fold trims `::$DATA` and not this. Windows only: elsewhere the
 // spelling names another file.
 func TestAC11ADirectoryNamedThroughItsIndexStreamIsTheDirectoryOnWindows(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	if filepath.VolumeName(root) == "" {
 		t.Skip("only NTFS reads name::$INDEX_ALLOCATION as the directory name; this is not Windows")
@@ -771,6 +778,7 @@ func TestAC13ACopyOrExtractionThatFillsADirectoryAboveTheProjectIsRefusedThrough
 // name is refused. The hook fails open on a panic, so a matcher that ignores
 // yield's false return lets each of these through.
 func TestAC5AndAC13APathWithTwoWholeMatchesOfOneNameIsRefusedThroughTheHook(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	for _, rel := range []string{"a/.claude/b/.claude/c", ".agents/a/.agents/b", "a/CLAUDE.md/b/CLAUDE.md", "a/AGENTS.md/b/AGENTS.md"} {
 		t.Run("AC-5 "+rel, func(t *testing.T) {
@@ -884,6 +892,7 @@ func TestAC14AGlobInAHomeOrAbsoluteDirectoryReachesTheProjectsHeldFiles(t *testi
 // a dot too. Security and red team ran `ln -sf <outside>/CLAUDE.md .` and
 // `install <outside>/CLAUDE.md .` through today's hook: both are allowed.
 func TestAC15LnAndInstallAreRefusedThroughTheHookWhereCpToTheSamePlaceIs(t *testing.T) {
+	t.Parallel()
 	root := loopProject(t)
 	agFreeze(t, root, "internal/invoice_test.go", "pkg.v2/invoice_test.go")
 	for _, dir := range []string{"sub", "docs", "docs.v2", "bin"} {

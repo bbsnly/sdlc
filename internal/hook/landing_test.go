@@ -204,6 +204,7 @@ var (
 // AC-9, every class, in the window where it matters most: the story finished
 // and not yet landed.
 func TestAC9AFinishedStorysSessionMovesNoTrunkOrStoryBranch(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		commands []string
@@ -234,6 +235,7 @@ func TestAC9AFinishedStorysSessionMovesNoTrunkOrStoryBranch(t *testing.T) {
 // AC-9 holds for as long as the session holds the story: with gates 1 to 7
 // passed and the commit to make, and with the commit made and the retro to do.
 func TestAC9TheSessionMovesNoTrunkOrStoryBranchBeforeTheStoryIsFinishedEither(t *testing.T) {
+	t.Parallel()
 	sample := []string{
 		"git update-ref refs/heads/main HEAD",
 		"git branch -f main story/A-1",
@@ -258,6 +260,7 @@ func TestAC9TheSessionMovesNoTrunkOrStoryBranchBeforeTheStoryIsFinishedEither(t 
 // OQ-3: the rebase of its own branch onto trunk is the session's only after
 // the commit gate. Before it the branch has nothing of the story's to rebase.
 func TestAC9AndQ3TheSessionDoesNotRebaseItsBranchBeforeTheCommitGate(t *testing.T) {
+	t.Parallel()
 	l := swCheckouts(t)
 	swReady(t, l)
 	swRefused(t, swHeld, []swRow{
@@ -270,6 +273,7 @@ func TestAC9AndQ3TheSessionDoesNotRebaseItsBranchBeforeTheCommitGate(t *testing.
 // leaves the session, go through: none of them moves a branch the session does
 // not own by its own gated work.
 func TestAC9AndQ3WhatReadsBranchesAndTheRebaseOntoTrunkGoThrough(t *testing.T) {
+	t.Parallel()
 	l := lhFinished(t)
 	swAllowed(t, swHeld, lhRows(l, false,
 		"git branch",
@@ -300,6 +304,7 @@ func TestAC9AndQ3WhatReadsBranchesAndTheRebaseOntoTrunkGoThrough(t *testing.T) {
 // the root is committed on the story's branch while the session still holds
 // it -- that file alone, and only once the retro has passed.
 func TestT14TheBookkeepersCodemapIsCommittedAloneAfterTheRetroAndNotBefore(t *testing.T) {
+	t.Parallel()
 	commit := "git add CODEMAP.md && git commit -m 'docs: map A-1'"
 	t.Run("R1 after the retro", func(t *testing.T) {
 		l := lhFinished(t)

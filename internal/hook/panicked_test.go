@@ -16,6 +16,7 @@ import (
 // command, and the log is a file anyone on the machine may read. Only the
 // runtime's own message, which holds no word of the command, is given.
 func TestAC2APanicIsLoggedByItsTypeAndNeverByAValueThatCouldQuoteTheCommand(t *testing.T) {
+	t.Parallel()
 	// Split so that the secrets scan does not take the fixture for a token.
 	const secret = "ghp_" + "zq7SecretShapedToken0123456789abcdefXYZ"
 	for _, r := range []any{"touch " + secret, errors.New(secret), fmt.Errorf("wrapped: %w", errors.New(secret)), []string{secret}} {
@@ -46,6 +47,7 @@ func TestAC2APanicIsLoggedByItsTypeAndNeverByAValueThatCouldQuoteTheCommand(t *t
 // drive's own working directory. The command alone, Bound(""), is the
 // resolver's answer.
 func TestAC5AWordWhosePlaceOnlyTheShellKnowsIsOverNoBound(t *testing.T) {
+	t.Parallel()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
