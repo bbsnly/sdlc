@@ -11,8 +11,13 @@ package cli
 // internal/parallel; interrupting a run is in test/e2e, because a test in this
 // package cannot signal its own process.
 //
-// The tests are not parallel: the launcher starts its sessions from the
-// process's environment, which a test changes with t.Setenv.
+// The tests are parallel but one. The launcher starts its sessions from the
+// process's environment, which Go does not let a parallel test change, so the
+// fake session's command is put on PATH once for the package
+// (plShareFakeClaude) and finds each test's plan from the directory its
+// session was started in. The test that puts a git shim on PATH,
+// TestAC7TheRunPushesNothingAndAsksNoRemote, changes PATH for its own run with
+// t.Setenv and so is not parallel.
 
 import (
 	"encoding/json"
@@ -114,8 +119,9 @@ func plWorktreeOf(main, id string) string { return swWorktreeOf(main, id) }
 // ---------------------------------------------------------------------- AC-1
 
 func TestAC1ParallelStartsOneSessionPerStoryEachRunningTheNextSkillFromTheMainCheckout(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 3)
-	rig := plInstall(t, map[string]plBehaviour{
+	rig := plInstall(t, main, map[string]plBehaviour{
 		"US-001": {Actions: []string{"start"}},
 		"US-002": {Actions: []string{"start"}},
 	}, false)
@@ -187,9 +193,10 @@ func TestAC1ParallelStartsOneSessionPerStoryEachRunningTheNextSkillFromTheMainCh
 // A story already in its own worktree is not refused: a person re-runs the
 // command after an approval or an interrupt, and the session resumes it.
 func TestAC1AStoryAlreadyInItsOwnWorktreeIsResumedByANewSession(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 2)
 	swStarted(t, main, swSessionA, "US-001")
-	rig := plInstall(t, map[string]plBehaviour{"US-001": {Actions: []string{"start"}}}, false)
+	rig := plInstall(t, main, map[string]plBehaviour{"US-001": {Actions: []string{"start"}}}, false)
 	before := swClaimed(t, main, "US-001")
 
 	plRun(t, main, "", "US-001")
@@ -209,6 +216,7 @@ func TestAC1AStoryAlreadyInItsOwnWorktreeIsResumedByANewSession(t *testing.T) {
 // ---------------------------------------------------------------------- AC-2
 
 func TestAC2TheCommandSaysHowManyRunAndHowManyWait(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		args []string
 		want string
@@ -221,8 +229,9 @@ func TestAC2TheCommandSaysHowManyRunAndHowManyWait(t *testing.T) {
 	} {
 		name := strings.Join(tc.args, " ")
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main := plRepository(t, 3)
-			rig := plInstall(t, nil, false)
+			rig := plInstall(t, main, nil, false)
 			r := plRun(t, main, "", tc.args...)
 			if !strings.Contains(r.stdout+r.stderr, tc.want) {
 				t.Errorf("sdlc parallel %s did not say %q:\n%s%s", name, tc.want, r.stdout, r.stderr)
@@ -240,8 +249,9 @@ func TestAC2TheCommandSaysHowManyRunAndHowManyWait(t *testing.T) {
 // The count is for a person at a terminal, and with --json standard output is
 // one document a script parses.
 func TestAC2WithJSONStandardOutputIsOneDocumentAndTheCountIsStillSaid(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 3)
-	plInstall(t, nil, false)
+	plInstall(t, main, nil, false)
 	r := plRun(t, main, "", "--json", "US-001", "US-002", "US-003")
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(r.stdout), &doc); err != nil {
@@ -253,9 +263,10 @@ func TestAC2WithJSONStandardOutputIsOneDocumentAndTheCountIsStillSaid(t *testing
 }
 
 func TestAC2AMaxThatIsNotAPositiveNumberIsRefusedAndStartsNothing(t *testing.T) {
+	t.Parallel()
 	for _, maxArg := range []string{"0", "-1", "two", "1.5", ""} {
 		main := plRepository(t, 2)
-		rig := plInstall(t, nil, false)
+		rig := plInstall(t, main, nil, false)
 		r := plRun(t, main, "", "--max", maxArg, "US-001", "US-002")
 		out := r.stdout + r.stderr
 		if r.code == 0 {
@@ -281,15 +292,17 @@ func TestAC2AMaxThatIsNotAPositiveNumberIsRefusedAndStartsNothing(t *testing.T) 
 // ---------------------------------------------------------------------- AC-3
 
 func TestAC3AnUnknownStoryIsRefusedByNameAndNothingIsStarted(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 2)
-	rig := plInstall(t, nil, false)
+	rig := plInstall(t, main, nil, false)
 	plRefused(t, rig, main, plUnknownStory, "US-999", "US-001", "US-999")
 	plRefused(t, rig, main, plUnknownStory, "US-999", "US-999", "US-001")
 }
 
 func TestAC3AnIdThatCannotBeAStoryIsRefusedBeforeAnythingIsLaunched(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 2)
-	rig := plInstall(t, nil, false)
+	rig := plInstall(t, main, nil, false)
 	for _, id := range []string{"../etc", "US-001; touch PWNED", "$(touch PWNED)", "a b", "US-001'"} {
 		r := plRun(t, main, "", "US-001", id)
 		if r.code == 0 {
@@ -305,9 +318,10 @@ func TestAC3AnIdThatCannotBeAStoryIsRefusedBeforeAnythingIsLaunched(t *testing.T
 }
 
 func TestAC3AStoryThatIsNotRunnableIsRefusedWhateverMakesItSo(t *testing.T) {
+	t.Parallel()
 	for _, status := range []model.Status{model.StatusBlocked, model.StatusDropped, model.StatusDone} {
 		main := plRepository(t, 2)
-		rig := plInstall(t, nil, false)
+		rig := plInstall(t, main, nil, false)
 		wtSetStatus(t, main, "US-002", status)
 		out := plRefused(t, rig, main, plNotRunnable, "US-002", "US-001", "US-002")
 		if !strings.Contains(out, string(status)) {
@@ -317,8 +331,9 @@ func TestAC3AStoryThatIsNotRunnableIsRefusedWhateverMakesItSo(t *testing.T) {
 }
 
 func TestAC3AStoryWaitingOnAnUnfinishedOneIsNotRunnable(t *testing.T) {
+	t.Parallel()
 	main := swRepository(t, wtStory{id: "US-001"}, wtStory{id: "US-002", dependsOn: []string{"US-003"}}, wtStory{id: "US-003"})
-	rig := plInstall(t, nil, false)
+	rig := plInstall(t, main, nil, false)
 	out := plRefused(t, rig, main, plNotRunnable, "US-002", "US-001", "US-002")
 	if !strings.Contains(out, "US-003") {
 		t.Errorf("the refusal does not name what US-002 waits on:\n%s", out)
@@ -340,8 +355,9 @@ func plHeldByAnotherCheckout(t *testing.T) (main, other string) {
 }
 
 func TestAC3AStoryAnotherCheckoutHoldsIsRefusedNamingWhereAndNothingIsStarted(t *testing.T) {
+	t.Parallel()
 	main, other := plHeldByAnotherCheckout(t)
-	rig := plInstall(t, nil, false)
+	rig := plInstall(t, main, nil, false)
 	out := plRefused(t, rig, main, plHeldElsewhere, "US-001", "US-002", "US-001")
 	if !wtNames(out, other) {
 		t.Errorf("the refusal does not say which checkout holds US-001 (%s):\n%s", other, out)
@@ -349,8 +365,9 @@ func TestAC3AStoryAnotherCheckoutHoldsIsRefusedNamingWhereAndNothingIsStarted(t 
 }
 
 func TestAC3AStoryListedTwiceIsRefusedBeforeAnythingTouchesTheBacklog(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 3)
-	rig := plInstall(t, nil, false)
+	rig := plInstall(t, main, nil, false)
 	plRefused(t, rig, main, plListedTwice, "US-002", "US-001", "US-002", "US-003", "US-002")
 	// Found from the arguments alone: a story the backlog does not have, listed
 	// twice, is listed twice before it is unknown.
@@ -360,8 +377,9 @@ func TestAC3AStoryListedTwiceIsRefusedBeforeAnythingTouchesTheBacklog(t *testing
 // The pre-flight is all or nothing: one story that cannot be run keeps every
 // other from being started.
 func TestAC3OneRefusedStoryStartsNoneOfTheOthers(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 3)
-	rig := plInstall(t, map[string]plBehaviour{
+	rig := plInstall(t, main, map[string]plBehaviour{
 		"US-001": {Actions: []string{"start"}}, "US-003": {Actions: []string{"start"}},
 	}, false)
 	wtSetStatus(t, main, "US-002", model.StatusBlocked)
@@ -372,8 +390,9 @@ func TestAC3OneRefusedStoryStartsNoneOfTheOthers(t *testing.T) {
 }
 
 func TestAC3ARunNeedsStoryWorktreesAndSaysHowToTurnThemOn(t *testing.T) {
+	t.Parallel()
 	main := wtRepository(t, plStories(2)...)
-	rig := plInstall(t, nil, false)
+	rig := plInstall(t, main, nil, false)
 	out := plRefused(t, rig, main, plNeedsWorktrees, "", "US-001", "US-002")
 	if !strings.Contains(out, "git.worktrees") {
 		t.Errorf("the refusal does not name the setting:\n%s", out)
@@ -404,10 +423,11 @@ func plRecordWith(t *testing.T, main, id string, setup func(r *model.Record)) {
 // A pending escalation is a decision only a person may make; a session started
 // on it would go on past it, which is an approval by another name.
 func TestAC3AStoryWithAnEscalationNobodyHasAnsweredIsRefusedNotResumed(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 2)
 	wt := swStarted(t, main, swSessionA, "US-001").Worktree
 	wtMust(t, wt, swSessionA, "", "escalate", "spec_unclear", "--message", "AC-1 and AC-2 contradict each other")
-	rig := plInstall(t, map[string]plBehaviour{"US-001": {Actions: []string{"start"}}}, false)
+	rig := plInstall(t, main, map[string]plBehaviour{"US-001": {Actions: []string{"start"}}}, false)
 
 	before := wtLoopState(t, main)
 	r := plRun(t, main, "", "US-001", "US-002")
@@ -427,8 +447,9 @@ func TestAC3AStoryWithAnEscalationNobodyHasAnsweredIsRefusedNotResumed(t *testin
 }
 
 func TestAC3AFinishedStoryIsRefusedNotWorkedAgain(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 2)
-	rig := plInstall(t, nil, false)
+	rig := plInstall(t, main, nil, false)
 	plRecordWith(t, main, "US-002", func(r *model.Record) {
 		for _, g := range model.Gates {
 			r.SetGate(g, model.GatePass, "", time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
@@ -443,8 +464,9 @@ func TestAC3AFinishedStoryIsRefusedNotWorkedAgain(t *testing.T) {
 // ---------------------------------------------------------------------- AC-4
 
 func TestAC4ARunFromAModelSessionIsRefusedBeforeAnythingIsReadAndStartsNothing(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 2)
-	rig := plInstall(t, nil, false)
+	rig := plInstall(t, main, nil, false)
 	before := wtLoopState(t, main)
 
 	// An unknown story as well: the backlog is not looked at for a caller who
@@ -484,8 +506,9 @@ func TestAC4ARunFromAModelSessionIsRefusedBeforeAnythingIsReadAndStartsNothing(t
 
 // A person has no session id, and is not asked for anything else.
 func TestAC4APersonAtATerminalIsNotRefused(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 1)
-	rig := plInstall(t, nil, false)
+	rig := plInstall(t, main, nil, false)
 	r := plRun(t, main, "", "US-001")
 	if strings.Contains(r.stderr, plFromASession) {
 		t.Errorf("a person was refused as a model session:\n%s", r.stderr)
@@ -498,6 +521,7 @@ func TestAC4APersonAtATerminalIsNotRefused(t *testing.T) {
 // ---------------------------------------------------------------------- AC-5
 
 func TestAC5HelpSaysTheSessionsAreNotInteractiveAndQuotesWhatTheFlagAllows(t *testing.T) {
+	t.Parallel()
 	r := wtMust(t, wtTempDir(t), "", "", "parallel", "--help")
 	help := strings.Join(strings.Fields(r.stdout), " ")
 	lower := strings.ToLower(help)
@@ -546,8 +570,9 @@ func plSkips(call plCall) bool {
 }
 
 func TestAC5ByDefaultASessionIsGivenNoToolsAndNoSkip(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 2)
-	rig := plInstall(t, nil, false)
+	rig := plInstall(t, main, nil, false)
 	plRun(t, main, "", "US-001", "US-002")
 	if len(rig.calls()) != 2 {
 		t.Fatalf("sessions: %q", rig.started())
@@ -568,9 +593,10 @@ func TestAC5ByDefaultASessionIsGivenNoToolsAndNoSkip(t *testing.T) {
 }
 
 func TestAC5TheUnattendedFlagGrantsTheBuiltInListAndNeverASkip(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"--unattended", "US-001", "US-002"}, {"US-001", "US-002", "--unattended"}} {
 		main := plRepository(t, 2)
-		rig := plInstall(t, nil, false)
+		rig := plInstall(t, main, nil, false)
 		plRun(t, main, "", args...)
 		if len(rig.calls()) != 2 {
 			t.Fatalf("sdlc parallel %s: sessions %q", strings.Join(args, " "), rig.started())
@@ -589,6 +615,7 @@ func TestAC5TheUnattendedFlagGrantsTheBuiltInListAndNeverASkip(t *testing.T) {
 }
 
 func TestAC5ConfigurationCanNarrowTheListAndNothingElse(t *testing.T) {
+	t.Parallel()
 	list := parallel.Allowlist()
 	for name, tc := range map[string]struct {
 		allow []string
@@ -599,9 +626,10 @@ func TestAC5ConfigurationCanNarrowTheListAndNothingElse(t *testing.T) {
 		"none":        {[]string{}, nil},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main := plRepository(t, 1)
 			setConfigOnDisk(t, main, "parallel", map[string]any{"allow": tc.allow})
-			rig := plInstall(t, nil, false)
+			rig := plInstall(t, main, nil, false)
 			plRun(t, main, "", "--unattended", "US-001")
 			call, ok := rig.calls()["US-001"]
 			if !ok {
@@ -618,10 +646,11 @@ func TestAC5ConfigurationCanNarrowTheListAndNothingElse(t *testing.T) {
 // config.json is a file a session on the project can write, so a person's
 // next unattended run must not hand it a wider list than the built-in one.
 func TestAC5AConfiguredEntryThatIsNotBuiltInIsRefusedNotGranted(t *testing.T) {
+	t.Parallel()
 	for _, widened := range []string{"Bash(*)", "Bash", "Write", "WebFetch", "Bash(git push:*)"} {
 		main := plRepository(t, 1)
 		setConfigOnDisk(t, main, "parallel", map[string]any{"allow": []string{parallel.Allowlist()[0], widened}})
-		rig := plInstall(t, nil, false)
+		rig := plInstall(t, main, nil, false)
 		r := plRun(t, main, "", "--unattended", "US-001")
 		out := r.stdout + r.stderr
 		if r.code == 0 || !strings.Contains(r.stderr, plAllowlistWidened) {
@@ -657,7 +686,7 @@ type plReport struct {
 func plMixed(t *testing.T) string {
 	t.Helper()
 	main := plRepository(t, 4)
-	plInstall(t, map[string]plBehaviour{
+	plInstall(t, main, map[string]plBehaviour{
 		"US-001": {Actions: []string{"start"}},
 		"US-002": {Actions: []string{"start", "escalate"}, Message: "\x1b[31mred\x1b[0m \x1b]0;pwned\x07 the migration has no down step"},
 		"US-003": {Exit: 3},
@@ -667,6 +696,7 @@ func plMixed(t *testing.T) string {
 }
 
 func TestAC6TheStatusViewGivesEveryStoryItsGateAndItsState(t *testing.T) {
+	t.Parallel()
 	main := plMixed(t)
 	r := plRun(t, main, "", "--json", "--max", "2", "US-001", "US-002", "US-003", "US-004")
 	report := decode[plReport](t, r)
@@ -702,6 +732,7 @@ func TestAC6TheStatusViewGivesEveryStoryItsGateAndItsState(t *testing.T) {
 }
 
 func TestAC6TheProseViewGathersWhatWaitsOnAPersonLastWithTheCommandToRun(t *testing.T) {
+	t.Parallel()
 	main := plMixed(t)
 	r := plRun(t, main, "", "--max", "2", "US-001", "US-002", "US-003", "US-004")
 	out := r.stdout + r.stderr
@@ -754,6 +785,7 @@ func abs(n int) int {
 // What a story's escalation message says came from a file the clone brought
 // along, and could retitle or overwrite the person's terminal.
 func TestAC6NothingAStoryCarriesCanControlThePersonsTerminal(t *testing.T) {
+	t.Parallel()
 	main := plMixed(t)
 	var backlog map[string]any
 	wtReadJSON(t, filepath.Join(main, "user_stories.json"), &backlog)
@@ -787,7 +819,7 @@ func TestAC6NothingAStoryCarriesCanControlThePersonsTerminal(t *testing.T) {
 
 func TestAC7TheRunPushesNothingAndAsksNoRemote(t *testing.T) {
 	main := plRepository(t, 2)
-	rig := plInstall(t, map[string]plBehaviour{
+	rig := plInstall(t, main, map[string]plBehaviour{
 		"US-001": {Actions: []string{"start", "escalate"}}, "US-002": {Actions: []string{"start"}},
 	}, true)
 	plRun(t, main, "", "--unattended", "US-001", "US-002")
@@ -809,6 +841,7 @@ func TestAC7TheRunPushesNothingAndAsksNoRemote(t *testing.T) {
 }
 
 func TestAC7TheCommandBuildsNoNetworkCallAndNoProcessOfItsOwn(t *testing.T) {
+	t.Parallel()
 	file, err := parser.ParseFile(token.NewFileSet(), "parallel.go", nil, 0)
 	if err != nil {
 		t.Fatalf("the command is in parallel.go of this package: %v", err)
@@ -840,10 +873,12 @@ func TestAC7TheCommandBuildsNoNetworkCallAndNoProcessOfItsOwn(t *testing.T) {
 // The launcher reads the records and writes none. Whatever a session did to a
 // story is the session's, and a run never says a story is done.
 func TestAC8TheLauncherWritesNoRecordClaimActiveSessionOrStatusOfItsOwn(t *testing.T) {
+	t.Parallel()
 	for name, exit := range map[string]int{"sessions that end cleanly": 0, "sessions that fail": 5} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			main := plRepository(t, 3)
-			rig := plInstall(t, map[string]plBehaviour{
+			rig := plInstall(t, main, map[string]plBehaviour{
 				"US-001": {Exit: exit}, "US-002": {Exit: exit}, "US-003": {Exit: exit},
 			}, false)
 			state := wtLoopState(t, main)
@@ -865,8 +900,9 @@ func TestAC8TheLauncherWritesNoRecordClaimActiveSessionOrStatusOfItsOwn(t *testi
 }
 
 func TestAC8NoStoryIsEverRecordedDoneByARun(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 2)
-	plInstall(t, map[string]plBehaviour{
+	plInstall(t, main, map[string]plBehaviour{
 		"US-001": {Actions: []string{"start"}}, "US-002": {Actions: []string{"start", "escalate"}},
 	}, false)
 	plRun(t, main, "", "US-001", "US-002")

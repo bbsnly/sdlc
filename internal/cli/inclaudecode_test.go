@@ -209,11 +209,11 @@ func TestAC15ATerminalOutsideClaudeCodeStillRecordsAPersonsCommand(t *testing.T)
 
 // parallel has no slash command, and starts model sessions: inside Claude
 // Code's environment it starts none. A session id is still SDLC-E0061's
-// (decision 2); any other marker is AC-15's. Not parallel: the fake claude it
-// would start is put on PATH.
+// (decision 2); any other marker is AC-15's.
 func TestAC15ParallelRunWithAMarkerOtherThanTheSessionIdStartsNothingAndIsRefused(t *testing.T) {
+	t.Parallel()
 	main := plRepository(t, 2)
-	rig := plInstall(t, nil, false)
+	rig := plInstall(t, main, nil, false)
 	before := icRecord(t, main)
 	c := icCommand{terminal: "sdlc parallel", args: []string{"parallel", "US-001", "US-002"}}
 	for _, m := range icMarkers {

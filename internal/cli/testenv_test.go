@@ -2,6 +2,7 @@ package cli
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"runtime"
 	"strconv"
@@ -17,7 +18,17 @@ func TestMain(m *testing.M) {
 	}
 	flag.Parse()
 	raiseParallel()
-	os.Exit(testenv.Run(m))
+	// Before testenv.Run, which leaves PATH and the PLFAKE_ variables as they
+	// are; the fake's directory is removed after the tests, outside the
+	// coverage profile that m.Run writes.
+	cleanup, err := plShareFakeClaude()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "the fake claude for the parallel tests:", err)
+		os.Exit(1)
+	}
+	code := testenv.Run(m)
+	cleanup()
+	os.Exit(code)
 }
 
 // parallelPerCPU is how many of this package's parallel tests run at once for

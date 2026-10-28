@@ -11,6 +11,13 @@ package cli
 // own code answers. So "each session holds one story in its own worktree" is
 // the loop's real answer, not the test's.
 //
+// The script is the same for every test, and TestMain puts it on PATH once
+// (plShareFakeClaude): the launcher starts its sessions from the process's
+// environment, and a test cannot change that without t.Setenv, which Go
+// refuses in a parallel test. What differs from one test to the next, the plan
+// and the log of what ran, sits beside the main checkout the sessions are
+// started in, where a session finds it from its own directory.
+//
 // Helpers carry a pl prefix, for parallel.
 
 import (
@@ -62,7 +69,6 @@ var plSeen = []string{store.SessionEnv, "SDLC_ENFORCE", "SDLC_BIN", "CLAUDE_PROJ
 
 // plChildMain is the fake session. It returns the exit status to end with.
 func plChildMain() int {
-	dir := os.Getenv("PLFAKE_DIR")
 	args := os.Args[1:]
 	call := plCall{Args: args, Env: map[string]string{}}
 	for _, a := range args {
@@ -71,6 +77,7 @@ func plChildMain() int {
 		}
 	}
 	call.Cwd, _ = os.Getwd()
+	dir := plDirOf(call.Cwd)
 	for _, name := range plSeen {
 		if v, ok := os.LookupEnv(name); ok {
 			call.Env[name] = v
@@ -130,26 +137,75 @@ func plAppend(path, line string) {
 	_, _ = f.WriteString(line + "\n")
 }
 
-// plRig is the fake claude, installed for one test.
+// plDirOf is where the fake claude keeps a test's plan and what it logs, for
+// the main checkout the sessions are started in: beside it, in the directory
+// the test's own t.TempDir made, so that it goes with the test and no other
+// test's sessions can read it. A session finds it from its working directory,
+// which the launcher sets to the main checkout; both ends resolve symbolic
+// links, because a temporary directory is one on macOS.
+func plDirOf(main string) string {
+	if resolved, err := filepath.EvalSymlinks(main); err == nil {
+		main = resolved
+	}
+	return main + ".plfake"
+}
+
+// plShareFakeClaude puts the fake claude on PATH for the whole run, and
+// returns what removes it. Every test's sessions are this one script, which
+// hands over to the test binary as plChildEnv says.
+//
+// Windows has none: the fake is a POSIX shell script, and plInstall skips
+// there.
+func plShareFakeClaude() (cleanup func(), err error) {
+	if runtime.GOOS == "windows" {
+		return func() {}, nil
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	bin, err := os.MkdirTemp("", "sdlc-plfake-")
+	if err != nil {
+		return nil, err
+	}
+	cleanup = func() { _ = os.RemoveAll(bin) }
+	script := "#!/bin/sh\n" + plChildEnv + "=1 exec \"$PLFAKE_BIN\" \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o755); err != nil {
+		cleanup()
+		return nil, err
+	}
+	for name, value := range map[string]string{
+		"PATH":            bin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"PLFAKE_BIN":      self,
+		"PLFAKE_SENTINEL": "carried",
+	} {
+		if err := os.Setenv(name, value); err != nil {
+			cleanup()
+			return nil, err
+		}
+	}
+	return cleanup, nil
+}
+
+// plRig is the fake claude, set up for one test.
 type plRig struct {
 	t   *testing.T
 	dir string
 }
 
-// plInstall puts the fake claude first on PATH for the test, and, with
-// shimGit, a git that logs what it was asked before it runs the real one. The
-// test is not parallel: the launcher starts its sessions from the process's
-// environment.
-func plInstall(t *testing.T, plan map[string]plBehaviour, shimGit bool) *plRig {
+// plInstall gives the fake claude the plan for a test whose sessions are
+// started in main. With shimGit it also puts a git that logs what it was asked
+// before it runs the real one first on PATH, which is the process's: a test
+// that asks for it is not parallel.
+func plInstall(t *testing.T, main string, plan map[string]plBehaviour, shimGit bool) *plRig {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake claude is a POSIX shell script; the launcher's Windows path runs under Git Bash and is not run here")
 	}
-	self, err := os.Executable()
-	if err != nil {
+	dir := plDirOf(main)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	dir, bin := wtTempDir(t), t.TempDir()
 	raw, err := json.Marshal(plan)
 	if err != nil {
 		t.Fatal(err)
@@ -157,24 +213,19 @@ func plInstall(t *testing.T, plan map[string]plBehaviour, shimGit bool) *plRig {
 	if err := os.WriteFile(filepath.Join(dir, "plan.json"), raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	script := "#!/bin/sh\n" + plChildEnv + "=1 exec \"$PLFAKE_BIN\" \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	if shimGit {
 		gitPath, err := exec.LookPath("git")
 		if err != nil {
 			t.Fatal(err)
 		}
+		bin := t.TempDir()
 		shim := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$PLFAKE_DIR/git.log\"\nexec '" + gitPath + "' \"$@\"\n"
 		if err := os.WriteFile(filepath.Join(bin, "git"), []byte(shim), 0o755); err != nil {
 			t.Fatal(err)
 		}
+		t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		t.Setenv("PLFAKE_DIR", dir)
 	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("PLFAKE_DIR", dir)
-	t.Setenv("PLFAKE_BIN", self)
-	t.Setenv("PLFAKE_SENTINEL", "carried")
 	return &plRig{t: t, dir: dir}
 }
 
