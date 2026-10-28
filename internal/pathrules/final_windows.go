@@ -61,8 +61,16 @@ func normalise(p string) string { return resolve(p) }
 const errCantResolveFilename syscall.Errno = 1921
 
 // lookupLimit reports whether err is a lookup that passed the system's own
-// limit on the links one lookup follows.
+// limit on the links one lookup follows, where Windows says so.
 func lookupLimit(err error) bool { return errors.Is(err, errCantResolveFilename) }
+
+// limitReadsAsNotThere is true: a lookup past the 63 reparse points does not
+// always come back as ERROR_CANT_RESOLVE_FILENAME. On CI for 38e0ed0 the
+// lookup of a word through 65 symlinks or junctions, one in each directory,
+// read as a name not there; the walk stopped one name short with 64 links
+// counted, within the bound, and `touch d-1/n/.../n/x` and `mkdir -p` through
+// them were allowed. Such a name is asked again (lookUp).
+const limitReadsAsNotThere = true
 
 // errFilenameExcedRange is ERROR_FILENAME_EXCED_RANGE, what Windows gives a
 // lookup of a path longer than it looks up, which Go's long-path prefix puts

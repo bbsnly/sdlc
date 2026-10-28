@@ -20,6 +20,10 @@ func normalise(p string) string { return p }
 // on Linux.
 func lookupLimit(err error) bool { return errors.Is(err, syscall.ELOOP) }
 
+// limitReadsAsNotThere is false: ELOOP is what both systems give a lookup past
+// their limit, whether the name at its end is there or not.
+const limitReadsAsNotThere = false
+
 // pathTooLong reports whether err is a lookup of a path longer than the system
 // looks up in one go: ENAMETOOLONG, past 1,024 bytes on macOS and 4,096 on
 // Linux. The system gives it for a name past nameMax too, which lstat tells

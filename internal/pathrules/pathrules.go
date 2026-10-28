@@ -98,7 +98,8 @@ var (
 	// or whose placing stopped at a link the system would not follow.
 	ErrTooManyLinks = errors.New("a path goes through more symbolic links than sdlc follows for one path")
 	// ErrLookupLimit is ErrTooManyLinks where the word is within maxLinks but
-	// past what this system follows in one lookup (macOS 32, Linux 40): the
+	// past what this system follows in one lookup (macOS 32, Linux 40,
+	// Windows 63 reparse points): the
 	// OS cannot say where it leads, and a program that walks one directory at
 	// a time still writes through it.
 	ErrLookupLimit = fmt.Errorf("%w: more than this system follows in one lookup", ErrTooManyLinks)
@@ -241,6 +242,103 @@ func (res Resolver) lstat(p string) entry {
 		res.disk.there[p] = e
 	}
 	return e
+}
+
+// lookUp is lstat(next), where below says the walk to next crossed a link on
+// the way. Where the system can answer a lookup past its own limit on links as
+// a name not there (limitReadsAsNotThere), such an answer below a link is
+// asked again: next is unreadable where the system will not follow the
+// directory it is in, though that directory is there when its links are
+// followed one at a time. That is the lookup the limit stopped, whether or not
+// next is there, as ELOOP says elsewhere. Read as not there, the rest of the
+// word was taken by name 64 links in, within the bound, and `touch` through
+// 65 links, one in each directory, was allowed on Windows (CI on 38e0ed0).
+func (res Resolver) lookUp(next string, below bool) entry {
+	e := res.lstat(next)
+	if !limitReadsAsNotThere || !below || e.there || e.unreadable {
+		return e
+	}
+	// Once the command's budget is spent it is refused, and nothing more is
+	// followed for it.
+	if res.budget.spent() {
+		return e
+	}
+	dir := filepath.Dir(next)
+	if _, err := os.Stat(dir); err == nil {
+		return e
+	}
+	there, links := res.reachable(dir)
+	res.budget.charge(links)
+	if !there {
+		return e
+	}
+	e.unreadable = true
+	if res.disk != nil {
+		res.disk.there[next] = e
+	}
+	return e
+}
+
+// reachable reports whether dir is there with every link on the way followed
+// one at a time from the root, junctions as well as symlinks, so that no
+// lookup crosses more than one link; or whether the walk passed maxLinks
+// first, which the bound refuses anyway; and how many links it followed. A
+// reparse point that names no other place is passed through as Windows passes
+// through it. A dir that is a link to nothing, which the system will not
+// follow either, is not reachable, so lookUp leaves a name below it not there.
+func (res Resolver) reachable(dir string) (there bool, links int) {
+	dest, rest := dir[:rootLen(dir)], dir[rootLen(dir):]
+	for rest != "" {
+		var name string
+		name, rest = firstName(rest)
+		switch name {
+		case "", ".":
+			continue
+		case "..":
+			dest = filepath.Dir(dest) // dest holds no link, so its parent by name is its parent on disk
+			continue
+		}
+		next := joinName(dest, name)
+		e := res.lstat(next)
+		if !e.there {
+			return false, links
+		}
+		target, ok := linkTarget(next, e)
+		if !ok {
+			dest = next
+			continue
+		}
+		if links++; links > maxLinks {
+			return true, links
+		}
+		v := rootLen(target)
+		dest, rest = filepath.Dir(next), target[v:]+rest
+		if v > 0 {
+			dest = target[:v]
+		}
+	}
+	return true, links
+}
+
+// firstName is the first name in rest, after any separators it starts with,
+// and what follows that name.
+func firstName(rest string) (name, after string) {
+	rest = strings.TrimLeftFunc(rest, isSeparator)
+	if j := strings.IndexFunc(rest, isSeparator); j >= 0 {
+		return rest[:j], rest[j:]
+	}
+	return rest, ""
+}
+
+// linkTarget is where p leads, which Lstat said e of, and whether p is a link
+// that names another place: a symlink or a junction, and not another kind of
+// reparse point, which Readlink cannot read.
+func linkTarget(p string, e entry) (string, bool) {
+	if !e.link {
+		return "", false
+	}
+	target, err := os.Readlink(p)
+	return target, err == nil
 }
 
 // resolve is resolve(p), asked once where res is memoised. With a budget,
@@ -505,7 +603,7 @@ func (res Resolver) stepParent(w *placeWalk) bool {
 // the name is not there.
 func (res Resolver) stepName(w *placeWalk, name string) bool {
 	next := joinName(w.at, name)
-	e := res.lstat(next)
+	e := res.lookUp(next, !w.settled)
 	if !e.there {
 		if e.unreadable {
 			w.unreadable = next
@@ -648,12 +746,8 @@ func isSeparator(r rune) bool { return r == '/' || r == filepath.Separator }
 // step walks one name of rest. It reports done with the answer where the walk
 // ends there, and otherwise leaves dest and rest for the next name.
 func (w *linkWalk) step(res Resolver, limit int) (bool, followed) {
-	w.rest = strings.TrimLeftFunc(w.rest, isSeparator)
-	name, after := w.rest, ""
-	if j := strings.IndexFunc(w.rest, isSeparator); j >= 0 {
-		name, after = w.rest[:j], w.rest[j:]
-	}
-	w.rest = after
+	var name string
+	name, w.rest = firstName(w.rest)
 	switch name {
 	case "", ".", "..":
 		if name == ".." {
@@ -857,9 +951,11 @@ func (res Resolver) existingPrefix(p string) (string, []string, string) {
 	volume := filepath.VolumeName(p)
 	parts := strings.Split(strings.TrimPrefix(p[len(volume):], sep), sep)
 	existing := volume + sep
+	linked := false
 	for i := range parts {
 		next := filepath.Join(existing, parts[i])
-		e := res.lstat(next)
+		e := res.lookUp(next, linked)
+		linked = linked || e.link
 		if !e.there {
 			if !e.unreadable {
 				return existing, parts[i:], ""

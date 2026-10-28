@@ -35,6 +35,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -84,6 +85,50 @@ func lbChainADirectoryAtATime(t *testing.T, kind, root, name string, n int, targ
 		acLink(t, kind, to, filepath.Join(root, fmt.Sprintf("%s-%d", name, i), "n"))
 	}
 	return fmt.Sprintf("%s-1/%sx", name, strings.Repeat("n/", n))
+}
+
+// lbPastTheLookup is n, a number of links past what macOS (32) and Linux (40)
+// follow in one lookup and within the bound of one word, or on Windows 64,
+// the one number that is both there: Windows follows 63 reparse points in one
+// lookup and took chains of 41 and 50 links in one go, so rows built to stop
+// at the system's limit placed them where they lead (CI on 38e0ed0).
+func lbPastTheLookup(n int) int {
+	if runtime.GOOS == "windows" {
+		return 64
+	}
+	return n
+}
+
+// lbLookups is what the system said of each path on the way to abs, which is
+// below root, from the first it would not look up: what Lstat said of it,
+// what Stat said of the directory it is in, and what Readlink said of the
+// last link before it. On Windows the answer to a lookup past the limit is
+// read from these, and a failure that carries them says which it was.
+func lbLookups(root, abs string) string {
+	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		return fmt.Sprintf("lookups: %s is not below %s: %v", abs, root, err)
+	}
+	at, link := root, ""
+	for i, name := range strings.Split(rel, string(filepath.Separator)) {
+		at = filepath.Join(at, name)
+		info, err := os.Lstat(at)
+		if err == nil {
+			if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+				link = at
+			}
+			continue
+		}
+		code := "no errno"
+		if errno, ok := errors.AsType[syscall.Errno](err); ok {
+			code = fmt.Sprintf("errno %d", uintptr(errno))
+		}
+		_, statErr := os.Stat(filepath.Dir(at))
+		target, readErr := os.Readlink(link)
+		return fmt.Sprintf("lookups on %s: Lstat of name %d below the root: %v (%s); Stat of its directory: %v; Readlink of the link before it: %q, %v",
+			runtime.GOOS, i+1, err, code, statErr, target, readErr)
+	}
+	return fmt.Sprintf("lookups on %s: Lstat answered every name of %s", runtime.GOOS, rel)
 }
 
 // lbChainWithDotDot makes n links, name-k1 to name-kn, each to a directory of
@@ -143,7 +188,8 @@ func TestAC5AWordThroughMoreThan64LinksPassesTheBoundOfOneWord(t *testing.T) {
 			within := shape.make(t, root, "within", 30)
 			for name, res := range acResolvers(root) {
 				if err := res.Bound(over); !errors.Is(err, ErrTooManyLinks) {
-					t.Errorf("%s: Bound(%s), through 65 links, = %v; want ErrTooManyLinks", name, over, err)
+					t.Errorf("%s: Bound(%s), through 65 links, = %v; want ErrTooManyLinks\n%s",
+						name, over, err, lbLookups(root, filepath.Join(root, filepath.FromSlash(over))))
 				}
 				if err := res.Bound(within); err != nil {
 					t.Errorf("%s: Bound(%s), through 30 links, = %v; want nil: 30 is within every platform's own limit", name, within, err)
@@ -187,7 +233,10 @@ func TestAC5AC7AWordWithinTheBoundIsPlacedWhereItsLinksLeadAndNeverByName(t *tes
 // D5: on Windows a junction is a link any user may make, and Windows passes
 // through a word's links in one call it bounds itself, so the count there is
 // the links the walk crossed. 65 junctions, one in each directory, pass the
-// bound; 30 do not. Nothing here needs a privilege.
+// bound; 30 do not. Nothing here needs a privilege. The count of symlinks has
+// none of them, and it is the lookup past Windows' 63 reparse points, asked
+// again a link at a time, that holds them: read as a name not there, 65 were
+// within the bound (CI on 38e0ed0).
 func TestAC5OnWindowsAWordThroughMoreThan64JunctionsPassesTheBoundOfOneWord(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("junctions exist only on Windows")
@@ -198,7 +247,8 @@ func TestAC5OnWindowsAWordThroughMoreThan64JunctionsPassesTheBoundOfOneWord(t *t
 	within := lbChainADirectoryAtATime(t, "junction", root, "within", 30, target)
 	for name, res := range acResolvers(root) {
 		if err := res.Bound(over); !errors.Is(err, ErrTooManyLinks) {
-			t.Errorf("%s: Bound of a word through 65 junctions = %v; want ErrTooManyLinks", name, err)
+			t.Errorf("%s: Bound of a word through 65 junctions = %v; want ErrTooManyLinks\n%s",
+				name, err, lbLookups(root, filepath.Join(root, filepath.FromSlash(over))))
 		}
 		if err := res.Bound(within); err != nil {
 			t.Errorf("%s: Bound of a word through 30 junctions = %v; want nil", name, err)
@@ -362,7 +412,7 @@ func lbFollow(res Resolver, known, at string, left *int) (to string, ok bool, cr
 func TestAC5AC7AWordThatBeginsWithADashIsBoundAndPlacedLikeAnyOther(t *testing.T) {
 	root := project(t)
 	over := lbChainAtOneName(t, root, "-d65", 65, lbTarget(t, root))
-	gap := lbChainADirectoryAtATime(t, "symlink", root, "-g", 50, lbTarget(t, root))
+	gap := lbChainADirectoryAtATime(t, "symlink", root, "-g", lbPastTheLookup(50), lbTarget(t, root))
 	state := filepath.Join(root, ".sdlc", "state")
 	if err := os.MkdirAll(state, 0o755); err != nil {
 		t.Fatal(err)

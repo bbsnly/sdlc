@@ -178,25 +178,29 @@ func TestAC8FollowCountingRecordsAPathThatDoesNotStartWithWhatIsKnown(t *testing
 // so that Bound("") refuses the command whoever walked the word. Recorded
 // nowhere, a word in a spelling Bound was not asked about was placed by name
 // past the bound (US-035, code review). 41 is past both systems' limit on one
-// lookup: macOS follows 32 links, Linux 40.
+// lookup: macOS follows 32 links, Linux 40; on Windows, which follows 63
+// reparse points, only 64 is (lbPastTheLookup). 65 links, one in each
+// directory, stop the walk 33 or 41 links in on those two, within the bound,
+// and on Windows 65 links in, past it.
 func TestAC5AC7ABudgetedResolverRecordsTheBoundWhereAWalkStopsAtTheLookupLimit(t *testing.T) {
+	past := lbPastTheLookup(41)
 	for _, tc := range []struct {
 		name   string
 		make   func(t *testing.T, root string) string
 		want   error
 		lookup bool
 	}{
-		{"41 links, one in each directory", func(t *testing.T, root string) string {
+		{fmt.Sprintf("%d links, one in each directory", past), func(t *testing.T, root string) string {
 			t.Helper()
-			return lbChainADirectoryAtATime(t, "symlink", root, "g", 41, lbTarget(t, root))
+			return lbChainADirectoryAtATime(t, "symlink", root, "g", past, lbTarget(t, root))
 		}, ErrLookupLimit, true},
 		{"65 links, one in each directory", func(t *testing.T, root string) string {
 			t.Helper()
 			return lbChainADirectoryAtATime(t, "symlink", root, "g", 65, lbTarget(t, root))
-		}, ErrLookupLimit, true},
-		{"41 links at one name", func(t *testing.T, root string) string {
+		}, ErrTooManyLinks, runtime.GOOS != "windows"},
+		{fmt.Sprintf("%d links at one name", past), func(t *testing.T, root string) string {
 			t.Helper()
-			return lbChainAtOneName(t, root, "a", 41, lbTarget(t, root))
+			return lbChainAtOneName(t, root, "a", past, lbTarget(t, root))
 		}, ErrLookupLimit, true},
 		{"65 links at one name", func(t *testing.T, root string) string {
 			t.Helper()
@@ -215,7 +219,8 @@ func TestAC5AC7ABudgetedResolverRecordsTheBoundWhereAWalkStopsAtTheLookupLimit(t
 				}
 				err := res.Bound("")
 				if !errors.Is(err, tc.want) || errors.Is(err, ErrLookupLimit) != tc.lookup {
-					t.Errorf("Bound(\"\") after %s's walk = %v, want %v", walk, err, tc.want)
+					t.Errorf("Bound(\"\") after %s's walk = %v, want %v, the lookup limit %v\n%s",
+						walk, err, tc.want, tc.lookup, lbLookups(root, word))
 				}
 			})
 		}

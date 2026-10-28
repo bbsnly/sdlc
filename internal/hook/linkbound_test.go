@@ -56,6 +56,19 @@ func lbLink(t *testing.T, target, at string) {
 	}
 }
 
+// lbPastTheLookup is n, a number of links past what macOS (32) and Linux (40)
+// follow in one lookup and within the bound of one word, or on Windows 64,
+// the one number that is both there: Windows follows 63 reparse points in one
+// lookup and took chains of 41 and 50 links in one go, so rows built to stop
+// at the system's limit were placed where they lead and allowed (CI on
+// 38e0ed0).
+func lbPastTheLookup(n int) int {
+	if runtime.GOOS == "windows" {
+		return 64
+	}
+	return n
+}
+
 // lbAtOneName makes name in root the head of a chain of n links, each the next
 // one's name and the last leading to target, which is relative to root; and
 // returns the word name/file, which goes through all n at its first name.
@@ -300,7 +313,8 @@ func TestAC5AC7AC12AWordThatBeginsWithADashIsHeldToTheBoundThroughTheHook(t *tes
 	const lookup = "more links than this system follows in one lookup"
 	root := lbProject(t)
 	over := lbAtOneName(t, root, "-e65", 65, "elsewhere", "x")
-	gap := lbADirectoryAtATime(t, root, "-g", 50, "elsewhere", "x")
+	gapLinks := lbPastTheLookup(50)
+	gap := lbADirectoryAtATime(t, root, "-g", gapLinks, "elsewhere", "x")
 	walk := lbADirectoryAtATime(t, root, "-h", 70, "elsewhere", "x")
 	lbLink(t, filepath.Join(root, ".sdlc", "state"), filepath.Join(root, "-st"))
 
@@ -315,10 +329,10 @@ func TestAC5AC7AC12AWordThatBeginsWithADashIsHeldToTheBoundThroughTheHook(t *tes
 		})
 	}
 	for _, cmd := range []string{"touch -- " + gap, "touch ./" + gap, "echo x > ./" + gap} {
-		t.Run("AC-7 "+cmd[:16]+", through 50 links", func(t *testing.T) {
+		t.Run(fmt.Sprintf("AC-7 %s, through %d links", cmd[:16], gapLinks), func(t *testing.T) {
 			reason := lbAsk(t, root, cmd)
 			if !strings.Contains(reason, lbWordCode) || !strings.Contains(reason, lookup) {
-				t.Errorf("%.40s..., through 50 links one directory at a time: want it refused under %s saying %q, got:\n%s", cmd, lbWordCode, lookup, reason)
+				t.Errorf("%.40s..., through %d links one directory at a time: want it refused under %s saying %q, got:\n%s", cmd, gapLinks, lbWordCode, lookup, reason)
 			}
 		})
 	}
@@ -381,14 +395,15 @@ func TestAC5AC12TheDirectoryACdMovesToAfterDashDashIsPlacedThroughTheHook(t *tes
 // `cd sub && touch lnk65/x` said "sub goes through more than 64 links"
 // (US-035, the verifier's fourth round). The cd's directory is named only
 // where it alone holds the links, as `cd -- e65`. 41 links at one name is past
-// what macOS (32) and Linux (40) follow in one lookup.
+// what macOS (32) and Linux (40) follow in one lookup, and 64 past Windows' 63.
 func TestAC5AfterACdTheRefusalNamesTheWordAsTypedThroughTheHook(t *testing.T) {
 	const lookup = "goes through more links than this system follows in one lookup"
 	root := lbProject(t)
 	sub := filepath.Join(root, "sub")
 	write(t, root, "sub/.keep", "")
 	lbAtOneName(t, sub, "lnk65", 65, "../elsewhere", "x")
-	lbAtOneName(t, sub, "st41", 41, "../.sdlc/state", "active")
+	st := fmt.Sprintf("st%d", lbPastTheLookup(41))
+	lbAtOneName(t, sub, st, lbPastTheLookup(41), "../.sdlc/state", "active")
 	lbAtOneName(t, root, "e65", 65, "elsewhere", "x")
 	lbAtOneName(t, root, "-e65", 65, "elsewhere", "x")
 	inSub, inRoot := make([]string, 18), make([]string, 18)
@@ -398,7 +413,7 @@ func TestAC5AfterACdTheRefusalNamesTheWordAsTypedThroughTheHook(t *testing.T) {
 	}
 	for _, tc := range []struct{ cmd, want string }{
 		{"cd sub && touch lnk65/x", "lnk65/x" + lbOver64},
-		{"cd sub && touch st41/active", "st41/active " + lookup},
+		{"cd sub && touch " + st + "/active", st + "/active " + lookup},
 		{"cd sub; echo x > lnk65/y", "lnk65/y" + lbOver64},
 		{"cd " + filepath.ToSlash(sub) + " && touch lnk65/x", "lnk65/x" + lbOver64},
 		{"touch sub/lnk65/x", "sub/lnk65/x" + lbOver64},
@@ -435,10 +450,11 @@ func lbHomeAsk(t *testing.T, root, session, tool, cmd string) string {
 // while the bound read it as a path in the project that was not there, and
 // within every bound: `touch $HOME/<41 links>/x` was allowed, where the same
 // word spelled with ~ was refused (US-035, code review). 41 links, one in each
-// directory, is past what macOS (32) and Linux (40) follow in one lookup; 65
-// is past the bound of one word. The chains lead to a directory nothing
-// protects, so only the bound can refuse them; and the session holding the
-// story and one that does not are held alike.
+// directory, is past what macOS (32) and Linux (40) follow in one lookup, and
+// on Windows 64 is past its 63 (lbPastTheLookup); 65 is past the bound of one
+// word. The chains lead to a directory nothing protects, so only the bound can
+// refuse them; and the session holding the story and one that does not are
+// held alike.
 func TestAC5AC7AWordThroughAVariableForTheHomeIsBoundAsItIsPlaced(t *testing.T) {
 	home := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(home); err == nil {
@@ -448,9 +464,10 @@ func TestAC5AC7AWordThroughAVariableForTheHomeIsBoundAsItIsPlaced(t *testing.T) 
 	t.Setenv("USERPROFILE", home)
 	write(t, home, "elsewhere/.keep", "")
 	root := lbProject(t)
+	past := lbPastTheLookup(41)
 	chains := map[int]string{
-		41: lbADirectoryAtATime(t, home, "hb41", 41, "elsewhere", "x"),
-		65: lbADirectoryAtATime(t, home, "hb65", 65, "elsewhere", "x"),
+		past: lbADirectoryAtATime(t, home, fmt.Sprintf("hb%d", past), past, "elsewhere", "x"),
+		65:   lbADirectoryAtATime(t, home, "hb65", 65, "elsewhere", "x"),
 	}
 	const lookup = "more links than this system follows in one lookup"
 	refusedForTheWord := func(t *testing.T, reason, typed string) {
@@ -464,7 +481,7 @@ func TestAC5AC7AWordThroughAVariableForTheHomeIsBoundAsItIsPlaced(t *testing.T) 
 			t.Errorf("the refusal does not quote the word as typed, %q...:\n%s", typed[:20], reason)
 		}
 	}
-	for _, n := range []int{41, 65} {
+	for _, n := range []int{past, 65} {
 		for _, spelling := range []string{"$HOME", "${HOME}", `"$HOME"`, "%USERPROFILE%"} {
 			word := spelling + "/" + chains[n]
 			for _, cmd := range []string{"touch " + word, "install -D f " + word, "echo x > " + word} {
@@ -512,15 +529,23 @@ func lbAskIn(t *testing.T, cwd, session, cmd string) string {
 // the working directory where it leads and judges each word from there, so
 // with 41 links Linux rightly let `echo ok` through (CI on 2492472), and a
 // write to the loop state at the end of such a chain is refused as one.
+//
+// Windows follows 63 reparse points in one lookup, so the working directory
+// it will not look up is 65 links deep, past the bound of one word as well,
+// and is named for that: with no such directory there between the two, 42
+// links were placed where they lead and `echo ok` was allowed (CI on 38e0ed0).
 func TestAC5AC7FromAWorkingDirectoryPastTheLookupLimitTheHookNamesIt(t *testing.T) {
 	root := lbProject(t)
-	deep := filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, "wd42", 42, "elsewhere", "")))
+	depth, want := 42, "the working directory goes through more links than this system follows in one lookup"
+	if runtime.GOOS == "windows" {
+		depth, want = 65, "the working directory"+lbOver64
+	}
+	deep := filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, fmt.Sprintf("wd%d", depth), depth, "elsewhere", "")))
 	state := filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, "st41", 41, ".sdlc/state", "")))
 	shallow := filepath.Join(root, filepath.FromSlash(lbADirectoryAtATime(t, root, "wd10", 10, "elsewhere", "")))
 	for _, session := range []string{working, "session-b"} {
-		t.Run("AC-7 echo ok, 42 links deep, "+session, func(t *testing.T) {
+		t.Run(fmt.Sprintf("AC-7 echo ok, %d links deep, %s", depth, session), func(t *testing.T) {
 			reason := lbAskIn(t, deep, session, "echo ok")
-			want := "the working directory goes through more links than this system follows in one lookup"
 			if !strings.Contains(reason, want) || !strings.Contains(reason, lbWordCode) {
 				t.Errorf("want it refused under %s saying %q, got:\n%s", lbWordCode, want, reason)
 			}
@@ -584,14 +609,16 @@ func TestAC5AC6FromASubdirectoryTheHookNamesTheWordAsTyped(t *testing.T) {
 // the system follows in one lookup, and fewer than 65, names that directory.
 // The word after the cd was quoted, because the directory alone, whose last
 // link is not followed to place it, was within every bound (US-035, verifier
-// round 5). 41 links at one name is past macOS (32) and Linux (40).
+// round 5). 41 links at one name is past macOS (32) and Linux (40), and 64
+// past Windows' 63.
 func TestAC5AC7ACdIntoADirectoryPastTheLookupLimitIsNamedThroughTheHook(t *testing.T) {
 	root := lbProject(t)
-	lbAtOneName(t, root, "e41", 41, "elsewhere", "x")
-	for _, cmd := range []string{"cd e41 && touch x", "cd e41; echo x > y"} {
+	dir := fmt.Sprintf("e%d", lbPastTheLookup(41))
+	lbAtOneName(t, root, dir, lbPastTheLookup(41), "elsewhere", "x")
+	for _, cmd := range []string{"cd " + dir + " && touch x", "cd " + dir + "; echo x > y"} {
 		t.Run("AC-7 "+cmd, func(t *testing.T) {
 			reason := lbAsk(t, root, cmd)
-			want := "e41 goes through more links than this system follows in one lookup"
+			want := dir + " goes through more links than this system follows in one lookup"
 			if !strings.Contains(reason, want) || !strings.Contains(reason, lbWordCode) {
 				t.Errorf("want it refused under %s saying %q, got:\n%s", lbWordCode, want, reason)
 			}
