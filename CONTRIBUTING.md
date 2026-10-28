@@ -174,10 +174,11 @@ $ ./task profile PKG=./internal/cli RUN=TestLanding FLAGS=-race
 It runs the package's tests once, prints its slowest tests, and then where its
 CPU and its memory went, from `go tool pprof -top`. `RUN` narrows the tests as
 `-run` does, and `FLAGS` passes go test anything else, such as `-race`, which
-`./task test` runs under and which changes where the time goes. The profiles
-are kept in a temporary directory the task names, for `go tool pprof -http=:`.
-A profile is of the test process alone: a test that spends its time waiting
-for git or the built binary shows in the slowest tests and not in the CPU.
+changes where the time goes and which `./task test` runs under, except for the
+packages `NO_RACE_PKGS` names in `Taskfile.yml`. The profiles are kept in a
+temporary directory the task names, for `go tool pprof -http=:`. A profile is
+of the test process alone: a test that spends its time waiting for git or the
+built binary shows in the slowest tests and not in the CPU.
 
 The classifier the hook runs on every Bash and PowerShell call has benchmarks:
 `BenchmarkInspect` in `internal/shellpolicy`, on commands of the kind a session

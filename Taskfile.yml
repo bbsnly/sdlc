@@ -52,6 +52,17 @@ vars:
   # Its reasons are in `test`.
   TEST_TIMEOUT: 20m
 
+  # The packages `test` and `check-linux` run without the race detector. Their
+  # code, and the packages of this module it imports, starts no goroutine and
+  # uses no channel or sync, so the detector has no race of theirs to find, and
+  # it made their tests several times slower: internal/shellpolicy took 82 s
+  # under it on a ten-core Mac and 24 s without. The one thing their tests
+  # take from elsewhere that does use sync, shellx.Command, is run under it in
+  # internal/shellx's tests, and the code of all three under it in
+  # internal/hook's, which import them. A package that gains a goroutine
+  # leaves this list in the same change.
+  NO_RACE_PKGS: ./internal/shellpolicy ./internal/pathrules ./internal/testset
+
   GOLICENSES: go run github.com/google/go-licenses/v2@v{{.GOLICENSES_VERSION}}
   GOLANGCI: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v{{.GOLANGCI_VERSION}}
   ACTIONLINT: go run github.com/rhysd/actionlint/cmd/actionlint@v{{.ACTIONLINT_VERSION}}
@@ -320,13 +331,14 @@ tasks:
         if [ -n "$out" ]; then printf '%s\n' "$out"; fi
 
   test:
-    desc: Go tests with race detection
+    desc: Go tests, with race detection except in the packages NO_RACE_PKGS names
     silent: true
     cmds:
       - |
         # go test gives a package ten minutes unless told otherwise, and under
         # the race detector internal/shellpolicy once reached that on a loaded
-        # macOS runner and was killed mid-test. The limit is twenty, short
+        # macOS runner and was killed mid-test (it now runs without the
+        # detector, as NO_RACE_PKGS says). The limit is twenty, short
         # enough that a real hang is reported by go test, with the test's
         # name, before the CI job's thirty minutes end it with none. It is not
         # lower because internal/cli is not fast enough: in CI run 40600769689
@@ -341,10 +353,29 @@ tasks:
         # package's time, the slowest tests, and every package over half the
         # limit. If testtime cannot run, the events are printed as they are:
         # what failed is still in them.
+        #
+        # Two go test runs at once, one stream of events: the packages in
+        # NO_RACE_PKGS (the reason is with it) without -race, and every other
+        # package with it. The list of the second is what is left of ./..., so
+        # a new package is run under -race unless it is named in NO_RACE_PKGS.
+        # At once, not one after the other, so that the two share the machine
+        # as the packages of one run do.
         dir=$({{.MKTEMP_DIR}})
         trap 'rm -rf "$dir"' EXIT
         status=0
-        go test -race -json -timeout {{.TEST_TIMEOUT}} ./... > "$dir/test.json" 2>&1 || status=$?
+        plain=$(go list {{.NO_RACE_PKGS}}) || plain=
+        if [ -z "$plain" ]; then
+          echo "sdlc: go list found none of {{.NO_RACE_PKGS}}, so which packages run without -race is not known." >&2
+          exit 1
+        fi
+        raced=$(go list ./... | grep -vxF "$plain") || raced=
+        go test -json -timeout {{.TEST_TIMEOUT}} $plain > "$dir/plain.json" 2>&1 &
+        plain_pid=$!
+        go test -race -json -timeout {{.TEST_TIMEOUT}} $raced > "$dir/raced.json" 2>&1 &
+        raced_pid=$!
+        wait "$plain_pid" || status=$?
+        wait "$raced_pid" || status=$?
+        cat "$dir/plain.json" "$dir/raced.json" > "$dir/test.json"
         out=$(GOFLAGS= go run ./internal/tools/testtime -limit {{.TEST_TIMEOUT}} < "$dir/test.json" 2>&1) || out=$(cat "$dir/test.json")
         [ "$status" -eq 0 ] || {
           # go test's failure lines carry only a test file's bare name, which
@@ -432,7 +463,15 @@ tasks:
               # As `test` runs them, so that the times printed are the ones
               # a Linux runner would print.
               s=0
-              go test -race -json -timeout {{.TEST_TIMEOUT}} ./... > /tmp/test.json 2>&1 || s=$?
+              plain=$(go list {{.NO_RACE_PKGS}})
+              raced=$(go list ./... | grep -vxF "$plain")
+              go test -json -timeout {{.TEST_TIMEOUT}} $plain > /tmp/plain.json 2>&1 &
+              plain_pid=$!
+              go test -race -json -timeout {{.TEST_TIMEOUT}} $raced > /tmp/raced.json 2>&1 &
+              raced_pid=$!
+              wait "$plain_pid" || s=$?
+              wait "$raced_pid" || s=$?
+              cat /tmp/plain.json /tmp/raced.json > /tmp/test.json
               go run ./internal/tools/testtime -limit {{.TEST_TIMEOUT}} < /tmp/test.json || cat /tmp/test.json
               exit $s
             ' || status=1
