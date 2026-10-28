@@ -60,6 +60,11 @@ there is nothing else to add:
 /plugin install sdlc@sdlc
 ```
 
+In the Code tab of Claude Desktop, `/plugin` does not add it: open the plugin
+browser, add the marketplace `bbsnly/sdlc` and install `sdlc` from there, as
+[Claude Desktop](https://github.com/bbsnly/sdlc/blob/main/docs/claude-desktop.md#install-the-plugin-from-the-plugin-browser)
+says.
+
 Finally, from the root of your project:
 
 ```console

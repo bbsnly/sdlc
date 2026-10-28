@@ -60,8 +60,8 @@ https://github.com/bbsnly/sdlc/blob/main/docs/getting-started.md and follow it
 all the way through.
 ```
 
-The agent cannot type the `/plugin` commands or `/sdlc:next`, because only a
-person can in Claude Code. It will hand those back to you, along with what goes
+The agent cannot add the plugin or type `/sdlc:next`, because only a person can
+in Claude Code. It will hand those back to you, along with what goes
 in the contract and your story's acceptance criteria, which are your decisions.
 
 ## Quick install
@@ -92,8 +92,12 @@ Then, in Claude Code, add the plugin:
 /plugin install sdlc@sdlc
 ```
 
-The repository is its own marketplace, so there is nothing else to add. Now
-let's make sure everything is in place.
+The repository is its own marketplace, so there is nothing else to add. In the
+Code tab of Claude Desktop, typing `/plugin` does not add the plugin: open
+Claude Desktop's plugin browser, add the marketplace `bbsnly/sdlc` and install
+`sdlc` from there, as
+[Claude Desktop](claude-desktop.md#install-the-plugin-from-the-plugin-browser)
+says. Now let's make sure everything is in place.
 
 ## Check it worked
 
@@ -258,7 +262,9 @@ before you trust it.
 
 If you added the plugin in the [quick install](#quick-install), it is already in
 place. This section explains what it brings and how it finds the binary. In
-Claude Code:
+Claude Code in a terminal (in Claude Desktop, use the plugin browser, as
+[Claude Desktop](claude-desktop.md#install-the-plugin-from-the-plugin-browser)
+says):
 
 ```text
 /plugin marketplace add bbsnly/sdlc

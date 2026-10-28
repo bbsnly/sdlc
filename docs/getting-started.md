@@ -35,8 +35,8 @@ There are two things to install: the `sdlc` command, and the Claude Code plugin
 that drives it. You will need Claude Code 2.1.265 or newer, git 2.17 or newer
 and, for the one-line install below, Node 18 or newer;
 [Installation](installation.md#what-it-needs) has the full list. The easiest way
-is to give your agent this prompt. Paste it into Claude Code, in the project you
-want to work on:
+is to give your agent this prompt. Paste it into Claude Code, in a terminal or in
+the Code tab of Claude Desktop, in the project you want to work on:
 
 ```text
 Set up sdlc: run `npx @bbsnly/sdlc install`, then read
@@ -48,10 +48,14 @@ The agent installs the command and works through this page with you. A few
 steps are yours alone, and it will hand those back to you when it reaches them.
 
 > [!NOTE]
-> If you are an agent following this page for a person: only they can type the
-> `/plugin` commands and `/sdlc:next` in Claude Code. Hand back to them adding
-> the plugin, what goes in the contract, the story's acceptance criteria and
-> `/sdlc:next`, which is where you stop.
+> If you are an agent following this page for a person: only they can add the
+> plugin and type `/sdlc:next`. Hand back to them adding the plugin, what goes
+> in the contract, the story's acceptance criteria and `/sdlc:next`, which is
+> where you stop. In a terminal they add the plugin with the `/plugin` commands
+> below; in the Code tab of Claude Desktop those commands do not add it, so
+> point them to the plugin browser, as
+> [Claude Desktop](claude-desktop.md#install-the-plugin-from-the-plugin-browser)
+> says.
 
 If you would rather type the commands yourself, first install the command. If
 `sdlc version` already works in your terminal, the command is installed and you
@@ -78,6 +82,15 @@ Then, in Claude Code, add the plugin. Only a person can type these commands:
 
 The repository is its own marketplace, so there is nothing else to add.
 
+In the Code tab of Claude Desktop, typing `/plugin` does not add the plugin.
+Open Claude Desktop's plugin browser instead, add the marketplace `bbsnly/sdlc`,
+and install the `sdlc` plugin from it. A plugin installed that way fetches its
+own `sdlc` the first time a session starts, so there the `npx` step above is
+optional. Where this page says to run an `sdlc` command and you have no
+terminal, type its slash command where it has one, such as `/sdlc:init` or
+`/sdlc:doctor`, or ask the assistant to run it.
+[Claude Desktop](claude-desktop.md) covers what else differs there.
+
 > [!NOTE]
 > No Node? You may also install with a one-line script for your platform, with
 > `go install`, from a prebuilt archive, or from source.
@@ -87,7 +100,8 @@ The repository is its own marketplace, so there is nothing else to add.
 ## Set up your project
 
 Next, tell `sdlc` about the project you want to work on. It needs to be a git
-repository. From inside it, run:
+repository. From inside it, run the following, or type `/sdlc:init` in Claude
+Code:
 
 ```console
 $ sdlc init
@@ -159,7 +173,8 @@ Where `init` wrote the section to `AGENTS.md`, add `AGENTS.md` in place of
 
 ### Check the setup
 
-Now check that everything is in order:
+Now check that everything is in order, in a terminal or with `/sdlc:doctor` in
+Claude Code:
 
 ```console
 $ sdlc doctor
