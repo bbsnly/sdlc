@@ -4,6 +4,7 @@ package pathrules
 
 import (
 	"errors"
+	"runtime"
 	"syscall"
 )
 
@@ -23,6 +24,15 @@ func lookupLimit(err error) bool { return errors.Is(err, syscall.ELOOP) }
 // limitReadsAsNotThere is false: ELOOP is what both systems give a lookup past
 // their limit, whether the name at its end is there or not.
 const limitReadsAsNotThere = false
+
+// lookupLinks is the most links one lookup follows: 32 on macOS and 40 on
+// Linux. Only a test that gives lstat Windows' answer reaches it here.
+func lookupLinks() int {
+	if runtime.GOOS == "darwin" {
+		return 32
+	}
+	return 40
+}
 
 // pathTooLong reports whether err is a lookup of a path longer than the system
 // looks up in one go: ENAMETOOLONG, past 1,024 bytes on macOS and 4,096 on

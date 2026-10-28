@@ -72,6 +72,10 @@ func lookupLimit(err error) bool { return errors.Is(err, errCantResolveFilename)
 // them were allowed. Such a name is asked again (lookUp).
 const limitReadsAsNotThere = true
 
+// lookupLinks is the most reparse points one lookup follows on Windows, past
+// which it gives ERROR_CANT_RESOLVE_FILENAME, or a name not there.
+func lookupLinks() int { return 63 }
+
 // errFilenameExcedRange is ERROR_FILENAME_EXCED_RANGE, what Windows gives a
 // lookup of a path longer than it looks up, which Go's long-path prefix puts
 // at about 32,767 characters.
