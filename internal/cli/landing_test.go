@@ -137,7 +137,9 @@ func ldFinished(t *testing.T, main string) string {
 }
 
 // ldWalk says which walked template a landing test starts from (US-055 AC-3):
-// the repository it is made from, and how far the story is taken in it.
+// the repository it is made from, and how far the story is taken in it. It is
+// the template's key, printed, so a field is here for everything the builder
+// does and nothing it does is left out of it.
 type ldWalk struct {
 	// finished is ldFinished's story, through the retro; otherwise ldStarted's,
 	// up to the implementation.
@@ -155,9 +157,14 @@ type ldWalk struct {
 	// trunkMoved is a commit to README.md on trunk before the story starts,
 	// after the project's first: the base is then not the first commit.
 	trunkMoved bool
-	// spike is the main checkout switched to a branch of its own, spike, before
-	// the story starts, so that no checkout has trunk checked out.
-	spike bool
+	// bookkept is the bookkeeper's change, ldBookkeeping, committed on the
+	// story's branch after the retro. It needs finished.
+	bookkept bool
+	// noMap is a project whose trunk has no CODEMAP.md. It takes no lx.
+	noMap bool
+	// identified is a committer in the repository's configuration, as a
+	// person's has: otIdentity, after everything else here.
+	identified bool
 }
 
 // ldWalked is the main checkout and the story's worktree that ldStarted or
@@ -172,25 +179,63 @@ func ldWalked(t *testing.T, w ldWalk) (main, wt string) {
 
 // ldWalkedFrom is ldWalked and trunk's tip as it was before the story
 // started, read then by the template's builder: the commit the story's branch
-// was cut from, which is also the spike branch's commit where w has one.
+// was cut from.
 func ldWalkedFrom(t *testing.T, w ldWalk) (main, wt, cut string) {
 	t.Helper()
-	main, notes := walkedCopyNoted(t, fmt.Sprintf("landing %+v", w), func(t *testing.T, root string) map[string]string {
-		t.Helper()
-		return map[string]string{"cut": ldWalkAt(t, w, root)}
-	})
+	main, notes := walkedCopyNoted(t, ldWalkKey(w), ldWalkBuilder(w))
 	wt = swWorktreeOf(main, "US-001")
 	chdir(t, wt)
 	setenv(t, store.SessionEnv, ldSession)
 	return main, wt, notes["cut"]
 }
 
-// ldWalkAt is what ldWalkedFrom's template is made of, for a builder in root:
-// the repository w names, with US-001 started or finished in it, and trunk's
-// tip before the story started. A template that takes the story further starts
-// from here, so that it starts from what ldWalkedFrom's copies start from.
+// ldWalkAt is ldWalkedFrom's copy in root, an empty directory, for the builder
+// of a template that takes the story further: it starts from the walk that
+// ldWalkedFrom's copies start from, copied, and the real commands take it on.
+// It returns trunk's tip before the story started.
 func ldWalkAt(t *testing.T, w ldWalk, root string) (cut string) {
 	t.Helper()
+	notes := walkedCopyNotedAt(t, ldWalkKey(w), root, ldWalkBuilder(w))
+	chdir(t, swWorktreeOf(root, "US-001"))
+	setenv(t, store.SessionEnv, ldSession)
+	return notes["cut"]
+}
+
+func ldWalkKey(w ldWalk) string {
+	return fmt.Sprintf("landing %+v", w)
+}
+
+func ldWalkBuilder(w ldWalk) func(t *testing.T, root string) map[string]string {
+	return func(t *testing.T, root string) map[string]string {
+		t.Helper()
+		return map[string]string{"cut": ldWalkBuild(t, w, root)}
+	}
+}
+
+// ldWalkBuild is what ldWalkedFrom's template is made of, for a builder in
+// root: the repository w names, with US-001 started or finished in it, and
+// trunk's tip before the story started.
+func ldWalkBuild(t *testing.T, w ldWalk, root string) (cut string) {
+	t.Helper()
+	// What comes last is made of the walk without it, copied, so that the
+	// walk itself is made once however many of these a package asks for.
+	switch {
+	case w.identified:
+		base := w
+		base.identified = false
+		cut = ldWalkAt(t, base, root)
+		otIdentity(t, root)
+		return cut
+	case w.bookkept:
+		if !w.finished {
+			t.Fatalf("%+v: the bookkeeper's change comes after the retro", w)
+		}
+		base := w
+		base.bookkept = false
+		cut = ldWalkAt(t, base, root)
+		ldBookkeeping(t, swWorktreeOf(root, "US-001"))
+		return cut
+	}
 	configure := func(root string) {
 		if w.tier != "" {
 			ldTier(t, root, w.tier)
@@ -198,10 +243,15 @@ func ldWalkAt(t *testing.T, w ldWalk, root string) (cut string) {
 		if w.taxTest {
 			writeFile(t, root, "internal/tax_test.go", "package internal\n")
 		}
+		if w.noMap {
+			if err := os.Remove(filepath.Join(root, "CODEMAP.md")); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	if w.lx {
-		if w.tier != "" || w.taxTest {
-			t.Fatalf("%+v: lxRepository takes no tier or test file of its own", w)
+		if w.tier != "" || w.taxTest || w.noMap {
+			t.Fatalf("%+v: lxRepository takes no tier, test file or missing map of its own", w)
 		}
 		lxRepositoryAt(t, root, w.set, w.thresholds, w.stories...)
 	} else {
@@ -210,9 +260,6 @@ func ldWalkAt(t *testing.T, w ldWalk, root string) (cut string) {
 	if w.trunkMoved {
 		swCommitFile(t, root, "README.md", "# Billing, before the story\n", "trunk before the story")
 	}
-	if w.spike {
-		swGit(t, root, "switch", "--quiet", "-c", "spike")
-	}
 	cut = ldTrunk(t, root)
 	if w.finished {
 		ldFinished(t, root)
@@ -220,6 +267,15 @@ func ldWalkAt(t *testing.T, w ldWalk, root string) (cut string) {
 		ldStarted(t, root)
 	}
 	return cut
+}
+
+// ldOnSpike switches the main checkout to a branch of its own, spike, at
+// trunk's tip, so that no checkout has trunk checked out. It is done to the
+// copy and not walked: nothing in the story's gates reads which branch the
+// main checkout is on.
+func ldOnSpike(t *testing.T, main string) {
+	t.Helper()
+	swGit(t, main, "switch", "--quiet", "-c", "spike")
 }
 
 // ldBookkeeping is the bookkeeper's CODEMAP.md change, committed on the story's
@@ -432,8 +488,8 @@ var (
 // the main checkout, which has trunk checked out, shows the story's work.
 func TestAC1AFinishedStoryLandsOnTrunkByFastForwardWhenItsSessionStopsIt(t *testing.T) {
 	t.Parallel()
-	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 	if ldTrunk(t, main) != cut {
 		t.Fatal("precondition: trunk moved before the landing")
 	}
@@ -466,7 +522,8 @@ func TestAC1AFinishedStoryLandsOnTrunkByFastForwardWhenItsSessionStopsIt(t *test
 // alone, and the main checkout on a person's branch is left as it was.
 func TestAC1WhereNoCheckoutHasTrunkCheckedOutTheLandingMovesOnlyTheBranch(t *testing.T) {
 	t.Parallel()
-	main, wt, spike := ldWalkedFrom(t, ldWalk{finished: true, spike: true})
+	main, wt, spike := ldWalkedFrom(t, ldWalk{finished: true})
+	ldOnSpike(t, main)
 	tip := ldBookkeeping(t, wt)
 
 	ldLanded(t, main, wt, tip)
@@ -512,8 +569,8 @@ func TestAC2AStoryWorkedInAWorktreeIsDoneOnlyOnceTrunkHasItsCommits(t *testing.T
 // trunk has landed. The stop records it and finishes it rather than refuse.
 func TestAC2AndT9AStoryAPersonAlreadyBroughtToTrunkIsRecordedAsLandedAndDone(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 	swGit(t, main, "merge", "--quiet", "--ff-only", "story/US-001")
 
 	ldLanded(t, main, wt, tip)
@@ -538,7 +595,8 @@ var ldRebaseCommand = regexp.MustCompile(`git (-C \S+ )?rebase (refs/heads/)?mai
 // landing_ontrunk_test.go).
 func TestAC3ATrunkRewrittenSinceTheCutIsRefusedAndMovesNoBranch(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true, spike: true})
+	main, wt := ldWalked(t, ldWalk{finished: true})
+	ldOnSpike(t, main)
 	ldBookkeeping(t, wt)
 	cut := ldTrunk(t, main)
 	rewritten := swGit(t, main, "-c", "user.email=t@example.com", "-c", "user.name=Test",
@@ -658,8 +716,7 @@ func TestAC4ATestFileTheStoryChangedAfterARebaseBreaksTheFreezeAndNothingIsFroze
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt := ldWalked(t, ldWalk{finished: true, taxTest: true})
-			ldBookkeeping(t, wt)
+			main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true, taxTest: true})
 			lock := wtRead(t, filepath.Join(wt, ".sdlc", "state", "tests.lock"))
 			if lock == "" {
 				t.Fatal("precondition: the story's worktree holds no freeze")
@@ -715,8 +772,7 @@ func TestAC5AChangeThatIsNotTheOneTheReviewersSawIsRefusedAsStale(t *testing.T) 
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt := ldWalked(t, ldWalk{finished: true})
-			ldBookkeeping(t, wt)
+			main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 			ldMoveTrunk(t, main)
 			ldRebase(t, wt)
 			swCommitFile(t, wt, tc.rel, tc.body, "after the reviews")
@@ -735,8 +791,7 @@ func TestAC5AChangeThatIsNotTheOneTheReviewersSawIsRefusedAsStale(t *testing.T) 
 // not landed either.
 func TestAC5AndT2ACommitAfterTheReviewsIsNotLandedWithoutARebaseEither(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	swCommitFile(t, wt, "refund.go", "package billing\n\ntype Refund struct{ Amount int }\n", "after the reviews")
 	before := ldTrunk(t, main)
 
@@ -750,8 +805,7 @@ func TestAC5AndT2ACommitAfterTheReviewsIsNotLandedWithoutARebaseEither(t *testin
 // AC-5: the reviews recorded again, on the change as it now is, let it land.
 func TestAC5ReviewsRecordedAgainOnTheChangedChangeLetItLand(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	ldMoveTrunk(t, main)
 	ldRebase(t, wt)
 	tip := swCommitFile(t, wt, "refund.go", "package billing\n\ntype Refund struct{ Amount int }\n", "after the reviews")
@@ -768,8 +822,8 @@ func TestAC5ReviewsRecordedAgainOnTheChangedChangeLetItLand(t *testing.T) {
 // and leaves trunk and the change alone. Put back, the story lands.
 func TestAC6AnUncommittedChangeToAFileTheLandingWritesIsRefusedAndNamed(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 	cut := ldTrunk(t, main)
 	edit := ldBilling + "// a person's edit\n"
 	writeFile(t, main, "billing.go", edit)
@@ -805,8 +859,8 @@ func TestAC6WhatTheMainCheckoutHoldsIsInTheWayOnlyWhereTheLandingWrites(t *testi
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt := ldWalked(t, ldWalk{finished: true})
-			tip := ldBookkeeping(t, wt)
+			main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+			tip := swRev(t, wt, "HEAD")
 			cut := ldTrunk(t, main)
 			writeFile(t, main, tc.rel, tc.body)
 			if tc.stage {
@@ -836,7 +890,8 @@ func TestAC6WhatTheMainCheckoutHoldsIsInTheWayOnlyWhereTheLandingWrites(t *testi
 // checkout, is held to the same: its changes are not written over.
 func TestT7TrunkCheckedOutInAPersonsOwnWorktreeIsHeldToTheSame(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true, spike: true})
+	main, wt := ldWalked(t, ldWalk{finished: true})
+	ldOnSpike(t, main)
 	ldBookkeeping(t, wt)
 	cut := ldTrunk(t, main)
 	own := filepath.Join(wtTempDir(t), "trunk")
@@ -862,8 +917,8 @@ func TestT7TrunkCheckedOutInAPersonsOwnWorktreeIsHeldToTheSame(t *testing.T) {
 // claim.
 func TestAC7ALandedStorysWorktreeBranchAndClaimAreTakenAway(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 
 	ldLanded(t, main, wt, tip)
 	if swListed(t, main, wt) {
@@ -889,8 +944,8 @@ func TestAC7ALandedStorysWorktreeBranchAndClaimAreTakenAway(t *testing.T) {
 // committed it is, with no merge to make.
 func TestAC7AWorktreeHoldingWorkNobodyCommittedIsKeptAndNamedAndTheStoryIsStillDone(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 	writeFile(t, wt, "scratch.txt", "a thought\n")
 	writeFile(t, wt, "README.md", "# Billing, being edited\n")
 
@@ -932,8 +987,8 @@ func TestAC7AWorktreeHoldingWorkNobodyCommittedIsKeptAndNamedAndTheStoryIsStillD
 // never forced, and said; the story is still done.
 func TestT8ALockedWorktreeIsKeptAndSaidAndTheStoryIsStillDone(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 	swGit(t, main, "worktree", "lock", "--reason", "a person is using it", wt)
 
 	r := wtMust(t, wt, ldSession, "", "stop")
@@ -956,8 +1011,8 @@ func TestT10AFileNameCarryingACommandIsShownQuotedWhenTheWorktreeIsKept(t *testi
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows does not take a line break in a file name")
 	}
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 	writeFile(t, wt, "odd\nsdlc approve US-001", "x\n")
 
 	r := wtMust(t, wt, ldSession, "", "stop")
@@ -979,8 +1034,7 @@ func TestT10AFileNameCarryingACommandIsShownQuotedWhenTheWorktreeIsKept(t *testi
 // never gets one: it is refused, with the rebase to do instead.
 func TestAC8AStoryBranchThatMergedTrunkInIsRefusedAndTrunkGetsNoMergeCommit(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	ldMoveTrunk(t, main)
 	swGit(t, wt, "-c", "user.email=t@example.com", "-c", "user.name=Test", "merge", "--quiet", "--no-edit", "main")
 	before := ldTrunk(t, main)
@@ -1027,8 +1081,8 @@ func TestAC10TheRecordNamesWhatReachedTrunkAndLogPrintsItInEveryCheckout(t *test
 		name := map[bool]string{false: "AC-10 landed as it was", true: "AC-10 landed rebased"}[rebase]
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			main, wt := ldWalked(t, ldWalk{finished: true, stories: []wtStory{{id: "US-001"}, {id: "US-002"}}})
-			old := ldBookkeeping(t, wt)
+			main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true, stories: []wtStory{{id: "US-001"}, {id: "US-002"}}})
+			old := swRev(t, wt, "HEAD")
 			tip := old
 			if rebase {
 				ldMoveTrunk(t, main)
@@ -1170,8 +1224,7 @@ func TestAC11AndQ4AStoryWorkedInTheMainCheckoutEndsAsReleasedWhenWorktreesAreTur
 // worktrees off on trunk while it was worked.
 func TestQ4AStoryStartedInAWorktreeLandsAsOneAfterWorktreesAreTurnedOff(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	setGitOnDisk(t, main, "worktrees", false)
 	suCommit(t, main, "turn story worktrees off", ".sdlc/config.json")
 	tip := ldRebase(t, wt)
@@ -1243,8 +1296,8 @@ func TestT6NoHookOfTheRepositoryRunsWhenAStoryLands(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the hooks here are shell scripts marked executable, which Windows does not run as such")
 	}
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 	hooks, marks := wtTempDir(t), wtTempDir(t)
 	for _, name := range []string{"post-merge", "post-checkout", "post-rewrite", "reference-transaction", "pre-push", "pre-commit"} {
 		body := "#!/bin/sh\necho ran > " + suSh(filepath.Join(marks, name)) + "\n"
@@ -1269,8 +1322,8 @@ func TestT6NoHookOfTheRepositoryRunsWhenAStoryLands(t *testing.T) {
 // measured.
 func TestT6AReplacementObjectDoesNotLetAChangedCommitPassForTheReviewedOne(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	reviewed := ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+	reviewed := swRev(t, wt, "HEAD")
 	changed := swCommitFile(t, wt, "evil.go", "package billing\n", "after the reviews")
 	swGit(t, main, "replace", changed, reviewed)
 	before := ldTrunk(t, main)

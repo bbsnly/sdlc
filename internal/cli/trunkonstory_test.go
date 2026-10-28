@@ -513,7 +513,8 @@ func TestAC1TrunkOnACommitOfTheStorysOwnThatAddsNoTestFileIsNotARefusal(t *testi
 // refusing test files and not to refusing every story whose commits trunk holds.
 func TestAC1ALandingCutShortAfterTheMoveOfTrunkIsFinishedByTheNextStop(t *testing.T) {
 	t.Parallel()
-	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true, taxTest: true, spike: true})
+	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true, taxTest: true})
+	ldOnSpike(t, main)
 	tip := ldBookkeeping(t, wt)
 	r := lxRecord(t, main)
 	r["landing"] = map[string]any{"from": cut, "to": tip}

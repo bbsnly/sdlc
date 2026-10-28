@@ -73,9 +73,8 @@ func otIdentity(t *testing.T, main string) {
 // otWalked is ldWalkedFrom in a repository with a committer.
 func otWalked(t *testing.T, w ldWalk) (main, wt, cut string) {
 	t.Helper()
-	main, wt, cut = ldWalkedFrom(t, w)
-	otIdentity(t, main)
-	return main, wt, cut
+	w.identified = true
+	return ldWalkedFrom(t, w)
 }
 
 // otFinished is a finished story with its bookkeeper's commit, in a
@@ -83,8 +82,7 @@ func otWalked(t *testing.T, w ldWalk) (main, wt, cut string) {
 // and the commit its branch was cut from.
 func otFinished(t *testing.T) (main, wt, cut string) {
 	t.Helper()
-	main, wt, cut = otWalked(t, ldWalk{finished: true, taxTest: true})
-	ldBookkeeping(t, wt)
+	main, wt, cut = otWalked(t, ldWalk{finished: true, bookkept: true, taxTest: true})
 	return main, wt, cut
 }
 
@@ -335,8 +333,8 @@ func TestAC8TheOneStopPutsAFinishedStoryOntoTheTrunkThatMovedAndLandsIt(t *testi
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt, cut := otWalked(t, ldWalk{finished: true})
-			old := ldBookkeeping(t, wt)
+			main, wt, cut := otWalked(t, ldWalk{finished: true, bookkept: true})
+			old := swRev(t, wt, "HEAD")
 			subjects := otSubjects(t, wt, cut, old)
 			tc.trunk(t, main)
 			moved := ldTrunk(t, main)
@@ -470,8 +468,7 @@ func TestAC9TheReviewsStandWhenTrunkChangedLinesBesideTheStorysOwn(t *testing.T)
 // recorded again on the change as it is, they let it land, as today.
 func TestAC10AChangeCommittedAfterTheReviewsIsStaleThoughTrunkMovedToo(t *testing.T) {
 	t.Parallel()
-	main, wt, _ := otWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt, _ := otWalked(t, ldWalk{finished: true, bookkept: true})
 	lxChangeAfterTheReviews(t, wt)
 	moved := ldMoveTrunk(t, main)
 
@@ -631,8 +628,8 @@ func TestAC12AConflictLeavesTheWorktreeAndBranchAsTheyWereAndHandsTheStoryToAPer
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt, _ := otWalked(t, ldWalk{finished: true})
-			tip := ldBookkeeping(t, wt)
+			main, wt, _ := otWalked(t, ldWalk{finished: true, bookkept: true})
+			tip := swRev(t, wt, "HEAD")
 			tc.trunk(t, main)
 			moved := ldTrunk(t, main)
 			files := []string{"billing.go", "refund.go", "price list.txt", "CODEMAP.md"}
@@ -682,8 +679,7 @@ func TestAC12AConflictLeavesTheWorktreeAndBranchAsTheyWereAndHandsTheStoryToAPer
 // was: not committed, not stashed, not written over.
 func TestAC12AWorktreeHoldingUncommittedWorkIsLeftAsItWasWhenTrunkMoved(t *testing.T) {
 	t.Parallel()
-	main, wt, _ := otWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt, _ := otWalked(t, ldWalk{finished: true, bookkept: true})
 	moved := ldMoveTrunk(t, main)
 	writeFile(t, wt, "README.md", "# Billing, edited in the worktree\n")
 	writeFile(t, wt, "scratch.txt", "a thought\n")

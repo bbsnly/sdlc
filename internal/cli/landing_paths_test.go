@@ -210,8 +210,7 @@ func TestFreezeFixLeavesAPlainErrorAndAnUnrelatedCodeUnchanged(t *testing.T) {
 // commit cannot be parsed.
 func TestReadTrunkRefusesWhenTrunksOwnConfigurationCannotBeParsed(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	orig := wtRead(t, filepath.Join(main, config.File))
 	swCommitFile(t, main, config.File, "{not json", "break trunk's configuration")
 	// Restore a valid disk copy: mainSettingsOf reads the main checkout's own
@@ -237,8 +236,8 @@ func TestReadTrunkRefusesWhenTrunksOwnConfigurationCannotBeParsed(t *testing.T) 
 // as for a story that did record them.
 func TestALegacyRecordMeasuresItsBaseAsTrunksMergeBaseWithTheTip(t *testing.T) {
 	t.Parallel()
-	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 	lqForgetChange(t, main)
 	// With no change recorded, the landing cannot tell the tree apart from one
 	// nobody reviewed, and asks for the reviews again on it as it stands.
@@ -255,8 +254,7 @@ func TestALegacyRecordMeasuresItsBaseAsTrunksMergeBaseWithTheTip(t *testing.T) {
 // naming the reason a person -- not the session -- has to decide on.
 func TestALegacyRecordWhoseBranchSharesNoHistoryWithTrunkIsRefused(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	lqForgetChange(t, main)
 
 	// Rewrite the story's branch onto an unrelated history, as if it had once
@@ -361,8 +359,7 @@ func TestStopEndsTheIterationAsReleasedWhileAWorktreeStoryStillHasGatesLeft(t *t
 // refusal.
 func TestLandRefusesWhenTheMainCheckoutsOwnConfigurationCannotBeRead(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	writeFile(t, main, config.File, "{not json")
 
 	out := wtRun(t, wt, ldSession, "", "stop")
@@ -406,8 +403,7 @@ func TestRecordChangeRefusesWhenTheMainCheckoutsOwnConfigurationCannotBeRead(t *
 // commit straight over what the reviewers saw.
 func TestChangeChecksRefusesADifferentChangeWhoseWorktreeHasUncommittedChanges(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	lqForgetChange(t, main)
 	writeFile(t, wt, "billing.go", ldBilling+"\n// left uncommitted\n")
 

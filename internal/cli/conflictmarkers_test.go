@@ -193,8 +193,7 @@ func cmkCommitAll(t *testing.T, wt, message string) string {
 // the way of the landing. It returns trunk as it was.
 func cmkLate(t *testing.T, files map[string]string) (main, wt, trunk string) {
 	t.Helper()
-	main, wt = ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt = ldWalked(t, ldWalk{finished: true, bookkept: true})
 	for rel, body := range files {
 		writeFile(t, wt, rel, body)
 	}
@@ -249,8 +248,7 @@ func TestAC1TheStopRefusesAStoryWhoseCommitsAddAConflictsMarkersAndNamesEachLine
 func TestAC1AndAC4AStoryRebasedByHandWithTheConflictLeftHalfResolvedIsRefusedByTheStop(t *testing.T) {
 	t.Parallel()
 	const file = "ledger.txt"
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	common := cmkFiller(1, 36)
 	swCommitFile(t, wt, file, cmkText(append(append([]string{}, common...), "the story's line")...), "late: the ledger")
 	trunk := swCommitFile(t, main, file, cmkText(append(append([]string{}, common...), "trunk's line")...), "trunk: the ledger")
@@ -325,8 +323,7 @@ func TestAC1TheStopRefusesASetInTheBookkeepersCODEMAP(t *testing.T) {
 func TestAC1TheStopRefusesAConflictInAFileWithCRLFLineEndingsLeftByAHandRebase(t *testing.T) {
 	t.Parallel()
 	const file = "crlf.txt"
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	common := cmkFiller(1, 12)
 	swGit(t, wt, "config", "core.autocrlf", "false")
 	swGit(t, main, "config", "core.autocrlf", "false")
@@ -426,8 +423,7 @@ func TestAC2AFileThatAlreadyHoldsASetOnTrunkLandsAndASecondSetInItIsRefusedByIts
 	t.Parallel()
 	const file = "notes.txt"
 	held := cmkJoin(cmkFiller(1, 20), cmkSet(), cmkFiller(21, 24))
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	swCommitFile(t, main, file, cmkText(held...), "trunk: a file a person left a conflict in")
 	ldRebase(t, wt)
 
@@ -465,8 +461,7 @@ func TestAC2AFileThatAlreadyHoldsASetOnTrunkLandsAndASecondSetInItIsRefusedByIts
 func TestAC2AndDecision4AMovedFileThatHoldsASetAddsNoneButASecondInItIsRefused(t *testing.T) {
 	t.Parallel()
 	held := cmkJoin(cmkFiller(1, 20), cmkSet(), cmkFiller(21, 40))
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	swCommitFile(t, main, "notes.txt", cmkText(held...), "trunk: a file a person left a conflict in")
 	ldRebase(t, wt)
 
@@ -537,8 +532,7 @@ func TestAC3AnExemptionOnlyTheStorysWorktreeHasDoesNotSurviveTheStop(t *testing.
 	t.Parallel()
 	const file = "docs/merging.md"
 	body := cmkText(cmkJoin([]string{"# Merging", ""}, cmkSet())...)
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	cmkPathsOnDisk(t, main, []string{"docs/**"})
 	suCommit(t, main, "a person lists where conflict markers are meant", ".sdlc/config.json")
 	ldRebase(t, wt)

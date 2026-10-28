@@ -592,8 +592,8 @@ func TestAC4AnAttributeNobodyCommittedDoesNotJoinAConflictInTheStopsOwnReplay(t 
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt, _ := otWalked(t, ldWalk{finished: true})
-			tip := ldBookkeeping(t, wt)
+			main, wt, _ := otWalked(t, ldWalk{finished: true, bookkept: true})
+			tip := swRev(t, wt, "HEAD")
 			moved := swCommitFile(t, main, "billing.go", ldBilling+"\n// Ledger is what another story adds.\ntype Ledger struct{}\n", "another story's ledger")
 			tc.set(t, main)
 			if got := swGit(t, wt, "check-attr", "merge", "--", "billing.go"); !strings.HasSuffix(got, ": union") {
@@ -737,8 +737,8 @@ func TestAC7AStopWhoseWorktreeIsGoneBeforeTheStoryLandedSaysSoWithItsCodeAndFix(
 		t.Skip("Windows does not take away a directory a running command has open, so the worktree cannot go while its stop waits")
 	}
 	t.Parallel()
-	main, wt, _ := otWalked(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt, _ := otWalked(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 	moved := ldMoveTrunk(t, main)
 	inFront := otLandingInFront(t, main)
 
@@ -784,8 +784,7 @@ func TestAC7AStopWhoseWorktreeIsGoneBeforeTheStoryLandedSaysSoWithItsCodeAndFix(
 // conflict and hands the story over with "sdlc escalate".
 func TestAC8AStopThatMeetsAConflictTellsTheAssistantToEscalateAndDoesNotEscalateItself(t *testing.T) {
 	t.Parallel()
-	main, wt, _ := otWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt, _ := otWalked(t, ldWalk{finished: true, bookkept: true})
 	swCommitFile(t, main, "billing.go", ldBilling+"\n// Ledger is what another story adds.\ntype Ledger struct{}\n", "another story's ledger")
 	was := wtStatuses(t, main)["US-001"]
 	events := len(swRecord(t, main, "US-001").Events)

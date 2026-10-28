@@ -132,8 +132,7 @@ func TestB1AnOddRootCodemapIsRefusedOnTheUnmovedPath(t *testing.T) {
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt := ldWalked(t, ldWalk{finished: true})
-			ldBookkeeping(t, wt)
+			main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 			kind.stage(t, wt)
 			before := ldTrunk(t, main)
 
@@ -161,8 +160,7 @@ func TestB1AnOddRootCodemapIsRefusedOnTheRebasedPath(t *testing.T) {
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt := ldWalked(t, ldWalk{finished: true})
-			ldBookkeeping(t, wt)
+			main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 			kind.stage(t, wt)
 			ldMoveTrunk(t, main)
 			ldRebase(t, wt)
@@ -191,7 +189,8 @@ func TestB1AnOddRootCodemapIsRefusedOnTheAlreadyLandedPath(t *testing.T) {
 	for _, kind := range lrOddKinds {
 		t.Run(kind.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt := ldWalked(t, ldWalk{finished: true, spike: true})
+			main, wt := ldWalked(t, ldWalk{finished: true})
+			ldOnSpike(t, main)
 			ldBookkeeping(t, wt)
 			tip := kind.stage(t, wt)
 			swGit(t, main, "update-ref", "refs/heads/main", tip)
@@ -215,8 +214,8 @@ func TestB1APlainOrExecutableRootCodemapStillLands(t *testing.T) {
 	t.Parallel()
 	t.Run("plain", func(t *testing.T) {
 		t.Parallel()
-		main, wt := ldWalked(t, ldWalk{finished: true})
-		tip := ldBookkeeping(t, wt)
+		main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+		tip := swRev(t, wt, "HEAD")
 		ldLanded(t, main, wt, tip)
 	})
 	t.Run("executable", func(t *testing.T) {
@@ -243,8 +242,7 @@ func lrAnswerFirst(t *testing.T, text, id, gate string) {
 // the fix names where they answer it and the worktree it is answered in.
 func TestE0036sFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 	t.Parallel()
-	_, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	_, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	wtMust(t, wt, ldSession, "", "escalate", "landing", "--message", "land it now?")
 
 	out := swRefused(t, "SDLC-E0036", wt, "", "stop")
@@ -261,7 +259,8 @@ func TestE0036sFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 // gives a change trunk still holds the base of.
 func TestE0029sReopenFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 	t.Parallel()
-	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true, trunkMoved: true, spike: true})
+	main, wt, cut := ldWalkedFrom(t, ldWalk{finished: true, trunkMoved: true})
+	ldOnSpike(t, main)
 	ldBookkeeping(t, wt)
 	lxChangeAfterTheReviews(t, wt)
 	back := swRev(t, main, cut+"~1")
@@ -286,8 +285,7 @@ func TestE0029sReopenFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 // GateImplementation).
 func TestE0055sMissingBranchFixNamesTheAnswerFirstRouteAndTheWorktree(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
 	swGit(t, wt, "switch", "--quiet", "--detach")
 	swGit(t, wt, "branch", "--quiet", "-D", "story/US-001")
 	before := ldTrunk(t, main)
@@ -316,8 +314,7 @@ func TestE0025AndE0043sFreezeFixesNameTheAnswerFirstRouteAndTheWorktree(t *testi
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt := ldWalked(t, ldWalk{finished: true, taxTest: true})
-			ldBookkeeping(t, wt)
+			main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true, taxTest: true})
 			swCommitFile(t, wt, tc.rel, "package internal\n\n// changed by the story\n", "the story's own change to a test")
 			ldReviewAgain(t, wt)
 			before := ldTrunk(t, main)

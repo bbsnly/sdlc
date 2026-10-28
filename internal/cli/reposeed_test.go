@@ -223,6 +223,29 @@ func walkedCopy(t *testing.T, key string, build func(t *testing.T, root string))
 // value here, not one read after the walk that only happens to agree.
 func walkedCopyNoted(t *testing.T, key string, build func(t *testing.T, root string) map[string]string) (string, map[string]string) {
 	t.Helper()
+	tpl := walkedTemplateFor(t, key, build)
+	raw, root := tempDirSpellings(t)
+	return root, tpl.copyInto(t, key, raw, root)
+}
+
+// walkedCopyNotedAt is walkedCopyNoted into root, an empty directory, for a
+// builder that starts from another template's walk instead of walking it
+// again: the template it builds is then made of the one it copies, and a copy
+// of the second is the same bytes as a copy of the first with what the builder
+// did on top. root is the directory the builder was given, so the one spelling
+// of it is the only one a copy has to rewrite to.
+//
+// Nothing here writes to a template: the copy is read out of the captured
+// files, and the builder works on its own files in root.
+func walkedCopyNotedAt(t *testing.T, key, root string, build func(t *testing.T, root string) map[string]string) map[string]string {
+	t.Helper()
+	return walkedTemplateFor(t, key, build).copyInto(t, key, root, root)
+}
+
+// walkedTemplateFor is the walked template named key, made by build the first
+// time anything asks for key and never again.
+func walkedTemplateFor(t *testing.T, key string, build func(t *testing.T, root string) map[string]string) *walkedTemplate {
+	t.Helper()
 	v, _ := walkedTemplates.LoadOrStore(key, &walkedTemplate{})
 	tpl, ok := v.(*walkedTemplate)
 	if !ok {
@@ -238,8 +261,14 @@ func walkedCopyNoted(t *testing.T, key string, build func(t *testing.T, root str
 	if tpl.files == nil {
 		t.Fatalf("the walked template %q was not made: the test that made it failed first", key)
 	}
+	return tpl
+}
 
-	raw, root := tempDirSpellings(t)
+// copyInto writes the template into root, an empty directory that t.TempDir
+// spelled raw and resolved to root, with every spelling of the template's
+// checkout rewritten to it, and returns a copy of the notes, rewritten too.
+func (tpl *walkedTemplate) copyInto(t *testing.T, key, raw, root string) map[string]string {
+	t.Helper()
 	rewrite := rootRewriter(tpl.raw, tpl.root, raw, root)
 	files := make([]seedFile, len(tpl.files))
 	for i, f := range tpl.files {
@@ -256,7 +285,11 @@ func walkedCopyNoted(t *testing.T, key string, build func(t *testing.T, root str
 	for _, checkout := range checkoutsIn(t, root) {
 		wtGit(t, checkout, "update-index", "-q", "--refresh")
 	}
-	return root, maps.Clone(tpl.notes)
+	notes := maps.Clone(tpl.notes)
+	for k, v := range notes {
+		notes[k] = string(rewrite([]byte(v)))
+	}
+	return notes
 }
 
 // withNothingSet runs build with t's commands running where, and with what, a

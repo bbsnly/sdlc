@@ -123,8 +123,8 @@ func (w *otWaitingStop) ended(t *testing.T) result {
 // story on the trunk that moved once the one in front lets go.
 func TestAC13AStopWaitsForTheLandingInFrontOfItAndThenLands(t *testing.T) {
 	t.Parallel()
-	main, wt, _ := otWalked(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt, _ := otWalked(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 	moved := ldMoveTrunk(t, main)
 	inFront := otLandingInFront(t, main)
 
@@ -169,8 +169,7 @@ func TestAC13AStopWhoseStoryLandedWhileItWaitedSaysSoAndLandsNothingTwice(t *tes
 		name := map[bool]string{false: "AC-13 as a person reads it", true: "AC-13 with --json"}[json]
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			main, wt, _ := otWalked(t, ldWalk{finished: true})
-			ldBookkeeping(t, wt)
+			main, wt, _ := otWalked(t, ldWalk{finished: true, bookkept: true})
 			moved := ldMoveTrunk(t, main)
 			inFront := otLandingInFront(t, main)
 
@@ -219,8 +218,7 @@ func TestAC13AStopWhoseStoryLandedWhileItWaitedSaysSoAndLandsNothingTwice(t *tes
 // story changed while it waited, and trunk is where it was.
 func TestAC13AStorySentBackWhileItsStopWaitedIsNotLanded(t *testing.T) {
 	t.Parallel()
-	main, wt, _ := otWalked(t, ldWalk{finished: true})
-	ldBookkeeping(t, wt)
+	main, wt, _ := otWalked(t, ldWalk{finished: true, bookkept: true})
 	moved := ldMoveTrunk(t, main)
 	inFront := otLandingInFront(t, main)
 
@@ -305,8 +303,8 @@ func TestAC9WhatTrunkGainedUnderARebasedStoryBringsNoReviewerBack(t *testing.T) 
 // is, the story lands.
 func TestAC10AReplayThatIsNotLineForLineTheReviewedChangeIsRefusedAndLeavesNoMark(t *testing.T) {
 	t.Parallel()
-	main, wt, _ := otWalked(t, ldWalk{finished: true})
-	tip := ldBookkeeping(t, wt)
+	main, wt, _ := otWalked(t, ldWalk{finished: true, bookkept: true})
+	tip := swRev(t, wt, "HEAD")
 	swGit(t, main, "mv", "billing.go", "accounts.go")
 	swGit(t, main, "-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--quiet", "-m", "another story renames billing.go")
 	moved := ldTrunk(t, main)
