@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -510,53 +511,84 @@ func TestAC2ATipTamperedWithBeforeTheStopsReplayIsRefusedNotLaundered(t *testing
 // that moved and was then refused with SDLC-E0055, because commands.test fails
 // on the tree the replay made. This is the way the existing landing tests cut
 // a stop short after its replay (landing_ontrunk_test.go, commitgate_ontrunk_
-// test.go), and it is deterministic: the command fails while a marker file
-// outside the repository is absent, and the test creates it. The first commit
-// is by firstAuthor where one is given. The story's tip is then the replayed
-// one, the mark's end, and nothing is amended yet.
+// test.go), and it is deterministic: the command fails while a marker file in
+// the repository's git directory is absent, and the test creates it. The first
+// commit is by firstAuthor where one is given. The story's tip is then the
+// replayed one, the mark's end, and nothing is amended yet.
 //
 // It returns the story, the trunk commit the replay sat it on, the marker the
 // command waits for, and the log of the commits as they were before the
 // replay.
+//
+// The walk is a walked template per first author: the real commands make it
+// once per package run, and each test gets a copy, with the marker in its own
+// copy's git directory.
 func ccCutShort(t *testing.T, firstAuthor string) (s ccStory, moved, marker string, before []string, approvals int) {
 	t.Helper()
-	marker = filepath.Join(wtTempDir(t), "trunk-is-put-right")
-	main := lxRepository(t, map[string]string{"test": "test ! -f CHANGES.md || test -f " + suSh(marker)}, nil)
-	otIdentity(t, main)
-	ldTier(t, main, "high")
-	wt := ldStarted(t, main)
-	cut := ldTrunk(t, main)
-	ldWork(t, wt)
-	swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
-	ldApproved(t, wt)
-	body, err := os.ReadFile(filepath.Join(wt, "refund.go"))
+	main, notes := walkedCopyNoted(t, "commit cover: cut short after the stop's own replay, first commit by "+firstAuthor,
+		func(t *testing.T, root string) map[string]string {
+			t.Helper()
+			// The command is committed into the template's configuration, so it
+			// cannot name a directory of the test that triggers the template: it
+			// looks in the repository's own git directory, which every copy has
+			// in its own place, and nothing there is part of a tree.
+			lxRepositoryAt(t, root, map[string]string{"test": "test ! -f CHANGES.md || test -f " + ccMarkerInGit}, nil)
+			otIdentity(t, root)
+			ldTier(t, root, "high")
+			wt := ldStarted(t, root)
+			cut := ldTrunk(t, root)
+			ldWork(t, wt)
+			swPass(t, wt, ldSession, model.GateImplementation, model.GateCommit)
+			ldApproved(t, wt)
+			body, err := os.ReadFile(filepath.Join(wt, "refund.go"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, wt, "refund.go", string(body))
+			ccGit(t, wt, "add", "--", "refund.go")
+			commit := []string{"commit", "--quiet", "-m", "feat: refunds\n\nCo-Authored-By: Dave <dave@example.org>"}
+			if firstAuthor != "" {
+				commit = append(commit, "--author", firstAuthor)
+			}
+			ccGit(t, wt, commit...)
+			swPass(t, wt, ldSession, model.GateCommit, "")
+			before := ccLog(t, wt, cut, "HEAD")
+			approvals := len(ccApprovals(t, root))
+			moved := ldMoveTrunk(t, root)
+
+			swRefused(t, ldCheckFailed, wt, ldSession, "stop")
+			if got := ldTrunk(t, root); got != moved {
+				t.Fatalf("precondition: the refused stop moved trunk to %s", got)
+			}
+			if _, ok := swGitTry(t, wt, "merge-base", "--is-ancestor", moved, "HEAD"); !ok {
+				t.Fatalf("precondition: the refused stop did not leave the story on trunk at %s", moved[:12])
+			}
+			if swRecord(t, root, "US-001").Replay == nil {
+				t.Fatal("precondition: the record holds no replay: the stop was not cut short after its own replay")
+			}
+			return map[string]string{"cut": cut, "moved": moved, "before": strings.Join(before, ccLogSeparator),
+				"approvals": strconv.Itoa(approvals)}
+		})
+	wt := swWorktreeOf(main, "US-001")
+	chdir(t, wt)
+	setenv(t, store.SessionEnv, ldSession)
+	approvals, err := strconv.Atoi(notes["approvals"])
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, wt, "refund.go", string(body))
-	ccGit(t, wt, "add", "--", "refund.go")
-	commit := []string{"commit", "--quiet", "-m", "feat: refunds\n\nCo-Authored-By: Dave <dave@example.org>"}
-	if firstAuthor != "" {
-		commit = append(commit, "--author", firstAuthor)
-	}
-	ccGit(t, wt, commit...)
-	swPass(t, wt, ldSession, model.GateCommit, "")
-	before = ccLog(t, wt, cut, "HEAD")
-	approvals = len(ccApprovals(t, main))
-	moved = ldMoveTrunk(t, main)
-
-	swRefused(t, ldCheckFailed, wt, ldSession, "stop")
-	if got := ldTrunk(t, main); got != moved {
-		t.Fatalf("precondition: the refused stop moved trunk to %s", got)
-	}
-	if _, ok := swGitTry(t, wt, "merge-base", "--is-ancestor", moved, "HEAD"); !ok {
-		t.Fatalf("precondition: the refused stop did not leave the story on trunk at %s", moved[:12])
-	}
-	if swRecord(t, main, "US-001").Replay == nil {
-		t.Fatal("precondition: the record holds no replay: the stop was not cut short after its own replay")
-	}
-	return ccStory{main: main, wt: wt, cut: cut}, moved, marker, before, approvals
+	marker = filepath.Join(main, ".git", ccMarkerName)
+	return ccStory{main: main, wt: wt, cut: notes["cut"]}, notes["moved"], marker,
+		strings.Split(notes["before"], ccLogSeparator), approvals
 }
+
+// ccMarkerName is the file in the repository's git directory that ccCutShort's
+// command waits for, and ccMarkerInGit is how the command finds it from any
+// checkout of the repository.
+const (
+	ccMarkerName   = "trunk-is-put-right"
+	ccMarkerInGit  = `"$(git rev-parse --git-common-dir)/` + ccMarkerName + `"`
+	ccLogSeparator = "\x00\n"
+)
 
 // AC-2 (THREATS T3): a landing cut short after the stop's own replay has
 // rewritten every hash, so the recorded commit is no longer an ancestor of
