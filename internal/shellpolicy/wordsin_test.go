@@ -10,7 +10,7 @@ func TestWordsInKeepsTheColonOfADriveOnItsWord(t *testing.T) {
 		text string
 		want []string
 	}{
-		{"ls C:/Users/p/* | xargs cp -t .", []string{"ls", "C:/Users/p/", "xargs", "cp", "-t", "."}},
+		{"ls C:/Users/dev/* | xargs cp -t .", []string{"ls", "C:/Users/dev/", "xargs", "cp", "-t", "."}},
 		{"d:/x", []string{"d:/x"}},
 		// Only one letter then `:/` is a drive; every other colon still ends a word.
 		{"xC:/z", []string{"xC", "/z"}},
