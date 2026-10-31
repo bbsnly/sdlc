@@ -716,6 +716,12 @@ func (l *lander) reportLanded(ctx context.Context, st landState, holding []strin
 		fmt.Fprintln(notes, mappedLine(l.m.trunk, m.commit, m.what))
 	}
 	fmt.Fprintln(notes, l.cleanUp(ctx, st))
+	if !wantJSON(l.cmd) {
+		// The last line of stdout, and the warning below follows on stderr.
+		// The landing lock is still held, which serialises only other
+		// landings, behind a stop that has just run the project's commands.
+		printConsolidateNudge(notes, l.s)
+	}
 	if m.failed != nil {
 		// A warning and not a refusal: the story is on trunk and done, so the
 		// stop still exits 0, and the code is on standard error whatever

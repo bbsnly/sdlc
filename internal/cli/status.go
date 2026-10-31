@@ -54,6 +54,9 @@ type statusPayload struct {
 	// repository. Neither is a story handed to a person, which is Waiting.
 	Landing       *landingState   `json:"landing,omitempty"`
 	WaitingToLand []landingWaiter `json:"waiting_to_land,omitempty"`
+	// Consolidate is how many stories have finished since the last
+	// /sdlc:consolidate, where that is consolidate.nudge_after or more.
+	Consolidate *consolidateState `json:"consolidate,omitempty"`
 }
 
 // landingState is whoever holds the landing lock, as far as its lock can be
@@ -168,6 +171,8 @@ func runStatus(cmd *cobra.Command) error {
 		v.payload.Next = &nextUp{Story: sel.Story.ID, Title: sel.Story.Title}
 	}
 
+	v.payload.Consolidate = consolidateOf(s, backlog)
+
 	if wantJSON(cmd) {
 		return emitJSON(cmd.OutOrStdout(), v.payload)
 	}
@@ -241,6 +246,9 @@ func (v *statusView) print(w io.Writer) {
 			lw.Story, lw.Command, lw.PID, lw.Since, cmp.Or(lw.For, "the landing lock"))
 	}
 	v.printAdvice(w, finished, notHereNext)
+	if payload.Consolidate != nil {
+		fmt.Fprintln(w, consolidateLine(payload.Consolidate))
+	}
 }
 
 // landingOf is what status says of the landing lock and of who waits for it.

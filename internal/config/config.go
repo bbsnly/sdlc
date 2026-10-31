@@ -42,20 +42,21 @@ const FormatVersion = 1
 // lives in CLAUDE.md or AGENTS.md; nothing here describes a language or a framework, only
 // the commands this project runs and the numbers it holds itself to.
 type Config struct {
-	Version    int               `json:"version"`
-	Backlog    Backlog           `json:"backlog"`
-	Git        Git               `json:"git"`
-	Commands   map[string]string `json:"commands"`
-	Thresholds Thresholds        `json:"thresholds"`
-	Paths      Paths             `json:"paths"`
-	Spec       Spec              `json:"spec"`
-	Loop       Loop              `json:"loop"`
-	Reviews    Reviews           `json:"reviews"`
-	Freeze     Freeze            `json:"freeze"`
-	HumanGates HumanGates        `json:"human_gates"`
-	Budget     Budget            `json:"budget"`
-	Parallel   Parallel          `json:"parallel"`
-	Staffing   Staffing          `json:"staffing"`
+	Version     int               `json:"version"`
+	Backlog     Backlog           `json:"backlog"`
+	Git         Git               `json:"git"`
+	Commands    map[string]string `json:"commands"`
+	Thresholds  Thresholds        `json:"thresholds"`
+	Paths       Paths             `json:"paths"`
+	Spec        Spec              `json:"spec"`
+	Loop        Loop              `json:"loop"`
+	Reviews     Reviews           `json:"reviews"`
+	Freeze      Freeze            `json:"freeze"`
+	HumanGates  HumanGates        `json:"human_gates"`
+	Budget      Budget            `json:"budget"`
+	Parallel    Parallel          `json:"parallel"`
+	Consolidate Consolidate       `json:"consolidate"`
+	Staffing    Staffing          `json:"staffing"`
 }
 
 // Staffing turns the staffing on and bounds what one may ask for. Absent or
@@ -87,6 +88,15 @@ type Parallel struct {
 	// the reason Git.Worktrees is one: a key left out means the whole built-in
 	// list, and an empty list means none, which are not the same.
 	Allow *[]string `json:"allow,omitempty"`
+}
+
+// Consolidate is when `sdlc status` and `sdlc stop` tell a person that stories
+// have finished since the last /sdlc:consolidate.
+type Consolidate struct {
+	// NudgeAfter is how many stories must have finished since the last
+	// consolidation before the line appears. 0 turns it off, and is kept as a
+	// value: it is what a person chose, not the default.
+	NudgeAfter int `json:"nudge_after"`
 }
 
 // Backlog names the file the stories live in. It is deliberately a plain JSON
@@ -222,6 +232,9 @@ func Default() Config {
 		Freeze:     Freeze{AllowNewTestFiles: false},
 		HumanGates: HumanGates{PreCommitPauseTiers: []string{"high"}},
 		Budget:     Budget{PerStoryUSD: 60, AlertFractions: []float64{0.5, 0.8, 1.0}},
+		// A project that sets nothing is nudged: two stories are the least a
+		// pattern can stand on, and three keeps the line from nagging after each.
+		Consolidate: Consolidate{NudgeAfter: 3},
 	}
 }
 
@@ -396,6 +409,10 @@ func (c Config) validate() error {
 		if n.value < 0 {
 			problems = append(problems, fmt.Sprintf("%s is %v, and 0 is how it is turned off", n.name, n.value))
 		}
+	}
+	if n := c.Consolidate.NudgeAfter; n < 0 {
+		problems = append(problems, fmt.Sprintf("consolidate.nudge_after is %d, and it must be 0 or more: "+
+			"0 turns the reminder to run /sdlc:consolidate off", n))
 	}
 	if c.Staffing.Enabled {
 		problems = append(problems, c.Staffing.problems()...)

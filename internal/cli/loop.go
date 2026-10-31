@@ -553,6 +553,13 @@ func runStop(cmd *cobra.Command) error {
 			stoppedIterationOn+"%s. Nothing was recorded; `sdlc start` picks it up again.\n",
 			active)
 	}
+	if active != "" {
+		// Counting reads every done story's record, and everything this stop
+		// writes is written: let the project's lock go first, so that nothing
+		// waits on a read. Another stop landing in between only adds a story.
+		unlock()
+		printConsolidateNudge(cmd.OutOrStdout(), s)
+	}
 	return nil
 }
 

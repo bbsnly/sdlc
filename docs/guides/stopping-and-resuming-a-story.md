@@ -80,6 +80,13 @@ Stopped the iteration on US-001. Nothing was recorded; `sdlc start` picks it up 
 Stopping ends the iteration and nothing else. No gate changes, the story stays
 `in_progress` in the backlog, and the gate record gets one `loop_end` event.
 
+Once enough stories have finished since you last ran `/sdlc:consolidate`, this
+stop, and the one that finishes a story, end with one more line, saying how many
+and that you can run the skill. It is the same line `sdlc status` ends with, and
+[`consolidate.nudge_after`](../configuration.md#consolidate) sets when it
+comes, or turns it off at `0`. The outputs below are what a project with fewer
+finished stories prints.
+
 It also turns the hook off. Every rule in [enforcement](../enforcement.md) only
 applies while `.sdlc/state/active` names a story, and only in the Claude Code
 session working it, so once you have stopped you can edit code, tests or

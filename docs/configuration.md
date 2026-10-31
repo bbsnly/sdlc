@@ -30,6 +30,7 @@
   - [`freeze.allow_new_test_files`](#freezeallow_new_test_files)
 - [`human_gates`](#human_gates)
 - [`budget`](#budget)
+- [`consolidate`](#consolidate)
 - [`parallel`](#parallel)
 - [`staffing`](#staffing)
   - [Models and efforts](#models-and-efforts)
@@ -541,6 +542,30 @@ Spend is recorded with [`sdlc cost add`](commands.md#sdlc-cost-add), and shown b
 and `sdlc status`. An alert goes to standard error once, on the entry that
 crosses it, and the entry that uses up the budget says so whichever fractions
 are set. Nothing blocks: a story stopped halfway costs more than the overspend.
+
+## `consolidate`
+
+`consolidate` sets when the loop reminds you to run `/sdlc:consolidate`, the
+skill that turns what several finished stories show into changes to your
+contract and configuration. It has one key.
+
+| Key | What it means |
+| --- | --- |
+| `nudge_after` | how many stories must have finished since the last consolidation before `sdlc status` and `sdlc stop` end with a line saying so. The default is 3, which a file that says nothing of it gets. `0` turns the line, and the `consolidate` field in `sdlc status --json`, off. A negative value is refused ([SDLC-E0045](troubleshooting.md#sdlc-e0045)), and so is one that is not a whole number ([SDLC-E0004](troubleshooting.md#sdlc-e0004)) |
+
+```json
+"consolidate": { "nudge_after": 5 }
+```
+
+A story has finished when the backlog says it is `done`, and it counts when it
+finished on a later calendar day than the date in the name of the newest
+`.sdlc/consolidation-<YYYY-MM-DD>.md` in the main checkout, in your computer's
+own time zone. A story that finishes on the day of a consolidation does not
+count, which is what lets that run end the reminder: one that finishes later
+that day is not counted either. With no such file, every finished story counts.
+Only the names of the files are read, never what is in them.
+[Consolidating what the retros say](guides/consolidating-what-the-retros-say.md#the-reminder)
+says more.
 
 ## `parallel`
 

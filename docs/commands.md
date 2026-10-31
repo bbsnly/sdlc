@@ -293,6 +293,33 @@ reads them to decide what to do:
 | `waiting` | every story handed to a person with `sdlc escalate` and not yet answered, with the question it asks |
 | `landing` | whoever holds the landing lock: the `story`, the `command` (`stop`, or `remap`, which lands nothing), `since` when, and its `pid`; `gone` is `true` where that process is not running, with `takeable_from`, the time a stop can take the lock from. `story`, `command` and `since` are there together or not at all: a lock whose owner cannot be read has only `gone`, and `pid` where one is named. Absent while no lock is there |
 | `waiting_to_land` | every `sdlc stop` or `sdlc remap` waiting for the landing lock, with its `story`, `command`, `since` and `pid`, and `for`, the story of the running stop it waits for. Absent while nothing waits |
+| `consolidate` | `finished`, how many stories have finished since the last `/sdlc:consolidate`, and `last`, the date of the newest consolidation file, which is `null` where there has been none. Absent below `consolidate.nudge_after` stories, and where that is `0` |
+
+Where `consolidate.nudge_after` stories (3 unless you set it) have finished
+since the last `/sdlc:consolidate`, status ends with one more line, after
+everything else it prints, saying how many and that a person can run the skill.
+Below that, and where the setting is `0`, status prints what it always has and
+`--json` has no `consolidate` field. The date it counts from is the one in the
+name of the newest `.sdlc/consolidation-<YYYY-MM-DD>.md` in the main checkout,
+which is the same from a story's worktree, and a story counts when it finished
+on a later day by your computer's clock; without such a file, every finished
+story counts. See [the reminder](guides/consolidating-what-the-retros-say.md#the-reminder).
+
+```text
+No iteration running.
+
+  backlog  1 ready · 3 done
+  next up  US-004  Example: refuse a refund above the amount paid
+
+A person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.
+3 stories have finished since the last consolidation on 2026-10-20: a person can run /sdlc:consolidate to see what they have in common.
+```
+
+`"consolidate": {"nudge_after": 0}` in [`.sdlc/config.json`](configuration.md#consolidate)
+is what turns the line off. A line that is missing where you expect one can
+mean a story's record that cannot be read: the count is left out, not made
+short, and nothing else changes, neither the output nor the exit code.
+`SDLC_DEBUG=1` shows why on standard error, and `sdlc doctor` says which record.
 
 With nothing landing, status prints what it always has:
 
@@ -514,6 +541,25 @@ carries on rather than that `sdlc start` picks it up here.
 
 From a Claude Code session other than the one working the story, `stop` refuses
 with [SDLC-E0048](troubleshooting.md#sdlc-e0048) and changes nothing.
+
+Where an iteration ended and `consolidate.nudge_after` stories or more have
+finished since the last `/sdlc:consolidate`, `stop` ends with the same line
+`sdlc status` does, counting the story it has just finished. It is text only:
+`--json` prints what it always did, with no field and no line, and the line is
+never on standard error. It is printed after:
+
+- `Ended the iteration on <ID>. Every gate passed, ...`;
+- `Stopped the iteration on <ID>. Nothing was recorded, ...`, and the lines that
+  say the story is held by another checkout, named by more than one, or held by
+  one that is gone;
+- the lines of a story landing, as the last line on standard output, so before
+  the SDLC-E0076 warning on standard error.
+
+It is not printed after `No iteration was running.`, which includes the stop
+that finds `.sdlc/state/active` unusable; after a refusal, of any kind; or by a
+stop that finds the story already landed by another. Below the threshold, and
+with `nudge_after` at `0`, the output is exactly what it was. Nothing in a
+failed count changes a stop: a record that cannot be read leaves the line out.
 
 ### Landing a story from its worktree
 
