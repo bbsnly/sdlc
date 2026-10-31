@@ -203,7 +203,16 @@ shows each story's status.
 ### SDLC-E0010
 
 Nothing in the backlog can be started right now. The message says which: every story is
-finished, or some are blocked or waiting on a dependency that is not done.
+finished, or some are blocked or waiting on a dependency that is not done, or only `todo`
+stories are left.
+
+A bare `sdlc start` takes only `ready` stories. It never takes a `todo` one, because a `todo`
+story is one whose criteria are not yet settled. When a `todo` story could otherwise have
+started, the message says how many it passed over and names up to five by id, in the order
+they would have been offered. Either mark one `ready` once its criteria are settled, by
+setting its `status` to `ready` in the backlog file, or name it with `sdlc start <ID>`, which
+starts a `todo` story and leaves Gate 1 to say whether it is ready. A `todo` story that waits
+on a story that is not done, or that another checkout holds, is not counted.
 
 A finished backlog is the loop having done its job, so write the next story. Otherwise run
 `sdlc story list`, which shows each story's status and what is holding it back.
@@ -1570,8 +1579,9 @@ Then correct the spelling, or add the story to the backlog first.
 `sdlc parallel` was given a story that is not runnable: it is dropped, blocked, done, or it waits
 on a story that is not finished yet. Nothing was started.
 
-The message names the status, and for a dependency the story it waits on. A story has to be
-`ready`, or every story it waits on has to be finished. A story that is already in progress or
+The message names the status, and for a dependency the story it waits on. Only a story that
+is `dropped`, `blocked` or done, or that waits on one that is not finished, is refused; a
+`todo` story is not, as it is not for `sdlc start <ID>`. A story that is already in progress or
 that waits for a person is not refused for this: a run again resumes the first, and the second has
 its own code, [SDLC-E0064](#sdlc-e0064). Take the story off the command line, or finish what it
 waits on first.

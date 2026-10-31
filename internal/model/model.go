@@ -130,8 +130,10 @@ type Selection struct {
 //
 // A story already under way wins, always: the loop finishes what it started
 // rather than accumulating half-done work. Otherwise the highest-priority story
-// whose dependencies are all done, with the id breaking ties so that the same
-// backlog always yields the same choice.
+// marked ready whose dependencies are all done, with the id breaking ties so
+// that the same backlog always yields the same choice. A todo story is never
+// picked: the person has not said its criteria are settled, and naming it is
+// how they start one anyway.
 func (b *Backlog) Next() (Selection, bool) {
 	for i := range b.Stories {
 		if s := &b.Stories[i]; s.Status == StatusInProgress || s.Status == StatusAwaitingHuman {
@@ -139,22 +141,28 @@ func (b *Backlog) Next() (Selection, bool) {
 		}
 	}
 
-	runnable := b.runnable()
+	runnable := b.startable(StatusReady)
 	if len(runnable) == 0 {
 		return Selection{}, false
 	}
-	sort.SliceStable(runnable, func(i, j int) bool {
-		pi, pj := priorityOf(runnable[i]), priorityOf(runnable[j])
-		if pi != pj {
-			return pi < pj
-		}
-		return compareIDs(runnable[i].ID, runnable[j].ID) < 0
-	})
 	return Selection{Story: runnable[0]}, true
 }
 
-// runnable is the stories that are waiting to start and have every dependency done.
-func (b *Backlog) runnable() []*Story {
+// TodoToStart is the ids of the todo stories that only their status keeps Next
+// from picking: every dependency done. They are in the order Next would offer
+// them were they ready, so that a refusal can name the first few.
+func (b *Backlog) TodoToStart() []string {
+	todo := b.startable(StatusTodo)
+	ids := make([]string, 0, len(todo))
+	for _, s := range todo {
+		ids = append(ids, s.ID)
+	}
+	return ids
+}
+
+// startable is the stories in the given status that have every dependency
+// done, by priority and then id.
+func (b *Backlog) startable(status Status) []*Story {
 	done := map[string]bool{}
 	for i := range b.Stories {
 		if b.Stories[i].Status == StatusDone {
@@ -162,18 +170,22 @@ func (b *Backlog) runnable() []*Story {
 		}
 	}
 
-	var runnable []*Story
+	var out []*Story
 	for i := range b.Stories {
 		s := &b.Stories[i]
-		if s.Status != StatusReady && s.Status != StatusTodo {
+		if s.Status != status || !b.dependenciesMet(s, done) {
 			continue
 		}
-		if !b.dependenciesMet(s, done) {
-			continue
-		}
-		runnable = append(runnable, s)
+		out = append(out, s)
 	}
-	return runnable
+	sort.SliceStable(out, func(i, j int) bool {
+		pi, pj := priorityOf(out[i]), priorityOf(out[j])
+		if pi != pj {
+			return pi < pj
+		}
+		return compareIDs(out[i].ID, out[j].ID) < 0
+	})
+	return out
 }
 
 // compareIDs orders story ids the way a person reads them: the numbers in them

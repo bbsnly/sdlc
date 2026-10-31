@@ -93,9 +93,10 @@ pass to `sdlc ack`, and leaves running it to you.
 
 When the skill finds something worth following up, it proposes each follow-up
 as a story in the backlog's own shape, with `status` set to `blocked`, so
-`sdlc start` does not pick it up before you have read it. A `todo` or `ready`
-story is picked next; see [Statuses](writing-stories.md#statuses). It gives the
-follow-up the risk tier of the story it follows up, for you to confirm: a story
+`sdlc start` does not pick it up before you have read it. A `ready`
+story is picked next, and a `todo` one is passed over; see
+[Statuses](writing-stories.md#statuses). It gives the follow-up the risk tier of
+the story it follows up, for you to confirm: a story
 with no tier is `low`, and would be committed without waiting for you.
 
 Nothing is added until you say which ones to add. Even then, a follow-up goes

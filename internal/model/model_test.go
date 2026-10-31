@@ -110,9 +110,11 @@ func TestNextReadsTheNumbersInAnIDAsNumbers(t *testing.T) {
 }
 
 func TestNextSkipsAStoryWithAnUnfinishedDependency(t *testing.T) {
+	// B-2 is ready, not todo: a bare start takes ready stories only (US-112.1),
+	// and this test is about waiting on a dependency, not about the status.
 	b := &Backlog{Stories: []Story{
 		story("A-1", StatusReady, new(1), "B-2"),
-		story("B-2", StatusTodo, new(5)),
+		story("B-2", StatusReady, new(5)),
 	}}
 
 	got, _ := b.Next()

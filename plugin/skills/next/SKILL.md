@@ -109,9 +109,9 @@ that it happens where Claude Code does not pass `CLAUDE_CODE_SESSION_ID` to the 
 Tell them the story is now in progress, and that `/sdlc:next` in a session that passes it on
 picks it up where it is. Then stop. Do not work the story without it.
 
-If it fails with `SDLC-E0010` there is nothing to work on: show the user the `why` field, run
-`sdlc story list`, and stop. `SDLC-E0033` in a story's worktree means it waits to land: go to
-Gate 9's `sdlc stop`.
+On `SDLC-E0010`, show the user the `why` and stop. Never start a `todo` story:
+they mark it `ready` or name it.
+`SDLC-E0033` in a story's worktree means it waits to land: go to Gate 9's `sdlc stop`.
 
 If the output has `"resume": true`, the story's earlier gates stand: go straight to the section
 for the `next_gate` it reports.

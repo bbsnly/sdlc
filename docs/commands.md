@@ -409,7 +409,12 @@ $ sdlc start AUTH-3
 ```
 
 With no story named, `start` picks up a story already under way, or takes the
-next runnable one: resume first, then priority, then id. It refuses if an
+next `ready` one whose `depends_on` stories are done: resume first, then
+priority, then id. It takes only `ready` stories and never a `todo` one. With
+only `todo` stories left it refuses with
+[SDLC-E0010](troubleshooting.md#sdlc-e0010), saying how many it passed over and
+naming up to five; mark one `ready`, or name it with `sdlc start <ID>`. It
+refuses if an
 iteration is already running on another story; on the same story it resumes and
 changes nothing about the story. With `--json` it reports `resume` and
 `next_gate`, the first gate that has not passed, so a session picking a story

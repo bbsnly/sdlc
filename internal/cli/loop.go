@@ -54,8 +54,9 @@ func newStartCmd() *cobra.Command {
 		Long: "start marks a story as the one being worked on. Everything the loop does\n" +
 			"afterwards -- gates, hooks, the record it keeps -- is about that story.\n\n" +
 			"With no argument it takes the next runnable story: one already under way\n" +
-			"if there is one, otherwise the highest-priority story whose dependencies\n" +
-			"are done. Running it again on the same story is safe and changes nothing.",
+			"if there is one, otherwise the highest-priority story marked ready whose\n" +
+			"dependencies are done. It never takes a todo story: name one to start it.\n" +
+			"Running it again on the same story is safe and changes nothing.",
 		Example: "  sdlc start\n  sdlc start AUTH-3",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -327,12 +328,58 @@ func nextRunnable(s *store.Store) (string, []goneHolder, error) {
 		return "", nil, err
 	}
 	held, passed := elsewhere(backlog, holders), goneHolders(backlog, holders)
-	if sel, ok := backlog.Without(held...).Next(); ok {
+	free := backlog.Without(held...)
+	if sel, ok := free.Next(); ok {
 		return sel.Story.ID, passed, nil
 	}
-	return "", passed, sdlcerr.New(sdlcerr.NoRunnableStory,
-		"there is no story to start",
-		describeWhyNothingRuns(backlog)+heldNote(held))
+	why := describeWhyNothingRuns(backlog) + heldNote(held)
+	refusal := sdlcerr.New(sdlcerr.NoRunnableStory, "there is no story to start", why)
+	if todo := free.TodoToStart(); len(todo) > 0 {
+		// Left to the default, the fix would send a person to add a story or
+		// unblock one, and neither is what a backlog of todo stories wants.
+		refusal = sdlcerr.New(sdlcerr.NoRunnableStory, "there is no story to start",
+			why+"; "+todoPassedOver(todo)).WithFix(todoNextStep)
+	}
+	return "", passed, refusal
+}
+
+// maxTodoNamed is how many of the todo stories a bare start passed over its
+// message names: the first few say what is waiting for a person, and a list of
+// a hundred ids hides the sentence that says what to do.
+const maxTodoNamed = 5
+
+// todoNextStep is what to do when a bare start has only todo stories to take.
+// It carries no number, so that it is never read as a count of them.
+const todoNextStep = `mark a todo story ready once its criteria are settled, or name one with "sdlc start <ID>"`
+
+// todoPassedOver says how many todo stories a bare start passed over, and
+// which, in the order it would have offered them. Ids are quoted as elsewhere
+// in this file, and titles are left out: an id is what the person types. Past
+// five the count comes first and nothing with a number follows it.
+func todoPassedOver(ids []string) string {
+	named := make([]string, 0, maxTodoNamed)
+	for _, id := range ids[:min(len(ids), maxTodoNamed)] {
+		named = append(named, quote(id))
+	}
+	sep := ": "
+	if len(ids) > maxTodoNamed {
+		sep = ", the first five being "
+	}
+	return fmt.Sprintf("a bare start takes only a story marked ready, and it passed over %d todo %s%s%s",
+		len(ids), plural(len(ids), "story", "stories"), sep, strings.Join(named, ", "))
+}
+
+// nothingToStartSaid is the line status and story list give when nothing can
+// start. Where todo stories could, it says so, and what to do, in the words the
+// refusal uses; the second result is whether it did. held is every story
+// another checkout holds.
+func nothingToStartSaid(b *model.Backlog, held []string) (string, bool) {
+	said := "\nNothing to start: " + describeWhyNothingRuns(b) + heldNote(held)
+	todo := b.Without(held...).TodoToStart()
+	if len(todo) == 0 {
+		return said + ".\n", false
+	}
+	return said + "; " + todoPassedOver(todo) + ".\nTo go on, " + todoNextStep + ".\n", true
 }
 
 func describeWhyNothingRuns(b *model.Backlog) string {
@@ -394,7 +441,10 @@ func nothingToStart(b *model.Backlog, path string, held []string) string {
 	if len(b.Stories) == 0 {
 		return "\nThe backlog is empty. " + writeAStory(path)
 	}
-	said := "\nNothing to start: " + describeWhyNothingRuns(b) + heldNote(held) + ".\n"
+	said, todo := nothingToStartSaid(b, held)
+	if todo {
+		return said
+	}
 	if nothingLeftToStart(b) {
 		return said + writeAStory(path)
 	}

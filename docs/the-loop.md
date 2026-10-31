@@ -194,6 +194,11 @@ loop to find out.
 
 **Refused without it:** a pass for a story with no acceptance criteria.
 
+A bare `sdlc start` takes only a story marked `ready`: it passes over a `todo`
+story, because the person has not said its criteria are settled. Naming a
+`todo` story with `sdlc start <ID>` starts it as before, and this gate decides
+whether it is ready.
+
 A new story starts only from a trunk fit to start from (the worktree is
 explained under [more than one checkout](#more-than-one-checkout)). `sdlc start` refuses a
 trunk behind `origin` when [`git.remote`](configuration.md#git) is on, and a

@@ -109,7 +109,7 @@ the rest as the story moves along.
 
 | Status | Picked by `sdlc start` | Set by |
 | --- | --- | --- |
-| `todo` | yes, exactly like `ready` | you |
+| `todo` | no, only by name | you |
 | `ready` | yes | you |
 | `in_progress` | resumed first, in the checkout that holds it | `sdlc start` and `sdlc approve`; also a gate recorded as failed on a story that was done |
 | `awaiting_human` | resumed first, once a person has answered, in the checkout that holds it | `sdlc escalate`, and the loop when it hands a story to a person |
@@ -117,8 +117,9 @@ the rest as the story moves along.
 | `done` | no | the tool, when the last gate passes; for a story in its own worktree, when `sdlc stop` lands it on trunk |
 | `dropped` | no | you |
 
-Because `todo` is picked like `ready`, mark a story you are not ready to run
-as `blocked` until you are.
+Because a bare start passes over a `todo` story, a story you are not ready to
+run can stay `todo` until you mark it `ready`. Use `blocked` for one that
+cannot go on at all.
 
 ## Acceptance criteria that become tests
 
@@ -224,8 +225,8 @@ section explains exactly how it chooses, for when the order surprises you.
    before everything else. One that is waiting for a person is refused with
    [SDLC-E0036](../troubleshooting.md#sdlc-e0036) until someone answers with
    `sdlc approve`.
-2. Otherwise, it considers stories that are `ready` or `todo` and whose every
-   `depends_on` entry is `done`.
+2. Otherwise, it considers only stories that are `ready` and whose every
+   `depends_on` entry is `done`. A `todo` story is passed over.
 3. The lowest `priority` wins. The schema gives `0` to fix-forward work. A
    story with no priority counts as 999, so it sorts after every story with a
    lower number.

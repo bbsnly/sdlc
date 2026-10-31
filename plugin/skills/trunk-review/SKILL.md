@@ -134,8 +134,8 @@ When every story is reported, propose each follow-up as a story in the backlog's
 }
 ```
 
-`blocked` keeps `sdlc start` from picking the story up before a person has read it; `todo` and
-`ready` are picked next. Use them only when the person says so.
+`blocked` keeps `sdlc start` from picking the story up before a person has read it; `ready` is
+picked next, and a bare start passes over `todo`. Use them only when the person says so.
 
 Give each one the `risk_tier` of the story it follows up. A story that names no tier is `low`,
 so a follow-up to a `high` story would otherwise be committed without waiting for a person. The

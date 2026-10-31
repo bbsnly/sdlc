@@ -237,10 +237,10 @@ $ sdlc story list
 ```
 
 > [!NOTE]
-> A story is picked up when its `status` is `todo` or `ready` and the stories
-> it depends on are done. [Writing stories](guides/writing-stories.md) covers
-> every status, how the next story is chosen, and how to write criteria the
-> first gate accepts.
+> A bare `sdlc start` takes a story only when its `status` is `ready` and the
+> stories it depends on are done; a `todo` story starts only when you name it.
+> [Writing stories](guides/writing-stories.md) covers every status, how the next
+> story is chosen, and how to write criteria the first gate accepts.
 
 ## Run the loop
 
@@ -250,7 +250,7 @@ You are ready to run your first story. In Claude Code, from your project, type:
 /sdlc:next
 ```
 
-The skill picks up the next runnable story, or
+The skill picks up the next `ready` story, or
 resumes one already under way, and works it through the gates one at a time. It
 hands each gate to the agent whose job it is, and records every outcome before
 the next gate begins.
