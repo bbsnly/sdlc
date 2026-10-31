@@ -162,7 +162,7 @@ func runStatus(cmd *cobra.Command) error {
 	}
 	v.payload.Landing, v.payload.WaitingToLand = landingOf(s.LandingQueue())
 	if active != "" {
-		if err := v.readActive(cmd.Context(), p); err != nil {
+		if err := v.readActive(cmd, p); err != nil {
 			return err
 		}
 	} else if sel, ok := pickable(backlog, holders).Next(); ok && !isWaiting(waiting, sel.Story.ID) {
@@ -181,7 +181,7 @@ func runStatus(cmd *cobra.Command) error {
 }
 
 // readActive fills in what the payload says of the story being worked on.
-func (v *statusView) readActive(ctx context.Context, p *config.Project) error {
+func (v *statusView) readActive(cmd *cobra.Command, p *config.Project) error {
 	payload, s, active := &v.payload, v.s, v.payload.Active
 	var err error
 	if story, ok := v.backlog.Find(active); ok {
@@ -193,6 +193,9 @@ func (v *statusView) readActive(ctx context.Context, p *config.Project) error {
 		return err
 	}
 	record := v.record
+	// Only said: status changes nothing, so the event is left to the next gate
+	// or review that saves.
+	gateHoursOver(p.Config.Budget, record).say(cmd.ErrOrStderr())
 	payload.Gates = map[string]string{}
 	for gate, result := range record.Gates {
 		payload.Gates[string(gate)] = string(result.Status)
@@ -200,7 +203,7 @@ func (v *statusView) readActive(ctx context.Context, p *config.Project) error {
 	if next, ok := record.NextGate(); ok {
 		payload.NextGate = string(next)
 	}
-	if payload.Freeze, err = describeFreeze(ctx, s, active, record); err != nil {
+	if payload.Freeze, err = describeFreeze(cmd.Context(), s, active, record); err != nil {
 		return err
 	}
 	payload.Cost = describeCost(p.Config.Budget, record)

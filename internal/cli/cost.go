@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bbsnly/sdlc/internal/config"
+	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
 )
@@ -102,7 +103,7 @@ func newCostAddCmd() *cobra.Command {
 			budget := p.Config.Budget
 			alerts := crossed(budget, before, after)
 			for _, a := range alerts {
-				record.Append("budget", a, s.Now())
+				record.Append(model.EventBudget, a, s.Now())
 			}
 			if err := s.SaveRecord(record); err != nil {
 				return err

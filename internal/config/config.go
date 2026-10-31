@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
@@ -202,9 +203,62 @@ func (h HumanGates) PausesBeforeCommit(tier string) bool {
 }
 
 // Budget caps what one story may cost and when to say so.
+//
+// GateHours is the file's own text for gate_hours, a map of gate key to hours.
+// A typed map would turn a value of the wrong type into SDLC-E0004 and a null
+// into a 0, which is off, and a person who wrote either believed in a number
+// that is not there. Kept as written, validate judges every entry and answers
+// SDLC-E0045; GateHoursSet is the numbers it holds.
 type Budget struct {
-	PerStoryUSD    float64   `json:"per_story_usd"`
-	AlertFractions []float64 `json:"alert_fractions"`
+	PerStoryUSD    float64         `json:"per_story_usd"`
+	AlertFractions []float64       `json:"alert_fractions"`
+	GateHours      json.RawMessage `json:"gate_hours,omitempty"`
+}
+
+// GateHoursSet is the hours budget.gate_hours gives each gate key, and
+// everything wrong with it, in the order of the keys so that one file gets one
+// message every time. validate refuses a file with any problem, so a caller
+// that loaded the configuration reads only numbers the loader let through; an
+// entry with a problem is not among the hours.
+//
+// Absent is the setting off. What is not an object, null included, is refused,
+// as is a number that is negative or too large to hold: 0 is how a gate is
+// turned off.
+func (b Budget) GateHoursSet() (hours map[string]float64, problems []string) {
+	raw := b.GateHours
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var entries map[string]json.RawMessage
+	if json.Unmarshal(raw, &entries) != nil || entries == nil {
+		problems = append(problems, "budget.gate_hours is not an object of hours by gate key")
+	}
+	hours = map[string]float64{}
+	for _, key := range slices.Sorted(maps.Keys(entries)) {
+		gate := model.Gate(key)
+		if !gate.Valid() {
+			problems = append(problems, fmt.Sprintf("budget.gate_hours has the key %q, which is not a gate key", key))
+		}
+		// Decoded as any, so that null is not read as 0; one too large to hold
+		// is an error that leaves a 0 behind, and is not a number either.
+		var value any
+		err := json.Unmarshal(entries[key], &value)
+		number, isNumber := value.(float64)
+		isNumber = isNumber && err == nil
+		switch {
+		case !isNumber:
+			problems = append(problems, fmt.Sprintf("budget.gate_hours.%s is not a number of hours", key))
+		case number < 0:
+			problems = append(problems, fmt.Sprintf("budget.gate_hours.%s is %v, and 0 is how it is turned off", key, number))
+		case gate.Valid():
+			hours[key] = number
+		}
+	}
+	if len(problems) > 0 {
+		problems = append(problems, "budget.gate_hours takes a gate key ("+model.GateNames()+
+			") and a number of hours, 0 or more")
+	}
+	return hours, problems
 }
 
 // Default is the configuration a project gets before it changes anything. It is
@@ -414,6 +468,8 @@ func (c Config) validate() error {
 		problems = append(problems, fmt.Sprintf("consolidate.nudge_after is %d, and it must be 0 or more: "+
 			"0 turns the reminder to run /sdlc:consolidate off", n))
 	}
+	_, gateHours := c.Budget.GateHoursSet()
+	problems = append(problems, gateHours...)
 	if c.Staffing.Enabled {
 		problems = append(problems, c.Staffing.problems()...)
 	}

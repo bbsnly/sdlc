@@ -70,6 +70,10 @@ type spanFigures struct {
 	Person      *float64 `json:"person"`
 	Between     *float64 `json:"between"`
 	Unaccounted *float64 `json:"unaccounted"`
+	// PastGateHours is on a gate's row when the record holds the budget event
+	// for it. It reports the event, not the configuration, so it stays after
+	// gate_hours is taken out.
+	PastGateHours bool `json:"past_gate_hours,omitempty"`
 }
 
 type unfinishedRun struct {
@@ -273,8 +277,11 @@ func storyReport(id string, rp *replay, record *model.Record, reading trace.Read
 	// for, and is given whether or not the story was traced. The story's own
 	// rest is left out where its subagents' time is not recorded (AC-21).
 	gates, splits := rp.byGate()
+	marks := budgetMarks(record)
 	for i, g := range gates {
-		st.Gates = append(st.Gates, figuresOf(string(g), splits[i], rp.agentsKnown, true))
+		f := figuresOf(string(g), splits[i], rp.agentsKnown, true)
+		f.PastGateHours = marks[g]
+		st.Gates = append(st.Gates, f)
 	}
 	for _, u := range rp.unfinished {
 		st.Unfinished = append(st.Unfinished, unfinishedRun{u.agentType, u.agentID, trace.Stamp(u.at)})
@@ -637,8 +644,12 @@ func writeTimeTable(p *printer, st storyTrace) {
 	p.linef("")
 	p.linef("time, by the gate the story was working towards:")
 	row := func(name string, f spanFigures) {
-		p.linef("  %-16s %-12s %-12s %-20s %-19s %s", name, shown(f.Wall), shown(f.Agents), shown(f.Person),
-			shown(f.Between), shown(f.Unaccounted))
+		mark := ""
+		if f.PastGateHours {
+			mark = "  <- past budget.gate_hours"
+		}
+		p.linef("  %-16s %-12s %-12s %-20s %-19s %s%s", name, shown(f.Wall), shown(f.Agents), shown(f.Person),
+			shown(f.Between), shown(f.Unaccounted), mark)
 	}
 	p.linef("  %-16s %-12s %-12s %-20s %-19s %s", "gate", "wall", "agents", "waiting on a person",
 		"between iterations", "no agent and no person accounts for")

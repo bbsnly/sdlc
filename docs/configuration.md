@@ -537,11 +537,55 @@ This is what one story is expected to cost, and when to say so as it gets close.
 | --- | --- |
 | `per_story_usd` | what one story is expected to cost. `0` turns the budget off and still keeps the total; a negative one is refused |
 | `alert_fractions` | the points along the way to say so, as fractions of the budget |
+| `gate_hours` | optional: hours of the agents' time each gate may take before the loop says so, by gate key, such as `{"plan": 1}`. Absent, or `0` for a gate, is off. A negative number, a value that is not a number, or a key that is not a gate key is refused |
 
 Spend is recorded with [`sdlc cost add`](commands.md#sdlc-cost-add), and shown by `sdlc cost`
 and `sdlc status`. An alert goes to standard error once, on the entry that
 crosses it, and the entry that uses up the budget says so whichever fractions
-are set. Nothing blocks: a story stopped halfway costs more than the overspend.
+are set. A budget never blocks: a story stopped halfway costs more than the overspend.
+
+`gate_hours` counts the agents' time as [`sdlc trace`](commands.md#sdlc-trace) does in its
+`agents` column: the union of the agents' runs charged to the gate the story was working
+towards, so an agent still running is not counted until it ends, and time spent waiting
+on a person is not counted. When `sdlc gate`, `sdlc review add` or `sdlc status` finds a
+gate with a number past it, the command prints one line on standard error and then does
+exactly what it would have done without the setting: the same decision, the same output
+on standard output, the same exit code. Every gate with a number is checked, so the line
+comes again on every one of those commands for the rest of the story, because the time
+stays charged to the gate after it passes. To silence it, set that gate's number to `0`
+or take the entry out. The first time `sdlc gate` or `sdlc review add` saves after finding
+a gate past its number, a `budget` event goes into the gate record, once for that gate on
+that story, and `sdlc trace` marks the gate. `sdlc status` changes nothing, so it only
+prints, and the next `gate` or `review add` records the event.
+
+`gate_hours` never blocks either, for the same reason: stopping a story halfway costs more
+than the overrun, so the loop says so and the gate carries on.
+
+A value `gate_hours` cannot use is refused by every command that reads the configuration
+with [SDLC-E0045](troubleshooting.md#sdlc-e0045). The hook cannot read such a file either:
+it sets the whole file aside and runs on the defaults, so your own test paths, freeze
+setting and the rest do not apply until it is fixed. `sdlc doctor` names the entry.
+
+There is no default: `sdlc init` writes no `gate_hours`, and a project sets its own. For a
+starting point, these are the median and upper quartile of the hours each gate took in the
+39 stories of this repository:
+
+| Gate | Median | Upper quartile |
+| --- | --- | --- |
+| `analysis` | 0.27 | 0.39 |
+| `tests_frozen` | 0.80 | 1.54 |
+| `plan` | 0.53 | 0.94 |
+| `design_review` | 0.49 | 0.96 |
+| `implementation` | 0.65 | 1.32 |
+| `verification` | 0.52 | 1.31 |
+| `code_review` | 0.31 | 0.99 |
+
+These were measured as machine time per gate, which includes sessions left open and idle.
+The agents' time `gate_hours` counts leaves idle sessions out, so the same gates show less
+in `sdlc trace`, and a number taken from this table is a generous start. Yours will
+differ: `sdlc trace <story>` shows the agents' time each gate took in a story of your own,
+which is the figure to set a number against, and `sdlc trace --all` puts the stories side
+by side with their totals.
 
 ## `consolidate`
 

@@ -144,6 +144,10 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 	if err != nil {
 		return err
 	}
+	// Said whether or not the review is then refused; recorded only with the
+	// review, below.
+	late := gateHoursOver(s.Config().Budget, record)
+	late.say(cmd.ErrOrStderr())
 	if !reviewer.Expected(reviewPolicy(s, record)) {
 		return sdlcerr.New(sdlcerr.UnknownReviewer,
 			string(gate)+" does not expect a review from "+quote(reviewer.Role)+" in this project",
@@ -166,6 +170,7 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 		Subject: subject, File: path, Note: f.note,
 	}, s.Now())
 	record.Append(model.EventReview, model.ReviewEvent(gate, reviewer.Role, verdict), s.Now())
+	late.record(record, s.Now())
 	handedOver, message, err := saveReview(cmd, s, record, reviewer, doc, verdict, f.note)
 	if err != nil {
 		return err

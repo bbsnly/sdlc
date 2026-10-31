@@ -165,6 +165,11 @@ configured commands would run, whether the hook would refuse any of them, and
 whether `sdlc` is on your `PATH`. Every problem comes with what to do about it.
 Exits non-zero when something is wrong, so it works in a script.
 
+A setting the loader refuses, such as a negative limit or a `budget.gate_hours` entry that
+is not a number of hours, is named with the entry and its
+[SDLC-E0045](troubleshooting.md#sdlc-e0045). A file that is not valid JSON, or has a
+setting of the wrong type, is reported in its own words, as before.
+
 The configuration check also lists, on a line of its own, the paths in
 `paths.conflict_markers_intended`, or says `none`. That is this checkout's copy:
 `sdlc stop` reads trunk's, so a path a person has only listed in a commit that
@@ -275,6 +280,11 @@ $ sdlc status --json
 It reports the active story, every gate's outcome, the state of the test freeze
 and whether it is still intact, the backlog counts, and what `sdlc start` would
 pick up next.
+
+Where [`budget.gate_hours`](configuration.md#budget) gives a gate a number and the
+story's agents' time at that gate has passed it, `status` also prints one line on
+standard error, with `--json` too, and nothing else about it changes. It records
+nothing: the next `sdlc gate` or `sdlc review add` puts the gate's event in the record.
 
 An active story with no gate left reads as `finished` rather than `in progress`,
 because there is nothing left to work on it: what it wants is `sdlc stop`.
@@ -1258,7 +1268,7 @@ else, every time in seconds, and `null` for a figure that was not recorded:
 | Heading | Key |
 | --- | --- |
 | the story's id | `story`, with `traced`, `skipped_lines`, `truncated` and `truncated_at` |
-| time, by the gate | `gates`, each `gate`, `wall`, `agents`, `person`, `between` and `unaccounted`, and `total` for "in all" |
+| time, by the gate | `gates`, each `gate`, `wall`, `agents`, `person`, `between` and `unaccounted`, and `past_gate_hours` where the record holds the gate's `budget` event (absent otherwise), and `total` for "in all" |
 | unfinished | `unfinished`, each `agent_type`, `agent_id` and `start` |
 | by kind of agent | `agent_types`, each `agent_type`, `runs`, `time`, `models`, `responses`, `peak_context`, `cache_read_ratio`, `tools`, `asked`, `observed_models`, `observed_efforts`, `done` and `blocked` |
 | the main conversation | `main`, each `gate` and `models` |
@@ -1267,6 +1277,14 @@ else, every time in seconds, and `null` for a figure that was not recorded:
 | refusals | `refusals`, each `rule`, `agent_type`, `code` and `count` |
 | the change at the commit gate | `diff`: `files`, `added`, `removed`, `test_files`, `test_added` and `test_removed` |
 | reviews | `reviews`, each `gate`, `rounds` and `blocks` |
+
+A gate whose agents' time passed its [`budget.gate_hours`](configuration.md#budget) is
+marked once the record holds its `budget` event: in the text its row ends
+`<- past budget.gate_hours`, and in `--json` it has `"past_gate_hours": true`. The mark
+reports the event on the record, not the setting now, so a gate over its number that no
+`sdlc gate` or `sdlc review add` has yet saved is not marked, and a mark stays after
+`gate_hours` is taken out of the configuration. `--all` has no row for a gate, so it marks
+nothing.
 
 A story worked before tracing has no trace. For it, `sdlc trace` gives what the
 gate record holds, the wall time, the wait on a person and the time between
@@ -1394,6 +1412,17 @@ In a story's own worktree a gate writes one thing to the record whether it then
 passes or is refused: which commits on the branch are the story's own (`forks`),
 so that trunk's branch pointed at one of them later does not make its test files
 trunk's ([the loop](the-loop.md#done-when-it-lands)).
+
+Where [`budget.gate_hours`](configuration.md#budget) gives a gate a number and the
+story's agents' time at that gate has passed it, `gate` prints one line on standard
+error for each such gate once it has read the story's record, whether or not it then
+records or refuses, and decides, prints on standard output and exits exactly as it would
+without the setting. A refusal before the record is read prints nothing: an unknown gate
+or outcome, no story being worked on, a story another checkout or session holds, a story
+not in the backlog, or a record that cannot be read. The first time it
+saves after finding a gate past its number, it also writes a `budget` event for that gate
+into the record, before the save, so a hand-over carries it; a gate that is refused
+records none.
 
 Recording the last gate is also what finishes the story: when no gate is left
 unpassed, the story's status in the backlog becomes `done`, except for a story in
@@ -1725,6 +1754,17 @@ be handed over the command is refused, nothing is recorded and no review
 document is left, and the refusal says that the block was not recorded and that
 running the same command again is safe. The round that was refused is not a
 round: run again, the block is the round it would have been.
+
+Where [`budget.gate_hours`](configuration.md#budget) gives a gate a number and the
+story's agents' time at that gate has passed it, `review add` prints one line on standard
+error for each such gate once it has read the story's record, whether or not it then
+records or refuses the review, and decides, prints on standard output and exits exactly as
+it would without the setting. A refusal before the record is read prints nothing: an
+unknown gate, reviewer or verdict, no story being worked on, a story another checkout or
+session holds, a story not in the backlog, or a record that cannot be read. The first time
+it saves after finding a gate past its number, it also writes a `budget` event
+for that gate into the record with the review, so a hand-over carries it; a review that is
+refused records none.
 
 > [!NOTE]
 > Rounds are kept rather than overwritten, so "what did the architect say last

@@ -933,6 +933,11 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) error {
 	if err != nil {
 		return err
 	}
+	// Said before anything below can refuse the gate: one refused again and
+	// again is the circle the line is for. Nothing goes on the record here,
+	// since noteForks saves it next, and a refused gate changes nothing.
+	late := gateHoursOver(s.Config().Budget, record)
+	late.say(cmd.ErrOrStderr())
 	// What this gate asks git about the tree and HEAD, up to saving the
 	// record, which writes nothing either of them measures.
 	g := &gateRun{cmd: cmd, s: s, rd: readingOf(s), id: id, gate: gate, status: status, note: flags.note, record: record}
@@ -952,6 +957,8 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) error {
 		return err
 	}
 	record.Append(model.EventGate, model.GateEvent(gate, status), s.Now())
+	// On the record before the save, which a hand-over makes with it.
+	late.record(record, s.Now())
 	handedOver, message, err := g.save()
 	if err != nil {
 		return err

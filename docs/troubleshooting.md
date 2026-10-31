@@ -80,7 +80,8 @@ unquoted key left behind by a hand edit.
 
 It is also the code for a setting of the wrong type, such as `"3"` where a number belongs, or a
 string where a list does. That is valid JSON, so a JSON checker finds nothing wrong with it. The
-message names the setting, what it takes, and the line it is on.
+message names the setting, what it takes, and the line it is on. `budget.gate_hours` is the one
+exception: whatever it holds that cannot be used is [SDLC-E0045](#sdlc-e0045), not this.
 
 Fix the JSON, or delete the file and run `sdlc init` again to get a fresh one.
 
@@ -1037,6 +1038,12 @@ one, so a single edit fixes them all:
   `..`. The backlog is committed with the work and protected while a story runs, and neither
   holds outside the repository. Give the path relative to the repository root.
 - **A limit, threshold or budget is negative.** `0` is how each of them is turned off.
+- **`budget.gate_hours` is not an object of hours by gate key, names a key that is no gate, or
+  holds a value that is not a number of hours, 0 or more.** The keys are the gate record keys,
+  spelt exactly (`plan`, not `Plan`); `null`, a string, a list and a negative number are
+  refused, and `0` turns a gate off. Every command that reads the configuration refuses the
+  file, and the hook sets the whole file aside and runs on the defaults until it is fixed.
+  `sdlc doctor` names the entry and the keys allowed.
 
 Change the settings and run `sdlc doctor`.
 

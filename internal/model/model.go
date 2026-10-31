@@ -1081,6 +1081,12 @@ const (
 	EventLanded        = "landed"
 )
 
+// EventBudget is a notice about cost: a story's per-story alert, or the one
+// notice for a gate whose agents' time passed budget.gate_hours. Nothing is
+// replayed from it, and "sdlc trace" reads only the gate notice, to mark the
+// gate. Any event ends a story still under way, as the replay reads it.
+const EventBudget = "budget"
+
 // GateEvent is how a gate's outcome is written into the record's history.
 func GateEvent(g Gate, s GateStatus) string { return string(g) + " " + string(s) }
 

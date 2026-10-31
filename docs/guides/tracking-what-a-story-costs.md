@@ -155,7 +155,10 @@ US-001  $65.42 spent of $60.00 (109%)
 ```
 
 Each alert is also written to the gate record as an event of type `budget`, so
-the retro can see when the story went over.
+the retro can see when the story went over. So is the one event per gate that
+a story's agents' time took past that gate's
+[`gate_hours`](../configuration.md#budget): its message begins with the gate's key
+and a colon, where an alert's begins with a percentage.
 
 ### Where alerts go
 

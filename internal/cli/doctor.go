@@ -171,15 +171,7 @@ func runChecks(ctx context.Context) []check {
 		err = staffingRoster(cfg.Staffing)
 	}
 	if err != nil {
-		// The error's own words: its cause alone said nothing of which setting
-		// was wrong, and "sdlc init" does not fix a file that is already there.
-		detail, fix := err.Error(), `if you want the loop in this repository, run "sdlc init" in `+root+` yourself`
-		if e, ok := errors.AsType[*sdlcerr.Error](err); ok {
-			detail, fix = e.What, e.Fix
-			if e.Why != "" {
-				detail += ": " + e.Why
-			}
-		}
+		detail, fix := configurationProblem(err, root)
 		add(check{Name: checkConfiguration, State: stateProblem, Detail: detail, Fix: fix})
 		add(check{Name: checkBacklog, State: stateSkipped,
 			Detail: "not checked: configuration has to work first"})
@@ -401,6 +393,26 @@ func (p *stateProbe) countWorktrees() {
 var checkOrder = []string{
 	checkGitRepository, checkGitCommand, checkConfiguration, checkBacklog, checkLoopState,
 	checkProjectContract, checkCommands, checkSdlcOnPath,
+}
+
+// configurationProblem is what the configuration check says of an error that
+// stopped the configuration loading: the error's own words, since its cause
+// alone said nothing of which setting was wrong, and "sdlc init" does not fix a
+// file that is already there.
+func configurationProblem(err error, root string) (detail, fix string) {
+	detail, fix = err.Error(), `if you want the loop in this repository, run "sdlc init" in `+root+` yourself`
+	if e, ok := errors.AsType[*sdlcerr.Error](err); ok {
+		detail, fix = e.What, e.Fix
+		if e.Why != "" {
+			detail += ": " + e.Why
+		}
+		// The code a person looks up, for a setting they wrote that is refused;
+		// a file that does not parse keeps the words it had.
+		if e.Code == sdlcerr.ConfigInvalid {
+			detail += " (" + e.Code.String() + ")"
+		}
+	}
+	return detail, fix
 }
 
 // skipRest reports the checks after the one named that could not run, so that
