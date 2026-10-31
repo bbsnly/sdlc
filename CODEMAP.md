@@ -1711,3 +1711,7 @@ figures (`storyReport`), and `--all` (`traceAll`, `mediansOf`, `firstPass`).
 `pathless` is an error's text with no path, for debug lines.
 `scaffold.IgnoreTraces` writes `.sdlc/.gitignore`, called by `InitAt` and by
 `sdlc start` (`ignoreTraces`).
+
+## internal/tools/migrationguide
+
+Package `main`, run by `./task migration-guide -- <from> <to>` as `go run ./internal/tools/migrationguide`. Takes `-C <dir>` (default `.`) before two tag words. Writes `docs/migrations/<from>-to-<to>.md` with one section per commit in `<from>..<to>` whose subject matches `^\w+(\([^)]*\))?!:` or whose message has a line starting `BREAKING CHANGE:` or `BREAKING-CHANGE:`, oldest first. Each word goes through `git show-ref --verify refs/tags/<word>`; a word with `/` is refused. An existing guide is refused (`O_EXCL`), never truncated. Git runs with a fixed argument list and no shell, under `gitx.Environ()`. Imports `gitx`. Its errors carry no `SDLC-E` code; `internal/tools` is outside `sdlcerr`.
