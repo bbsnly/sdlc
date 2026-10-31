@@ -462,9 +462,12 @@ func TestReviewListMarksARoundStaleWhenItsSubjectHasChanged(t *testing.T) {
 		t.Fatalf("architect's review = %+v, want round 1 and stale", architect)
 	}
 
-	out := mustRun(t, "review", "list", "--gate", "design_review").stdout
-	if !strings.Contains(out, "(round 1, stale -- what was reviewed has changed since)") {
-		t.Errorf("the prose does not flag the stale round:\n%s", out)
+	// What else the line says of a design review is US-112.3's AC-2.
+	line := rvListLine(t, "architect")
+	for _, want := range []string{"round 1", "stale", "changed since"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("the prose does not flag the stale round with %q:\n%s", want, line)
+		}
 	}
 }
 

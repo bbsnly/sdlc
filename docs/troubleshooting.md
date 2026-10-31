@@ -117,6 +117,11 @@ below it is.
 - **`.sdlc/`, or a directory in it, is a link to somewhere outside the repository**, as a clone
   can bring one. The loop keeps its state inside the repository, so it refuses. Replace the link
   with a directory of the same name.
+- **`sdlc artifact write plan` could not keep the plan's revision.** `plans/` in the story's
+  directory has to be a real directory or not there at all, so a link to anywhere is refused, and
+  the name of the next revision, `plans/<sha256>.md`, must not be taken by a directory. Take away
+  what stands there and store the plan again; `PLAN.md` has not moved. See
+  [the command's section](commands.md#sdlc-artifact-diff-plan).
 - **Another sdlc command is still running.** Every command that writes loop state takes a lock
   first, and waits up to ten seconds for a command that holds it. The message names that command
   and its process id. Wait for it to finish, then run your command again. A command stopped
@@ -295,6 +300,8 @@ You asked to store a document the loop does not know about.
 
 Run `sdlc artifact list` for the names this version accepts. They are tied to the gate that
 produces them, so a new one arrives with the gate that needs it.
+
+`sdlc artifact diff` takes only `plan`, the one document that keeps its revisions.
 
 ### SDLC-E0017
 
@@ -500,6 +507,10 @@ $ sdlc review list --gate <gate>
 
 Then run `sdlc review add` again with one of those roles. If a role you want is not there, it is
 not part of this gate.
+
+`sdlc artifact diff plan` needs `--since` to name one of the design review's reviewers, because a
+diff starts from the plan that reviewer last reviewed. `sdlc review list --gate design_review`
+lists them.
 
 ### SDLC-E0028
 
@@ -2105,6 +2116,38 @@ and name it again. Running the command from a directory nearer the file does not
 reads the full path whichever way the command names it. From a working directory whose own path
 is that long, every command is refused; `cd` to a directory with a shorter path, then run the
 command again. If you are an assistant, ask the person to run it.
+
+### SDLC-E0084
+
+`sdlc artifact diff plan --since <role>` could not show that reviewer what changed in the plan
+since its last review, so that reviewer reads the whole plan this round. Nothing is on standard
+output but, under `--json`, the failure's JSON. Nothing is wrong with the story, and the verdict
+the reviewer gives counts the same.
+
+The `why` line says which of these it was. On screen, every row but the first two follows the
+words `the revision its review was stamped with is not usable:`.
+
+| It says | What it means |
+| --- | --- |
+| it has no design review on this story | There is nothing to diff from: the reviewer has not looked at a plan yet. |
+| its review is stamped with no plan revision | The review was recorded before there was a plan, or its record holds something that is not a hash. |
+| there is no file there; a plan stored before revisions were kept has none | No kept revision has that name. The plan was stored before revisions were kept, or the file was deleted. |
+| it is not a regular file | A link, a directory or something else stands at the name. |
+| it could not be opened | Its permissions, or those of a directory on the way to it, do not let you read it. |
+| it could not be read to the end, or is larger than one document may be | The read failed, or the file is past the 1 MiB a stored document may be. |
+| the file no longer holds the bytes its name is the hash of | The file was changed after it was stored. |
+
+A plan stored before this version has no kept revision, so a story in flight across an upgrade has
+one round of whole-plan reviews. Revisions are kept from then on.
+
+To go on, start the reviewer afresh with the path to `PLAN.md`. For every row but the last, nothing
+else needs doing.
+
+The last row is the one to look into. The tool wrote that file with bytes that match its name, so
+something else has changed it since, and the diff is refused because it could have hidden a change
+from the reviewer. Tell a person, as the refusal says. Any agent can write that directory, and
+[the command's section](commands.md#sdlc-artifact-diff-plan) says why the check on its name is the
+defence.
 
 ## Warnings the hook prints
 

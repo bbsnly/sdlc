@@ -244,8 +244,9 @@ seen on 2026-10-29) the slash command does not run, and a `!` line does: type
 `!sdlc approve <ID>`.
 
 Put the decision where the next agent will read it, not only in the chat. Every
-gate is done by an agent starting from a fresh context, and that agent never
-sees the conversation. Where the decision goes depends on what the loop asked.
+gate is done by an agent that never sees the conversation, whether it starts from
+a fresh context or is a Gate 4 reviewer resumed for a second look. Where the
+decision goes depends on what the loop asked.
 
 **A question about the story.** Edit the story in the backlog: tighten the
 criterion, add a non-goal, split it. The story schema has a `decisions` list

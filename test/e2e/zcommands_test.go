@@ -77,7 +77,7 @@ func parallel(t *testing.T) {
 func knownGaps() map[string]string {
 	gaps := map[string]string{
 		"story":    "prints its help only; its work is done by story list",
-		"artifact": "prints its help only; its work is done by artifact list and artifact write",
+		"artifact": "prints its help only; its work is done by artifact list, artifact write and artifact diff",
 		"review":   "prints its help only; its work is done by review add and review list",
 		"staffing": "prints its help only; its work is done by staffing show, set, amend and assign",
 		"codemap":  "prints its help only; its work is done by codemap write",

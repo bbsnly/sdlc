@@ -47,6 +47,12 @@ security defect rather than a bug:
   configuration, this plugin's launcher, binary and checksums included; that
   residual is accepted, and [enforcement](docs/enforcement.md#claude-config-is-the-persons)
   says so.
+- **Story ids and the file names the store builds from what a record says.** A
+  story id or a review's `subject` becomes a path under `.sdlc/stories/`. A
+  spelling that reaches a path outside the story's directory, or a kept plan
+  revision printed that does not match its name, is in scope. Changing or
+  deleting a kept revision is not: the diff is then refused, and that reviewer
+  reads the whole plan.
 - **The plugin's own fetch.** `plugin/checksums.txt` and the launcher's
   fetch, verify and run path: anything that gets a binary run that does not
   match the checksum the plugin pins, or that has the launcher trust a checksums

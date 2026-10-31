@@ -37,6 +37,7 @@ Commands the loop's agents run:
   - [How the commit range is recorded](#how-the-commit-range-is-recorded)
 - [`sdlc artifact list`](#sdlc-artifact-list)
 - [`sdlc artifact write NAME`](#sdlc-artifact-write-name)
+- [`sdlc artifact diff plan`](#sdlc-artifact-diff-plan)
 - [`sdlc codemap write`](#sdlc-codemap-write)
 - [`sdlc review list`](#sdlc-review-list)
 - [`sdlc review add GATE ROLE VERDICT`](#sdlc-review-add-gate-role-verdict)
@@ -1613,10 +1614,82 @@ not two. An empty document is refused, and so is one larger than a megabyte,
 because storing a truncated document would leave every later gate reviewing
 something that stops mid-sentence.
 
+Storing the plan also keeps that revision of it, as `plans/<sha256>.md` in the
+story's directory, for
+[`sdlc artifact diff plan`](#sdlc-artifact-diff-plan). If the revision cannot be
+written, the command refuses with `SDLC-E0006` and `PLAN.md` stays as it was.
+
 > [!NOTE]
 > This is the only way these files are written. The hook refuses anyone who
 > edits them in place, including the agent whose gate it is. See
-> [enforcement](enforcement.md).
+> [enforcement](enforcement.md). A kept revision is the exception, as the next
+> section says.
+
+## `sdlc artifact diff plan`
+
+Print what changed in the plan since a reviewer's latest design review, for a
+reviewer [asked to look again](the-loop.md#why-approvals-go-stale). It records
+nothing, so that reviewer still records a verdict on the plan as it now stands.
+
+```console
+$ sdlc artifact diff plan --since architect
+--- PLAN.md 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d
++++ PLAN.md ad70ac83778a442067fc5e0f4420419aafe37666cc890dc70787299d138f4dba
+@@ -1,3 +1,3 @@
+ # Plan
+
+-One.
++One, and a correction to it.
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--since` | required: the design reviewer whose latest review the diff starts from |
+
+It prints a unified diff with 3 lines of context, from the plan that review was
+stamped with to the current `PLAN.md`, naming each by its hash and no path. Where
+two plans differ by more lines than the search is bounded to, thousands of them,
+it prints one hunk replacing everything between what they share at each end. That
+is larger and just as correct.
+
+It prints nothing and exits 0 when nothing changed, including where the review's
+revision was never kept: the review is then current, and the gate accepts it as
+it stands. With `--json` it prints `ok`, `story`, `role`, `reviewed_subject`,
+`subject` and `diff`.
+
+Where the review's revision cannot be given, it refuses with
+[`SDLC-E0084`](troubleshooting.md#sdlc-e0084) and that reviewer reads the whole
+plan this round, because a diff from anything else could hide a change. A review
+with no kept revision goes this way, as does a role with no design review yet.
+`PLAN.md` itself missing, or unreadable, is
+[`SDLC-E0005`](troubleshooting.md#sdlc-e0005): there is no whole plan to read, so
+have the implementer store it again. Any other name than `plan` is
+[`SDLC-E0016`](troubleshooting.md#sdlc-e0016), and a `--since` that is no design
+reviewer is [`SDLC-E0027`](troubleshooting.md#sdlc-e0027).
+
+A kept revision is named by the SHA-256 of its bytes, the hash its review was
+stamped with, and every read checks the bytes against that name. Nothing stops an
+agent writing that directory: no hook rule guards it. The check is the defence,
+because the revision has to hash to its name whoever wrote it. So changing or
+deleting one costs only that reviewer's diff. Anything but a real directory at
+`plans/`, a link to anywhere included, or a directory at the name the next plan
+will take, stops `sdlc artifact write plan` with `SDLC-E0006` until it is removed.
+Other bytes at that name are replaced.
+
+There is one file for each distinct plan, never pruned, because a later review may
+need any of them. Correcting a plan therefore does not remove the earlier text: in
+a project that commits `.sdlc/stories` it is committed too. Deleting the file
+removes it, at the cost of that reviewer's diff.
+
+Whoever relays the diff to a reviewer has to give all of it, and the reviewer can
+run the command itself and compare. A diff too long for the host to pass whole
+means that reviewer cannot be resumed, and it starts fresh with the path to
+`PLAN.md`.
+
+Control characters in a plan are spelled out, as in everything `sdlc` prints: an
+escape reads as `\u001b`. So a real escape and the same six characters typed out
+print alike, though a change between them still shows as a changed line.
+Bidirectional format characters are not control characters, and pass as they are.
 
 ## `sdlc codemap write`
 
@@ -1717,6 +1790,18 @@ reads `left out` with the staffing's reason, and the gate does not wait for it:
 `left_out` and `reason` in `--json`. A reviewer the staffing leaves out that a
 changed path brings back to the code review is listed as any other, with the
 path: `brought_back_by` in `--json`.
+
+A stale design review also names the revision of the plan it was stamped with,
+and the command that shows what changed since, so that reviewer can be
+[asked to look again](the-loop.md#why-approvals-go-stale):
+
+```console
+$ sdlc review list --gate design_review
+  design_review   architect       blocking  approve (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since architect)
+```
+
+The hash is `reviewed_subject` in `--json`. It is there for a stale design review
+whose stamp can name a revision, and for no other review.
 
 ## `sdlc review add GATE ROLE VERDICT`
 

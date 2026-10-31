@@ -68,7 +68,9 @@ A few more words are used with a fixed meaning throughout:
 
 Every gate follows the same shape, and the shape is the point:
 
-1. Work is delegated to an agent that starts from a fresh context.
+1. Work is delegated to an agent that starts from a fresh context (a Gate 4
+   reviewer looking again is resumed; see
+   [why approvals go stale](#why-approvals-go-stale)).
 2. The agent stores what it produced **through the tool**, never as a file it
    writes itself.
 3. The outcome is recorded, and the tool refuses to record a pass unless the
@@ -177,9 +179,13 @@ runs agents fifteen times: one each at Gates 2, 3, 5, 6 and 9, six at Gate 4 and
 four at Gate 7, plus the human advocate at Gate 1 when the project asks for it.
 With it on, `sdlc:project-manager` runs twice more, after Gates 1 and 2, and each
 reviewer it leaves out is one run fewer at Gate 4, Gate 7 or both. Every one
-starts from a fresh context, and none reads another's work at the same gate. A
-gate that keeps failing, or a reviewer that keeps blocking, hands the story to a
-person after [`loop.max_rework_rounds`](configuration.md#loop) failures or
+starts from a fresh context, and none reads another's work at the same gate. The
+one exception is a Gate 4 reviewer asked to look again at a revised plan, which is
+resumed instead. It is given its own findings and their answers, not everyone's,
+and the diff shows what the others' findings changed. The independence that
+remains is the first look. A gate that keeps failing, or a reviewer that keeps
+blocking, hands the story to a person after
+[`loop.max_rework_rounds`](configuration.md#loop) failures or
 `loop.max_review_rounds` blocks.
 
 ## Gate 1 — `dor`, definition of ready
@@ -453,6 +459,19 @@ is the work a reviewer approved. Everything else in the backlog counts: change a
 story's title or its acceptance criteria after the review, and the review is
 stale.
 
+At Gate 4, what makes a review stale is unchanged, and so is what clears it: the
+stamp is still taken when the review is recorded, and the gate still waits for
+each reviewer's verdict on the plan as it now stands. Only what the reviewer is
+shown changes. A reviewer asked to look again is resumed and given what
+[`sdlc artifact diff plan --since <role>`](commands.md#sdlc-artifact-diff-plan)
+prints, the path to `PLAN.md`, and its own findings with their answers. It reads
+the diff for what changed and the plan for how that fits the rest.
+
+Where the diff is refused, because the review's revision was not kept or no longer
+matches its name, that reviewer starts afresh and reads the whole plan, as it does
+if it cannot be resumed. A plan stored before this version has no kept revision, so
+a story in flight across an upgrade has one round of whole-plan reviews.
+
 ## Where everything lives
 
 Once you have run a story, you may wonder where its files went. This is the
@@ -474,6 +493,8 @@ layout of `.sdlc/`:
       THREATS.md                 gate 2
       TEST-PLAN.md               gate 3
       PLAN.md                    gate 4
+      plans/
+        <sha256>.md              a kept revision of the plan, named by its hash
       VERIFICATION.md            gate 6
       RETRO.md                   gate 9
       reviews/

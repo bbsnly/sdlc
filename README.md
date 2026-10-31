@@ -173,10 +173,11 @@ The plugin gives you three skills that only you start (`/sdlc:next`,
 `/sdlc:trunk-review` and `/sdlc:consolidate`), twelve agents, and hooks on
 Claude Code's tool calls. Each gate is run by an agent that starts from a fresh
 context and sees none of the others' reasoning, because a reviewer that
-inherited the argument for a change is not a reviewer. The hook and the `sdlc`
-command refuse what would bypass a gate, and every refusal says what to run
-instead. No git hooks are installed, and your tests, your build and your tooling
-are untouched.
+inherited the argument for a change is not a reviewer. A Gate 4 reviewer looking
+again at a revised plan is resumed, with its own findings and what changed. The
+hook and the `sdlc` command refuse what would bypass a gate, and every refusal
+says what to run instead. No git hooks are installed, and your tests, your build
+and your tooling are untouched.
 
 Two limits are worth knowing from the start:
 

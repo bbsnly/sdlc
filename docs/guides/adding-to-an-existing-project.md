@@ -351,6 +351,7 @@ layout:
     gate-record.json            sdlc start creates it; every gate, event and review
     trace.jsonl                 the hook and the commit gate append to it; what the story cost
     ANALYSIS.md ... RETRO.md    sdlc artifact write
+    plans/<sha256>.md           sdlc artifact write plan; a kept revision of the plan
     reviews/                    sdlc review add
   worktrees/
     .gitignore                  sdlc start writes it, holding *

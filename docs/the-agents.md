@@ -21,6 +21,12 @@ change cannot notice what only makes sense if you already knew why, and a
 verifier that watched the implementation happen is checking its memory rather
 than the code.
 
+There is one exception. A Gate 4 reviewer asked to look again at a revised plan is
+resumed, not started afresh, and it is given the diff with its own findings and
+their answers, not everyone's. It still never sees the argument that produced the
+plan, and what the other reviewers found reaches it only as what changed. The
+independence that remains is the first look, which every reviewer takes alone.
+
 You do not start the agents yourself. You type `/sdlc:next`, and the runbook
 hands each gate to the agent that owns it. This page shows who they are, what
 each one may write, and how a project can choose which of them a story needs.

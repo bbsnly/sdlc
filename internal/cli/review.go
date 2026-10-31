@@ -46,6 +46,10 @@ type reviewInfo struct {
 	Verdict        string `json:"verdict,omitempty"`
 	Round          int    `json:"round,omitempty"`
 	Stale          bool   `json:"stale,omitempty"`
+	// ReviewedSubject is the kept revision of the plan a stale design review was
+	// stamped with, where its subject could name one: what a reviewer asked to
+	// look again diffs from.
+	ReviewedSubject string `json:"reviewed_subject,omitempty"`
 	// LeftOut is a reviewer the story's staffing says it does not need, which
 	// the gate does not wait for; Reason is the staffing's reason. BroughtBackBy
 	// is the changed path that has the code review wait for it all the same.
@@ -320,6 +324,9 @@ func describeReviewer(ctx context.Context, rd *reading, record *model.Record, id
 	if latest, ok := record.LatestReview(r.Gate, r.Role); ok {
 		info.Verdict, info.Round = string(latest.Verdict), latest.Round
 		info.Stale = latest.Subject != subject
+		if info.Stale && r.Gate == model.GateDesignReview && store.IsPlanRevision(latest.Subject) {
+			info.ReviewedSubject = latest.Subject
+		}
 	}
 	if info.LeftOut, info.BroughtBackBy, err = waited(ctx, rd, record, r.Gate, r.Role); err != nil {
 		return reviewInfo{}, err
@@ -355,6 +362,11 @@ func describeReviewState(i reviewInfo) string {
 		return "left out -- " + quote(i.Reason)
 	case i.Verdict == "":
 		return "not reviewed"
+	case i.ReviewedSubject != "":
+		// The role is the reviewers' table's, and the subject has passed the check
+		// that it is a hash: neither is free text from the record.
+		return verdict + " (round " + strconv.Itoa(i.Round) + ", stale -- what was reviewed has changed since; reviewed revision " +
+			i.ReviewedSubject + "; see sdlc artifact diff plan --since " + i.Role + ")"
 	case i.Stale:
 		return verdict + " (round " + strconv.Itoa(i.Round) + ", stale -- what was reviewed has changed since)"
 	default:

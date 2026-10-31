@@ -15,9 +15,8 @@ import (
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
-// maxArtifact bounds what will be stored. These are documents a person reads,
-// not data files, and a runaway agent should not be able to fill a repository.
-const maxArtifact = 1 << 20
+// maxArtifact is one limit with what the store will read back.
+const maxArtifact = store.MaxDocument
 
 type artifactPayload struct {
 	OK    bool   `json:"ok"`
@@ -47,11 +46,12 @@ func newArtifactCmd() *cobra.Command {
 			"and loop state is written by sdlc rather than edited in place. Writing them\n" +
 			"through this command is also the only way that works: Claude Code refuses a\n" +
 			"subagent's file write when the name reads like a report.",
-		Example: "  sdlc artifact list\n  sdlc artifact write analysis < notes.md",
-		Args:    cobra.NoArgs,
-		RunE:    func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+		Example: "  sdlc artifact list\n  sdlc artifact write analysis < notes.md\n" +
+			"  sdlc artifact diff plan --since architect",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
-	cmd.AddCommand(newArtifactWriteCmd(), newArtifactListCmd())
+	cmd.AddCommand(newArtifactWriteCmd(), newArtifactListCmd(), newArtifactDiffCmd())
 	return cmd
 }
 
@@ -89,7 +89,8 @@ func newArtifactWriteCmd() *cobra.Command {
 		Long: "write stores a document under the story's directory, where the gates after\n" +
 			"it will read it.\n\n" +
 			"The content comes from standard input, or from --file. Writing it again\n" +
-			"replaces it: a gate that ran twice has one record, not two.",
+			"replaces it: a gate that ran twice has one record, not two. The plan also\n" +
+			"keeps each revision, named by its hash, for sdlc artifact diff.",
 		Example: "  sdlc artifact write analysis < analysis.md\n" +
 			"  sdlc artifact write threats --file /tmp/threats.md\n" +
 			"  sdlc artifact write analysis <<'MD'\n  # Analysis\n  ...\n  MD",

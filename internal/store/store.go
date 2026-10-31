@@ -743,6 +743,13 @@ func (s *Store) WriteArtifact(story string, a model.Artifact, content []byte) (s
 	if err != nil {
 		return "", err
 	}
+	// The revision first: a PLAN.md whose revision could not be kept is a review
+	// that could never be read back.
+	if a.Gate == model.GatePlan {
+		if err := s.keepPlanRevision(dir, content); err != nil {
+			return "", err
+		}
+	}
 	path := filepath.Join(dir, a.File)
 	if err := s.writeFile(path, content); err != nil {
 		return "", err

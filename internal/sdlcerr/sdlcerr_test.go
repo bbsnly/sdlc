@@ -336,6 +336,12 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	for _, id := range []string{"SDLC-E0081", "SDLC-E0082", "SDLC-E0083"} {
 		released = append(released, pin{registered(id), id})
 	}
+	// US-112.3 AC-4: a plan revision that cannot be given to a reviewer, the next
+	// after SDLC-E0083. Pinned outright, and found by number so that this package
+	// keeps compiling until it is registered: the row fails by rendering as
+	// nothing until then. Its name, PlanRevisionNotKept, is held by
+	// TestAC4TheRevisionCodeIsNamedPlanRevisionNotKeptIsDocumentedAndSaysWhatToDo.
+	released = append(released, pin{registered("SDLC-E0084"), "SDLC-E0084"})
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
 			t.Errorf("%s now renders as %s: a released code was renumbered", r.id, got)

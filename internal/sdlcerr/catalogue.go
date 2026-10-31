@@ -281,6 +281,12 @@ var (
 	// TooManyLinks.
 	PathTooLong = register("SDLC-E0083",
 		`make the full path shorter, from the root of the disk, by moving or renaming the directories on the way to it, and name it again; running the command from a directory nearer the file does not help, because the hook reads the full path whichever way it is named. From a working directory whose own path is that long, "cd" to a directory with a shorter path, then run the command again. If you are an assistant, ask the person to run it`)
+
+	// PlanRevisionNotKept is a reviewer's diff that cannot be given: the plan its
+	// review was stamped with is not there to diff from, or is no longer what its
+	// name says. A diff from anything else could hide a change from the reviewer.
+	PlanRevisionNotKept = register("SDLC-E0084",
+		`give this reviewer the whole plan this round: start it afresh with the path to PLAN.md. Nothing else needs doing, and its verdict counts the same`)
 )
 
 // entry is one row of the catalogue.

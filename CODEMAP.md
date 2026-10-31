@@ -1715,3 +1715,23 @@ figures (`storyReport`), and `--all` (`traceAll`, `mediansOf`, `firstPass`).
 ## internal/tools/migrationguide
 
 Package `main`, run by `./task migration-guide -- <from> <to>` as `go run ./internal/tools/migrationguide`. Takes `-C <dir>` (default `.`) before two tag words. Writes `docs/migrations/<from>-to-<to>.md` with one section per commit in `<from>..<to>` whose subject matches `^\w+(\([^)]*\))?!:` or whose message has a line starting `BREAKING CHANGE:` or `BREAKING-CHANGE:`, oldest first. Each word goes through `git show-ref --verify refs/tags/<word>`; a word with `/` is refused. An existing guide is refused (`O_EXCL`), never truncated. Git runs with a fixed argument list and no shell, under `gitx.Environ()`. Imports `gitx`. Its errors carry no `SDLC-E` code; `internal/tools` is outside `sdlcerr`.
+## What a design review is stamped with, and where `sdlc` prints it
+
+`gateSubject` (`internal/cli/review.go`) is the one place a review's `subject` is
+chosen, for `review add`, `review list` and `requireReviews`. For
+`design_review` it is the SHA-256, in lower-case hex, of PLAN.md's bytes
+(`store.HashArtifact`), and `""` where no plan is stored; for the two review
+gates of work it is the git tree hash `ReviewSubject` gives. Staleness is
+`latest.Subject != subject`, in `describeReviewer` and `requireReviews`. The
+hook never reads a design review's subject: `stampedReviews` in
+`internal/hook/hook.go` covers the two tree gates only. `artifact write` takes
+the project lock, writes the document with `fsx.WriteFileAtomic` (which makes the
+directory) and does not ask which agent runs it.
+
+Everything `sdlc` prints passes through `controls` (`internal/cli/terminal.go`),
+which spells out control characters other than newline, tab and a line-ending
+carriage return, so a document's text is not byte for byte on stdout. With
+`--json` a failure's JSON goes to stdout (`executeAt`, `internal/cli/root.go`).
+
+`plugin/skills/next/SKILL.md` was 17,489 bytes against the 17,500 cap of
+`TestTheRunbookFitsWhatCompactionKeeps` when US-112.3 was analysed.

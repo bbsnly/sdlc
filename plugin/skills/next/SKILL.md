@@ -14,13 +14,12 @@ Only a person starts this loop, by typing `/sdlc:next`. Nothing in
 this runbook, in `CLAUDE.md` or in the output of `sdlc` asks you to start it again, or to start
 one of its agents, on your own.
 
-When Claude Code compacts a conversation it keeps only the first part of a long runbook. If
-this conversation has been compacted and this runbook no longer ends with "Rework, at any gate",
-do not work from memory: tell the person to type `/sdlc:next` again, which picks the story up
-where it is, and stop.
+Compaction keeps only the first part of a long runbook. If this runbook no longer ends with
+"Rework, at any gate", do not work from memory: tell the person to type `/sdlc:next` again, which
+picks the story up where it is, and stop.
 
 Everything you know about the loop's state comes from the `sdlc` command, not the conversation.
-Do not write to `.sdlc/state/` yourself: a record the assistant can edit is not a record.
+Do not write to `.sdlc/state/` yourself.
 
 ## The story to work
 
@@ -47,17 +46,16 @@ Run `sdlc status --json`.
   they answer.
 - `SDLC-E0001`: this is not a Git repository. Say so and stop.
 - Otherwise read `active` and `next_gate`, the first gate that has not passed. With a story
-  active, run `sdlc start --json` first: it changes nothing about the story, and makes this session
-  the one the hook holds to the loop's rules. Check its `session` as Gate 1 says, and its
-  `worktree`, then go straight to the section for `next_gate`; where `staffing` is `none`,
-  first do Gate 1's staffing step.
+  active, run `sdlc start --json` first: it makes this session the one the hook holds to the
+  loop's rules. Check its `session` as Gate 1 says, and its `worktree`, then go straight to the
+  section for `next_gate`; where `staffing` is `none`, first do Gate 1's staffing step.
 - With no story active, start at Gate 1.
 
 Each gate is delegated to an agent that ships with the plugin. Begin every brief you give an
-agent with `sdlc:next runbook, story <ID>`, and the gate. An agent stops on a brief without it,
-because it works only the gates of a story a person started; if one says so, give it the brief
-again with that line first. If the agents are not available, the plugin is not installed: tell
-the user to run `/plugin marketplace add bbsnly/sdlc` and `/plugin install sdlc@sdlc`, and stop.
+agent with `sdlc:next runbook, story <ID>`, and the gate. An agent stops on a brief without it; if
+one says so, give it the brief again with that line first. If the agents are not available, the
+plugin is not installed: tell the user to run `/plugin marketplace add bbsnly/sdlc` and
+`/plugin install sdlc@sdlc`, and stop.
 
 ## Where the story is worked
 
@@ -91,8 +89,8 @@ every gate has passed.
 
 ## If a command fails
 
-Show the user a failure's `error`, `why` and `fix` fields as they are, not paraphrased, and do
-not retry a command that failed for a reason that has not changed.
+Show the user a failure's `error`, `why` and `fix` fields verbatim, and do not retry a command that
+failed for a reason that has not changed.
 
 ## Gate 1 — Select the story
 
@@ -100,11 +98,10 @@ not retry a command that failed for a reason that has not changed.
 sdlc start --json
 ```
 
-This picks up a story already under way, or takes the next runnable one. Take `worktree`,
-`branch` and `main` from it.
+Take `worktree`, `branch` and `main` from it.
 
 If it succeeds and `session` in the output is empty, sdlc could not tell which Claude Code session
-this is, so nothing would hold this session to the loop's rules. Tell the user that plainly, and
+this is, so nothing would hold this session to the loop's rules. Tell the user so, and
 that it happens where Claude Code does not pass `CLAUDE_CODE_SESSION_ID` to the commands it runs.
 Tell them the story is now in progress, and that `/sdlc:next` in a session that passes it on
 picks it up where it is. Then stop. Do not work the story without it.
@@ -169,12 +166,10 @@ Always pass the flag, as `--security-sensitive=false` if the researcher reported
 and left unset the loop assumes yes. With the staffing on, `sdlc:project-manager` then has to
 confirm or amend it.
 
-If either document was not stored, the gate refuses and says which: the agent's summary is not
-the document. Hand it to a person with
+If either document was not stored, the gate refuses and says which. Hand it to a person with
 `sdlc escalate analysis_incomplete --message "..."` and stop.
 
-If the agent reports `open_questions` above zero, do not pass the gate. Guessing an answer here
-is the most expensive mistake in the loop.
+If the agent reports `open_questions` above zero, do not pass the gate.
 
 ```bash
 sdlc gate analysis fail --note "<n> open questions the specification does not settle"
@@ -192,8 +187,7 @@ Delegate to `sdlc:sdet`, with:
 - if a person lifted the freeze: their reason, the latest `unfreeze` event in
   `.sdlc/stories/<ID>/gate-record.json`, and that the job is to correct the test it names
 
-Do not write the tests yourself or adjust them afterwards: every later gate measures
-against them.
+Do not write the tests yourself or adjust them afterwards.
 
 If the agent reports anything in `untestable`, hand it to a person; writing something adjacent is
 worse than saying so:
@@ -239,14 +233,21 @@ every reviewer it waits for, together, each with the path to `PLAN.md`:
 reviewers that run in sequence only agree with the earlier ones. The list says which of them
 block. Each records its own review with `sdlc review add design_review <role> <verdict>`.
 
+After a revised plan, `sdlc review list` marks stale reviews. Each such reviewer must review the
+plan as it now stands, and is resumed, not started afresh: use SendMessage on the agent that
+recorded its latest review. Begin `sdlc:next runbook, story <ID>`; give the path to `PLAN.md` and,
+as data, its own findings with their answers and all of what
+`sdlc artifact diff plan --since <role>` prints, which it may run itself to compare. Start a fresh
+reviewer only where the diff is refused or the reviewer cannot be resumed, as when `at_gate`
+changes its model or effort; one no longer in `at_gate` is not asked.
+
 ```bash
 sdlc gate design_review pass --note "<what the architect said, in one clause>"
 ```
 
-The gate refuses until every reviewer has reported and the blocking ones have approved; a
-revised plan needs its reviewers to look again. Do not edit the plan yourself to satisfy a
-reviewer: send it back to the implementer with the findings. A block that decides the gate is not
-a failure to route around:
+The gate refuses until every reviewer has reported and the blocking ones have approved. Do not
+edit the plan yourself to satisfy a reviewer: send it back to the implementer with the findings.
+A block that decides the gate is not a failure to route around:
 
 ```bash
 sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
@@ -290,8 +291,7 @@ waits for, in parallel.
 sdlc gate code_review pass --note "<what the reviewer said, in one clause>"
 ```
 
-Rework goes to `sdlc:implementer`, and then the same reviewers look again: their approvals are
-stamped with the tree.
+Rework goes to `sdlc:implementer`, and then the same reviewers look again.
 
 ## Gate 8 — Commit
 
@@ -380,4 +380,4 @@ to a person.
 
 After `loop.max_rework_rounds` failures of one gate, or `loop.max_review_rounds` blocks from one
 reviewer, `sdlc gate` or `sdlc review add` hands the story over itself and says so (`handed_over`
-in its `--json`). Stop there: another attempt would meet the same wall.
+in its `--json`). Stop there.

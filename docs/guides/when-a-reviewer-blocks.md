@@ -181,10 +181,10 @@ review of the gate stops counting, advisory ones included:
 ```console
 $ sdlc review list --gate design_review
   design_review   architect       blocking  approve (round 2)
-  design_review   red-team        advisory  note (round 1, stale -- what was reviewed has changed since)
-  design_review   security        advisory  note (round 1, stale -- what was reviewed has changed since)
-  design_review   perf            on budget note (round 1, stale -- what was reviewed has changed since)
-  design_review   human-advocate  advisory  note (round 1, stale -- what was reviewed has changed since)
+  design_review   red-team        advisory  note (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since red-team)
+  design_review   security        advisory  note (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since security)
+  design_review   perf            on budget note (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since perf)
+  design_review   human-advocate  advisory  note (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since human-advocate)
 
 $ sdlc gate design_review pass
 sdlc: design_review cannot pass until its reviews are in
@@ -198,6 +198,11 @@ sdlc: design_review cannot pass until its reviews are in
 This is deliberate. The red team read a plan that no longer exists, and its
 findings about that plan say nothing about this one. Send the whole gate back
 out, not only the reviewer that blocked.
+
+Those reviewers are resumed, not started afresh, and each is given what changed,
+from the command its line names. `sdlc artifact diff` reads a diff and records
+nothing, so every reviewer still records a verdict on the plan as it now stands
+before the gate can pass.
 
 The same holds after a gate has passed. If the code changes after
 `code_review`, the hook refuses `git commit` of that tree and names the
