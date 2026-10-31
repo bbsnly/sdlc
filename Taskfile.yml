@@ -895,6 +895,14 @@ tasks:
     cmds:
       - GOFLAGS= go run ./internal/tools/sandbox remove {{range .CLI_ARGS_LIST}}{{shellQuote .}} {{end}}
 
+  migration-guide:
+    desc: Write the skeleton of a migration guide -- `./task migration-guide -- <from-tag> <to-tag>`
+    silent: true
+    # Each word after `--` is quoted again before the shell reads it: a tag may
+    # hold a `;` or a `$(...)`, and nothing in one is run as a command.
+    cmds:
+      - GOFLAGS= go run ./internal/tools/migrationguide {{range .CLI_ARGS_LIST}}{{shellQuote .}} {{end}}
+
   release-check:
     desc: Assert every file that carries the version agrees, and the changelog has a section for it
     cmds:

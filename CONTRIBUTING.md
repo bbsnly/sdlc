@@ -353,7 +353,10 @@ immediately rather than during a release.
 1. Bump the version in `plugin/.claude-plugin/plugin.json` and `npm/package.json`.
 2. Write the section for it in `CHANGELOG.md`. The release notes are that
    section, verbatim — they are written by a person and reviewed like anything
-   else, not generated from commit subjects.
+   else, not generated from commit subjects. If the release has breaking
+   commits, `./task migration-guide -- <from> <to>` writes
+   `docs/migrations/<from>-to-<to>.md` with a section for each, to complete
+   by hand.
 3. `./task check`, then `./task release-snapshot` to see exactly what the
    release will publish, in `dist/`.
 4. Commit the bump on a branch named for the tag, cut from trunk, and push the
