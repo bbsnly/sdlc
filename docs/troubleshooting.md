@@ -2149,6 +2149,58 @@ from the reviewer. Tell a person, as the refusal says. Any agent can write that 
 [the command's section](commands.md#sdlc-artifact-diff-plan) says why the check on its name is the
 defence.
 
+### SDLC-E0085
+
+`sdlc freeze` did not freeze the tests, because of the freeze check the project configures,
+[`commands.freeze_check`](configuration.md#the-freeze-check). The check runs once per freeze,
+before anything is recorded, over the test files that are new or changed since the story started.
+Nothing was recorded and nothing was frozen, and the story is where it was: the refusal is not an
+escalation. The message says which of these it is:
+
+- **The check failed.** It ended with a status other than 0, or was killed by a signal. The message
+  gives how it ended, and under `commands.freeze_check printed (last 40 lines):` the last 40
+  lines of what it printed, standard output and standard error together. The text is set apart so
+  that none of it passes for sdlc's own words, and the command's own text is replaced by the key,
+  because a command can hold a token (a command of one word is left as it is, since replacing it
+  would rewrite any file name that holds it). The test author corrects the files the check names
+  and runs `sdlc freeze` again; nobody needs a person for this. If the output says a program was
+  not found or could not be started, the check fails whatever the tests hold, or it fails on code
+  the tests name and nobody has written yet (`undefined: X`), a correction to a test cannot clear
+  it: a person installs the program, or changes `commands.freeze_check` in `.sdlc/config.json`.
+  `sdlc doctor` looks at the first word of each simple command as its scanner reads them, so it can
+  miss a program in a compound command, and it cannot see the programs a script calls.
+- **The check changed a test file.** It ran on the files as the author left them and, when it
+  ended, a test file was different, new or gone. The message names up to five of them. A freeze
+  holds what the check judged, so nothing was frozen. The test author looks at what changed. A
+  change to a file that is not frozen yet is kept if it is right, and `sdlc freeze` is run again,
+  which judges the files as they now are. A change to a frozen test (on an addition) is not kept,
+  and the hook refuses the author's edit, so the author stops and a person restores it or lifts
+  the freeze; a freeze run over it is [SDLC-E0025](#sdlc-e0025). A
+  formatter that rewrites files belongs in the author's own run before the freeze. A check that
+  writes a test file on every run never settles, and no correction to a test clears it: a person
+  changes `commands.freeze_check`.
+- **A test file's name holds a line break.** One name to a line cannot carry it. The message shows
+  the name with the break written `\n`. Rename the file, with `git mv`, so that its name has no
+  line break, and run `sdlc freeze` again.
+- **There is no shell to run the check in.** `commands.freeze_check` runs under `sh` or `bash`,
+  and neither is on PATH (on Windows, Git Bash provides them). The freeze is refused rather than
+  taken unchecked. A person puts one on PATH, and `sdlc freeze` is run again.
+- **The check ran `sdlc freeze`, or `SDLC_FREEZE_FILES` was already set.** A check that freezes
+  starts the check again, with the project's lock let go and no time limit. A person removes the
+  `sdlc freeze` from `commands.freeze_check` or from the script it runs; whoever exported
+  `SDLC_FREEZE_FILES` by hand unsets it.
+- **The story or its freeze moved while the check ran.** The lock is let go for the run, so
+  another story can become the one being worked on, or a person can lift the freeze. (A session
+  that takes the story over is [SDLC-E0048](#sdlc-e0048) instead.) The message names the story the
+  check ran for and the one being worked on when it ended. Run `sdlc status` to see which story is
+  being worked on and whether its tests are frozen, and run `sdlc freeze` again only if that is
+  the story you meant.
+
+A check judged by how it ended: a process it left running that held its output open does not make
+a pass a failure. One residual remains: the content is hashed again a moment after the comparison,
+under the project's lock, so a process the check left running that writes a test file in that gap
+is not caught.
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session working a story as a system message, and

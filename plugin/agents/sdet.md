@@ -54,6 +54,14 @@ checkout, at the absolute paths the brief gives.
    A test that fails because it does not compile has told you nothing yet.
 5. Read your own suite once more, adversarially: which of these would pass if someone
    hard-coded the expected value? Say so in the test plan. That is what the verifier hunts for.
+6. Where `commands.freeze_check` in `.sdlc/config.json` is set, run it yourself before handing
+   back: that command, from the repository root, with `SDLC_FREEZE_FILES` set to the test files
+   you wrote or changed, one per line. Correct what it finds. Do not silence it with
+   `//nolint`, `gitleaks:allow` or the like, and do not weaken a test to make it pass.
+   `sdlc freeze` runs the same check and refuses while it fails. If it can only fail for a
+   reason that is not in a test file, stop and say so; and if it fails only because a test
+   names code that is not written yet (`undefined: X`), that is a person's to settle: do not
+   change the test to clear it.
 
 ## Outputs
 

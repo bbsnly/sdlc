@@ -250,6 +250,11 @@ terminal, because the hook refuses it from an agent.
 [When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md) walks
 through it.
 
+A project can set `commands.freeze_check`, which `sdlc freeze` runs first on the
+test files that are new or changed. The freeze is taken only if it passes, so the
+test author corrects what the check finds now, and not after the plan and its
+reviews at the cost of a person's unfreeze.
+
 The freeze belongs to the iteration. It survives `sdlc stop` and a new session,
 so resuming a story finds its tests still locked; it is lifted when the story
 finishes, so the next story freezes its own.
@@ -270,7 +275,8 @@ to green, and every gate after that means nothing.
 The plan is the smallest change that makes the frozen tests pass, in steps
 somebody else could follow, with the alternative that was rejected and why.
 
-The reviewers run in parallel and do not read each other's work. The architect
+The reviewers run in parallel and do not read each other's work: reviewers that
+run in sequence only agree with the earlier ones. The architect
 blocks; security blocks when the story is security-sensitive; perf never has to
 approve, but its block stops the gate, because it blocks only on a performance
 budget the contract states. Red-team and human-advocate report but cannot stop

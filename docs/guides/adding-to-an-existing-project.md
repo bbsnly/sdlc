@@ -224,6 +224,7 @@ sdlc doctor
   ok       commands             build, coverage, fmt, fmt_check, fmt_file, lint, smoke, test
   problem  commands on PATH     golangci-lint is not installed, so lint would fail
                                 fix: install golangci-lint, or clear commands.lint in .sdlc/config.json
+  ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
   ok       sdlc on PATH         /usr/local/bin/sdlc
 
 1 problem. The fix is above it.

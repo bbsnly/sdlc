@@ -133,6 +133,7 @@ const (
 	checkConfiguration   = "configuration"
 	checkBacklog         = "backlog"
 	checkCommands        = "commands"
+	checkFreezeCheck     = "freeze check"
 )
 
 // worktreeOf joins a story's id to the path of its worktree in a sentence.
@@ -213,6 +214,7 @@ func runChecks(ctx context.Context) []check {
 		add(instructionsCheck(env.getenv))
 	}
 	out = append(out, commandChecks(root, cfg)...)
+	add(freezeCheckLine(cfg))
 	add(binaryCheck(env))
 	return out
 }
@@ -392,7 +394,7 @@ func (p *stateProbe) countWorktrees() {
 // got all the way through.
 var checkOrder = []string{
 	checkGitRepository, checkGitCommand, checkConfiguration, checkBacklog, checkLoopState,
-	checkProjectContract, checkCommands, checkSdlcOnPath,
+	checkProjectContract, checkCommands, checkFreezeCheck, checkSdlcOnPath,
 }
 
 // configurationProblem is what the configuration check says of an error that
@@ -760,11 +762,40 @@ func commandChecks(root string, cfg config.Config) []check {
 	return out
 }
 
-// shellBuiltins never need to be on PATH.
+// freezeCheckLine says whether `sdlc freeze` runs a check first. It never
+// prints the command, which can hold a token; the programs it names are looked
+// up with the other commands'.
+func freezeCheckLine(cfg config.Config) check {
+	if strings.TrimSpace(cfg.Commands["freeze_check"]) == "" {
+		return check{Name: checkFreezeCheck, State: stateOK,
+			Detail: freezeCheckKey + " is not set, so sdlc freeze runs no check"}
+	}
+	return check{Name: checkFreezeCheck, State: stateOK,
+		Detail: freezeCheckKey + " is set, so sdlc freeze runs it before it records anything"}
+}
+
+// shellBuiltins are what a shell has without a program on PATH. `source` is
+// here though dash lacks it: it fails when run, and doctor prefers a miss to a
+// wrong report. The shell's reserved words are here too: they start a segment
+// (`for f in $FILES; do gofmt -l "$f"; done`) and are no program to look up. The
+// cost is that a program written straight after `do`, `then`, `exec`, `eval`,
+// `command`, `time`, `type`, `source` or `.` in the same segment is not looked
+// up either, a miss and never a wrong report.
 var shellBuiltins = map[string]bool{
 	"test": true, "[": true, "echo": true, "printf": true, "true": true,
 	"false": true, "cd": true, ":": true, "exit": true, "read": true,
 	"esac": true, "trap": true,
+	"for": true, "while": true, "until": true, "do": true, "done": true,
+	"if": true, "then": true, "elif": true, "else": true, "fi": true,
+	"in": true, "select": true, "function": true, "{": true, "}": true,
+	"!": true, "[[": true, "time": true,
+	"break": true, "continue": true, ".": true, "eval": true, "exec": true,
+	"export": true, "readonly": true, "return": true, "set": true,
+	"shift": true, "times": true, "unset": true,
+	"alias": true, "bg": true, "command": true, "fc": true, "fg": true,
+	"getopts": true, "hash": true, "jobs": true, "local": true, "type": true,
+	"ulimit": true, "umask": true, "unalias": true, "wait": true,
+	"source": true,
 }
 
 // programsIn pulls the program names out of a shell command. It splits on the

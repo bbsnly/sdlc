@@ -177,6 +177,7 @@ sdlc doctor
                                 fix: every test is treated as frozen until .sdlc/state/tests.lock reads: restore it if you keep a copy, or lift it on the record with "sdlc unfreeze --reason ..." in your own terminal and run "sdlc freeze", which freezes the tests as they are now
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
   ok       commands             build, coverage, fmt, fmt_check, fmt_file, lint, smoke, test
+  ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
   ok       sdlc on PATH         /usr/local/bin/sdlc
 
 1 problem. The fix is above it.

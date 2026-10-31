@@ -342,6 +342,12 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	// nothing until then. Its name, PlanRevisionNotKept, is held by
 	// TestAC4TheRevisionCodeIsNamedPlanRevisionNotKeptIsDocumentedAndSaysWhatToDo.
 	released = append(released, pin{registered("SDLC-E0084"), "SDLC-E0084"})
+	// US-112.2 AC-2 and decision 12: every refusal of the freeze check, for a
+	// check that failed, one that changed a test file and no shell to run it in,
+	// takes the one number after SDLC-E0084. Pinned outright, found by number as
+	// SDLC-E0080 is: until the code is registered this row fails by rendering as
+	// nothing.
+	released = append(released, pin{registered("SDLC-E0085"), "SDLC-E0085"})
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
 			t.Errorf("%s now renders as %s: a released code was renumbered", r.id, got)

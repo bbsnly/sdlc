@@ -3910,6 +3910,11 @@ What it does have is worth reading as it is:
 - **`Edit` and `Write` are scoped to `.sdlc/worktrees/**`**, the worktrees of
   the stories under the main checkout, where each session works. The main
   checkout's own files and the rest of the machine are outside them.
+- **`sdlc freeze` runs the project's `commands.freeze_check`, when one is set.**
+  A check that is a script makes `Write` under the worktrees plus `sdlc freeze`
+  run code the session wrote, with your privileges, as `go test` does. If you
+  narrow the list to drop the toolchain entries and keep `sdlc freeze`, that
+  route is still open.
 - **Text in the repository is input to a session that holds pre-approved
   tools.** A file, an issue or a test that says something to the model is
   prompt injection to a session nobody is watching.

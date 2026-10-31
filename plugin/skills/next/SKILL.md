@@ -184,13 +184,13 @@ Delegate to `sdlc:sdet`, with:
 - that `paths.tests` and `commands.test` in `.sdlc/config.json` say where tests live and how to
   run them
 - that it stores its test plan with `sdlc artifact write test_plan`
+- that it runs `commands.freeze_check`, where set, before handing back
 - if a person lifted the freeze: their reason, the latest `unfreeze` event in
   `.sdlc/stories/<ID>/gate-record.json`, and that the job is to correct the test it names
 
 Do not write the tests yourself or adjust them afterwards.
 
-If the agent reports anything in `untestable`, hand it to a person; writing something adjacent is
-worse than saying so:
+If the agent reports anything in `untestable`, hand it to a person:
 
 ```bash
 sdlc gate tests_frozen fail --note "AC-3 cannot be observed from outside"
@@ -205,6 +205,8 @@ Then freeze:
 sdlc freeze
 sdlc gate tests_frozen pass --note "<n> criteria, <n> failing tests"
 ```
+
+An `SDLC-E0085` refusal goes to the test author, or to a person if no test change clears it.
 
 From then on nobody can edit the tests, you and their author included, and the hook
 refuses `sdlc unfreeze` from you and every agent. If a frozen test is wrong,
@@ -229,8 +231,8 @@ sdlc gate plan pass --note "<n> steps, <what it changes>"
 ```
 
 Then run `sdlc review list --gate design_review` and delegate to `sdlc:<role>` for
-every reviewer it waits for, together, each with the path to `PLAN.md`:
-reviewers that run in sequence only agree with the earlier ones. The list says which of them
+every reviewer it waits for, together, each with the path to `PLAN.md`.
+The list says which of them
 block. Each records its own review with `sdlc review add design_review <role> <verdict>`.
 
 After a revised plan, `sdlc review list` marks stale reviews. Each such reviewer must review the
@@ -247,7 +249,7 @@ sdlc gate design_review pass --note "<what the architect said, in one clause>"
 
 The gate refuses until every reviewer has reported and the blocking ones have approved. Do not
 edit the plan yourself to satisfy a reviewer: send it back to the implementer with the findings.
-A block that decides the gate is not a failure to route around:
+When a block decides the gate, record it:
 
 ```bash
 sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
@@ -307,7 +309,7 @@ sdlc escalate pre_commit_approval --message "<what changed, what to look at, and
 
 An approval holds only for the work it was given for: change anything after it, even amend a
 commit after the pass (SDLC-E0037), and it needs approving again. Once approved, a person
-types `/sdlc:next` again, and it resumes here.
+types `/sdlc:next` again to resume here.
 
 Commit the whole story as one change, with a message about the change and why, in the project's
 style. With a worktree, commit there, on `story/<ID>`, never with `git -C` on the main
@@ -362,12 +364,11 @@ story: it runs the story's code as them. Once it lands, run later commands in `<
   comes back.
 - `SDLC-E0075` (a conflict) or another code: escalate with its text.
 
-Tell the user what was built, what deviated from the plan, and what the retro says to do
-differently.
+Tell the user what was built, what deviated from the plan, and what the retro says to change.
 
 ## Rework, at any gate
 
-A gate that fails is recorded as failed, and the loop goes back, not around:
+A failed gate is recorded, and the loop goes back, not around:
 
 ```bash
 sdlc gate <gate> fail --note "<what went wrong>"

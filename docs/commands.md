@@ -162,9 +162,10 @@ $ sdlc doctor --json
 including a setting it does not know, such as a misspelled one — the backlog,
 the loop's state files the hook reads on every tool call and the commit
 [`sdlc ack`](#sdlc-ack) recorded, the contract in `CLAUDE.md` or `AGENTS.md`, the programs your
-configured commands would run, whether the hook would refuse any of them, and
-whether `sdlc` is on your `PATH`. Every problem comes with what to do about it.
-Exits non-zero when something is wrong, so it works in a script.
+configured commands would run, whether the hook would refuse any of them,
+whether a freeze check is configured, and whether `sdlc` is on your `PATH`.
+Every problem comes with what to do about it. Exits non-zero when something is
+wrong, so it works in a script.
 
 A setting the loader refuses, such as a negative limit or a `budget.gate_hours` entry that
 is not a number of hours, is named with the entry and its
@@ -182,6 +183,13 @@ with no story under way, so it does not judge the agent's role, the freeze, the
 other checkouts or whether the story's gates have passed, and it does not judge
 `fmt_file`, which the hook runs itself. It names a refused command by its key
 and the rule, never prints the command, and never runs it.
+
+The programs it looks up are the first word of each command, after an operator
+such as `&&` or `|`, as its scanner reads them, so it can miss a program in a
+compound command. It cannot see the programs a script calls, so a
+`freeze_check` that runs a script is reported as set, and nothing more. The
+`freeze check` line says only whether `commands.freeze_check` is set, never what
+it holds.
 
 The `project contract` check says which file Claude Code will read the section
 from. With the section in `AGENTS.md`, it is a problem where a `CLAUDE.md` is
@@ -2042,6 +2050,19 @@ The one exception is `freeze.allow_new_test_files`. With it on, running
 `sdlc freeze` again on the story's own freeze adds the test files written since,
 provided none of the frozen ones has changed, and lists what it added; `--json`
 names them in `added`.
+
+Where `commands.freeze_check` is set, `sdlc freeze` runs it first, from the
+repository root, with the test files that are new or changed in
+`SDLC_FREEZE_FILES`, one to a line, and takes the freeze only if it exits 0 and
+leaves every test file as it found it. It has no time limit of its own, and
+Ctrl-C stops it. A check that fails, or changes a test file, makes the freeze
+refuse with [SDLC-E0085](troubleshooting.md#sdlc-e0085), showing the last 40
+lines it printed: the test author corrects the files it names and runs the
+command again, and no person is needed. A refusal that no correction of a test
+can clear, such as a missing program, goes to a person. A freeze that adds
+files runs the check again; one with nothing to add is refused as before,
+without running it. [The freeze check](configuration.md#the-freeze-check) says
+what the check is handed, what it costs and an example.
 
 ## `sdlc escalate`
 

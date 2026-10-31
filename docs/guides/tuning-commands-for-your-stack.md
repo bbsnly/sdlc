@@ -83,7 +83,8 @@ The sections below explain what each key is for, and then the paths that tell
 
 Commands run from the root of the checkout the story is worked in, in a shell:
 with [`git.worktrees`](../configuration.md#git) on, the story's own worktree.
-Most are run by the agents; two are run by `sdlc` itself.
+Most are run by the agents. During a story `sdlc` itself runs three, `smoke`,
+`fmt_file` and `freeze_check`, and `sdlc stop` runs the rest again at landing.
 
 | Key | Who runs it |
 | --- | --- |
@@ -92,6 +93,8 @@ Most are run by the agents; two are run by `sdlc` itself.
 | `build`, `lint`, `fmt_check`, `coverage`, `mutation` | the verifier at Gate 6, which blocks on any that fails |
 | `smoke` | `sdlc start`, before each new story: in the story's new worktree, or on trunk with `git.worktrees` off; a failure refuses the start with [SDLC-E0041](../troubleshooting.md#sdlc-e0041) |
 | `fmt_file` | the hook, on each file a tool writes while a story is being worked on, with `$FILE` set to that file |
+| `build`, `test`, `lint`, `fmt_check`, `coverage`, `mutation` | `sdlc stop`, at landing, where the story was put onto a trunk that moved or its change is not the one reviewed: [At landing](../configuration.md#at-landing) |
+| `freeze_check` | `sdlc freeze`, before it records anything, with the new and changed test files in `$SDLC_FREEZE_FILES`; a failure refuses the freeze with [SDLC-E0085](../troubleshooting.md#sdlc-e0085). Empty until you choose one: [the freeze check](../configuration.md#the-freeze-check) |
 
 Any key you add stays available for the agents to read, but nothing runs it by
 name. An empty string is not run.

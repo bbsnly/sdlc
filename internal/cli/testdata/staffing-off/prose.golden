@@ -49,7 +49,8 @@ stderr:
     "fmt_check": "",
     "fmt_file":  "",
     "coverage":  "",
-    "mutation":  ""
+    "mutation":  "",
+    "freeze_check": ""
   },
 
   "thresholds": {
@@ -182,6 +183,7 @@ sdlc doctor
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
   problem  commands             no commands are configured, so every gate that runs one is skipped
                                 fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
   ok       sdlc on PATH         SDLC_BIN: <bin>
 
 1 problem. The fix is above it.
@@ -307,6 +309,7 @@ sdlc doctor
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
   problem  commands             no commands are configured, so every gate that runs one is skipped
                                 fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
   ok       sdlc on PATH         SDLC_BIN: <bin>
 
 1 problem. The fix is above it.
@@ -701,6 +704,7 @@ sdlc doctor
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
   problem  commands             no commands are configured, so every gate that runs one is skipped
                                 fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
   ok       sdlc on PATH         SDLC_BIN: <bin>
 
 1 problem. The fix is above it.
@@ -834,6 +838,7 @@ sdlc doctor
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
   problem  commands             no commands are configured, so every gate that runs one is skipped
                                 fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
   ok       sdlc on PATH         SDLC_BIN: <bin>
 
 1 problem. The fix is above it.
@@ -1019,6 +1024,7 @@ sdlc doctor
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
   problem  commands             no commands are configured, so every gate that runs one is skipped
                                 fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
   ok       sdlc on PATH         SDLC_BIN: <bin>
 
 1 problem. The fix is above it.
@@ -1498,6 +1504,7 @@ sdlc doctor
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
   problem  commands             no commands are configured, so every gate that runs one is skipped
                                 fix: fill in commands.test and commands.lint in .sdlc/config.json
+  ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
   ok       sdlc on PATH         SDLC_BIN: <bin>
 
 1 problem. The fix is above it.

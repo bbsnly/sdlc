@@ -205,6 +205,7 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 			"  ok       project contract     CLAUDE.md carries the \"## SDLC Contract\" section\n" +
 			"  problem  commands             no commands are configured, so every gate that runs one is skipped\n" +
 			"                                fix: fill in commands.test and commands.lint in .sdlc/config.json\n" +
+			"  ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check\n" +
 			"  ok       sdlc on PATH         SDLC_BIN: <sdlc>\n" +
 			"\n1 problem. The fix is above it.\n"
 	}

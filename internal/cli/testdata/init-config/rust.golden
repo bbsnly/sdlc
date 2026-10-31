@@ -11,7 +11,8 @@
     "fmt_check": "cargo fmt --check",
     "fmt_file":  "",
     "coverage":  "",
-    "mutation":  ""
+    "mutation":  "",
+    "freeze_check": ""
   },
   "thresholds": {
     "coverage_min": 80,

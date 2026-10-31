@@ -4,6 +4,7 @@
 - [What `init` writes for a Go project](#what-init-writes-for-a-go-project)
 - [`commands`](#commands)
   - [Trusting the commands](#trusting-the-commands)
+  - [The freeze check](#the-freeze-check)
   - [Formatting each file](#formatting-each-file)
   - [Installing what a worktree needs](#installing-what-a-worktree-needs)
   - [The coverage profile](#the-coverage-profile)
@@ -146,6 +147,7 @@ a build system `init` could not guess.
 | `fmt_file` | the hook, on each file a tool writes while a story is being worked on |
 | `coverage` | the verifier, compared against `thresholds.coverage_min` |
 | `mutation` | the verifier, compared against `thresholds.mutation_min` |
+| `freeze_check` | `sdlc freeze`, before it records anything. Empty until you choose one: [The freeze check](#the-freeze-check) |
 | `smoke` | `sdlc start`, before each new story: in the story's new worktree, or on trunk with `git.worktrees` off. Keep it fast: it runs before every story |
 
 Any key you add is available to the agents; these are the ones the loop looks
@@ -155,12 +157,170 @@ for by name. A key you leave out is simply not run.
 
 > [!WARNING]
 > These commands run with your permissions, and `sdlc` runs them itself:
-> `smoke` is covered by the prompt for `sdlc start`, and `fmt_file` gets no
-> prompt at all.
+> `smoke` is covered by the prompt for `sdlc start`; `fmt_file` and
+> `freeze_check` get no prompt at all, and `freeze_check` runs whenever
+> `sdlc freeze` does, which an agent does at Gate 3.
 
-They are read from `.sdlc/config.json` in the repository, and a clone can bring
-`.sdlc/state/active` with it, so in a repository you did not write, read its
-`commands` before you work in it, as you would its `.claude/settings.json`.
+They are read from `.sdlc/config.json` in the repository, and a clone brings
+that file with it, so in a repository you did not write, read its `commands`
+before you work in it, as you would its `.claude/settings.json`.
+
+### The freeze check
+
+`freeze_check` is a command that `sdlc freeze` runs before it records anything.
+It exists so that a test file that CI would refuse is corrected by the test
+author at Gate 3, and not after the plan and its reviews, at the cost of a
+person's unfreeze. It is empty until you choose one, and with it empty
+`sdlc freeze` does what it always did.
+
+**What it is handed.** `SDLC_FREEZE_FILES` holds the test files that are new or
+changed since the story's base, one slash-separated name to a line. The base is
+the commit the story's branch was cut from, else the base its record holds; if
+there is neither, or git cannot read it, every test file is listed, so the check
+sees more and never less. A deleted file is never listed, and a renamed one is
+listed by its new path. A list with nothing in it is set and empty, so a loop
+over it has no work and passes. A name with a line break in it cannot be handed
+over, and `sdlc freeze` refuses until it is renamed. Every other name is the
+test author's data: it can start with `-` or hold `$(...)`, so quote it, prefix
+it with `./` and never evaluate it.
+
+**Where and how it runs.** From the repository root, by `sh`, with the project's
+lock let go so that no other command waits for it. It has no time limit of its
+own, and Ctrl-C stops it and everything in its process group; a `kill -9` of
+`sdlc freeze` does not, so give a long check a long timeout of its own. The environment is
+inherited apart from git's location variables. Run from your own terminal, that
+is your environment, so a check can run what you can, `sdlc approve` and
+`sdlc unfreeze` among it. A check must not run `sdlc freeze`:
+[SDLC-E0085](troubleshooting.md#sdlc-e0085) refuses it when `SDLC_FREEZE_FILES`
+is already set.
+
+**What it costs.** One run per freeze, and again on a freeze after
+`sdlc unfreeze` and on every addition under `freeze.allow_new_test_files`. A
+second freeze with nothing to add is refused before the check runs.
+
+**What it decides.** A check that exits 0 passes. Any other end refuses with
+[SDLC-E0085](troubleshooting.md#sdlc-e0085), shows the last 40 lines of what it
+printed, both streams together, and freezes and records nothing. After a pass
+the freeze reads the test files again, and a check that rewrote, deleted or
+created one is refused too, naming it. For a first freeze, a formatter as the
+check is refused once for what it did and passes the second time, because the
+file is by then what it judged. On an addition, a frozen test it changed is not
+kept, and the hook refuses the author's edit, so the author stops and a person
+restores it or lifts the freeze (a freeze run over it is refused with
+[SDLC-E0025](troubleshooting.md#sdlc-e0025)). A pass is recorded in the freeze
+event, as "commands.freeze_check ran and passed". `sdlc freeze` itself never
+prints or records the command's text, because it can hold a token; what the
+shell or the command prints of it is replaced by the key where it can be, as
+below. `sdlc doctor` names a program it cannot find, which is the first word of
+a command.
+
+**Whose it is.** The key is read from the checkout, so a worktree that was cut
+before a person set it does not see it, and rolling it back has the same delay.
+A script in the tree is as editable as the tree, where a command written in
+`.sdlc/config.json` stays in the protected file. A pass is what the command
+reported under the environment of whoever ran `sdlc freeze`, `PATH` included, so
+neither the refusal nor the event is a control against a session set on getting
+round it; CI remains the bar. Put no token in the command and take it from the
+environment: the shell quotes a command that does not parse back in its own
+error, which `sdlc` replaces with the key when the command is more than one
+word, but cannot catch every time, such as a command of several lines or a
+trace from `set -x`. A check that prints a secret prints it into the session,
+hence `--redact` below. It should write nothing in the tree, since a stray file
+is a change the next review sees.
+
+**What cannot pass.** Whole-module `go vet ./...` and `./task check` fail at
+Gate 3 on a test-first tree, because the tests name code that does not exist
+yet. A refusal that no correction of a test can clear is a person's, and not the
+author's to loop on: no shell, a program that is not installed, a check that
+fails whatever the tests hold, one that rewrites a test file on every run.
+`sdlc doctor` reports that the check is set and looks up the first word of each
+of its commands as its scanner reads them, so it can miss a program in a compound
+command, and it cannot see the programs a script calls. A list too long for one
+environment string (about 128 KiB on Linux) cannot start the check at all: the
+refusal says "argument list too long", and the fix is to clear the key or shorten
+the list.
+
+An example for Go, saved as `scripts/freeze-check.sh`:
+
+```sh
+#!/bin/sh
+# sdlc freeze runs this from the repository root, with the test files that are
+# new or changed in $SDLC_FREEZE_FILES, one to a line. It writes nothing into
+# the tree.
+failed=0
+tmp=$(mktemp -d) || exit 1
+trap 'rm -rf "$tmp"' EXIT
+printf '%s\n' "$SDLC_FREEZE_FILES" > "$tmp/files"
+
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  case "$f" in
+    *.go)
+      # gofmt -l exits 0 when it lists a file, so its output is what counts.
+      if ! out=$(gofmt -l "./$f" 2>&1) || [ -n "$out" ]; then
+        printf 'gofmt: %s is not formatted, or does not parse:\n%s\n' "./$f" "$out"
+        failed=1
+      fi
+      ;;
+  esac
+  case "$f" in
+    testdata/* | */testdata/*) ;;
+    *.go) dirname "./$f" >> "$tmp/dirs" ;;
+  esac
+  gitleaks dir --no-banner --no-color --redact --verbose "./$f" || failed=1
+  found=$(grep -a -i -o -E '(/Users/|/home/|/c/Users/|[a-z]:\\Users\\)[A-Za-z0-9._-]+' "./$f" | grep -v -E '[/\\]dev$')
+  if [ -n "$found" ]; then
+    printf 'account paths in %s:\n%s\n' "./$f" "$found"
+    failed=1
+  fi
+done < "$tmp/files"
+
+# A package whose tests name code that is not written yet does not compile, and
+# golangci-lint stops at it. Lint the packages that do, and say which were left out.
+if [ -s "$tmp/dirs" ]; then
+  sort -u "$tmp/dirs" > "$tmp/each"
+  while IFS= read -r d; do
+    if go vet "$d" > "$tmp/vet" 2>&1; then
+      set -- "$@" "$d"
+    elif go test -vet=off -c -o /dev/null "$d" > /dev/null 2>&1; then
+      cat "$tmp/vet"
+      failed=1
+    else
+      echo "not linted, does not compile yet: $d"
+    fi
+  done < "$tmp/each"
+  if [ $# -gt 0 ]; then
+    golangci-lint run "$@" || failed=1
+  fi
+fi
+exit "$failed"
+```
+
+and named in the configuration:
+
+```json
+"freeze_check": "sh scripts/freeze-check.sh"
+```
+
+It checks each listed file as a whole name and runs nothing a name holds. It
+checks the format, scans for secrets and for paths that carry an account name in
+the spellings Linux, macOS and Windows use, which a project that commits its
+tests wants out of them, and lints the packages the files are in. The
+golangci-lint it runs has to be built with the Go version the project uses, or
+it refuses every tree with "Running error". A test in a package that does not
+compile yet is not linted: golangci-lint stops at a package whose tests
+name code that is not written, so the script leaves that package out and says so
+in a refusal's output, while `gofmt` and `gitleaks` still read its files. It is
+the test-first tree's usual state, and it can still cost an unfreeze when a lint
+finding in such a test comes to light only after the code is written.
+
+The script avoids the traps that make a check pass when it should not:
+
+- `gofmt -l` exits 0 when it lists a file, so its output is what is tested.
+- `| tee` and `a; b` hide a failure. A `while read` at the end of a pipe loses
+  `failed` in a subshell, so the list is read from a file.
+- An unquoted `$SDLC_FREEZE_FILES` splits a name with a space in it and, empty,
+  makes the next command read the whole tree.
 
 ### Formatting each file
 

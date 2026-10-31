@@ -11,7 +11,8 @@
     "fmt_check": "ruff format --check .",
     "fmt_file":  "case \"$FILE\" in *.py) ruff format \"$FILE\" ;; esac",
     "coverage":  "p=$(mktemp) \u0026\u0026 trap 'rm -f \"$p\"' EXIT \u0026\u0026 COVERAGE_FILE=\"$p\" pytest -q --cov --cov-report=term | grep -E '^TOTAL' | grep -Eo '[0-9]+%' | tr -d %",
-    "mutation":  ""
+    "mutation":  "",
+    "freeze_check": ""
   },
   "thresholds": {
     "coverage_min": 80,

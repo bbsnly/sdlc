@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -42,11 +43,40 @@ func newFreezeCmd() *cobra.Command {
 			"This is the hinge the loop turns on. An agent that can edit its own\n" +
 			"acceptance tests will eventually edit them -- not out of malice, just by\n" +
 			"taking the shortest path to green -- and every gate after that is theatre.\n\n" +
-			"Which files count as tests comes from paths.tests in .sdlc/config.json.",
+			"Which files count as tests comes from paths.tests in .sdlc/config.json.\n\n" +
+			"Where commands.freeze_check is set there, freeze runs it first over the new and\n" +
+			"changed test files and takes the freeze only if it passes.",
 		Example: "  sdlc freeze\n  sdlc freeze --json",
 		Args:    cobra.NoArgs,
 		RunE:    func(cmd *cobra.Command, _ []string) error { return runFreeze(cmd) },
 	}
+}
+
+// heldLock is the project's lock as one freeze holds it. The check runs with the
+// lock let go and takes it back afterwards, so the guard the deferred call gives
+// up has to be the one held then, not the one the command opened with.
+type heldLock struct{ release func() }
+
+// letGo gives the lock up, and puts in its place something that gives up
+// nothing, so that a second call is harmless.
+func (l *heldLock) letGo() {
+	l.release()
+	l.release = noUnlock
+}
+
+// freezer is one run of `sdlc freeze`. A check configured for the project runs
+// in the middle of it, with the lock let go, and the freeze is then taken again
+// from the top: passed says so, and id and extending say what the first pass
+// was doing, which is the one thing the second cannot find out for itself.
+type freezer struct {
+	cmd       *cobra.Command
+	s         *store.Store
+	p         *config.Project
+	lock      heldLock
+	check     string
+	passed    bool
+	id        string
+	extending bool
 }
 
 func runFreeze(cmd *cobra.Command) error {
@@ -54,39 +84,89 @@ func runFreeze(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	defer unlock()
-	id, err := activeStory(s, "freeze locks the tests for the story being worked on")
-	if err != nil {
-		return err
+	f := &freezer{
+		cmd: cmd, s: s, p: p, lock: heldLock{release: unlock},
+		check: strings.TrimSpace(p.Config.Commands["freeze_check"]),
 	}
-	if err := refuseIfHeldElsewhere(s, id, "the freeze holds the tests in that checkout, not this one's"); err != nil {
-		return err
-	}
+	defer f.lock.letGo()
+	return f.take()
+}
 
-	lock, err := s.Lock()
+// take is the freeze itself: everything it asks, it asks of the project as it
+// stands now.
+func (f *freezer) take() error {
+	id, err := f.ground()
 	if err != nil {
 		return err
+	}
+	lock, err := f.freezeOnDisk(id)
+	if err != nil {
+		return err
+	}
+	if lock != nil {
+		return f.refuseOrExtend(id, lock)
+	}
+	files, err := findTests(f.cmd, f.p, f.s)
+	if err != nil {
+		return err
+	}
+	hashes, err := hashAll(f.s, files)
+	if err != nil {
+		return err
+	}
+	if f.vetting() {
+		return f.vet(id, false, hashes)
+	}
+	if err := f.s.SaveLock(model.NewLock(id, hashes, f.s.Now())); err != nil {
+		return err
+	}
+	return f.sayFrozen(id, files, nil)
+}
+
+// ground is the story the freeze is for, once the session and the claim have
+// agreed that it is this checkout's to freeze. The session is asked every time
+// the freeze begins: a person may move the story to another session while the
+// lock is let go.
+func (f *freezer) ground() (string, error) {
+	if err := refuseAnotherSession(f.s); err != nil {
+		return "", err
+	}
+	id, err := activeStory(f.s, "freeze locks the tests for the story being worked on")
+	if err != nil {
+		return "", err
+	}
+	return id, refuseIfHeldElsewhere(f.s, id, "the freeze holds the tests in that checkout, not this one's")
+}
+
+// freezeOnDisk is the freeze that stands, or nil where there is none to meet: no
+// freeze at all, or one a finished story left, which is cleared.
+func (f *freezer) freezeOnDisk(id string) (*model.Lock, error) {
+	lock, err := f.s.Lock()
+	if err != nil {
+		return nil, err
 	}
 	if lock == nil {
-		if err := refuseALostFreeze(s, id); err != nil {
-			return err
+		if err := refuseALostFreeze(f.s, id); err != nil {
+			return nil, err
 		}
-	} else if done, err := meetExistingFreeze(cmd, s, p, lock, id); done || err != nil {
-		return err
 	}
-
-	files, err := findTests(cmd, p, s)
+	// After the check, whether this is the freeze it began for: another story
+	// is being worked on, or the freeze it was to add to was lifted on the
+	// record while the lock was let go, and putting it back would undo that.
+	if f.passed && (id != f.id || lock == nil && f.extending) {
+		return nil, f.moved(id)
+	}
+	if lock == nil {
+		return lock, nil
+	}
+	stale, err := freezeIsALeftover(f.s, lock, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	hashes, err := hashAll(s, files)
-	if err != nil {
-		return err
+	if !stale {
+		return lock, nil
 	}
-	if err := s.SaveLock(model.NewLock(id, hashes, s.Now())); err != nil {
-		return err
-	}
-	return sayFrozen(cmd, s, id, files, nil)
+	return nil, f.s.ClearLock()
 }
 
 // hashAll is the content hash of each of the files.
@@ -102,35 +182,17 @@ func hashAll(s *store.Store, files []string) (map[string]string, error) {
 	return hashes, nil
 }
 
-// meetExistingFreeze deals with a freeze already on disk. It reports done when
-// the command has ended there, with the error it ended on; a leftover freeze is
-// cleared and the command carries on to take its own.
-func meetExistingFreeze(cmd *cobra.Command, s *store.Store, p *config.Project, lock *model.Lock, id string) (bool, error) {
-	stale, err := freezeIsALeftover(s, lock, id)
-	if err != nil {
-		return true, err
-	}
-	if !stale {
-		return true, refuseOrExtendFreeze(cmd, s, p, lock, id)
-	}
-	return false, s.ClearLock()
-}
-
-// refuseOrExtendFreeze is what a freeze that still stands means for a second
+// refuseOrExtend is what a freeze that still stands means for a second
 // `sdlc freeze`: new test files taken into it where the project allows them,
 // and a refusal otherwise.
-func refuseOrExtendFreeze(cmd *cobra.Command, s *store.Store, p *config.Project, lock *model.Lock, id string) error {
+func (f *freezer) refuseOrExtend(id string, lock *model.Lock) error {
 	// A project that allows new test files after the freeze
 	// takes them into it here, so that from now on they are
 	// held like the rest. With nothing new to add this is a
 	// second freeze over the top, and refused as one.
-	if lock.Story == id && p.Config.Freeze.AllowNewTestFiles {
-		added, err := addToFreeze(cmd.Context(), s, lock)
-		if err != nil {
+	if lock.Story == id && f.p.Config.Freeze.AllowNewTestFiles {
+		if done, err := f.addToFreeze(id, lock); done || err != nil {
 			return err
-		}
-		if len(added) > 0 {
-			return sayFrozen(cmd, s, id, lock.Paths(), added)
 		}
 	}
 	refusal := sdlcerr.New(sdlcerr.AlreadyFrozen,
@@ -150,14 +212,15 @@ func refuseOrExtendFreeze(cmd *cobra.Command, s *store.Store, p *config.Project,
 
 // sayFrozen puts a freeze on the record and reports it: the files it holds,
 // and, when it was extended rather than taken, the ones just added to it.
-func sayFrozen(cmd *cobra.Command, s *store.Store, id string, files, added []string) error {
+func (f *freezer) sayFrozen(id string, files, added []string) error {
+	s, cmd := f.s, f.cmd
 	message, listed := countFiles(len(files))+" frozen", files
 	if len(added) > 0 {
 		message, listed = countFiles(len(added))+" added to the freeze", added
 	}
 	record, err := s.Record(id)
 	if err == nil {
-		record.Append("freeze", message, s.Now())
+		record.Append("freeze", message+f.passedNote(), s.Now())
 		// A freeze taken, and not one added to: it holds every test file
 		// there is, so the story's list of its own commits starts again, in
 		// the save that says so, unless it was the stop that lifted the last
@@ -177,37 +240,51 @@ func sayFrozen(cmd *cobra.Command, s *store.Store, id string, files, added []str
 	}
 	w := cmd.OutOrStdout()
 	fmt.Fprintf(w, "%s  %s\n", id, message)
-	for _, f := range listed {
-		fmt.Fprintf(w, "  %s\n", f)
+	for _, name := range listed {
+		fmt.Fprintf(w, "  %s\n", name)
 	}
 	return nil
 }
 
-// addToFreeze adds the test files written since the freeze was taken to it, and
-// returns them. A freeze whose own files have changed gets nothing added: the
-// new files would go in, and the change would go through with them.
-func addToFreeze(ctx context.Context, s *store.Store, lock *model.Lock) ([]string, error) {
+// passedNote is what the record says of a check that ran, apart from the
+// message the command prints, which a skill reads.
+func (f *freezer) passedNote() string {
+	if f.passed {
+		return "; " + freezeCheckKey + " ran and passed"
+	}
+	return ""
+}
+
+// addToFreeze adds the test files written since the freeze was taken to it. It
+// reports done when the command has ended there, with the error it ended on;
+// with nothing to add the freeze is a second one, and refused as one.
+func (f *freezer) addToFreeze(id string, lock *model.Lock) (bool, error) {
+	added, err := pendingAdditions(f.cmd.Context(), f.s, lock)
+	if err != nil || len(added) == 0 {
+		return false, err
+	}
+	hashes, err := hashAll(f.s, added)
+	if err != nil {
+		return true, err
+	}
+	maps.Copy(lock.Files, hashes)
+	if f.vetting() {
+		return true, f.vet(id, true, lock.Files)
+	}
+	if err := f.s.SaveLock(lock); err != nil {
+		return true, err
+	}
+	return true, f.sayFrozen(id, lock.Paths(), added)
+}
+
+// pendingAdditions is the test files written since the freeze was taken, which
+// it does not yet hold. A freeze whose own files have changed gets nothing
+// added: the new files would go in, and the change would go through with them.
+func pendingAdditions(ctx context.Context, s *store.Store, lock *model.Lock) ([]string, error) {
 	if changed := verifyFreeze(s, lock); len(changed) > 0 {
 		return nil, brokenFreeze(changed)
 	}
-	added, err := unfrozenTests(ctx, s, lock)
-	if err != nil {
-		return nil, err
-	}
-	if len(added) == 0 {
-		return nil, nil
-	}
-	for _, f := range added {
-		sum, err := s.HashFile(f)
-		if err != nil {
-			return nil, err
-		}
-		lock.Files[f] = sum
-	}
-	if err := s.SaveLock(lock); err != nil {
-		return nil, err
-	}
-	return added, nil
+	return unfrozenTests(ctx, s, lock)
 }
 
 // refuseALostFreeze refuses to freeze a story whose freeze was taken and is

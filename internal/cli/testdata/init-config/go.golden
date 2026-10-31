@@ -11,7 +11,8 @@
     "fmt_check": "test -z \"$(gofmt -l .)\"",
     "fmt_file":  "case \"$FILE\" in *.go) gofmt -w \"$FILE\" ;; esac",
     "coverage":  "p=$(mktemp) \u0026\u0026 trap 'rm -f \"$p\"' EXIT \u0026\u0026 go test ./... -count=1 -coverprofile=\"$p\" \u003e/dev/null \u0026\u0026 go tool cover -func=\"$p\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'",
-    "mutation":  ""
+    "mutation":  "",
+    "freeze_check": ""
   },
   "thresholds": {
     "coverage_min": 80,
