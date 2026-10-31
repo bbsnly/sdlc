@@ -14,11 +14,23 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit",
+        "matcher": "Write|Edit|MultiEdit|Bash|PowerShell|SubagentHandback",
         "hooks": [
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" PostToolUse",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" PostToolUseFailure",
             "timeout": 30
           }
         ]
@@ -31,6 +43,61 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" Stop",
             "timeout": 45
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" SubagentStart",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" SubagentStop",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" Notification",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" StopFailure",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-hook\" PostCompact",
+            "timeout": 30
           }
         ]
       }

@@ -7,7 +7,7 @@ import (
 	"github.com/bbsnly/sdlc/internal/shellpolicy"
 )
 
-// BenchmarkInspect is the leg's nine shapes, through the real
+// BenchmarkInspect is the leg's eleven shapes, through the real
 // shellpolicy.Inspect and the State the leg builds, as a benchmark: the leg
 // says whether a shape is inside its budget, and this, through `./task bench`
 // and benchstat, says by how much a change moved it and what it allocates.

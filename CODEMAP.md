@@ -173,10 +173,16 @@ removers, and removers in inline code. Imports `pathrules`.
 
 ## internal/shellpolicy/wrappers.go
 
-Package `shellpolicy`. Works out what `env`, `flock` and `script` run, so that
-`program` in `shellpolicy.go` reads through to the command behind them. For
-`env`, that covers its options that take a value, and `-S` or
-`--split-string`, whose string is read as a command line. Standard library
+Package `shellpolicy`. Works out what `env`, `flock`, `script`, `xargs`, `exec`
+and macOS's `arch` run, so that `program` in `shellpolicy.go` reads through to
+the command behind them. For `env`, that covers its options that take a value,
+and `-S` or `--split-string`, whose string is read as a command line. Each
+reader also keeps on `invocation` what `checkAgentEnv` and the slash route
+read:
+`cleared` (`env -i`, `exec -c`, `arch -c`), `unsets` (`env -u`, `arch -d`) and
+`replace`, the string `xargs -I`, `-J`, `-i` or `--replace` fills in, which
+`find -exec` sets to `{}` in `commands.go`. `unwrap` in `shellpolicy.go` takes
+zsh's `noglob`, `nocorrect`, `-` and `repeat N` off the front. Standard library
 only.
 
 ## internal/shellpolicy/cdpath.go
@@ -199,6 +205,28 @@ shell handed a script inside a script is not followed. `unquotedWalk` keeps
 where the walk would be had it not read the quotes, and judges each segment
 from there as well, so that a misread quote costs a refusal and not an allow.
 `quotesLeftOpen` and `quoteAfter` are the quote reader. Standard library only.
+
+## internal/shellpolicy/wordreading.go
+
+Package `shellpolicy`. Adds the reading the path rules need where the shell
+keeps a word whole that they split at its text. `addWordReadings`, called from
+`readings` in `shellpolicy.go`, adds one text per reading that holds a quote, a
+`${`, a process substitution, a carriage return or an escaped backslash before a
+newline. `wordsScan` reads the line as the shell splits it into commands and
+words, in the common forms and not the shell's whole grammar, and rewrites
+characters by their index:
+
+- a separator inside a quoted word, a `${...}` or a `$'...'` is written as
+  `kept` (U+FFFD), unless the command hands the word to a shell, `eval` or
+  `trap`, whose script is then read whole (`scripts`);
+- a process substitution, `<(...)` or `>(...)` anywhere in a word, or zsh's
+  `=(...)` at a word's start, is written as the `$(...)` the path rules read;
+- a blank goes in front of a newline that escapedSeparators would otherwise
+  take out with an escaped carriage return or an escaped backslash, and in
+  front of a separator just after a quote.
+
+The reading is added to the others, so it can only add refusals. Each
+substitution's text is read once (`wordsScan.read`). Standard library only.
 
 ## internal/cli/landing.go
 
@@ -804,8 +832,8 @@ rules and `takeAway` are handed the `findExpression`.
 `separatorAt` and `splitSegments`: a change to one not made to the other shows
 as every find in a command being refused. `spacedFields` (shellpolicy.go) is
 the field splitter `parse` and the reader share: a descriptor number written
-against a redirect is no word. `underEval` (shellpolicy.go) takes the `eval`
-builtin off an invocation for the path rules alone, which read and judge the
+against a redirect is no word. `programUnderEval` (readings.go) takes the
+`eval` builtin off an invocation for the path rules alone, which read and judge the
 command under it; `program` and the rules that turn on which program runs are
 handed the builtin as before.
 
@@ -861,15 +889,19 @@ packages the linter holds to `sdlcerr`.
 Package `main`, run by `./task hook-time` through `GOFLAGS= go run`; `check`
 runs that task as its last leg, so a failure it gives on a busy machine hides no
 other leg. Like `sandbox`, goreleaser does not build it and nothing
-`cmd/sdlc` links imports it. It times `shellpolicy.Inspect` in process on three
-commands of at most 8,192 bytes (`shapes`): a `perl` call with one long
-single-dash word, a here-string, and a removal through a deep dot-glob. `state`
+`cmd/sdlc` links imports it. It times `shellpolicy.Inspect` in process on
+eleven commands of at most 8,192 bytes (`shapes`): a `perl` call with one long
+single-dash word, a here-string, a removal through a deep dot-glob, four tools
+each given one long single-dash word, fifty words through chains of links,
+`CDPATH` read on many `cd`s, and the two readings shapes of US-112, a command
+past the 16 other readings it may have (`readings-script`, refused) and one
+read the 16 ways (`dashBehind`). `state`
 copies the `shellpolicy.State` wiring that `internal/hook` builds for a session
 holding a story with frozen tests, over an empty temporary directory the
 program makes; the copy can drift from the hook's, and three comments in
 `internal/hook/hook.go` point at it. Its `Outside` answers no without asking
-the disk, and none of the three commands calls it. `timeShapes` takes the
-three in turn for five rounds and keeps each shape's fastest run.
+the disk, and none of the commands calls it. `timeShapes` takes the shapes
+in turn for five rounds and keeps each shape's fastest run.
 `readBudgets` refuses a missing or unparseable `-perl`, `-here-string` or
 `-dot-glob` before the directory is made. The leg fails when a fastest run is
 over its budget, and when a shape's answer (`answer`) differs from the one
@@ -1580,3 +1612,102 @@ instructions setting, only where the section is in `AGENTS.md` alone.
 any-case match would have held) describes the plugin's agents; links to the
 old name are rewritten in `README.md`, `docs/README.md`, `docs/enforcement.md`
 and the guides. `docs/enforcement.md` lists the two new rule ids.
+
+## internal/trace
+
+A story's `trace.jsonl` (US-112): `Append` writes one record a line, `Read`
+reads them back, and `Usage` and `Tokens` are what a host's transcript reader
+returns. It sits beside `store`: `cli`, `hook` and `hook/claudecode` import it,
+and it imports `model` and `pathrules` only. Every key a record may hold is
+listed per kind in `knownKey`, so the writer refuses any other. Opening is in
+`open_other.go` and `open_windows.go`: the name must be one regular file with
+one link, checked again on the open handle. Its `Err*` values carry no path,
+because the hook's and the commit gate's debug lines quote them as they are.
+
+## internal/hook/claudecode
+
+Claude Code's side of recording: `ReadTranscript` counts a transcript's tokens
+by model, responses, the largest context and tool calls, from a byte offset.
+Only `cmd/sdlc/main.go` imports it outside tests, and hands it to
+`hook.RunHosted` in `hook.Host`, beside `cli.ExecuteIn`.
+
+## internal/hook/trace.go: recording
+
+`RunHosted` routes the eight events the hook records (`recordsEvent`): the six
+that only record (`recordsOnly`) answer `{"continue":true}` at once in `run`,
+and `PostToolUse` and `Stop` keep their old answers, with the payload teed and
+recorded after the answer is written (`noteEvent`). A refusal on `PreToolUse`
+is recorded through the `note` closure `decide` returns, made by
+`refusalNote`. Recording asks no variable (decision 3 of US-112: Claude Code in
+Claude Desktop runs its hooks with `AI_AGENT` set), and a `PostToolUse` of a
+tool that is neither a shell nor the hand-back returns before anything is
+read. Agent events go
+into `gate-record.json` under the store's lock (`agentEvent`), the rest into
+the trace with no lock. The turn marks are `.sdlc/state/trace-read.json`
+(`model.TraceMarkFile`), keyed by a hash of the transcript's path.
+
+Host names stay in four places, for the stories that move them to the host's
+edge: this file (the events, `AI_AGENT`, the hand-back tool and the
+`StopFailure` values), `shellpolicy/forgedhook.go` (the recorded events),
+`shellpolicy/agentenv.go` (`AI_AGENT`, copied from `store.AgentEnv`), and the
+case list of `checkEnforcement` in `shellpolicy/shellpolicy.go`.
+
+## The trace's shell rules (US-112)
+
+`recorded-event-comes-from-the-host` is `checkHandRunHook` in
+`shellpolicy/forgedhook.go` answering `recordedEvent`; it reads the launcher
+as a later word under any program and a made program given a recorded event.
+`enforcement-stays-on` for `AI_AGENT` is `checkAgentEnv` in
+`shellpolicy/agentenv.go`, asked in `programWalk.run` after the git rules and
+in `humanDecisionBy`, so in every session. `trace-is-written-by-the-tool` is
+`ruleTrace` in `shellpolicy/shellpolicy.go` and a rule in `policy.Rules`, with
+the same words in both. `evaluated` in `shellpolicy.go` hands `trap`'s action,
+zsh's `emulate -c` and `mapfile -C`'s callback to every rule as `eval`'s
+string is: eval's `--` is taken off (`endOfOptions` in `commands.go`), and the
+words before what a builtin hands on are scanned for zsh's short forms
+(`startsAReading`). `checkHandRunHook` falls back to `interpreterRunsTheHook`
+for interpreter code that names the hook and a recorded event, and
+`interpretsCode` in `agentenv.go` names the programs whose code is read for
+`AI_AGENT`.
+
+The readings of a command come from one worklist (`readings.go`): `program`
+and `programUnderEval` read a command's words through the option tables in
+`wrappers.go` (`optionTable`, `tableOf`), where an option a table does not know
+forks a reading that takes the word after it and one that does not, and a
+reading still to be made is a `resume`. Each reading is kept on `invocation`
+(`others`), deduplicated, and capped at `maxReadings` (16); past it `unread`
+is set. The program walk counts the other readings of a line in
+`subshells.readings` and stops at the cap with `tooManyReadings`. A script
+handed to a shell, `eval`, `trap`, `emulate -c` or `mapfile -C` is read through
+`programScan.script`, at most four deep, asked through `nests`, and refused
+with `scriptsTooDeep` past that; the script is read again as the shell decodes
+it. The path walk reads the other readings through `otherReadings`, and a
+quoted word the blind split cuts through `asTheShellSplits`. The lexer reads a
+substitution inside a `${…}` (`parameter`) and one inside quotes after a `[`
+(`subscripts`), which arithmetic runs.
+
+## internal/shellpolicy/classify.go
+
+`Classify` is the class (`test`, `build`, `lint`, `git`, `sdlc`, `other`) and
+program name a `shell` trace record keeps. It decides nothing and no rule reads
+it. It reads the first command after any leading `cd ... &&`, past the shell's
+`time`.
+
+## internal/gitx/numstat.go
+
+`Numstat` is the change between two commits' trees, file by file, with the
+paths it is given left out, for the commit gate's `diff` record. `noteDiff` in
+`cli/loop.go` splits it into the frozen tests and the rest, and logs and
+records nothing where git cannot measure it.
+
+## internal/cli/trace.go and internal/cli/tracereplay.go
+
+`sdlc trace`. `tracereplay.go` walks a story's gate record (`replayOf`): the
+story's bounds, the gate in force at each instant (`gateStretches`), agent runs
+paired by id, the waits on a person (`escalate` to `approval`) and the time
+between iterations (`loop_end` to `loop_start`), and `splitOf`, whose rest is
+the wall time less the union of the others. `trace.go` adds the trace's
+figures (`storyReport`), and `--all` (`traceAll`, `mediansOf`, `firstPass`).
+`pathless` is an error's text with no path, for debug lines.
+`scaffold.IgnoreTraces` writes `.sdlc/.gitignore`, called by `InitAt` and by
+`sdlc start` (`ignoreTraces`).

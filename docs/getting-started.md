@@ -32,7 +32,7 @@ your first story go through is the quickest way to learn them.
 ## Install sdlc
 
 There are two things to install: the `sdlc` command, and the Claude Code plugin
-that drives it. You will need Claude Code 2.1.265 or newer, git 2.17 or newer
+that drives it. You will need Claude Code 2.1.309 or newer, git 2.17 or newer
 and, for the one-line install below, Node 18 or newer;
 [Installation](installation.md#what-it-needs) has the full list. The easiest way
 is to give your agent this prompt. Paste it into Claude Code, in a terminal or in
@@ -132,9 +132,11 @@ empty, and you will need to fill in at least `test` and `lint` yourself.
 how.
 
 > [!NOTE]
-> `init` writes no `.gitignore`, because what a project commits is the
-> project's decision. To restore the default settings later while keeping your
-> stories, see [`sdlc init`](commands.md#sdlc-init). Setting up a repository
+> `init` never touches your own `.gitignore`, because what a project commits is
+> the project's decision. The one it writes under `.sdlc/` keeps only each
+> story's [trace](the-loop.md#the-trace) out of git. To restore the default
+> settings later while keeping your stories, see
+> [`sdlc init`](commands.md#sdlc-init). Setting up a repository
 > that already has code and tests? Read
 > [Adding sdlc to an existing project](guides/adding-to-an-existing-project.md).
 

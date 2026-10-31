@@ -55,11 +55,12 @@ A few more words are used with a fixed meaning throughout:
   theirs alone, and so are a few more commands: see
   [a person's decisions](enforcement.md#a-persons-decisions-refused-in-every-session).
   Their own terminal is one outside Claude Code: a window they opened
-  themselves. A `!` line typed in a session, a terminal or `tmux` that Claude
-  Code started, and anything a model's tool runs have Claude Code's environment
-  variables, and the person's commands refuse themselves there with
-  [SDLC-E0079](troubleshooting.md#sdlc-e0079). In Claude Code the slash
-  commands are the way.
+  themselves. A `!` line typed in Claude Code run from a terminal, a terminal
+  or `tmux` that Claude Code started, and anything a model's tool runs have
+  Claude Code's environment variables, and the person's commands refuse
+  themselves there with [SDLC-E0079](troubleshooting.md#sdlc-e0079). In Claude
+  Code the slash commands are the way; in Claude Desktop, whose hooks have
+  `AI_AGENT` (Claude Code 2.1.309), a `!` line is.
 - **the conversation** (also called the assistant): the main Claude Code
   session that runs the skill and hands each gate to an agent.
 
@@ -454,13 +455,16 @@ layout of `.sdlc/`:
 
 ```text
 .sdlc/
+  .gitignore                     keeps every story's trace.jsonl out of git
   config.json                    the settings
   state/
     active                       the story being worked on
     tests.lock                   the freeze: every test file, by content
+    trace-read.json              how far the hook has read each session's transcript
   stories/
     AUTH-3/
       gate-record.json           every gate, event and review, in order
+      trace.jsonl                what the story cost, as the hook measured it
       ANALYSIS.md                gate 2
       THREATS.md                 gate 2
       TEST-PLAN.md               gate 3
@@ -479,8 +483,92 @@ The stories directory is all text in your repository, which is what makes it
 reviewable; a worktree is a whole checkout. Claims, which say which checkout
 holds a story, live in your git directory instead
 ([more than one checkout](#more-than-one-checkout)). Whether you commit `.sdlc/`
-is your decision; the loop writes no `.gitignore` of yours, and the one in
-`.sdlc/worktrees/` ignores only that directory.
+is your decision. The loop writes no `.gitignore` of yours: the one in
+`.sdlc/worktrees/` ignores only that directory, and `.sdlc/.gitignore` only the
+traces.
+
+### The trace
+
+A story's trace is `trace.jsonl` in its directory: one JSON object a line, each
+a *trace record*, which the hook appends as the story runs and the commit gate
+appends once. It is what [`sdlc trace`](commands.md#sdlc-trace) reads, and it is
+not the gate record: a line of `gate-record.json`'s history is an *event*. Two
+events go with it, `agent_start` and `agent_end`, which the hook writes into the
+gate record when a subagent starts and stops, with the agent's type and id, so
+that a story's time can be split between its agents.
+
+No prompt, response, hand-back text, command argument, file path or error message
+is kept. What is kept is times, counts, exit codes and short names and labels:
+agent types and ids, model names, tool names, the program a command starts with,
+rule ids and `SDLC-E` codes, and the effort, permission mode, prompt id and the
+kind of an API error the host reports. The trace is in the story's directory, so
+every agent can read it; only sdlc writes it
+([`trace-is-written-by-the-tool`](enforcement.md#trace-is-written-by-the-tool)).
+
+Every line carries `v` (the format, 1), `at` (UTC, to the millisecond) and
+`kind`, which is one of these:
+
+| Kind | Written when | Its fields |
+| --- | --- | --- |
+| `agent_run` | a subagent stops | `agent_type`, `agent_id`, `start` and `end`; `effort` and `permission_mode` as the host reported them; `asked_model` and `asked_effort`; `models`, `responses`, `peak_context` and `tools` from the agent's transcript; `status`, `done` or `blocked`, from its hand-back |
+| `turn` | the main conversation's turn ends | `prompt_id`, `effort`, `models`, `responses`, `peak_context`, `tools`, and `background_tasks`, the background tasks Claude Code listed when the turn ended, by type |
+| `handback` | an agent calls the hand-back tool | `agent_type`, `agent_id` and `status`, `done` or `blocked` |
+| `refusal` | the hook refuses a tool call | `rule`, `agent_type`, `tool`, and `code` where the refusal has one |
+| `shell` | a shell command ends | `agent_type`, `duration_ms`, `background`, `class` (`test`, `build`, `lint`, `git`, `sdlc` or `other`), `program`, and for a test run `outcome` (`pass`, `fail`, `interrupted` or `unknown`) and `exit_code` |
+| `diff` | the commit gate passes | `files`, `added` and `removed`, and the same for the frozen tests alone: `test_files`, `test_added`, `test_removed` |
+| `notification` | the host asks a person for permission, or says it is idle | `agent_type`, `notification_type` (`permission_prompt` or `idle_prompt`) |
+| `api_error` | a turn ends on an error from the model provider | `agent_type`, `error`, one of the kinds Claude Code 2.1.311 reports, such as `rate_limit` or `overloaded` |
+| `compaction` | the host compacts a conversation | `agent_type`, `trigger` (`auto` or `manual`) |
+| `truncated` | the trace reaches its limit | `size` |
+
+`models` is tokens by model name, each `input`, `cache_read`, `cache_written` and
+`output`; `responses` is how many answers the model gave; `peak_context` is the
+largest context one of them was given; `tools` is calls by tool name. An
+`agent_type` left out means the main conversation.
+
+`asked_model` and `asked_effort` are what the story's staffing asked for that
+agent, after any `sdlc staffing assign` a person made, and not what ran: what
+ran is in `models` and `effort`. They are left out for an agent outside the
+loop, such as `Explore`.
+
+The trace is bounded so that a story that runs for weeks still reads in a
+moment. A line is at most 4,096 bytes; `models` keeps four models and `tools`
+sixteen tools, the largest, with the rest added up under `other`, and
+`background_tasks` eight types; an id is at most 128 characters, a prompt id 64
+and any other label 32.
+The whole trace stops at 4 MiB: the record that would take it past is replaced
+by a `truncated` record, and nothing is written after it. `sdlc trace` says so.
+
+Some things to know when you read one:
+
+- A turn's counts start where the last turn's stopped, which the hook keeps in
+  `.sdlc/state/trace-read.json`. The first turn of a session that picks a story
+  up partway counts the session's earlier responses too. A turn whose part of
+  the transcript holds a line not in the shape the hook reads is recorded
+  without counts: the lines before that one are never counted, and the lines
+  after it are counted in the next turn. A part larger than 64 MB is recorded
+  without counts too, and the next turn starts after it.
+- A story already under way when you upgrade is traced from its next record, so
+  its earlier gates read 0 in what is recorded, not "not recorded".
+- A story worked before tracing has no trace at all; `sdlc trace` shows what its
+  gate record holds and says the rest predates tracing.
+- Recording never refuses anything and never changes the hook's answer: a record
+  that cannot be written is a line in the debug log. When nothing is recorded,
+  see [`sdlc trace` shows nothing was
+  recorded](troubleshooting.md#sdlc-trace-shows-nothing-was-recorded).
+- A command that gets past the shell rules can add records and agent events
+  ([Not held](enforcement.md#not-held)). A forged agent run changes the
+  figures, never a gate, and Not held says how to check the agent events
+  against what ran.
+
+The traces are kept out of git: `sdlc init` writes `.sdlc/.gitignore` holding
+`/stories/*/trace.jsonl`, and `sdlc start` writes it in a project initialised
+before tracing that has none. Commit it once, with the story's own commit or as
+a commit of your own on trunk between stories, and never on trunk while a story
+is being worked on: that is HEAD moving under the story
+([SDLC-E0046](troubleshooting.md#sdlc-e0046)). If you want the traces in git,
+leave the file empty and commit that: sdlc never writes over a file that is
+there, but every `sdlc start` writes it again where it has been deleted.
 
 ## More than one checkout
 

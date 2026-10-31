@@ -1,4 +1,4 @@
-// Command hooktime times the hook's classifier on nine commands that are slow
+// Command hooktime times the hook's classifier on eleven commands that are slow
 // by construction, and fails when one takes longer than its budget. `./task
 // hook-time` runs it, and `./task check` runs that.
 //
@@ -22,6 +22,13 @@
 // relative cds, which the CDPATH reader once read again for every cd. The
 // links one needs links made on disk, and is skipped, saying why, where none
 // can be.
+//
+// US-112 adds two, held to the perl shape's budget too, for the bound on the
+// readings of a command: an option a tool's table does not know is read both
+// ways, and without the bound n of them gave a Fibonacci number of readings.
+// One is a command read one way past the 16 it may be, with a script of
+// commands that fork, which is refused; the other is a command read the 16
+// ways, each over 8 KB, which is allowed.
 package main
 
 import (
@@ -75,9 +82,9 @@ type shape struct {
 	linked bool
 }
 
-// shapes are the nine commands, built here and handed to Inspect as a string.
-// They are never run, and never written into a command line: one of them is a
-// removal.
+// shapes are the eleven commands, built here and handed to Inspect as a
+// string. They are never run, and never written into a command line: one of
+// them is a removal.
 func shapes() []shape {
 	const (
 		perlHead, perlTail = "perl -", " file"
@@ -113,8 +120,24 @@ func shapes() []shape {
 			command: strings.Repeat(cdpathHead, cdpathAssignments) + cdpathRest +
 				strings.Repeat(cdpathStep, (size-len(cdpathHead)*cdpathAssignments-len(cdpathRest))/len(cdpathStep)),
 		},
+		// US-112: strace with one option it does not know past the 16
+		// readings a command is read, and a script of commands that fork, to
+		// the longest whole command within size; refused.
+		{
+			name: "readings-script", heldTo: perlBudget, refused: true,
+			command: readingsHead + strings.Repeat(" -J", 17) + readingsShell +
+				strings.Repeat(readingsStep, (size-len(readingsHead)-17*len(" -J")-len(readingsShell)-len("'"))/
+					len(readingsStep)) + "'",
+		},
+		// And the touch shape's single-dash word behind strace with 16 such
+		// options, read the 16 ways it may be; allowed.
+		dashBehind(readingsHead+strings.Repeat(" -J", 16)+" ", "touch", "readings-single-dash"),
 	}
 }
+
+// The readings shapes: readingsHead and its options, then readingsShell and
+// as many of readingsStep as fit before the script's closing quote.
+const readingsHead, readingsShell, readingsStep = "strace", " 1 sh -c '", "strace -J -J 1 true; "
 
 // The cdpath shape: cdpathAssignments of cdpathHead, then cdpathRest, then as
 // many of cdpathStep as fit, 8,190 bytes in all.
@@ -130,9 +153,14 @@ const perlBudget = "perl"
 // dashShape is tool, one single-dash word of letters and the file name, 8,192
 // bytes in all: allowed, and held to the perl budget.
 func dashShape(tool string) shape {
-	head, tail := tool+" -", " file"
+	return dashBehind("", tool, "single-dash-"+tool)
+}
+
+// dashBehind is dashShape's command after front, under name.
+func dashBehind(front, tool, name string) shape {
+	head, tail := front+tool+" -", " file"
 	return shape{
-		name: "single-dash-" + tool, heldTo: perlBudget,
+		name: name, heldTo: perlBudget,
 		command: head + strings.Repeat("a", size-len(head)-len(tail)) + tail,
 	}
 }

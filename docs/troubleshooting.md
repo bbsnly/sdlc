@@ -97,6 +97,11 @@ the permissions on one that cannot be opened, and run `sdlc stop` if it is the i
 If `.sdlc/stories` itself is not a directory, the message says so: move whatever is there aside
 and restore the directory, from git where your project commits it.
 
+`sdlc trace` gives this code for a story whose `trace.jsonl` is there and cannot be read: a
+directory, a link or a named pipe at its name, which it does not wait on, or a file you have no
+permission to read. Move it aside. sdlc only ever appends to a trace, so one it did not make is
+not its own, and without one the story reads as untraced.
+
 If `sdlc` itself left a file it cannot read, that is a bug: please open an issue at
 <https://github.com/bbsnly/sdlc/issues> with the code above.
 
@@ -189,6 +194,11 @@ Fix the JSON and try again. The message names the story that stopped it.
 No story in the backlog has the id you asked for.
 
 Run `sdlc story list` to see the ids you can use. Ids are compared exactly, including case.
+
+`sdlc trace` gives this code for a story the backlog holds that has not been started yet, and
+says so: `<ID> is in the backlog but has not been started, so it has no record to trace`. A
+story's record is made when it is started, and the trace is read beside it. `sdlc story list`
+shows each story's status.
 
 ### SDLC-E0010
 
@@ -566,6 +576,13 @@ commands would run with them in the tree that lands. Commit them on `story/<ID>`
 change is not the one reviewed and the reviews are recorded again, or stash them with
 `git stash push -- <path>`, in the worktree; then `sdlc stop` there again.
 
+**`.sdlc/.gitignore`**, when it is among the uncommitted files, was written by `sdlc start` in a
+project initialised before stories had traces, so that each story's `trace.jsonl` stays out of
+git; the fix says so. Commit it with the story's work. Between stories, a commit of your own on
+trunk does as well; never commit it on trunk while a story is being worked on, which is HEAD
+moving under the story ([SDLC-E0046](#sdlc-e0046)). To keep the traces in git, leave the file
+empty and commit that; deleted, it is written again at the next `sdlc start`.
+
 ### SDLC-E0033
 
 The story you asked to start has passed every gate. Starting it would put work that is already
@@ -609,6 +626,8 @@ command takes, and run it again with a valid value.
 - **`sdlc approve`** carries it when `--reject` is given no reason.
 - **`sdlc staffing set` and `sdlc staffing amend`** carry it for a `--story` other than the
   story being worked on, and `sdlc staffing assign` for a `--story` that has not been started.
+- **`sdlc trace`** carries it when given no story's id and no `--all`, more than one id, or an
+  id together with `--all`. Name one story, as in `sdlc trace US-001`, or give `--all` alone.
 - **An unknown command, an unknown flag, or the wrong number of arguments** carries this code
   too. A required flag left off does not: `sdlc cost add` with no `--usd` prints
   `required flag(s) "usd" not set`, with no code.
@@ -1864,17 +1883,20 @@ started. Nothing was read or changed.
 Claude Code sets environment variables in the processes it starts: `CLAUDECODE`,
 `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_CHILD_SESSION` and `CLAUDE_PID`, and `AI_AGENT` for a
 model's tools. A model's Bash or PowerShell has them, and so does any script, shell or
-interpreter it starts, a `!` line typed in a session, and a terminal app or a `tmux` server that
-Claude Code started. The refusal's why names the first one it found, by its name only. A person's
-decision comes from a slash command they type in Claude Code, or from a terminal outside Claude
-Code: a terminal window you opened yourself, such as Terminal on macOS or PowerShell from the
-Start menu. A terminal inside Claude Code or Claude Desktop is not one, and neither is a `tmux`
-session that Claude Code started.
+interpreter it starts, a `!` line typed in Claude Code run from a terminal, and a terminal app or
+a `tmux` server that Claude Code started. The refusal's why names the first one it found, by its
+name only. A person's decision comes from a slash command they type in Claude Code, a `!` line in
+Claude Desktop, or a terminal outside Claude Code: a terminal window you opened yourself, such as
+Terminal on macOS or PowerShell from the Start menu. A terminal inside Claude Code or Claude
+Desktop is not one, and neither is a `tmux` session that Claude Code started.
 
 To go on:
 
 - Type the slash command, with the story where the command names one: `/sdlc:approve <ID>`, or
-  `sdlc approve <ID>` in a terminal outside Claude Code. The others are alike:
+  `!sdlc approve <ID>` at the prompt in Claude Desktop, or `sdlc approve <ID>` in a terminal
+  outside Claude Code. In Claude Desktop, where the slash command answers that it did not run
+  (Claude Code 2.1.309, seen on 2026-10-29), type the command as a `!` line, which reaches sdlc
+  with none of the variables above. The others are alike:
   `/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."`; `/sdlc:ack`, or
   `sdlc ack --through <commit>`; `/sdlc:remap <ID>`, or `sdlc remap <ID>`, for a landed story
   whose change to `CODEMAP.md` is waiting, with `--replace` or `--drop` where the fix it printed
@@ -1882,7 +1904,8 @@ To go on:
   `/sdlc:release <ID> --reason "..."`, or `sdlc release <ID> --reason "..."`; and
   `/sdlc:assign`, or `sdlc staffing assign <agent> --model <model> --reason "..."`. The refusal's
   fix names the story when the command was given one.
-- `sdlc parallel` has no slash command, and runs only in a terminal outside Claude Code.
+- `sdlc parallel` has no slash command, and runs in a terminal outside Claude Code, or as a `!`
+  line at the prompt in Claude Desktop: `!sdlc parallel <ID>...`.
 - A terminal of your own has no `sdlc` unless you installed one, with `npx @bbsnly/sdlc install`:
   the plugin's copy is on Claude Code's `PATH` only. Install it before you need `sdlc parallel`;
   the slash commands need nothing installed.
@@ -2207,6 +2230,50 @@ cannot be a session id, no session is working the story, so the hook holds none
 to it and tells none. `sdlc status` and `sdlc doctor` say that no Claude Code
 session is working the story. Run `/sdlc:next` in the session that should work
 it, which records that session again.
+
+### `sdlc trace` shows nothing was recorded
+
+`sdlc trace` says `no trace.jsonl for this story`, or the trace stops short, or agent runs and
+turns have no tokens. Recording never refuses anything and never says anything in the session,
+so the reason is in the debug log. Set `SDLC_DEBUG_FILE` to a file in the environment you start
+the session from, as for the hook elsewhere on this page, run a turn, and read the lines that
+start with `trace:`. The causes, each with what shows it:
+
+1. **The plugin was not reloaded after an upgrade.** Claude Code runs the hook only on the
+   events the plugin's `hooks.json` registered when it loaded, and the events the trace needs
+   are new. There is no `trace:` line at all, and no `sdlc-hook` line for a `SubagentStop` or
+   a `Stop`. Restart Claude Code, or update the plugin and reload it.
+2. **The session does not hold the story.** Only the session working the story, and its
+   agents, are recorded: `trace: not recorded: no story is held by this session here`. Run
+   `/sdlc:next` in the session that should work it.
+3. **The trace is full.** At 4 MiB the trace ends with a `truncated` record and takes nothing
+   more: `trace: the trace reached 4 MiB; nothing more is recorded for this story`, once, and
+   `sdlc trace` says that the records after it are missing.
+4. **The trace is not one regular file sdlc made.** A hard link, a directory, a named pipe or
+   a symbolic link at its name is not written to:
+   `trace: a record was not written` with `why="the trace's name is not one regular file sdlc made"`.
+   Move it aside, and the next record starts a new trace.
+5. **The story's directory resolves outside the checkout.** A link on the way to it is not
+   followed: `trace: a record was not written` with
+   `why="the story's directory resolves outside the checkout"`. Put the directory back inside
+   the project.
+6. **The store's lock was not got in time.** Another `sdlc` command held it for the whole
+   wait, so an agent's start or end was not written to the gate record:
+   `trace: an agent event was not recorded: the store's lock was not got`. The run is still
+   recorded in the trace; only its place in the story's time is missing.
+7. **Claude Code is older than 2.1.309.** Older releases do not know some of the events the
+   hooks file registers and drop them. Run `claude --version`, and update Claude Code if it is
+   older.
+
+A turn or an agent run recorded without its tokens has a line of its own:
+`trace: a transcript's counts were not recorded`, with `why` saying the transcript was missing,
+unreadable, not in the shape the hook reads, larger than 64 MB past where the read starts, or
+not read in time.
+
+`sdlc trace` saying that agent events have no agent id means the gate record was saved by an
+older `sdlc`, which dropped the field. The hook runs the plugin's `sdlc`, and the agents run the
+one on your `PATH`: keep the two on one release. `sdlc version` gives the one on your `PATH`, and
+the `sdlc-hook` line in the debug log names the binary the hook ran.
 
 ### `.sdlc/config.json could not be read, so tests are being recognised by the default patterns`
 

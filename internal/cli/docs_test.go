@@ -218,6 +218,10 @@ func shellRules(t *testing.T) []string {
 		// runs, here from the main conversation.
 		"sdlc staffing assign security --model opus --reason x",
 		"sdlc staffing set",
+		// US-112 AC-17 and AC-25: the trace's own rule.
+		"echo x > .sdlc/stories/A-1/trace.jsonl",
+		// US-112 B1: the hook run by hand on an event it records.
+		"sdlc hook SubagentStop < /tmp/p.json",
 	} {
 		f, ok := shellpolicy.Inspect(command, shellpolicy.State{})
 		if !ok {

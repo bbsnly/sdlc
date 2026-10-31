@@ -24,7 +24,7 @@ you through putting the loop on such a repository.
 
 The short version is reassuring. `sdlc init` adds a few files and appends one
 section to your `CLAUDE.md`. It does not change your code, your tests, your
-build or your `.gitignore`, and it does not overwrite a `CLAUDE.md`, an
+build or your own `.gitignore`, and it does not overwrite a `CLAUDE.md`, an
 `AGENTS.md` or a backlog you already have. Along the way you will run `sdlc init`, commit what it
 wrote, check what it guessed with `sdlc doctor`, fill in the contract the
 reviewers hold the work to, and decide what else belongs in version control.
@@ -56,7 +56,8 @@ Next:
 `init` walks up to the nearest `.git` and writes everything relative to that
 directory, so it does not matter which subdirectory you run it from. The
 output lists each file it wrote as `created` and each it left alone as `kept`,
-and there is nothing else.
+and there is nothing else. Beside them, and not in that list, it writes
+`.sdlc/.gitignore`, which keeps each story's `trace.jsonl` out of git.
 
 ### What it writes, and what it leaves alone
 
@@ -70,10 +71,15 @@ if you later run `sdlc init --force`:
 | `user_stories.json` | written with one example story, unless it exists | kept |
 | `CLAUDE.md` | created, or the `## SDLC Contract` section appended | section appended only if missing |
 | `AGENTS.md` | the section appended in place of `CLAUDE.md`, where there is no `CLAUDE.md` or it links to `AGENTS.md` | section appended only if missing |
+| `.sdlc/.gitignore` | written, holding `/stories/*/trace.jsonl`, unless it exists | kept |
 
-`init` writes no `.gitignore`. What a project commits and ignores is the
-project's decision, and [Deciding what to commit](#deciding-what-to-commit)
-gives you the facts to make it.
+`init` never touches your own `.gitignore`. The one it writes under `.sdlc/`
+ignores only the stories' traces, the measurements
+[`sdlc trace`](../commands.md#sdlc-trace) reads, which are kept on the machine
+that made them. Leave it empty to commit the traces too. What else a project
+commits and ignores is the project's decision, and
+[Deciding what to commit](#deciding-what-to-commit) gives you the facts to make
+it.
 
 `init` and `doctor` look for the contract as a `## SDLC Contract` heading on a
 line of its own. A `### SDLC Contract` heading, or a sentence that mentions the
@@ -318,6 +324,11 @@ facts the rest of the decision rests on:
   `/sdlc:next`.
 - The freeze only considers files git lists: tracked, or untracked and not
   ignored.
+- Each story's `trace.jsonl` grows with every tool call while the story runs,
+  and `.sdlc/.gitignore` keeps it out of git. In a project initialised before
+  traces, `sdlc start` writes that file; commit it once, with the story's own
+  commit or as a commit of your own on trunk between stories, never on trunk
+  while a story is being worked on.
 
 ## What lives under `.sdlc/`
 
@@ -327,6 +338,7 @@ layout:
 
 ```text
 .sdlc/
+  .gitignore                    written by init, or by sdlc start where there is none; ignores the traces
   config.json                   written by init; read by every command and the hook
   templates/story.schema.json   written by init; not read by sdlc itself
   state/
@@ -334,8 +346,10 @@ layout:
     session                     sdlc start writes it in Claude Code; removed with active
     tests.lock                  sdlc freeze writes it
     stop-blocks.json            the Stop hook's count of stops it sent back, and when it began waiting for a subagent
+    trace-read.json             the hook's mark of how far it has read each transcript
   stories/<ID>/
     gate-record.json            sdlc start creates it; every gate, event and review
+    trace.jsonl                 the hook and the commit gate append to it; what the story cost
     ANALYSIS.md ... RETRO.md    sdlc artifact write
     reviews/                    sdlc review add
   worktrees/
@@ -370,8 +384,14 @@ checkout, where every checkout reads and writes them.
   nothing recorded, up to `loop.max_stop_blocks`. Once a stop has been let
   through because a subagent was still running, `waiting_since` in it is when
   that [wait began](../enforcement.md#stopping-mid-story), in UTC.
+- **`state/trace-read.json`** is where the hook keeps how far it has read each
+  session's transcript, so that each turn's tokens are counted once.
 - **`stories/<ID>/`** is the story's history: the gate record, the documents
-  each gate stored and every review round.
+  each gate stored and every review round, and its
+  [trace](../the-loop.md#the-trace), `trace.jsonl`.
+- **`.gitignore`** keeps every story's `trace.jsonl` out of git. sdlc writes it
+  where there is none and never writes over it, so to commit the traces, leave
+  it empty: deleted, it is written again at the next `sdlc start`.
 
 ### Files outside `.sdlc/`
 

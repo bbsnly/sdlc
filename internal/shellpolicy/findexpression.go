@@ -127,6 +127,7 @@ const (
 	causeStray            // a word that is neither a test nor an operator
 	causeShape            // the expression's own shape
 	causeDiffer           // the two readings of the command do not agree
+	causeForked           // a command an action runs can be read more than one way
 )
 
 // A findExpression is one find's expression read: the postfix list of its
@@ -542,8 +543,8 @@ func wordFields(segment string) []field {
 	for i := 0; i < len(fields); i++ {
 		f := unquote(fields[i].text)
 		switch {
-		case f == ">" || f == "<":
-			i++
+		case fields[i].op:
+			i, _ = targetOf(fields, i)
 		case isAssignment(f) && (leading || exporting(words)):
 		default:
 			leading = false
@@ -559,9 +560,9 @@ func wordFields(segment string) []field {
 func fieldWords(text string) (words []string, open bool) {
 	fields := spacedFields(text)
 	for i := 0; i < len(fields); i++ {
-		if f := fields[i].text; f == ">" || f == "<" {
-			open = i+1 == len(fields)
-			i++
+		if fields[i].op {
+			i, _ = targetOf(fields, i)
+			open = i == len(fields)
 			continue
 		}
 		words = append(words, unquote(fields[i].text))
@@ -587,6 +588,8 @@ const (
 	whyDiffer = "the hook reads the command twice, as the shell splits it and as find is handed it, and " +
 		"the two readings part ways"
 	whyNoStart = "the hook could not tell where the find starts in the command"
+	whyForked  = "a command one of its actions runs can be read more than one way, since an option its " +
+		"program does not know may or may not take the word after it"
 )
 
 // read reads the find of the segment at idx, whose words, as the path rules
@@ -643,7 +646,11 @@ func (sc *findScan) read(idx int, segment string, words []string, evals int) fou
 		// The find runs on past where the path rules ended its segment: its own
 		// words are made from all of it, for the rules to be asked again with.
 		all, _, _ := parse(sc.flat[a:b])
-		full, _ := underEval(program(all))
+		// The first reading alone: these words start at the find itself, which
+		// is no wrapper, so its only other readings start at a `]]` or a `}`
+		// among find's words, and the path walk's loop reads those for the
+		// segment.
+		full := programUnderEval(all)
 		if len(full.words) == 0 || base(full.words[0]) != "find" {
 			return fail(causeDiffer, words[0], whyNoStart)
 		}
@@ -657,8 +664,27 @@ func (sc *findScan) read(idx int, segment string, words []string, evals int) fou
 	if cause != causeNone {
 		return fail(cause, word, why)
 	}
-	out.exp = readFind(tokens)
+	out.exp = forkedActions(readFind(tokens))
 	return out
+}
+
+// forkedActions is exp, or, where one of its actions runs a command that can
+// be read more than one way (program), a find the reader gave up on, which
+// reaches everything below where it starts. What an action runs is read one
+// way here, and the rules judge the find by it: followed, `find . -exec
+// strace -J 1 rm {} \;` took strace for a program that only reads, read one
+// way, and removed every file it found, the loop's own among them, the other
+// (US-112, Gate 5).
+func forkedActions(exp findExpression) findExpression {
+	if !exp.followed {
+		return exp
+	}
+	for _, e := range exp.execs {
+		if len(e) > 0 && len(program(e).others) > 0 {
+			return unfollowed(causeForked, e[0], whyForked)
+		}
+	}
+	return exp
 }
 
 // substitutesAProcess reports whether the text of a find holds a process
@@ -681,7 +707,12 @@ func (sc *findScan) givenUp(segment string, from int, cause findCause, word, why
 	}
 	out.segment = segment + " " + sc.flat[from:]
 	all, _, _ := parse(out.segment)
-	full, _ := underEval(program(all))
+	// The first reading alone, though a wrapper before the find can fork:
+	// the path walk gives each other reading of the segment an unfollowed
+	// find of its own, so a reading that reaches another program through the
+	// fork is judged whole, from where the find would start (security, round
+	// 6, N3).
+	full := programUnderEval(all)
 	out.more, out.toEnd, out.words = true, true, full.words
 	return out
 }
@@ -714,8 +745,14 @@ func (sc *findScan) standing(q *quoting, from, a int) (script byte, opened bool,
 
 // evalParsesAgain reports whether a find that evals stand in front of is not
 // one eval's single quoted word: more than one eval, a find that is not at
-// the opening of a quote, or a word before it that is not eval.
+// the opening of a quote, or a word before it that is not eval, or the `--`
+// that ends eval's options after it. Without that step, `eval -- 'find . -name
+// x -delete'` was refused as a script eval parses a second time, which it is
+// not (US-112, round 8).
 func evalParsesAgain(evals int, opened bool, n int, fields []field) bool {
+	if n > 1 && endsOptions(fields[n-1].text) {
+		n--
+	}
 	return evals > 0 && (evals > 1 || !opened || n == 0 || base(unquote(fields[n-1].text)) != "eval")
 }
 

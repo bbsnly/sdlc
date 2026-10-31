@@ -247,7 +247,7 @@ func (s *Store) writeHandOver(h HandOver, p *handOverRead) error {
 		done = append(done, written{"the reviewer's document", func() error { return s.putBack(p.reviewPath, p.reviewWas) }})
 	}
 	p.record.Escalate(h.Kind, h.Message, p.tree, s.Now())
-	p.record.Append("escalate", h.Kind+": "+h.Message, s.Now())
+	p.record.Append(model.EventEscalate, h.Kind+": "+h.Message, s.Now())
 	if err := s.SaveRecord(p.record); err != nil {
 		return s.takenBack(id, err, done)
 	}

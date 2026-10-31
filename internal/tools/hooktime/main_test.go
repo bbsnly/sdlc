@@ -19,6 +19,20 @@ package main
 //     `true; ` and then `cd x; ` to the longest whole command within 8,192
 //     bytes, 8,190. Allowed: it writes nothing.
 //
+// US-112 (design review round 5) adds two shapes for the bound on the
+// readings of a command, each held to the perl shape's budget. An option a
+// tool's table does not know may take the word after it or not, so it is read
+// both ways; without the bound, n of them gave a Fibonacci number of readings.
+//
+//   - readings-script: strace, 17 options it does not know, and `1 sh -c`
+//     with a script of `strace -J -J 1 true; ` to the longest whole command
+//     within 8,192 bytes, 8,174: one reading past the 16 a command is read,
+//     each inner command forking twice. Refused, under
+//     command-too-deep-to-read.
+//   - readings-single-dash: strace, 16 options it does not know, and the
+//     touch shape's single-dash word, to 8,192 bytes: the 16 readings a
+//     command is read, each over 8 KB. Allowed.
+//
 // Run through the real Inspect under the race detector, the calls take
 // minutes, so nothing here does that. The tests hand the program an Inspect
 // and a clock of their own, and these are what it has to offer:
@@ -88,13 +102,16 @@ const (
 	// assigned many times in front of many relative cds, read again for every
 	// cd until it was read once for the line (US-035, performance review).
 	cdpathShape = "cdpath"
-	unknown     = "a command of none of the shapes"
+	// The bound on readings, US-112: one over it and one at it.
+	readingsScript = "readings-script"
+	readingsDash   = "readings-single-dash"
+	unknown        = "a command of none of the shapes"
 )
 
 // shapeNames are every shape; withoutLinks the ones that need no link made.
 var (
-	shapeNames   = []string{perl, hereString, dotGlob, sdTouch, sdCp, sdSed, sdTee, links, cdpathShape}
-	withoutLinks = []string{perl, hereString, dotGlob, sdTouch, sdCp, sdSed, sdTee, cdpathShape}
+	shapeNames   = []string{perl, hereString, dotGlob, sdTouch, sdCp, sdSed, sdTee, links, cdpathShape, readingsScript, readingsDash}
+	withoutLinks = []string{perl, hereString, dotGlob, sdTouch, sdCp, sdSed, sdTee, cdpathShape, readingsScript, readingsDash}
 	singleDash   = []string{sdTouch, sdCp, sdSed, sdTee}
 )
 
@@ -123,6 +140,11 @@ var described = map[string]string{
 	sdTee:   "tee -" + strings.Repeat("a", 8182) + " file",
 	// 500 assignments of CDPATH to a, `true; `, and 614 of `cd x; `.
 	cdpathShape: strings.Repeat("CDPATH=a ", 500) + "true; " + strings.Repeat("cd x; ", 614),
+	// strace, 17 `-J`, `1 sh -c '`, 386 of `strace -J -J 1 true; ` and `'`.
+	readingsScript: "strace" + strings.Repeat(" -J", 17) + " 1 sh -c '" + strings.Repeat("strace -J -J 1 true; ", 386) + "'",
+	// strace, 16 `-J`, touch, one word that is a dash and 8,125 of the letter
+	// a, and the file name `file`.
+	readingsDash: "strace" + strings.Repeat(" -J", 16) + " touch -" + strings.Repeat("a", 8125) + " file",
 }
 
 // The lengths AC-1 and AC-10 give, as figures, so that a slip in the table
@@ -130,16 +152,19 @@ var described = map[string]string{
 var describedLength = map[string]int{
 	perl: 8192, hereString: 8190, dotGlob: 8191,
 	sdTouch: 8192, sdCp: 8192, sdSed: 8192, sdTee: 8192,
-	cdpathShape: 8190,
+	cdpathShape:    8190,
+	readingsScript: 8174, readingsDash: 8192,
 }
 
-// The answer the leg expects of Inspect: the removal refused, and the words
-// through 255 links each refused for going through more than 64 (AC-5); the
-// rest allowed, as today.
+// The answer the leg expects of Inspect: the removal refused, the words
+// through 255 links each refused for going through more than 64 (AC-5), and
+// the command read one way more than 16 refused (US-112); the rest allowed,
+// the command read 16 ways among them.
 var refusedToday = map[string]bool{
 	perl: false, hereString: false, dotGlob: true,
 	sdTouch: false, sdCp: false, sdSed: false, sdTee: false,
 	links: true, cdpathShape: false,
+	readingsScript: true, readingsDash: false,
 }
 
 // budgetFlag is the budget each shape is held to: its own, or the perl shape's
@@ -147,11 +172,15 @@ var refusedToday = map[string]bool{
 var budgetFlag = map[string]string{
 	perl: perl, hereString: hereString, dotGlob: dotGlob,
 	sdTouch: perl, sdCp: perl, sdSed: perl, sdTee: perl, links: perl,
-	cdpathShape: perl,
+	cdpathShape: perl, readingsScript: perl, readingsDash: perl,
 }
 
 func shapeOf(command string) string {
 	switch {
+	case strings.HasPrefix(command, "strace") && strings.Contains(command, " sh -c '"):
+		return readingsScript
+	case strings.HasPrefix(command, "strace"):
+		return readingsDash
 	case strings.HasPrefix(command, "perl"):
 		return perl
 	case strings.HasPrefix(command, "$s"):
@@ -878,31 +907,37 @@ func TestAC2OneLineForEachShapeGivesItsNameItsFastestOfFiveRunsAndItsBudget(t *t
 			name:    "the story's budgets",
 			budgets: []int{3000, 1000, 1000},
 			took: map[string][]time.Duration{
-				perl:        ms(1049, 1093, 1062, 1077, 1055),
-				hereString:  ms(401, 284, 277, 283, 290),
-				dotGlob:     ms(408, 372, 361, 399, 352),
-				sdTouch:     ms(1101, 1102, 1103, 1104, 1105),
-				sdCp:        ms(1206, 1202, 1203, 1204, 1205),
-				sdSed:       ms(1306, 1307, 1308, 1309, 1301),
-				sdTee:       ms(1406, 1407, 1401, 1409, 1408),
-				cdpathShape: ms(1508, 1506, 1505, 1502, 1507),
+				perl:           ms(1049, 1093, 1062, 1077, 1055),
+				hereString:     ms(401, 284, 277, 283, 290),
+				dotGlob:        ms(408, 372, 361, 399, 352),
+				sdTouch:        ms(1101, 1102, 1103, 1104, 1105),
+				sdCp:           ms(1206, 1202, 1203, 1204, 1205),
+				sdSed:          ms(1306, 1307, 1308, 1309, 1301),
+				sdTee:          ms(1406, 1407, 1401, 1409, 1408),
+				cdpathShape:    ms(1508, 1506, 1505, 1502, 1507),
+				readingsScript: ms(1609, 1607, 1606, 1603, 1608),
+				readingsDash:   ms(1710, 1704, 1709, 1708, 1707),
 			},
-			fastest: map[string]float64{perl: 1049, hereString: 277, dotGlob: 352, sdTouch: 1101, sdCp: 1202, sdSed: 1301, sdTee: 1401, cdpathShape: 1502},
+			fastest: map[string]float64{perl: 1049, hereString: 277, dotGlob: 352, sdTouch: 1101, sdCp: 1202, sdSed: 1301, sdTee: 1401, cdpathShape: 1502,
+				readingsScript: 1603, readingsDash: 1704},
 		},
 		{
 			name:    "other budgets and other timings",
 			budgets: []int{2999, 998, 997},
 			took: map[string][]time.Duration{
-				perl:        ms(2100, 2050, 2998, 2001, 1234),
-				hereString:  ms(321, 900, 800, 700, 600),
-				dotGlob:     ms(950, 940, 456, 930, 920),
-				sdTouch:     ms(2501, 2502, 2503, 2504, 1511),
-				sdCp:        ms(1612, 2502, 2503, 2504, 2505),
-				sdSed:       ms(2501, 1713, 2503, 2504, 2505),
-				sdTee:       ms(2501, 2502, 2503, 1814, 2505),
-				cdpathShape: ms(2501, 2502, 1915, 2504, 2505),
+				perl:           ms(2100, 2050, 2998, 2001, 1234),
+				hereString:     ms(321, 900, 800, 700, 600),
+				dotGlob:        ms(950, 940, 456, 930, 920),
+				sdTouch:        ms(2501, 2502, 2503, 2504, 1511),
+				sdCp:           ms(1612, 2502, 2503, 2504, 2505),
+				sdSed:          ms(2501, 1713, 2503, 2504, 2505),
+				sdTee:          ms(2501, 2502, 2503, 1814, 2505),
+				cdpathShape:    ms(2501, 2502, 1915, 2504, 2505),
+				readingsScript: ms(2016, 2502, 2503, 2504, 2505),
+				readingsDash:   ms(2501, 2502, 2503, 2504, 2117),
 			},
-			fastest: map[string]float64{perl: 1234, hereString: 321, dotGlob: 456, sdTouch: 1511, sdCp: 1612, sdSed: 1713, sdTee: 1814, cdpathShape: 1915},
+			fastest: map[string]float64{perl: 1234, hereString: 321, dotGlob: 456, sdTouch: 1511, sdCp: 1612, sdSed: 1713, sdTee: 1814, cdpathShape: 1915,
+				readingsScript: 2016, readingsDash: 2117},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -928,7 +963,8 @@ func TestAC6AC10TheNewShapesAreHeldToThePerlBudgetAndPrintIt(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d with every fastest run inside its budget; stderr:\n%s", code, stderr)
 	}
-	fastest := map[string]float64{perl: 1, hereString: 1, dotGlob: 1, sdTouch: 1, sdCp: 1, sdSed: 1, sdTee: 1, links: 75, cdpathShape: 1}
+	fastest := map[string]float64{perl: 1, hereString: 1, dotGlob: 1, sdTouch: 1, sdCp: 1, sdSed: 1, sdTee: 1, links: 75, cdpathShape: 1,
+		readingsScript: 1, readingsDash: 1}
 	passingLines(t, stdout, shapeNames, fastest, func(shape string) int { return budgetFor(shape, 2999, 998, 997) })
 	if skipped := skipLines(stdout + stderr); len(skipped) != 0 {
 		t.Errorf("the links shape was timed and also said to be skipped: %q", skipped)
@@ -953,6 +989,8 @@ func TestAC3AShapeWhoseFastestRunIsOverItsBudgetFailsTheLegAndSaysWhatToDo(t *te
 		{sdTee, ms(5000, 4000, 3001.5, 4500, 4600), 3001.5, 3000},
 		{links, ms(22800, 22700, 22600, 22500, 22400), 22400, 3000},
 		{cdpathShape, ms(3600, 3500, 3502, 3700, 3800), 3500, 3000},
+		{readingsScript, ms(3100, 3050, 3700, 3601, 3333), 3050, 3000},
+		{readingsDash, ms(9999, 8888, 7777, 6666, 3007), 3007, 3000},
 	} {
 		t.Run(tc.shape, func(t *testing.T) {
 			l := legFor(t, tc.shape == links)
@@ -1151,7 +1189,8 @@ func TestAC3ABudgetThatIsMissingOrIsNotAWholeNumberAboveZeroFailsBeforeAnythingI
 func TestAC6AC10EachTimedShapeIsTheCommandItsCriterionDescribes(t *testing.T) {
 	t.Run("AC-6 the commands this test expects are the longest whole ones not over 8,192 bytes", func(t *testing.T) {
 		// One more unit of each shape: a letter, a block, a segment.
-		step := map[string]int{perl: 1, hereString: len("$s = @'\nx\n'@\n"), dotGlob: len("a/"), sdTouch: 1, sdCp: 1, sdSed: 1, sdTee: 1, cdpathShape: len("cd x; ")}
+		step := map[string]int{perl: 1, hereString: len("$s = @'\nx\n'@\n"), dotGlob: len("a/"), sdTouch: 1, sdCp: 1, sdSed: 1, sdTee: 1, cdpathShape: len("cd x; "),
+			readingsScript: len("strace -J -J 1 true; "), readingsDash: 1}
 		for _, shape := range withoutLinks {
 			n := len(described[shape])
 			if n != describedLength[shape] {
@@ -1385,6 +1424,24 @@ func TestAC6WhereNoLinkCanBeMadeTheLinksShapeIsSkippedSayingWhyAndTheRestStillCo
 			t.Error("exit 0 with the perl shape over its budget and the links shape skipped")
 		}
 	})
+}
+
+// US-112, AC-17 (design review round 5): the real Inspect answers the two
+// readings shapes as the leg expects, so the leg times the bound and not a
+// command it stopped reading. The one over the bound is refused as too deep to
+// read, and not as a write or a commit: what it runs was not read.
+func TestAC17TheReadingsShapesAreAnsweredByTheRealInspectAsTheLegExpects(t *testing.T) {
+	for _, shape := range []string{readingsScript, readingsDash} {
+		t.Run("AC-17 "+shape, func(t *testing.T) {
+			f, refused := shellpolicy.Inspect(described[shape], state(t.TempDir(), false))
+			switch {
+			case refused != refusedToday[shape]:
+				t.Fatalf("Inspect answered %s as %s, and the leg expects it %s: %+v", shape, answer(refused), answer(refusedToday[shape]), f)
+			case refused && f.Rule != "command-too-deep-to-read":
+				t.Errorf("%s was refused under %s, want command-too-deep-to-read: %s", shape, f.Rule, f.Reason)
+			}
+		})
+	}
 }
 
 // head is enough of a command to recognise, not 8 KB of it.

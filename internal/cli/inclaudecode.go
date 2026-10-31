@@ -34,12 +34,16 @@ func refuseInsideClaudeCode(cmd *cobra.Command, slash string) error {
 		quote(path)+" was run in a process Claude Code started, so nothing was read or changed",
 		// By name only: the session id is a value of one of them.
 		"the environment variable "+found+" is set here, and Claude Code sets it for the processes it starts: "+
-			"a model's Bash or PowerShell and whatever they run, a `!` line typed in a session, and a terminal "+
-			"or tmux it started; a person's decision comes from a slash command they type in Claude Code, or "+
-			"from a terminal outside it")
+			"a model's Bash or PowerShell and whatever they run, a `!` line typed in a session started from a "+
+			"terminal, and a terminal or tmux it started; a person's decision comes from a slash command they "+
+			"type in Claude Code, a `!` line in Claude Desktop, or a terminal outside Claude Code")
 	if slash == "" {
-		return err.WithFix("a person runs " + quote(path) + withArguments(cmd, false) + " in a terminal outside " +
-			"Claude Code, in a window they opened themselves; an assistant stops here and tells the person")
+		// No slash command: the terminal, and in Claude Desktop the `!` line,
+		// which has none of the markers (human advocate, Gate 7).
+		more := withArguments(cmd, false)
+		return err.WithFix("a person runs " + quote(path) + more + " in a terminal outside Claude Code, in a " +
+			"window they opened themselves, or types " + quote("!"+path) + more + " at the prompt in Claude " +
+			"Desktop; an assistant stops here and tells the person")
 	}
 	// The first argument is put in where it has the shape of an id: the story
 	// for approve, remap and release, since after an escalation no story is
@@ -54,9 +58,11 @@ func refuseInsideClaudeCode(cmd *cobra.Command, slash string) error {
 	if more != "" {
 		them = " with them"
 	}
-	return err.WithFix("a person types " + quote(typed) + " in Claude Code" + more + ", or runs " + quote(run) + them +
-		" in a terminal outside Claude Code, in a window they opened themselves; an assistant stops here and says " +
-		"what it would have run")
+	// In Claude Desktop the slash command does not run, since every hook
+	// there has AI_AGENT, so the `!` line is named before the terminal.
+	return err.WithFix("a person types " + quote(typed) + " in Claude Code" + more + ", or " + quote("!"+run) +
+		them + " at the prompt in Claude Desktop, or runs " + quote(run) + them + " in a terminal outside Claude " +
+		"Code, in a window they opened themselves; an assistant stops here and says what it would have run")
 }
 
 // withArguments is how a fix says to give the command the rest of what was

@@ -792,6 +792,9 @@ func unfollowedFinding(rule string, e findExpression, root, what string, known b
 			"off the command"
 	case e.cause == causeDiffer:
 		route = "run the find as a command of its own, with each word written out plainly"
+	case e.cause == causeForked:
+		route = "give each option of the command the action runs as the tool's manual does, or run that " +
+			"command on the files a find that only prints lists"
 	default:
 		route = "run one find for each filter, so the hook need not read a group"
 	}

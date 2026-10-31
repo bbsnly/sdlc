@@ -168,7 +168,9 @@ func staffingRow(record *model.Record, agent string) *model.Staffed {
 }
 
 // assigned is what a person pinned for an agent, and whether they pinned
-// anything.
+// anything. The hook asks the same of the staffing for an agent's run, with
+// staffingRow's row under it (askedFor in internal/hook/trace.go), and cannot
+// import this package: a change to one is made to both.
 func assigned(record *model.Record, agent string) (model.Assigned, bool) {
 	if record.Staffing != nil {
 		for _, a := range record.Staffing.Assigned {

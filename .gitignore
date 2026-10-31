@@ -25,6 +25,11 @@
 # writes no opinion about what your project should commit.
 /.sdlc/stories/
 
+# A story's trace is telemetry of the machine that made it, and sdlc ignores it
+# in every project it sets up. Named on its own, so that it stays ignored if
+# the line above ever goes.
+/.sdlc/stories/*/trace.jsonl
+
 # The backlog, when sdlc runs on itself. Ignored for now: the stories here are
 # this repository's own to-do list, still being shaped, and not something a
 # user of sdlc needs. Again a rule about THIS repository -- sdlc itself expects

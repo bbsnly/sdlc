@@ -281,15 +281,33 @@ func TestInitWritesEverythingAProjectNeeds(t *testing.T) {
 }
 
 // The loop's state belongs to the project, and what a project commits is the
-// project's decision.
-func TestInitWritesNoGitignoreOpinion(t *testing.T) {
+// project's decision. US-112 AC-26 makes one exception: a story's trace is
+// telemetry of the machine that made it, and is ignored unless the project
+// removes the line. Nothing else of the loop's is.
+func TestAC26InitIgnoresTheTraceAndHasNoOtherOpinion(t *testing.T) {
 	root := t.TempDir()
+	cmd := exec.CommandContext(t.Context(), "git", "init", "--quiet")
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
 	if _, err := Init(root, false); err != nil {
 		t.Fatal(err)
 	}
-	for _, rel := range []string{".gitignore", config.Dir + "/.gitignore"} {
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
-			t.Errorf("init wrote %s; what to ignore is the user's decision", rel)
+	ignored := func(rel string) bool {
+		check := exec.CommandContext(t.Context(), "git", "check-ignore", "-q", "--no-index", rel)
+		check.Dir = root
+		return check.Run() == nil
+	}
+	if !ignored(config.Dir + "/stories/US-001/trace.jsonl") {
+		t.Error("AC-26 init does not ignore a story's trace")
+	}
+	for _, rel := range []string{
+		config.Dir + "/stories/US-001/gate-record.json", config.Dir + "/stories/US-001/PLAN.md",
+		config.Dir + "/state/tests.lock", config.File, "user_stories.json", "src/trace.jsonl",
+	} {
+		if ignored(rel) {
+			t.Errorf("init ignores %s; what to ignore is the user's decision", rel)
 		}
 	}
 }

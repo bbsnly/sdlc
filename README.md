@@ -23,7 +23,7 @@ always green.
 There are three parts: the binary that does the enforcing, the plugin that runs
 the loop, and one command in your project. Before you begin, you will need:
 
-- **Claude Code** 2.1.265 or newer
+- **Claude Code** 2.1.309 or newer
 - **git** 2.17 or newer, and on Windows
   [Git for Windows](https://git-scm.com/download/win) (WSL is not required)
 - **Node** 18 or newer, for the `npx` command below

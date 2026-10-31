@@ -57,7 +57,8 @@ Some of the loop's commands are a person's decision, and the hook refuses them
 from the model: approving, lifting the freeze, acknowledging the log, putting a
 landed story's map change on trunk, moving a story, and choosing an agent's
 model. In a terminal outside Claude Code you run them as `sdlc` commands. In
-Claude Code you type them as slash commands:
+Claude Code you type them as slash commands; in Claude Desktop, as a `!` line
+(below):
 
 | Type in Claude Code | Stands for |
 | --- | --- |
@@ -79,17 +80,23 @@ first six: Claude Code does not offer them to it, and the hook runs only a
 command a person typed. `/sdlc:init` and `/sdlc:doctor` decide nothing, so the
 model may run those too.
 
-Inside Claude Code, the slash command is the way. A `!` line such as
-`!sdlc approve US-001` runs with the environment variables Claude Code sets for
-the model's Bash, so the command refuses itself with
-[SDLC-E0079](troubleshooting.md#sdlc-e0079) and changes nothing; type
-`/sdlc:approve US-001` instead. A slash command typed in a session that was
-started from another session's tool call, such as a `claude` a model's Bash
-started, does not run either: the hook finds `AI_AGENT` in its environment and
-says that the command did not run.
+In Claude Desktop, type a person's command as a `!` line: `!sdlc approve
+US-001`. Claude Code 2.1.309 in Claude Desktop runs the hook with `AI_AGENT`
+set, so `/sdlc:approve US-001` answers that it did not run. A `!` line there
+runs the command with none of the variables
+[SDLC-E0079](troubleshooting.md#sdlc-e0079) reads (seen on 2026-10-29). A
+terminal outside Claude Code is the fallback; it needs sdlc installed
+([What still needs a terminal](#what-still-needs-a-terminal)). In Claude Code
+run from a terminal, the slash command is the way: there a `!` line runs with
+the environment variables Claude Code sets for the model's Bash, so the command
+refuses itself with SDLC-E0079 and changes nothing. A slash command typed in a
+session that was started from another session's tool call does not run
+either: the hook finds `AI_AGENT` in its environment and says that the command
+did not run.
 
 After the loop handed `US-001` to a person with a question, typing
-`/sdlc:approve US-001` shows:
+`!sdlc approve US-001` in Claude Desktop, or `/sdlc:approve US-001` in Claude
+Code run from a terminal, shows:
 
 ```text
 US-001  approved (spec_unclear)
@@ -99,7 +106,9 @@ A person runs `sdlc start US-001`, or types /sdlc:next in Claude Code, to carry 
 
 A command acts on the directory the session is in, as the same command typed
 in a terminal there would. A story under way in its own worktree is answered
-there, so open a session in `.sdlc/worktrees/<ID>` for it; typed from the main
+there, so open a session in `.sdlc/worktrees/<ID>` for it, or, since a `!` line
+runs where the session is, type `!cd .sdlc/worktrees/US-001 && sdlc approve
+US-001`; typed from the main
 checkout, `/sdlc:approve` is refused with
 [SDLC-E0050](troubleshooting.md#sdlc-e0050), which names the checkout that
 holds the story.
@@ -130,9 +139,11 @@ started after the change sees them.
 enforcement off for the sessions Desktop starts: every refusal of the hook's
 stands down, and so do the `Stop` hook and the formatter. The slash commands
 above still run, as they would in a terminal with enforcement off. A person's
-command run in the model's Bash, or from a `!` line, still refuses itself
+command run in the model's Bash, or from a `!` line in Claude Code run from a
+terminal, still refuses itself
 ([SDLC-E0079](troubleshooting.md#sdlc-e0079), and SDLC-E0061 or SDLC-E0074 for
-`sdlc parallel` and `sdlc staffing assign`). It must be exactly `0`.
+`sdlc parallel` and `sdlc staffing assign`); a `!` line in Claude Desktop runs
+it, as above. It must be exactly `0`.
 
 `SDLC_DEBUG_FILE` set in the local environment editor to the full path of a file
 makes the hook, and the plugin's launcher, append a line to it about each call.
@@ -146,9 +157,12 @@ off.
 ## What still needs a terminal
 
 `sdlc parallel`, which works more than one story at a time in their own
-worktrees, has no slash command. Run it in a terminal outside Claude Code: a
-terminal window you opened yourself, such as Terminal on macOS or PowerShell
-from the Start menu. A terminal that Claude Code or Claude Desktop opens is not
+worktrees, has no slash command. In Claude Desktop a `!` line reaches it with
+none of the variables [SDLC-E0079](troubleshooting.md#sdlc-e0079) reads, as it
+reaches the other commands above: `!sdlc parallel US-001 US-002`. A run of
+sessions takes as long as its stories do, so a terminal outside Claude Code is
+the surer place for it: a terminal window you opened yourself, such as Terminal
+on macOS or PowerShell from the Start menu. A terminal that Claude Code or Claude Desktop opens is not
 one, and neither is a `tmux` session Claude Code started: where one has Claude
 Code's environment variables, the command refuses itself there with
 [SDLC-E0079](troubleshooting.md#sdlc-e0079).

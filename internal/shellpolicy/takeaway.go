@@ -828,8 +828,13 @@ func findDepth(args []string, option string, def int) int {
 // -rf {} +`, `-execdir mv {} ...`.
 func findRemoves(args []string) bool {
 	for i, a := range args {
-		if findRuns(a) {
-			if exec := program(args[i+1:]); len(exec.words) > 0 && hasWord(takenAway(exec.words), "{}") {
+		if !findRuns(a) {
+			continue
+		}
+		// Any reading that removes what find found: `-exec strace -J 1 rm
+		// {} +` removes it read one way.
+		for _, exec := range everyReading(program(args[i+1:])) {
+			if len(exec.words) > 0 && hasWord(takenAway(exec.words), "{}") {
 				return true
 			}
 		}

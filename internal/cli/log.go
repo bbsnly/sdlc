@@ -293,7 +293,7 @@ func noteReviews(e *logEntry, r *model.Record) {
 func noteEvents(e *logEntry, r *model.Record) {
 	for _, ev := range r.Events {
 		switch {
-		case ev.Type == "gates_reopened":
+		case ev.Type == model.EventGatesReopened:
 			e.Reopened = append(e.Reopened, logEvent{At: ev.At, Message: ev.Message})
 		// Lifting a finished story's freeze is the loop tidying up, not
 		// somebody changing the tests.

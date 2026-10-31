@@ -235,11 +235,13 @@ it does not stop the gate, and it goes stale if the story changes after it.
 ## Record your decision
 
 Your own terminal, wherever this page says so, is one outside Claude Code: a
-window you opened yourself. A `!` line typed in a session, a terminal or `tmux`
-that Claude Code started, and anything a model's tool runs have Claude Code's
-environment variables, and the commands below refuse themselves there with
-[SDLC-E0079](../troubleshooting.md#sdlc-e0079); in Claude Code, type the slash
-command.
+window you opened yourself. A `!` line typed in Claude Code run from a
+terminal, a terminal or `tmux` that Claude Code started, and anything a model's
+tool runs have Claude Code's environment variables, and the commands below
+refuse themselves there with [SDLC-E0079](../troubleshooting.md#sdlc-e0079); in
+Claude Code, type the slash command. In Claude Desktop (Claude Code 2.1.309,
+seen on 2026-10-29) the slash command does not run, and a `!` line does: type
+`!sdlc approve <ID>`.
 
 Put the decision where the next agent will read it, not only in the chat. Every
 gate is done by an agent starting from a fresh context, and that agent never

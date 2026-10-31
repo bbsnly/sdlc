@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,8 +15,10 @@ import (
 
 	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/scaffold"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
+	"github.com/bbsnly/sdlc/internal/trace"
 )
 
 const securityFlag = "security-sensitive"
@@ -65,8 +68,32 @@ func newStartCmd() *cobra.Command {
 			// Once start knows where it went on to, if anywhere. A refusal is
 			// printed after the command returns, so this still comes first.
 			notePassedOver(cmd.ErrOrStderr(), said)
+			if err == nil && said.went != "" {
+				ignoreTraces(cmd, said.went)
+			}
 			return err
 		},
+	}
+}
+
+// ignoreTraces writes .sdlc/.gitignore where a project initialised before
+// there were traces has none: with worktrees off, a trace not ignored is an
+// untracked file the commit gate meets on every story for good. It is written
+// in the checkout that holds the story's records, where the trace is. A
+// failure is a debug line: start's output and exit code are API.
+func ignoreTraces(cmd *cobra.Command, id string) {
+	s, _, err := openStore(cmd)
+	var dir string
+	if err == nil {
+		dir, err = s.StoryDir(id)
+	}
+	if err == nil {
+		// StoryDir is <checkout>/.sdlc/stories/<ID>, so the checkout is three
+		// levels above it, as the trace writer finds it (trace.inCheckout).
+		err = scaffold.IgnoreTraces(filepath.Dir(filepath.Dir(filepath.Dir(dir))))
+	}
+	if err != nil {
+		slog.Debug("start: .sdlc/.gitignore was not written", "err", pathless(err))
 	}
 }
 
@@ -189,7 +216,7 @@ func beginIteration(cmd *cobra.Command, s, target *store.Store, plan startPlan, 
 	if plan.fresh {
 		withdrawMap(s, record, id, "the story was begun afresh")
 	}
-	record.Append("loop_start", "iteration started", s.Now())
+	record.Append(model.EventLoopStart, "iteration started", s.Now())
 	if err := s.SaveRecord(record); err != nil {
 		return err
 	}
@@ -581,7 +608,7 @@ func recordLoopEnd(cmd *cobra.Command, s *store.Store, active string) (bool, err
 	case err != nil:
 		return false, err
 	}
-	record.Append("loop_end", "iteration ended", s.Now())
+	record.Append(model.EventLoopEnd, "iteration ended", s.Now())
 	if err := s.SaveRecord(record); err != nil {
 		return false, err
 	}
@@ -872,6 +899,7 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) error {
 	if err != nil {
 		return err
 	}
+	g.noteDiff()
 	// A story handed over is the backlog's awaiting_human, written with
 	// the hand-over; there is nothing left to settle, and nothing left
 	// that could fail once a person has been asked.
@@ -1057,6 +1085,70 @@ func (g *gateRun) noteCommitGate() error {
 	}
 	rememberCommit(record, g.s.Now(), false)
 	return nil
+}
+
+// measureChange is how the commit gate measures the story's change for its
+// trace. It is a variable so that a test can make the measurement fail and
+// nothing else.
+var measureChange = gitx.Numstat
+
+// noteDiff records in the story's trace the size of the change the commit gate
+// passed, in all and for the frozen tests, naming no file (US-112, AC-10). The
+// gate's outcome is settled before it runs: nothing is printed and nothing is
+// refused, and a change that cannot be measured is a debug line. The change
+// is the one the landing fingerprints, so it leaves out the loop's own files
+// as that does.
+func noteDiff(ctx context.Context, s *store.Store, record *model.Record) {
+	stage, err := func() (string, error) {
+		freeze, err := s.Lock()
+		if err != nil {
+			return "freeze", err
+		}
+		// A story in its own worktree is measured from where its change
+		// starts, which recordChange set in this pass; any other from the
+		// start of its commits.
+		base := record.ChangeBase
+		if base == "" {
+			base = record.CommitBase
+		}
+		stats, err := measureChange(ctx, s.Root(), base, record.Base, leftOut...)
+		if err != nil {
+			return "measure", err
+		}
+		dir, err := s.StoryDir(record.Story)
+		if err != nil {
+			return "story directory", err
+		}
+		return "append", trace.Append(dir, diffRecord(stats, freeze))
+	}()
+	if err != nil {
+		slog.Debug("trace: the commit gate's change was not recorded", "stage", stage, "err", pathless(err))
+	}
+}
+
+// noteDiff records the change a commit gate's pass took, and nothing for any
+// other gate or outcome.
+func (g *gateRun) noteDiff() {
+	if g.gate == model.GateCommit && g.status == model.GatePass {
+		noteDiff(g.cmd.Context(), g.s, g.record)
+	}
+}
+
+// diffRecord is a change's size as the trace keeps it: files and lines, and
+// the share of them the freeze holds. A file git reads as binary is a file
+// with no lines.
+func diffRecord(stats []gitx.FileStat, freeze *model.Lock) trace.Record {
+	var files, added, removed, testFiles, testAdded, testRemoved int
+	for _, f := range stats {
+		files, added, removed = files+1, added+f.Added, removed+f.Removed
+		if freeze.Holds(f.Path) {
+			testFiles, testAdded, testRemoved = testFiles+1, testAdded+f.Added, testRemoved+f.Removed
+		}
+	}
+	return trace.Record{
+		"kind": "diff", "files": files, "added": added, "removed": removed,
+		"test_files": testFiles, "test_added": testAdded, "test_removed": testRemoved,
+	}
 }
 
 // save writes the record. A failure is counted on it before it is saved: one
@@ -1439,7 +1531,17 @@ func requireCommitted(ctx context.Context, s *store.Store) error {
 			why = "the gate records that the story is committed on " + store.StoryBranch(id) +
 				", and a working tree with changes in it is not"
 		}
-		return sdlcerr.New(sdlcerr.TreeNotCommitted, "the commit gate cannot pass while there is uncommitted work", why)
+		err := sdlcerr.New(sdlcerr.TreeNotCommitted, "the commit gate cannot pass while there is uncommitted work", why)
+		// The one file a person may not know is theirs to commit: sdlc start
+		// wrote it into a project initialised before traces, and with
+		// .sdlc/stories tracked the gate refused on it with nothing to say
+		// what it was (US-112, human advocate).
+		if paths, lerr := gitx.Uncommitted(ctx, s.Root(), true); lerr == nil && slices.Contains(paths, scaffold.TraceIgnoreFile) {
+			err = err.WithFix("commit " + scaffold.TraceIgnoreFile + " with the work: sdlc wrote it so that each story's " +
+				model.TraceFile + " stays out of git, and it belongs in this story's commit; stash anything else " +
+				`that does not belong to this story by path with "git stash push -- <path>", then record the gate`)
+		}
+		return err
 	}
 	return nil
 }

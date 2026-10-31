@@ -348,6 +348,12 @@ type Artifact struct {
 // here rather than in the store because the rules that protect it need it too.
 const RecordFile = "gate-record.json"
 
+// TraceFile is the story's measurements beside its gate record: one line per
+// thing the loop costs, appended by the hook and the commit gate and read back
+// by "sdlc trace". The rules that keep it from being written by anything else
+// need its name, which is why it sits here beside RecordFile.
+const TraceFile = "trace.jsonl"
+
 // The files the store keeps in the loop's state directory, by name. They are
 // named here rather than in the store for the same reason: the rules that
 // protect them need them before they exist. Held only as the disk listed the
@@ -359,12 +365,15 @@ const (
 	FreezeFile       = "tests.lock"
 	StopBlocksFile   = "stop-blocks.json"
 	AcknowledgedFile = "acknowledged"
+	// TraceMarkFile is where the hook keeps how far it has read each
+	// transcript, so that a turn's counts start where the last turn's ended.
+	TraceMarkFile = "trace-read.json"
 )
 
 // StateFiles are the files the store keeps in the loop's state directory, by
 // name, in a slice of the caller's own.
 func StateFiles() []string {
-	return []string{ActiveFile, SessionFile, FreezeFile, StopBlocksFile, AcknowledgedFile}
+	return []string{ActiveFile, SessionFile, FreezeFile, StopBlocksFile, AcknowledgedFile, TraceMarkFile}
 }
 
 // InstructionFiles are the files Claude Code, and the agent tools that read
@@ -702,6 +711,11 @@ type Event struct {
 	At      string `json:"at"`
 	Type    string `json:"type"`
 	Message string `json:"message"`
+	// AgentType and AgentID name the subagent of an agent_start or agent_end
+	// event. They are left out when empty, so every other event is written
+	// byte for byte as it was before they existed.
+	AgentType string `json:"agent_type,omitempty"`
+	AgentID   string `json:"agent_id,omitempty"`
 }
 
 // Escalation is a point where the loop stopped and asked a person.
@@ -1042,6 +1056,19 @@ const (
 	EventApproval = "approval"
 )
 
+// The other kinds of event in a record's history: the ones "sdlc trace"
+// replays to split a story's time between subagents, a person and the time
+// between iterations.
+const (
+	EventAgentStart    = "agent_start"
+	EventAgentEnd      = "agent_end"
+	EventEscalate      = "escalate"
+	EventLoopStart     = "loop_start"
+	EventLoopEnd       = "loop_end"
+	EventGatesReopened = "gates_reopened"
+	EventLanded        = "landed"
+)
+
 // GateEvent is how a gate's outcome is written into the record's history.
 func GateEvent(g Gate, s GateStatus) string { return string(g) + " " + string(s) }
 
@@ -1213,7 +1240,7 @@ func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) [
 
 	reopened := r.reopenAfter(g, "reopened when "+string(g)+" was recorded "+string(status), at)
 	if len(reopened) > 0 {
-		r.Append("gates_reopened", strings.Join(reopened, ", ")+" reopened: "+
+		r.Append(EventGatesReopened, strings.Join(reopened, ", ")+" reopened: "+
 			string(g)+" was recorded "+string(status), at)
 	}
 	r.forgetCommit(stood)
@@ -1232,7 +1259,7 @@ func (r *Record) Reopen(g Gate, why string, at time.Time) []string {
 	note := "reopened: " + why
 	r.Gates[g] = GateResult{Status: GatePending, At: Timestamp(at), Note: note}
 	reopened := append([]string{string(g)}, r.reopenAfter(g, note, at)...)
-	r.Append("gates_reopened", strings.Join(reopened, ", ")+" reopened: "+why, at)
+	r.Append(EventGatesReopened, strings.Join(reopened, ", ")+" reopened: "+why, at)
 	r.forgetCommit(stood)
 	return reopened
 }

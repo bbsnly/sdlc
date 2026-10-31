@@ -2,9 +2,13 @@
 //
 // It writes four things: the configuration, the story schema editors validate
 // against, a starter backlog, and the contract section the assistant reads from
-// CLAUDE.md or AGENTS.md. It writes no .gitignore: what a project commits is the project's
-// decision, and the loop's state is useful in version control for exactly the
-// same reasons the code is. The one exception is .sdlc/state: every story
+// CLAUDE.md or AGENTS.md. Beside them it writes .sdlc/.gitignore, which ignores
+// each story's trace and nothing else, and it never writes the project's own
+// .gitignore: what a project commits is the project's decision, and the loop's
+// state is useful in version control for exactly the same reasons the code is.
+// A trace is the exception: it is telemetry of the machine that made it, which
+// the hook appends to on every tool call, so tracked it leaves the tree dirty
+// for good (US-112, AC-26). The other exception is .sdlc/state: every story
 // worktree writes its own there, so a story worked in one cannot land on a
 // trunk that tracks it. Start ignores it inside each new worktree, and doctor
 // says when trunk tracks it; neither writes the project's own .gitignore.
@@ -15,6 +19,8 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +29,7 @@ import (
 	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/fsx"
 	"github.com/bbsnly/sdlc/internal/gitx"
+	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
@@ -128,11 +135,58 @@ func InitAt(root, shared string, force bool) (*Result, error) {
 	if err := res.write(shared, backlogPath, backlog, false); err != nil {
 		return nil, err
 	}
+	// Where the stories are kept, once the schema has made the directory, and
+	// beside what is listed rather than through it: init's printed list is API.
+	if err := IgnoreTraces(shared); err != nil {
+		return nil, err
+	}
 
 	if err := res.writeContract(root); err != nil {
 		return nil, err
 	}
 	return res, nil
+}
+
+// traceIgnore is the one line .sdlc/.gitignore holds: every story's trace,
+// as the hook names it.
+const traceIgnore = "/stories/*/" + model.TraceFile + "\n"
+
+// TraceIgnoreFile is the file IgnoreTraces writes, from the project's root,
+// slash-separated as git status names it.
+const TraceIgnoreFile = config.Dir + "/.gitignore"
+
+// IgnoreTraces writes <root>/.sdlc/.gitignore, ignoring every story's trace,
+// where there is no file at that name. One that is there is the project's and
+// is left byte for byte, so a project that took the line out keeps it out.
+// Init writes it, and so does start, for a project initialised before there
+// were traces.
+func IgnoreTraces(root string) error {
+	dir := filepath.Join(root, filepath.FromSlash(config.Dir))
+	path := filepath.Join(root, filepath.FromSlash(TraceIgnoreFile))
+	rel := TraceIgnoreFile
+	// Not through a link to a directory elsewhere, as the store writes
+	// nothing there either.
+	if info, err := os.Lstat(dir); err != nil || !info.IsDir() {
+		return sdlcerr.New(sdlcerr.StateUnwritable, rel+" could not be written",
+			config.Dir+" is not a directory in the project")
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) //nolint:gosec // G302: an ignore file git and the person read
+	if errors.Is(err, fs.ErrExist) || err != nil && fsx.Exists(path) {
+		// Windows refuses a directory at the name as access denied, not as
+		// there already; asking the disk sends both to "the project's own".
+		return nil
+	}
+	if err == nil {
+		_, err = f.WriteString(traceIgnore)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+	}
+	if err != nil {
+		return sdlcerr.New(sdlcerr.StateUnwritable, rel+" could not be written",
+			"its directory may not be writable, or the disk may be full").WithCause(err)
+	}
+	return nil
 }
 
 // write puts one file in place, under dir. When overwrite is false an existing

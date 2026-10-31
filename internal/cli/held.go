@@ -367,7 +367,7 @@ func releasedSinceStart(record *model.Record) bool {
 		switch v.Type {
 		case "release":
 			return true
-		case "loop_start":
+		case model.EventLoopStart:
 			return false
 		}
 	}

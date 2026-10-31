@@ -41,7 +41,7 @@ story you started and to stop on anything else, but nothing enforces that.
 
 | | |
 | --- | --- |
-| Claude Code | 2.1.265 or newer |
+| Claude Code | 2.1.309 or newer |
 | Node | 18 or newer, only for the `npx` route |
 | git | 2.17 or newer, in the project you run the loop on. On Windows this is [Git for Windows](https://git-scm.com/download/win); WSL is not required |
 | an OS | macOS, Linux, or Windows 10 or newer |

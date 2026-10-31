@@ -460,7 +460,7 @@ func ChangedBetween(ctx context.Context, root, base, tip string) ([]string, erro
 		return nil, err
 	}
 	changed, err := recall("changed-between", root, base, tip, func() ([]string, error) {
-		out, err := sealed(ctx, root, "diff-tree", "-r", "-z", argNoRenames, "--name-only",
+		out, err := sealed(ctx, root, argDiffTree, "-r", "-z", argNoRenames, "--name-only",
 			argIgnoreSubmodNone, base, tip, "--")
 		if err != nil {
 			return nil, err
@@ -765,8 +765,8 @@ func fingerprint(ctx context.Context, root, unified, base, tip string, leaveOut 
 	if err != nil {
 		return "", err
 	}
-	args := []string{"diff-tree", "-r", "-p", "--text", "--binary", argFullIndex,
-		"--no-color", "--no-ext-diff", "--no-textconv", argNoRenames,
+	args := []string{argDiffTree, "-r", "-p", "--text", "--binary", argFullIndex,
+		"--no-color", argNoExtDiff, argNoTextconv, argNoRenames,
 		unified, "--inter-hunk-context=0", "--diff-algorithm=myers", "--indent-heuristic",
 		"--src-prefix=a/", "--dst-prefix=b/", "--submodule=short", argIgnoreSubmodNone,
 		base + "^{commit}", tip + "^{commit}", "--"}

@@ -20,7 +20,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/bbsnly/sdlc/internal/model"
@@ -361,8 +363,16 @@ var mutating = map[string]bool{
 	"del": true, "erase": true, "move": true, "copy": true, "ren": true, "rename": true,
 	"rd": true,
 	// A link to a protected directory is that directory under a name no rule
-	// knows, and a junction needs no privilege to make.
-	"mklink": true,
+	// knows, and a junction needs no privilege to make. A hard link is a second
+	// name for a file, which an append made through either name reaches, and
+	// both of link's operands are names of it (US-112, security B2); fsutil's
+	// `hardlink create` and `file createnew` write, and changesAFile lets its
+	// verbs that only read through.
+	"mklink": true, "link": true, "fsutil": true,
+	// A named pipe made at a file's name is a file there: one at the trace's
+	// name before its first record leaves nothing recorded, and a reader that
+	// opens it waits on a writer that never comes (US-112, security N1).
+	"mkfifo": true, "mknod": true,
 	// PowerShell's cmdlets and their aliases, folded like every other name.
 	"remove-item": true, "move-item": true, "copy-item": true, "rename-item": true,
 	"new-item": true, "set-content": true, "add-content": true, "clear-content": true,
@@ -435,6 +445,8 @@ func readings(command string, powerShell bool) []pair {
 	out = addReadings(out, withoutDocuments(shell, powerShell, false), shell, false, viaShell)
 	if !powerShell {
 		out = addDecodedReadings(out, shell)
+		out = addHandedReadings(out, shell)
+		out = addWordReadings(out)
 		// And each once more with its brace lists expanded, where it has one.
 		for _, p := range slices.Clone(out) {
 			if text := bracesExpanded(p.text); text != p.text {
@@ -483,6 +495,55 @@ func addDecodedReadings(out []pair, shell string) []pair {
 		out = addReadings(out, texts, d, false, viaDecoded)
 	}
 	return out
+}
+
+// addHandedReadings adds a reading of the line once the shell has taken out
+// the backslashes the other readings leave to the path rules as words. An
+// escaped backslash is one backslash, which escapes nothing after it, and is
+// read as the separator clean makes of one, so the character after it is read
+// as itself: `echo \\; rm .sdlc/state/tests.lock` runs rm, which met no rule
+// while every reading took `\;` for find's (escapedSeparators). And where the
+// line may hand a string to eval, trap, emulate, mapfile or a shell's -c, an
+// escaped `;`, `&` or `|` separates: the shell takes the backslash out before
+// it hands the string over, and `eval true\;\ rm\ -f
+// .sdlc/stories/US-1/trace.jsonl` runs rm (US-112, Gate 7). At the top level
+// that escape is a word, so only such a line is read so. Added after the
+// others, it keeps the rule and the reason a command was refused under, and
+// it goes by the decoded reading's name: the names the log is told are four
+// (US-035, D1), and this too is the line once the shell has taken a backslash
+// out.
+func addHandedReadings(out []pair, shell string) []pair {
+	if !strings.Contains(shell, `\`) {
+		return out
+	}
+	r := escapedBackslashes
+	if mayHandAString(shell) {
+		r = handedSeparators
+	}
+	if text := r.Replace(shell); text != shell {
+		return addReadings(out, withoutDocuments(text, false, false), text, false, viaDecoded)
+	}
+	return out
+}
+
+// escapedBackslashes and handedSeparators are addHandedReadings' two
+// spellings: the second also takes the backslash off an escaped `;`, `&` or
+// `|`.
+var (
+	escapedBackslashes = strings.NewReplacer(`\\`, "/")
+	handedSeparators   = strings.NewReplacer(`\\`, "/", `\;`, ";", `\&`, "&", `\|`, "|")
+)
+
+// mayHandAString reports a line that names a builtin that hands the shell a
+// string to read, or a -c: a cheap test on the text, which can only add a
+// reading where none is needed.
+func mayHandAString(line string) bool {
+	for _, w := range []string{"eval", "trap", "emulate", "mapfile", "readarray", "-c"} {
+		if strings.Contains(line, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // Inspect reports the first rule that refuses this command.
@@ -623,7 +684,7 @@ func inspectReading(r pair, s State, m *memo) (Finding, bool) {
 
 // inspectPrograms applies the rules for what a reading runs.
 func inspectPrograms(r pair, s State, _ *memo) (Finding, bool) {
-	if f, ok := checkAssignedEnforcement(r.text); ok {
+	if f, ok := checkAssignedEnforcement(r.text, s.PowerShell); ok {
 		return f, true
 	}
 	return checkPrograms(r.text, s)
@@ -656,8 +717,9 @@ func inspectPaths(r pair, s State, m *memo) (Finding, bool) {
 }
 
 // checkAssignedEnforcement refuses a command that assigns one of the
-// variables the enforcement goes by, in any of its segments.
-func checkAssignedEnforcement(text string) (Finding, bool) {
+// variables the enforcement goes by, in any of its segments, or AI_AGENT as
+// its text form reads it.
+func checkAssignedEnforcement(text string, powerShell bool) (Finding, bool) {
 	for _, segment := range segments(text) {
 		if _, _, assigns := parse(segment); len(assigns) > 0 {
 			if f, ok := checkEnforcement(assigns); ok {
@@ -667,12 +729,12 @@ func checkAssignedEnforcement(text string) (Finding, bool) {
 	}
 	// PowerShell sets a variable as a statement of its own, which parse does not
 	// read as an assignment: `$env:CLAUDE_CODE_SESSION_ID='x'; sdlc start`.
-	if mayName(text, "CLAUDE_CODE_SESSION_ID") && setsSession.MatchString(text) {
+	if mayName(text, "CLAUDE_CODE_SESSION_ID") && setsSession().MatchString(text) {
 		if f, ok := checkEnforcement([]string{"CLAUDE_CODE_SESSION_ID"}); ok {
 			return f, true
 		}
 	}
-	return Finding{}, false
+	return agentText(text, powerShell)
 }
 
 // walkPlace is where the command was when a subshell opened: what a `cd`
@@ -772,23 +834,21 @@ func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 	if len(words) == 0 {
 		return Finding{}, false
 	}
-	run, evals := underEval(program(words))
+	run := programUnderEval(words)
+	if run.unread {
+		// Past its cap the command's readings were cut short, so it is not
+		// judged on those made before the cap; the program walk refuses the
+		// same in Inspect and HumanDecisions, and this is the refusal
+		// ClaudeConfigWrites, which runs this walk alone, gives.
+		return tooManyReadings(words[0], false), true
+	}
+	evals := run.evals
 	w.enters(run, quoted)
 	run.cut = w.cutWords(idx, marked)
 	s.seen.tell(s, run.words)
 	// A find's expression is read once, here, for every rule that asks.
 	found := w.find(idx, segment, run, evals)
-	// env -C runs the command in the directory it names, as a cd in front
-	// of it would, and leaves the shell where it was. Read from where the
-	// shell was, `env -C .. rm -rf B-2` took another story's worktree away,
-	// and `env -C .sdlc rm -rf state` the loop's own record. After `--`, since
-	// what env -C names is a directory whatever it begins with.
-	at, atLost, atFrom := w.dir, w.lost, w.from
-	if run.chdir != "" {
-		at, _ = changedDir(w.dir, []string{"cd", "--", run.chdir})
-		atLost = w.movedTo(at)
-		atFrom = movedFrom(w.from, w.lost, []string{"cd", "--", run.chdir})
-	}
+	at, atLost, atFrom := w.runsAt(run)
 	s.seen.parents(s, at, run.words)
 	j := segmentRules{
 		command: w.command, exp: &found.exp, redirects: redirects, dir: at, lost: atLost, from: atFrom, unsure: w.unsure,
@@ -823,7 +883,7 @@ func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 			return f, true
 		}
 	}
-	if f, ok := w.beyondWords(j, segment, run, found); ok {
+	if f, ok := w.elsewhere(j, segment, quoted, run, found); ok {
 		return f, true
 	}
 	// A script handed to a shell runs in a process of its own: its cd moves
@@ -834,6 +894,92 @@ func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 	// never in, and allowed; so a cd under eval is one the hook cannot place.
 	w.follow(run, evals, segment, quoted)
 	return Finding{}, false
+}
+
+// elsewhere asks the rules of what the segment runs beyond its first reading's
+// words: the scripts and finds behind them, its other readings, and a quoted
+// word the walk's split cut that the shell keeps whole.
+func (w *pathWalk) elsewhere(j segmentRules, segment string, quoted bool, run invocation, found foundFind) (Finding, bool) {
+	if f, ok := w.beyondWords(j, segment, run, found); ok {
+		return f, true
+	}
+	if f, ok := w.otherReadings(j, segment, run.cut, run.others); ok {
+		return f, true
+	}
+	return w.asTheShellSplits(j, segment, quoted, run)
+}
+
+// runsAt is where a reading of a segment runs, as the walk's dir, lost and
+// from say it. env -C runs the command in the directory it names, as a cd in
+// front of it would, and leaves the shell where it was. Read from where the
+// shell was, `env -C .. rm -rf B-2` took another story's worktree away, and
+// `env -C .sdlc rm -rf state` the loop's own record. After `--`, since what
+// env -C names is a directory whatever it begins with.
+func (w *pathWalk) runsAt(run invocation) (at string, lost bool, from string) {
+	if run.chdir == "" {
+		return w.dir, w.lost, w.from
+	}
+	at, _ = changedDir(w.dir, []string{"cd", "--", run.chdir})
+	return at, w.movedTo(at), movedFrom(w.from, w.lost, []string{"cd", "--", run.chdir})
+}
+
+// otherReadings asks the path rules of readings of the segment's command
+// besides its first (program), as they asked of the first, from where each
+// runs and with the same redirects. Only the first moves the walk and has its
+// find read: any other is not certain, and a find in it is one the reader
+// gave up on, read as reaching everything below where it starts (unreadFind).
+// In `strace -J 1 rm .sdlc/state/tests.lock` the first reading runs 1, and
+// the second the rm.
+func (w *pathWalk) otherReadings(j segmentRules, segment string, cut []string, readings []invocation) (Finding, bool) {
+	for _, r := range readings {
+		if len(r.words) == 0 {
+			continue
+		}
+		r.cut = cut
+		k := j
+		k.dir, k.lost, k.from = w.runsAt(r)
+		k.away.dir, k.away.lost = k.dir, k.lost
+		k.certain = false
+		found := foundFind{exp: unfollowed(causeDiffer, r.words[0], whyDiffer)}
+		k.exp, k.away.exp = &found.exp, &found.exp
+		if f, ok := k.judge(segment, r); ok {
+			return f, true
+		}
+		if f, ok := w.beyondWords(k, segment, r, found); ok {
+			return f, true
+		}
+	}
+	return Finding{}, false
+}
+
+// asTheShellSplits asks the path rules of the segment's command once more as
+// the shell splits it into words, where that puts another program first. The
+// path rules split a segment at white space, quotes and all (spacedFields),
+// which reads more everywhere but past an option's value: a quoted value with
+// a space in it is two words to them, the second was taken for the program,
+// and `/usr/bin/time -f '%e %M' rm .sdlc/state/tests.lock` ran a program
+// called %M (US-112, Gate 5). Only a segment that is one command, and opens
+// and closes no quote it does not close and open, is split again.
+func (w *pathWalk) asTheShellSplits(j segmentRules, segment string, quoted bool, run invocation) (Finding, bool) {
+	if quoted || !strings.ContainsAny(segment, `'"`) {
+		return Finding{}, false
+	}
+	l := lex(segment, w.s.PowerShell)
+	if l.unclosed || l.subshells.unread != nil || len(l.commands) != 1 {
+		return Finding{}, false
+	}
+	words := l.commands[0]
+	for len(words) > 0 && isAssignment(words[0]) {
+		words = words[1:]
+	}
+	split := programUnderEval(words)
+	if len(split.words) == 0 || len(run.words) > 0 && split.words[0] == run.words[0] {
+		return Finding{}, false
+	}
+	if split.unread {
+		return tooManyReadings(words[0], false), true
+	}
+	return w.otherReadings(j, segment, run.cut, append([]invocation{split}, split.others...))
 }
 
 // cutWords are the words of the segment at idx, as the path rules read them,
@@ -909,12 +1055,22 @@ func judgeExecs(j segmentRules, segment string, run invocation, found foundFind)
 	}
 	j.certain = false
 	for _, command := range execCommands(words[1:], found.exp) {
-		if exec := program(command); len(exec.words) > 0 {
+		exec := program(command)
+		if exec.unread {
+			// Its readings were cut short at the cap. ClaudeConfigWrites runs
+			// this walk alone, with no program walk to count them first
+			// (security, round 7, N4).
+			return tooManyReadings(command[0], false), true
+		}
+		for _, e := range everyReading(exec) {
+			if len(e.words) == 0 {
+				continue
+			}
 			// Where the reader could not follow the find, the commands are cut
 			// from the path rules' words, which lost a substitution inside a
 			// word; the reader's own keep it as `$SUB`.
-			exec.cut = run.cut
-			if f, ok := j.judge(segment, exec); ok {
+			e.cut = run.cut
+			if f, ok := j.judge(segment, e); ok {
 				return f, true
 			}
 		}
@@ -1180,7 +1336,11 @@ func movesInAScript(text string, powerShell bool) bool {
 			moved[script] = true
 		}
 	}
-	return false
+	// A line the program walk stopped reading could hold any script, so it
+	// counts as one that moves and writes. Only the freeze's rule reads this,
+	// and it does not rest on the program walk having refused the line first
+	// (architect, round 7, note 1).
+	return subshells.unread != nil
 }
 
 // checkPrograms applies the rules that turn on which program a command runs,
@@ -1193,16 +1353,16 @@ func checkPrograms(text string, s State) (Finding, bool) {
 	// repository; not followed at all, `(cd /tmp/fixture && git commit)` was a
 	// commit in this one.
 	runs, subshells := programsAt(text, s.PowerShell)
-	if subshells.tooDeep {
-		return tooDeep, true
+	if subshells.unread != nil {
+		return *subshells.unread, true
 	}
-	w := &programWalk{s: s, subshells: subshells, dirs: map[int]string{0: s.Dir}}
+	w := &programWalk{s: s, text: text, subshells: subshells, dirs: map[int]string{0: s.Dir}}
 	// GIT_DIR names the repository whatever the directory, and an assignment to
 	// it can be anywhere in the command, or a statement of its own in
 	// PowerShell: `$env:GIT_DIR='C:\project\.git'; cd \; git commit`. Asked once:
 	// asked for every command in it, a long command took seconds. printf -v and
 	// read set it too, in words no pattern tells from a mention.
-	w.gitDirSet = mayName(text, "GIT_DIR") && setsGitDir.MatchString(text) ||
+	w.gitDirSet = mayName(text, "GIT_DIR") && setsGitDir().MatchString(text) ||
 		slices.ContainsFunc(runs, func(r ran) bool {
 			_, ok := assigned(r.sets, "GIT_DIR")
 			return ok
@@ -1223,10 +1383,24 @@ func checkPrograms(text string, s State) (Finding, bool) {
 	w.git = &gitRules{s: s, m: &memo{landed: map[string][]Landing{}}}
 	for _, r := range runs {
 		if f, ok := w.run(r); ok {
-			return f, true
+			return inSubscript(f, r), true
 		}
 	}
 	return Finding{}, false
+}
+
+// inSubscript is f, the refusal of r, with what brought r to be read where it
+// came from a substitution inside `[ ]` in a word, which no rule's own words
+// say: a person who had quoted the text met a refusal of a command they had
+// not run, with nothing that named the brackets (human advocate, Gate 7).
+func inSubscript(f Finding, r ran) Finding {
+	if r.subscript {
+		f.Reason += "; it was read from a `$( )` or a backtick inside `[ ]` in a word, which bash and zsh run " +
+			"where they read the word as a number or a name, quoted or not"
+		f.Route += "; if it is only text, keep the substitution out of the brackets, or write the text to a file " +
+			"with a file tool"
+	}
+	return f
 }
 
 // programWalk is checkPrograms part way through a command: where each
@@ -1234,6 +1408,7 @@ func checkPrograms(text string, s State) (Finding, bool) {
 // place, in lost; and what the command as a whole says of GIT_DIR and CDPATH.
 type programWalk struct {
 	s                 State
+	text              string
 	subshells         *subshells
 	dirs              map[int]string
 	lost              map[int]bool
@@ -1255,17 +1430,21 @@ func (w *programWalk) run(r ran) (Finding, bool) {
 		}
 		// Read without its substitutions, `sh plugin/bin/sdlc-hook
 		// "$(echo UserPromptExpansion)"` ran the launcher on no event at all.
-		return checkHandRunHook(r)
+		if f, ok := checkHandRunHook(r, w.text); ok {
+			return f, true
+		}
+		return checkAgentEnv(r, w.text)
 	}
 	if len(words) == 0 {
-		return Finding{}, false
+		// An assignment alone: `V=AI_AGENT`, kept for a later `unset "$V"`.
+		return checkAgentEnv(r, w.text)
 	}
 	w.s.seen.tell(w.s, words)
 	if f, ok := checkSdlcCommands(words, r.piped, r.substituted, w.s); ok {
 		return f, true
 	}
 	// After the rules above, so that what any of them refused keeps its name.
-	if f, ok := checkHandRunHook(r); ok {
+	if f, ok := checkHandRunHook(r, w.text); ok {
 		return f, true
 	}
 	// Asked before the commit gate and answered after it, so that a commit
@@ -1285,6 +1464,15 @@ func (w *programWalk) run(r ran) (Finding, bool) {
 	}
 	if refused {
 		return gitFinding, true
+	}
+	// After the git rules, so that a commit `env -i` runs elsewhere keeps the
+	// rule it was refused under before. A variable env or xargs sets for the
+	// program, which parse does not read: `xargs --process-slot-var=SDLC_ENFORCE`.
+	if f, ok := checkEnforcement(assignedNames(r.env)); ok {
+		return f, true
+	}
+	if f, ok := checkAgentEnv(r, w.text); ok {
+		return f, true
 	}
 	w.follow(r.group, dir, unplaced, words)
 	return Finding{}, false
@@ -1408,13 +1596,59 @@ var tooDeep = Finding{
 	Route: "write it as separate commands; nothing a person writes nests this deep",
 }
 
+// scriptsTooDeep refuses a line that nests the strings it hands a shell, or
+// a builtin that runs one, past what the program walk reads
+// (programScan.nests). It is a value of its own because tooDeep's reason
+// names `$( )` and backticks, which `eval eval eval eval eval git commit -m
+// x` does not hold.
+var scriptsTooDeep = Finding{
+	Rule: "command-too-deep-to-read",
+	Reason: "the command hands a string to a shell, `eval`, `trap`, `emulate -c` or `mapfile -C` that " +
+		"itself holds another such string, more than four deep, so what runs inside was not checked; a " +
+		"shell or an `eval` inside four such strings is refused even where it is handed no string, as in " +
+		"`eval eval eval eval bash x.sh`",
+	Route: "write it as separate commands, and run the inner command on its own, not inside another " +
+		"`eval` or `bash -c`",
+}
+
+// tooManyReadings refuses a command, or with line set a line, read more ways
+// than the readers make (maxReadings), since what the readings past the cap
+// run was not checked. first is the command's first word as written, after
+// its assignments, which the reason quotes cut short: for `strace -J 1 true`
+// it is strace, where the first reading's program is 1 (red team, round 6,
+// C2).
+func tooManyReadings(first string, line bool) Finding {
+	n := strconv.Itoa(maxReadings)
+	why := "an option its program does not know may or may not take the word after it, and zsh's `]]`, " +
+		"`}` and `{`, and `coproc`, start another command, so past " + n + " other readings what it runs " +
+		"was not checked"
+	reason := "the command " + shown(shortened(first)) + " can be read too many ways, more than " + n +
+		" other readings: " + why
+	if line {
+		reason = "the commands on this line, with the scripts they hand a shell, can be read too many ways, " +
+			"more than " + n + " other readings between them, and " + shown(shortened(first)) + " took them past " +
+			n + ": " + why
+	}
+	// The rule's name is API, so it stays, though a count is not a depth;
+	// the route names what a person can change (human advocate, Gate 7).
+	return Finding{
+		Rule:   "command-too-deep-to-read",
+		Reason: reason,
+		Route: "remove the options sdlc does not know, or split the line into separate commands, in separate " +
+			"calls where it holds many, so that no command and no line has more than " + n + " other readings",
+	}
+}
+
 // setsGitDir matches an assignment to GIT_DIR: `GIT_DIR=`, `export GIT_DIR=`,
 // or PowerShell's environment drive, as in `$env:GIT_DIR = ` and `Set-Item
 // env:GIT_DIR`, `Env:\GIT_DIR`, and .NET's
 // `[Environment]::SetEnvironmentVariable('GIT_DIR', ...)`. A mention is not
 // one: a commit message that said "unset GIT_DIR", or `grep 'GIT_DIR'`, was a
 // commit in the project wherever it was made.
-var setsGitDir = regexp.MustCompile(`(?i)\bgit_dir=|env:[\\/]?git_dir\b|setenvironmentvariable\(\s*['"]git_dir['"]`)
+// Compiled on first use, so that init does no work.
+var setsGitDir = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`(?i)\bgit_dir=|env:[\\/]?git_dir\b|setenvironmentvariable\(\s*['"]git_dir['"]`)
+})
 
 // runsHere are the commands that run a script in the shell that calls them,
 // where a `cd` inside it moves the command line around it.
@@ -1444,10 +1678,12 @@ func placedWords(words []string) bool {
 // session it finds there as the one the story holds, so setting it hands the
 // story to a session that does not exist. Unlike setsGitDir it is a refusal, so
 // a read is not one: `echo $env:CLAUDE_CODE_SESSION_ID` is allowed.
-var setsSession = regexp.MustCompile(
-	`(?i)\bclaude_code_session_id=|\$env:claude_code_session_id\s*=|\$\{env:claude_code_session_id\}\s*=|` +
-		`\b(set-item|new-item|set-content|add-content|si|ni|sc|ac)\s+(-path\s+)?env:[\\/]?claude_code_session_id\b|` +
-		`setenvironmentvariable\(\s*['"]claude_code_session_id['"]`)
+var setsSession = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(
+		`(?i)\bclaude_code_session_id=|\$env:claude_code_session_id\s*=|\$\{env:claude_code_session_id\}\s*=|` +
+			`\b(set-item|new-item|set-content|add-content|si|ni|sc|ac)\s+(-path\s+)?env:[\\/]?claude_code_session_id\b|` +
+			`setenvironmentvariable\(\s*['"]claude_code_session_id['"]`)
+})
 
 // mayName reports whether text could name the variable name, an upper-case
 // one, where setsSession or setsGitDir could match: upper-casing folds each of
@@ -1521,8 +1757,8 @@ func humanDecisionsAs(command string, powerShell bool, storyWaits func(dir strin
 
 func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
 	runs, subshells := programsAt(text, powerShell)
-	if subshells.tooDeep {
-		return tooDeep, true
+	if subshells.unread != nil {
+		return *subshells.unread, true
 	}
 	// Where each subshell is, followed as checkPrograms follows it, and whether
 	// a move there was one that cannot be read.
@@ -1532,25 +1768,44 @@ func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) 
 		// whether it runs the hook, as the program walk asks it; the other
 		// rules read the script once, as they always have.
 		if len(r.words) == 0 || r.extra {
-			if f, ok := checkHandRunHook(r); ok {
-				return f, true
+			if f, ok := wordlessDecision(r, text); ok {
+				return inSubscript(f, r), true
 			}
 			continue
 		}
-		here, ok := places[r.group]
-		for g := r.group; !ok; {
-			g = subshells.parent[g]
-			here, ok = places[g]
-		}
-		places[r.group] = here
-		if f, ok := humanDecisionBy(r, here, storyWaits); ok {
-			return f, true
+		here := placeIn(places, subshells.parent, r.group)
+		if f, ok := humanDecisionBy(r, here, text, storyWaits); ok {
+			return inSubscript(f, r), true
 		}
 		if next, ok := changedDir(here.dir, r.words); ok {
 			places[r.group] = here.moved(r, next)
 		}
 	}
-	return Finding{}, false
+	// AI_AGENT as text, last, as Inspect reads it beside setsSession: a
+	// session that holds no story can still forge a recorded event.
+	return agentText(text, powerShell)
+}
+
+// wordlessDecision asks a command with no words, or a script read again with
+// its substitutions in place, the two questions such a command can answer:
+// whether it runs the hook, and whether it takes AI_AGENT away.
+func wordlessDecision(r ran, text string) (Finding, bool) {
+	if f, ok := checkHandRunHook(r, text); ok {
+		return f, true
+	}
+	return checkAgentEnv(r, text)
+}
+
+// placeIn is where the subshell group is, from the nearest one followed
+// around it, which it then holds.
+func placeIn(places map[int]decisionPlace, parent []int, group int) decisionPlace {
+	here, ok := places[group]
+	for g := group; !ok; {
+		g = parent[g]
+		here, ok = places[g]
+	}
+	places[group] = here
+	return here
 }
 
 // decisionPlace is where a subshell is as humanDecisionsOn follows it, and
@@ -1568,8 +1823,8 @@ func (here decisionPlace) moved(r ran, next string) decisionPlace {
 }
 
 // humanDecisionBy refuses one command, run from here, that makes a decision
-// a person keeps.
-func humanDecisionBy(r ran, here decisionPlace, storyWaits func(dir string) bool) (Finding, bool) {
+// a person keeps, or that takes AI_AGENT away. text is the reading.
+func humanDecisionBy(r ran, here decisionPlace, text string, storyWaits func(dir string) bool) (Finding, bool) {
 	// An assignment is refused whatever the project holds, as an
 	// acknowledgement is: a person can assign to a story at any point after
 	// it is started, so whether one waits is never asked.
@@ -1608,11 +1863,17 @@ func humanDecisionBy(r ran, here decisionPlace, storyWaits func(dir string) bool
 	if f, ok := checkUnread(r.words, r.piped); ok {
 		return f, true
 	}
-	// Last, so that `echo UserPromptExpansion | xargs sdlc hook` keeps the
-	// rule it was refused under before. Whatever the project holds, as an
-	// acknowledgement is: a forged payload can name any of a person's
+	// Last but one, so that `echo UserPromptExpansion | xargs sdlc hook`
+	// keeps the rule it was refused under before. Whatever the project holds,
+	// as an acknowledgement is: a forged payload can name any of a person's
 	// commands.
-	return checkHandRunHook(r)
+	if f, ok := checkHandRunHook(r, text); ok {
+		return f, true
+	}
+	// Whatever the project holds too: a session that holds no story can run
+	// the hook on a payload that names the one that does, and AI_AGENT is
+	// what keeps a person's typed command on the slash route theirs.
+	return checkAgentEnv(r, text)
 }
 
 // Places is every path-shaped word a command names, each once, in the order
@@ -1636,12 +1897,24 @@ func Places(command string, powerShell bool) []string {
 	return out
 }
 
+// assignedNames are the names of assignments, NAME=value.
+func assignedNames(assigns []string) []string {
+	names := make([]string, 0, len(assigns))
+	for _, a := range assigns {
+		name, _, _ := strings.Cut(a, "=")
+		names = append(names, name)
+	}
+	return names
+}
+
 // checkEnforcement stops a session turning the loop off from the inside. The
 // switch exists for the person who started the session, and a switch an
 // assistant can reach is not a control.
 func checkEnforcement(assigns []string) (Finding, bool) {
 	for _, name := range assigns {
 		switch name {
+		case agentEnv:
+			return agentMarkerFinding(), true
 		case "SDLC_ENFORCE", "SDLC_BIN", "CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID":
 			return Finding{
 				Rule: "enforcement-stays-on",
@@ -1701,7 +1974,8 @@ func checkUnfreeze(words []string) (Finding, bool) {
 			"so it is not one an agent makes",
 		Route: "say which frozen test is wrong and which acceptance criterion it gets " +
 			"wrong, and stop there; the person running the session lifts the freeze with " +
-			"`/sdlc:unfreeze`, or `sdlc unfreeze --reason \"...\"` in their own terminal",
+			"`/sdlc:unfreeze`, or `!sdlc unfreeze --reason \"...\"` at the prompt in Claude Desktop, or " +
+			"`sdlc unfreeze --reason \"...\"` in their own terminal",
 	}, true
 }
 
@@ -1722,7 +1996,8 @@ func checkStop(words []string, s State) (Finding, bool) {
 			"here off, so it is not a step an agent takes",
 		Route: "work the next gate -- `sdlc status` shows which; if the story cannot go on, " +
 			"hand it to a person with `sdlc escalate <type> --message \"...\"` and stop; the " +
-			"person running the session ends the iteration with `sdlc stop` in their own terminal",
+			"person running the session ends the iteration with `sdlc stop` in their own terminal, or with " +
+			"`!sdlc stop` at the prompt in Claude Desktop",
 	}, true
 }
 
@@ -1756,7 +2031,8 @@ func checkRelease(words []string) (Finding, bool) {
 		Reason: "releasing a story takes it from the checkout holding it, and an agent that did it " +
 			"could take a story another checkout is working, or let go of the one it is held to",
 		Route: "say which checkout holds the story and stop; a person runs " +
-			"`/sdlc:release <ID> --reason \"...\"`, or `sdlc release <ID> --reason \"...\"` in their own terminal if it is to move",
+			"`/sdlc:release <ID> --reason \"...\"`, or `!sdlc release <ID> --reason \"...\"` at the prompt in " +
+			"Claude Desktop, or `sdlc release <ID> --reason \"...\"` in their own terminal, if it is to move",
 	}, true
 }
 
@@ -1773,7 +2049,8 @@ func checkParallel(words []string) (Finding, bool) {
 		Reason: "sdlc parallel starts model sessions, optionally with tools pre-approved, and an " +
 			"agent that ran it would be starting work nobody asked for",
 		Route: "say which stories you meant and stop; a person runs " +
-			"`sdlc parallel <ID>...` in their own terminal, outside Claude Code",
+			"`sdlc parallel <ID>...` in their own terminal, outside Claude Code, or types " +
+			"`!sdlc parallel <ID>...` at the prompt in Claude Desktop",
 	}, true
 }
 
@@ -1817,8 +2094,9 @@ func checkRemap(words []string) (Finding, bool) {
 		Reason: "putting a landed story's change into trunk's CODEMAP.md, over what trunk holds or not at all, " +
 			"is a choice between two texts that nobody reviewed, and an agent that made it would be " +
 			"deciding what trunk's map says",
-		Route: "say what the stop or `sdlc status` printed and stop; the person runs `/sdlc:remap <story>`, or `sdlc remap <story>` " +
-			"in their own terminal. To read what it does, run `sdlc help remap`",
+		Route: "say what the stop or `sdlc status` printed and stop; the person runs `/sdlc:remap <story>`, or " +
+			"`!sdlc remap <story>` at the prompt in Claude Desktop, or `sdlc remap <story>` in their own terminal. " +
+			"To read what it does, run `sdlc help remap`",
 	}, true
 }
 
@@ -2241,7 +2519,7 @@ func loopFileFinding(c string, s State, m *memo) (Finding, bool) {
 				"outside a running iteration; say which setting is wrong and stop",
 		}, true
 	}
-	return recordFinding(hit), true
+	return storyFileFinding(hit, c), true
 }
 
 // unreadFind refuses, under rule, a find that changes files and that the
@@ -2317,7 +2595,7 @@ func sharedState(word string, s State, m *memo) (Finding, bool) {
 					"outside a running iteration; say which setting is wrong and stop",
 			}, true
 		}
-		return recordFinding(hit), true
+		return storyFileFinding(hit, l.Rel), true
 	}
 	return Finding{}, false
 }
@@ -2601,6 +2879,67 @@ func frozenFinding(frozen string) Finding {
 	}
 }
 
+// storyFileFinding is the refusal of a word that names one of a story's own
+// files, hit as loopState folded it and word as it was spelled: the trace
+// under its own rule, and every other under the record's.
+func storyFileFinding(hit, word string) Finding {
+	if path.Base(hit) == model.TraceFile {
+		return traceFinding(storyOf(word))
+	}
+	return recordFinding(hit)
+}
+
+// ruleTrace is the rule a write to a story's trace is refused under, by the
+// shell here and by the file tools in policy. The two texts are written for
+// each other: policy's trace rule says the same, and a change to one is made
+// to both (US-112, AC-17).
+const ruleTrace = "trace-is-written-by-the-tool"
+
+// traceFinding is the refusal of a write to a story's trace. The generic
+// route, which names `sdlc artifact write`, would be wrong advice: nothing
+// writes the trace but sdlc itself.
+func traceFinding(id string) Finding {
+	of, reads := "story `"+id+"`", "`sdlc trace "+id+"`"
+	if id == "" {
+		of, reads = "this story", "`sdlc trace` and the story's id"
+	}
+	return Finding{
+		Rule: ruleTrace,
+		Reason: model.TraceFile + " is the loop's measurements of " + of + ", written by sdlc as it runs; " +
+			"a measurement the assistant can write is not a measurement",
+		Route: "there is nothing to record by hand: read it with " + reads + ", and put anything else you " +
+			"want kept in your hand-back",
+	}
+}
+
+// storyOf is the story a path into a story's directory names, as it is
+// spelled, or "" where that is not a plain id: a glob names no one story.
+func storyOf(word string) string {
+	parts := strings.Split(clean(word), "/")
+	for i := 1; i+1 < len(parts); i++ {
+		if pathrules.Fold(parts[i-1]) == ".sdlc" && pathrules.Fold(parts[i]) == "stories" && plainID(parts[i+1]) {
+			return parts[i+1]
+		}
+	}
+	return ""
+}
+
+// plainID reports whether a word is a story id as the store takes one:
+// letters, digits, dots, dashes and underscores, from a letter or a digit,
+// not ending in a dot, and with no "..".
+func plainID(id string) bool {
+	if id == "" || len(id) > 64 || strings.Contains(id, "..") || strings.HasSuffix(id, ".") ||
+		id[0] == '_' || id[0] == '.' || id[0] == '-' {
+		return false
+	}
+	for _, r := range id {
+		if !nameRune(r) && r != '.' && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
 func recordFinding(hit string) Finding {
 	return Finding{
 		Rule: ruleLoopState,
@@ -2641,6 +2980,8 @@ func changesAFile(words []string) bool {
 		return hasWord(words[1:], findDelete) || len(printedTo(words[1:])) > 0
 	case "git":
 		return gitChangesFiles(words[1:])
+	case "fsutil":
+		return fsutilWrites(words[1:])
 	default:
 		// A program that writes only a file it is given changes one where it
 		// is given one: `sort -o CLAUDE.md x`, and not `sort CLAUDE.md`.
@@ -2649,6 +2990,19 @@ func changesAFile(words []string) bool {
 		}
 		return mutating[name]
 	}
+}
+
+// fsutilWrites reports whether fsutil's verb writes: every verb does but
+// `list` and those that start with `query`, `hardlink list` and `file
+// queryfileid` among them. Read as a list of the verbs that write, a verb
+// added in a later Windows would pass unread; read this way it is refused
+// until it is read (US-112, the human advocate's round-2 note 4).
+func fsutilWrites(args []string) bool {
+	if len(args) < 2 {
+		return true
+	}
+	verb := pathrules.Fold(args[1])
+	return verb != "list" && !strings.HasPrefix(verb, "query")
 }
 
 // changesFiles is changesAFile for the loop's own record and the protected
@@ -2670,7 +3024,10 @@ func changesFiles(words []string) bool {
 		// `-exec wc -l {} +` changes nothing, and `-exec ./tidy {} +` cannot be
 		// seen to leave anything alone.
 		return hasWord(words[1:], findDelete) || runsAWriter(words[1:]) || len(printedTo(words[1:])) > 0
-	case "sed", "perl", "awk", "gawk":
+	case "sed", "perl", "awk", "gawk", "fsutil":
+		// fsutil's verbs that only read are let through for the freeze
+		// (changesAFile); for the loop's record any verb may be one that
+		// writes, as for sed.
 		return true
 	}
 	if interpreters[base(words[0])] {
@@ -2937,118 +3294,67 @@ type invocation struct {
 	// cut are the words a substitution inside them was cut from, as the path
 	// walk read them (cutWords): the shell fills in what the words do not show.
 	cut []string
-}
-
-// program takes off the front of a segment whatever only runs the command after
-// it: `(`, `then`, `env`, `sudo`, `sh -c`, `xargs` and their like. Read as the
-// first word, `(git commit)`, `env git commit` and `sh -c 'git commit'` were
-// commands called `(git`, `env` and `sh`, and no rule knew any of them.
-func program(words []string) invocation {
-	var run invocation
-	for len(words) > 0 {
-		first := strings.TrimLeft(words[0], "({!")
-		if first == "" {
-			words = words[1:]
-			continue
-		}
-		var done bool
-		if words, done = run.unwrap(first, words); done {
-			return run
-		}
-	}
-	return run
+	// replace is the word xargs puts each argument it reads in: -I, -J, -i or
+	// --replace's string, which the shell makes as the command runs.
+	replace string
+	// cleared is set where the program is started with its environment
+	// emptied (env -i, exec -c, arch -c), and unsets are the names env -u and
+	// arch -d take out of it.
+	cleared bool
+	unsets  []string
+	// evals counts the builtins programUnderEval took off the front of this
+	// reading: eval, trap's action, emulate -c and mapfile's -C callback.
+	evals int
+	// others are the command's readings besides this one, and unread is set
+	// where it has more than maxReadings of them, past which none was made.
+	// Only the first reading has either; everyReading gives them all.
+	others []invocation
+	unread bool
 }
 
 // unwrap takes one wrapper off the front of words, whose first word, with
 // what opens a group taken off it, is first, and returns the words after it.
 // It is done where first is the program itself, or a wrapper that runs
-// nothing: run then has its words.
-func (run *invocation) unwrap(first string, words []string) ([]string, bool) {
-	switch base(first) {
-	case "if", "then", "else", "elif", "do", "while", "until", "time":
+// nothing: run then has its words. A wrapper whose options are in a table
+// (optionTables) is read by it, and an option the table does not know forks
+// the reading into w.
+func (w *worklist) unwrap(run *invocation, first string, words []string) ([]string, bool) {
+	switch name := base(first); name {
+	case "if", "then", "else", "elif", "do", "while", "until",
+		// zsh's precommand modifiers run the command after them as it is:
+		// read as the program, `noglob rm .sdlc/state/tests.lock` and
+		// `- sdlc unfreeze --reason x` met no rule (US-112).
+		"noglob", "nocorrect", "-",
+		// zsh's block after a group, and a reading or a path segment that
+		// starts at a `]]` or a `}`: ` ]] rm x` is the path rules' segment
+		// after a substitution inside `[[ … ]]`, and `} always { rm x }`
+		// another. A function's body is read at its `{` (startsAReading).
+		"always", "]]", "}", "function":
 		words = words[1:]
+	case "repeat":
+		// zsh's `repeat N command` runs it N times.
+		words = afterFirst(words[1:])
 	case "xargs":
-		run.piped = true
-		// Read as flags, the value of `xargs -I {} rm {}` was the program.
-		words = skipOptions(skipValued(words[1:], "-I", "-n", "-P", "-L", "-d", "-s", "-E", "-a",
-			"--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-lines", "--max-chars",
-			"--replace", "--eof"))
+		words = run.xargs(words[1:])
+	case "arch":
+		// macOS's arch runs a program as env does, and empties or trims its
+		// environment with -c and -d (security, round 3, N2).
+		words = run.arch(words[1:])
 	case "env":
 		words = run.env(words[1:])
-	case "command", "builtin", "nohup", "nice", "caffeinate", "setsid", "unbuffer", "chronic", "firejail":
+	case "command", "builtin", "nohup", "setsid", "unbuffer", "chronic", "firejail", "valgrind":
+		// Their options are flags, or --name=value.
 		words = skipOptions(words[1:])
 	case "busybox", "toybox":
 		// The applet after it is the program: `busybox rm -rf dir`.
 		words = words[1:]
-	case "taskset":
-		// Its options, then the CPUs, then the command.
-		words = afterFirst(skipValued(words[1:]))
-	case "ts":
-		// task-spooler queues the command after its options.
-		words = skipOptions(skipValued(words[1:], "-L", "-D", "-N", "-W"))
-	case "nsenter":
-		words = skipValued(words[1:], "-t", "--target", "-S", "--setuid", "-G", "--setgid")
-	case "unshare":
-		words = run.skipValuedTo(words[1:], []string{"-w", "--wd"}, "-S", "--setuid", "-G", "--setgid",
-			"-R", "--root", "--propagation", "--setgroups", "--map-user", "--map-group", "--map-users",
-			"--map-groups")
-	case "systemd-run":
-		words = run.skipValuedTo(words[1:], []string{"--working-directory"}, "-u", "--unit", "-p",
-			"--property", "--description", "--slice", "-E", "--setenv", "--uid", "--gid", "--nice", "-M",
-			"--machine", "-H", "--host", "--service-type", "--on-active", "--on-boot", "--on-startup",
-			"--on-unit-active", "--on-unit-inactive", "--on-calendar", "--path-property",
-			"--socket-property", "--timer-property")
-	case "watch":
-		// watch hands its words to sh -c, as one command line.
-		run.shell = true
-		words = skipValued(words[1:], "-n", "--interval", "-q", "--equexit", "-s", "--shotsdir")
-	case "parallel":
-		// GNU parallel runs its command through a shell, once for each
-		// argument after :::, which are left among its words, and takes
-		// them from standard input where there are none.
-		run.shell, run.piped = true, true
-		words = skipValued(words[1:], "-j", "--jobs", "-P", "--max-procs", "-n", "--max-args", "-N",
-			"--max-replace-args", "-L", "--max-lines", "-s", "--max-chars", "-a", "--arg-file", "-d",
-			"--delimiter", "-E", "-I", "-C", "--colsep", "-S", "--sshlogin", "--sshloginfile", "--slf",
-			"--results", "--res", "--joblog", "--timeout", "--delay", "--memfree", "--load", "--tmpdir",
-			"--workdir", "--wd", "--tagstring", "--env", "--header", "--retries", "--halt", "--basefile",
-			"--bf", "--return", "--transferfile", "--tf", "--nice", "--rpl")
 	case "exec":
-		words = skipOptions(skipValued(words[1:], "-a"))
-	case "stdbuf":
-		words = skipOptions(skipValued(words[1:], "-i", "-o", "-e"))
-	case "ionice":
-		words = skipValued(words[1:], "-c", "-n", "-p", "-P", "-u",
-			"--class", "--classdata", "--pid", "--pgid", "--uid")
-	case "chrt":
-		// Its options, then the priority, then the command.
-		words = skipValued(words[1:], "-T", "-P", "-D", "--sched-runtime", "--sched-period", "--sched-deadline")
-		if len(words) > 0 && strings.Trim(words[0], "0123456789") == "" {
-			words = words[1:]
-		}
+		words = run.exec(words[1:])
 	case "flock", "script":
 		// With a command line of their own they are sh -c.
 		var line bool
-		words, line = flockedOrScripted(base(first), words[1:])
+		words, line = flockedOrScripted(name, words[1:])
 		run.shell = run.shell || line
-	case "sudo", "doas":
-		words = run.skipValuedTo(words[1:], []string{"-D", "--chdir"},
-			"-u", "-g", "-h", "-p", "-C", "-R", "-r", "-t", "-T", "-U")
-	case "sh", "bash", "zsh", "dash", "ksh", "pwsh", "powershell":
-		run.shell = true
-		words = skipOptions(words[1:])
-	case "ssh":
-		// What follows the host is a command line for the shell at the
-		// other end, and localhost is this machine.
-		run.shell = true
-		words = skipValued(words[1:], "-B", "-b", "-c", "-D", "-E", "-e", "-F", "-I", "-i", "-J",
-			"-L", "-l", "-m", "-O", "-o", "-P", "-p", "-Q", "-R", "-S", "-W", "-w")
-		words = afterFirst(words)
-	case "timeout":
-		// skipOptions took the duration for a number an option was given,
-		// and then the command for the duration: `timeout 60 git commit`
-		// was a command called `commit`.
-		words = afterFirst(skipValued(words[1:], "-s", "-k", "--signal", "--kill-after")) // the duration
 	case "direnv":
 		if len(words) < 3 || words[1] != "exec" {
 			run.words = append([]string{first}, words[1:]...)
@@ -3063,8 +3369,18 @@ func (run *invocation) unwrap(first string, words []string) ([]string, bool) {
 		run.shell = true
 		words = afterCmdSwitches(words[1:])
 	default:
-		run.words = append([]string{first}, words[1:]...)
-		return nil, true
+		t := tableOf(name)
+		if t == nil {
+			run.words = append([]string{first}, words[1:]...)
+			return nil, true
+		}
+		// What follows ssh's host, watch's options and a shell's is a command
+		// line for a shell. GNU parallel runs its command through one, once
+		// for each argument after :::, which are left among its words, and
+		// takes them from standard input where there are none.
+		run.shell = run.shell || t.shell
+		run.piped = run.piped || t.piped
+		words = w.options(run, t, place{owed: t.operands}, words[1:])
 	}
 	return words, false
 }
@@ -3097,59 +3413,89 @@ func afterCmdSwitches(words []string) []string {
 	return words
 }
 
-// underEval is an invocation with the shell's `eval` taken off the front of
-// it, and how many were: eval runs its words in the shell that calls it, so
-// to the path rules the command after it is the command. What the outer
-// invocation set stays set, and what wraps the command under the builtin is
-// taken off in turn.
+// evaluated is what a builtin hands the shell to parse as a command line, in
+// words as the path rules split a segment, quotes not followed: eval's words;
+// trap's action, with the signals after it, which name no file; zsh
+// emulate's -c; and the callback mapfile and readarray run with -C. Read as
+// the program, `trap 'rm .sdlc/state/tests.lock' EXIT` wrote nothing, while
+// the same under eval was refused (security, round 3, N1). It is not ok for
+// any other command, or where nothing is handed over: `eval --` alone hands
+// over nothing, so no turn leaves a reading without words.
 //
-// Only the path rules ask this. The rules that turn on which program runs read
-// the builtin themselves, with its string and the variables set in front of
-// it, and are handed what program makes of the words as they always were.
-func underEval(run invocation) (invocation, int) {
-	evals := 0
-	// Each turn leaves fewer words than the one before.
-	for len(run.words) > 1 && base(run.words[0]) == "eval" {
-		under := program(run.words[1:])
-		under.shell = under.shell || run.shell
-		under.piped = under.piped || run.piped
-		under.assigns = slices.Concat(run.assigns, under.assigns)
-		under.chdir = cmp.Or(under.chdir, run.chdir)
-		run = under
-		evals++
+// first is words[0] with what opens a group taken off it, and from is where
+// in words the first word handed on whole stands: 1 for eval, 2 past its
+// `--`, the first after trap's options, emulate's command, and mapfile's
+// callback or the -C word that holds it glued. The words before from are the
+// builtin's own, which the reader scans for zsh's short forms (worklist.read).
+// Each case but a glued callback hands on a slice of words, so a chain of
+// these builtins is read without a copy at each (perf, round 7).
+func evaluated(first string, words []string) (handed []string, from int, ok bool) {
+	switch base(first) {
+	case "eval":
+		handed = endOfOptions(words[1:])
+		return handed, len(words) - len(handed), len(handed) > 0
+	case "trap":
+		handed = trapOperands(words[1:])
+		// One word alone resets that signal, and `-` resets them all.
+		if len(handed) < 2 || handed[0] == "-" {
+			return nil, 0, false
+		}
+		return withoutSignals(handed), len(words) - len(handed), true
+	case "emulate":
+		if j := emulateCommand(words); j > 0 {
+			return words[j:], j, true
+		}
+	case "mapfile", "readarray":
+		if v, at, found := mapfileCallback(words); found {
+			if words[at] == v {
+				return words[at:], at, true
+			}
+			return slices.Concat([]string{v}, words[at+1:]), at, true
+		}
 	}
-	return run, evals
+	return nil, 0, false
 }
 
-// skipValued drops the flags a wrapper takes before the command it runs, with
-// the value each of the valued ones is given: `sudo -u me`, `timeout -s KILL`.
-func skipValued(words []string, valued ...string) []string {
-	for len(words) > 0 && strings.HasPrefix(words[0], "-") {
-		if hasWord(valued, words[0]) && len(words) > 1 {
-			words = words[1:]
-		}
-		words = words[1:]
+// withoutSignals is trap's operands with the signals after its action taken
+// off, all but the first word. Quotes are not followed, so the action's end is
+// not known, and a signal read as a word of it was cp's or mv's destination:
+// `trap 'cp x ~/.claude/settings.json' EXIT` copied to a file called EXIT
+// (US-112, Gate 7). A signal's name holds no dot and no slash, and no path a
+// rule protects is one.
+func withoutSignals(operands []string) []string {
+	end := len(operands)
+	for end > 1 && isSignal(operands[end-1]) {
+		end--
 	}
-	return words
+	return operands[:end]
 }
 
-// skipValuedTo is skipValued for a wrapper with an option that runs the
-// command in another directory, as env -C does, which it keeps as where the
-// command runs: `sudo -D <main checkout> git commit` commits there.
-func (run *invocation) skipValuedTo(words, moves []string, valued ...string) []string {
-	for len(words) > 0 && strings.HasPrefix(words[0], "-") {
-		name, value, glued := strings.Cut(words[0], "=")
-		moved := hasWord(moves, name)
-		if (moved && !glued || hasWord(valued, words[0])) && len(words) > 1 {
-			words = words[1:]
-			value = words[0]
-		}
-		if moved {
-			run.chdir = value
-		}
-		words = words[1:]
+// isSignal reports a word trap reads as a signal: a number, or a name with or
+// without SIG, in any case, as bash and zsh take them.
+func isSignal(w string) bool {
+	if w != "" && strings.Trim(w, "0123456789") == "" {
+		return true
 	}
-	return words
+	name := strings.TrimPrefix(strings.ToUpper(w), "SIG")
+	for _, rt := range []string{"RTMIN", "RTMAX"} {
+		if rest, ok := strings.CutPrefix(name, rt); ok && strings.TrimLeft(rest, "+-0123456789") == "" {
+			return true
+		}
+	}
+	switch name {
+	case "EXIT", "ERR", "DEBUG", "RETURN", "ZERR", "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "IOT", "BUS",
+		"EMT", "FPE", "KILL", "USR1", "SEGV", "USR2", "PIPE", "ALRM", "TERM", "STKFLT", "CHLD", "CLD", "CONT",
+		"STOP", "TSTP", "TTIN", "TTOU", "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO", "POLL", "PWR",
+		"SYS", "INFO", "LOST", "THR":
+		return true
+	}
+	return false
+}
+
+// emulateRuns reports zsh emulate's -c, alone or in a bundle with its flags:
+// the word after it is a command line, run under the emulation.
+func emulateRuns(w string) bool {
+	return w == "-c" || len(w) > 2 && w[0] == '-' && strings.Trim(w[1:], "lLR") == "c"
 }
 
 // skipOptions drops the flags a wrapper takes before the command it runs, and
@@ -3490,7 +3836,7 @@ func handedWords(words []string, line string) []string {
 	}
 	for _, segment := range segments(line) {
 		for _, f := range spacedFields(segment) {
-			if f.text != ">" && f.text != "<" && strings.ContainsFunc(f.text, endsAPath) {
+			if !f.op && strings.ContainsFunc(f.text, endsAPath) {
 				add(unquote(f.text))
 			}
 		}
@@ -3704,8 +4050,33 @@ func inAPath(r rune) bool {
 // one text, and two where a here-string marker nothing closes leaves the tail to
 // be read in two ways that cannot be put in one text.
 func withoutDocuments(command string, powerShell, released bool) []string {
+	var scan documentScan
+	texts := documentsOut(command, powerShell, released, &scan)
+	if scan.doubt {
+		// Where the reader was in doubt, the command is read zsh's way
+		// too. Read bash's alone, `cat <<EOF "${x:-'}"`, a line `'`, `EOF`
+		// and `sdlc approve US-1` took the `'` for a quote that ran to the
+		// end, so no body was taken out, and the line `'` hid the approve
+		// zsh ran (US-112, Gate 7 round 7, verifier 1).
+		texts = append(texts, documentsOut(command, powerShell, released, &documentScan{plain: true})...)
+	}
+	return texts
+}
+
+// documentsOut is withoutDocuments read with scan, which reads every line
+// that is not a body, and carries from one to the next what a line leaves
+// it inside: a string, a substitution, an array or arithmetic that runs over
+// lines, in which a `<<` may open no document (documentScan).
+func documentsOut(command string, powerShell, released bool, scan *documentScan) []string {
 	lines := strings.Split(command, "\n")
 	kept := make([]string, 0, len(lines))
+	// bodies is the command from the first document the reader is unsure of
+	// on, with every line left in: one nothing closes, or one whose end the
+	// shells, or the reader and the shells, may read apart. It is a reading
+	// of its own, so it can only
+	// add refusals: where the reader took the wrong line for the end, the
+	// commands after the real one are read there.
+	var bodies []string
 	for i := 0; i < len(lines); i++ {
 		kept = append(kept, lines[i])
 		// PowerShell's here-string, `@'` at the end of a line to `'@` at the
@@ -3721,15 +4092,47 @@ func withoutDocuments(command string, powerShell, released bool) []string {
 				if released {
 					continue
 				}
-				return unclosedHereString(kept, opener, lines[i+1:])
+				return withBodies(unclosedHereString(kept, opener, lines[i+1:]), bodies)
 			}
 			kept = withoutHereString(kept, lines, i, end, opener, quote)
 			i = end
 			continue
 		}
-		i = pastDocuments(lines, i)
+		opening, last := scan.opening(lines, i, powerShell)
+		kept = append(kept, lines[i+1:last+1]...)
+		var sure bool
+		if i, sure = pastDocuments(lines, last, opening, scan.delimiters(), powerShell); !sure && bodies == nil {
+			bodies = slices.Concat(kept, lines[last+1:])
+		}
 	}
-	return []string{strings.Join(kept, "\n")}
+	return withBodies([]string{strings.Join(kept, "\n")}, bodies)
+}
+
+// withBodies is texts, and bodies joined after them where there are any.
+func withBodies(texts, bodies []string) []string {
+	if bodies == nil {
+		return texts
+	}
+	return append(texts, strings.Join(bodies, "\n"))
+}
+
+// joined is lines[i] with each line after it that a backslash at the end of
+// the one before continues it onto, where joins is set, and the index of the
+// last line it took. A tab that starts a continued line is kept, even under
+// `<<-`, as bash, zsh and sh keep it.
+func joined(lines []string, i int, joins bool) (string, int) {
+	line := lines[i]
+	for joins && continued(line) && i+1 < len(lines) {
+		i++
+		line = line[:len(line)-1] + lines[i]
+	}
+	return line, i
+}
+
+// continued reports whether a line ends in a backslash that escapes the
+// newline after it: an odd number of them, since `\\` is a backslash.
+func continued(line string) bool {
+	return (len(line)-len(strings.TrimRight(line, `\`)))%2 == 1
 }
 
 // hereStringEnd is the index of the line that closes the here-string opened
@@ -3803,46 +4206,413 @@ func withoutHereString(kept, lines []string, i, end int, opener, quote string) [
 }
 
 // pastDocuments is the index of the last line of the here-documents that
-// lines[i] opens, whose bodies are then left out; or i itself where it opens
-// none, or hands them to something that runs them.
-func pastDocuments(lines []string, i int) int {
-	delimiters := documentDelimiters(lines[i])
-	if len(delimiters) == 0 || runsAScript(lines[i]) {
-		return i
+// opening, the line that ends at lines[i], opens with delimiters, whose
+// bodies are then left out; or i itself where it opens none, or hands them
+// to something that runs them. Outside PowerShell, a body line a backslash
+// continues is compared joined to the next, as the shell reads it where the
+// delimiter is not quoted: line by line, `EO\<LF>F` closed no document, and
+// the commands after it were read as its text (US-112, Gate 7 round 4).
+//
+// It reports whether it is sure of the end: not where a document runs to
+// the end of the command, nor where the delimiter is one it is not sure of.
+// withoutDocuments then reads the command once more with this body and
+// every later one left in.
+func pastDocuments(lines []string, i int, opening string, delimiters []delimiter, powerShell bool) (int, bool) {
+	if len(delimiters) == 0 || runsAScript(opening) {
+		return i, true
 	}
+	sure := true
 	for _, d := range delimiters {
-		for i+1 < len(lines) {
-			i++
-			// `<<-` lets the closing line be indented with tabs.
-			if strings.TrimLeft(lines[i], "\t") == d {
-				break
+		closed := false
+		for !closed && i+1 < len(lines) {
+			var line string
+			line, i = joined(lines, i+1, !powerShell && !d.quoted)
+			// `<<-` lets the closing line be indented with tabs, and only
+			// it: trimmed under `<<` too, a line `<TAB>EOF` closed a
+			// document the shell left open, and an apostrophe on the line
+			// after it opened a string that hid the commands after the
+			// real end (US-112, Gate 7 round 5).
+			closed = line == d.word || d.dash && strings.TrimLeft(line, "\t") == d.word
+		}
+		sure = sure && closed && !d.unsure
+	}
+	return i, sure
+}
+
+// delimiter is the word that ends a here-document, with its quoting taken
+// off, and whether it was quoted, which leaves the body as it is written;
+// whether it was opened by `<<-`; and whether the reader is unsure of it.
+type delimiter struct {
+	word   string
+	quoted bool
+	dash   bool
+	unsure bool
+}
+
+// What a line can leave the here-document reader inside, besides a quote,
+// ansiQuote, a backtick, `(` for a subshell, and `}` and `]` for a `${` and
+// a `$[`: a `<<` in any of these but the backtick, a substitution and `(` is
+// no document's. Read as one, `x=$((1<<2))` opened a document called 2,
+// `echo ${x:-<<EOF}` one called EOF, and every line after it up to such a
+// line was hidden from every rule (US-112, Gate 7 round 5); so did `a=(x
+// <<EOF)`, which bash reads as no redirect, and runs the line after (round
+// 6, code review B1).
+const (
+	inArithmetic = 'a' // `((`, to its `))`
+	inSubArith   = 'b' // `$((`, to its `))`
+	inParens     = 'p' // a parenthesis inside arithmetic
+	inSub        = 's' // `$(`, `<(`, `>(` or zsh's `=(`, to its `)`
+	inArray      = 'r' // an array's `(` after `=` or `+=`, to its `)`
+)
+
+// openedBy is what each of `$(`, `${`, `$[` and `$'` opens, in that order.
+const openedBy = string(rune(inSub)) + "}]" + string(rune(ansiQuote))
+
+// documentScan reads a command for the words that end the here-documents
+// it opens. It follows the common forms, not the shell's whole grammar: a
+// `<<` opens a document outside quotes, a `${...}`, an array, arithmetic and
+// a comment, a substitution included, and it is not checked that a command
+// can stand there. Inside quotes it is text, and taken for a document, `echo
+// '<<EOF'` hid every line after it up to an EOF as that document's (US-112,
+// Gate 7 round 4); so did `true;#<<EOF`, whose `#` starts a comment after
+// the `;`, and a `<<` in a string nested in a substitution in another
+// (round 5). Where the shells read a line apart, or the reader may read it
+// apart from them, the delimiters are marked unsure (delimiters), and
+// withoutDocuments reads the command once more with the bodies left in.
+//
+// PowerShell has no `<<`, and runs no command that holds one outside
+// quotes, so in a `PowerShell` command nothing is a document but its
+// here-string, which withoutDocuments reads, and every line is read.
+type documentScan struct {
+	// stack is what the line being read is inside, innermost last, carried
+	// from line to line.
+	stack []byte
+	// out are the delimiters read on the command being read, and depth how
+	// many frames were open at each one's `<<`. floor is the fewest open
+	// since the first, or -1 before one: a frame at floor or above it was
+	// opened after the `<<`.
+	out   []delimiter
+	depth []int
+	floor int
+	// ended is the index of the `)` that closed a substitution or an array
+	// on the line, and closed which; a `#` just after it is no comment's.
+	ended  int
+	closed byte
+	// doubt is set once the reader has read what it may read apart from the
+	// shells, and marks every delimiter read after it unsure. plain reads a
+	// `'` in a `${...}` within double quotes as zsh does (withoutDocuments).
+	doubt bool
+	plain bool
+}
+
+// opening reads the command that starts at lines[i], and returns it and the
+// index of its last line.
+//
+// A line a backslash continues is one line with the next, and its lines are
+// commands, kept as they are: compared line by line, `cat <<E\<LF>OF` named
+// a delimiter E that no line closed, and every command after the document
+// was read as its text (US-112, Gate 7 round 4). PowerShell continues
+// nothing with a backslash.
+//
+// The shell starts a body after the line the command ends on, so where a
+// `<<` is followed by a quote, a `${...}`, arithmetic or a substitution the
+// line leaves open, the command runs on to the line that closes them. Taken
+// to start on the next line, `cat <<EOF "a`, `b"`, `EOF`, `sdlc approve
+// US-1` had `b"` for its body, and the quote left open hid the approve that
+// bash, zsh and sh all ran (US-112, Gate 7 round 6, verifier 1).
+func (s *documentScan) opening(lines []string, i int, powerShell bool) (string, int) {
+	opening, last := joined(lines, i, !powerShell)
+	s.out, s.depth, s.floor = nil, nil, -1
+	if powerShell {
+		return opening, last
+	}
+	s.read(opening)
+	parts := []string{opening}
+	for s.runsOn() && last+1 < len(lines) {
+		next, end := joined(lines, last+1, true)
+		parts, last = append(parts, next), end
+		s.read(next)
+	}
+	return strings.Join(parts, "\n"), last
+}
+
+// read reads one line.
+func (s *documentScan) read(line string) {
+	s.ended = -2
+	for i := 0; i < len(line); i++ {
+		i = s.step(line, i)
+	}
+}
+
+// runsOn reports whether the command read so far runs on to the next line
+// before its documents' bodies start: whether a frame opened after its first
+// `<<` is still open, other than a subshell or an array, in which a newline
+// ends a command and the shells start the body after it.
+func (s *documentScan) runsOn() bool {
+	return len(s.out) > 0 && slices.ContainsFunc(s.stack[s.floor:], func(f byte) bool {
+		return f != '(' && f != inArray
+	})
+}
+
+// delimiters are the delimiters the command read, in order. Each is unsure
+// where the reader is in doubt, and where an array opened after the `<<` is
+// open at the end of the command: bash 5 starts the body after the array's
+// `)`, and bash 3.2, zsh and sh on the next line.
+func (s *documentScan) delimiters() []delimiter {
+	if len(s.out) > 0 && (s.doubt || slices.Contains(s.stack[s.floor:], inArray)) {
+		for k := range s.out {
+			s.out[k].unsure = true
+		}
+	}
+	return s.out
+}
+
+func (s *documentScan) top() byte {
+	if len(s.stack) == 0 {
+		return 0
+	}
+	return s.stack[len(s.stack)-1]
+}
+
+func (s *documentScan) push(c byte) { s.stack = append(s.stack, c) }
+
+// pop leaves the innermost frame. A document opened in a substitution that
+// closes on the line of its `<<` is one the shells end apart: bash 5 reads
+// the lines after `echo $(cat <<EOF)` as its body, and bash 3.2, zsh and sh
+// run them, so read as sure, a `git commit` there was hidden (US-112, Gate 7
+// round 6, security B2).
+func (s *documentScan) pop() {
+	if t := s.top(); t == inSub || t == '`' {
+		for k, d := range s.depth {
+			if d >= len(s.stack) {
+				s.out[k].unsure = true
 			}
+		}
+	}
+	s.stack = s.stack[:len(s.stack)-1]
+	s.floor = min(s.floor, len(s.stack))
+}
+
+// step reads the character at i, and returns the index of the last
+// character it read.
+func (s *documentScan) step(line string, i int) int {
+	c, top := line[i], s.top()
+	var next byte
+	if i+1 < len(line) {
+		next = line[i+1]
+	}
+	switch {
+	case top == '\'' || top == ansiQuote || top == '"' && c != '$' && c != '`':
+		q, end, _ := quoteStep(line, i, top, false)
+		if q == 0 {
+			s.pop()
+		}
+		return end
+	case c == '\\':
+		return i + 1
+	case c == '`' || c == '$' && strings.IndexByte("({['", next) >= 0 && (next != '\'' || top != '"'):
+		return s.expansion(line, i, top)
+	case c == '"' || c == '\'':
+		s.quote(c, top)
+	case top == '}' || top == ']':
+		if c == top {
+			s.pop()
+		} else if c == "{["[strings.IndexByte("}]", top)] {
+			s.push(top)
+		}
+	case top == inArithmetic || top == inSubArith || top == inParens:
+		return s.arithmetic(c, next, top, i)
+	default:
+		// Where a command can stand: the line itself, a subshell, or a
+		// command or process substitution.
+		return s.command(line, i)
+	}
+	return i
+}
+
+// expansion reads a backtick, or a `$` that opens a substitution, a
+// parameter, arithmetic or a `$'...'`, at i, and returns the index of the
+// last character it read.
+func (s *documentScan) expansion(line string, i int, top byte) int {
+	switch {
+	case line[i] == '`' && top == '`':
+		s.pop()
+	case line[i] == '`':
+		s.push('`')
+	case strings.HasPrefix(line[i:], "$(("):
+		s.push(inSubArith)
+		return i + 2
+	default:
+		s.push(openedBy[strings.IndexByte("({['", line[i+1])])
+		return i + 1
+	}
+	return i
+}
+
+// arithmetic reads c inside `$((...))` or `((...))`.
+func (s *documentScan) arithmetic(c, next, top byte, i int) int {
+	switch c {
+	case '(':
+		s.push(inParens)
+	case ')':
+		if top != inParens && next != ')' {
+			// The shells take `$((` and `((` for arithmetic only where `))`
+			// ends them; otherwise they are `$(` or `(` and a `(` this `)`
+			// closes. Popped whole, `echo $((true)<<EOF)` opened a document
+			// the reader was sure of, and the commit after it ran in bash,
+			// zsh and sh (US-112, Gate 7 round 7, security B1).
+			s.stack[len(s.stack)-1], s.doubt = map[byte]byte{inArithmetic: '(', inSubArith: inSub}[top], true
+			return i
+		}
+		s.pop()
+		if top != inParens {
+			if top == inSubArith {
+				s.ended, s.closed = i+1, top
+			}
+			return i + 1
 		}
 	}
 	return i
 }
 
-// documentDelimiters lists the words that end the here-documents one line
-// opens, in order, with their quoting taken off.
-func documentDelimiters(line string) []string {
-	var out []string
-	rest := line
-	for {
-		i := strings.Index(rest, "<<")
-		if i < 0 {
-			return out
-		}
-		rest = rest[i+2:]
-		// A `<<<` here-string has no body, and names no delimiter here: the
-		// word below stops at its third `<` before it starts.
-		word := strings.TrimLeft(strings.TrimPrefix(rest, "-"), " \t")
-		if end := strings.IndexAny(word, " \t;&|<>()"); end >= 0 {
-			word = word[:end]
-		}
-		if word = strings.NewReplacer(`'`, "", `"`, "", `\`, "").Replace(word); word != "" {
-			out = append(out, word)
+// quote reads a quote c that opens a string.
+func (s *documentScan) quote(c, top byte) {
+	// In a `${...}` within a double-quoted string, bash reads a `'` as a
+	// quote and zsh as a character, so the two end the string apart: in
+	// `echo "${x:-'}"'}"<<EOF'`, zsh opens no document and runs the lines
+	// after it (US-112, Gate 7 round 6, security B3). The test is for any
+	// double quote open below, which can only mark more lines unsure.
+	if c == '\'' && top == '}' && slices.Contains(s.stack, '"') {
+		s.doubt = true
+		if s.plain {
+			return
 		}
 	}
+	s.push(c)
+}
+
+// command reads the character at i where a command can stand, or inside an
+// array's words.
+func (s *documentScan) command(line string, i int) int {
+	top := s.top()
+	switch c := line[i]; {
+	case c == '(' || c == ')':
+		return s.parenthesis(line, i, top)
+	case c == '#' && (i == 0 || strings.IndexByte(wordStarts, line[i-1]) >= 0):
+		// After the `)` that closes a substitution, the `#` is a character
+		// of the word: read as a comment, the `'` after `echo $(true)#` was
+		// not seen, and a `<<` in the string it opens hid the lines after
+		// it from every rule (US-112, Gate 7 round 6, security B1). After
+		// an array's, bash and sh read a character, `a=(x)#y` being the
+		// string `(x)#y`, and zsh a comment.
+		if s.ended != i-1 {
+			return len(line)
+		}
+		s.doubt = s.doubt || s.closed == inArray
+	case len(s.stack) > 0 && caseWord(line, i):
+		// A `case` pattern's `)` closes the substitution or the subshell
+		// here, and not in the shell; the frames after it are guesses.
+		s.doubt = true
+		return i + 3
+	case top != inArray && strings.HasPrefix(line[i:], "<<"):
+		d, n, ok := delimiterAfter(line[i+2:])
+		if ok {
+			s.out = append(s.out, d)
+			s.depth = append(s.depth, len(s.stack))
+			if s.floor < 0 {
+				s.floor = len(s.stack)
+			}
+		}
+		return i + 1 + n
+	}
+	return i
+}
+
+// parenthesis reads a `(` or a `)` at i where a command can stand, or inside
+// an array's words, and returns the index of the last character it read.
+func (s *documentScan) parenthesis(line string, i int, top byte) int {
+	switch {
+	case line[i] == ')':
+		if top == '(' || top == inSub || top == inArray {
+			if top != '(' {
+				s.ended, s.closed = i, top
+			}
+			s.pop()
+		}
+	case top == inArray || i > 1 && line[i-1] == '=' && strings.IndexByte(wordStarts, line[i-2]) < 0:
+		// `name=(` and `name+=(` open an array, whose parentheses are
+		// counted; `=(` at a word's start is zsh's process substitution.
+		s.push(inArray)
+	case i > 0 && strings.IndexByte("<>=", line[i-1]) >= 0:
+		s.push(inSub)
+	case strings.HasPrefix(line[i:], "(("):
+		s.push(inArithmetic)
+		return i + 1
+	default:
+		s.push('(')
+	}
+	return i
+}
+
+// caseWord reports whether the word `case` starts at i.
+func caseWord(line string, i int) bool {
+	return strings.HasPrefix(line[i:], "case") && (i == 0 || strings.IndexByte(wordStarts, line[i-1]) >= 0) &&
+		(i+4 == len(line) || line[i+4] == ' ' || line[i+4] == '\t')
+}
+
+// wordStarts are the characters a word starts after, where a `#` starts a
+// comment: a blank, a newline, and each operator's. The shell starts one
+// nowhere else: after `{`, `}` or a carriage return the `#` is a character
+// of a word, and read as a comment, `echo {#;git commit -m x` and `echo
+// x<CR>#;git commit -m x` hid a commit bash, zsh and sh all ran (US-112,
+// Gate 7 round 5).
+const wordStarts = " \t\n;&|()<>"
+
+// delimiterAfter is the delimiter named by rest, the text after a `<<`, and
+// how much of rest it read. The word is read as the shell reads it: to a
+// blank or an operator outside quotes, with each quote and escape followed
+// and then taken off, `\\` a backslash and `$'...'` decoded. Cut at the
+// first blank or operator before the quotes were followed, `<<'E;F'` named
+// a delimiter E, and a line E after the real end hid the commands between
+// (US-112, Gate 7 round 5). A `<<<` here-string has no body, and names none:
+// the word stops at its third `<` before it starts.
+//
+// A delimiter holding a `$` or a backtick is one the reader is not sure of:
+// bash reads `<<$"EOF"` as EOF and zsh as $EOF, and the shells keep a
+// `$(...)` whole, which this does not read.
+func delimiterAfter(rest string) (delimiter, int, bool) {
+	var d delimiter
+	word, dash := strings.CutPrefix(rest, "-")
+	word = strings.TrimLeft(word, " \t")
+	start := len(rest) - len(word)
+	var b strings.Builder
+	var q byte
+	i := start
+	for ; i < len(rest) && (q != 0 || strings.IndexByte(" \t;&|<>()", rest[i]) < 0); i++ {
+		switch c := rest[i]; {
+		case c == q:
+			q = 0
+		case q == '\'':
+			b.WriteByte(c)
+		case c == '\\' && i+1 < len(rest) && (q == 0 || strings.IndexByte("\\\"$`", rest[i+1]) >= 0):
+			i++
+			b.WriteByte(rest[i])
+		case q == 0 && (c == '\'' || c == '"'):
+			q = c
+		case q == 0 && strings.HasPrefix(rest[i:], "$'"):
+			var value string
+			value, i = ansiC(rest, i+2)
+			b.WriteString(value)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	i = min(i, len(rest))
+	raw := rest[start:i]
+	d.word, d.dash = b.String(), dash
+	d.quoted = strings.ContainsAny(raw, `'"\`)
+	d.unsure = strings.ContainsAny(strings.ReplaceAll(raw, "$'", ""), "$`")
+	return d, i, i > start
 }
 
 // hereString reports whether a line opens a PowerShell here-string, with the
@@ -3975,6 +4745,10 @@ func withoutEscapes(command string) string {
 	if strings.IndexByte(command, '`') < 0 {
 		return command
 	}
+	// PowerShell reads a carriage return and a newline as one end of line, so
+	// a backtick before the two continues the line as one before a newline
+	// does.
+	command = strings.ReplaceAll(command, "`\r\n", "`\n")
 	var b strings.Builder
 	b.Grow(len(command))
 	var inSingle, inDouble, inComment bool
@@ -3992,7 +4766,7 @@ func withoutEscapes(command string) string {
 			inSingle = c != '\''
 		case c == '`':
 			if i++; i < len(command) && strings.IndexByte("'\"`", command[i]) < 0 {
-				b.WriteByte(command[i])
+				b.WriteByte(escapedAs(command[i]))
 			}
 			continue
 		case c == '\'' && !inDouble:
@@ -4009,6 +4783,23 @@ func withoutEscapes(command string) string {
 	return b.String()
 }
 
+// escapedAs is what withoutEscapes writes for a character a backtick escapes:
+// the character, but for the end of a line. A backtick there continues the
+// command on the next line, as a blank between its words: left as a newline,
+// it ended the command, and these two lines committed unchecked (US-112,
+// Gate 7 round 4, security note 6):
+//
+//	git `
+//	commit -m x
+//
+// Inside a string the blank stands in its text, where it changes no command.
+func escapedAs(c byte) byte {
+	if c == '\n' || c == '\r' {
+		return ' '
+	}
+	return c
+}
+
 // runsAScript reports whether a command on this line could run the text it is
 // handed, so that a here-document going to it is a program and not a document.
 // The programs are what count, read with their quoting: every word on the line
@@ -4020,23 +4811,38 @@ func runsAScript(line string) bool {
 		for len(words) > 0 && isAssignment(words[0]) {
 			words = words[1:]
 		}
-		run := program(words)
-		if run.shell || run.piped {
-			return true
-		}
-		if len(run.words) == 0 {
-			continue
-		}
-		switch base(run.words[0]) {
-		case "fish", "eval", "source", ".", "iex", "invoke-expression",
-			"python", "python3", "perl", "ruby", "node", "deno", "bun", "php":
-			return true
-		}
-		if namesAShell(run.words) {
-			return true
+		// Every reading: in `strace -J 1 python3 <<'X'` the interpreter is
+		// the program of the second (security, round 5, N3).
+		for _, run := range everyReading(program(words)) {
+			if readsItsInput(run) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// readsItsInput reports whether a reading of a command could run what it is
+// fed as a program.
+func readsItsInput(run invocation) bool {
+	if run.shell || run.piped {
+		return true
+	}
+	if len(run.words) == 0 {
+		return false
+	}
+	switch base(run.words[0]) {
+	case "fish", "eval", "source", ".", "iex", "invoke-expression",
+		"python", "python3", "perl", "ruby", "node", "deno", "bun", "php":
+		return true
+	case "awk", "gawk", "mawk", "nawk":
+		// Its program from a file, as in `gawk -f /dev/stdin <<'EOF'`, which
+		// ran the document; fed data, as in `awk '{print $1}' <<EOF`, the
+		// document is one. Asked as awk, since the reader names only awk and
+		// gawk of the family.
+		return tookItsProgramElsewhere(slices.Concat([]string{"awk"}, run.words[1:]))
+	}
+	return namesAShell(run.words)
 }
 
 // namesAShell reports whether a word after the first of a command could be a
@@ -4054,7 +4860,10 @@ func namesAShell(words []string) bool {
 			continue
 		}
 		switch base(w) {
-		case "sh", "bash", "zsh", "dash", "ksh", "fish", "pwsh", "powershell":
+		case "sh", "bash", "zsh", "dash", "ksh", "fish", "pwsh", "powershell",
+			// The interpreters readsItsInput names: `xyz python3 <<'X'` runs
+			// the document as `firejail sh <<EOF` does (security, round 5, N3).
+			"python", "python3", "perl", "ruby", "node", "deno", "bun", "php":
 			return true
 		}
 	}
@@ -4220,7 +5029,12 @@ func isQuote(c byte) bool {
 }
 
 // escapedSeparators are the characters splitSegments ends a command at, as an
-// argument. A `(` is not one of them.
+// argument. A `(` is not one of them. Quotes are not followed, so `\\;` is read
+// as it reaches a shell inside double quotes, find's `\;`; where it stands
+// outside them, addHandedReadings reads the separator. A backslash before a
+// carriage return and a newline is taken out with them, which reads `rm
+// .sdlc/sta\<CR><LF>te/active` as the lock's directory; the shell reads an
+// escaped carriage return and a newline there, which addWordReadings reads.
 var escapedSeparators = strings.NewReplacer(
 	"\\\r\n", "", "\\\n", "",
 	`\)`, " ", `\;`, " ", `\|`, " ", `\&`, " ",
@@ -4335,13 +5149,14 @@ func parse(segment string) (words, redirects, assigns []string) {
 	for i := 0; i < len(fields); i++ {
 		f := unquote(fields[i].text)
 		switch {
-		case f == ">":
-			if i+1 < len(fields) {
-				redirects = append(redirects, unquote(fields[i+1].text))
-				i++
+		case fields[i].op && f == ">":
+			j, ok := targetOf(fields, i)
+			if ok {
+				redirects = append(redirects, unquote(fields[j].text))
 			}
-		case f == "<":
-			i++
+			i = j
+		case fields[i].op:
+			i, _ = targetOf(fields, i)
 		case isAssignment(f) && (leading || exporting(words)):
 			name, _, _ := strings.Cut(f, "=")
 			assigns = append(assigns, name)
@@ -4353,11 +5168,37 @@ func parse(segment string) (words, redirects, assigns []string) {
 	return words, redirects, assigns
 }
 
+// targetOf is the index of the field the redirect at i names: the first after
+// it with something left once its quotes are gone, or the one after it where
+// none has. Quotes are not followed, so in `eval echo x '>'
+// .sdlc/state/tests.lock`, which eval runs as the redirect it spells, the
+// field after the `>` was the quote that closes it, and the lock was a word
+// (US-112, Gate 7). wordFields and fieldWords skip the same fields.
+//
+// Another redirect is never the target: it is the end of this one, and ok is
+// false, with the index of the field before it, so the caller reads it next as
+// the redirect it is. Taken as the target, it consumed the real redirect after
+// a quoted operator, and the file that redirect writes was read as a word: `:
+// '>' >.sdlc/state/tests.lock` emptied the lock, met by no rule (security, US-112
+// Gate 7, B2). ok is false too where the redirect is the last field.
+func targetOf(fields []field, i int) (int, bool) {
+	for j := i + 1; j < len(fields); j++ {
+		switch {
+		case fields[j].op:
+			return j - 1, false
+		case unquote(fields[j].text) != "":
+			return j, true
+		}
+	}
+	return i + 1, i+1 < len(fields)
+}
+
 // A field is one word of a segment as spacedFields splits it, and where in the
-// segment it starts.
+// segment it starts. op is set on a redirect operator, `>` or `<`.
 type field struct {
 	text string
 	at   int
+	op   bool
 }
 
 // spacedFields splits a segment at white space, with each redirect operator
@@ -4366,39 +5207,80 @@ type field struct {
 // command: a run of digits that starts a word and is followed at once by the
 // operator is dropped, wherever on the line the redirect stands.
 //
-// Quotes are not followed, here as in the rest of parse: a `>` inside a quoted
-// word is read as a redirect all the same.
+// It reads more redirects and more blanks than the shell does, on purpose, so
+// that a string a later eval or shell runs is read as that shell reads it: a
+// `>` inside quotes or after a backslash is a redirect all the same, and a
+// backslash before a blank is read as the blank, in an ordinary command too,
+// where the shell keeps the blank in the word. Kept as a field of its own, that
+// backslash stood between a `>` and its file, and `eval echo\ x\ \>\
+// .sdlc/state/tests.lock`, which eval runs as the redirect it spells, wrote a
+// file named `\` (US-112, Gate 7). Either can only add a redirect's target or
+// split a word, and a word split is still read.
+//
+// A `<` the shell reads as a character is not a redirect here, and any other
+// character after a backslash is one of the word, as the lexer reads them
+// (readQuoting). A `<` is the one operator whose target is read by no rule, so
+// read as a redirect, `rm '<' .sdlc/state/tests.lock` and `rm \<
+// .sdlc/state/tests.lock` hid the lock from every rule while the shell
+// removed it; and `\\` read as a backslash before whatever came next made the
+// second backslash escape it (US-112, Gate 7). Quotes are followed for that
+// alone: a blank inside them still ends a field.
 func spacedFields(segment string) []field {
 	var out []field
 	start, afterSpace, skip := -1, true, false
+	var quote rune
 	flush := func(end int) {
 		if start >= 0 {
-			out = append(out, field{segment[start:end], start})
+			out = append(out, field{text: segment[start:end], at: start})
 			start = -1
 		}
 	}
 	for i, r := range segment {
 		switch {
 		case skip:
-			// The second `>` of `>>`, which is one operator.
+			// The second `>` of `>>`, which is one operator, or the character
+			// a backslash makes one of the word.
 			skip = false
-		case r == '>' || r == '<':
+		case r == '>' || r == '<' && quote == 0:
 			if start >= 0 && afterSpace && strings.Trim(segment[start:i], "0123456789") == "" {
 				start = -1
 			}
 			flush(i)
-			out = append(out, field{string(r), i})
+			out = append(out, field{text: string(r), at: i, op: true})
 			skip = r == '>' && strings.HasPrefix(segment[i+1:], ">")
 			afterSpace = false
 		case unicode.IsSpace(r):
 			flush(i)
 			afterSpace = true
+		case r == '\\' && i+1 < len(segment) && (segment[i+1] == ' ' || segment[i+1] == '\t'):
+			flush(i)
 		case start < 0:
 			start = i
+			quote, skip = fieldQuote(segment, i, r, quote)
+		default:
+			quote, skip = fieldQuote(segment, i, r, quote)
 		}
 	}
 	flush(len(segment))
 	return out
+}
+
+// fieldQuote is the quote left open after r, the character at i, where quote was
+// open before it, and whether r is a backslash that makes the character after
+// it one of the word: outside quotes any but a `>` or a newline, and inside
+// double quotes `"`, `\`, `$` and a backtick.
+func fieldQuote(segment string, i int, r, quote rune) (rune, bool) {
+	switch {
+	case r == '\\' && i+1 < len(segment):
+		next := rune(segment[i+1])
+		return quote, quote == 0 && !strings.ContainsRune(">\r\n", next) ||
+			quote == '"' && strings.ContainsRune("\"\\$`", next)
+	case r == quote:
+		return 0, false
+	case quote == 0 && (r == '\'' || r == '"'):
+		return r, false
+	}
+	return quote, false
 }
 
 func isAssignment(f string) bool {
@@ -4491,7 +5373,7 @@ func storyOwned(rest string) bool {
 		return true
 	}
 	_, tail, _ := strings.Cut(rest, "/")
-	if strings.HasPrefix(tail, "reviews/") || tail == "reviews" || tail == model.RecordFile {
+	if strings.HasPrefix(tail, "reviews/") || tail == "reviews" || tail == model.RecordFile || tail == model.TraceFile {
 		return true
 	}
 	_, ok := model.ArtifactByFile(tail)
@@ -4635,6 +5517,9 @@ var quotes = strings.NewReplacer(`$'`, "", `$"`, "", `"`, "", "'", "")
 // base is the command a word runs, folded: on macOS and Windows `RM` and
 // `rm.exe` find the same program as `rm`.
 func base(word string) string {
+	if word == "{}" {
+		return word
+	}
 	word = pathrules.Fold(clean(word))
 	if i := strings.LastIndex(word, "/"); i >= 0 {
 		word = word[i+1:]

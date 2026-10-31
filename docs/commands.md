@@ -27,6 +27,8 @@ Commands you type:
 - [`sdlc ack`](#sdlc-ack)
 - [`sdlc cost`](#sdlc-cost)
   - [`sdlc cost add`](#sdlc-cost-add)
+- [`sdlc trace`](#sdlc-trace)
+  - [`sdlc trace --all`](#sdlc-trace---all)
 - [`sdlc version`](#sdlc-version)
 
 Commands the loop's agents run:
@@ -73,9 +75,10 @@ companion [`sdlc log`](#sdlc-log) is open to everyone), and
 [`sdlc staffing assign`](#sdlc-staffing-assign-agent), which the hook refuses
 to every session. Each of these, and `sdlc approve`, also refuses itself where
 it runs with Claude Code's environment variables, in the model's Bash or from a
-`!` line typed in a session
+`!` line typed in Claude Code run from a terminal
 ([SDLC-E0079](troubleshooting.md#sdlc-e0079)): type its slash command in Claude
-Code, or run it in a terminal outside Claude Code, a window you opened yourself.
+Code, as a `!` line in Claude Desktop, or run it in a terminal outside Claude
+Code, a window you opened yourself.
 In the session working a story, the hook also refuses
 [`sdlc stop`](#sdlc-stop) to the main conversation and to every agent while the
 story still has a gate to pass; once every gate has passed it does not. In any
@@ -115,8 +118,10 @@ schema, and a `## SDLC Contract` section appended to `CLAUDE.md`. Where the
 project has an `AGENTS.md` and no `CLAUDE.md`, or its `CLAUDE.md` is a link to
 `AGENTS.md`, the section goes in `AGENTS.md` instead, and no `CLAUDE.md` is
 made: Claude Code reads `AGENTS.md` only where there is no `CLAUDE.md`. init
-then prints `created  AGENTS.md (appended to)`. It never overwrites a file you
-wrote, and it writes no `.gitignore`.
+then prints `created  AGENTS.md (appended to)`. Beside them it writes
+`.sdlc/.gitignore`, which keeps each story's `trace.jsonl` on this machine
+([the trace](the-loop.md#the-trace)); it is not in the list init prints. It never
+overwrites a file you wrote, and it never touches your own `.gitignore`.
 
 Then commit what `init` wrote, because each story's worktree is cut from trunk's
 commits. After that, run `sdlc doctor` to check the setup, and open Claude Code
@@ -399,6 +404,11 @@ Naming a story picks it over the priority order, and nothing else. A story that
 is `dropped`, `blocked` or marked `done`, or that waits on a `depends_on` story
 that is not done, is refused as it would be passed over
 ([SDLC-E0010](troubleshooting.md#sdlc-e0010)).
+
+A start writes `.sdlc/.gitignore`, which keeps the stories' traces out of git,
+where a project initialised before tracing has none, and leaves one that is
+there alone. Commit it once, between stories or with the story's own commit
+([the trace](the-loop.md#the-trace)).
 
 A start that begins a story afresh drops any sections of `CODEMAP.md` stored
 for it in an earlier attempt ([`sdlc codemap write`](#sdlc-codemap-write)). It
@@ -1110,6 +1120,179 @@ recorded as zero, because a story that silently cost nothing is the one wrong an
 questions. [Tracking what a story costs](guides/tracking-what-a-story-costs.md) walks
 through recording, reading back and budgeting.
 
+## `sdlc trace`
+
+See where a story's time and tokens went: how long each gate took, how much of
+that its subagents, a person and the time between iterations account for, what
+each kind of agent cost, and the shell commands, test runs, refusals, the change
+at the commit gate and the review rounds. It reads the story's gate record and
+its [trace](the-loop.md#the-trace), and writes nothing.
+
+```console
+$ sdlc trace <ID>
+$ sdlc trace <ID> --json
+$ sdlc trace --all
+$ sdlc trace --all --json
+```
+
+`sdlc trace` takes a story's id or `--all`, and not both. Each wrong form says
+which mistake it was, and exits with
+[SDLC-E0034](troubleshooting.md#sdlc-e0034). With neither, or more than one id,
+it prints `sdlc trace was given no story's id and no --all, or more than one id:
+name one story, as in sdlc trace US-001, or add --all for every story`. With
+both, it prints `sdlc trace takes a story's id or --all, not both`.
+
+| Flag | What it does |
+| --- | --- |
+| `--all` | every story with a record, side by side, with the median of each column |
+
+For one story it prints:
+
+```text
+T-1  Story T-1
+2 lines of the trace were skipped: they could not be read, or were written by a newer sdlc
+
+time, by the gate the story was working towards:
+  gate             wall         agents       waiting on a person  between iterations  no agent and no person accounts for
+  dor              10m          0s           0s                   0s                  10m
+  analysis         35m          28m          0s                   0s                  7m
+  tests_frozen     3h15m        30m          2h00m                10m                 35m
+  in all           4h00m        58m          2h00m                10m                 52m
+  unfinished: sdlc:verifier a4, started 2026-10-01T13:40:00.000Z and never ended, so it is left out
+
+by kind of agent:
+  Explore: 1 run, 20m, 1 response, the largest context 10 tokens, read from the cache 0%
+    tokens: m-haiku 10 in, 0 read from the cache, 0 written to it, 5 out
+    tools: Grep 1
+    asked for: nothing named; ran on m-haiku at no effort recorded
+    handed back: 0 done, 0 blocked
+  sdlc:researcher: 1 run, 18m, 4 responses, the largest context 400 tokens, read from the cache 60%
+    tokens: m-opus 100 in, 300 read from the cache, 100 written to it, 50 out
+    tools: Read 3
+    asked for: opus at high; ran on m-opus at high
+    handed back: 1 done, 0 blocked
+  sdlc:sdet: 1 run, 30m, 6 responses, the largest context 900 tokens, read from the cache 60%
+    tokens: m-sonnet 200 in, 600 read from the cache, 200 written to it, 100 out
+    tools: Bash 4; Write 2
+    asked for: sonnet at high; ran on m-sonnet at medium
+    handed back: 0 done, 1 blocked
+
+the main conversation, by gate:
+  analysis: m-main 1000 in, 0 read from the cache, 0 written to it, 10 out
+  tests_frozen: m-main 500 in, 0 read from the cache, 0 written to it, 5 out
+shell commands, by class:
+  git: 2, 0.04s in all, the longest 0.03s
+  test: 2, 4s in all, the longest 3s
+test runs: 2, 4s in all, 1 passed, 1 failed
+refusals, by rule, agent and code:
+  gate-record-is-written-by-the-tool, sdlc:sdet: 2
+  loop-state-through-the-tool, the main conversation, SDLC-E0081: 1
+the change at the commit gate: 5 files, 100 lines added and 20 removed; of them the frozen tests 2 files, 60 added and 0 removed
+
+reviews, by gate:
+  tests_frozen: 2 rounds, 1 block
+```
+
+A gate's time is charged to the gate the story was working towards then: the
+first gate in the loop's order that had not passed, so a gate reopened takes the
+time back. A story's time ends at its landing, or where it has none at its
+commit gate's pass, or at its last event while it is under way. The agents' time
+is the union of their runs, so two agents at once count once; the last column is
+the wall time less the union of the other three, never below zero. A run with no
+end, such as an agent the session lost, is listed as unfinished and left out.
+
+Each heading is one key of `--json`, which prints one JSON document and nothing
+else, every time in seconds, and `null` for a figure that was not recorded:
+
+| Heading | Key |
+| --- | --- |
+| the story's id | `story`, with `traced`, `skipped_lines`, `truncated` and `truncated_at` |
+| time, by the gate | `gates`, each `gate`, `wall`, `agents`, `person`, `between` and `unaccounted`, and `total` for "in all" |
+| unfinished | `unfinished`, each `agent_type`, `agent_id` and `start` |
+| by kind of agent | `agent_types`, each `agent_type`, `runs`, `time`, `models`, `responses`, `peak_context`, `cache_read_ratio`, `tools`, `asked`, `observed_models`, `observed_efforts`, `done` and `blocked` |
+| the main conversation | `main`, each `gate` and `models` |
+| shell commands | `shell`, each `class`, `count`, `total` and `longest` |
+| test runs | `tests`: `count`, `time`, `passes` and `failures` |
+| refusals | `refusals`, each `rule`, `agent_type`, `code` and `count` |
+| the change at the commit gate | `diff`: `files`, `added`, `removed`, `test_files`, `test_added` and `test_removed` |
+| reviews | `reviews`, each `gate`, `rounds` and `blocks` |
+
+A story worked before tracing has no trace. For it, `sdlc trace` gives what the
+gate record holds, the wall time, the wait on a person and the time between
+iterations, says once that the story predates tracing, and says "not recorded"
+for everything else, never 0:
+
+```text
+T-1  Story T-1
+no trace.jsonl for this story: it predates tracing, or nothing was recorded (see "sdlc trace shows nothing was recorded" in the troubleshooting guide)
+
+time, by the gate the story was working towards:
+  gate             wall         agents       waiting on a person  between iterations  no agent and no person accounts for
+  dor              10m          not recorded 0s                   0s                  10m
+  analysis         1h50m        not recorded 1h00m                10m                 40m
+  in all           2h00m        not recorded 1h00m                10m                 not recorded
+  with no agent's time recorded, a gate's last column holds its agents' time as well
+```
+
+A gate's last column there is its wall time less the wait and the time between
+iterations, since no agent's time was recorded to take off, and the last line
+says so; the story's whole is not recorded.
+
+It also says when lines of the trace were skipped, when the trace reached its
+4 MiB limit and the records after it are missing, when agent runs or turns were
+recorded without their tokens, and when agent events have no agent id, written
+by an older sdlc.
+
+A story the backlog does not hold, or one that has not been started and so has
+no record, is refused with [SDLC-E0009](troubleshooting.md#sdlc-e0009), and a
+trace that cannot be read with [SDLC-E0005](troubleshooting.md#sdlc-e0005).
+
+### `sdlc trace --all`
+
+Every story in the backlog that has a record, one row each, with the median of
+each time and count column under them. Under each row, a second line gives what
+the gate record counts: the escalations by kind, the unfreezes, the review
+rounds by gate, and whether a gate failed after the commit gate passed. Here
+US-8 and US-9 predate tracing, and US-10 is under way:
+
+```text
+story      start                     end                       wall         agents       waiting on a person  design review to end  tokens         largest context  test time    refusals     diff files   diff lines   first pass
+US-7       2026-10-01T10:00:00.000Z  2026-10-01T20:00:00.000Z  10h00m       2h18m        30m                  5h30m                 1100           900              5s           3            4            42           yes
+           escalations: spec_unclear 1; unfreezes: 0; review rounds: design_review 2, verifier_review 1, code_review 1; a gate failed after the commit gate: no
+US-8       2026-10-01T10:00:00.000Z  2026-10-01T14:00:00.000Z  4h00m        not recorded 0s                   3h00m                 not recorded   not recorded     not recorded not recorded not recorded not recorded no
+           escalations: none; unfreezes: 1; review rounds: code_review 2; a gate failed after the commit gate: yes
+US-9       2026-10-01T10:00:00.000Z  2026-10-01T13:00:00.000Z  3h00m        not recorded 15m                  1h45m                 not recorded   not recorded     not recorded not recorded not recorded not recorded yes
+           escalations: hard_stop 1, human_check 1; unfreezes: 0; review rounds: none; a gate failed after the commit gate: no
+US-10      2026-10-01T10:00:00.000Z  in progress               20h00m       not recorded 0s                   not yet               not recorded   not recorded     not recorded not recorded not recorded not recorded not yet
+           escalations: none; unfreezes: 0; review rounds: none; a gate failed after the commit gate: no
+median                                                         4h00m        2h18m        15m                  3h00m                 1100           900              5s           3            4            42
+first-pass success, of the stories that ended: 67%
+a story still in progress is left out of the medians; not recorded is a figure its story did not record
+```
+
+A story in progress has no end and is left out of the medians and of the
+first-pass share; its time from the last design review pass to the end reads
+"not yet". First pass means no block at the verifier's review or the code
+review, and no failure at Gates 6 and 7, the verification included; a story
+under way with none of those yet reads "not yet", and one that already has one
+reads "no". `--json` gives every
+row with `escalations` by kind, `unfreezes`, `review_rounds` by gate,
+`first_pass`, `design_to_end` (from the last design review pass to the end),
+`failed_after_commit`, `tokens`, `peak_context`, `test_time`, `refusals`,
+`diff_files` and `diff_lines`, then
+`medians` and `first_pass_share`. `first_pass` is `null` for a story under way
+with none of those yet, and `false` once one is on its record, ended or not. A
+story whose trace cannot be read is noted on standard error, as `sdlc: the trace
+of US-10 could not be read, so its row shows only what its gate record holds;
+"sdlc trace US-10" says why`, and keeps its row without the trace's columns.
+
+Where no story has a record yet, it says so and exits 0:
+
+```console
+$ sdlc trace --all
+no story has a record yet: a story gets one when it is started ("sdlc start <ID>")
+```
+
 ## `sdlc version`
 
 Print the version of `sdlc` you are running, which is the first thing to include
@@ -1724,8 +1907,14 @@ sense when you meet it.
 
 An assistant's tool call that runs it on `UserPromptExpansion`, the event on
 which it runs a person's slash command, is refused
-([`slash-command-is-a-human-decision`](enforcement.md#slash-command-is-a-human-decision));
-run on any other event, it is not.
+([`slash-command-is-a-human-decision`](enforcement.md#slash-command-is-a-human-decision)),
+and so is one that runs it on any of the eight events it records in the trace:
+`PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`,
+`Notification`, `StopFailure` and `PostCompact`
+([`recorded-event-comes-from-the-host`](enforcement.md#recorded-event-comes-from-the-host)).
+On `PreToolUse`, `SessionStart` and any other event it answers as it would answer
+Claude Code. A payload sent to `sdlc hook PreToolUse` that the hook refuses adds a
+`refusal` record to the trace, as a refusal of a real call would.
 
 ## Where to go next
 

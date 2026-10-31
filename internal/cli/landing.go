@@ -1782,9 +1782,9 @@ func (l *lander) finish(ctx context.Context, st landState) error {
 	// here it would read as "already on trunk" to the notice and the repair.
 	r.CodemapCommit = ""
 	recordAccepted(l.s, l.id, r, st.accepted)
-	r.Append("landed", landedEvent(l.m.trunk, st), now)
+	r.Append(model.EventLanded, landedEvent(l.m.trunk, st), now)
 	if l.running {
-		r.Append("loop_end", "iteration ended", now)
+		r.Append(model.EventLoopEnd, "iteration ended", now)
 	}
 	if err := l.s.SaveRecord(r); err != nil {
 		return err

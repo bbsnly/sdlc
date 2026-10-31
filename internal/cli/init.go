@@ -36,8 +36,9 @@ func newInitCmd() *cobra.Command {
 			"no CLAUDE.md, or CLAUDE.md is a link to it.\n\n" +
 			"It reads the repository first and fills in commands that match it, so the\n" +
 			"configuration works before you edit it. It never overwrites your backlog or\n" +
-			"a CLAUDE.md or AGENTS.md you have already filled in, and it writes no\n" +
-			".gitignore: what a project commits is the project's decision.",
+			"a CLAUDE.md or AGENTS.md you have already filled in. Beside them it writes\n" +
+			".sdlc/.gitignore, so the story traces stay on this machine, and it never\n" +
+			"touches your own .gitignore.",
 		Example: "  sdlc init\n  sdlc init --force   # restore the default settings, keeping your stories",
 		Args:    cobra.NoArgs,
 		RunE:    func(cmd *cobra.Command, _ []string) error { return runInit(cmd, force) },

@@ -14,6 +14,7 @@
   - [`gate-record-is-written-by-the-tool`](#gate-record-is-written-by-the-tool)
   - [`review-is-written-by-the-tool`](#review-is-written-by-the-tool)
   - [`gate-artifact-is-written-by-the-tool`](#gate-artifact-is-written-by-the-tool)
+  - [`trace-is-written-by-the-tool`](#trace-is-written-by-the-tool)
   - [`frozen-test-is-not-edited`](#frozen-test-is-not-edited)
   - [`no-new-test-after-the-freeze`](#no-new-test-after-the-freeze)
   - [`implementer-does-not-write-tests`](#implementer-does-not-write-tests)
@@ -40,6 +41,7 @@
   - [`review-is-recorded-by-its-reviewer`](#review-is-recorded-by-its-reviewer)
   - [`assignment-is-a-human-decision`](#assignment-is-a-human-decision)
   - [`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)
+  - [`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host)
   - [`staffing-is-recorded-by-the-project-manager`](#staffing-is-recorded-by-the-project-manager)
   - [`project-manager-only-staffs`](#project-manager-only-staffs)
   - [`commit-gate`](#commit-gate)
@@ -89,6 +91,15 @@ hook, a `Stop` hook, the plugin's agents, and the `sdlc` command. A
 `PostToolUse` hook runs your [`commands.fmt_file`](configuration.md#commands),
 and refuses nothing. No git hooks are installed, and `sdlc` never writes to
 `.git/hooks`.
+
+The same hook records what a story costs in its
+[`trace.jsonl`](the-loop.md#the-trace), which `sdlc trace` reads back: on
+`PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`,
+`Notification`, `StopFailure` and `PostCompact`, and a refusal on `PreToolUse`.
+Recording never refuses anything and never changes what the hook answers, and
+it carries on with `SDLC_ENFORCE` set to `0`: a span recorded then has no
+refusals, because none were made. Only sdlc writes the trace
+([`trace-is-written-by-the-tool`](#trace-is-written-by-the-tool)).
 
 **This is a discipline tool, not a sandbox.** It constrains an assistant that is
 trying to do the right thing and takes the shortest path to it. It does not
@@ -178,7 +189,7 @@ refusals below stay, [SDLC-E0079](troubleshooting.md#sdlc-e0079) among them.
   way and none waiting, they are not. After a move the hook cannot follow, such
   as `cd "$OLDPWD"`, `cd ../$name` or `popd`, they are refused as if a story
   waited where it led.
-- A command nested too deep to read
+- A command nested too deep, or read too many ways, for the rules to read
   ([`command-too-deep-to-read`](#command-too-deep-to-read)) is refused whatever
   it runs, since any of these could be inside it.
 - A write to the person's Claude Code configuration, by a file tool or a
@@ -189,7 +200,12 @@ refusals below stay, [SDLC-E0079](troubleshooting.md#sdlc-e0079) among them.
   ([`story-stays-in-its-session`](#story-stays-in-its-session)).
 - Running the sdlc hook by hand on `UserPromptExpansion`, the event on which it
   runs a person's slash command, is refused there always
-  ([`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)).
+  ([`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)),
+  and so is running it on one of the eight events it records
+  ([`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host)).
+- A command that takes `AI_AGENT` away from what it runs, blanks it or sets it
+  is refused there always
+  ([`enforcement-stays-on`](#enforcement-stays-on)).
 
 A command is read to its end, so `sdlc approve A-1; sdlc ack --through HEAD` is
 refused for the `sdlc ack` in it. `sdlc escalate` ends the iteration, so the
@@ -211,19 +227,27 @@ processes it starts. [SDLC-E0061](troubleshooting.md#sdlc-e0061) and
 and `sdlc staffing assign` where the session id is set. A model's Bash or
 PowerShell has those variables, and so does every program it starts that keeps
 its environment, so the seven commands are refused even where the shell rules
-cannot read them: behind `arch`, `osascript -e`, `su -c`, `vim -c`, awk's
+cannot read them: behind `osascript -e`, `su -c`, `vim -c`, awk's
 `system()`, `git -c core.pager` or `GIT_EDITOR`, through `Invoke-Expression`
 or a PowerShell argument in parentheses, behind a wrapper the rules do not read
 through that keeps the environment, and in a shell or an interpreter fed its
-program on standard input. `sudo`, `doas`, `env -i` and `env -u` start a
-command without them; written out, the shell rules read the command after them
-and refuse it there. A `!` line typed in a session has the variables too, so
-there a person types the slash command instead.
+program on standard input. `sudo` and `doas` start a command without them, and
+so does `env -u` given their names; written out, the shell rules read the
+command after them and refuse it there. `env -i`, `exec -c`, `arch -c` and
+`env -u AI_AGENT` are refused themselves, whatever they run
+([`enforcement-stays-on`](#enforcement-stays-on)). A `!` line typed in Claude
+Code run from a terminal has the variables too, so there a person types the
+slash command instead. In Claude Desktop (Claude Code 2.1.309, seen on
+2026-10-29) a `!` line has none of them and runs the command, while a slash
+command does not run, since the hook there has `AI_AGENT`.
 
 A slash command a person types reaches the hook, which hands the command none
 of those variables, so it records. A hook run from a model's tool call has
-`AI_AGENT`, and so has the hook of a session started from one: there a typed
-person's command answers that it did not run, and records nothing. What neither
+`AI_AGENT`, and so has the hook of a session started from one, and so does
+every hook Claude Code runs in Claude Desktop (2.1.309): there a typed
+person's command answers that it did not run and records no decision, and the
+person types it as a `!` line in Claude Desktop, or runs it in a terminal
+outside Claude Code. What neither
 catches is listed in [Not held](#not-held): a program that starts with a clean
 environment or removes those variables; a part-way `sdlc stop`, which is not
 one of the seven; a program Claude Code starts itself from a project's
@@ -727,6 +751,27 @@ is a rule nobody could keep.
 
 *Instead:* `sdlc artifact write <name>`.
 
+### `trace-is-written-by-the-tool`
+
+Refuses any write to a story's `trace.jsonl`, in any story's directory, by a
+file tool or a shell command, from every agent and the main conversation alike.
+Spellings that fold to the same file on a case-insensitive disk, and the
+`::$DATA` stream on Windows, are the same name. A `trace.jsonl` outside a
+story's directory is not this rule's, and reading the trace is never refused.
+
+The trace is the loop's measurements of the story, written by sdlc as it runs
+([the trace](the-loop.md#the-trace)); a measurement the assistant can write is
+not a measurement. The shell rules hold it as they hold the gate record: a
+redirect, `rm`, `mv`, `cp`, `tee`, a hard link onto it or of it (`ln`, `link`,
+`fsutil hardlink create`, `mklink /h`, `New-Item -ItemType HardLink`), and a
+named pipe made at its name (`mkfifo`, `mknod`) are refused. The hook's turn
+marks, `.sdlc/state/trace-read.json`, are under `.sdlc/state` and held with it
+([`write-protected-path`](#write-protected-path),
+[`loop-state-through-the-tool`](#loop-state-through-the-tool)).
+
+*Instead:* there is nothing to record by hand: read it with `sdlc trace` and
+the story's id, and put anything else you want kept in your hand-back.
+
 ### `frozen-test-is-not-edited`
 
 Refuses any edit of a file in the freeze, from any role.
@@ -920,20 +965,50 @@ refuses, by hand, in your own terminal.
 The rules read past what only wraps a command:
 
 - `( … )`, `{ … }` and a leading `!`, and the shell's own `if`, `then`, `else`,
-  `elif`, `do`, `while`, `until` and `time`;
-- `env` with the values its `-u`, `-C` and `-P` take;
-- `sudo`, `doas`, `command`, `builtin`, `exec`, `timeout`, `stdbuf`,
+  `elif`, `do`, `while`, `until`, `coproc`, `function` and `time` with its
+  options, and zsh's `[[ … ]]` short forms and `always`;
+- `env` with the values its `-u`, `-C` and `-P` take, and macOS's `arch` with
+  its `-arch`, `-d` and `-e`;
+- zsh's precommand modifiers `noglob`, `nocorrect` and `-`, and its
+  `repeat N`;
+- `exec` with its `-c`, `-l` and `-a NAME`;
+- `sudo`, `doas`, `command`, `builtin`, `timeout`, `gtimeout`, `stdbuf`,
   `caffeinate`, `nice`, `nohup`, `setsid`, `ionice`, `chrt`, `unbuffer`,
   `taskset`, `chronic`, `ts`, `firejail`, `systemd-run`, `unshare`, `nsenter`,
-  `direnv exec`, `busybox` and `toybox`;
+  `chroot`, `/usr/bin/time`, `gtime`, `strace`, `ltrace`, `valgrind`,
+  `prlimit`, `numactl`, `rlwrap`, `eatmydata`, macOS's `taskpolicy`,
+  `sandbox-exec` and `xcrun`, `direnv exec`, `busybox` and `toybox`, each with
+  its options read as its manual gives them, `sudo`'s and `doas`'s long ones
+  among them, and a GNU long option given by a unique prefix;
+- `lldb`, whose options are read wherever they stand: after `--` the program
+  is the first word, and otherwise the last `-f` or `--file` names it, and
+  every other positional is then an argument;
 - `sh -c`, and `bash`, `zsh`, `dash`, `ksh`, `pwsh` and `powershell` the same
-  way, `cmd /c`, `ssh` with the command after the host, and `xargs`;
+  way, with the shells' valued options (`-o`, `+o`, `--rcfile` and
+  `--init-file`, and in bash, dash and ksh `-O` and `+O`, which in zsh are
+  flags); PowerShell's parameters read whole or by any unique prefix, with `-`,
+  an en dash, an em dash, a horizontal bar or `/` in front, all but `-`
+  unverified; `cmd /c`, `ssh` with the command after the host and its options
+  read after the host as well as before it, and `xargs` with its
+  options read as GNU's and BSD's `xargs` read them, a value glued on or the
+  next word (`-I{}`, `-I {}`, `-J %`, `-i`, `--replace`, and a prefix of a long
+  option); the string `-I`, `-J`, `-i` or `--replace` gives, and `find -exec`'s
+  `{}`, is read as a word the shell makes, since `xargs` and `find` fill it in;
 - `env -S`, `flock` and `script` with the command line each is given;
 - `watch` and `parallel`, which hand their words to a shell, their words read
   as one command line, with `parallel`'s `:::` and the arguments after it among
   them ([not held](#not-held));
 - as well as a command sent to the background with `&` or run with
   PowerShell's `&`.
+
+An option a wrapper does not know may or may not take the word after it, so
+the command is read both ways: `strace -J 1 git commit -m x` runs `1` or
+`git`, and each is checked. zsh's `]]`, a `}` before `always`, `else` or
+`elif`, a `{` after a function's name, and `coproc` each start another command,
+which is read too. `eval`, `trap`, `emulate -c` and `mapfile -C` are read
+through in every reading of a command, not only its first, and what they hand
+the shell is read within the same 16 other readings
+([`command-too-deep-to-read`](#command-too-deep-to-read)).
 
 A program that runs another and is not on this list is read as itself, not for
 what it runs ([not held](#not-held)), with two exceptions:
@@ -942,9 +1017,10 @@ what it runs ([not held](#not-held)), with two exceptions:
   by the rules on commits, on git and on `sdlc`, so
   `find . -name x -exec git commit -m x ';'` meets `commit-gate`.
 - `sdlc` is found where it is a later word behind a program not on the list, so
-  `strace sdlc approve A-1` and `docker run img sdlc unfreeze --reason "..."`
-  are refused as `sdlc approve` and `sdlc unfreeze` are. `git` is not found
-  that way: `strace git commit -m x` is not read as a commit.
+  `faketime 2020-01-01 sdlc approve A-1` and
+  `docker run img sdlc unfreeze --reason "..."` are refused as `sdlc approve`
+  and `sdlc unfreeze` are. `git` is not found that way:
+  `docker run img git commit -m x` is not read as a commit.
 
 #### PowerShell spellings
 
@@ -967,6 +1043,76 @@ The body of a here-document is text, not commands, so a plan or a review that
 mentions `git commit` is not refused for it — unless the text goes to a shell
 or an interpreter, which runs it.
 
+The hook follows the common forms of a here-document, not the shell's whole
+grammar. A line continued with a backslash is joined to the next before its
+delimiter is read, and so is a line of the body where the delimiter is not
+quoted, so `cat <<E\` with `OF` on the next line opens a document that a line
+`EOF` closes, and the commands after that line are read. Where a quote, a
+`${…}`, arithmetic or a substitution opened after the `<<` is still open at
+the end of the line, the body starts after the line that closes it, as it
+does in the shell. PowerShell has no `<<`: in a `PowerShell` command it opens
+no document, and a backslash joins nothing.
+
+The delimiter is read as the shell reads a word: to a blank or an operator
+outside quotes, with its quotes and escapes followed and then taken off. So
+`<<'E;F'` ends at a line `E;F`, `<<E\\` at a line `E\`, and `<<$'EOF'` at a
+line `EOF`. Only `<<-` lets the closing line be indented with tabs.
+
+A `<<` opens a document outside quotes, a `${…}`, an array, arithmetic and
+a comment, a substitution included. Inside quotes, as in `echo '<<EOF'`,
+inside a `${…}`, inside an array (`a=(x <<EOF)`), in arithmetic
+(`$((1<<2))`, `((…))` or `$[…]`) or in a comment it opens none, so the lines
+after it are read as commands. The hook does not check that a command could
+stand where the `<<` is: `[[ a <<EOF ]]` opens a document, though the shells
+refuse that line whole. A `#` just after the `)` that closes a substitution,
+as in `echo $(true)#`, is a character of the word and starts no comment.
+
+Where the hook is not sure where a document ends, it reads the command once
+more with this document's body, and every later one, left in, so a body that
+mentions a command the rules refuse is refused there. It is not sure where no
+line closes the document; where the delimiter holds a `$` or a backtick other
+than in `$'…'`, since bash and zsh end `<<$"EOF"` at different lines and the
+shells keep a `$(…)` in a delimiter whole; and where the line is one the
+shells read apart, or the hook may read apart from them:
+
+- a `<<` in a substitution that closes on the same line, as in
+  `echo $(cat <<EOF)`, whose next lines bash 5 reads as the body, while bash
+  3.2, zsh and sh run them;
+- an array opened after the `<<` and still open at the end of the line, where
+  bash 5 starts the body after the array's `)` and the others on the next
+  line;
+- a `#` just after the `)` that closes an array, which bash and sh read as a
+  character of the word, `a=(x)#y` being the string `(x)#y`, and zsh as the
+  start of a comment;
+- a `$((` or `((` that a single `)` ends, which the shells read as `$(` or
+  `(` with a `(` inside it and not as arithmetic, from that line on: the hook
+  reads it so too from that `)` on, but it took what came before the `)` for
+  arithmetic, in which a `<<` opens no document;
+- a `case` inside a substitution or a subshell, from that line on, since the
+  hook takes a pattern's `)` for the one that closes it;
+- a `'` inside a `${…}` within a double-quoted string, which bash reads as a
+  quote and zsh as a character, from that line on.
+
+Where the line is one of the last four, the hook also reads the whole command
+once more with each `'` inside a `${…}` within a double-quoted string read as
+a character, as zsh reads it, and the documents taken out where that reading
+ends them. Read bash's way alone, `cat <<EOF "${x:-'}"`, a line `'`, `EOF`
+and `git commit -m x` took the `'` for a quote that ran to the end of the
+command, so the commit zsh runs was not read. Where the command holds no such
+`'`, as on a line with only one of the other three, that reading is the first
+one again and adds nothing.
+
+If a command is refused for a document that no line closes, close the
+document with its end word on a line of its own. For the other causes, write
+the end word plain or in single quotes, as in `<<'EOF'`; end a substitution
+that holds the `<<` on a line after the end word; close an array before the
+`<<`; put a blank before a `#` after an array; or give the document a command
+of its own, with nothing before it on its line but the program it goes to.
+The second reading takes every body as commands, so a quote left open in a
+body can still hide the lines after it in that reading;
+[Not held](#not-held) lists this with the other forms the hook does not
+follow.
+
 PowerShell's here-string, `@'` to `'@` or `@"` to `"@`, is a document too, but
 only in a `PowerShell` command and only when it is closed; the lines after one
 that is never closed are read as commands. In a `Bash` or `Monitor` command
@@ -979,10 +1125,62 @@ Which program a command runs is read with its quoting, so a commit message, a
 `--note` or a `--message` that mentions `sdlc approve` or `git commit` is text,
 not a command.
 
-Quotes and escapes are read as the tool's shell reads them: `$'…'` with its
-escapes decoded, a backslash before an ordinary character dropped, so
-`g\it com\mit` and `git $'commit'` are `git commit`, and an escaped quote, as
-in `'it'\''s'`, a quote inside the word rather than the start of a string.
+Quotes and escapes are read as the tool's shell reads them in the forms
+below. The readers follow the common forms and do not parse the shell's whole
+grammar; [Not held](#not-held) lists the forms they are known to read apart
+from it.
+Outside quotes, a backslash keeps the character after it in the word:
+
+- Before an ordinary character the backslash stays in the word, as a Windows
+  path keeps it, so `C:\Users\dev\sdlc.exe` is `sdlc`. The word is read with
+  the backslash taken out too, so `g\it com\mit` and `git $'commit'` are
+  `git commit`, with `$'…'` decoded. Before `#`, `~` or a glob character
+  (`*`, `?`, `[`) the backslash stays in both readings, and the word is read
+  unexpanded, as the shell leaves it.
+- An escaped quote, as in `'it'\''s'`, is a quote inside the word, not the
+  start of a string.
+- An escaped space, tab, `;`, `&`, `|`, parenthesis, brace, backtick, `<`, `>`
+  or `$` loses its backslash and is a character of the word. So
+  `eval git\ commit\ -m\ x` hands `eval` one word, the line `git commit -m x`;
+  `eval \{\ git\ commit\ -m\ x\;\ \}` hands it `{ git commit -m x; }`; and
+  `eval \"\$\(git\ commit\ -m\ x\)\"` hands it `"$(git commit -m x)"`, which
+  runs git. An escaped `$` opens nothing where it stands, so in
+  `echo \${x; git commit -m x; echo }` git runs. `find . \( -name x \) -exec …`
+  is one command.
+- A brace inside a word is a character of it (not in a `PowerShell` command);
+  only at a word's start does it open or close a group.
+- A `#` starts a comment only at a word's start: after a blank, a newline or an
+  operator. After `{`, `}` or a carriage return it is a character of the word,
+  so in `echo {#;git commit -m x` git runs.
+- `\\` is one backslash, which escapes nothing after it. In
+  `FOO=a\\ git commit -m x` the blank ends the assignment, and git runs.
+- A backslash at the end of a line goes with the newline, inside double quotes
+  too, so `gi\` on one line and `t commit -m x` on the next are `git commit`.
+  Only a newline: before a carriage return the backslash escapes the carriage
+  return, and the newline after it ends the command, so in `echo x\` followed
+  by a carriage return, a newline and `git commit -m x`, git runs. In a
+  `PowerShell` command the backslash is a character and the newline ends the
+  command, and a backtick at the end of a line continues it.
+
+The rules that protect a path read a little more than the shell does, on
+purpose. A `>` that is quoted or escaped is still read as a redirect, because
+`eval echo x \> FILE` runs it as one. A backslash before a blank is read as the
+blank. Neither can hide a path. A quoted or escaped `<` is a character of the
+word, so `rm '<' .sdlc/state/tests.lock` names the lock. A `>` or `<` is never
+the file of the redirect before it, so the lock is the file written in
+`: '>' >.sdlc/state/tests.lock`. These rules split a command at every `;`, `&`,
+`|`, `)`, backtick and newline, and read it once more split where the shell
+splits it, where a quoted word, a `${…}` or a `$'…'` holds one, quotes nested
+in a `${…}` included. So the lock is named in `rm 'a;b' .sdlc/state/tests.lock` and in
+`rm "${x:-"a;b"}" .sdlc/state/tests.lock`. A word handed to a shell's `-c` is
+read as one script, and `eval`'s words as the one script the shell joins them
+into. A process substitution, `<(…)` or `>(…)` anywhere in a word or zsh's
+`=(…)` at a word's start, is a word the shell fills in and a command of its own,
+so `rm -f a<(:) .sdlc/state/tests.lock` names the lock. A separator between two
+quoted strings separates: in `true ''|'rm' .sdlc/state/tests.lock`, `rm` runs.
+A backslash before a carriage return and a newline is read both as a line
+continuation and as the escaped carriage return it is, and so is an escaped
+backslash before a newline.
 
 #### A path that is only named
 
@@ -1080,6 +1278,43 @@ the rules of the tool the command came from: a string for a shell of another
 kind, such as `pwsh -Command` in a `Bash` command or `bash -c` in a
 `PowerShell` one, is read as the tool's own shell would read it, not as that
 shell does ([not held](#not-held)).
+
+A string is read however its blanks are kept in it: quoted, or each escaped
+with a backslash, as in `bash -c git\ commit\ -m\ x` or
+`eval sdlc\ approve\ A-1` ([quotes and escapes](#quotes-and-escapes)). Its
+separators and groups are read the same way, escaped or not:
+`eval true\;\ rm\ -f\ FILE` and `eval \{\ rm\ -f\ FILE\;\ \}` run `rm`, and
+are read as doing so.
+`eval -- 'cmd'` is read as `eval 'cmd'`: bash, zsh and sh take the `--` as the
+end of eval's options, however it is quoted. A string is read inside up to four
+others. One nested deeper is not read, and the command is refused under
+[`command-too-deep-to-read`](#command-too-deep-to-read): with five `eval`s in
+front of it, `git commit -m x` is refused, and with four it is read and held to
+the gate. A script handed to a shell is read again as that shell decodes it,
+`$'...'` and a backslash taken out, as the command itself is
+([quotes and escapes](#quotes-and-escapes)).
+
+The strings other builtins hand the shell to run are read as `eval`'s is:
+`trap`'s action (`trap 'rm .sdlc/state/tests.lock' EXIT`), the command line
+after zsh's `emulate -c`, and the callback `mapfile` and `readarray` run with
+`-C`. A `}` or `]]` among the words before `emulate`'s `-c` or `mapfile`'s
+`-C` still ends the command there, as zsh reads it.
+
+A `$(…)` or a backtick inside a `${…}` runs as one outside it does, and is read
+so: `echo ${x:-$(git commit -m x)}` meets `commit-gate`. So is one inside quotes
+and inside a `[…]` of the same word, since bash and zsh expand an array's
+subscript again where they read the word as arithmetic or as a name:
+`let 'q[$(git commit -m x)]=1'`, `printf -v`, `read`, `unset`, `declare`,
+`[[ -v ]]` and an integer's assignment each run it. Which words a shell reads
+that way cannot be told from the line, since a variable can be made an integer
+anywhere, so every such word is read, and `echo 'q[$(git commit -m x)]'` is
+refused with them; one after the `]` closes, as in a commit message
+``'fix [docs]: run `make`'``, is left as text. Such a refusal says the command
+was read from a `$( )` or a backtick inside `[ ]` in a word, and to print the
+text, keep the substitution out of the brackets, or write it to a file with a
+file tool. A refusal of a path in quoted text, such as
+`echo '$(rm .sdlc/state/tests.lock)'`, is the path rules' own, brackets or
+none ([a path that is only named](#a-path-that-is-only-named)).
 
 #### A commit in another repository
 
@@ -1238,7 +1473,8 @@ Refuses a command that would write or delete the loop's own files: `.sdlc/state`
 `gate-record.json`, any `reviews/` directory, or any gate document, and `.sdlc`,
 `.sdlc/stories` or a story's directory taken whole — by redirection; through
 `rm`, `mv`, `cp`, `tee`, `dd`, `sed -i`, `find -delete`, `git rm`,
-`git checkout` and their like; or from
+`git checkout`, a hard link (`ln`, `link`, `fsutil hardlink create`), a named
+pipe (`mkfifo`, `mknod`) and their like; or from
 inside a program handed to an interpreter.
 
 A relative name is read from the directory the session is in. Where the hook
@@ -1278,6 +1514,13 @@ The rest of this entry is the fine detail: what is left alone, how a `find` is
 read, and what counts as taking a checkout away.
 
 #### Links and installs
+
+`link` takes two names, and both are read as written: one is a second name for
+the other. `fsutil` writes unless its verb only reads, as `hardlink list` and
+the `query` verbs (`file queryfileid`, `reparsepoint query`) do; a verb it adds
+later is read as a write until it is known. `mkfifo` and `mknod` make a named
+pipe or a device at each name they are given, so naming the gate record or a
+frozen test is refused, and a pipe elsewhere is not.
 
 `ln` and `install` land each source under the destination, whatever the
 destination is called, so `ln -s /tmp/x/AGENTS.md docs.v2` writes
@@ -1506,6 +1749,11 @@ its way on depends on the cause:
 - The shape of the expression itself: a comma, parentheses that do not
   balance, an operator with nothing to govern, or more than 512 words. Run one
   `find` for each filter.
+- A command one of its actions runs that can be read more than one way, since
+  an option its program does not know may or may not take the word after it,
+  as `-exec strace -J 1 rm {} +`. Give each option of the command the action
+  runs as the tool's manual does, or run that command on the files a `find`
+  that only prints lists.
 
 Some ordinary commands are over-refused in this way and have a plain way on,
 named with the refusal:
@@ -1831,6 +2079,7 @@ such as `--note "no need to unfreeze"`, is not refused.
 
 *Instead:* say which frozen test is wrong and which acceptance criterion it gets
 wrong, and stop there. The person running the session lifts the freeze with `/sdlc:unfreeze`, or
+`!sdlc unfreeze --reason "..."` at the prompt in Claude Desktop, or
 `sdlc unfreeze --reason "..."` in their own terminal.
 
 ### `approval-is-a-human-decision`
@@ -1904,7 +2153,8 @@ trunk; the story's `gate-record.json` has a `codemap` event for every change
 `sdlc` itself stored, applied or dropped, and none for one made that way.
 
 *Instead:* say what the stop or `sdlc status` printed, and stop. The person runs
-`/sdlc:remap <story>`, or `sdlc remap <story>` in their own terminal.
+`/sdlc:remap <story>`, or `!sdlc remap <story>` at the prompt in Claude Desktop,
+or `sdlc remap <story>` in their own terminal.
 
 ### `release-is-a-human-decision`
 
@@ -1919,8 +2169,9 @@ story another checkout is working, or let go of the one it is held to and with
 it every rule holding it.
 
 *Instead:* say which checkout holds the story and stop. A person runs
-`/sdlc:release <ID> --reason "..."`, or `sdlc release <ID> --reason "..."` in their own terminal
-if it is to move.
+`/sdlc:release <ID> --reason "..."`, or `!sdlc release <ID> --reason "..."` at
+the prompt in Claude Desktop, or `sdlc release <ID> --reason "..."` in their own
+terminal, if it is to move.
 
 ### `parallel-is-a-human-decision`
 
@@ -1935,7 +2186,8 @@ agent that could run it would be starting model sessions, and choosing what they
 may do, that nobody asked for. See [unattended sessions](#unattended-sessions).
 
 *Instead:* say which stories you meant, and stop. A person runs
-`sdlc parallel <ID>...` in their own terminal, outside Claude Code.
+`sdlc parallel <ID>...` in their own terminal, outside Claude Code, or types
+`!sdlc parallel <ID>...` at the prompt in Claude Desktop.
 
 ### `stop-is-a-human-decision`
 
@@ -1950,7 +2202,8 @@ is the runbook's last step, and is not refused.
 
 *Instead:* work the next gate, or hand the story to a person with
 `sdlc escalate <type> --message "..."` and stop. The person ends the iteration
-with `sdlc stop` in their own terminal.
+with `sdlc stop` in their own terminal, or with `!sdlc stop` at the prompt in
+Claude Desktop.
 
 ### `review-is-recorded-by-its-reviewer`
 
@@ -2062,20 +2315,25 @@ project manager's or a reviewer's run of the hook may be refused under
 *Instead:* say what you wanted decided and stop; a person types
 `/sdlc:approve <ID>`, or `sdlc approve <ID>` in their own terminal, and likewise
 `/sdlc:unfreeze`, `/sdlc:ack`, `/sdlc:remap`, `/sdlc:release` and
-`/sdlc:assign`; to try the hook yourself, run it on another event written out
-as a literal word, such as `sdlc hook PreToolUse`.
+`/sdlc:assign`; to try the hook yourself, run it on PreToolUse, written out as
+a literal word, such as `sdlc hook PreToolUse`.
 
-Not refused: the hook run by hand on any other event, as in
-`sdlc hook PreToolUse < p.json`, which is how a reviewer drives it; and a line
-that only names the event, such as `grep -n UserPromptExpansion
-plugin/hooks/hooks.json`, a commit message or a document's text.
+Not refused: the hook run by hand on `PreToolUse` or `SessionStart`, as in
+`sdlc hook PreToolUse < p.json`, which is how a reviewer drives it, and on an
+event Claude Code does not have; and a line that only names the event, such as
+`grep -n UserPromptExpansion plugin/hooks/hooks.json`, a commit message or a
+document's text. The eight events the hook records are refused under
+[`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host).
 
 Not caught by this rule, and caught after it, each in [Not held](#not-held).
 Code handed to an interpreter that runs the hook itself, as `python3 -c` with
 `subprocess.run` does, or a script file that runs it, reaches the hook, which
-answers that the command did not run and records nothing, since the process
-has `AI_AGENT`. PowerShell's `Invoke-Expression` or `iex`, given the hook's
-command line as a string, reaches the hook with `AI_AGENT` too, and the hook
+answers that the command did not run and records no decision, since the
+process has `AI_AGENT`. Interpreter code that names the hook and the expansion
+or an event it records, written out, is refused; code that builds them still
+reaches the hook, whose check on the slash route answers as before.
+PowerShell's `Invoke-Expression` or `iex`, given the hook's command line as a
+string, reaches the hook with `AI_AGENT` too, and the hook
 answers that the command did not run. A copy of `sdlc` or of the launcher
 under another name, given an event this rule cannot read, as in
 `/tmp/x hook "$E"`, reaches the hook with `AI_AGENT`, and the hook answers that
@@ -2094,6 +2352,66 @@ settings, has an environment of its own that may not have `AI_AGENT`, and a
 payload it feeds the hook is not caught (the project MCP server or hook in Not
 held). A slash command another program types into the person's own prompt
 reaches Claude Code's own hook as the person's typing would (in Not held too).
+
+### `recorded-event-comes-from-the-host`
+
+Refuses running the sdlc hook by hand, from a tool call, on one of the eight
+events it records: `PostToolUse`, `PostToolUseFailure`, `SubagentStart`,
+`SubagentStop`, `Stop`, `Notification`, `StopFailure` and `PostCompact`, in
+any case. In any session, in any project with `.sdlc/config.json` the call
+reaches, whether or not a story is being worked on.
+
+On those events the hook writes the story's `agent_start` and `agent_end`
+events to its `gate-record.json` and its measurements to the
+[trace](the-loop.md#the-trace), as Claude Code reported them. A payload a model
+wrote is not Claude Code's report, and the story's figures would be what the
+model chose.
+
+It is read as
+[`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision) reads
+the expansion, through every spelling listed there, and further:
+
+- the launcher, `sdlc-hook` or `sdlc-hook.cmd`, as a later word under any
+  program, `.` and `source` included, where a recorded event follows it:
+  `. plugin/bin/sdlc-hook SubagentStop < p.json`;
+- a program the shell makes, from a variable, a substitution, a backtick or a
+  pattern, given a recorded event as its first word, as the launcher would be:
+  `L=plugin/bin/sdlc-hook; $L SubagentStop < p.json`;
+- the same after `xargs -I`, `-i`, `--replace` or `-J`, and in `find -exec`,
+  whose replacement string is a word the shell makes:
+  `echo plugin/bin/sdlc-hook | xargs -I{} sh {} SubagentStop`;
+- `exec -c ./plugin/bin/sdlc-hook SubagentStop`;
+- interpreter code, `python3 -c`, `node`, `perl`, `ruby`, `php` and awk's
+  family among them, that names `sdlc hook` or the launcher and a recorded
+  event, in its words or in a here-document it is fed;
+- a program handed `SubagentStart`, `SubagentStop`, `PostToolUse`,
+  `PostToolUseFailure`, `StopFailure` or `PostCompact` as its first word, such
+  as a copy of the launcher (`/tmp/y SubagentStop`), where the program is not
+  one the rules know runs no hook.
+
+A recorded event as the first word of a program that is named is not read
+otherwise, since `docker stop web`, `echo Stop` and
+`grep -n SubagentStop plugin/hooks/hooks.json` run no hook, and neither is the
+launcher named with no event after it, as in `chmod +x plugin/bin/sdlc-hook`.
+
+`PreToolUse` and `SessionStart` stay open. A reviewer drives the hook on
+`PreToolUse` to see what it answers, and neither records anything run that
+way, with one exception: a payload sent to `sdlc hook PreToolUse` that the hook
+refuses adds a `refusal` record, as the refusal of a real call would, and a
+commit payload it allows notes the commit as Claude Code's own call would.
+
+The hook does not ask `AI_AGENT` on these events: Claude Code in Claude
+Desktop (2.1.309, seen on 2026-10-29) runs its hooks with it set, and a check
+there would record nothing for a person working in Claude Desktop. So these
+rules are what hold the events, and what gets past them is in
+[Not held](#not-held).
+
+*Instead:* leave the recording to Claude Code, which runs the hook on these
+events itself; to see what the hook answers, run `sdlc hook PreToolUse` with a
+payload on standard input that has a `session_id` of its own: it answers on
+stdout as it would answer Claude Code, and a payload it refuses that carries
+this session's id is recorded in the held story's trace as a refusal of a call
+that never ran, and counted in its figures.
 
 ### `staffing-is-recorded-by-the-project-manager`
 
@@ -2411,7 +2729,8 @@ refused ([not held](#not-held)).
 ### `enforcement-stays-on`
 
 Refuses a command that sets `SDLC_ENFORCE`, `SDLC_BIN`, `CLAUDE_PROJECT_DIR` or
-`CLAUDE_CODE_SESSION_ID`.
+`CLAUDE_CODE_SESSION_ID`, and, in every session, one that takes `AI_AGENT` away
+from what it runs, blanks it or sets it.
 
 The switch that turns enforcement off belongs to the person who started the
 session. A switch an assistant can reach is not a control.
@@ -2419,7 +2738,56 @@ session. A switch an assistant can reach is not a control.
 there as the one the story holds, so setting it hands the story to a session
 that does not exist.
 
-*Instead:* if a rule is wrong, say which one and why.
+`AI_AGENT` is another. Claude Code sets it for the tools a model runs, for a
+session started from one, and, in Claude Desktop (Claude Code 2.1.309), for
+every hook it runs, and the hook runs no person's slash command where it is
+set. Taken away, a payload a model wrote could reach the hook as a person's
+typed command, such as `/sdlc:approve`. Recording does not ask it, so the
+story's [trace](the-loop.md#the-trace) and its agent events are held by
+[`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host)
+instead.
+A command is refused for what it does to the name, however it is spelled:
+
+- a builtin that writes a variable it is named: `unset`, `export`, `declare`,
+  `typeset`, `local`, `readonly`, `read`, `mapfile`, `getopts`, `printf -v`,
+  `wait -p`, `for` and `select`, `coproc`, zsh's `getln` and its module
+  builtins such as `zparseopts`, with `AI_AGENT`, a subscript of it, or a
+  pattern that can match it (`AI_*`) in a place it writes;
+- an assignment to it, in front of a command, alone, in arithmetic or in
+  `${AI_AGENT:=}`, and a value that names it, as `declare -n r=AI_AGENT` or
+  `V=AI_AGENT` kept for a later `unset "$V"`;
+- a program the shell makes, given a word that names it:
+  `X=unset; $X AI_AGENT`;
+- a program started without it: `env -i` and its spellings (`env -`,
+  `--ignore-environment` and its prefixes), `exec -c`, `arch -c`, and
+  `env -u AI_AGENT`;
+- interpreter code that names it, as `python3 -c` with `os.environ.pop` or
+  `node -e` with `delete process.env.AI_AGENT`, awk's family (`awk`, `gawk`,
+  `mawk`, `nawk`) and `perl` among them, in its words or in a document it is
+  fed;
+- in PowerShell, `$env:AI_AGENT =`, `Remove-Item`, `Rename-Item` and their kin
+  on `Env:AI_AGENT`, a pattern or the bare `env:` drive, `Start-Process
+  -UseNewEnvironment`, and a string that is `AI_AGENT` alone.
+
+Some commands are refused though they change nothing, because the hook cannot
+tell them from ones that do: `declare -p AI_AGENT`, `readonly AI_AGENT`, a
+builtin given a name the shell makes (`read -r "$var"`, `export "$NAME=1"`), a
+value that is the text `AI_AGENT` (`MSG=AI_AGENT make`), awk code that names
+it, a here-document that names it after a command that names an interpreter or
+a shell among its words (`xyz python3 <<EOF`), and `env -i` or `exec -c`
+whatever they run. Reading it is never refused:
+`echo "$AI_AGENT"`, `printenv AI_AGENT`, `export AI_AGENT` and
+`Get-Item Env:AI_AGENT` are left alone.
+
+*Instead:* leave `AI_AGENT` as Claude Code set it; a command that names
+`AI_AGENT` where the shell or an interpreter could change it is refused even
+when it changes nothing (`declare -p AI_AGENT`, `MSG=AI_AGENT make`), so leave
+the name out of it; spell out a variable's name instead of building it from
+another variable; to drop another variable for one program, use `env -u NAME`,
+not `env -i`; to see what the hook answers, run
+`sdlc hook PreToolUse` as you are, with a payload that has a `session_id` of
+its own, since a refused one with this session's id is counted in the held
+story's trace; if a rule is wrong, say which one and why.
 
 ### `story-stays-in-its-session`
 
@@ -2432,7 +2800,7 @@ story holds only the session working it, so none of these rules would hold
 what the new one did. The shell rules do not read a script file, so they
 cannot tell what one runs. A script file that runs `claude` starts a session
 whose hook has `AI_AGENT`, so a person's slash command expanded there answers
-that it did not run, and records nothing. One that sets
+that it did not run, and records no decision. One that sets
 `CLAUDE_CODE_SESSION_ID` and runs a person's command is refused by the command
 itself, with SDLC-E0079.
 
@@ -2477,7 +2845,7 @@ none of those commands is not refused there.
 Not caught by this rule, and caught after it. Each of these starts a Claude Code
 session that keeps the environment of the model's tool that started it, and the
 hook of a session started that way has `AI_AGENT`, so a person's slash command
-expanded there answers that it did not run, and records nothing:
+expanded there answers that it did not run, and records no decision:
 
 - A script file that starts `claude` starts a session whose hook has
   `AI_AGENT`.
@@ -2500,8 +2868,7 @@ expanded there answers that it did not run, and records nothing:
 - A link the copy above does not read as `claude`, one made from the versioned
   binary's path or from a glob such as `cla*`, and a copy made in one call and
   run in the next, each start a session whose hook has `AI_AGENT`.
-- `arch -arm64 claude -p /sdlc:approve` and `su me -c` start a session whose
-  hook has `AI_AGENT`.
+- `su me -c` starts a session whose hook has `AI_AGENT`.
 - An editor or a pager that runs a shell, as in
   `vim -c '!claude -p /sdlc:approve' -c q`, starts a session whose hook has
   `AI_AGENT`.
@@ -2586,17 +2953,53 @@ there, is refused too.
 
 ### `command-too-deep-to-read`
 
-Refuses a command that nests `$( )` or backticks more than 32 deep.
+<!-- The figure 16 is shellpolicy's maxReadings, and 32 is maxNesting: change them here with
+     the constants. -->
+
+Refuses a command that nests `$( )` or backticks more than 32 deep, or the
+strings it hands a shell, `eval`, `trap`, `emulate -c` or `mapfile -C` more
+than four deep, or that has more than 16 other readings.
 
 Every level is read for the commands it runs, and a line nested thousands deep
 took longer to read than Claude Code gives the hook, which then lets the command
-run unchecked. Nothing a person writes nests that deep. It applies to any
+run unchecked. Nothing a person writes nests that deep. A string handed over is
+read for the commands it runs, as `$( )` is, and past four the rules stop
+reading, so the command is refused rather than run unread. A shell or an
+`eval` inside four such strings is refused even where it is handed no string,
+as in `eval eval eval eval bash x.sh`.
+
+A command is read more than one way where the shell's grammar leaves open which
+program runs. An option a wrapper does not know may or may not take the word
+after it, so `strace -J 1 git commit -m x` runs `1` or `git`. zsh's `]]`, a `}`
+before `always`, `else` or `elif`, a `{` after a function's name, and `coproc`
+each start another command. Every reading is checked. A command with more than
+16 other readings is refused, and so is a line whose commands have more than 16
+other readings between them, counted through the scripts it hands a shell,
+since the rules did not finish reading it. The refusal names the command. A
+test such as `[[ -f a ]]`, or a function's body, starts no reading, so an
+ordinary script does not come near 16.
+
+These are over-refused, and each has a plain way on:
+
+- `echo ]] git commit -m x` and `echo { git commit -m x }`, which zsh reads as
+  a second command, are held to the gate: quote the words, as
+  `echo ']] git commit -m x'`;
+- a zsh line of more than 16 short `if [[ … ]] cmd` forms: split it across
+  calls, or write each as `if [[ … ]]; then cmd; fi`;
+- five nested strings of anything, such as `eval eval eval eval eval echo hi`:
+  run the inner command on its own.
+
+It applies to any
 command: it is refused in any session, in any project with `.sdlc/config.json`
 the call reaches (the session's, the working directory's, or one a path in the
 command names), whether or not a story is being worked on, because `sdlc ack`
 or an approval could be buried in it.
 
-*Instead:* write it as separate commands.
+*Instead:* write it as separate commands, in separate calls where a line holds
+many, and run the inner command on its own, not inside another `eval` or
+`bash -c`. Where the command can be read too many ways, remove the options sdlc
+does not know, or split the line, so that no command and no line has more than
+16 other readings.
 
 ### `too-many-links`
 
@@ -3024,11 +3427,16 @@ how you would notice.
   command that any other program runs, or that code handed to an interpreter
   runs as a command of its own, is not read for what it runs. A commit and the
   removal of a worktree or a checkout get past the rules that way, as in
-  `strace git commit -m x`. A person's decision inside a string, code or a
-  script that such a program runs, as in `fish -c 'sdlc approve A-1'` or
-  `make approve`, is refused by the command itself, with SDLC-E0079.
-  `strace sdlc approve A-1`, with `sdlc` written out as a word of the command,
-  is refused by the shell rules before it runs, and by SDLC-E0079 had it run.
+  `faketime 2020-01-01 git commit -m x`, or `docker run img git commit -m x`
+  with the checkout mounted. `faketime` is left off the list on purpose: the
+  time it takes before the program can start with a dash, and only its own
+  options, written out exactly, end them, so no table of options reads it as it
+  reads itself. A person's decision inside a string, code or a script that such
+  a program runs, as in `fish -c 'sdlc approve A-1'` or `make approve`, is
+  refused by the command itself, with SDLC-E0079.
+  `faketime 2020-01-01 sdlc approve A-1`, with `sdlc` written out as a word of
+  the command, is refused by the shell rules before it runs, and by SDLC-E0079
+  had it run.
   `tmux new-session 'sdlc approve A-1'` is refused with SDLC-E0079 where it
   starts the `tmux` server, which then has the session's environment; where a
   server a person started is already running, it runs the command with an
@@ -3127,6 +3535,76 @@ how you would notice.
   the other checkout show a commit no gate passed, and when it came; and the
   story's `gate-record.json` lists every approval and unfreeze with when it was
   made.
+- **A line the readers do not follow.** The rules read a command with
+  readers that follow the common forms of the shell's grammar, not all of it,
+  and they read these forms apart from bash or zsh, or do not follow them as
+  far:
+  - A `case` inside a substitution. The `)` after a pattern is taken to close
+    the substitution, so in `echo $(case x in x) git commit -m x;; esac)` the
+    commit is read as words of `echo`, and in
+    `rm $(case x in a) echo ;; esac) .sdlc/state/tests.lock` the lock is not
+    read as a file `rm` is given. bash 5 and zsh run both; bash 3.2 and sh
+    refuse the line. It is left open because reading a `case` to its `esac`
+    would change where every substitution ends, for every rule at once.
+  - A `${…}` inside a double-quoted string. The rules that read which program
+    a command runs do not follow it: they read its text as the string's, so
+    a `"` in it ends the string and a `'` in it is a character. The shells
+    read a `"` there as a quote
+    within the `${…}`, so in `echo "${x:-"'"}"; git commit -m x` bash 3.2,
+    bash 5, zsh and sh all run the commit, which the rules take for text
+    inside a single-quoted string. bash and sh read a `'` there as a quote,
+    and zsh as a character, as the rules do, so in
+    `echo "${x:-'"'}"; git commit -m x` bash and sh run the commit and zsh
+    does not. An `rm` of the lock after either is refused, by the rules that
+    read which files a command writes. The here-document
+    reader reads such a `'` as bash does, and both ways where it is not sure
+    ([Here-documents](#here-documents)). It is left open because following a
+    `${…}` there would change where every double-quoted string ends, for
+    every rule that reads which program runs, and bash and zsh disagree on
+    its `'`, so no one reading is right for both.
+  - A `#` just after the `)` of an array, as in `a=(x)#y`, which bash 3.2,
+    bash 5 and sh read as one word, the string `(x)#y`, and zsh as an array
+    and a comment. The rules read a comment there, as zsh does, so after
+    `a=(x)#'`, a newline and `';git commit -m x`, bash and sh run the
+    commit, which the rules take for text inside a quote. It is left open
+    because the rules read the `(` of `a=(` as they read a subshell's, after
+    whose `)` every shell starts a comment, and telling the two apart would
+    change how every rule reads every `(`.
+  - A line bash refuses inside an array. For `a=(x;'`, bash 3.2 and bash 5
+    report a syntax error and go on to the next line, where zsh and sh run
+    nothing more. The rules read the `'` as a quote that runs on, so after
+    `a=(x;'` and a newline, `git commit -m x` is taken for text, and both
+    bashes run it. It is left open because what bash runs after a syntax
+    error comes from how it recovers from the error, not from the shell's
+    grammar, and zsh and sh do not recover that way.
+  - A here-document the hook is not sure of
+    ([Here-documents](#here-documents)) is read a second time with every body
+    taken as commands. A quote left open in a body can hide the lines after it
+    in that reading too: a body is text, and a reading that takes it for
+    commands cannot tell which of its quotes the shell would have closed.
+  - A redirect to a file a substitution prints. In
+    `echo x > $(echo .sdlc/state/tests.lock)`, in
+    `eval 'echo x > $(echo .sdlc/state/tests.lock)'`, and in the same with
+    its blanks and operators escaped,
+    `eval echo\ x\ \>\ \$\(echo\ .sdlc/state/tests.lock\)`, the file written
+    is what the substitution prints when it runs, and bash, zsh and sh all
+    write the lock. It is left open because the rules would have to run the
+    substitution to know what it prints.
+
+  A here-document opened on or after a line with a `case` in a substitution,
+  a `'` in a double-quoted `${…}` or a `#` just after an array's `)` is read
+  as one the hook is not sure of. None of these reaches more than commands
+  the rules already do not read: a commit run by `eval` of a variable, as in
+  `c='git commit -m x'; eval "$c"`, or spelt as a parameter's default, as in
+  `${x:-git commit -m x}`, which bash and sh run and zsh does not; a file
+  written through a path the command does not spell out, as in
+  `p=.sdlc/state/tests; echo x > $p.lock` or `eval "$(cat x.txt)"`; and a
+  script run from a file, as in `sh tidy.sh`. A person's decision run this
+  way is refused by the command itself, with SDLC-E0079. `git log` and
+  `git reflog` show a commit no gate passed, `sdlc doctor` a loop record it
+  can no longer read, a test freeze that no longer reads included, and the
+  story's `gate-record.json` every approval and unfreeze with when it was
+  made.
 - **Deleting through the Finder.** AppleScript run with `osascript`, telling
   the Finder to delete a checkout or move it to the Trash, is not read. The
   checkout is then in the Trash, and can be put back from there. Until it is,
@@ -3158,7 +3636,7 @@ how you would notice.
   `subprocess.run(["sdlc", "approve", "A-1"])`, runs it where the shell rules
   cannot read it, and the command itself refuses it with SDLC-E0079. Given
   `["sdlc", "hook", "UserPromptExpansion"]` and a payload it wrote, the hook
-  answers that the command did not run, and records nothing, since the
+  answers that the command did not run, and records no decision, since the
   process has `AI_AGENT`. PowerShell's `Invoke-Expression` or `iex` runs a
   command it is given as a string, which the shell rules do not read;
   `Invoke-Expression 'sdlc approve A-1'` is refused by the command itself,
@@ -3167,8 +3645,8 @@ how you would notice.
 - **The hook under another name, on an event it cannot read.** A copy of
   `sdlc` or of the plugin's launcher under another name, given an event the
   shell rules cannot read, as in `/tmp/x hook "$E"`, reaches the hook, which
-  answers that the command did not run and records nothing, since the process
-  has `AI_AGENT`
+  answers that the command did not run and records no decision, since the
+  process has `AI_AGENT`
   ([`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)
   refuses that copy before it runs only with the event written out). The
   story's `gate-record.json` lists every approval and unfreeze with when it
@@ -3186,8 +3664,8 @@ how you would notice.
   through a directory the command does not spell, such as
   `cd "$(cat /tmp/d)"`, is refused by the command itself, with SDLC-E0079.
   Running the hook there on a payload whose `cwd` names a project that does
-  take part answers that the command did not run, and records nothing, since
-  the process has `AI_AGENT`. That project's `gate-record.json` lists every
+  take part answers that the command did not run, and records no decision,
+  since the process has `AI_AGENT`. That project's `gate-record.json` lists every
   approval and unfreeze with when it was made.
 - **A project MCP server, or a project hook.** Any session can write
   `.mcp.json`, which no rule protects, and Claude Code starts a server named
@@ -3200,6 +3678,9 @@ how you would notice.
   command it runs is refused with SDLC-E0079. That environment of its own may
   not have `AI_AGENT`, and a person's slash command it feeds the hook on a
   payload it wrote, with `sdlc hook UserPromptExpansion`, is then not caught.
+  It can run `sdlc hook SubagentStop`, or any event the hook records, on a
+  payload it wrote too, and since recording asks no variable, the story's
+  agent events and trace are then what it wrote, whatever its environment.
   You would notice Claude Code asking you to approve a server you did not add,
   `git status` showing `.mcp.json` or a file under `.claude` changed, and the
   story's `gate-record.json` listing a decision nobody remembers making.
@@ -3209,7 +3690,9 @@ how you would notice.
   pane, `screen -X stuff`, or a keystroke sent with `osascript` through System
   Events. Claude Code takes what was typed as your typing, and its own hook,
   which starts with an environment of its own and no `AI_AGENT`, records a
-  person's decision typed that way: it is not caught. This is not new: in
+  person's decision typed that way: it is not caught. In Claude Desktop, whose
+  hooks have `AI_AGENT` (Claude Code 2.1.309), a slash command typed that way
+  does not run, though a `!` line typed that way does. This is not new: in
   0.4.0 the same keystrokes typed a `!sdlc approve` line, which SDLC-E0079 now
   refuses. You would notice a command in your session's prompt or transcript
   that you did not type, and the story's `gate-record.json` listing a decision
@@ -3242,6 +3725,84 @@ how you would notice.
   `sdlc unfreeze --reason x` lifts a story's freeze, and so a model working a
   story could lift its own. The story's `gate-record.json` lists every
   approval and unfreeze with when it was made.
+- **`AI_AGENT` taken away where the rules cannot see it.** `AI_AGENT` now
+  guards a person's typed command on the slash route alone. The commands
+  [`enforcement-stays-on`](#enforcement-stays-on) reads are refused, and these
+  are not:
+  - a program that starts clean or drops the environment by its own setup:
+    `sudo` and `doas` as set up by default, `su -`, `ssh`, `systemd-run`,
+    `setpriv --reset-env`, `launchctl`, `at`, `cron`, and a `tmux` or `screen`
+    session, each running the launcher or a copy of it;
+  - a program the shell makes that clears the environment (`$X -i …` with
+    `X=env`), and a name the shell makes handed to a program the shell makes
+    (`$X $Y`), with the variables set in this call or an earlier one of the
+    persistent shell;
+  - a name the shell makes, handed to one of zsh's module builtins;
+  - interpreter code, PowerShell's included, that builds the name, as
+    `'AI_' + 'AGENT'`;
+  - a script run from a file, words or a script fed to a shell, `xargs` or
+    `parallel` on standard input or from a file
+    (`echo 'unset AI_AGENT; …' | sh`), `eval "$cmd"`, a process substitution
+    run as a script, and an alias or a function defined in an earlier call;
+  - interpreter code that empties its environment without naming the variable
+    (`os.environ.clear()`, `env={}`, `os.execve(…, {})`, `%ENV=()`,
+    `ENV.clear`, `process.env = {}`), as
+    [code that works out its own path](#commands-the-rules-do-not-read) is;
+  - a shell the rules do not read (`fish`, `csh` and `tcsh`, `nu`, `elvish`,
+    `xonsh`), as [a command line for another kind of
+    shell](#commands-the-rules-do-not-read) is;
+  - a command git runs (`core.fsmonitor`, a `!` alias), as
+    [git settings that name a program](#branches-and-the-landing) are;
+  - `parallel ::: …`, as [`parallel`'s own command
+    lines](#commands-the-rules-do-not-read) are;
+  - `osascript`, `vim -c`, `emacs`, `gdb` and `lua`, as
+    [a program the rules do not read through](#commands-the-rules-do-not-read)
+    is.
+
+  Through them a payload a model wrote can reach the hook as a person's typed
+  command, as the entry before this one says. Recording does not need
+  `AI_AGENT` taken away: the next entry says what gets past it.
+- **The hook run on an event it records, where the rules cannot see it.**
+  The hook does not ask `AI_AGENT` on the events it records, since Claude Code
+  in Claude Desktop runs its hooks with it set, so
+  [`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host)
+  is what holds them. These get past it:
+  - a copy of the launcher, or of sdlc under another name, given `Stop` or
+    `Notification` alone, which reads as `docker stop web` does, and
+    `c='sdlc hook SubagentStop'; eval "$c"`;
+  - a script run from a file or fed on standard input;
+  - interpreter code that builds the event, the name or the path
+    (`'Subagent' + 'Stop'`), and a program the rules do not read as an
+    interpreter (`lua`, `osascript`, `tclsh`, `gdb -ex`, `vim -c`, and lldb's
+    own commands, `-o 'platform shell …'` and `script`);
+  - a shell the rules do not read.
+
+  With `AI_AGENT` kept, each records the event it names: agent events in
+  `gate-record.json`, and records in the trace. Agent events can be forged this
+  way until the hook can tell Claude Code's events from others, which US-077 is
+  for. You would notice `agent_start` and `agent_end` events in the story's
+  `gate-record.json` with no agent run in the session's transcript, and
+  `sdlc trace` figures that do not match it.
+- **Refusal records from a hand-run hook.** `sdlc hook PreToolUse` run by hand,
+  with a payload that carries the session's id, adds a `refusal` record to the
+  held story's trace, whatever `AI_AGENT` holds. A loop of them fills the trace
+  to its 4 MiB, after which nothing more is recorded for the story, and
+  `sdlc trace` says `truncated`, with the instant. No rule refuses it; the
+  routes of both rules above say to use a `session_id` of the payload's own.
+- **The gate record's growth.** An agent event forged by a route the rules do
+  not see (`eval`, a script file or a built name) is written to
+  `gate-record.json`, which has no cap. A loop of them grows the file that
+  every later gate command reads and rewrites, and that a person approves
+  from. You would notice agent runs in `sdlc trace` far above the agents the
+  session ran, or the file's size.
+- **How to check the agent events against what ran.** List the ids with
+  `grep -o '"agent_id": "[^"]*"' .sdlc/stories/<ID>/gate-record.json | sort | uniq -c`.
+  Claude Code keeps each subagent's transcript as `agent-<id>.jsonl`, in the
+  session's `subagents` directory under `~/.claude/projects/`. An id counted
+  once (a start or an end alone), more than twice, or with no such transcript
+  was not a run Claude Code reported. A forged run fakes the cost figures,
+  never a gate: `first_pass`, the review rounds, the escalations and every gate
+  come from reviews and gate events, which agent events do not touch.
 
 #### Other checkouts and claims
 

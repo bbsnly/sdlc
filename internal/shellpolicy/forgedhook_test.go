@@ -145,8 +145,10 @@ func TestAC3AModelsShellThatRunsTheHookOnAUserPromptExpansionIsRefusedInEverySes
 	}
 }
 
-// The hook run by hand on any other event decides nothing a person keeps, and
-// a line that only names the event runs nothing.
+// The hook run by hand on another event decides nothing a person keeps, and
+// a line that only names the event runs nothing. US-112 refuses the events
+// the hook records (forgedevent_test.go), Stop among them, so the launcher's
+// row here is PreToolUse.
 func TestAC3AModelsShellThatRunsTheHookOnAnotherEventIsLeftAlone(t *testing.T) {
 	none := func(string) bool { return false }
 	for _, c := range []struct {
@@ -155,7 +157,7 @@ func TestAC3AModelsShellThatRunsTheHookOnAnotherEventIsLeftAlone(t *testing.T) {
 	}{
 		{"sdlc hook PreToolUse < /tmp/p.json", false},
 		{"sdlc-hook PreToolUse < /tmp/p.json", false},
-		{"cat /tmp/p.json | /opt/sdlc/plugin/bin/sdlc-hook Stop", false},
+		{"cat /tmp/p.json | /opt/sdlc/plugin/bin/sdlc-hook PreToolUse", false},
 		{"grep -n UserPromptExpansion plugin/hooks/hooks.json", false},
 		{"Get-Content p.json | sdlc hook PreToolUse", true},
 	} {

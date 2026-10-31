@@ -581,10 +581,19 @@ func rereadsText(c namedCommand) string {
 	if !first.literal() || shellWord(first) {
 		return whyConstruct
 	}
-	run, evals := underEval(program(c.texts()))
-	if run.shell || run.piped || evals > 0 || runsHere[base(first.text())] ||
-		len(run.words) > 0 && runsHere[base(run.words[0])] {
+	if runsHere[base(first.text())] {
 		return whyRereads
+	}
+	// Every reading, through eval and its like, since a wrapper's option it
+	// does not know may hide a shell: `strace -J 1 sh -c …`. The list may be
+	// cut short at the cap, and is read through any number of evals; that is
+	// safe because the program walk refuses a line it did not read through,
+	// past its count or past four nested strings, and Inspect and
+	// HumanDecisions ask it first (security, round 8, N1).
+	for _, run := range everyReading(programUnderEval(c.texts())) {
+		if run.shell || run.piped || run.evals > 0 || len(run.words) > 0 && runsHere[base(run.words[0])] {
+			return whyRereads
+		}
 	}
 	return ""
 }
@@ -625,8 +634,13 @@ func runsCode(c namedCommand) bool {
 	if len(c.words) == 0 {
 		return false
 	}
-	run, _ := underEval(program(c.texts()))
-	return runsInlineCode(run.words, "") || runsAProgramOfItsOwn(run.words)
+	// Every reading, as rereadsText reads them, and on what the same rests.
+	for _, run := range everyReading(programUnderEval(c.texts())) {
+		if runsInlineCode(run.words, "") || runsAProgramOfItsOwn(run.words) {
+			return true
+		}
+	}
+	return false
 }
 
 // carries says why a command could be given the words of one before it on

@@ -25,6 +25,7 @@ func protectedShapes(backlog string) []string {
 	shapes := []string{
 		".sdlc", loopStateDir, loopConfigFile, ".sdlc/claude-progress.json",
 		".sdlc/stories", ".sdlc/stories/*/reviews", ".sdlc/stories/*/" + model.RecordFile,
+		".sdlc/stories/*/" + model.TraceFile,
 	}
 	for _, a := range model.Artifacts {
 		shapes = append(shapes, ".sdlc/stories/*/"+a.File)

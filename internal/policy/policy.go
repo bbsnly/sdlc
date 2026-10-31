@@ -239,6 +239,26 @@ var Rules = []Rule{
 		},
 	},
 	{
+		// Ahead of every role rule, so that every agent and the main
+		// conversation meet the same rule for any story's trace (US-112,
+		// AC-17). The words are shellpolicy's traceFinding's, which says the
+		// same of a shell command; a change to one is made to both.
+		ID: "trace-is-written-by-the-tool",
+		Route: "there is nothing to record by hand: read it with `sdlc trace` and the story's id, and put " +
+			"anything else you want kept in your hand-back",
+		check: func(r Request) string {
+			if !pathrules.SameName(fileAt(r.Path), model.TraceFile) {
+				return ""
+			}
+			of := "this story"
+			if story, _ := storySplit(r.Path); plainStory(story) {
+				of = "story `" + story + "`"
+			}
+			return model.TraceFile + " is the loop's measurements of " + of + ", written by sdlc as it runs; " +
+				"a measurement the assistant can write is not a measurement"
+		},
+	},
+	{
 		ID: "frozen-test-is-not-edited",
 		Route: "change the code until the test passes; if the test itself is wrong, " +
 			"say which acceptance criterion it got wrong and stop: the person running " +
@@ -514,6 +534,18 @@ func fileAt(path string) string {
 		return ""
 	}
 	return rest
+}
+
+// plainStory reports whether a story's name, as a path spells it, is one a
+// refusal can quote: letters, digits, dots, dashes and underscores. Any other
+// is said as "this story".
+func plainStory(story string) bool {
+	for _, c := range story {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && !strings.ContainsRune("._-", c) {
+			return false
+		}
+	}
+	return story != "" && len(story) <= 64
 }
 
 // inReviews reports whether path is inside some story's reviews directory.

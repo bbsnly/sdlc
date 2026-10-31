@@ -708,8 +708,8 @@ func (j *gitRules) script(line string, r ran, dir string, e *environment, handed
 		return f, true
 	}
 	runs, t := programsAt(line, false)
-	if t.tooDeep {
-		return tooDeep, true
+	if t.unread != nil {
+		return *t.unread, true
 	}
 	inner := e.within(r, t, handed)
 	for _, sr := range runs {

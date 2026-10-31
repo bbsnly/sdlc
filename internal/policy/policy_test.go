@@ -81,6 +81,12 @@ var fixtures = map[string]fixture{
 		denies:  Request{Tool: "Edit", Agent: "", Path: ".sdlc/stories/A-1/gate-record.json", Story: "A-1"},
 		permits: Request{Tool: "Edit", Agent: "", Path: ".sdlc/stories/A-1/scratch/gate-record.json", Story: "A-1"},
 	},
+	// US-112 AC-17: a story's trace, which only sdlc writes, under a rule of
+	// its own.
+	"trace-is-written-by-the-tool": {
+		denies:  Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/trace.jsonl", Story: "A-1"},
+		permits: Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/notes.jsonl", Story: "A-1"},
+	},
 	"review-is-written-by-the-tool": {
 		denies:  Request{Tool: "Write", Agent: "sdlc:architect", Path: ".sdlc/stories/A-1/reviews/design_review-architect-1.md", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc:architect", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},

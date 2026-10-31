@@ -18,9 +18,12 @@
 // text of the command never reaches the model (slash.go). A model's shell that
 // runs the hook on that event itself, on a payload it wrote, is refused as a
 // person's decision: the hook cannot tell that run from Claude Code's by its
-// payload. By its own environment it can, for a spelling that rule cannot read:
-// a hook that has AI_AGENT, which Claude Code sets for a model's tools alone,
-// answers that a typed person's command did not run.
+// payload. By its own environment it fails closed, for a spelling that rule
+// cannot read: a hook that has AI_AGENT, which Claude Code sets for a model's
+// tools and, in Claude Desktop, for every hook it runs (Claude Code 2.1.309,
+// seen on 2026-10-29), answers that a typed person's command did not run.
+// Recording does not ask: the events are recorded whatever AI_AGENT holds,
+// and the shell rules keep a model's own run of the hook out (US-112).
 //
 // It fails open. An error -- an unreadable payload, a missing configuration, a
 // path that cannot be resolved -- ends in "carry on". In the session working a
@@ -171,7 +174,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	// SessionStart runs the launcher, which fetches the plugin's own sdlc where
 	// it has none, and asks nothing of the loop: it is answered before anything
 	// is looked for.
-	if len(args) == 0 || args[0] == "SessionStart" {
+	// The events the hook only records are answered the same way, and
+	// RunHosted records them once the answer is out.
+	if len(args) == 0 || args[0] == "SessionStart" || recordsOnly(args[0]) {
 		return emit(stdout, Allow())
 	}
 
@@ -188,7 +193,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	said := &warnings{stderr: stderr}
 	warn := said.warn
 
-	if args[0] == "Stop" || args[0] == "PostToolUse" {
+	if args[0] == eventStop || args[0] == eventToolUsed {
 		return answerTurn(stdout, args[0], raw, getenv, said)
 	}
 
@@ -210,7 +215,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 
 	// Everything decide does runs here, on this goroutine, with no timer: a
 	// call the hook turns out not to check is answered as it always was.
-	rest, event, shell := decide(args[0], raw, getenv, warn, c.now)
+	rest, event, shell, note := decide(args[0], raw, getenv, warn, c.now)
 	// Read once decide has returned, so that it holds for every way the hook
 	// learns that it checks the call.
 	remaining = left()
@@ -218,8 +223,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 		unknown("loop found", remaining)
 	}
 
+	// A refusal is recorded once it is answered, the deadline's included, and
+	// never before: recording that gave way first would turn the refusal into
+	// the crash's carry-on (THREATS E1).
 	answer := func(o outcome, warnings []string) int {
-		return answerPreToolUse(stdout, event, o, warnings)
+		code := answerPreToolUse(stdout, event, o, warnings)
+		if note != nil && o.ok && !o.verdict.Allowed {
+			note(o.verdict)
+		}
+		return code
 	}
 	if rest == nil {
 		return answer(outcome{verdict: policy.Allowed}, said.taken())
@@ -277,7 +289,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 func answerTurn(stdout io.Writer, event string, raw []byte, getenv func(string) string, said *warnings) int {
 	warn := said.warn
 	var reply turnReply
-	if event == "Stop" {
+	if event == eventStop {
 		reply = decideStop(raw, getenv, warn, time.Now)
 	} else {
 		reply = formatWritten(raw, getenv, warn)
@@ -362,16 +374,17 @@ func awaitOutcome(done <-chan outcome, timer <-chan time.Time) (o outcome, decid
 // returns the rest of the decision, which run then races against the deadline;
 // where it is not, or there is no telling, rest is nil and the call goes
 // through. shell is whether the call is a command, which a refusal for running
-// out of time is worded by.
+// out of time is worded by. note records a refusal in the story the session
+// holds, and is nil where there is none.
 //
 // Nothing here may be handed to another goroutine: until this returns, the
 // hook does not know that it has anything to say to the session at all.
 func decide(event string, raw []byte, getenv func(string) string, warn func(string),
-	now func() time.Time) (rest func(context.Context) outcome, name string, shell bool) {
+	now func() time.Time) (rest func(context.Context) outcome, name string, shell bool, note func(policy.Verdict)) {
 	// A human who started the session can turn enforcement off. This is read
 	// from the environment, which a session cannot change from the inside.
 	if getenv("SDLC_ENFORCE") == "0" {
-		return nil, event, false
+		return nil, event, false, nil
 	}
 
 	var p payload
@@ -381,7 +394,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 		// not start one hears nothing from the plugin. It goes through, and the
 		// debug log says why.
 		slog.Debug("hook: the call could not be read, so it was not checked", "why", unreadableBecause(raw))
-		return nil, event, false
+		return nil, event, false, nil
 	}
 	if p.HookEventName != "" {
 		event = p.HookEventName
@@ -407,15 +420,18 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 		// has one waiting, that is refused nobody. The command is read before the
 		// project's state, which is read only for a decision on a story.
 		if rest := humanDecisionsOnly(getenv, p, path); rest != nil {
-			return rest, event, true
+			return rest, event, true, nil
 		}
-		return nil, event, false
+		return nil, event, false, nil
 	}
 
+	// Found once, for the rules and for where a refusal is recorded.
+	pl := placeOf(project)
+	note = refusalNote(pl, story, p)
 	if shellpolicy.Tools[p.ToolName] {
 		return func(ctx context.Context) outcome {
-			return inspectShell(ctx, placeOf(project), story, p, getenv, warn, now)
-		}, event, true
+			return inspectShell(ctx, pl, story, p, getenv, warn, now)
+		}, event, true, note
 	}
 
 	return func(context.Context) outcome {
@@ -434,7 +450,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 			Outside: outside && path != "",
 			// Asked only of a path inside the project, and only where the
 			// repository has another checkout that could be nested in it.
-			OtherCheckout: !outside && nestedCheckout(placeOf(project), path, p.CWD),
+			OtherCheckout: !outside && nestedCheckout(pl, path, p.CWD),
 			ClaudeConfig:  newClaudeConfig(getenv, project, res).holds(writtenAt(p, path, project)),
 			AgentsConfig:  newAgentsConfig(getenv, project, res).holds(writtenAt(p, path, project)),
 			// rel is the resolved absolute path for a write outside, so a
@@ -444,7 +460,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 			Tests:        testState(project, story, rel, warn),
 			Backlog:      backlogPath(project),
 		})}
-	}, event, false
+	}, event, false, note
 }
 
 // unreadableBecause says why a call's payload could not be read, for the debug

@@ -20,17 +20,10 @@ type Runner func(dir string, getenv func(string) string, args []string,
 	stdin io.Reader, stdout, stderr io.Writer) int
 
 // RunWith is Run with a way to run the person's own commands, which a
-// UserPromptExpansion answers by running.
+// UserPromptExpansion answers by running, and no transcript reader.
 func RunWith(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string,
 	commands Runner) int {
-	// Routed on the event word Claude Code passes, and kept so: the shell
-	// rule that refuses a model running this by hand
-	// (internal/shellpolicy/forgedhook.go) reads that word alone, and a route
-	// taken from the payload's hook_event_name would get past it.
-	if len(args) > 0 && args[0] == "UserPromptExpansion" {
-		return answerExpansion(stdin, stdout, getenv, commands)
-	}
-	return runOnTheClock(args, stdin, stdout, stderr, getenv)
+	return RunHosted(args, stdin, stdout, stderr, getenv, Host{Commands: commands})
 }
 
 // typedCommand is the sdlc command a slash command stands for, by the name the
@@ -142,21 +135,27 @@ func answerExpansion(stdin io.Reader, stdout io.Writer, getenv func(string) stri
 func runTyped(e expansion, name string, getenv func(string) string, commands Runner) expansionAnswer {
 	slash := "/sdlc:" + name
 	// The hook's own environment, before anything typed is read. Claude Code
-	// sets AI_AGENT for a model's tools and never for a hook it runs itself, so
-	// a hook that has it is a session started from a model's tool call, or a
-	// model's shell running the hook on a payload it wrote: no person typed
-	// this. init and doctor are no decision, and a model may run both.
+	// sets AI_AGENT for a model's tools, for a session started from one, and,
+	// in Claude Desktop (Claude Code 2.1.309, seen on 2026-10-29), for every
+	// hook it runs; so a hook that has it may be a model's shell running the
+	// hook on a payload it wrote, and the check fails closed there, by the
+	// person's decision of 2026-10-29. A person there types a `!` line, which
+	// reaches sdlc with none of the markers SDLC-E0079 reads (seen the same
+	// day). init and doctor are no decision, and a model may run both.
 	if getenv(store.AgentEnv) != "" && name != "init" && name != "doctor" {
 		// By name, never its value, as SDLC-E0079's why does.
 		slog.Info("hook: a person's slash command was not run, since the hook's environment has a model's tool variable",
 			"command", slash, "variable", store.AgentEnv)
 		return shown(slash + " did not run: the environment variable " + store.AgentEnv + " is set where this " +
-			"hook runs, which Claude Code does for a session started from another Claude Code session's tool " +
-			"call, and a command typed there is not a person's decision. Type " + slash + " again, with the " +
+			"hook runs, and the hook cannot tell that from a model's command. Claude Code sets it for a session " +
+			"started from another Claude Code session's tool call, and in Claude Desktop (Claude Code 2.1.309, " +
+			"seen on 2026-10-29) for every hook it runs. In Claude Desktop, type `!" + terminalForm(name) +
+			"` with the same arguments at the prompt instead. Elsewhere, type " + slash + " again, with the " +
 			"same arguments, in a Claude Code session you opened yourself, or run `" + terminalForm(name) +
-			"` with the same arguments in a terminal outside Claude Code. If you did open this session " +
-			"yourself, the terminal or app you started it from was started inside Claude Code: quit that app " +
-			"fully, open it again, and start Claude Code from it.")
+			"` with the same arguments in a terminal outside Claude Code, where sdlc has to be installed " +
+			"(`npx @bbsnly/sdlc install`). If you did open this session yourself from a terminal, that " +
+			"terminal was started inside Claude Code: quit it fully, open it again, and start Claude Code " +
+			"from it.")
 	}
 	words, unread := splitTyped(e.CommandArgs)
 	if unread != "" {

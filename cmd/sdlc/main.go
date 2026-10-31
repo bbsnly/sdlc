@@ -14,6 +14,7 @@ import (
 
 	"github.com/bbsnly/sdlc/internal/cli"
 	"github.com/bbsnly/sdlc/internal/hook"
+	"github.com/bbsnly/sdlc/internal/hook/claudecode"
 	"github.com/bbsnly/sdlc/internal/logging"
 	"github.com/bbsnly/sdlc/internal/shellx"
 	"github.com/bbsnly/sdlc/internal/store"
@@ -81,10 +82,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	// pay for building the command tree; internal/cli builds it inside a
 	// function precisely so that not calling it costs nothing. The hook is
 	// handed cli.ExecuteIn, not its result: only a slash command a person typed
-	// runs it, and hook may not import cli.
+	// runs it, and hook may not import cli. The transcript reader is Claude
+	// Code's, from the host's edge, which only this file imports.
 	if isHook {
 		defer logging.Stage(opts, "hook")()
-		return hook.RunWith(args[1:], stdin, stdout, stderr, getenv, cli.ExecuteIn)
+		return hook.RunHosted(args[1:], stdin, stdout, stderr, getenv,
+			hook.Host{Commands: cli.ExecuteIn, Transcripts: claudecode.ReadTranscript})
 	}
 
 	defer logging.Stage(opts, "cli")()

@@ -96,8 +96,8 @@ func ConflictMarkersOutside(ctx context.Context, root, base, tip string, exempt 
 	if err != nil {
 		return MarkerScan{}, err
 	}
-	args := []string{"diff-tree", "-r", "-p", "--text", argFullIndex,
-		"--no-color", "--no-ext-diff", "--no-textconv", "-M",
+	args := []string{argDiffTree, "-r", "-p", "--text", argFullIndex,
+		"--no-color", argNoExtDiff, argNoTextconv, "-M",
 		"-U0", "--inter-hunk-context=0", "--diff-algorithm=myers", "--indent-heuristic",
 		"--src-prefix=a/", "--dst-prefix=b/", "--submodule=short", argIgnoreSubmodNone,
 		base + "^{commit}", tip + "^{commit}", "--"}

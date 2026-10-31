@@ -83,7 +83,7 @@ working tree itself.
 gets slower refuses, for time, long commands it used to answer. The leg times
 `shellpolicy.Inspect` in process, with the test matchers and the path resolver
 wired as the hook wires them for an implementer whose story has frozen tests,
-on nine commands that are slow by construction. All but `links` are the
+on eleven commands that are slow by construction. All but `links` are the
 longest whole command of their shape that fits in 8,192 bytes, and the leg
 prints them by these names:
 
@@ -108,6 +108,14 @@ prints them by these names:
 - `cdpath`: 500 assignments `CDPATH=a`, then `true;` and 614 of `cd x;`: 8,190
   bytes, allowed. It times how `CDPATH` is read on a line of many assignments
   and many relative `cd`s.
+- `readings-script`: `strace`, then 17 times a space and `-J`, an option its
+  table does not know, then a space, `1 sh -c '` and 386 of
+  `strace -J -J 1 true;` each with a space after it, before the closing quote:
+  8,174 bytes, refused, since the command has more than 16 other readings.
+  Without the bound, n such options gave a Fibonacci number of readings.
+- `readings-single-dash`: the `single-dash-touch` shape behind `strace` and 16
+  times a space and `-J`, 8,192 bytes, read the 16 ways it may be, and
+  allowed.
 
 The shapes are timed in turn, five times each, and a shape's fastest run counts.
 A line for each shape gives that time, the time of its first run and its
@@ -115,12 +123,12 @@ budget. The first run is there because the hook is a new process for every
 command and pays for the first; it is not compared with anything. The budgets
 are `HOOK_PERL_BUDGET_MS`, `HOOK_HERESTRING_BUDGET_MS` and
 `HOOK_DOTGLOB_BUDGET_MS`, beside `INIT_BUDGET_MS` in the vars of
-`Taskfile.yml`. The single-dash, `links` and `cdpath` shapes take no budget of
-their own: each is held to the `perl` budget.
+`Taskfile.yml`. The single-dash, `links`, `cdpath` and readings shapes take no
+budget of their own: each is held to the `perl` budget.
 
 The leg fails when a shape's fastest run is over its budget. It also fails,
-however fast the shape was, when `Inspect` allows the `dot-glob` or `links`
-shape or refuses any of the others. If that happened on every run, running the
+however fast the shape was, when `Inspect` allows the `dot-glob`, `links` or
+`readings-script` shape or refuses any of the others. If that happened on every run, running the
 leg again changes nothing, and the place to look is `internal/shellpolicy`, or
 for the `links` shape the bound on links in `internal/pathrules`. If it
 happened on only some of the runs, the answer depends on something besides the
@@ -182,7 +190,7 @@ built binary shows in the slowest tests and not in the CPU.
 
 The classifier the hook runs on every Bash and PowerShell call has benchmarks:
 `BenchmarkInspect` in `internal/shellpolicy`, on commands of the kind a session
-runs all day, and in `internal/tools/hooktime`, on the nine shapes the
+runs all day, and in `internal/tools/hooktime`, on the eleven shapes the
 `hook-time` leg times. To see what a change does to them, run the benchmarks
 on trunk and on the change, and compare the two with benchstat, which the
 Taskfile pins:
