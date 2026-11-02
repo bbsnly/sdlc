@@ -1735,3 +1735,14 @@ carriage return, so a document's text is not byte for byte on stdout. With
 
 `plugin/skills/next/SKILL.md` was 17,489 bytes against the 17,500 cap of
 `TestTheRunbookFitsWhatCompactionKeeps` when US-112.3 was analysed.
+
+## internal/cli/freezecheck.go: commands.freeze_check
+
+`sdlc freeze` runs `commands.freeze_check`, when the key is set, before it hashes anything. The
+`freezer` type (freeze.go) holds the command's text, the store and the lock; `heldLock` lets the
+lock go and takes it back. `vet` judges the check. The command runs through `shellx` from the
+repository root with `SDLC_FREEZE_FILES` set to the new or changed test files, one per line and
+slash-separated (`touchedSince`, `changedByCheck`). The lock is let go while the check runs and is
+taken back only after a pass, so a failed check takes nothing back. A pass runs `take` again, which
+reads everything afresh. Every refusal is SDLC-E0085 (`sdlcerr.FreezeCheckRefused`) in one of six
+states: failed, changed, newline in a name, no shell, nested, moved.
