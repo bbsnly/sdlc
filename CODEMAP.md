@@ -1714,7 +1714,16 @@ figures (`storyReport`), and `--all` (`traceAll`, `mediansOf`, `firstPass`).
 
 ## internal/tools/migrationguide
 
-Package `main`, run by `./task migration-guide -- <from> <to>` as `go run ./internal/tools/migrationguide`. Takes `-C <dir>` (default `.`) before two tag words. Writes `docs/migrations/<from>-to-<to>.md` with one section per commit in `<from>..<to>` whose subject matches `^\w+(\([^)]*\))?!:` or whose message has a line starting `BREAKING CHANGE:` or `BREAKING-CHANGE:`, oldest first. Each word goes through `git show-ref --verify refs/tags/<word>`; a word with `/` is refused. An existing guide is refused (`O_EXCL`), never truncated. Git runs with a fixed argument list and no shell, under `gitx.Environ()`. Imports `gitx`. Its errors carry no `SDLC-E` code; `internal/tools` is outside `sdlcerr`.
+Package `main`, run by `./task migration-guide -- <from> <to>` as
+`go run ./internal/tools/migrationguide`. Takes `-C <dir>` (default `.`) before two tag words.
+Writes `docs/migrations/<from>-to-<to>.md` with one section per commit in `<from>..<to>` whose
+subject matches `^\w+(\([^)]*\))?!:` or whose message has a line starting `BREAKING CHANGE:` or
+`BREAKING-CHANGE:`, oldest first. Each word goes through
+`git show-ref --verify refs/tags/<word>`; a word with `/` is refused. An existing guide is refused
+(`O_EXCL`), never truncated. Git runs with a fixed argument list and no shell, under
+`gitx.Environ()`. Imports `gitx`. Its errors carry no `SDLC-E` code; `internal/tools` is outside
+`sdlcerr`.
+
 ## What a design review is stamped with, and where `sdlc` prints it
 
 `gateSubject` (`internal/cli/review.go`) is the one place a review's `subject` is
