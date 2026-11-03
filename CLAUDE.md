@@ -42,11 +42,9 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
   `internal/hook/<host>` (today `claudecode`): only `cmd/sdlc` imports it, outside tests, and
   builds the set it passes to `cli` and `hook`. New code elsewhere names no agent host, its
   files, its variables or its tools; what still does is being moved out, not a pattern to
-  follow. `parallel` sits beside `store`: only `cli` imports it,
-  and it imports `shellpolicy`, `model`, `sdlcerr` and `shellx`. `guard` sits between `cli`,
-  `hook` and the layer below: both import it, it imports `store`, `policy`, `shellpolicy` and
-  `testset`, and it never imports `cli` or `hook`. Never upward, and `cli` and `hook` never
-  import each other. Nothing enforces this but review.
+  follow. `guard` sits between `cli`, `hook` and the layer below: both import it, it imports
+  `store`, `policy`, `shellpolicy` and `testset`, and it never imports `cli` or `hook`. Never
+  upward, and `cli` and `hook` never import each other. Nothing enforces this but review.
 - `cmd/sdlc/main.go` stays a dispatcher. Behaviour goes in a package under `internal/`.
 - Stdout is a protocol surface: the hook's stdout is JSON that Claude Code parses. Diagnostics go
   through `internal/logging` to stderr or a file, never stdout.
