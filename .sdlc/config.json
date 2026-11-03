@@ -79,7 +79,7 @@
     "bring_back": {
       "security": [
         "internal/hook/", "internal/shellpolicy/", "internal/policy/", "internal/pathrules/",
-        "internal/testset/", "internal/store/", "internal/parallel/",
+        "internal/testset/", "internal/store/",
         "internal/cli/approve.go", "internal/cli/ack.go", "internal/cli/freeze.go",
         "internal/cli/release.go", "internal/cli/staffing.go",
         "install.sh", "install.ps1", "npm/", "plugin/hooks/",
