@@ -44,6 +44,7 @@ type Request struct {
 	Story        string // the story the iteration is on
 	Tests        Tests  // what the freeze says about this path
 	Backlog      string // the backlog file, as Path is; empty for none
+	ReviewPolicy string // the review policy file, as Path is; empty for none
 }
 
 // Tests is the freeze, as it applies to one path. The caller works these out --
@@ -239,6 +240,20 @@ var Rules = []Rule{
 		},
 	},
 	{
+		// The reviewed party must not edit what its reviewers obey, so this is
+		// ahead of the role rules and holds every agent.
+		ID: "review-policy-is-not-edited",
+		Route: "if the review policy is wrong, say what and stop; a person changes it by hand, on trunk between " +
+			"stories, and a running story keeps the copy it was cut from; to apply a change to this story, end the " +
+			"story, commit it on trunk and start again",
+		check: func(r Request) string {
+			if r.ReviewPolicy == "" || !pathrules.Under(r.Path, r.ReviewPolicy) {
+				return ""
+			}
+			return r.Path + " is the review policy, which says what every reviewer of this story reports"
+		},
+	},
+	{
 		// Ahead of every role rule, so that every agent and the main
 		// conversation meet the same rule for any story's trace (US-112,
 		// AC-17). The words are shellpolicy's traceFinding's, which says the
@@ -333,7 +348,7 @@ var Rules = []Rule{
 	},
 	{
 		ID: "reviewer-reviews",
-		Route: "record the verdict with `sdlc review add <gate> <role> approve|block`, " +
+		Route: "record the verdict with `sdlc review add <gate> <role> approve|block --important <n> --nits <n>`, " +
 			"and say what is wrong rather than fixing it -- a reviewer that " +
 			"changes the work is reviewing its own",
 		check: func(r Request) string {
@@ -381,7 +396,7 @@ var Rules = []Rule{
 	},
 	{
 		ID: "review-is-written-by-the-tool",
-		Route: "run `sdlc review add <gate> <role> <verdict>` and give it the review; " +
+		Route: "run `sdlc review add <gate> <role> <verdict> --important <n> --nits <n>` and give it the review; " +
 			"it records who reviewed what, and what they were looking at",
 		check: func(r Request) string {
 			if !inReviews(r.Path) {

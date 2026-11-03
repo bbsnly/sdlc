@@ -201,6 +201,7 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 			"                                paths.conflict_markers_intended (this checkout's copy; \"sdlc stop\" reads trunk's): none\n" +
 			"  ok       backlog              user_stories.json  (1 story, " + runnable + " runnable)\n" +
 			"  ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read\n" +
+			"  ok       review policy        REVIEW.md\n" +
 			"  ok       project contract     CLAUDE.md carries the \"## SDLC Contract\" section\n" +
 			"  problem  commands             no commands are configured, so every gate that runs one is skipped\n" +
 			"                                fix: fill in commands.test and commands.lint in .sdlc/config.json\n" +
@@ -209,7 +210,8 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 			"\n1 problem. The fix is above it.\n"
 	}
 	reviews := func(design, code, state string) string {
-		return "  design_review   architect       blocking  " + state + "\n" +
+		return "Review policy: REVIEW.md\n" +
+			"  design_review   architect       blocking  " + state + "\n" +
 			"  design_review   red-team        advisory  " + state + "\n" +
 			"  design_review   security        " + design + "  " + state + "\n" +
 			"  design_review   perf            on budget " + state + "\n" +

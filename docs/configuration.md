@@ -27,6 +27,7 @@
 - [`loop`](#loop)
 - [`reviews`](#reviews)
   - [`reviews.gate7_advisory`](#reviewsgate7_advisory)
+  - [`reviews.policy`](#reviewspolicy)
 - [`freeze`](#freeze)
   - [`freeze.allow_new_test_files`](#freezeallow_new_test_files)
 - [`human_gates`](#human_gates)
@@ -634,8 +635,8 @@ refused.
 
 ## `reviews`
 
-`reviews` changes how much a reviewer's word counts. Its one key is
-`gate7_advisory`.
+`reviews` changes how much a reviewer's word counts, and what reviewers are told to look for.
+It has two keys, `gate7_advisory` and `policy`.
 
 ### `reviews.gate7_advisory`
 
@@ -648,6 +649,32 @@ report on the change as it stands (a missing or stale review holds the gate as
 it always does), but a `block` from it no longer stops the gate.
 `sdlc review list` shows it as advisory. The verifier stays blocking, and so
 does security on a story Gate 2 called security-sensitive.
+
+### `reviews.policy`
+
+This is the file every reviewer reads first: which passes to make, what counts as important,
+what is a nit, how many nits to report, and what not to review. Give it relative to the
+repository root. Left out or empty it is `REVIEW.md`, which `sdlc init` writes; with no file
+there the project has no review policy, and reviewers review as they do without one.
+
+The path is refused, and the configuration does not load, where it leaves the repository, holds
+a `..` segment even one that stays inside, ends in `/`, or holds a character the shell rules
+cannot hold in a name: white space, a control or format character, a quote, a backslash, a
+backtick, or any of `$`, `;`, `&`, `|`, `<`, `>`, `(` and `)`. A path the rule cannot hold is a policy
+any shell command could rewrite, so it is no path for one.
+
+A file that is a link out of the repository, or whose parent is, counts as no policy, so that a
+reviewer does not copy what it reads into a committed review. A link to a file inside the repository
+is the policy. `sdlc doctor` warns about each of these where `reviews.policy` names it, including a
+directory. It warns rather than refuses, and until you act on it the rule below holds the directory
+you named and everything under it.
+
+No agent writes the file while a story is being worked on
+([`review-policy-is-not-edited`](enforcement.md#review-policy-is-not-edited)), and no story lands a
+change to it. A person commits a change on trunk between stories, and a running story keeps the
+copy it was cut from. To apply a change to the story in front of you, end the story, commit on trunk
+and start again. A configuration that will not load holds `REVIEW.md`, not the file it named, until
+it is fixed; `sdlc doctor` reports the configuration and skips this check.
 
 ## `freeze`
 

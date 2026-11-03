@@ -38,11 +38,11 @@ const codemap = "CODEMAP.md"
 var leftOut = []string{config.Dir, codemap}
 
 // mainSettings is what the landing reads from the main checkout's own
-// configuration, never the story branch's: the trunk's name and the backlog's
-// path, slash-separated from the root.
+// configuration, never the story branch's: the trunk's name, and the backlog's
+// and the review policy's paths, slash-separated from the root.
 type mainSettings struct {
-	main, trunk, backlog string
-	cfg                  config.Config
+	main, trunk, backlog, policy string
+	cfg                          config.Config
 }
 
 func mainSettingsOf(s *store.Store) (mainSettings, error) {
@@ -54,7 +54,13 @@ func mainSettingsOf(s *store.Store) (mainSettings, error) {
 	if err != nil {
 		return mainSettings{}, err
 	}
-	return mainSettings{main: co.Main, trunk: trunkOf(cfg), backlog: backlogIn(cfg), cfg: cfg}, nil
+	return mainSettings{main: co.Main, trunk: trunkOf(cfg), backlog: backlogIn(cfg), policy: policyIn(cfg), cfg: cfg}, nil
+}
+
+// policyIn is the review policy's path in cfg, slash-separated and cleaned, as
+// the hook holds it.
+func policyIn(cfg config.Config) string {
+	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(cfg.ReviewPolicyPath())))
 }
 
 // backlogIn is the backlog's path in cfg, slash-separated from the root.
@@ -199,24 +205,25 @@ func recordChange(cmd *cobra.Command, s *store.Store, id string, record *model.R
 			"the commit gate records the change the reviewers saw, and git could not read it").WithCause(err)
 	}
 	record.ChangeBase, record.Change = base, change
-	loopFiles, err := loopFilesIn(ctx, s.Root(), base, head, m.backlog)
+	loopFiles, err := loopFilesIn(ctx, s.Root(), base, head, m.backlog, m.policy)
 	if err != nil {
 		return err
 	}
 	if len(loopFiles) > 0 {
 		fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s changes %s, which the landing refuses: no story lands the "+
-			"loop's own files or the backlog. A person takes those changes out of the story's commits, or "+
-			"brings them to %s themselves, before `sdlc stop` lands the story.\n",
+			"loop's own files, the backlog or the review policy. A person takes those changes out of the story's "+
+			"commits, or brings them to %s themselves, before `sdlc stop` lands the story.\n",
 			store.StoryBranch(id), quoteAll(loopFiles), m.trunk)
 	}
 	return nil
 }
 
 // loopFilesIn is every path base..tip changes under the loop's own directory,
-// or at one of the backlog paths, compared without regard to case.
-func loopFilesIn(ctx context.Context, root, base, tip string, backlogs ...string) ([]string, error) {
+// or at one of the paths the configuration holds (the backlog's, the review
+// policy's), compared without regard to case.
+func loopFilesIn(ctx context.Context, root, base, tip string, held ...string) ([]string, error) {
 	var found []string
-	for _, p := range append([]string{config.Dir}, backlogs...) {
+	for _, p := range append([]string{config.Dir}, held...) {
 		changed, err := gitx.ChangedUnder(ctx, root, base, tip, p)
 		if err != nil {
 			return nil, err
@@ -321,7 +328,7 @@ type landState struct {
 	// commands are and what passing them means.
 	trunkCfg config.Config
 	// backlogs are the backlog's path as the main checkout's configuration
-	// and trunk's name it.
+	// and trunk's name it, and the review policy's as the main checkout's does.
 	backlogs []string
 	// already is trunk holding S before anything moves: case (A).
 	already bool
@@ -866,7 +873,7 @@ func (l *lander) readTrunk(ctx context.Context, st *landState) error {
 				in + ` again; ` + assistantEscalates).WithCause(err)
 	}
 	st.trunkTip = tip
-	st.backlogs = []string{l.m.backlog}
+	st.backlogs = []string{l.m.backlog, l.m.policy}
 	if b := backlogIn(st.trunkCfg); !strings.EqualFold(b, l.m.backlog) {
 		st.backlogs = append(st.backlogs, b)
 	}
@@ -1067,10 +1074,15 @@ func (l *lander) rangeChecks(ctx context.Context, st landState) error {
 		}
 	}
 	fix += fixSb892.String()
+	if slices.ContainsFunc(files, func(f string) bool { return strings.EqualFold(f, l.m.policy) }) {
+		fix += `; where it is ` + quote(l.m.policy) + `, revert it on ` + branch + `, and a person changes it on ` + trunk +
+			` between stories`
+	}
 	return sdlcerr.New(sdlcerr.LandingCheckFailed,
-		branch+" changes the loop's own files or the backlog: "+quoteSome(files),
+		branch+" changes the loop's own files, the backlog or the review policy: "+quoteSome(files),
 		"no story lands those: the tool writes the records and the backlog in the main checkout, and the "+
-			"configuration is a person's, so a change to them in a story's commits would reach "+trunk+" past every gate").
+			"configuration and the review policy are a person's, so a change to them in a story's commits would reach "+
+			trunk+" past every gate").
 		WithFix(fix + "; " + assistantEscalates)
 }
 

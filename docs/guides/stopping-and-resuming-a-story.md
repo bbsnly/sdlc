@@ -227,6 +227,7 @@ stale.
 
 ```console
 $ sdlc review list --gate verifier_review
+Review policy: REVIEW.md
   verifier_review verifier        blocking  approve (round 1, stale -- what was reviewed has changed since)
 ```
 

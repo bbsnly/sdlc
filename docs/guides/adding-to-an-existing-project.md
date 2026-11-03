@@ -44,6 +44,7 @@ Set up sdlc in /home/<user>/src/billing
   created  .sdlc/templates/story.schema.json
   created  user_stories.json
   created  CLAUDE.md (appended to)
+  created  REVIEW.md
 
 Guessed the commands from a Go project.
 
@@ -141,6 +142,7 @@ which would hide your `AGENTS.md` from Claude Code:
 
 ```console
   created  AGENTS.md (appended to)
+  created  REVIEW.md
 ```
 
 Where your `CLAUDE.md` is a link to `AGENTS.md`, `init` appends to `AGENTS.md`
@@ -198,7 +200,7 @@ worktrees` problem and `sdlc start` is refused with
 [SDLC-E0053](../troubleshooting.md#sdlc-e0053):
 
 ```console
-$ git add .sdlc user_stories.json CLAUDE.md
+$ git add .sdlc user_stories.json CLAUDE.md REVIEW.md
 $ git commit -m "Set up the sdlc loop"
 ```
 
@@ -220,6 +222,7 @@ sdlc doctor
                                 paths.conflict_markers_intended (this checkout's copy; "sdlc stop" reads trunk's): none
   ok       backlog              user_stories.json  (1 story, one runnable)
   ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read
+  ok       review policy        REVIEW.md
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
   ok       commands             build, coverage, fmt, fmt_check, fmt_file, lint, smoke, test
   problem  commands on PATH     golangci-lint is not installed, so lint would fail

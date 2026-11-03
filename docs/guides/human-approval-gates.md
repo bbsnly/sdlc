@@ -124,6 +124,7 @@ criterion or add a decision after those reviews, and they are stale:
 
 ```console
 $ sdlc review list --gate code_review
+Review policy: REVIEW.md
   code_review     code-reviewer   blocking  approve (round 3, stale -- what was reviewed has changed since)
   code_review     security        advisory  approve (round 2, stale -- what was reviewed has changed since)
   code_review     perf            on budget approve (round 2, stale -- what was reviewed has changed since)

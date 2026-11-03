@@ -183,6 +183,10 @@ type State struct {
 	// only because the configuration says where it is.
 	Backlog string
 
+	// ReviewPolicy is the review policy, repository-relative, slash-separated and
+	// cleaned, and held as the backlog is: the configuration says where it is.
+	ReviewPolicy string
+
 	// Shared, when set, says where a word of the command lands among the
 	// repository's other checkouts: the main checkout, where the backlog and
 	// the story records are kept, and every linked worktree. Nil where the
@@ -359,6 +363,17 @@ var mutating = map[string]bool{
 	// write the freeze could see, and `awk 'BEGIN{print "x" > "x_test.go"}'`
 	// went through.
 	"ed": true, "patch": true,
+	// The vi family and emacs, which a batch mode makes writers: `vim -es -c
+	// %d -c wq` and `emacs --batch` rewrote a held path with no refusal. view,
+	// rvim and vimdiff are the same program, and each emptied a file so asked.
+	// vim.tiny, vim.basic, vim.nox and vim.gtk3 are the vim Debian installs, nvi
+	// the vi of the BSDs, red the ed restricted to its directory, and kak's -f
+	// rewrites the files it is given. nano is not here: it is interactive, with
+	// no batch mode. Asked only of a held path, so an ordinary file stays free.
+	"ex": true, "vi": true, "vim": true, "nvim": true, "emacs": true,
+	"view": true, "rvim": true, "rview": true, "vimdiff": true, "gvim": true,
+	"vim.tiny": true, "vim.basic": true, "vim.nox": true, "vim.gtk3": true, "nvi": true,
+	"red": true, "emacs-nox": true, "kak": true,
 	// Windows spellings, because Bash on Windows is not always a POSIX shell.
 	"del": true, "erase": true, "move": true, "copy": true, "ren": true, "rename": true,
 	"rd": true,
@@ -446,6 +461,7 @@ func readings(command string, powerShell bool) []pair {
 	if !powerShell {
 		out = addDecodedReadings(out, shell)
 		out = addHandedReadings(out, shell)
+		out = addCommentReadings(out, shell)
 		out = addWordReadings(out)
 		// And each once more with its brace lists expanded, where it has one.
 		for _, p := range slices.Clone(out) {
@@ -526,6 +542,181 @@ func addHandedReadings(out []pair, shell string) []pair {
 	return out
 }
 
+// addCommentReadings adds the readings of a line that holds a `#` and a
+// backslash-newline. A comment ends at its newline whatever comes before it, so
+// a backslash there continues nothing and the next line is a command of its
+// own, while a backslash-newline anywhere else still joins two lines into one.
+// So the line is read with every backslash-newline left a newline, and as the
+// shell joins it (commentsEnded), once following its quotes and once with a
+// comment opened inside them too, since a string the line hands a shell has
+// comments of its own: a flag beside -c or an eval spelled with a quote in it
+// hands one as surely as `sh -c` does. Any `#` will do, in a word or not: a
+// reading can only add a refusal, and a line with no comment pays two Contains
+// for it.
+func addCommentReadings(out []pair, shell string) []pair {
+	for _, line := range commentLines(shell) {
+		for _, text := range commentReadings(line) {
+			out = addReadings(out, withoutDocuments(text, false, false), text, false, viaDecoded)
+		}
+	}
+	return out
+}
+
+// commentLines are the spellings of a line read for its comments: the line, and
+// the line decoded where that is another, since a `$'...'` handed to a shell
+// may spell its `#` and its backslash-newline as escapes, and has them only once
+// decoded. Neither is read without a `#` and a backslash-newline.
+func commentLines(shell string) []string {
+	if !strings.Contains(shell, "#") && !strings.Contains(shell, "$'") {
+		return nil
+	}
+	lines := make([]string, 0, 2)
+	for _, line := range []string{shell, decoded(shell)} {
+		if mayEndAComment(line) && !slices.Contains(lines, line) {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// commentReadings are the spellings addCommentReadings reads a line in. The
+// shell's join is made with the documents taken out, since a document is not
+// read for quotes: the apostrophe of "don't" in one opened a string that ran to
+// the end, and the line after a comment was then read with nothing joined.
+func commentReadings(line string) []string {
+	texts := []string{commentLinesApart(line)}
+	for _, text := range withoutDocuments(line, false, false) {
+		texts = append(texts, commentsEnded(text, false), commentsEnded(text, true))
+	}
+	return texts
+}
+
+// mayEndAComment reports a line with a `#` and a backslash at the end of a
+// line, before a carriage return or not: the shell runs the next line in both.
+func mayEndAComment(line string) bool {
+	return strings.Contains(line, "#") && (strings.Contains(line, "\\\n") || strings.Contains(line, "\\\r\n"))
+}
+
+// commentLinesApart is the line with each backslash at the end of a line taken
+// out and its line end left.
+func commentLinesApart(line string) string {
+	return strings.NewReplacer("\\\r\n", "\r\n", "\\\n", "\n").Replace(line)
+}
+
+// commentsEnded is the line as the shell joins it: each backslash-newline taken
+// out, and each comment's text with it, up to the newline that ends the
+// comment. Nothing in a comment runs, and the path rules join every
+// backslash-newline they meet, an escaped backslash's too, so a comment's text
+// left in would be joined to the next line by them. Before a carriage return the backslash escapes the carriage return, and the
+// newline after it ends the command, so that is no join. Quotes are followed
+// as withoutEscapes follows them: single, double and `$'...'`, where a
+// backslash escapes the quote after it. In quotes, a `#` opens no comment and a
+// backslash-newline inside single quotes is kept, as the shell keeps it; inQuotes
+// opens a comment there too and reads no quote, for a string handed to a shell.
+//
+// The cases are in order: a comment, then single quotes, own every byte up to
+// their end. dollar is whether the byte before was a `$` the shell reads as one,
+// which the `$` of an escaped `\$` and the second of `$$` are not: only after
+// one does a quote open `$'...'`.
+func commentsEnded(line string, inQuotes bool) string {
+	var b strings.Builder
+	b.Grow(len(line))
+	var single, ansi, double, comment, dollar bool
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		wasDollar := dollar
+		dollar = false
+		switch {
+		case comment && c != '\n':
+			continue
+		case comment:
+			comment = false
+		case single:
+			single = c != '\''
+		case c == '\\' && strings.HasPrefix(line[i+1:], "\n"):
+			// To the newline, which the loop then steps past; the join keeps a
+			// `$` before it.
+			i++
+			dollar = wasDollar
+			continue
+		case c == '\\' && i+1 < len(line):
+			b.WriteString(line[i : i+2])
+			i++
+			continue
+		case ansi:
+			ansi = c != '\''
+		case inQuotes:
+			comment = commentOpens(line, i)
+		case c == '\'' && !double:
+			ansi = wasDollar
+			single = !ansi
+		case c == '"':
+			double = !double
+		case !double:
+			comment = commentOpens(line, i)
+		}
+		b.WriteByte(c)
+		dollar = c == '$' && !wasDollar
+	}
+	return b.String()
+}
+
+// commentOpens is opensAComment for the shell's join, which also opens one
+// straight after a `)`: `(true)# x` is a subshell and a comment. opensAComment
+// is left as it is, since its other callers read words, not lines.
+func commentOpens(line string, i int) bool {
+	return opensAComment(line, i) || line[i] == '#' && i > 0 && line[i-1] == ')'
+}
+
+// commentMayHideALine reports a line the rules do not read: with the documents
+// out, a physical line holding a `#` that may open a comment ends in a
+// backslash, and something other than blanks comes after it. Whether that
+// backslash continues the line turns on whether the `#` opens a comment, which
+// turns on quotes, and the readings above follow those only as far as they can:
+// so the shape is refused whatever it writes, once no rule has refused it.
+// Quotes are not followed, so a `#` in quotes counts, and a quoted string handed
+// to a shell is read in the line's own physical lines; a `$'...'` one is read
+// in the line as decoded (commentLines).
+func commentMayHideALine(command string) bool {
+	for _, text := range withoutDocuments(command, false, false) {
+		lines := strings.Split(text, "\n")
+		for i, line := range lines[:len(lines)-1] {
+			line = strings.TrimSuffix(line, "\r")
+			odd := (len(line)-len(strings.TrimRight(line, "\\")))%2 == 1
+			if odd && mayOpenAComment(line) && slices.ContainsFunc(lines[i+1:], func(later string) bool {
+				return strings.TrimSpace(later) != ""
+			}) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// mayOpenAComment reports a `#` in line at its start or after a blank or one of
+// `;&|(){}=,<>`, quotes or none. That is more than the shell opens a comment
+// after, and as much as any reading here takes for a comment.
+func mayOpenAComment(line string) bool {
+	for i := range len(line) {
+		if line[i] == '#' && (i == 0 || strings.IndexByte(" \t\r;&|(){}=,<>", line[i-1]) >= 0) {
+			return true
+		}
+	}
+	return false
+}
+
+// commentHidesALine refuses what commentMayHideALine reports.
+func commentHidesALine() Finding {
+	return Finding{
+		Rule: "command-too-deep-to-read",
+		Reason: "a line holding a # that may start a comment ends in a backslash and more follows it, and " +
+			"whether the # starts a comment depends on quotes this rule does not read, so where the " +
+			"shell's lines start and end was not checked",
+		Route: "write that part of the command on one line, or put the comment on a line of its own " +
+			"with no backslash at its end",
+	}
+}
+
 // escapedBackslashes and handedSeparators are addHandedReadings' two
 // spellings: the second also takes the backslash off an escaped `;`, `&` or
 // `|`.
@@ -579,7 +770,17 @@ func Inspect(command string, s State) (Finding, bool) {
 	// After every rule a command was refused under before there was this one:
 	// the Claude Code sessions checkNestedSession does not read as one, where
 	// they would expand a person's command.
-	return secondSession(command, s.PowerShell, s.seen.readingsOf)
+	if f, refused := secondSession(command, s.PowerShell, s.seen.readingsOf); refused {
+		return f, true
+	}
+	if f, refused := inspectAssigned(command, s); refused {
+		return f, true
+	}
+	// Last, so a line a rule reads keeps that rule's reason.
+	if !s.PowerShell && slices.ContainsFunc(commentLines(command), commentMayHideALine) {
+		return commentHidesALine(), true
+	}
+	return Finding{}, false
 }
 
 // inspectNamed is Inspect without the reading of a second session, with the
@@ -821,6 +1022,15 @@ func (w *pathWalk) segment(idx int, marked string) (Finding, bool) {
 	return f, ok
 }
 
+// commandOfSegment is the words a segment is judged by. The shell takes a
+// redirect with no command as this one.
+func commandOfSegment(words, redirects []string) []string {
+	if len(words) == 0 && len(redirects) > 0 {
+		return []string{":"}
+	}
+	return words
+}
+
 // read is segment, before the walk leaves a script the segment ends.
 func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 	s := w.s
@@ -831,6 +1041,7 @@ func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 	}
 	quoted := w.quoting(segment)
 	words, redirects, _ := parse(segment)
+	words = commandOfSegment(words, redirects)
 	if len(words) == 0 {
 		return Finding{}, false
 	}
@@ -857,7 +1068,7 @@ func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 		away:    takeAway{s: s, m: w.m, dir: at, lost: atLost, pwd: w.dir, pwdLost: w.lost, old: w.old, exp: &found.exp},
 	}
 	if f, ok := j.judge(segment, run); ok {
-		return f, true
+		return withEditorRoute(f, run.words), true
 	}
 	if found.spent && !s.configOnly {
 		// More finds the reader gave up on than it reads to the end. A command
@@ -2131,15 +2342,18 @@ func reviewRole(words []string) (string, bool) {
 // with this subcommand.
 func runsSubcommand(words []string, sub string) bool {
 	args, ok := sdlcArgs(words)
-	return ok && (subcommand(args) == sub || subcommand(slices.DeleteFunc(slices.Clone(args), staffingValueFlag)) == sub)
+	return ok && (subcommand(args) == sub || subcommand(slices.DeleteFunc(slices.Clone(args), flagReadBothWays)) == sub)
 }
 
-// staffingValueFlag is a flag that takes a value only since the staffing
-// commands. With the flag taken out the words are read as they were before
-// there was one, so the word after it is read as the subcommand as well as the
-// flag's value: read only as the value, a command only a person runs that was
-// refused there stopped being refused.
-func staffingValueFlag(word string) bool { return word == "--model" || word == "--effort" }
+// flagReadBothWays is a flag that came to take a value after the rules that read
+// sdlc's subcommand were written: the staffing commands' and the counts on
+// `sdlc review add`. With the flag taken out the words are read as they were
+// before there was one, so the word after it is read as the subcommand as well
+// as the flag's value: read only as the value, a command only a person runs that
+// was refused there stopped being refused.
+func flagReadBothWays(word string) bool {
+	return word == "--model" || word == "--effort" || word == "--important" || word == "--nits"
+}
 
 // ValueFlags are the flags of sdlc that take the next word as their value. The
 // command's own tests hold this to the flags it has. The help reader and
@@ -2148,6 +2362,7 @@ var ValueFlags = map[string]bool{
 	"--file": true, "--gate": true, "--message": true, "--note": true,
 	"--reason": true, "--reject": true, "--since": true, "--story": true, "--through": true,
 	"--usd": true, "--model": true, "--effort": true,
+	"--important": true, "--nits": true,
 }
 
 // checkCommit puts the commit gate in front of the commit, for a commit in this
@@ -2388,7 +2603,7 @@ func (q pathQuestion) loopFilesFound() (found, picked []string) {
 		}
 	}
 	if len(from) > 0 && len(names)+len(patterns) > 0 {
-		shapes := append(protectedShapes(s.Backlog), stateFiles...)
+		shapes := append(protectedShapes(s.Backlog, s.ReviewPolicy), stateFiles...)
 		found = foundBy(from, names, patterns, shapes)
 	}
 	// Beside the flat reading, the shapes the expression picks once its
@@ -2396,7 +2611,7 @@ func (q pathQuestion) loopFilesFound() (found, picked []string) {
 	// name does not say. Asked only of an expression the reader followed
 	// that holds an operator, and only from a root that reaches the project.
 	if exp.followed && exp.operated && len(from) > 0 {
-		picked = exp.pickedShapes(from, append(protectedShapes(s.Backlog), stateFiles...))
+		picked = exp.pickedShapes(from, append(protectedShapes(s.Backlog, s.ReviewPolicy), stateFiles...))
 	}
 	return found, picked
 }
@@ -2442,7 +2657,7 @@ func (q pathQuestion) takesAnotherCheckout() (Finding, bool) {
 // path.
 func (q pathQuestion) namesLoopFiles(candidates, picked []string) (Finding, bool) {
 	s, m := q.s, q.m
-	shapes := func() []string { return protectedShapes(s.Backlog) }
+	shapes := func() []string { return protectedShapes(s.Backlog, s.ReviewPolicy) }
 	spelled := withGlobs(m.spell(s, q.dir, candidates), shapes)
 	// The flat reading's candidates first, so that a command it refuses is
 	// refused in the same words as ever; then what the operators leave in.
@@ -2468,13 +2683,12 @@ func loopFileFinding(c string, s State, m *memo) (Finding, bool) {
 	if m.outside(s, c) {
 		return Finding{}, false
 	}
-	if hit, ok := protectedPath(c, s.Backlog); ok {
+	if hit, ok := protectedPath(c, s.Backlog, s.ReviewPolicy); ok {
 		f := Finding{
 			Rule: "protected-path-through-the-tool",
 			Reason: hit + " is protected while a story is being worked on, and a shell " +
 				"command is the one way around the rule that protects it" + heldEverywhere(hit),
-			Route: "change it by hand outside a running iteration; if what it says is " +
-				"wrong, stop and say what rather than editing it",
+			Route: protectedRoute(hit, s),
 		}
 		// A name held only because the disk may fold its case says so
 		// (pathrules.CaseClause). The route is CLAUDE.md's, which the file
@@ -2542,7 +2756,7 @@ func (q pathQuestion) rootThatCouldHold(frozen []string) (root, test string, ok 
 // by naming them in full, and every rule stopped at its own checkout's edge.
 func sharedState(word string, s State, m *memo) (Finding, bool) {
 	for _, l := range m.shared(s, word) {
-		protected, byName := protectedPath(l.Rel, s.Backlog)
+		protected, byName := protectedPath(l.Rel, s.Backlog, s.ReviewPolicy)
 		hit, state := loopState(l.Rel)
 		switch {
 		case !byName && !state:
@@ -2559,8 +2773,7 @@ func sharedState(word string, s State, m *memo) (Finding, bool) {
 				Rule: "protected-path-through-the-tool",
 				Reason: protected + " in another checkout of this repository is protected while a story is " +
 					"being worked on, and a shell command is the one way around the rule that protects it",
-				Route: "change it by hand outside a running iteration; if what it says is " +
-					"wrong, stop and say what rather than editing it",
+				Route: protectedRoute(protected, s),
 			}, true
 		case hit == loopConfigFile:
 			return Finding{
@@ -5365,9 +5578,10 @@ func storyOwned(rest string) bool {
 // lists cannot drift apart.
 var protectedShellPaths = append([]string{".git"}, model.InstructionPaths...)
 
-// protectedPath reports whether a word names one of them, or the backlog,
-// folded as the filesystem folds it.
-func protectedPath(word, backlog string) (string, bool) {
+// protectedPath reports whether a word names one of them, or a path the
+// configuration holds (the backlog, the review policy), folded as the filesystem
+// folds it.
+func protectedPath(word string, configured ...string) (string, bool) {
 	p := pathrules.Fold(strings.TrimPrefix(clean(word), "./"))
 	if p == "" {
 		return "", false
@@ -5379,10 +5593,44 @@ func protectedPath(word, backlog string) (string, bool) {
 			return own, true
 		}
 	}
-	if backlog != "" && at(p, pathrules.Fold(backlog)) {
-		return backlog, true
+	for _, held := range configured {
+		if held != "" && at(p, pathrules.Fold(held)) {
+			return held, true
+		}
 	}
 	return "", false
+}
+
+// editors are the programs of the writers table that a person also runs only to
+// read. withEditorRoute says how to read the file instead.
+var editors = map[string]bool{
+	"ex": true, "vi": true, "vim": true, "nvim": true, "emacs": true,
+	"view": true, "rvim": true, "rview": true, "vimdiff": true, "gvim": true,
+	"vim.tiny": true, "vim.basic": true, "vim.nox": true, "vim.gtk3": true, "nvi": true,
+	"red": true, "emacs-nox": true, "kak": true,
+}
+
+// withEditorRoute adds to a refusal of an editor what to do for a read: `view
+// REVIEW.md`, asked only to read it, was told to change the file by hand.
+func withEditorRoute(f Finding, words []string) Finding {
+	if len(words) > 0 && editors[base(words[0])] {
+		f.Route += "; an editor can write the file, so it is refused whatever it is asked: to read the file, use " +
+			"`cat` or a file tool"
+	}
+	return f
+}
+
+// protectedRoute is what a refusal of a protected path says to do. A running
+// story keeps the policy it was cut from and no story lands a change to it, so an
+// edit "outside a running iteration" says too little of where it has to go.
+func protectedRoute(hit string, s State) string {
+	if s.ReviewPolicy != "" && pathrules.Fold(hit) == pathrules.Fold(s.ReviewPolicy) {
+		return "a person changes the review policy by hand, on trunk between stories, and a running story keeps " +
+			"the copy it was cut from; to apply a change to this story, end the story, commit it on trunk and start " +
+			"again; if what it says is wrong, stop and say what rather than editing it"
+	}
+	return "change it by hand outside a running iteration; if what it says is " +
+		"wrong, stop and say what rather than editing it"
 }
 
 // heldEverywhere is the clause a refusal of one of the newer instruction

@@ -352,13 +352,13 @@ func hoBlockedOnce(t *testing.T) string {
 	t.Helper()
 	root := planned(t)
 	mustRunWith(t, "# architect\n\nAC-3 has no step.\n",
-		"review", "add", "design_review", "architect", "block", "--note", "AC-3 has no step")
+		"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 has no step")
 	return root
 }
 
 var (
 	hoArchitectBlocked = model.ReviewEvent(model.GateDesignReview, "architect", model.VerdictBlock)
-	hoSecondBlock      = []string{"review", "add", "design_review", "architect", "block", "--note", "AC-3 still has no step"}
+	hoSecondBlock      = []string{"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 still has no step"}
 )
 
 // One run for each cause holds both halves of AC-3: they start from the same
@@ -540,7 +540,7 @@ func TestAC4WithALimitOfZeroEveryFailureIsRecordedWithoutGit(t *testing.T) {
 			t.Fatalf("failure %d under a limit of zero was not simply recorded: %+v", i+1, got)
 		}
 		block := decode[reviewPayload](t, mustRunWith(t, "# architect\n",
-			"review", "add", "design_review", "architect", "block", "--note", "AC-3 has no step", "--json"))
+			"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 has no step", "--json"))
 		if !block.OK || block.HandedOver != "" || block.Round != i+1 {
 			t.Fatalf("block %d under a limit of zero was not simply recorded: %+v", i+1, block)
 		}
@@ -566,7 +566,7 @@ func TestAC4ABlockBelowTheLimitIsRecordedWhateverWouldStopAHandOver(t *testing.T
 		mend := cause.stop(t, root)
 
 		first := decode[reviewPayload](t, mustRunWith(t, "# architect\n",
-			"review", "add", "design_review", "architect", "block", "--note", "AC-3 has no step", "--json"))
+			"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 has no step", "--json"))
 		if !first.OK || first.HandedOver != "" || first.Round != 1 {
 			t.Errorf("the first block of two allowed was not simply recorded: %+v", first)
 		}
@@ -574,7 +574,7 @@ func TestAC4ABlockBelowTheLimitIsRecordedWhateverWouldStopAHandOver(t *testing.T
 		// lost: the third is no nearer a hand-over than the first.
 		for i := range 3 {
 			advisory := decode[reviewPayload](t, mustRunWith(t, "# red team\n",
-				"review", "add", "design_review", "red-team", "block", "--json"))
+				"review", "add", "design_review", "red-team", "block", "--important", "1", "--json"))
 			if !advisory.OK || advisory.HandedOver != "" || advisory.Round != i+1 {
 				t.Errorf("advisory block %d was not simply recorded: %+v", i+1, advisory)
 			}

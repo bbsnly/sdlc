@@ -52,6 +52,11 @@ var fixtures = map[string]fixture{
 		denies:  Request{Tool: "Edit", Agent: "sdlc-implementer", Path: "user_stories.json", Story: "A-1", Backlog: "user_stories.json"},
 		permits: Request{Tool: "Edit", Agent: "sdlc-implementer", Path: "internal/user_stories.go", Story: "A-1", Backlog: "user_stories.json"},
 	},
+	// US-115 Q1: the review policy, a configured path as the backlog is.
+	"review-policy-is-not-edited": {
+		denies:  Request{Tool: "Edit", Agent: "sdlc-implementer", Path: "REVIEW.md", Story: "A-1", ReviewPolicy: "REVIEW.md"},
+		permits: Request{Tool: "Edit", Agent: "sdlc-implementer", Path: "internal/review.go", Story: "A-1", ReviewPolicy: "REVIEW.md"},
+	},
 	"frozen-test-is-not-edited": {
 		denies: Request{Tool: "Edit", Agent: "sdlc-implementer", Path: "internal/x_test.go", Story: "A-1",
 			Tests: Tests{IsTest: true, Frozen: true, Locked: true}},

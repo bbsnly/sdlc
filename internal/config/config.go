@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
@@ -152,9 +153,12 @@ type Loop struct {
 	MaxStopBlocks   int `json:"max_stop_blocks"`
 }
 
-// Reviews configures whether the code-review gate can block.
+// Reviews configures whether the code-review gate can block, and where the
+// review policy every reviewer reads is. Policy stays empty unless a person names
+// a file, so doctor can tell a file they asked for from the default.
 type Reviews struct {
-	Gate7Advisory bool `json:"gate7_advisory"`
+	Gate7Advisory bool   `json:"gate7_advisory"`
+	Policy        string `json:"policy,omitempty"`
 }
 
 // Freeze configures test freezing. Allowing new test files after the freeze is
@@ -440,6 +444,11 @@ func (c Config) validate() error {
 		problems = append(problems, fmt.Sprintf("backlog.path is %q, which leaves the repository: "+
 			"give it relative to the repository root", p))
 	}
+	if p := c.Reviews.Policy; p != "" && !reviewPolicyPathOK(p) {
+		problems = append(problems, fmt.Sprintf("reviews.policy is %q: give a file relative to the repository root, "+
+			"with no `..` in it and none of the characters the shell rules cannot hold in a name: white space, "+
+			"a control or format character, a quote, a backslash, a backtick, or any of $;&|<>()", p))
+	}
 	for _, n := range []struct {
 		name  string
 		value float64
@@ -532,6 +541,35 @@ func (s Staffing) bringBackProblems() []string {
 	}
 	return problems
 }
+
+// reviewPolicyPathOK is whether a path can be the review policy. A `..` segment
+// is refused even where it stays inside: `l/../secret.txt`, with l a link out,
+// cleans to a name inside and a reader of the path as written gets the file
+// outside. A name the shell rules read apart from how they hold it is refused
+// too: with one of these in the path, `echo x > '<path>'` was allowed though the
+// path was held, so the rule that holds the policy would not have held it.
+func reviewPolicyPathOK(p string) bool {
+	return filepath.IsLocal(filepath.FromSlash(p)) && path.Clean(p) != "." && !strings.HasSuffix(p, "/") &&
+		!slices.Contains(strings.Split(p, "/"), "..") && !strings.ContainsFunc(p, unheldInAName)
+}
+
+// unheldInAName is a character the shell rules cannot hold in a name.
+func unheldInAName(r rune) bool {
+	return strings.ContainsRune("\"'\\`$;&|<>()", r) || unicode.IsControl(r) || unicode.IsSpace(r) || unicode.Is(unicode.Cf, r)
+}
+
+// ReviewPolicyPath is where the review policy is, relative to the repository
+// root and as written. Whether a file is there is for the caller: no file means
+// the project has no policy.
+func (c Config) ReviewPolicyPath() string {
+	if c.Reviews.Policy == "" {
+		return defaultReviewPolicy
+	}
+	return c.Reviews.Policy
+}
+
+// defaultReviewPolicy is the review policy where reviews.policy names none.
+const defaultReviewPolicy = "REVIEW.md"
 
 func bringBackPathOK(p string) bool {
 	at := strings.TrimSuffix(p, "/")

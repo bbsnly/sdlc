@@ -264,6 +264,11 @@ var (
 	// ran. The CLI gives each state a fix of its own; this is the general one.
 	FreezeCheckRefused = register("SDLC-E0085",
 		`read what the message above says commands.freeze_check found. Nothing was frozen. Where the check failed or changed a test file, the test author corrects the files it names and runs "sdlc freeze" again, and nobody needs a person for this; a name with a line break in it is renamed first. Anything no correction to a test file can clear is a person's: a shell that is not on PATH, a program the check needs that is missing, a check that fails whatever the tests hold, one that rewrites a test file every run, or one that runs "sdlc freeze" itself. The person puts commands.freeze_check right in the configuration, and "sdlc freeze" is then run again`)
+
+	// BlockWithoutImportant is a block recorded with no important finding counted.
+	// A block costs a whole round, and a review with only nits does not earn one.
+	BlockWithoutImportant = register("SDLC-E0086",
+		`pass --important with the number of important findings the review names; a review with only nits is an approve, with --nits and the nits listed`)
 )
 
 // entry is one row of the catalogue.

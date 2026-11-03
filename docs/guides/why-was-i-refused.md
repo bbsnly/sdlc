@@ -175,6 +175,7 @@ sdlc doctor
   ok       backlog              user_stories.json  (1 story, one runnable)
   problem  loop state           the test freeze could not be read (SDLC-E0005): invalid character 'o' in literal null (expecting 'u')
                                 fix: every test is treated as frozen until .sdlc/state/tests.lock reads: restore it if you keep a copy, or lift it on the record with "sdlc unfreeze --reason ..." in your own terminal and run "sdlc freeze", which freezes the tests as they are now
+  ok       review policy        REVIEW.md
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
   ok       commands             build, coverage, fmt, fmt_check, fmt_file, lint, smoke, test
   ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check

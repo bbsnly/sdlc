@@ -251,6 +251,7 @@ func state(dir string, powerShell bool) shellpolicy.State {
 		ImplementerTest: tests.Match,
 		Agent:           "implementer",
 		Backlog:         cfg.Backlog.Path,
+		ReviewPolicy:    cfg.ReviewPolicyPath(),
 		PowerShell:      powerShell,
 		// The perl command asks this about 8,000 times, which is half its
 		// time: without it the leg passes a classifier four times slower than

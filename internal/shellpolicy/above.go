@@ -391,7 +391,7 @@ func checkAboveProject(q pathQuestion) (Finding, bool) {
 	}
 	q.noteMade()
 	inside, held := q.configWords()
-	shapes := func() []string { return protectedShapes(s.Backlog) }
+	shapes := func() []string { return protectedShapes(s.Backlog, s.ReviewPolicy) }
 	for _, w := range slices.Concat(inside, held) {
 		named := spellings("", []string{w})
 		// withGlobs leaves a last name with none of these as it is, and the

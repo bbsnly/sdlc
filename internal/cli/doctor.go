@@ -34,6 +34,9 @@ const (
 	stateOK      state = "ok"
 	stateProblem state = "problem"
 	stateSkipped state = "skipped"
+	// stateWarning is counted as neither a problem nor a skip: it changes
+	// neither the last line nor the exit status.
+	stateWarning state = "warning"
 )
 
 // check is one thing doctor looked at. A problem always carries a fix: a check
@@ -134,6 +137,7 @@ const (
 	checkBacklog         = "backlog"
 	checkCommands        = "commands"
 	checkFreezeCheck     = "freeze check"
+	checkPolicyFile      = "review policy"
 )
 
 // worktreeOf joins a story's id to the path of its worktree in a sentence.
@@ -203,6 +207,7 @@ func runChecks(ctx context.Context) []check {
 	s := store.New(&config.Project{Root: root, Config: cfg}).WithEnv(env.getenv)
 	add(backlogCheck(s, root))
 	add(stateCheck(ctx, s))
+	add(policyFileCheck(ctx, s, cfg, root))
 	if c, ok := storyWorktreesCheck(ctx, s); ok {
 		add(c)
 	}
@@ -217,6 +222,70 @@ func runChecks(ctx context.Context) []check {
 	add(freezeCheckLine(cfg))
 	add(binaryCheck(env))
 	return out
+}
+
+// policyFileCheck is what doctor says of the review policy. A warning, and not a
+// problem: a project may have no policy, and its reviewers then review as they
+// do without one, so nothing here stops a story.
+func policyFileCheck(ctx context.Context, s *store.Store, cfg config.Config, root string) check {
+	main := root
+	if co, err := s.Checkout(); err == nil {
+		main = co.Main
+	}
+	// In a story's worktree a policy trunk does not hold is not there to find, and
+	// the file a person wrote waits in the main checkout.
+	p := policyFileIn(cfg, root)
+	if p == "" {
+		p = policyFileIn(cfg, main)
+	}
+	if p != "" {
+		return policyOnTrunkCheck(ctx, cfg, main, p, policyFileIn(cfg, root) != "")
+	}
+	named, at := cfg.Reviews.Policy, filepath.Join(root, filepath.FromSlash(cfg.ReviewPolicyPath()))
+	_, lstatErr := os.Lstat(at)
+	switch {
+	case named == "" && lstatErr != nil:
+		return check{Name: checkPolicyFile, State: stateOK,
+			Detail: "no review policy: `sdlc init` writes " + cfg.ReviewPolicyPath() + " between stories, and it keeps a file that is there"}
+	case named == "":
+		return check{Name: checkPolicyFile, State: stateOK,
+			Detail: "no review policy: " + cfg.ReviewPolicyPath() + " is not a file in the repository"}
+	case lstatErr != nil:
+		return check{Name: checkPolicyFile, State: stateWarning,
+			Detail: "reviews.policy names " + oneLine(named) + ", and there is no file there",
+			Fix:    "create " + oneLine(named) + " by hand, on trunk between stories, or take reviews.policy out of " + config.File}
+	}
+	return check{Name: checkPolicyFile, State: stateWarning,
+		Detail: "reviews.policy names " + oneLine(named) + ", and that is not a file in the repository: a directory, " +
+			"or a link that leads out",
+		Fix: "put a file at " + oneLine(named) + ", or point reviews.policy at one"}
+}
+
+// policyOnTrunkCheck is the policy that is there: a story's worktree is cut from
+// what trunk commits, so a file trunk does not hold is no policy to its reviewers.
+// here says the file is where doctor runs. Where trunk has it and this story's
+// worktree does not, `review list` here says there is no policy, and doctor says
+// the same rather than `ok`.
+func policyOnTrunkCheck(ctx context.Context, cfg config.Config, main, p string, here bool) check {
+	ok := check{Name: checkPolicyFile, State: stateOK, Detail: oneLine(p)}
+	if !cfg.Git.WorktreesOn() {
+		return ok
+	}
+	trunk := trunkOf(cfg)
+	held, err := gitx.Holds(ctx, main, "refs/heads/"+trunk, policyIn(cfg))
+	if err != nil || held && here {
+		return ok
+	}
+	if held {
+		return check{Name: checkPolicyFile, State: stateWarning,
+			Detail: oneLine(p) + " is on " + trunk + " but not in this worktree, which was cut before it, so this story's " +
+				"reviewers have no policy; the next story has it",
+			Fix: "nothing, or to apply it to this story, end the story and start again"}
+	}
+	return check{Name: checkPolicyFile, State: stateWarning,
+		Detail: oneLine(p) + " is not on " + trunk + ", and a story's worktree is cut from what " + trunk +
+			" commits, so its reviewers would have no policy",
+		Fix: "a person commits " + oneLine(p) + " on " + trunk + " between stories"}
 }
 
 // stateCheck reads the loop's own files: the iteration file, every story's gate
@@ -393,7 +462,7 @@ func (p *stateProbe) countWorktrees() {
 // also what skipRest walks, so the report has the same shape whether or not it
 // got all the way through.
 var checkOrder = []string{
-	checkGitRepository, checkGitCommand, checkConfiguration, checkBacklog, checkLoopState,
+	checkGitRepository, checkGitCommand, checkConfiguration, checkBacklog, checkLoopState, checkPolicyFile,
 	checkProjectContract, checkCommands, checkFreezeCheck, checkSdlcOnPath,
 }
 
@@ -747,7 +816,7 @@ func commandChecks(root string, cfg config.Config) []check {
 	// classifier's reason, which can quote the command and a command can hold
 	// a token. fmt_file is run by the hook itself and never reaches the
 	// classifier, so it is not judged.
-	state := shellpolicy.State{Backlog: relativeTo(root, cfg.BacklogPath(root))}
+	state := shellpolicy.State{Backlog: relativeTo(root, cfg.BacklogPath(root)), ReviewPolicy: policyIn(cfg)}
 	for _, name := range names {
 		if f, refused := shellpolicy.Inspect(cfg.Commands[name], state); refused && name != "fmt_file" {
 			out = append(out, check{

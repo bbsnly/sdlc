@@ -158,7 +158,7 @@ func stfOffWalk(t *testing.T, asJSON bool) string {
 	// Gate 4: nobody has reviewed, then the architect blocks, then everybody
 	// reports and the gate passes.
 	tr.run("", "gate", "design_review", "pass", "--note", "nobody objected")
-	tr.run("# architect\n", "review", "add", "design_review", "architect", "block", "--note", "AC-1 has no step")
+	tr.run("# architect\n", "review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-1 has no step")
 	tr.run("", "gate", "design_review", "pass")
 	tr.run("# nobody\n", "review", "add", "design_review", "code-reviewer", "approve")
 	tr.run("# architect\n", "review", "add", "design_review", "architect", "approve")
@@ -214,6 +214,29 @@ func stfGolden(name string) string {
 	return filepath.Join("testdata", "staffing-off", name)
 }
 
+// stfWithoutReviewPolicy is a transcript with what US-115 added taken out: this
+// test is about the staffing, and US-115's own tests hold what it prints. The
+// walk's one block carries a count, which the record, `review add` and `sdlc log`
+// repeat; every project now has a policy, which init, `review list` and doctor
+// name. In that order: the JSON first, as a line of it can hold the words that
+// take out a line of prose.
+func stfWithoutReviewPolicy(transcript string) string {
+	for _, gone := range []*regexp.Regexp{
+		regexp.MustCompile(`,\s*"review_counts":\s*\[[^\]]*\]`),
+		regexp.MustCompile(`\{"name":"review policy"[^{}]*\},`),
+		regexp.MustCompile(`,\s*"(important|nits)":\s*\d+`),
+		regexp.MustCompile(`"(important|nits)":\s*\d+,\s*`),
+		regexp.MustCompile(`,\s*"policy":\s*"[^"]*"`),
+		regexp.MustCompile(`"policy":\s*"[^"]*",\s*`),
+		regexp.MustCompile(`,"REVIEW\.md"`),
+		// --important is in the walk's command line, which the goldens have.
+		regexp.MustCompile(`(?mi)^[^$\n].*(review policy|REVIEW\.md|\bimportant\b).*\n`),
+	} {
+		transcript = gone.ReplaceAllString(transcript, "")
+	}
+	return transcript
+}
+
 func TestAC10WithNoStaffingSectionEveryCommandPrintsWhatItPrintedBeforeTheStory(t *testing.T) {
 	t.Parallel()
 	for _, form := range []struct {
@@ -229,8 +252,8 @@ func TestAC10WithNoStaffingSectionEveryCommandPrintsWhatItPrintedBeforeTheStory(
 			if err != nil {
 				t.Fatalf("the output the tool printed before the story is not there to compare with: %v", err)
 			}
-			got := stfWithoutConfigComments(t, stfOffWalk(t, form.json))
-			wanted := stfWithoutConfigComments(t, string(want))
+			got := stfWithoutReviewPolicy(stfWithoutConfigComments(t, stfOffWalk(t, form.json)))
+			wanted := stfWithoutReviewPolicy(stfWithoutConfigComments(t, string(want)))
 			if got == wanted {
 				return
 			}

@@ -21,7 +21,7 @@ const maxBraces = 64
 
 // protectedShapes are the paths loopState and protectedPath refuse, as shapes:
 // a `*` segment is any one name, as a story's id is.
-func protectedShapes(backlog string) []string {
+func protectedShapes(configured ...string) []string {
 	shapes := []string{
 		".sdlc", loopStateDir, loopConfigFile, ".sdlc/claude-progress.json",
 		".sdlc/stories", ".sdlc/stories/*/reviews", ".sdlc/stories/*/" + model.RecordFile,
@@ -31,8 +31,10 @@ func protectedShapes(backlog string) []string {
 		shapes = append(shapes, ".sdlc/stories/*/"+a.File)
 	}
 	shapes = append(shapes, protectedShellPaths...)
-	if backlog != "" {
-		shapes = append(shapes, backlog)
+	for _, held := range configured {
+		if held != "" {
+			shapes = append(shapes, held)
+		}
 	}
 	return shapes
 }

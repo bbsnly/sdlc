@@ -639,6 +639,10 @@ command takes, and run it again with a valid value.
 - **`sdlc cost add --usd`** is the usual one. An amount that arrived from a shell substitution which
   produced nothing is refused rather than recorded as zero, because a story that silently cost
   nothing is the one wrong answer nobody questions. Check the command that produced the value.
+- **`sdlc review add --important` and `--nits`** carry it for a count that is negative or above
+  1,000,000, on any verdict, and for a word given as a count. A word there is usually a flag that
+  swallowed the role or the gate as its value: give the number after the flag.
+  `unknown flag: --important` means the binary is older than the plugin; upgrade `sdlc`.
 - **`sdlc log --since`** carries it for something git cannot read as a commit, and so does
   `--since` given together with `--all`.
 - **`sdlc ack`** carries it when `--through` is missing, names something git cannot read as a
@@ -1525,6 +1529,10 @@ The message says which check, and the fix is for that state:
   loop's own files: a person takes those changes out of the story's commits, or brings them to
   trunk themselves. Where the files are loop state that trunk tracks, stop tracking them on trunk,
   and ignore them, first.
+- **The story's commits change the review policy.** No story lands the review policy, at the path
+  [`reviews.policy`](configuration.md#reviewspolicy) names in the main checkout's configuration. The
+  message and its fix name the file. Revert it on the story's branch, then run `sdlc stop` again; a
+  person changes it on trunk between stories.
 - **The story's commits change the root `CODEMAP.md` as something other than a plain file.** The
   story's change is measured without the bookkeeper's `CODEMAP.md`, so the landing takes that path
   only as a plain file by exactly that name. A directory, a link or a submodule there, files
@@ -2146,6 +2154,19 @@ A check judged by how it ended: a process it left running that held its output o
 a pass a failure. One residual remains: the content is hashed again a moment after the comparison,
 under the project's lock, so a process the check left running that writes a test file in that gap
 is not caught.
+
+### SDLC-E0086
+
+`sdlc review add ... block` was given no `--important`, or 0, so nothing was recorded. A block
+costs a whole round, so it has to name at least one important finding under the
+[review policy](configuration.md#reviewspolicy).
+
+Count the important findings the review names, and pass that number with `--important`. A review
+with only nits is an approve with the nits listed: record `approve` with `--nits`. The number is the
+reviewer's own, and `sdlc` does not judge it.
+
+`unknown flag: --important` is a different failure, [SDLC-E0034](#sdlc-e0034): the binary is older
+than the plugin, so upgrade `sdlc`.
 
 ## Warnings the hook prints
 

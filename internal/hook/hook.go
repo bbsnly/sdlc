@@ -443,6 +443,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 			"tool", p.ToolName, "agent", p.AgentType, "role", policy.NormalizeAgent(p.AgentType),
 			"path", path, "rel", rel, "outside", outside, "story", story, "project", project)
 
+		backlog, policyFile := heldPaths(project)
 		return outcome{ok: true, verdict: policy.Evaluate(policy.Request{
 			Tool:    p.ToolName,
 			Agent:   p.AgentType,
@@ -458,7 +459,8 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 			AboveProject: outside && aboveProject(filepath.ToSlash(res.Root()), rel),
 			Story:        story,
 			Tests:        testState(project, story, rel, warn),
-			Backlog:      backlogPath(project),
+			Backlog:      backlog,
+			ReviewPolicy: policyFile,
 		})}
 	}, event, false, note
 }
@@ -583,14 +585,14 @@ func commandDir(resolver pathrules.Resolver, cwd string) string {
 	return ""
 }
 
-// backlogPath is the backlog file as the configuration names it,
-// repository-relative. The name, and not where a link by that name leads: a
-// backlog linked in from elsewhere resolved outside the repository, and
-// protecting nothing there left `echo >> linked.json` free. The configuration
-// refuses a name that itself leaves the repository. One that will not read
-// leaves the backlog where the defaults put it, which is where it most likely
+// heldPaths is the backlog file and the review policy as the configuration names
+// them, repository-relative, from one load of it. The name, and not where a link
+// by that name leads: a backlog linked in from elsewhere resolved outside the
+// repository, and protecting nothing there left `echo >> linked.json` free. The
+// configuration refuses a name that itself leaves the repository. One that will
+// not read leaves each where the defaults put it, which is where it most likely
 // is.
-func backlogPath(project string) string {
+func heldPaths(project string) (backlog, policyFile string) {
 	cfg, err := config.Load(project)
 	if err != nil {
 		cfg = config.Default()
@@ -599,7 +601,8 @@ func backlogPath(project string) string {
 	if p == "" {
 		p = config.Default().Backlog.Path
 	}
-	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(p)))
+	clean := func(p string) string { return filepath.ToSlash(filepath.Clean(filepath.FromSlash(p))) }
+	return clean(p), clean(cfg.ReviewPolicyPath())
 }
 
 // onDisk is the file a word of a shell command is on disk, repository-relative:
@@ -741,10 +744,11 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	// the package. A field set here, or work added to Resolve, NewTest or
 	// ImplementerTest that every word of a command pays for, goes there too,
 	// or the leg times a classifier the hook does not run.
+	backlog, policyFile := heldPaths(project)
 	state := shellpolicy.State{
 		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
-		Backlog: backlogPath(project), PowerShell: p.ToolName == toolPowerShell,
+		Backlog: backlog, ReviewPolicy: policyFile, PowerShell: p.ToolName == toolPowerShell,
 		StoryFinished: storyFinished(pl, story),
 		Committed:     storyCommitted(pl, story),
 		Trunk:         trunk,

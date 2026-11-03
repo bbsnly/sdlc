@@ -83,7 +83,8 @@ Only after the design review has passed.
 
 1. One plan step at a time. After each, run `commands.test`. Say which tests moved.
 2. Write the simplest thing that makes the test pass and that you would defend in review.
-   Match the surrounding code — its naming, its idiom, its comment density.
+   Match the surrounding code — its naming, its idiom, its comment density. Nits in your brief are
+   for how a step is written; they do not change the plan.
 3. Never special-case a test, swallow an error the criterion is about, or add a flag or hook
    that only a test sets. Never read a value the test happens to use. If you find yourself
    writing something whose only purpose is to satisfy the assertion, that is the signal the

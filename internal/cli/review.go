@@ -3,34 +3,41 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/model"
+	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
 type reviewPayload struct {
-	OK      bool   `json:"ok"`
-	Story   string `json:"story"`
-	Gate    string `json:"gate"`
-	Role    string `json:"role"`
-	Verdict string `json:"verdict"`
-	Round   int    `json:"round"`
-	Path    string `json:"path"`
-	Subject string `json:"subject,omitempty"`
+	OK        bool   `json:"ok"`
+	Story     string `json:"story"`
+	Gate      string `json:"gate"`
+	Role      string `json:"role"`
+	Verdict   string `json:"verdict"`
+	Round     int    `json:"round"`
+	Path      string `json:"path"`
+	Subject   string `json:"subject,omitempty"`
+	Important *int   `json:"important,omitempty"`
+	Nits      *int   `json:"nits,omitempty"`
 	// HandedOver is the kind of escalation, when this block was one too many
 	// and the story went to a person.
 	HandedOver string `json:"handed_over,omitempty"`
 }
 
 type reviewListPayload struct {
-	OK      bool         `json:"ok"`
-	Story   string       `json:"story"`
-	Reviews []reviewInfo `json:"reviews"`
+	OK         bool         `json:"ok"`
+	Story      string       `json:"story"`
+	PolicyFile string       `json:"policy"`
+	Reviews    []reviewInfo `json:"reviews"`
 }
 
 // reviewInfo is one expected review and where it has got to. Stale is the field
@@ -78,6 +85,7 @@ func newReviewCmd() *cobra.Command {
 
 func newReviewAddCmd() *cobra.Command {
 	var storyID, file, note string
+	var important, nits int
 	cmd := &cobra.Command{
 		Use:   "add GATE ROLE VERDICT",
 		Short: "Record one reviewer's conclusion",
@@ -86,23 +94,83 @@ func newReviewAddCmd() *cobra.Command {
 			"Verdicts: " + model.VerdictNames() + ". A blocking reviewer's approve is what\n" +
 			"lets the gate pass; a note is a finding worth recording that does not stand\n" +
 			"in the way.\n\n" +
+			"A block names at least one important finding, counted with --important: a\n" +
+			"review with only nits is an approve. The counts are the reviewer's own, and\n" +
+			"sdlc does not judge them.\n\n" +
 			"The document comes from standard input, or from --file.",
-		Example: "  sdlc review add design_review architect block < review.md\n" +
+		Example: "  sdlc review add design_review architect block --important 2 --nits 1 < review.md\n" +
 			"  sdlc review add code_review perf note --file /tmp/perf.md",
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReviewAdd(cmd, args, reviewFlags{story: storyID, file: file, note: note})
+			return runReviewAdd(cmd, args, reviewFlags{story: storyID, file: file, note: note,
+				important: givenCount(cmd, flagImportant, important), nits: givenCount(cmd, flagNits, nits)})
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "read the review from this path instead of standard input")
 	cmd.Flags().StringVar(&note, "note", "", "the headline finding, in one line")
 	cmd.Flags().StringVar(&storyID, "story", "", "record against this story instead of the one being worked on")
+	cmd.Flags().IntVar(&important, flagImportant, 0, "how many important findings this review names")
+	cmd.Flags().IntVar(&nits, flagNits, 0, "how many nits this review found")
 	return cmd
+}
+
+const (
+	flagImportant = "important"
+	flagNits      = "nits"
+)
+
+// givenCount is n where the flag was given and nil where it was not, which is not
+// the same as 0.
+func givenCount(cmd *cobra.Command, flag string, n int) *int {
+	if !cmd.Flags().Changed(flag) {
+		return nil
+	}
+	return &n
+}
+
+// maxReviewCount is the most a review may count: the log takes a higher number
+// read from a record as nonsense, so the flag refuses it rather than record what
+// is then never shown.
+const maxReviewCount = 1_000_000
+
+// usableCount is n, or nil for what no review counts, read from a record that
+// could say anything.
+func usableCount(n *int) *int {
+	if n == nil || *n < 0 || *n > maxReviewCount {
+		return nil
+	}
+	return n
+}
+
+func countOutOfRange(n int) string {
+	if n < 0 {
+		return "a count is a number of findings, so it cannot be negative"
+	}
+	return "no review counts more than 1,000,000 findings, and a higher count is taken as a mistake"
+}
+
+// refuseCounts holds a review's counts up before anything is read or recorded.
+func refuseCounts(verdict model.Verdict, f reviewFlags) error {
+	for _, c := range []struct {
+		flag string
+		n    *int
+	}{{flagImportant, f.important}, {flagNits, f.nits}} {
+		if c.n != nil && usableCount(c.n) == nil {
+			return sdlcerr.New(sdlcerr.BadArgument, "--"+c.flag+" is "+strconv.Itoa(*c.n), countOutOfRange(*c.n))
+		}
+	}
+	if verdict == model.VerdictBlock && (f.important == nil || *f.important == 0) {
+		return sdlcerr.New(sdlcerr.BlockWithoutImportant,
+			"a block has to name at least one important finding under the review policy",
+			"a review with only nits is an approve with the nits listed")
+	}
+	return nil
 }
 
 // reviewFlags are the flags `sdlc review add` was given.
 type reviewFlags struct {
 	story, file, note string
+	important, nits   *int
 }
 
 func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
@@ -123,6 +191,9 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 		return sdlcerr.New(sdlcerr.UnknownVerdict,
 			quote(args[2])+" is not a verdict",
 			"a reviewer approves, blocks, or leaves a note")
+	}
+	if err := refuseCounts(verdict, f); err != nil {
+		return err
 	}
 
 	// Read before the lock is taken, as artifact write does: every
@@ -171,7 +242,7 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 	path := store.ReviewPath(id, gate, reviewer.Role, doc.Round)
 	rev := record.AddReview(model.Review{
 		Gate: gate, Role: reviewer.Role, Verdict: verdict,
-		Subject: subject, File: path, Note: f.note,
+		Subject: subject, File: path, Note: f.note, Important: f.important, Nits: f.nits,
 	}, s.Now())
 	record.Append(model.EventReview, model.ReviewEvent(gate, reviewer.Role, verdict), s.Now())
 	late.record(record, s.Now())
@@ -184,7 +255,7 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 		return emitJSON(cmd.OutOrStdout(), reviewPayload{
 			OK: true, Story: id, Gate: string(gate), Role: reviewer.Role,
 			Verdict: string(verdict), Round: rev.Round, Path: path, Subject: subject,
-			HandedOver: handedOver,
+			HandedOver: handedOver, Important: f.important, Nits: f.nits,
 		})
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s  %s (round %d)\n  %s\n",
@@ -276,15 +347,45 @@ func runReviewList(cmd *cobra.Command, storyID, gateName string) error {
 		return err
 	}
 
+	policyFile := policyFileIn(s.Config(), s.Root())
 	if wantJSON(cmd) {
-		return emitJSON(cmd.OutOrStdout(), reviewListPayload{OK: true, Story: id, Reviews: infos})
+		return emitJSON(cmd.OutOrStdout(), reviewListPayload{OK: true, Story: id, PolicyFile: policyFile, Reviews: infos})
 	}
 	w := cmd.OutOrStdout()
+	fmt.Fprintln(w, describePolicyFile(s.Config(), policyFile))
 	for _, i := range infos {
 		fmt.Fprintf(w, "  %-15s %-15s %-9s %s\n", i.Gate, i.Role,
 			describeReviewPower(i), describeReviewState(i))
 	}
 	return nil
+}
+
+// policyFileIn is the review policy's path as written, or "" where there is no
+// policy at root: nothing there, not a regular file, or a link that leads out of
+// the repository, whose text a reviewer would copy into a committed review.
+func policyFileIn(cfg config.Config, root string) string {
+	p := cfg.ReviewPolicyPath()
+	abs := filepath.Join(root, filepath.FromSlash(p))
+	if _, outside := pathrules.NewResolver(root).Rel(abs); outside {
+		return ""
+	}
+	if info, err := os.Stat(abs); err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	return p
+}
+
+// describePolicyFile is the first line of `sdlc review list`. A mistyped
+// reviews.policy shows here, where every reviewer looks.
+func describePolicyFile(cfg config.Config, p string) string {
+	if p != "" {
+		return "Review policy: " + oneLine(p)
+	}
+	if cfg.Reviews.Policy != "" {
+		return "This project has no review policy: reviews.policy names " + oneLine(cfg.Reviews.Policy) +
+			", which is not a file in the repository."
+	}
+	return "This project has no review policy."
 }
 
 // describeReviewers is where each expected reviewer's review stands, for one
@@ -402,7 +503,8 @@ func gateSubject(ctx context.Context, rd *reading, id string, gate model.Gate) (
 }
 
 // reviewPolicy is what decides who is expected and who blocks, for this story
-// in this project.
+// in this project. It is not the review policy file, which says what they report:
+// that is policyFileIn.
 func reviewPolicy(s *store.Store, record *model.Record) model.ReviewPolicy {
 	return model.ReviewPolicy{
 		SecuritySensitive:  record.SecuritySensitive(),

@@ -123,6 +123,11 @@ then prints `created  AGENTS.md (appended to)`. Beside them it writes
 ([the trace](the-loop.md#the-trace)); it is not in the list init prints. It never
 overwrites a file you wrote, and it never touches your own `.gitignore`.
 
+`init` also writes `REVIEW.md`, the [review policy](configuration.md#reviewspolicy)
+every reviewer reads, naming the commands it wrote for the stack, and prints
+`created  REVIEW.md`. Where the file is there already it keeps it, and prints
+`kept     REVIEW.md`. With `reviews.policy` set, that is the path it uses.
+
 Then commit what `init` wrote, because each story's worktree is cut from trunk's
 commits. After that, run `sdlc doctor` to check the setup, and open Claude Code
 and type `/sdlc:next` to begin. [Getting started](getting-started.md) walks
@@ -137,7 +142,7 @@ $ sdlc init --force
 
 | Flag | What it does |
 | --- | --- |
-| `--force` | restore the default settings over an existing setup, keeping your stories, where they are (`backlog.path`) and your trunk branch (`git.trunk_branch`); refused while a story is being worked on ([SDLC-E0012](troubleshooting.md#sdlc-e0012)) |
+| `--force` | restore the default settings over an existing setup, keeping your stories, where they are (`backlog.path`), your trunk branch (`git.trunk_branch`) and a review policy you moved (`reviews.policy`); refused while a story is being worked on ([SDLC-E0012](troubleshooting.md#sdlc-e0012)) |
 
 `init` recognises Go (`go.mod`), Rust (`Cargo.toml`), Node (`package.json`) and
 Python (`pyproject.toml`, `setup.py` or `requirements.txt`), tried in that order
@@ -157,14 +162,13 @@ $ sdlc doctor
 $ sdlc doctor --json
 ```
 
-`doctor` looks at the git repository, the git command itself, the configuration —
-including a setting it does not know, such as a misspelled one — the backlog,
-the loop's state files the hook reads on every tool call and the commit
-[`sdlc ack`](#sdlc-ack) recorded, the contract in `CLAUDE.md` or `AGENTS.md`, the programs your
-configured commands would run, whether the hook would refuse any of them,
-whether a freeze check is configured, and whether `sdlc` is on your `PATH`.
-Every problem comes with what to do about it. Exits non-zero when something is
-wrong, so it works in a script.
+`doctor` looks at the git repository, the git command itself, the configuration — including a
+setting it does not know, such as a misspelled one — the backlog, the loop's state files the hook
+reads on every tool call and the commit [`sdlc ack`](#sdlc-ack) recorded, the review policy, the
+contract in `CLAUDE.md` or `AGENTS.md`, the programs your configured commands would run, whether the
+hook would refuse any of them, whether a freeze check is configured, and whether `sdlc` is on your
+`PATH`. Every problem comes with what to do about it. Exits non-zero when something is wrong, so it
+works in a script.
 
 A setting the loader refuses, such as a negative limit or a `budget.gate_hours` entry that
 is not a number of hours, is named with the entry and its
@@ -200,6 +204,24 @@ and only `AGENTS.md` at the root shows:
 ```console
   ok       project contract     AGENTS.md carries the "## SDLC Contract" section and there is no CLAUDE.md, so Claude Code 2.1.277 or later reads it
 ```
+
+The `review policy` check comes straight after `loop state` and says which file
+reviewers read. It is the one check that can say `warning`. A warning is not
+counted as a problem: it does not change the last line or the exit status.
+
+```console
+  ok       review policy        REVIEW.md
+  warning  review policy        reviews.policy names docs/polcy.md, and there is no file there
+                                fix: create docs/polcy.md by hand, on trunk between stories, or take reviews.policy out of .sdlc/config.json
+```
+
+It warns about a file [`reviews.policy`](configuration.md#reviewspolicy) names that
+is not there, or that is a directory or a link out of the repository. With
+[`git.worktrees`](configuration.md#git) on it also warns about a policy trunk does
+not hold, because a story's worktree is cut from what trunk commits, and about one
+that reached trunk after this story's worktree was cut. With `reviews.policy` not
+set, a project with no policy is `ok` and says `no review policy`, and where nothing
+is at the default path it says that `sdlc init` writes `REVIEW.md` between stories.
 
 In that layout a `project instructions` check follows it. It reads the Project
 instructions setting from your Claude Code user settings (`settings.json` in
@@ -938,8 +960,8 @@ $ sdlc log --all --json
 | `--all` | list every committed story, whatever has been acknowledged. Not together with `--since` |
 
 The log has one entry per story whose commit gate has passed, oldest first: the
-commits it landed in, how many rounds each gate's reviews took, every block, and
-what is worth a second look. That means a freeze lifted with `sdlc unfreeze`,
+commits it landed in, how many rounds each gate's reviews took, every block, the
+counts each review gave, and what is worth a second look. That means a freeze lifted with `sdlc unfreeze`,
 gates reopened, a question handed to a person and whether it was answered, and
 what the story cost. It changes nothing.
 
@@ -949,6 +971,14 @@ commits end in that commit's history has been read. With nothing acknowledged,
 it lists every story. A file that names no commit git has is refused —
 [SDLC-E0047](troubleshooting.md#sdlc-e0047) — rather than read as nothing
 acknowledged.
+
+A review that gave a count has a row of its own, one per round, `review_counts` in
+`--json`. It prints only the counts the review gave, and an old review has no row:
+
+```console
+  counts     design_review architect (round 1): 2 important, 3 nits
+  counts     code_review code-reviewer (round 1): 3 nits
+```
 
 ### How a story's range is found
 
@@ -1694,6 +1724,13 @@ $ sdlc review list --gate design_review --json
 | `--gate` | only this gate's reviews |
 | `--story` | for this story instead of the one being worked on |
 
+The first line names the review policy every reviewer reads, as written in
+[`reviews.policy`](configuration.md#reviewspolicy) or the default: `Review policy: REVIEW.md`.
+It is `policy` in `--json`, which is always there and empty for none. Where there is no file
+there, or it is a directory or a link out of the repository, the line says the project has
+`no review policy`, and names the path where `reviews.policy` set one. It never reads the
+file's content.
+
 For every expected review, the list says whether it can block the gate, what the
 latest verdict was, and whether it is **stale**, which means the reviewer looked
 at something that has changed since. A `blocking` reviewer has to approve; an
@@ -1713,6 +1750,7 @@ and the command that shows what changed since, so that reviewer can be
 
 ```console
 $ sdlc review list --gate design_review
+Review policy: REVIEW.md
   design_review   architect       blocking  approve (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since architect)
 ```
 
@@ -1725,7 +1763,7 @@ Record one reviewer's conclusion. Each reviewing agent runs this when it has
 finished, with the review itself on standard input.
 
 ```console
-$ sdlc review add design_review architect block --note "AC-3 has no step" < review.md
+$ sdlc review add design_review architect block --important 1 --nits 2 --note "AC-3 has no step" < review.md
 $ sdlc review add code_review perf note --file /tmp/perf.md
 ```
 
@@ -1733,9 +1771,23 @@ $ sdlc review add code_review perf note --file /tmp/perf.md
 | --- | --- |
 | `--file` | read the review from this path instead of standard input |
 | `--note` | the headline finding, in one line |
+| `--important` | how many important findings this review names |
+| `--nits` | how many nits this review found |
 | `--story` | record against this story instead of the one being worked on. The id has to be in the backlog |
 
 The verdicts are `approve`, `block` and `note`.
+
+A block has to name at least one important finding under the
+[review policy](configuration.md#reviewspolicy): `block` with no `--important`, or with 0, is
+refused with [SDLC-E0086](troubleshooting.md#sdlc-e0086) and records nothing, because a review
+with only nits is an approve with the nits listed. Either count may go with any verdict, and
+`--nits` with a block is fine. A count that is negative, or above 1,000,000, is refused with
+[SDLC-E0034](troubleshooting.md#sdlc-e0034) on any verdict, and so is a word.
+
+The counts are the reviewer's own, and `sdlc` does not judge them. A number typed to get past
+the refusal passes it, and an approve with an important count is recorded as given and lets the
+gate through. A block still stops the gate, so the most a false count costs is a round.
+`gate-record.json` and `sdlc log` show what each review gave.
 
 The command stamps the review with what was in front of the reviewer — the
 story's entry in the backlog at `dor`, the plan's content at `design_review`,

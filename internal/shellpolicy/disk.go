@@ -107,7 +107,7 @@ func (q pathQuestion) isDirectory(to string, from []string) bool {
 func (q pathQuestion) landsHeld(dir string, from []string) bool {
 	for _, f := range from {
 		landed := path.Join(dir, path.Base(clean(f)))
-		if _, ok := protectedPath(landed, q.s.Backlog); ok {
+		if _, ok := protectedPath(landed, q.s.Backlog, q.s.ReviewPolicy); ok {
 			return true
 		}
 		if _, ok := loopState(landed); ok {

@@ -11,6 +11,7 @@
   - [`write-outside-repository`](#write-outside-repository)
   - [`write-protected-path`](#write-protected-path)
   - [`backlog-is-not-edited`](#backlog-is-not-edited)
+  - [`review-policy-is-not-edited`](#review-policy-is-not-edited)
   - [`gate-record-is-written-by-the-tool`](#gate-record-is-written-by-the-tool)
   - [`review-is-written-by-the-tool`](#review-is-written-by-the-tool)
   - [`gate-artifact-is-written-by-the-tool`](#gate-artifact-is-written-by-the-tool)
@@ -709,8 +710,9 @@ wrong, the loop's answer is to stop and say so, not to edit it and carry on.
 ### `backlog-is-not-edited`
 
 Refuses any write to the backlog file, wherever
-[`backlog.path`](configuration.md#backlogpath) puts it. A backlog linked in from
-elsewhere is protected under the name the configuration gives it.
+[`backlog.path`](configuration.md#backlogpath) puts it. Where the configured name is a link to
+another file in the repository, the rule goes by where a write lands: a file tool can write through
+the name, and the shell rule refuses the name and leaves the target.
 
 The backlog holds the acceptance criteria the tests are held to and each story's
 `risk_tier`, which decides whether a person approves the commit. An assistant
@@ -719,6 +721,23 @@ that lowered a story to `low` mid-iteration would take that pause away. The
 
 *Instead:* if a story's criteria or risk tier are wrong, say which and stop.
 Change the backlog by hand outside a running iteration.
+
+### `review-policy-is-not-edited`
+
+Refuses every agent's write to the review policy, wherever
+[`reviews.policy`](configuration.md#reviewspolicy) puts it, ahead of the role rules. A write is
+compared with the configured path without regard to case. Where the configured name is a link to
+another file in the repository, the rule goes by where a write lands, as
+[`backlog-is-not-edited`](#backlog-is-not-edited) does. What the rules do not read is in
+[Not held](#not-held).
+
+Reviewers read the copy in the story's worktree and it tells them what to report, so an implementer
+that could edit it could edit what its own reviewers obey.
+
+*Instead:* if the policy is wrong, say what and stop. A person commits a change on trunk between
+stories, and a running story keeps the copy it was cut from. To apply a change to this story, end the
+story, commit it on trunk and start again. A change made in the story's worktree does not get
+anywhere: the landing refuses it ([SDLC-E0055](troubleshooting.md#sdlc-e0055)).
 
 ### `gate-record-is-written-by-the-tool`
 
@@ -732,8 +751,8 @@ that it finished, and the same is true of its reviews and its documents below.
 
 Refuses any write under a story's `reviews/` directory.
 
-*Instead:* `sdlc review add <gate> <role> <verdict>`, which stamps the review
-with what was in front of the reviewer.
+*Instead:* `sdlc review add <gate> <role> <verdict> --important <n> --nits <n>`, which stamps the
+review with what was in front of the reviewer. Each number is the reviewer's own count.
 
 ### `gate-artifact-is-written-by-the-tool`
 
@@ -880,7 +899,8 @@ made the review worth having is gone. The story directory stays open so a
 reviewer can work something out on paper; the verdict itself still goes through
 `sdlc review add`, which the rule above holds it to.
 
-*Instead:* record the verdict with `sdlc review add <gate> <role> approve|block`
+*Instead:* record the verdict with
+`sdlc review add <gate> <role> approve|block --important <n> --nits <n>`
 and say what is wrong rather than fixing it.
 
 ### `bookkeeper-writes-the-retro-and-the-map`
@@ -1154,10 +1174,13 @@ Outside quotes, a backslash keeps the character after it in the word:
 - A backslash at the end of a line goes with the newline, inside double quotes
   too, so `gi\` on one line and `t commit -m x` on the next are `git commit`.
   Only a newline: before a carriage return the backslash escapes the carriage
-  return, and the newline after it ends the command, so in `echo x\` followed
-  by a carriage return, a newline and `git commit -m x`, git runs. In a
+  return, and the newline after it ends the command, so in `echo x\` followed by
+  a carriage return, a newline and `git commit -m x`, git runs. In a
   `PowerShell` command the backslash is a character and the newline ends the
-  command, and a backtick at the end of a line continues it.
+  command, and a backtick at the end of a line continues it. A comment ends at
+  its newline whatever comes before it, so a backslash that ends a comment
+  continues nothing, and the next line is a command of its own, in which a
+  backslash at the end of a line still joins it to the one after.
 
 The rules that protect a path read a little more than the shell does, on
 purpose. A `>` that is quoted or escaped is still read as a redirect, because
@@ -1166,9 +1189,19 @@ blank. Neither can hide a path. A quoted or escaped `<` is a character of the
 word, so `rm '<' .sdlc/state/tests.lock` names the lock. A `>` or `<` is never
 the file of the redirect before it, so the lock is the file written in
 `: '>' >.sdlc/state/tests.lock`. These rules split a command at every `;`, `&`,
-`|`, `)`, backtick and newline, and read it once more split where the shell
-splits it, where a quoted word, a `${…}` or a `$'…'` holds one, quotes nested
-in a `${…}` included. So the lock is named in `rm 'a;b' .sdlc/state/tests.lock` and in
+`|`, `)`, backtick and newline a backslash does not continue. Where the line
+holds a `#`, they also read it with every continued newline a newline, and
+joined with each comment's text taken out up to the newline that ends it,
+following its quotes as far as telling a comment from a word needs. A string
+handed to a shell's `-c` or to `eval` is read for that shell's comments too, and
+so is a `$'…'` string on the line, once decoded. Whatever these readings find, a
+line that holds a `#` that may open a comment and ends in a backslash, with more
+after it, is refused under
+[`command-too-deep-to-read`](#command-too-deep-to-read) when no other rule has
+refused it: write that part of the command on one line. And they read it once
+more split where the shell splits it, where a quoted word, a `${…}` or a `$'…'`
+holds one, quotes nested in a `${…}` included. So the lock is named in
+`rm 'a;b' .sdlc/state/tests.lock` and in
 `rm "${x:-"a;b"}" .sdlc/state/tests.lock`. A word handed to a shell's `-c` is
 read as one script, and `eval`'s words as the one script the shell joins them
 into. A process substitution, `<(…)` or `>(…)` anywhere in a word or zsh's
@@ -1846,10 +1879,10 @@ as in `rm -rf build` or `find build -type d -empty -delete`.
 ### `protected-path-through-the-tool`
 
 Refuses a command that would write or delete `CLAUDE.md`, `CLAUDE.local.md`,
-`AGENTS.md`, anything under `.claude` or `.agents`, anything under `.git`, or
-the backlog — the paths
-`write-protected-path` and `backlog-is-not-edited` protect from the file tools
-that are not the loop's own state. It matches the way the filesystem does, so
+`AGENTS.md`, anything under `.claude` or `.agents`, anything under `.git`,
+the backlog, or the review policy — the paths
+`write-protected-path`, `backlog-is-not-edited` and `review-policy-is-not-edited` protect from the
+file tools that are not the loop's own state. It matches the way the filesystem does, so
 `claude.md` is `CLAUDE.md` on macOS and Windows, and the reason then says the
 name is matched without regard to case, as
 [`write-protected-path`](#write-protected-path) does. A `CLAUDE.md` in a directory
@@ -1858,6 +1891,23 @@ an `AGENTS.md` or `CLAUDE.local.md` anywhere. A link or install that lands one
 there is read as [links and installs](#links-and-installs) says, and a program
 that writes a file it is given as
 [that section](#programs-that-write-a-file-they-are-given) says.
+
+The backlog's and the review policy's names are held in any directory, and folded. So with the
+default on, a shell write to any `review.md` anywhere in the project is refused during a story, while
+the file tools still write one that is not the configured path.
+
+The editors `ed`, `red`, `ex`, `vi`, `nvi`, `vim`, `vim.tiny`, `vim.basic`, `vim.nox`, `vim.gtk3`,
+`nvim`, `emacs`, `emacs-nox`, `view`, `rvim`, `rview`, `vimdiff`, `gvim` and `kak` are writers on a
+held path, whatever they are asked, since a batch mode, or kak's `-f`, rewrites the file with no
+person at the keyboard. To read the file, use `cat` or a file tool; the refusal says so. An ordinary
+file stays free. `nano` is not among them: it is interactive, with no batch mode.
+
+A line that assigns a variable is read a second time with each `$NAME` and `${NAME...}` as the value
+the line gives it, so a target assigned on the line is refused as the path it holds, and the refusal
+says which assignment it read. Any assignment on the line counts, in a branch or a subshell, and one
+a later assignment replaces too, because a reading that may be wrong refuses. So a line that only
+mentions both, such as `echo 'T=CLAUDE.md; rm "$T"'`, is refused, as `echo 'a; rm CLAUDE.md'` is.
+[Not held](#the-review-policy) says which values it does not read.
 
 A settings file under `.claude` is where hooks are configured, `CLAUDE.md` is
 the contract every gate reads, and the backlog is the story itself, so a shell
@@ -1869,7 +1919,9 @@ interpreters are refused on them, though not for naming a whole directory, as
 your own `~/.claude`, is not the project's and is not protected.
 
 *Instead:* change them by hand outside a running iteration. If what one says is
-wrong, stop and say what.
+wrong, stop and say what. A person commits a change to the review policy on trunk between stories,
+and a running story keeps the copy it was cut from. To apply it to this story, end the story, commit
+it on trunk and start again.
 
 ### `frozen-test-through-the-tool`
 
@@ -2939,7 +2991,8 @@ there, is refused too.
 
 Refuses a command that nests `$( )` or backticks more than 32 deep, or the
 strings it hands a shell, `eval`, `trap`, `emulate -c` or `mapfile -C` more
-than four deep, or that has more than 16 other readings.
+than four deep, or that has more than 16 other readings, or that has more after
+a line holding a `#` that may open a comment and ending in a backslash.
 
 Every level is read for the commands it runs, and a line nested thousands deep
 took longer to read than Claude Code gives the hook, which then lets the command
@@ -2960,6 +3013,28 @@ since the rules did not finish reading it. The refusal names the command. A
 test such as `[[ -f a ]]`, or a function's body, starts no reading, so an
 ordinary script does not come near 16.
 
+A line that [assigns a variable](#protected-path-through-the-tool) is read once for each value it gives
+that variable. A line those values give more than 16 readings, as one name given more than 16 values
+and used does, is refused, and so is a line its values make more than 64 KB longer, as one value of
+1,000 bytes used 70 times does. Past either, what it writes was not checked, and the refusal says
+which it met. A document can hit this: one holding many spellings of an assignment, in a here-document
+or a `--note`. It cannot be split, so give it from a file: `sdlc artifact write` and
+`sdlc review add` read one with `--file`.
+
+A line that holds a `#` that may open a comment and ends in a backslash, with
+anything but blanks after it, is refused when no other rule has refused it. A
+comment ends at its newline, so a backslash at its end continues nothing, while
+anywhere else a backslash at the end of a line joins the next line to it.
+Whether the `#` opens a comment depends on the quotes around it, which this rule
+does not read, so where the commands of such a line start and end was not
+checked. A `#` counts at the start of a line, or after a blank or one of
+`;&|(){}=,<>`, quoted or not, and so does one in a string handed to a shell, and
+one a `$'…'` string spells as an escape. An even number of backslashes at the
+end of the line continues nothing, and does not count. A here-document's body is
+text, and is not read for it, and nor is a `PowerShell` command. The refusal
+says to write that part of the command on one line, or to put the comment on a
+line of its own with no backslash at its end.
+
 These are over-refused, and each has a plain way on:
 
 - `echo ]] git commit -m x` and `echo { git commit -m x }`, which zsh reads as
@@ -2968,19 +3043,27 @@ These are over-refused, and each has a plain way on:
 - a zsh line of more than 16 short `if [[ … ]] cmd` forms: split it across
   calls, or write each as `if [[ … ]]; then cmd; fi`;
 - five nested strings of anything, such as `eval eval eval eval eval echo hi`:
-  run the inner command on its own.
+  run the inner command on its own;
+- a `#` the shell reads as a character of a word, quoted after a blank or
+  straight after `{`, `}`, `=` or `,`, on a line that ends in a backslash with
+  more after it, as `git commit -m "fix #12" \` with `--amend` on the next line:
+  write that part of the command on one line.
 
 It applies to any
 command: it is refused in any session, in any project with `.sdlc/config.json`
 the call reaches (the session's, the working directory's, or one a path in the
 command names), whether or not a story is being worked on, because `sdlc ack`
-or an approval could be buried in it.
+or an approval could be buried in it. The rule for a line ending in a backslash
+after a `#` is the exception: it is asked only while a story is being worked
+on, when there are paths the session may not write.
 
 *Instead:* write it as separate commands, in separate calls where a line holds
 many, and run the inner command on its own, not inside another `eval` or
 `bash -c`. Where the command can be read too many ways, remove the options sdlc
 does not know, or split the line, so that no command and no line has more than
-16 other readings.
+16 other readings. Where a line holding a `#` ends in a backslash, write that
+part of the command on one line, or put the comment on a line of its own with no
+backslash at its end.
 
 ### `too-many-links`
 
@@ -3372,6 +3455,50 @@ how you would notice.
 - **Ignored files go with a landed story's worktree.** They are removed with it,
   and the stop's last line says so.
 
+#### The review policy
+
+- **What the shell rules do not read reaches the story's copy.** A target whose value the line does
+  not hold, scripts and programs, the other listed classes, and a nested policy's parent directory
+  are declined, because the landing refusal stops them reaching trunk. `sdlc init` writing the
+  template where no file exists during a story is declined for the same reason.
+
+  The other listed classes are these: a target carried by a substitution, `for`, `read`, `set --` or
+  `printf -v`; a program name the shell makes, a function or an alias; text piped to a shell;
+  `xargs` fed by a program; an interpreter's or a tool's own output that the rules do not read, a
+  patch, a sync of a directory; git moving a file by a branch, a merge, the index, a sparse checkout
+  or a submodule; PowerShell through a variable or a .NET call; a copy whose source is not on the
+  disk yet; a change to no content, such as an attribute. A nested policy's parent directory is
+  removing, renaming, linking or replacing the directory that holds a policy in a subdirectory.
+
+  Of the values a line holds, these are read: `NAME=value` wherever the word stands, including after
+  `export`, `declare` or `env` and inside a script given to a shell or a backtick substitution;
+  quoted any way, and as `$'...'` and `$"..."`, across a line continuation in the value, the name or
+  the use, and through another variable the line assigned. A use is read as `$NAME`, or `${NAME...}`
+  taken as the whole value. These are not read: an array; indirection; a value an expansion
+  transforms or assigns, such as `${T%x}` or `${T:=x}`; an escape inside `$'...'`; `+=`; what a
+  substitution prints, so `rm "$(echo "$T")"` is not read as the path; an assignment inside a value
+  that holds a `$`; and a pairing of two names' values other than the one the line's order gives.
+  Each name's values are kept in the order each was last given, and the i-th of one is read with the
+  i-th of another, so the values each name was last given are read together; a pairing made
+  otherwise, by a branch, a loop, or a value given again after the use, is not read. Each adds
+  nothing to what a substitution already gets past. A use inside a substitution is read as the
+  command it is, so `x=$(rm "$T")` is refused as `rm` of the value, and so is a line that only
+  mentions it. `nano` is not read as a writer either: it is interactive, with no batch mode.
+
+  A change left in the story's commits is in its diff, the commit gate warns of it, and `sdlc stop`
+  refuses it with [SDLC-E0055](troubleshooting.md#sdlc-e0055). A copy changed and restored before
+  the commit leaves nothing in the diff or at the landing, so reviewers may have read a changed copy
+  with no trace of it. The landing is this second line only with
+  [`git.worktrees`](configuration.md#git) on: with it off there is no landing to refuse. And it
+  looks only at what the story's commits change, so this reason does not reach the loop's state
+  under `.sdlc/state`.
+
+- **A link's target.** Where the configured name is a link to another file in the repository, a file
+  tool can write through the name, the shell rule refuses the name and leaves the target, and the
+  landing goes by the name, so a change to the target lands. This is a person's own layout, and the
+  backlog behaves the same way. A change left in the story's commits shows in its diff under the
+  target's name.
+
 #### Commands the rules do not read
 
 - **A call the hook is killed on before it knows whether it checks it.** The
@@ -3576,10 +3703,10 @@ how you would notice.
   a `'` in a double-quoted `${…}` or a `#` just after an array's `)` is read
   as one the hook is not sure of. None of these reaches more than commands
   the rules already do not read: a commit run by `eval` of a variable, as in
-  `c='git commit -m x'; eval "$c"`, or spelt as a parameter's default, as in
+  `c=$(cat x.txt); eval "$c"`, or spelt as a parameter's default, as in
   `${x:-git commit -m x}`, which bash and sh run and zsh does not; a file
   written through a path the command does not spell out, as in
-  `p=.sdlc/state/tests; echo x > $p.lock` or `eval "$(cat x.txt)"`; and a
+  `p=$(cat x.txt); echo x > $p.lock` or `eval "$(cat x.txt)"`; and a
   script run from a file, as in `sh tidy.sh`. A person's decision run this
   way is refused by the command itself, with SDLC-E0079. `git log` and
   `git reflog` show a commit no gate passed, `sdlc doctor` a loop record it
@@ -3605,8 +3732,9 @@ how you would notice.
   story's `gate-record.json` lists every approval and unfreeze with when it
   was made, so one nobody remembers making shows there.
 - **`sdlc` reached under another name.** The shell rules find `sdlc` only
-  where the word is written out. Reached through a variable, as in
-  `"$SDLC_BIN" approve A-1` or `s=sdlc; $s approve A-1`, through a shell alias,
+  where the word is written out, or where the line assigns it to the variable
+  it runs. Reached through a variable the line does not assign, as in
+  `"$SDLC_BIN" approve A-1`, through a shell alias,
   as in `alias s=sdlc; s approve A-1`, through a command substitution, as in
   `$(command -v sdlc) approve A-1`, or as a copy under another name, as in
   `cp bin/sdlc /tmp/s && /tmp/s approve A-1`, a person's command is refused by

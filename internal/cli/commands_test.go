@@ -1141,7 +1141,7 @@ func TestDoctorSkipsWhatItCannotCheckYet(t *testing.T) {
 			problems++
 		case stateSkipped:
 			skipped++
-		case stateOK:
+		case stateOK, stateWarning:
 		}
 	}
 	if problems != 1 {

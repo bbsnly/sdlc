@@ -159,7 +159,7 @@ says what to write in each field.
 Next, commit the contract together with everything `init` wrote:
 
 ```console
-$ git add .sdlc user_stories.json CLAUDE.md
+$ git add .sdlc user_stories.json CLAUDE.md REVIEW.md
 $ git commit -m "Set up the sdlc loop"
 ```
 
@@ -307,6 +307,7 @@ $ sdlc review list
 ```
 
 `status` shows the story in progress and the gate it has reached. `review list`
+names the [review policy](configuration.md#reviewspolicy) every reviewer reads, then
 shows what each reviewer said. Before a story is started, `status` names the
 story that is next up, and `review list` has nothing to show and says so with
 [SDLC-E0011](troubleshooting.md#sdlc-e0011).

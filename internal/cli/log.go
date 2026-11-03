@@ -62,14 +62,15 @@ type logEntry struct {
 	RangeUnknown bool `json:"range_unknown,omitempty"`
 	// HeadPastCommit is HEAD when the commit gate passed, where it was past
 	// the range's end.
-	HeadPastCommit string          `json:"head_past_commit,omitempty"`
-	Missing        bool            `json:"missing,omitempty"`
-	Rounds         map[string]int  `json:"rounds,omitempty"`
-	Blocks         []logBlock      `json:"blocks,omitempty"`
-	Reopened       []logEvent      `json:"reopened,omitempty"`
-	Unfrozen       []logEvent      `json:"unfrozen,omitempty"`
-	Escalations    []logEscalation `json:"escalations,omitempty"`
-	SpentUSD       float64         `json:"spent_usd"`
+	HeadPastCommit string           `json:"head_past_commit,omitempty"`
+	Missing        bool             `json:"missing,omitempty"`
+	Rounds         map[string]int   `json:"rounds,omitempty"`
+	Blocks         []logBlock       `json:"blocks,omitempty"`
+	ReviewCounts   []logReviewCount `json:"review_counts,omitempty"`
+	Reopened       []logEvent       `json:"reopened,omitempty"`
+	Unfrozen       []logEvent       `json:"unfrozen,omitempty"`
+	Escalations    []logEscalation  `json:"escalations,omitempty"`
+	SpentUSD       float64          `json:"spent_usd"`
 	// Staffing is who the story was said to need and what each was asked for,
 	// with every change to it. StaffingEvents is the record's own line for each
 	// change, which is all that is left where an sdlc from before the staffing
@@ -92,6 +93,16 @@ type logBlock struct {
 	Role  string `json:"role"`
 	Round int    `json:"round"`
 	Note  string `json:"note,omitempty"`
+}
+
+// logReviewCount is one review's counts, where it has any. A row per review and
+// not per reviewer, so that no round overwrites another.
+type logReviewCount struct {
+	Gate      string `json:"gate"`
+	Role      string `json:"role"`
+	Round     int    `json:"round"`
+	Important *int   `json:"important,omitempty"`
+	Nits      *int   `json:"nits,omitempty"`
 }
 
 type logEvent struct {
@@ -285,6 +296,11 @@ func noteReviews(e *logEntry, r *model.Record) {
 		}
 		if rev.Verdict == model.VerdictBlock {
 			e.Blocks = append(e.Blocks, logBlock{Gate: string(rev.Gate), Role: rev.Role, Round: rev.Round, Note: rev.Note})
+		}
+		important, nits := usableCount(rev.Important), usableCount(rev.Nits)
+		if important != nil || nits != nil {
+			e.ReviewCounts = append(e.ReviewCounts, logReviewCount{Gate: string(rev.Gate), Role: rev.Role, Round: rev.Round,
+				Important: important, Nits: nits})
 		}
 	}
 }
@@ -489,6 +505,22 @@ func printLogReviews(w io.Writer, e logEntry) {
 		}
 		fmt.Fprintf(w, "  blocks     %d: %s\n", len(e.Blocks), strings.Join(blocks, ", "))
 	}
+	for _, c := range e.ReviewCounts {
+		fmt.Fprintf(w, "  counts     %s %s (round %d): %s\n", c.Gate, oneLine(c.Role), c.Round, describeReviewCounts(c))
+	}
+}
+
+// describeReviewCounts says only the counts the review gave: an old review, or
+// one with `--nits` alone, has no number to print for the other.
+func describeReviewCounts(c logReviewCount) string {
+	var parts []string
+	if c.Important != nil {
+		parts = append(parts, fmt.Sprintf("%d important", *c.Important))
+	}
+	if c.Nits != nil {
+		parts = append(parts, fmt.Sprintf("%d nits", *c.Nits))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // printLogStaffing prints the staffing the story had and how it changed.

@@ -995,7 +995,7 @@ func TestWorkCommittedInANewRepositorysFirstStoryHoldsTheGatesBack(t *testing.T)
 	worktreesOff(t, root)
 	// A story starts from a tree with nothing uncommitted, which with no
 	// commits is a tree whose files git does not track.
-	writeFile(t, root, ".git/info/exclude", "CLAUDE.md\n")
+	writeFile(t, root, ".git/info/exclude", "CLAUDE.md\nREVIEW.md\n")
 	mustRun(t, "start")
 	reach(t, root, model.GateImplementation)
 

@@ -50,7 +50,7 @@ func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
 			reach(t, root, model.GateCodeReview)
 
 			approveAll(t, model.GateCodeReview, "code-reviewer")
-			mustRunWith(t, "# code review\n", "review", "add", "code_review", "code-reviewer", "block",
+			mustRunWith(t, "# code review\n", "review", "add", "code_review", "code-reviewer", "block", "--important", "1",
 				"--note", "the names do not say what they hold")
 
 			r := run(t, "gate", "code_review", "pass")
@@ -163,7 +163,7 @@ func TestAReviewIsStoredWhereTheNextRoundCanReadIt(t *testing.T) {
 	root := planned(t)
 
 	got := decode[reviewPayload](t, mustRunWith(t, "# Design review\n\nAC-3 has no step.\n",
-		"review", "add", "design_review", "architect", "block", "--note", "AC-3 has no step", "--json"))
+		"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 has no step", "--json"))
 	if got.Role != "architect" || got.Verdict != "block" || got.Round != 1 {
 		t.Fatalf("review = %+v", got)
 	}
@@ -250,7 +250,7 @@ func TestABlockingReviewerStopsTheGateAndSaysWhy(t *testing.T) {
 	t.Parallel()
 	planned(t)
 	approveAll(t, model.GateDesignReview, "architect")
-	mustRunWith(t, "# Design review\n", "review", "add", "design_review", "architect", "block",
+	mustRunWith(t, "# Design review\n", "review", "add", "design_review", "architect", "block", "--important", "1",
 		"--note", "AC-3 has no step")
 
 	r := run(t, "gate", "design_review", "pass")
@@ -307,7 +307,7 @@ func TestSecuritySensitivityDecidesWhetherSecurityBlocks(t *testing.T) {
 				"--security-sensitive="+map[bool]string{true: "false", false: "true"}[c.blocks])
 
 			approveAll(t, model.GateDesignReview, "security")
-			mustRunWith(t, "# security\n", "review", "add", "design_review", "security", "block",
+			mustRunWith(t, "# security\n", "review", "add", "design_review", "security", "block", "--important", "1",
 				"--note", "the token reaches the log")
 
 			r := run(t, "gate", "design_review", "pass")
@@ -380,7 +380,7 @@ func TestPerfStopsTheGateWhenItBlocksWithoutHavingToApprove(t *testing.T) {
 	t.Parallel()
 	planned(t)
 	approveAll(t, model.GateDesignReview, "perf")
-	mustRunWith(t, "# perf\n", "review", "add", "design_review", "perf", "block",
+	mustRunWith(t, "# perf\n", "review", "add", "design_review", "perf", "block", "--important", "1",
 		"--note", "p99 is 400ms against a 200ms budget")
 
 	r := run(t, "gate", "design_review", "pass")
@@ -431,7 +431,7 @@ func TestABlockWithNoNoteStillNamesWhoBlocked(t *testing.T) {
 	t.Parallel()
 	planned(t)
 	approveAll(t, model.GateDesignReview, "architect")
-	mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "block")
+	mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "block", "--important", "1")
 
 	r := run(t, "gate", "design_review", "pass")
 	if r.code == 0 || !strings.Contains(r.stderr, "architect blocked") {

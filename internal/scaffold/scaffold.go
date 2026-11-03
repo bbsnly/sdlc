@@ -1,17 +1,18 @@
 // Package scaffold sets a repository up to take part in the loop.
 //
-// It writes four things: the configuration, the story schema editors validate
-// against, a starter backlog, and the contract section the assistant reads from
-// CLAUDE.md or AGENTS.md. Beside them it writes .sdlc/.gitignore, which ignores
-// each story's trace and nothing else, and it never writes the project's own
-// .gitignore: what a project commits is the project's decision, and the loop's
-// state is useful in version control for exactly the same reasons the code is.
-// A trace is the exception: it is telemetry of the machine that made it, which
-// the hook appends to on every tool call, so tracked it leaves the tree dirty
-// for good (US-112, AC-26). The other exception is .sdlc/state: every story
-// worktree writes its own there, so a story worked in one cannot land on a
-// trunk that tracks it. Start ignores it inside each new worktree, and doctor
-// says when trunk tracks it; neither writes the project's own .gitignore.
+// It writes five things: the configuration, the story schema editors validate
+// against, a starter backlog, the contract section the assistant reads from
+// CLAUDE.md or AGENTS.md, and the review policy every reviewer reads. Beside
+// them it writes .sdlc/.gitignore, which ignores each story's trace and nothing
+// else, and it never writes the project's own .gitignore: what a project
+// commits is the project's decision, and the loop's state is useful in version
+// control for exactly the same reasons the code is. A trace is the exception:
+// it is telemetry of the machine that made it, which the hook appends to on
+// every tool call, so tracked it leaves the tree dirty for good (US-112,
+// AC-26). The other exception is .sdlc/state: every story worktree writes its
+// own there, so a story worked in one cannot land on a trunk that tracks it.
+// Start ignores it inside each new worktree, and doctor says when trunk tracks
+// it; neither writes the project's own .gitignore.
 package scaffold
 
 import (
@@ -21,8 +22,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -35,6 +38,9 @@ import (
 
 //go:embed templates
 var templates embed.FS
+
+//go:embed templates/review-policy.md
+var reviewPolicyTemplate string
 
 // ContractHeading is the section of a project's CLAUDE.md or AGENTS.md that
 // makes it take part. Its presence is half the contract; .sdlc/config.json is the other half.
@@ -103,12 +109,14 @@ func InitAt(root, shared string, force bool) (*Result, error) {
 	// `sdlc start` refused for not being on trunk.
 	defaults := config.Default()
 	backlogPath, trunk := defaults.Backlog.Path, defaults.Git.TrunkBranch
+	policyPath, namedPolicy := defaults.ReviewPolicyPath(), ""
 	if found := gitx.Trunk(context.Background(), root); found != "" {
 		trunk = found
 	}
 	if force {
 		if old, err := config.Load(root); err == nil {
 			backlogPath, trunk = old.Backlog.Path, old.Git.TrunkBranch
+			policyPath, namedPolicy = old.ReviewPolicyPath(), old.Reviews.Policy
 		}
 	}
 
@@ -116,7 +124,7 @@ func InitAt(root, shared string, force bool) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := res.write(root, config.File, cfg, true); err != nil {
+	if err := res.write(root, config.File, keepPolicyPath(cfg, namedPolicy), true); err != nil {
 		return nil, err
 	}
 
@@ -144,7 +152,37 @@ func InitAt(root, shared string, force bool) (*Result, error) {
 	if err := res.writeContract(root); err != nil {
 		return nil, err
 	}
+	if err := res.write(root, policyPath, renderReviewPolicy(stack), false); err != nil {
+		return nil, err
+	}
 	return res, nil
+}
+
+// keepPolicyPath puts a path a person named back into a rendered configuration,
+// as `--force` keeps the backlog's. Through quoteJSON because %q's escapes are not
+// all JSON. A reworded template line would make this a no-op, which the force
+// tests catch.
+func keepPolicyPath(cfg []byte, named string) []byte {
+	if named == "" {
+		return cfg
+	}
+	return bytes.Replace(cfg, []byte(`"reviews": { `), []byte(`"reviews": { "policy": `+quoteJSON(named)+`, `), 1)
+}
+
+// renderReviewPolicy is the template with the commands init wrote for this stack
+// under what not to review, or none for a stack with no commands.
+func renderReviewPolicy(stack Stack) []byte {
+	var list strings.Builder
+	for _, key := range slices.Sorted(maps.Keys(stack.Commands)) {
+		if c := stack.Commands[key]; c != "" {
+			list.WriteString("- `" + key + "`: `" + c + "`\n")
+		}
+	}
+	named := ""
+	if list.Len() > 0 {
+		named = "\nThe commands `sdlc init` wrote:\n\n" + list.String()
+	}
+	return []byte(strings.Replace(reviewPolicyTemplate, "{{commands}}\n", named, 1))
 }
 
 // traceIgnore is the one line .sdlc/.gitignore holds: every story's trace,

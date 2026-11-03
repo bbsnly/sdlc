@@ -36,6 +36,7 @@ gives.
    was recorded at the time or discovered afterwards. Facts, not blame.
 2. **Rework.** Read the reviews. What sent this back, how many rounds, and what would have
    caught it one gate earlier. This is the most useful thing in the document.
+   List too the nits that approving reviews left at Gates 6 and 7: nobody else takes them up.
 3. **Lessons.** Only what this story actually demonstrated. A lesson that could have been
    written before the story started is not a lesson, and a retro full of them is noise that
    makes the real ones harder to find.

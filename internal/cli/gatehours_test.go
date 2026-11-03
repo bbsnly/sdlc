@@ -359,7 +359,7 @@ var ghCommands = []ghCommand{
 	{name: "a gate that fails", args: []string{"gate", "plan", "fail", "--note", "again"}},
 	{name: "a gate refused for its documents", args: []string{"gate", "analysis", "pass"}, refused: true},
 	{name: "a review", stdin: "# architect\n", args: []string{"review", "add", "design_review", "architect", "approve"}},
-	{name: "a block", stdin: "# architect\n", args: []string{"review", "add", "design_review", "architect", "block", "--note", "no step"}},
+	{name: "a block", stdin: "# architect\n", args: []string{"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "no step"}},
 	{name: "a review the project does not expect", stdin: "# advocate\n", args: []string{"review", "add", "dor", "human-advocate", "approve"}, refused: true},
 	{name: "status", args: []string{"status"}},
 }
@@ -874,6 +874,9 @@ func TestAC1ACommandRefusedBeforeItHasTheRecordPrintsNoLine(t *testing.T) {
 		{name: "a review of an unknown gate", stdin: "# x\n", args: []string{"review", "add", "nosuch", "architect", "approve"}},
 		{name: "an unknown reviewer", stdin: "# x\n", args: []string{"review", "add", "design_review", "nosuch", "approve"}},
 		{name: "an unknown verdict", stdin: "# x\n", args: []string{"review", "add", "design_review", "architect", "maybe"}},
+		// US-115 AC-3: refused with the unknown verdict, before the record is read.
+		{name: "a block with no important finding", stdin: "# x\n", args: []string{"review", "add", "design_review", "architect", "block"}},
+		{name: "a negative count", stdin: "# x\n", args: []string{"review", "add", "design_review", "architect", "approve", "--nits", "-1"}},
 		{name: "a review of an unknown story", stdin: "# x\n", args: []string{"review", "add", "design_review", "architect", "approve", "--story", "NOPE-1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -128,7 +128,7 @@ type globReader struct {
 // path of a frozen test or the backlog.
 func heldDotNames(s State) []string {
 	names := []string{".sdlc"}
-	for _, p := range slices.Concat(protectedShellPaths, s.Frozen, []string{s.Backlog}) {
+	for _, p := range slices.Concat(protectedShellPaths, s.Frozen, []string{s.Backlog, s.ReviewPolicy}) {
 		for seg := range strings.SplitSeq(p, "/") {
 			if strings.HasPrefix(seg, ".") && seg != "." && seg != ".." && !slices.Contains(names, seg) {
 				names = append(names, seg)

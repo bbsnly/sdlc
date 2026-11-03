@@ -484,7 +484,7 @@ func (j segmentRules) heldFrom(run invocation, tail string) []heldDir {
 		}
 	}
 	var dirs []heldDir
-	held := slices.Concat([]string{loopStateDir, loopConfigFile, ".sdlc/claude-progress.json", j.s.Backlog},
+	held := slices.Concat([]string{loopStateDir, loopConfigFile, ".sdlc/claude-progress.json", j.s.Backlog, j.s.ReviewPolicy},
 		j.s.Frozen, j.storyRecords(firsts), j.stateEntries(firsts))
 	for _, h := range held {
 		segs := strings.Split(h, "/")

@@ -127,7 +127,12 @@ func rvWrite(t *testing.T, content string) {
 
 func rvReview(t *testing.T, role, verdict string) reviewPayload {
 	t.Helper()
-	return decode[reviewPayload](t, mustRunWith(t, "# "+role+"\n", "review", "add", "design_review", role, verdict, "--json"))
+	args := []string{"review", "add", "design_review", role, verdict, "--json"}
+	if verdict == string(model.VerdictBlock) {
+		// US-115 AC-3: a block names at least one important finding.
+		args = append(args, "--important", "1")
+	}
+	return decode[reviewPayload](t, mustRunWith(t, "# "+role+"\n", args...))
 }
 
 func rvDiff(t *testing.T, role string) result {

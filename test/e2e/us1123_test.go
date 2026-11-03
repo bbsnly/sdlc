@@ -63,7 +63,7 @@ func TestAC6ASandboxStoresTwoPlanRevisionsReviewsTheFirstAndReadsTheDiff(t *test
 	// The first revision is what Gate 4 stored, and the architect reviews it.
 	const second = "# Plan\n\nOne step, and a correction to it.\n"
 	sb.works(t, tree, "architect", "# architect\n\nThe step is wrong.\n",
-		"review", "add", "design_review", "architect", "block", "--note", "the step is wrong")
+		"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "the step is wrong")
 	sb.works(t, tree, "implementer", second, "artifact", "write", "plan")
 
 	for _, content := range []string{sandboxPlan, second} {

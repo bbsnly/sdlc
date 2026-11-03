@@ -169,7 +169,8 @@ A proposal that loosens a check says so first, as a trade-off, and names what st
 checked. Among them, and not only these: a tier taken out of
 `human_gates.pre_commit_pause_tiers`, `dor_advocate_check` turned off, a lower
 `thresholds.coverage_min` or `mutation_min`, `reviews.gate7_advisory` or
-`freeze.allow_new_test_files` turned on, `paths.tests` narrowed so the freeze covers less, a
+`freeze.allow_new_test_files` turned on, `reviews.policy` pointed at a file that asks less,
+`paths.tests` narrowed so the freeze covers less, a
 `commands` entry cleared so the gates that run it skip it, `git.remote` turned off, a `loop` limit
 raised or set to `0`, or a contract rule dropped, including one that makes a kind of story
 `risk_tier: high`. A person pausing before a commit is the check most easily lost, so never fold

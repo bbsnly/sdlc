@@ -338,6 +338,12 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	// SDLC-E0080 is: until the code is registered this row fails by rendering as
 	// nothing.
 	released = append(released, pin{registered("SDLC-E0085"), "SDLC-E0085"})
+	// US-115 AC-3: a block that names no important finding, the next after
+	// SDLC-E0085. Pinned outright and found by number, as SDLC-E0085 is: the row
+	// fails by rendering as nothing until it is registered. Its name,
+	// BlockWithoutImportant, is held by
+	// TestAC3TheBlockCodeIsNamedBlockWithoutImportantIsDocumentedAndSaysWhatToDo.
+	released = append(released, pin{registered("SDLC-E0086"), "SDLC-E0086"})
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
 			t.Errorf("%s now renders as %s: a released code was renumbered", r.id, got)

@@ -73,12 +73,15 @@ time changing the code.
 
 ### The reviewer looks again
 
-A reviewer records its conclusion with `sdlc review add GATE ROLE VERDICT`. The
-review document comes from standard input or `--file`, and `--note` carries the
-headline. When the architect first blocked, the review was recorded like this:
+A reviewer records its conclusion with `sdlc review add GATE ROLE VERDICT`. The review document
+comes from standard input or `--file`, and `--note` carries the headline. `--important` and `--nits`
+carry the reviewer's own counts: a block with no important finding is refused
+([SDLC-E0086](../troubleshooting.md#sdlc-e0086)), and a review with only nits is an approve with the
+nits listed. The numbers below are examples. When the architect first blocked, the review was
+recorded like this:
 
 ```console
-$ sdlc review add design_review architect block --note "AC-2 has no step" < review.md
+$ sdlc review add design_review architect block --important 1 --note "AC-2 has no step" < review.md
 US-001  design_review  architect  block (round 1)
   .sdlc/stories/US-001/reviews/design_review-architect-1.md
 ```
@@ -87,13 +90,18 @@ When the rework is in, the **same** reviewer looks again. Its new verdict is a
 new round, and the gate reads the latest one:
 
 ```console
-$ sdlc review add design_review architect approve < review.md
+$ sdlc review add design_review architect approve --important 0 --nits 2 < review.md
 US-001  design_review  architect  approve (round 2)
   .sdlc/stories/US-001/reviews/design_review-architect-2.md
 ```
 
 Earlier rounds are kept, both in the record and as files, so the second round
 can see what the first one said.
+
+What a reviewer reports is set by the [review policy](../configuration.md#reviewspolicy). If the
+reviewers are reporting the wrong things, a person commits a change to it on trunk between stories,
+and a running story keeps the copy it was cut from. To apply it to this story, end the story, commit
+on trunk and start again.
 
 ## Who can block
 
@@ -104,6 +112,7 @@ front of you:
 
 ```console
 $ sdlc review list --gate design_review
+Review policy: REVIEW.md
   design_review   architect       blocking  block (round 1)
   design_review   red-team        advisory  not reviewed
   design_review   security        advisory  not reviewed
@@ -153,7 +162,7 @@ person. The configuration `sdlc init` writes sets it to 2, so had the architect
 blocked again in round 2:
 
 ```console
-$ sdlc review add design_review architect block --note "AC-2 still has no step" < review.md
+$ sdlc review add design_review architect block --important 1 --note "AC-2 still has no step" < review.md
 US-001  design_review  architect  block (round 2)
   .sdlc/stories/US-001/reviews/design_review-architect-2.md
 
@@ -180,6 +189,7 @@ review of the gate stops counting, advisory ones included:
 
 ```console
 $ sdlc review list --gate design_review
+Review policy: REVIEW.md
   design_review   architect       blocking  approve (round 2)
   design_review   red-team        advisory  note (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since red-team)
   design_review   security        advisory  note (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since security)
@@ -220,6 +230,7 @@ it: it makes the code reviewer advisory, and it is off by default. With it on,
 
 ```console
 $ sdlc review list --gate code_review
+Review policy: REVIEW.md
   code_review     code-reviewer   advisory  not reviewed
   code_review     security        blocking  not reviewed
   code_review     perf            on budget not reviewed

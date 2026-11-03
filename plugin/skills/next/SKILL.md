@@ -78,13 +78,13 @@ is wrong, a gate that keeps failing for the same reason. Hand them over:
 sdlc escalate <type> --message "<the question, and what you found>"
 ```
 
-Then stop, and tell the user what you asked. The iteration has ended, and the story waits until a
+Then stop, and tell the user what you asked. The story waits until a
 person answers with `sdlc approve <ID>` in their own terminal, in the story's worktree if it has
 one. Do not run `sdlc approve` yourself, and do not start the story again before they have
 answered.
 
 Do not end your turn mid-story any other way: finishing a gate is not a place to stop, and the
-plugin's Stop hook sends you back. Only handing the story to a person ends it, or `sdlc stop` once
+Stop hook sends you back. Only handing the story to a person ends it, or `sdlc stop` once
 every gate has passed.
 
 ## If a command fails
@@ -101,10 +101,9 @@ sdlc start --json
 Take `worktree`, `branch` and `main` from it.
 
 If it succeeds and `session` in the output is empty, sdlc could not tell which Claude Code session
-this is, so nothing would hold this session to the loop's rules. Tell the user so, and
-that it happens where Claude Code does not pass `CLAUDE_CODE_SESSION_ID` to the commands it runs.
-Tell them the story is now in progress, and that `/sdlc:next` in a session that passes it on
-picks it up where it is. Then stop. Do not work the story without it.
+this is, so no rule would hold it. Tell the user so, that Claude Code did not pass
+`CLAUDE_CODE_SESSION_ID` to its commands, that the story is now in progress, and that
+`/sdlc:next` in a session that passes it picks it up. Then stop. Do not work the story without it.
 
 On `SDLC-E0010`, show the user the `why` and stop. Never start a `todo` story:
 they mark it `ready` or name it.
@@ -114,14 +113,14 @@ If the output has `"resume": true`, the story's earlier gates stand: go straight
 for the `next_gate` it reports.
 
 If it fails with `SDLC-E0040`, `SDLC-E0041`, `SDLC-E0053`, or with `git.worktrees` false
-`SDLC-E0038` or `SDLC-E0039`, a new story cannot start from trunk as it is. Each is the person's
-to fix: show the error and stop. Do not commit, stash, discard or fix anything on trunk to get
+`SDLC-E0038` or `SDLC-E0039`, a new story cannot start from trunk: the person's
+to fix. Show the error and stop. Do not commit, stash, discard or fix anything on trunk to get
 past it.
 
 Read the story from the backlog file named by `backlog.path`, in the main checkout. Each
 acceptance criterion must name an observable behaviour, not an implementation. One that cannot
 become a failing test is a Definition-of-Ready problem: record it, and hand the question to a
-person rather than inventing an interpretation:
+person:
 
 ```bash
 sdlc gate dor fail --note "AC-2 names an implementation"
@@ -129,7 +128,7 @@ sdlc escalate spec_unclear --message "AC-2 names an implementation: what should 
 ```
 
 If `sdlc review list --gate dor --json` lists `human-advocate`, delegate to `sdlc:human-advocate`
-and read what it found before deciding. It is advisory.
+with the path in its `policy`, and read what it found before deciding. It is advisory.
 
 When the story is ready:
 
@@ -153,18 +152,17 @@ Delegate to `sdlc:researcher`, with:
 - that it stores its two documents with `sdlc artifact write analysis` and
   `sdlc artifact write threats`
 
-Do not do this analysis yourself: the agent's fresh context is the point.
+Do not do this analysis yourself.
 
-When it returns, read its JSON result and record the gate:
+Read its JSON result and record the gate:
 
 ```bash
 sdlc gate analysis pass --security-sensitive --note "<what the threats came to, in one clause>"
 ```
 
-Always pass the flag, as `--security-sensitive=false` if the researcher reported
-`security_sensitive: false`. It decides whether the security reviewer can block Gates 4 and 7,
-and left unset the loop assumes yes. With the staffing on, `sdlc:project-manager` then has to
-confirm or amend it.
+Always pass the flag, as `--security-sensitive=false` if it reported
+`security_sensitive: false`. With the staffing on, `sdlc:project-manager` then has to confirm or
+amend it.
 
 If either document was not stored, the gate refuses and says which. Hand it to a person with
 `sdlc escalate analysis_incomplete --message "..."` and stop.
@@ -198,7 +196,7 @@ sdlc escalate untestable --message "AC-3 cannot be observed from outside: <why>"
 ```
 
 Otherwise run `commands.test` and read the output yourself. Every new test must fail; if one
-passes, the behaviour already exists or the test does not test it, and the gate does not pass.
+passes, the gate does not pass.
 Then freeze:
 
 ```bash
@@ -208,7 +206,7 @@ sdlc gate tests_frozen pass --note "<n> criteria, <n> failing tests"
 
 An `SDLC-E0085` refusal goes to the test author, or to a person if no test change clears it.
 
-From then on nobody can edit the tests, you and their author included, and the hook
+From then on nobody can edit the tests, and the hook
 refuses `sdlc unfreeze` from you and every agent. If a frozen test is wrong,
 hand it to a person with
 `sdlc escalate frozen_test_wrong --message "<which test, and the criterion it gets wrong>"` and
@@ -230,10 +228,9 @@ Delegate to `sdlc:implementer` with the backlog file and the paths to `ANALYSIS.
 sdlc gate plan pass --note "<n> steps, <what it changes>"
 ```
 
-Then run `sdlc review list --gate design_review` and delegate to `sdlc:<role>` for
-every reviewer it waits for, together, each with the path to `PLAN.md`.
-The list says which of them
-block. Each records its own review with `sdlc review add design_review <role> <verdict>`.
+Then run `sdlc review list --gate design_review` and delegate to `sdlc:<role>` for every reviewer it
+waits for, together, each with the policy path and the path to `PLAN.md`. The list says which of
+them block. Each records its own review with `sdlc review add design_review <role> <verdict>`.
 
 After a revised plan, `sdlc review list` marks stale reviews. Each such reviewer must review the
 plan as it now stands, and is resumed, not started afresh: use SendMessage on the agent that
@@ -249,7 +246,8 @@ sdlc gate design_review pass --note "<what the architect said, in one clause>"
 
 The gate refuses until every reviewer has reported and the blocking ones have approved. Do not
 edit the plan yourself to satisfy a reviewer: send it back to the implementer with the findings.
-When a block decides the gate, record it:
+A gate whose blocking reviewers approve passes with nits unaddressed; nits go in the implementer's
+brief, never back as rework that changes the plan. When a block decides the gate, record it:
 
 ```bash
 sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
@@ -257,8 +255,8 @@ sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
 
 ## Gate 5 — Implementation
 
-Delegate to `sdlc:implementer` again with the path to `PLAN.md`, and tell it the plan is
-approved. Do not write this code yourself.
+Delegate to `sdlc:implementer` again with the path to `PLAN.md` and the reviewers' nits, and tell it
+the plan is approved. Do not write this code yourself.
 
 When it reports that the frozen tests pass, run the project's test command and read the output.
 Then:
@@ -272,9 +270,8 @@ If the gate finds the freeze broken, something edited an acceptance test: hand i
 
 ## Gate 6 — Independent verification
 
-Delegate to `sdlc:verifier`, with nothing from this conversation beyond the paths. It stores
-`VERIFICATION.md` and records a blocking verdict with
-`sdlc review add verifier_review verifier approve|block`.
+Delegate to `sdlc:verifier`, with nothing from this conversation beyond the paths, the policy's too.
+It stores `VERIFICATION.md` and records a blocking verdict.
 
 ```bash
 sdlc gate verification pass --note "all commands green, <n> criteria verified"
@@ -282,18 +279,20 @@ sdlc gate verifier_review pass --note "no gaming found"
 ```
 
 If it blocks, send its findings to `sdlc:implementer` as rework, then have the **same** verifier
-look again. An approval from before the rework does not count.
+look again. An approval from before the rework does not count. An approval passes with nits
+unaddressed; they go to the retro, never back as rework that changes the tree.
 
 ## Gate 7 — Code review
 
 Run `sdlc review list --gate code_review` and delegate to `sdlc:<role>` for every reviewer it
-waits for, in parallel.
+waits for, in parallel, each with the policy path.
 
 ```bash
 sdlc gate code_review pass --note "<what the reviewer said, in one clause>"
 ```
 
-Rework goes to `sdlc:implementer`, and then the same reviewers look again.
+Rework goes to `sdlc:implementer`, and then the same reviewers look again. Approved, it passes
+with nits unaddressed; they go to the retro, never back as rework that changes the tree.
 
 ## Gate 8 — Commit
 

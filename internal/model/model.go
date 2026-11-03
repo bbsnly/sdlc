@@ -691,6 +691,10 @@ type Review struct {
 	Subject string  `json:"subject,omitempty"`
 	File    string  `json:"file,omitempty"`
 	Note    string  `json:"note,omitempty"`
+	// Important and Nits are the reviewer's own counts: nil where none was given,
+	// which an old review has too, and not the same as 0.
+	Important *int `json:"important,omitempty"`
+	Nits      *int `json:"nits,omitempty"`
 }
 
 // GateStatus is the outcome recorded for a gate.

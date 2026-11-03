@@ -294,7 +294,7 @@ func TestAC3DoctorSaysNothingMoreOfAProjectWhoseCommandsTheHookAllows(t *testing
 			t.Errorf("%s = %s (%s) in a healthy project", c.Name, c.State, c.Detail)
 		}
 	}
-	want := "git repository,git command,configuration,backlog,loop state,project contract,commands,freeze check,sdlc on PATH"
+	want := "git repository,git command,configuration,backlog,loop state,review policy,project contract,commands,freeze check,sdlc on PATH"
 	if got := strings.Join(names, ","); got != want {
 		t.Errorf("the healthy report's checks are %s, want %s", got, want)
 	}

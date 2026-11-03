@@ -217,7 +217,8 @@ work is in the tree.
 With [`human_gates.dor_advocate_check`](configuration.md#human_gates) on,
 `sdlc:human-advocate` reads the story first, as the person it is for would, and
 the gate waits for its review. The review is advisory, and it goes stale if the
-story changes after it.
+story changes after it. Like every reviewer, it reads
+[the review policy](#the-review-policy) first.
 
 ## Gate 2 — `analysis`
 
@@ -283,6 +284,9 @@ budget the contract states. Red-team and human-advocate report but cannot stop
 the gate, and none of the five can be skipped (unless the project's staffing
 leaves one out for this story, see [The staffing](#the-staffing)).
 
+A gate whose blocking reviewers approve passes with nits unaddressed. The nits go in the
+implementer's brief for how a step is written, and never come back as rework that changes the plan.
+
 **Refused without it:** a pass with the plan missing, a reviewer that has not
 reported, a blocking reviewer that has not approved, a block from perf, or an
 approval of a plan that has since changed.
@@ -292,7 +296,8 @@ approval of a plan that has since changed.
 **Who:** `sdlc:implementer`. **Produces:** the code.
 
 The plan is carried out one step at a time, running the tests after each. The
-implementer cannot touch any test file, and cannot add a new one.
+implementer cannot touch any test file, and cannot add a new one. Its brief carries the nits the
+Gate 4 reviewers left.
 
 **Refused without it:** a pass when the freeze is gone or broken.
 
@@ -304,7 +309,8 @@ A verifier that has not seen the implementer's reasoning re-derives what each ac
 criterion should mean, compares that with the frozen tests, runs every command
 the project configures, and hunts by hand for the thing tests cannot catch: an
 implementation that passes them without the behaviour being there. It checks
-every gaming vector the red team named at Gate 4.
+every gaming vector the red team named at Gate 4. An approval passes with nits unaddressed; they go
+to the retro, and never come back as rework that changes the tree.
 
 **Refused without it:** a pass with the verification document missing, a broken
 freeze, or a verifier that blocked or has not approved the current tree.
@@ -316,7 +322,8 @@ freeze, or a verifier that blocked or has not approved the current tree.
 
 The diff is reviewed in a context that never saw the reasoning that produced it.
 That is the whole value: a reviewer that inherited the justification cannot
-notice what only makes sense if you already knew why.
+notice what only makes sense if you already knew why. A gate whose blocking reviewers approve
+passes with nits unaddressed. Having no next gate, they go to the retro.
 
 **Refused without it:** the same conditions as the design review, against the
 tree rather than the plan.
@@ -413,6 +420,19 @@ commit of their own
 it does, `sdlc start` there says the story waits to land, and `sdlc status` says
 so too. The record and the backlog change wait in the main checkout for a person
 to commit them.
+
+## The review policy
+
+Every reviewer reads one file first: `REVIEW.md` at the repository root, or wherever
+[`reviews.policy`](configuration.md#reviewspolicy) puts it. It says which passes to make, what counts
+as important, what is a nit, how many nits to report and what not to review. A pass in the policy is
+one reading of the work with one question in mind, and not a gate's outcome. A block has to name at
+least one important finding ([SDLC-E0086](troubleshooting.md#sdlc-e0086)), so a round is spent on
+what matters.
+
+A person changes the policy by hand: they commit it on trunk between stories, and a running story
+keeps the copy it was cut from. To apply a change to the story in front of you, end the story, commit
+on trunk and start again. No agent writes it, and no story lands a change to it.
 
 ## Rework
 
