@@ -1581,105 +1581,53 @@ assistant, hand the story to a person with `sdlc escalate` and stop.
 
 ### SDLC-E0057
 
-`sdlc parallel` was given a story id that the backlog does not have. Nothing was started, and
-every story is checked before any session starts, so one bad id stops the whole run.
-
-To see the ids the backlog has, run:
-
-```console
-$ sdlc story list
-```
-
-Then correct the spelling, or add the story to the backlog first.
+**Retired.** The command that raised this code, `sdlc parallel`, is gone. It refused a story id the
+backlog does not have, and nothing raises it now. The number is not given to any other.
 
 ### SDLC-E0058
 
-`sdlc parallel` was given a story that is not runnable: it is dropped, blocked, done, or it waits
-on a story that is not finished yet. Nothing was started.
-
-The message names the status, and for a dependency the story it waits on. Only a story that
-is `dropped`, `blocked` or done, or that waits on one that is not finished, is refused; a
-`todo` story is not, as it is not for `sdlc start <ID>`. A story that is already in progress or
-that waits for a person is not refused for this: a run again resumes the first, and the second has
-its own code, [SDLC-E0064](#sdlc-e0064). Take the story off the command line, or finish what it
-waits on first.
+**Retired.** The command that raised this code, `sdlc parallel`, is gone. It refused a story that
+was not runnable, and nothing raises it now. The number is not given to any other.
 
 ### SDLC-E0059
 
-`sdlc parallel` was given a story that another checkout is working. Nothing was started.
-
-Finish the story in that checkout, or have a person give the claim up by running this in their own
-terminal, outside Claude Code:
-
-```console
-$ sdlc release <ID> --reason "why the story is moving"
-```
-
-Release is refused while an iteration is running on the story, so run `sdlc stop` first in the
-checkout that is running it. Then name the story to `sdlc parallel` again. If you are an
-assistant, stop and tell the person.
-
-The same code covers the two other ways a story is not this run's to start, in the words
-`sdlc start` uses for them. The checkout holding the story no longer exists
-([SDLC-E0051](#sdlc-e0051)): a person releases it as above. More than one checkout names the
-story and none holds it ([SDLC-E0050](#sdlc-e0050)): a person runs `sdlc stop` in all but one.
+**Retired.** The command that raised this code, `sdlc parallel`, is gone. It refused a story that
+another checkout was working, and nothing raises it now. The number is not given to any other.
 
 ### SDLC-E0060
 
-`sdlc parallel` was given the same story id twice. Two sessions on one story would fight over its
-worktree.
-
-Name each story once. This is checked before the backlog is read, so a story the backlog does not
-have, named twice, is reported as named twice first.
+**Retired.** The command that raised this code, `sdlc parallel`, is gone. It refused a story id
+named twice, and nothing raises it now. The number is not given to any other.
 
 ### SDLC-E0061
 
-`sdlc parallel` was run from inside a Claude Code session. Starting model sessions is a person's
-decision, so a person runs it in their own terminal, outside Claude Code.
-
-The hook is the first barrier: it refuses the command in any session. This check is the second, for
-a spelling the hook cannot read. If you are an assistant, stop and tell the person.
+**Retired.** The command that raised this code, `sdlc parallel`, is gone. It refused to run from
+inside a Claude Code session, and nothing raises it now. The number is not given to any other.
 
 ### SDLC-E0062
 
-`sdlc parallel` needs `git.worktrees`, because each story gets its own worktree under
-`.sdlc/worktrees`.
-
-Turn the setting on in the project's configuration, or work the stories one at a time with
-`/sdlc:next`. See [configuration](configuration.md).
+**Retired.** The command that raised this code, `sdlc parallel`, is gone. It refused to run where
+`git.worktrees` was off, and nothing raises it now. The number is not given to any other.
 
 ### SDLC-E0063
 
-`--max` is the most stories `sdlc parallel` runs at the same time. It has to be a whole number, 1
-or more, and the default is 2. The message names the value it was given.
-
-Run the command again with a value in that range.
+**Retired.** The command that raised this code, `sdlc parallel`, is gone. It refused a `--max` that
+was not a whole number of 1 or more, and nothing raises it now. The number is not given to any other.
 
 ### SDLC-E0064
 
-`sdlc parallel` was given a story that is waiting for a person's answer to an escalation. Running
-it again would act as that answer, so it is refused. Nothing was started.
-
-Run `/sdlc:approve <ID>`, or `sdlc approve <ID>` (or its `--reject`) in `.sdlc/worktrees/<ID>`,
-then name the story again.
-If you are an assistant, stop and tell the person.
+**Retired.** The command that raised this code, `sdlc parallel`, is gone. It refused a story that
+was waiting for a person's answer, and nothing raises it now. The number is not given to any other.
 
 ### SDLC-E0065
 
-`sdlc parallel` was given a story whose gates are all done. Running it again would start a session
-with nothing to do and would hide that it is waiting to land. Nothing was started.
-
-To land it, run `sdlc stop` in `.sdlc/worktrees/<ID>`. To reopen it for rework, a person records a
-gate as failed with `sdlc gate <gate> fail --story <ID> --note "..."`, then names it again.
+**Retired.** The command that raised this code, `sdlc parallel`, is gone. It refused a story whose
+gates were all done, and nothing raises it now. The number is not given to any other.
 
 ### SDLC-E0066
 
-`parallel.allow` in the project's configuration names a tool that is not in the built-in list, and
-`--unattended` was given. The setting can only narrow the list, never widen it. Nothing was
-started.
-
-Take out the entries that are not built in, or take the setting out. The built-in list is in
-[enforcement](enforcement.md#unattended-sessions).
+**Retired.** The command that raised this code, `sdlc parallel`, is gone. It refused a tool list
+that widened the built-in one, and nothing raises it now. The number is not given to any other.
 
 ### SDLC-E0067
 
@@ -1905,7 +1853,7 @@ discards it with
 ### SDLC-E0079
 
 One of a person's commands, `sdlc approve`, `sdlc unfreeze`, `sdlc ack`, `sdlc remap`,
-`sdlc release`, `sdlc staffing assign` or `sdlc parallel`, ran in a process that Claude Code
+`sdlc release` or `sdlc staffing assign`, ran in a process that Claude Code
 started. Nothing was read or changed.
 
 Claude Code sets environment variables in the processes it starts: `CLAUDECODE`,
@@ -1932,11 +1880,9 @@ To go on:
   `/sdlc:release <ID> --reason "..."`, or `sdlc release <ID> --reason "..."`; and
   `/sdlc:assign`, or `sdlc staffing assign <agent> --model <model> --reason "..."`. The refusal's
   fix names the story when the command was given one.
-- `sdlc parallel` has no slash command, and runs in a terminal outside Claude Code, or as a `!`
-  line at the prompt in Claude Desktop: `!sdlc parallel <ID>...`.
 - A terminal of your own has no `sdlc` unless you installed one, with `npx @bbsnly/sdlc install`:
-  the plugin's copy is on Claude Code's `PATH` only. Install it before you need `sdlc parallel`;
-  the slash commands need nothing installed.
+  the plugin's copy is on Claude Code's `PATH` only. Install it before you run one of these
+  commands in a terminal; the slash commands need nothing installed.
 - If you met this in a terminal window you opened yourself, the why names the variable it found
   there. A terminal app started from inside Claude Code, for example by a model's `open`, has the
   variables in every window it opens, and so does each window of a `tmux` server a model's Bash
@@ -1945,9 +1891,9 @@ To go on:
 - If you are an assistant, stop here and say what you would have run. Do not try another way of
   running it.
 
-For `sdlc parallel` and `sdlc staffing assign`, [SDLC-E0061](#sdlc-e0061) and
-[SDLC-E0074](#sdlc-e0074) answer first where `CLAUDE_CODE_SESSION_ID` is set, as before, and this
-code covers every other case. `SDLC_ENFORCE=0` does not turn this check off, nor those two.
+For `sdlc staffing assign`, [SDLC-E0074](#sdlc-e0074) answers first where
+`CLAUDE_CODE_SESSION_ID` is set, as before, and this code covers every other case.
+`SDLC_ENFORCE=0` does not turn this check off, nor that one.
 
 ### SDLC-E0080
 

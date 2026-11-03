@@ -35,10 +35,10 @@ const (
 // killGroup kills the group pgid leads, and kills it again until nothing in it
 // is left to kill. One kill is not enough on macOS: a process whose fork was
 // under way when the signal went to the group is not signalled, and its child
-// lives on in the group with nobody to stop it. An interrupted `sdlc parallel`
-// left a session's tool running that way, about once in twenty runs of its
-// test and most runs on a loaded machine. The child is in the group by the
-// time its parent has died, so the next kill finds it.
+// lives on in the group with nobody to stop it. It was seen with a command run
+// in a group of its own and interrupted, more often on a loaded machine. The
+// child is in the group by the time its parent has died, so the next kill
+// finds it.
 //
 // It stops at the first kill the system refuses, and does not signal the group
 // again after that: ESRCH is a group with nothing in it, on either system, and

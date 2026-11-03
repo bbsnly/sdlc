@@ -5,7 +5,7 @@ hooks, so the loop works there as it does in a terminal. What is
 different is that a person there may have no terminal. This page covers what
 changes because of that: how the plugin gets its binary, the slash commands
 that stand for the commands only a person runs, where to set the variables the
-hook reads, and what still needs a terminal.
+hook reads, and using a terminal of your own.
 
 The slash commands need `sdlc` 0.5.0 or later; see
 [Which release you need](#which-release-you-need).
@@ -86,7 +86,7 @@ set, so `/sdlc:approve US-001` answers that it did not run. A `!` line there
 runs the command with none of the variables
 [SDLC-E0079](troubleshooting.md#sdlc-e0079) reads (seen on 2026-10-29). A
 terminal outside Claude Code is the fallback; it needs sdlc installed
-([What still needs a terminal](#what-still-needs-a-terminal)). In Claude Code
+([Using a terminal of your own](#using-a-terminal-of-your-own)). In Claude Code
 run from a terminal, the slash command is the way: there a `!` line runs with
 the environment variables Claude Code sets for the model's Bash, so the command
 refuses itself with SDLC-E0079 and changes nothing. A slash command typed in a
@@ -141,8 +141,8 @@ stands down, and so do the `Stop` hook and the formatter. The slash commands
 above still run, as they would in a terminal with enforcement off. A person's
 command run in the model's Bash, or from a `!` line in Claude Code run from a
 terminal, still refuses itself
-([SDLC-E0079](troubleshooting.md#sdlc-e0079), and SDLC-E0061 or SDLC-E0074 for
-`sdlc parallel` and `sdlc staffing assign`); a `!` line in Claude Desktop runs
+([SDLC-E0079](troubleshooting.md#sdlc-e0079), and SDLC-E0074 for
+`sdlc staffing assign`); a `!` line in Claude Desktop runs
 it, as above. It must be exactly `0`.
 
 `SDLC_DEBUG_FILE` set in the local environment editor to the full path of a file
@@ -154,23 +154,19 @@ or a slash command did not run.
 installed yourself makes the hook run that one, and turns the plugin's own fetch
 off.
 
-## What still needs a terminal
+## Using a terminal of your own
 
-`sdlc parallel`, which works more than one story at a time in their own
-worktrees, has no slash command. In Claude Desktop a `!` line reaches it with
-none of the variables [SDLC-E0079](troubleshooting.md#sdlc-e0079) reads, as it
-reaches the other commands above: `!sdlc parallel US-001 US-002`. A run of
-sessions takes as long as its stories do, so a terminal outside Claude Code is
-the surer place for it: a terminal window you opened yourself, such as Terminal
-on macOS or PowerShell from the Start menu. A terminal that Claude Code or Claude Desktop opens is not
-one, and neither is a `tmux` session Claude Code started: where one has Claude
-Code's environment variables, the command refuses itself there with
-[SDLC-E0079](troubleshooting.md#sdlc-e0079).
+A terminal outside Claude Code is a window you opened yourself, such as Terminal
+on macOS or PowerShell from the Start menu. A terminal that Claude Code or
+Claude Desktop opens is not one, and neither is a `tmux` session Claude Code
+started: where one has Claude Code's environment variables, a person's command
+refuses itself there with [SDLC-E0079](troubleshooting.md#sdlc-e0079).
 
 A terminal of your own has no `sdlc` unless you installed one, with
 `npx @bbsnly/sdlc install`: the plugin's copy is on Claude Code's `PATH` only.
-Install it before you need `sdlc parallel`. The slash commands need nothing
-installed.
+Install it before you run `sdlc approve`, `sdlc unfreeze`, `sdlc ack`,
+`sdlc remap`, `sdlc release` or `sdlc staffing assign` in a terminal; the slash
+commands need nothing installed.
 
 ## Why Cowork is not supported
 

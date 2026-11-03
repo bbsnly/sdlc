@@ -36,7 +36,6 @@
   - [`acknowledgement-is-a-human-decision`](#acknowledgement-is-a-human-decision)
   - [`remap-is-a-human-decision`](#remap-is-a-human-decision)
   - [`release-is-a-human-decision`](#release-is-a-human-decision)
-  - [`parallel-is-a-human-decision`](#parallel-is-a-human-decision)
   - [`stop-is-a-human-decision`](#stop-is-a-human-decision)
   - [`review-is-recorded-by-its-reviewer`](#review-is-recorded-by-its-reviewer)
   - [`assignment-is-a-human-decision`](#assignment-is-a-human-decision)
@@ -58,7 +57,6 @@
   - [`path-too-long`](#path-too-long)
 - [A repository with more than one checkout](#a-repository-with-more-than-one-checkout)
   - [Not held: the known gaps](#not-held)
-- [Unattended sessions](#unattended-sessions)
 - [Stopping mid-story](#stopping-mid-story)
 - [Rules the command enforces](#rules-the-command-enforces)
 - [Turning it off](#turning-it-off)
@@ -177,8 +175,6 @@ refusals below stay, [SDLC-E0079](troubleshooting.md#sdlc-e0079) among them.
   is not one that waits, so whether a story waits is never asked for it.
 - `sdlc release` is refused there always. It takes a story from the checkout
   holding it ([`release-is-a-human-decision`](#release-is-a-human-decision)).
-- `sdlc parallel` is refused there always
-  ([`parallel-is-a-human-decision`](#parallel-is-a-human-decision)).
 - `sdlc staffing assign`, and a run of `sdlc` whose subcommand cannot be read,
   are refused there always
   ([`assignment-is-a-human-decision`](#assignment-is-a-human-decision)).
@@ -211,22 +207,21 @@ A command is read to its end, so `sdlc approve A-1; sdlc ack --through HEAD` is
 refused for the `sdlc ack` in it. `sdlc escalate` ends the iteration, so the
 answer to it always comes while no session is held, and no session's assistant
 approves another's story. A session that is not using sdlc never meets the
-refusals of `sdlc ack`, `sdlc release`, `sdlc parallel`,
+refusals of `sdlc ack`, `sdlc remap`, `sdlc release`,
 `sdlc staffing assign`, `sdlc approve` and `sdlc unfreeze`: each is refused only
 when an assistant runs that command itself. A command nested too deep to read
 is refused in any of those projects, whatever else it does.
 
 Behind those rules, the commands refuse themselves. `sdlc approve`,
-`sdlc unfreeze`, `sdlc ack`, `sdlc remap`, `sdlc release`, `sdlc parallel` and
+`sdlc unfreeze`, `sdlc ack`, `sdlc remap`, `sdlc release` and
 `sdlc staffing assign` each refuse to run, before anything is read, with
 [SDLC-E0079](troubleshooting.md#sdlc-e0079), in a process whose environment has
 any of `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_CHILD_SESSION`,
 `CLAUDE_PID` or `AI_AGENT`, the environment variables Claude Code sets in the
-processes it starts. [SDLC-E0061](troubleshooting.md#sdlc-e0061) and
-[SDLC-E0074](troubleshooting.md#sdlc-e0074) answer first for `sdlc parallel`
-and `sdlc staffing assign` where the session id is set. A model's Bash or
+processes it starts. [SDLC-E0074](troubleshooting.md#sdlc-e0074) answers first
+for `sdlc staffing assign` where the session id is set. A model's Bash or
 PowerShell has those variables, and so does every program it starts that keeps
-its environment, so the seven commands are refused even where the shell rules
+its environment, so the six commands are refused even where the shell rules
 cannot read them: behind `osascript -e`, `su -c`, `vim -c`, awk's
 `system()`, `git -c core.pager` or `GIT_EDITOR`, through `Invoke-Expression`
 or a PowerShell argument in parentheses, behind a wrapper the rules do not read
@@ -250,7 +245,7 @@ person types it as a `!` line in Claude Desktop, or runs it in a terminal
 outside Claude Code. What neither
 catches is listed in [Not held](#not-held): a program that starts with a clean
 environment or removes those variables; a part-way `sdlc stop`, which is not
-one of the seven; a program Claude Code starts itself from a project's
+one of the six; a program Claude Code starts itself from a project's
 configuration, such as an MCP server named in `.mcp.json` or a hook in
 `.claude/settings.json`, which may not have `AI_AGENT`; and a slash command a
 program types into the person's own prompt, as `tmux send-keys` can, which
@@ -267,7 +262,9 @@ comment, with a file redirect, piped to a pager or any other program, in the
 background, through `env` or another program, or with a variable or a
 substitution among its words, since the hook cannot be sure the command would
 not run. `sdlc help approve` prints the same help and is not refused in any of
-those forms, since it names no command that decides anything.
+those forms, since it names no command that decides anything. The one exception
+is `sdlc remap`, whose help is refused as the command is; `sdlc help remap`
+prints the same text and is not refused.
 
 ### When the hook fails open
 
@@ -2173,22 +2170,6 @@ it every rule holding it.
 the prompt in Claude Desktop, or `sdlc release <ID> --reason "..."` in their own
 terminal, if it is to move.
 
-### `parallel-is-a-human-decision`
-
-Refuses `sdlc parallel` run from a tool call, where `sdlc` is written out as
-the program (by name on `PATH`, by path, or through `npx` or `go run`), in any
-session, in any project with `.sdlc/config.json` the call reaches, whether or
-not a story is being worked on.
-
-`sdlc parallel` starts a Claude Code session for each story named, and with
-`--unattended` it hands each of them a list of tools to use without asking. An
-agent that could run it would be starting model sessions, and choosing what they
-may do, that nobody asked for. See [unattended sessions](#unattended-sessions).
-
-*Instead:* say which stories you meant, and stop. A person runs
-`sdlc parallel <ID>...` in their own terminal, outside Claude Code, or types
-`!sdlc parallel <ID>...` at the prompt in Claude Desktop.
-
 ### `stop-is-a-human-decision`
 
 Refuses `sdlc stop` run from a tool call while the story still has a gate to
@@ -3834,164 +3815,6 @@ how you would notice.
   runs `sdlc stop` in all but one. What the refusal says about each checkout is
   read from files anybody can write: it helps a person choose, and proves
   nothing.
-
-## Unattended sessions
-
-[`sdlc parallel`](commands.md#sdlc-parallel-id) starts one headless Claude Code
-session for each story named. Those sessions are **not interactive**: no
-permission prompt reaches anyone, so a tool that default permissions deny ends
-that story's turn. Without `--unattended` nothing is pre-approved, and the
-sessions go as far as default permissions allow. The launcher never passes a
-blanket skip of permissions in either mode.
-
-### What `--unattended` pre-approves
-
-With `--unattended` the launcher gives each session exactly this list to use
-without asking, and adds nothing else. What your own Claude Code settings allow
-still applies on top of it, which is [how you add a command](#adding-a-command):
-
-```text
-Read
-Edit(.sdlc/worktrees/**)
-Write(.sdlc/worktrees/**)
-Bash(cd:*)
-Bash(sdlc start:*)
-Bash(sdlc status:*)
-Bash(sdlc gate:*)
-Bash(sdlc artifact:*)
-Bash(sdlc codemap:*)
-Bash(sdlc review:*)
-Bash(sdlc staffing set:*)
-Bash(sdlc staffing amend:*)
-Bash(sdlc staffing show:*)
-Bash(sdlc escalate:*)
-Bash(sdlc freeze:*)
-Bash(sdlc story:*)
-Bash(sdlc cost:*)
-Bash(git status:*)
-Bash(git add:*)
-Bash(go build:*)
-Bash(go test:*)
-Bash(go vet:*)
-Bash(cargo build:*)
-Bash(cargo test:*)
-Bash(npm test:*)
-Bash(pytest:*)
-```
-
-### What the list leaves out
-
-The list is written for the loop's own commands, by name, and not `sdlc` as a
-whole. It has:
-
-- no network tool,
-- no `git push`,
-- no `claude`,
-- no `sdlc approve`, `unfreeze`, `ack`, `remap`, `release`, `parallel` or `stop`,
-- no `git commit`,
-- no interpreter or runner (`go run`, `sh`, `python3`, `env`, `xargs`,
-  `npm run`),
-- and no `git diff`, `log` or `show`, whose `--output` writes a file where it
-  is told.
-
-The staffing's commands are named one by one for the same reason:
-`sdlc staffing` as a whole would pre-approve `sdlc staffing assign`, which is a
-person's. `sdlc codemap` is on the list as a whole, for the bookkeeper's
-`sdlc codemap write`, which is its only subcommand.
-
-### What the list does hand over
-
-What it does have is worth reading as it is:
-
-- **The toolchain entries run code the session wrote, with your privileges.**
-  `go test`, `go build`, `cargo test`, `npm test` and `pytest` are arbitrary
-  code from the repository. That is the work, and also the reason to read what
-  a story's branch holds before you run anything from it yourself.
-- **`Edit` and `Write` are scoped to `.sdlc/worktrees/**`**, the worktrees of
-  the stories under the main checkout, where each session works. The main
-  checkout's own files and the rest of the machine are outside them.
-- **`sdlc freeze` runs the project's `commands.freeze_check`, when one is set.**
-  A check that is a script makes `Write` under the worktrees plus `sdlc freeze`
-  run code the session wrote, with your privileges, as `go test` does. If you
-  narrow the list to drop the toolchain entries and keep `sdlc freeze`, that
-  route is still open.
-- **Text in the repository is input to a session that holds pre-approved
-  tools.** A file, an issue or a test that says something to the model is
-  prompt injection to a session nobody is watching.
-
-### Narrowing the list
-
-`parallel.allow` in the project's configuration can only narrow the list: a
-list names the built-in entries to keep, an empty one keeps none, and an entry
-that is not built in refuses the run
-([SDLC-E0066](troubleshooting.md#sdlc-e0066)). The file is writable by a session
-on the project, which is why it is never allowed to widen anything.
-
-### Adding a command
-
-Nothing in `sdlc` adds to the list: there is no flag for it, and `parallel.allow`
-only takes entries away. A session is an ordinary Claude Code session, though,
-started in the main checkout, so it reads your Claude Code settings as any
-session there does. An allow rule in those settings is a tool the session uses
-without asking, with `--unattended` or without it.
-
-To let the sessions run one more command, add a rule for it to
-`.claude/settings.local.json` in the main checkout:
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(make lint:*)",
-      "Bash(git diff:*)"
-    ]
-  }
-}
-```
-
-`Bash(make lint:*)` lets through `make lint` and `make lint` followed by
-anything. The session's last words, printed beneath an `ended early` story,
-usually name the command that was denied, which is the one to add. Run
-`sdlc parallel` for that story again and it resumes where it stopped.
-
-Which file you choose decides who gets the rule:
-
-| File | Who gets the rule |
-| --- | --- |
-| `.claude/settings.local.json` in the main checkout | your sessions in this project. Claude Code keeps the file out of git |
-| `.claude/settings.json` in the main checkout | everyone who works on the project, once it is committed |
-| `~/.claude/settings.json` | every session you start, in every project |
-
-Before you add one:
-
-- **The rule is not only for unattended sessions.** Every Claude Code session
-  that reads the file stops asking about that command, the ones you sit in
-  front of included.
-- **None of what [the list leaves out](#what-the-list-leaves-out) is left out
-  for you any longer.** A rule for a runner (`./task`, `make`, `npm run`, an
-  interpreter) pre-approves whatever that runner can be made to run, and a rule
-  for `git diff` pre-approves its `--output`.
-- **A deny rule in the same settings applies too**, and beats every allow,
-  the built-in list included.
-- **The hook still decides first.** A rule for `sdlc approve` or for
-  `git commit` does not get a session past what
-  [a person's decisions](#a-persons-decisions-refused-in-every-session) and the
-  gates refuse.
-- **Some commands are asked about whatever the rules say.** Claude Code asks
-  about a `cd` joined to a `git` command (`cd dir && git status`) even when
-  both halves are allowed, and no rule changes that.
-
-### What the hook still holds, and what nothing stops
-
-The hook still decides in these sessions, and a deny beats an allow. But a
-session is bound to its story only once it has run `sdlc start`, and every rule
-that needs a story holds from then on. A project whose build is none of the
-toolchain entries in [the list](#what---unattended-pre-approves) runs headless
-and is stopped at the first tool it was not given.
-
-What nothing here can stop is a script file a pre-approved command runs, and a
-spelling the hook cannot read. Nothing records who started a run or with which
-list: the evidence is the session transcripts and the hook's debug log.
 
 ## Stopping mid-story
 

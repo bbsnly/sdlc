@@ -213,7 +213,6 @@ func TestAC12TheProjectManagerRunsNoOtherSdlcCommandThatWrites(t *testing.T) {
 		"sdlc unfreeze --reason x":                           {"project-manager-only-staffs", "unfreeze-is-a-human-decision"},
 		"sdlc ack --through HEAD":                            {"project-manager-only-staffs", "acknowledgement-is-a-human-decision"},
 		"sdlc release A-1 --reason x":                        {"project-manager-only-staffs", "release-is-a-human-decision"},
-		"sdlc parallel A-1":                                  {"project-manager-only-staffs", "parallel-is-a-human-decision"},
 		"sdlc stop":                                          {"project-manager-only-staffs", "stop-is-a-human-decision"},
 	} {
 		for _, agent := range []string{"sdlc:project-manager", "sdlc-project-manager", "project-manager"} {

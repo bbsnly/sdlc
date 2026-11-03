@@ -1419,8 +1419,8 @@ func TestDecision8AnAssignmentIsHeldToTheConfiguredLimitsAndCannotLeaveAnAgentOu
 
 // The hook is the first barrier and refuses the command to any session. This
 // is the second, in the command, for a spelling the hook cannot read: it
-// refuses wherever it sees a Claude Code session id, as `sdlc parallel` does,
-// the session working the story included.
+// refuses wherever it sees a Claude Code session id, the session working the
+// story included.
 func TestDecision8AssignIsRefusedWhereverTheCommandSeesAClaudeCodeSession(t *testing.T) {
 	t.Parallel()
 	root := stfProject(t)

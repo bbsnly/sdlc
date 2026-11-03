@@ -18,9 +18,7 @@
 //   - a command that was expected to exit otherwise, noted by the case that
 //     compared its exit code and streams (sandbox.holds, for `sdlc doctor`);
 //   - the hook, noted when it answered and exited 0 whether it let the call
-//     through or refused it, through the launcher or directly;
-//   - `sdlc parallel`, noted by the one case that runs it to the end it expects
-//     (an interrupt that ends every session it started).
+//     through or refused it, through the launcher or directly.
 //
 // A command only a person may run counts when the case runs it as a person
 // (sandbox.person, which has no session and refuses a directory outside the
@@ -83,7 +81,6 @@ func knownGaps() map[string]string {
 		"codemap":  "prints its help only; its work is done by codemap write",
 	}
 	if runtime.GOOS == "windows" {
-		gaps["parallel"] = "its one real run starts sessions through a fake claude that waits on FIFOs, which need a POSIX shell and mkfifo"
 		gaps["codemap write"] = "its cases land stories through the POSIX launcher (skipWithoutTheLauncher)"
 		gaps["remap"] = "its cases land stories through the POSIX launcher (skipWithoutTheLauncher)"
 	}

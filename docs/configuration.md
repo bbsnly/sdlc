@@ -32,7 +32,6 @@
 - [`human_gates`](#human_gates)
 - [`budget`](#budget)
 - [`consolidate`](#consolidate)
-- [`parallel`](#parallel)
 - [`staffing`](#staffing)
   - [Models and efforts](#models-and-efforts)
   - [Setting a floor with `lowest`](#setting-a-floor-with-lowest)
@@ -770,26 +769,6 @@ that day is not counted either. With no such file, every finished story counts.
 Only the names of the files are read, never what is in them.
 [Consolidating what the retros say](guides/consolidating-what-the-retros-say.md#the-reminder)
 says more.
-
-## `parallel`
-
-This setting matters only if you run several stories at once with
-`sdlc parallel --unattended`.
-
-| Key | What it means |
-| --- | --- |
-| `allow` | narrows the tools [`sdlc parallel --unattended`](commands.md#sdlc-parallel-id) gives each session. Absent: the whole built-in list. A list: only the built-in entries it names. `[]`: none |
-
-The setting can only narrow. The built-in list is stated on the
-[enforcement page](enforcement.md#unattended-sessions), and an entry that is not
-on it refuses the run ([SDLC-E0066](troubleshooting.md#sdlc-e0066)): this file
-is writable by a session on the project, so it never widens what a session may
-do. Without `--unattended` the setting is not read.
-
-To let the sessions use a command the list does not have, add an allow rule to
-your Claude Code settings, not to this file:
-[adding a command](enforcement.md#adding-a-command) says where and what it
-hands over.
 
 ## `staffing`
 

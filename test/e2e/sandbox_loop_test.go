@@ -184,8 +184,7 @@ func reviewedBy(gate, role string) string {
 // S3 of the analysis: this is every subcommand that needs no person, not only
 // the nine AC-2 names. `commit` in AC-2 is the gate, not a command: the
 // `git commit` the hook lets through once the gates before it have passed,
-// and `sdlc gate commit pass`. `parallel` starts model sessions and is never
-// run; AC-3's test holds it refused.
+// and `sdlc gate commit pass`.
 func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) {
 	parallel(t)
 	sb := newSandbox(t)
@@ -425,7 +424,6 @@ var personsDecisions = []struct{ command, rule string }{
 	{"sdlc ack --through HEAD", "acknowledgement-is-a-human-decision"},
 	{`sdlc release US-001 --reason "moved"`, "release-is-a-human-decision"},
 	{"sdlc stop", "stop-is-a-human-decision"},
-	{"sdlc parallel US-001", "parallel-is-a-human-decision"},
 	// US-026 AC-8: what a person assigns to a story, in a project that has the
 	// staffing on or off.
 	{`sdlc staffing assign security --model opus --effort high --reason "mine"`, "assignment-is-a-human-decision"},
@@ -558,23 +556,6 @@ func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunSt
 		}
 		sb.holds(t, ran{dir: main, args: []string{"log"},
 			stdout: "No story has been committed since <sha>, the last commit acknowledged. `sdlc log --all` lists every one.\n"})
-	})
-
-	// S3: parallel starts real model sessions, which is no part of this story,
-	// so it is never run to the end. The hook refuses it above; and past the
-	// hook, the binary refuses a process that says it is a session.
-	t.Run("AC-3 parallel is refused by the binary too, and starts nothing", func(t *testing.T) {
-		stdout, stderr, code := sb.outcome(t, sandboxSession, main, "", "parallel", "US-001")
-		want := refusedTo("sdlc parallel was run from inside a Claude Code session",
-			"starting model sessions is a person's decision",
-			`a person runs "sdlc parallel" in their own terminal, outside Claude Code; an assistant stops and tells the person`,
-			"SDLC-E0061")
-		if stdout != "" || stderr != want || code != 1 {
-			t.Errorf("sdlc parallel in a session: exit %d\nstdout %q\nstderr %q\nwant stderr %q", code, stdout, stderr, want)
-		}
-		if exists(filepath.Join(main, ".sdlc", "worktrees", "US-001")) {
-			t.Error("the refused run left a worktree")
-		}
 	})
 }
 

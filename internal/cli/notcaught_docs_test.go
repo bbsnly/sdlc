@@ -35,7 +35,7 @@ import (
 // the commands, the slash commands, the hook run on a payload, a nested
 // `claude`, and the markers AC-15 and AC-17 read.
 var decisionRoute = regexp.MustCompile(strings.Join([]string{
-	`sdlc (approve|unfreeze|ack|remap|release|parallel|staffing assign)\b`,
+	`sdlc (approve|unfreeze|ack|remap|release|staffing assign)\b`,
 	`"sdlc", "`,
 	`sdlc \(`,
 	`/sdlc:(approve|unfreeze|ack|remap|release|assign)\b`,

@@ -515,7 +515,7 @@ func TestAC6TheContributingGuideNamesTheSandboxCommandAndQuotesWhatItPrints(t *t
 	// just as well in the project the reader is standing in.
 	t.Run("AC-6 it gives no way to run a person's decision", func(t *testing.T) {
 		for _, recipe := range []string{
-			"sdlc approve", "sdlc unfreeze", "sdlc ack", "sdlc release", "sdlc parallel",
+			"sdlc approve", "sdlc unfreeze", "sdlc ack", "sdlc release",
 			"CLAUDE_CODE_SESSION_ID", "SDLC_ENFORCE",
 		} {
 			if strings.Contains(guide, recipe) {

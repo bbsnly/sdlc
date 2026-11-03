@@ -316,7 +316,7 @@ func checkRecorder(words []string, s State) (Finding, bool) {
 // word is as likely where a file is being copied to.
 var sdlcCommands = []string{
 	"init", "status", "story", "log", "ack", "start", "stop", "gate", "artifact", "review", "freeze",
-	"unfreeze", "escalate", "approve", "release", "parallel", "cost", "doctor", "version", "staffing",
+	"unfreeze", "escalate", "approve", "release", "cost", "doctor", "version", "staffing",
 	"codemap", "remap",
 }
 

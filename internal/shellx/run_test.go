@@ -110,7 +110,7 @@ func TestRunForgetsTheCommandOnceItHasWaitedForIt(t *testing.T) {
 
 // One kill of the group is not enough on macOS: a process whose fork is under
 // way when the signal goes out is not signalled, and its child outlives the
-// stop. An interrupted `sdlc parallel` left a session's tool running that way.
+// stop. An interrupted landing command left a tool running that way.
 // The shell here does nothing but start children, so the stop finds it in a
 // fork nearly every time; each round, nothing it started holds the pipe once
 // Run has returned. The children are counted, so that a stop that killed

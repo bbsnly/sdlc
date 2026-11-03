@@ -579,9 +579,9 @@ person may run counts when a case runs it through `sandbox.person`, which the
 single `approve --reject` case in `sandbox_reject_test.go` does.
 
 `knownGaps()` lists the commands no case runs, each with its reason:
-`story`, `artifact`, `review` and `staffing` print their help only, and
-`parallel` has no run on Windows. The guard skips with a reason under `-run`,
-`-skip`, `-shuffle` and `-list`, because the package has then not run whole.
+`story`, `artifact`, `review` and `staffing` print their help only. The guard
+skips with a reason under `-run`, `-skip`, `-shuffle` and `-list`, because the
+package has then not run whole.
 
 ## internal/testscan
 
@@ -695,53 +695,12 @@ not report the test source itself.
 only by `internal/cli/landing.go`'s `landingCommands` (landing.go:222), during
 a story's own landing (Gate 9); no leg of `./task check` runs either.
 
-## internal/parallel
-
-Package `parallel`. What `sdlc parallel` needs that is not about a project's
-files, with no import of `cli`. `launch.go` holds `Allowlist()` (the built-in
-tools an unattended session gets: `sdlc` subcommands, `git status` and `git
-add`, build and test commands, scoped `Edit` and `Write`, unscoped `Read`; no
-interpreter, runner, network tool, push, `claude` or decision command),
-`Narrow` (the allowlist cut down by `parallel.allow`; an entry that is not
-built in is SDLC-E0066, and nil means all, empty means none), `Quote`, and
-`Command`, which builds the one `claude -p` line through `shellx.Command`.
-`schedule.go` defines `Schedule`, which runs at most `limit` sessions and calls
-its progress function from one goroutine only. `status.go` defines `Classify`,
-which reads a finished session as `waiting`, `stopped` or `failed` from the
-story's record first and the exit status second. Imports `model`, `sdlcerr`,
-`shellx`.
-
-## internal/cli/parallel.go
-
-Package `cli`. The `sdlc parallel <ID>...` command. `runParallel` checks that
-the process is a person's (SDLC-E0061) before it reads anything, then the flags
-and the ids, then `parallelPreflight` for each story in order, first refusal
-winning and nothing started until all pass; it reuses `decideStart`'s helpers
-and `recode` copies their wording under the SDLC-E0057 to E0066 codes. A story
-already in its own worktree may be re-run. Sessions run from the main checkout.
-Records are read only after `parallel.Schedule` returns, and `printParallel`
-prints the status view with the commands a person must run gathered at the
-end. Imports `parallel`, `store`, `model`, `sdlcerr`, `shellx`.
-
-## internal/shellpolicy `checkParallel`
-
-Package `shellpolicy`. The rule `parallel-is-a-human-decision`, in
-`shellpolicy.go`, refuses `sdlc parallel` from a model session. It is asked
-from both `checkPrograms` (`Inspect`) and `humanDecisionsOn`, beside
-`checkRelease`. `--max` was added to `ValueFlags`, so its value is not read as
-a subcommand.
-
-## config `parallel` section
-
-Package `config`. `Config.Parallel.Allow` is a `*[]string`, so a missing key
-(the whole built-in list) and an empty list (none) differ. It can only narrow
-the allowlist; `parallel.Narrow` refuses anything wider.
-
 ## cmd/sdlc/main.go signal handler
 
 `exitOnInterrupt` handles `os.Interrupt`, `SIGTERM` and `SIGHUP`. `SIGHUP` is
-there so that closing the terminal an `sdlc parallel` runs in calls
-`shellx.StopAll()`, which ends the sessions, each in a process group of its own.
+there so that closing the terminal a landing runs in calls
+`shellx.StopAll()`, which ends the commands the landing started, each in a
+process group of its own.
 
 ## internal/shellpolicy/find.go
 
@@ -963,7 +922,7 @@ directory in `sdlc/locks`. On Windows the `Microsoft` directory at the top of
 under `LocalAppData`; `leftoversOn` takes the system's name so the tests reach
 that on any machine. `run` is `Run` with the tests handed in, which is
 how the tests reach what happens after `m.Run`. In `internal/cli` only
-`parallel.go` reads the session variable to refuse. `approve`, `unfreeze`,
+`staffing.go` reads the session variable to refuse. `approve`, `unfreeze`,
 `ack` and `remap` are refused to a session by the hook alone.
 
 The landing takes one more, `LockLandings` (`internal/store/guard.go`), at the
@@ -1058,8 +1017,6 @@ all together:
   `internal/shellpolicy/shellpolicy.go`, each keyed on the first subcommand
   word; `shellRules` in `internal/cli/docs_test.go` is the sample of commands
   that makes a rule need a heading in `docs/enforcement.md`;
-- `parallel.Allowlist` (`internal/parallel/launch.go`), which names the `sdlc`
-  subcommands an unattended session may run;
 - `sdlcCommands` in `internal/shellpolicy/staffing.go`, which `codemap` and
   `remap` joined;
 - `personsDecisions` in `test/e2e/sandbox_loop_test.go`;
@@ -1106,8 +1063,7 @@ be read. `sdlcUses` finds each use of `sdlc` among a command's words.
 `staffing assign` also refuses wherever `CLAUDE_CODE_SESSION_ID` is set.
 
 `plugin/agents/project-manager.md` is the twelfth agent. It is not a reviewer
-and not a loop role to the file rules. `parallel.Allowlist` names `set`,
-`amend` and `show` one by one, never `sdlc staffing` as a whole.
+and not a loop role to the file rules.
 
 ## internal/scaffold/templates/config.json.tmpl
 
@@ -1143,7 +1099,7 @@ A program's own text is not read that way: cut at its blanks, a
 `expanduser("~/.agents/x")` named a `.agents` in the project.
 
 `HumanDecisions` never asks a path rule, and of the program rules it asks
-only `checkAssign`, `checkAck`, `checkRemap`, `checkRelease`, `checkParallel`,
+only `checkAssign`, `checkAck`, `checkRemap`, `checkRelease`,
 `checkUnfreeze`, `checkApprove` and `checkUnread`. `checkRemap` and the one
 exception in `helpOnly` (`named.go`) both ask `runsRemap`, so `sdlc remap
 --help` is refused wherever `sdlc remap` is.
@@ -1158,7 +1114,7 @@ substitution (`ran.substituted`). `namesHelp` beside it is the reading
 nothing: `checkManagerAndLast` asks it one question, whether a command the
 project manager is refused was let past before, so that the refusal keeps the
 rule name it had. The rules for `approve`, `unfreeze`, `ack`,
-`release`, `parallel` and `stop` do not call it, and go by `subcommand` in
+`release` and `stop` do not call it, and go by `subcommand` in
 `commands.go` alone: help for those is let through by `named.go`.
 
 Apart from test files, no rule in `policy.Rules` asks what kind of file is written:
@@ -1507,11 +1463,11 @@ and `doctor`. The skills of the six decisions carry
 **The marker check.** `store.ClaudeCodeMarkers()` returns a copy of the five
 variables Claude Code sets for processes it starts. `refuseInsideClaudeCode`
 (`internal/cli/inclaudecode.go`, SDLC-E0079) is the first thing `approve`,
-`unfreeze`, `ack`, `remap`, `release`, `parallel` and `staffing assign` do;
+`unfreeze`, `ack`, `remap`, `release` and `staffing assign` do;
 it reads through `envOf(cmd).getenv`, never `os.Getenv`. `internal/testenv`
 clears `CLAUDECODE` and `AI_AGENT` as well as the `SDLC_`, `CLAUDE_` and
-`GIT_` names. SDLC-E0061 and E0074 still fire first for `parallel` and
-`staffing assign` where the session id is set.
+`GIT_` names. SDLC-E0074 still fires first for `staffing assign` where the
+session id is set.
 
 **Refusals in the hook for a model.** `shellpolicy/forgedhook.go`
 (`checkHandRunHook`, rule `slash-command-is-a-human-decision`) refuses the

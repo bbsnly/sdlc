@@ -1518,9 +1518,6 @@ func checkSdlcCommands(words []string, piped, cut bool, s State) (Finding, bool)
 	if f, ok := checkRelease(words); ok {
 		return f, true
 	}
-	if f, ok := checkParallel(words); ok {
-		return f, true
-	}
 	if f, ok := checkStop(words, s); ok {
 		return f, true
 	}
@@ -1842,9 +1839,6 @@ func humanDecisionBy(r ran, here decisionPlace, text string, storyWaits func(dir
 	if f, ok := checkRelease(r.words); ok {
 		return f, true
 	}
-	if f, ok := checkParallel(r.words); ok {
-		return f, true
-	}
 	f, onAStory := checkUnfreeze(r.words)
 	if !onAStory {
 		f, onAStory = checkApprove(r.words)
@@ -2036,24 +2030,6 @@ func checkRelease(words []string) (Finding, bool) {
 	}, true
 }
 
-// checkParallel keeps starting model sessions with a person. `sdlc parallel`
-// runs `claude` once per story, and with --unattended it hands each session a
-// list of pre-approved tools: an agent that ran it would be starting work, and
-// choosing what that work may do, that nobody asked for.
-func checkParallel(words []string) (Finding, bool) {
-	if !runsSubcommand(words, "parallel") {
-		return Finding{}, false
-	}
-	return Finding{
-		Rule: "parallel-is-a-human-decision",
-		Reason: "sdlc parallel starts model sessions, optionally with tools pre-approved, and an " +
-			"agent that ran it would be starting work nobody asked for",
-		Route: "say which stories you meant and stop; a person runs " +
-			"`sdlc parallel <ID>...` in their own terminal, outside Claude Code, or types " +
-			"`!sdlc parallel <ID>...` at the prompt in Claude Desktop",
-	}, true
-}
-
 // checkAck keeps acknowledging the log with the person who read it.
 //
 // `sdlc log` starts after the commit acknowledged, so moving it forward takes
@@ -2171,7 +2147,7 @@ func staffingValueFlag(word string) bool { return word == "--model" || word == "
 var ValueFlags = map[string]bool{
 	"--file": true, "--gate": true, "--message": true, "--note": true,
 	"--reason": true, "--reject": true, "--since": true, "--story": true, "--through": true,
-	"--usd": true, "--max": true, "--model": true, "--effort": true,
+	"--usd": true, "--model": true, "--effort": true,
 }
 
 // checkCommit puts the commit gate in front of the commit, for a commit in this

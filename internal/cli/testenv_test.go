@@ -2,7 +2,6 @@ package cli
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"runtime"
 	"strconv"
@@ -12,23 +11,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// The fake claude of US-058 is this binary again: see parallel_fake_test.go.
-	if os.Getenv(plChildEnv) != "" {
-		os.Exit(plChildMain())
-	}
 	flag.Parse()
 	raiseParallel()
-	// Before testenv.Run, which leaves PATH and the PLFAKE_ variables as they
-	// are; the fake's directory is removed after the tests, outside the
-	// coverage profile that m.Run writes.
-	cleanup, err := plShareFakeClaude()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "the fake claude for the parallel tests:", err)
-		os.Exit(1)
-	}
-	code := testenv.Run(m)
-	cleanup()
-	os.Exit(code)
+	os.Exit(testenv.Run(m))
 }
 
 // parallelPerCPU is how many of this package's parallel tests run at once for

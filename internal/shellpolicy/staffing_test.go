@@ -506,7 +506,6 @@ var personRules = map[string]string{
 	"sdlc unfreeze --reason x":       "unfreeze-is-a-human-decision",
 	"sdlc ack --through HEAD":        "acknowledgement-is-a-human-decision",
 	"sdlc release US-001 --reason x": "release-is-a-human-decision",
-	"sdlc parallel US-001":           "parallel-is-a-human-decision",
 	"sdlc stop":                      "stop-is-a-human-decision",
 }
 

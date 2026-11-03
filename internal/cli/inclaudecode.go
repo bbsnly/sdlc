@@ -9,7 +9,7 @@ import (
 
 // refuseInsideClaudeCode is SDLC-E0079 where the command runs in a process
 // that carries any of Claude Code's markers, and nil elsewhere. slash is the
-// slash command that stands for it, or "" for one that has none.
+// slash command that stands for it.
 //
 // The shell rules read a command line and miss what they cannot read: `arch`,
 // `vim -c`, a script fed to a shell on standard input. Every one of those
@@ -37,14 +37,6 @@ func refuseInsideClaudeCode(cmd *cobra.Command, slash string) error {
 			"a model's Bash or PowerShell and whatever they run, a `!` line typed in a session started from a "+
 			"terminal, and a terminal or tmux it started; a person's decision comes from a slash command they "+
 			"type in Claude Code, a `!` line in Claude Desktop, or a terminal outside Claude Code")
-	if slash == "" {
-		// No slash command: the terminal, and in Claude Desktop the `!` line,
-		// which has none of the markers (human advocate, Gate 7).
-		more := withArguments(cmd, false)
-		return err.WithFix("a person runs " + quote(path) + more + " in a terminal outside Claude Code, in a " +
-			"window they opened themselves, or types " + quote("!"+path) + more + " at the prompt in Claude " +
-			"Desktop; an assistant stops here and tells the person")
-	}
 	// The first argument is put in where it has the shape of an id: the story
 	// for approve, remap and release, since after an escalation no story is
 	// active and a bare slash command is refused with SDLC-E0011, and the

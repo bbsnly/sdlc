@@ -10,9 +10,6 @@ package e2e
 // hook does, still makes the decision. AC-17: the same line expanded in a
 // session started from another session's tool call, whose hook inherits
 // AI_AGENT, records nothing.
-//
-// parallel is left to internal/cli, whose fake claude it starts: here it
-// would find the developer's own on PATH.
 
 import (
 	"bytes"

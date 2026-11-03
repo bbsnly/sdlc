@@ -7,10 +7,10 @@ package cli
 // read the command line and miss what they cannot read (`arch`, `vim -c`, a
 // script on standard input); the markers reach every one of those.
 //
-// The refusal is SDLC-E0079. It comes before anything is read, as SDLC-E0061
-// and SDLC-E0074 do, so it answers no question about the record. Those two
-// keep refusing parallel and staffing assign first where the session id is
-// set (decision 2 of 2026-10-20), and the new code covers every other case.
+// The refusal is SDLC-E0079. It comes before anything is read, as SDLC-E0074
+// does, so it answers no question about the record. That one keeps refusing
+// staffing assign first where the session id is set (decision 2 of
+// 2026-10-20), and the new code covers every other case.
 // The slash commands record as before: internal/hook's tests hold that.
 
 import (
@@ -204,30 +204,5 @@ func TestAC15ATerminalOutsideClaudeCodeStillRecordsAPersonsCommand(t *testing.T)
 				t.Error("sdlc ack from a terminal outside Claude Code recorded nothing")
 			}
 		})
-	}
-}
-
-// parallel has no slash command, and starts model sessions: inside Claude
-// Code's environment it starts none. A session id is still SDLC-E0061's
-// (decision 2); any other marker is AC-15's.
-func TestAC15ParallelRunWithAMarkerOtherThanTheSessionIdStartsNothingAndIsRefused(t *testing.T) {
-	t.Parallel()
-	main := plRepository(t, 2)
-	rig := plInstall(t, main, nil, false)
-	before := icRecord(t, main)
-	c := icCommand{terminal: "sdlc parallel", args: []string{"parallel", "US-001", "US-002"}}
-	for _, m := range icMarkers {
-		want := icInClaudeCode
-		if m.name == store.SessionEnv {
-			want = plFromASession
-		}
-		t.Logf("AC-15 sdlc parallel with %s", m.name)
-		icRefused(t, icRun(t, main, map[string]string{m.name: m.value}, c.args...), want, c)
-	}
-	if got := rig.started(); len(got) != 0 {
-		t.Errorf("sdlc parallel inside Claude Code's environment started sessions for %q", got)
-	}
-	if !maps.Equal(before, icRecord(t, main)) {
-		t.Error("a refused sdlc parallel changed the record")
 	}
 }

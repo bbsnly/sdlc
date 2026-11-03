@@ -34,8 +34,8 @@ func main() {
 // commands still ran; StopAll returns once they have been.
 func exitOnInterrupt() {
 	signals := make(chan os.Signal, 1)
-	// SIGHUP too: closing the terminal an `sdlc parallel` runs in would
-	// otherwise end sdlc and leave every session it started, each in a group of
+	// SIGHUP too: closing the terminal a landing runs in would
+	// otherwise end sdlc and leave the commands it started, each in a group of
 	// its own, running on with nobody to stop them.
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {

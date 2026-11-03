@@ -202,7 +202,7 @@ func TestAC14EachPersonOnlySlashCommandTypedInTheAppMakesThePersonsDecisionThrou
 	})
 
 	// A stop before the gates have passed is a person's too, and has no slash
-	// command: the story leaves it out (parallel likewise).
+	// command: the story leaves it out.
 	if r := sb.person(t, tree, "stop"); r.code != 0 {
 		t.Fatalf("stop, by the harness: exit %d\n%s%s", r.code, r.stdout, r.stderr)
 	}

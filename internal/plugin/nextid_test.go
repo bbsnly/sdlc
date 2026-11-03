@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// US-058 AC-1: `sdlc parallel` starts each session with /sdlc:next <ID>, and
-// two sessions each told /sdlc:next US-5 would both start the highest-priority
-// story if the skill ignored what it was given. The runbook takes the id the
-// person (or the launcher) typed after the command, and starts that story; with
+// US-058 AC-1: a person who opens a session for each story starts each with
+// /sdlc:next <ID>, and two sessions each told /sdlc:next US-5 would both start
+// the highest-priority story if the skill ignored what it was given. The
+// runbook takes the id the person typed after the command, and starts that story; with
 // none, it behaves as it always did. The id is a story id and not an
 // instruction: `sdlc start` is what validates it.
 //

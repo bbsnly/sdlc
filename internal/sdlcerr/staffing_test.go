@@ -57,8 +57,7 @@ func TestAC4AC5AC8TheStaffingCodesAreDocumentedAndSayWhatToDo(t *testing.T) {
 
 // The refusal a session meets when it runs the person's command tells it to
 // stop: a session that reads "run sdlc staffing assign in a terminal" as its
-// own next step has been told to do the one thing the code refuses. SDLC-E0061
-// says the same of `sdlc parallel`, in the same words.
+// own next step has been told to do the one thing the code refuses.
 func TestDecision8TheFixForAPersonsCommandDoesNotSendAnAssistantToRunIt(t *testing.T) {
 	const id = "SDLC-E0074"
 	code := registered(id)

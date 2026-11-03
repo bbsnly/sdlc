@@ -56,11 +56,6 @@ func TestAC13TheClaudeDesktopPageCoversWhatAPersonThereNeeds(t *testing.T) {
 			}
 		}
 	})
-	t.Run("AC-13 sdlc parallel still needs a terminal", func(t *testing.T) {
-		if !someParagraph(page, "sdlc parallel", "terminal") {
-			t.Error("no paragraph says that sdlc parallel still needs a terminal")
-		}
-	})
 	t.Run("AC-13 why Cowork is not supported", func(t *testing.T) {
 		// The story's own reason: Cowork refuses a plugin with a bin/
 		// directory, and this one's launcher lives there.

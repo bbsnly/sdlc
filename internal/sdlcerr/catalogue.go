@@ -191,36 +191,6 @@ var (
 	UncommittedOnTrunk = register("SDLC-E0056",
 		`in the checkout named above, stash the changes it names, or commit them (a commit moves trunk, so the next stop puts the story onto it before it lands), then run "sdlc stop" in the story's worktree again; they are a person's changes, so an assistant hands the story to a person with "sdlc escalate" and stops`)
 
-	ParallelUnknownStory = register("SDLC-E0057",
-		"name only stories the backlog has: `sdlc story list` shows them; fix the spelling of the id, or add the story to the backlog first")
-
-	ParallelNotRunnable = register("SDLC-E0058",
-		"the story has to be ready, or every story it waits on has to be finished: take it off the command line, or finish what it waits on first; `sdlc story list` shows each story's status")
-
-	ParallelHeldElsewhere = register("SDLC-E0059",
-		`the story is being worked in another checkout: finish it there, or a person runs "release" in that checkout, or "/sdlc:release <ID> --reason ...", or "sdlc release <ID> --reason ..." here; an assistant stops and tells the person`)
-
-	ParallelListedTwice = register("SDLC-E0060",
-		"name each story once: take the repeated id off the command line")
-
-	ParallelFromASession = register("SDLC-E0061",
-		`a person runs "sdlc parallel" in their own terminal, outside Claude Code; an assistant stops and tells the person`)
-
-	ParallelNeedsWorktrees = register("SDLC-E0062",
-		`sdlc parallel gives each story its own worktree: turn "git.worktrees" on in the project's configuration, or work the stories one at a time with /sdlc:next`)
-
-	ParallelBadMax = register("SDLC-E0063",
-		"give --max a whole number, 1 or more: the most stories to run at the same time (the default is 2)")
-
-	ParallelAwaitingPerson = register("SDLC-E0064",
-		`the story is waiting for a person's answer, and a run again would act as that answer: run "/sdlc:approve <ID>", or "sdlc approve <ID>" (or its --reject) in .sdlc/worktrees/<ID>, then name the story again; an assistant stops and tells the person`)
-
-	ParallelFinished = register("SDLC-E0065",
-		`the story's gates are done and it is waiting to land: run "sdlc stop" in .sdlc/worktrees/<ID> to land it; to rework it, a person has to reopen it by recording a gate as failed, then name it again`)
-
-	ParallelAllowlistWidened = register("SDLC-E0066",
-		`"parallel.allow" can only narrow the built-in list of tools a session is given: take out the entries that are not built in, or take the setting out of the project's configuration`)
-
 	StaffingOff = register("SDLC-E0067",
 		`to use the staffing, a person sets "staffing.enabled" to true in the project's configuration, with the models and efforts it may ask for (docs/configuration.md has an example); until then every agent takes part and each runs as its definition says`)
 
@@ -261,7 +231,7 @@ var (
 	// the docs read; the CLI gives each command a fix of its own, with its
 	// slash command and the story it names.
 	PersonsCommandInClaudeCode = register("SDLC-E0079",
-		`a person types the command's slash command in Claude Code with the same arguments, "/sdlc:approve" for "sdlc approve" and likewise "/sdlc:unfreeze", "/sdlc:ack", "/sdlc:remap", "/sdlc:release", and "/sdlc:assign" for "sdlc staffing assign", or, in Claude Desktop, types "!" and the command with the same arguments at the prompt, as "!sdlc approve US-001", or runs the command in a terminal outside Claude Code, in a window they opened themselves; "sdlc parallel" has no slash command, and runs only in that terminal or as a "!" line in Claude Desktop; an assistant stops here and says what it would have run, and tries no other way of running it`)
+		`a person types the command's slash command in Claude Code with the same arguments, "/sdlc:approve" for "sdlc approve" and likewise "/sdlc:unfreeze", "/sdlc:ack", "/sdlc:remap", "/sdlc:release", and "/sdlc:assign" for "sdlc staffing assign", or, in Claude Desktop, types "!" and the command with the same arguments at the prompt, as "!sdlc approve US-001", or runs the command in a terminal outside Claude Code, in a window they opened themselves; an assistant stops here and says what it would have run, and tries no other way of running it`)
 
 	ConflictMarkersAdded = register("SDLC-E0080",
 		`a person puts each file the message names right: they resolve the unresolved conflict in it, or take out the lines that are not one, commit, and run the commit gate or "sdlc stop" again; where the lines are meant to be there, a person lists the file in "paths.conflict_markers_intended" in .sdlc/config.json, in a commit to the trunk branch, because "sdlc stop" reads trunk's copy and not the story's, and then runs "sdlc stop" in the story's worktree again. An assistant hands the story to a person with "sdlc escalate" and stops: it does not resolve the conflict and does not edit that list`)

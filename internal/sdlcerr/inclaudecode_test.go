@@ -1,6 +1,6 @@
 package sdlcerr
 
-// US-108 AC-15: approve, unfreeze, ack, remap, release, parallel and staffing
+// US-108 AC-15: approve, unfreeze, ack, remap, release and staffing
 // assign refuse in a process whose environment carries Claude Code's markers,
 // under a code of their own. Its fix is read by a person who typed `!sdlc
 // approve` in a session, and by a model whose Bash ran it, so it sends the
@@ -34,12 +34,10 @@ func TestAC15APersonsCommandRunInsideClaudeCodeHasACodeWhoseFixNamesTheSlashComm
 	case outside < slash:
 		t.Errorf("%s's fix names the terminal before the slash command (AC-12):\n%s", inClaudeCodeID, fix)
 	}
-	// The other two codes for a session stay as they were (AC-8), and this one
-	// is not either of them under a new number.
-	for _, other := range []string{"SDLC-E0061", "SDLC-E0074"} {
-		if fixFor(registered(other)) == fix {
-			t.Errorf("%s has %s's fix word for word", inClaudeCodeID, other)
-		}
+	// The other code for a session stays as it was (AC-8), and this one is not
+	// it under a new number.
+	if other := "SDLC-E0074"; fixFor(registered(other)) == fix {
+		t.Errorf("%s has %s's fix word for word", inClaudeCodeID, other)
 	}
 
 	documented := documentedCodes(t)

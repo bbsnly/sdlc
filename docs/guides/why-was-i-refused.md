@@ -115,7 +115,7 @@ what is read as a mention and what is not.
 Unless enforcement is switched off, one thing is refused in every session, in
 any project with `.sdlc/config.json` the call reaches (the session's, the
 working directory's, or one a path in the command names): a person's decisions.
-`sdlc ack`, `sdlc release`, `sdlc parallel` and `sdlc staffing assign` are
+`sdlc ack`, `sdlc remap`, `sdlc release` and `sdlc staffing assign` are
 refused from any tool call, and so is any command nested too deep to read.
 While a story is under way, or handed to a person and not yet answered, so are
 `sdlc approve` and `sdlc unfreeze`, and after a `cd` the hook cannot follow,

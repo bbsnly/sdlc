@@ -873,7 +873,6 @@ var corpusPersons = []struct{ verb, args, rule string }{
 	{"unfreeze", "--reason x", refusedAsUnfreeze},
 	{"ack", "--through HEAD", refusedAsAck},
 	{"release", "A-1 --reason x", refusedAsRelease},
-	{"parallel", "A-1 B-2", parallelRule},
 	{"stop", "", refusedAsStop},
 	{"staffing assign", "security --model opus --reason x", assignRule},
 }
@@ -1068,8 +1067,6 @@ func TestAC5AHelpFlagThatDoesNotStopTheCommandIsStillRefused(t *testing.T) {
 		corpusRow{command: `sdlc approve -- --help`, rule: approvalRule, person: approvalRule},
 		corpusRow{command: `sdlc approve -- -h`, rule: approvalRule, person: approvalRule},
 		corpusRow{command: `sdlc approve help`, rule: approvalRule, person: approvalRule},
-		corpusRow{command: `sdlc parallel A-1 B-2 -- --help`, rule: parallelRule, person: parallelRule},
-		corpusRow{command: `sdlc parallel help`, rule: parallelRule, person: parallelRule},
 		// The project manager, and PowerShell.
 		corpusRow{who: "manager", command: `sdlc approve --help=false A-1`, rule: approvalRule, person: approvalRule},
 		corpusRow{who: "manager", command: `sdlc unfreeze --help --help=false --reason x`, rule: refusedAsUnfreeze, person: refusedAsUnfreeze},

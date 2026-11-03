@@ -26,7 +26,6 @@ var helpPersons = []helpVerb{
 	{[]string{"unfreeze"}, []string{"--reason", "x"}, "unfreeze-is-a-human-decision"},
 	{[]string{"ack"}, []string{"--through", "HEAD"}, "acknowledgement-is-a-human-decision"},
 	{[]string{"release"}, []string{"A-1", "--reason", "x"}, "release-is-a-human-decision"},
-	{[]string{"parallel"}, []string{"A-1", "B-2"}, "parallel-is-a-human-decision"},
 	{[]string{"stop"}, nil, "stop-is-a-human-decision"},
 	{[]string{"staffing", "assign"}, []string{"security", "--model", "opus", "--reason", "x"}, "assignment-is-a-human-decision"},
 }

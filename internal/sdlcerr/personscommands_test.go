@@ -8,8 +8,7 @@ package sdlcerr
 // The wording rule is the story's test plan's: the first terminal-form mention
 // of a person-only command is preceded by its slash command, in the same
 // quoting, then ", or "; a lead-in to a list of answers reads "in Claude Code or
-// in their own terminal:". `sdlc staffing assign` is /sdlc:assign, and
-// `sdlc parallel` has no slash command and is left as it is.
+// in their own terminal:". `sdlc staffing assign` is /sdlc:assign.
 //
 // Where the terminal command names the story, the slash command names it too,
 // with the same arguments: re-pinned at Gate 7, after the first pins gave a
@@ -51,9 +50,7 @@ func TestAC12EveryFixThatNamesAPersonsCommandNamesItsSlashCommandFirst(t *testin
 		{StoryHeldElsewhere, "a person runs the command in the checkout that holds the story, named above, or moves the story here with `/sdlc:release <ID> --reason \"...\"`, or `sdlc release <ID> --reason \"...\"` in their own terminal, then `sdlc start <ID>` in this checkout; an assistant stops and tells the person which checkout holds the story, and runs neither \"sdlc start\" nor \"sdlc release\""}, // SDLC-E0050
 		{HoldingCheckoutMissing, "if that checkout is gone for good, a person runs `/sdlc:release <ID> --reason \"...\"`, or `sdlc release <ID> --reason \"...\"` in their own terminal, after which `sdlc start <ID>` works in any checkout; until then no checkout can record anything for the story; an assistant stops and tells the person, and does not run it"},                                                // SDLC-E0051
 		{LandingCheckFailed, "read what the message above says the check or the configured commands found. Where a configured command failed, the story stays with its session: run the command in a checkout that has trunk checked out with nothing uncommitted, which the main checkout usually is, and where it passes there, record `sdlc gate implementation fail --story <ID> --note \"...\"` in .sdlc/worktrees/<ID>, rework the story through its gates and run \"sdlc stop\" there again; where it fails there too the failure is trunk's own, and \"sdlc stop\" lands the story once a person has put trunk right. Any other check is a person's to put right: they do what the message says and run \"sdlc stop\" in .sdlc/worktrees/<ID> again, or reopen the story: answer the escalation first with \"/sdlc:approve <ID>\", or \"sdlc approve <ID>\" or its --reject in .sdlc/worktrees/<ID>, then run `sdlc gate implementation fail --story <ID> --note \"...\"` there, then /sdlc:next; \"sdlc stop\" run by a person runs the story's code and the repository's git settings with that person's own privileges, so read the story's changes first; for those checks an assistant hands the story to a person with \"sdlc escalate\" and stops"}, // SDLC-E0055
-		{ParallelHeldElsewhere, `the story is being worked in another checkout: finish it there, or a person runs "release" in that checkout, or "/sdlc:release <ID> --reason ...", or "sdlc release <ID> --reason ..." here; an assistant stops and tells the person`},                  // SDLC-E0059
-		{ParallelAwaitingPerson, `the story is waiting for a person's answer, and a run again would act as that answer: run "/sdlc:approve <ID>", or "sdlc approve <ID>" (or its --reject) in .sdlc/worktrees/<ID>, then name the story again; an assistant stops and tells the person`}, // SDLC-E0064
-		{StaffingAssigned, `a person chose this for the agent, so it stays as it is: leave it out of the change; only a person changes it, with "/sdlc:assign", or "sdlc staffing assign" in their own terminal`},                                                                        // SDLC-E0072
+		{StaffingAssigned, `a person chose this for the agent, so it stays as it is: leave it out of the change; only a person changes it, with "/sdlc:assign", or "sdlc staffing assign" in their own terminal`}, // SDLC-E0072
 		// Re-pinned after the first pin offered /sdlc:assign and then said it is
 		// run only outside Claude Code: the slash command is typed in Claude
 		// Code, the terminal command outside it.

@@ -76,7 +76,6 @@ func New(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newEscalateCmd(),
 		newApproveCmd(),
 		newReleaseCmd(),
-		newParallelCmd(),
 		newCostCmd(),
 		newTraceCmd(),
 		newDoctorCmd(),

@@ -55,7 +55,6 @@ type Config struct {
 	Freeze      Freeze            `json:"freeze"`
 	HumanGates  HumanGates        `json:"human_gates"`
 	Budget      Budget            `json:"budget"`
-	Parallel    Parallel          `json:"parallel"`
 	Consolidate Consolidate       `json:"consolidate"`
 	Staffing    Staffing          `json:"staffing"`
 }
@@ -81,14 +80,6 @@ type Staffing struct {
 type Lowest struct {
 	Model  string `json:"model"`
 	Effort string `json:"effort"`
-}
-
-// Parallel is what `sdlc parallel --unattended` may be narrowed by.
-type Parallel struct {
-	// Allow narrows the tools an unattended session is given. A pointer, for
-	// the reason Git.Worktrees is one: a key left out means the whole built-in
-	// list, and an empty list means none, which are not the same.
-	Allow *[]string `json:"allow,omitempty"`
 }
 
 // Consolidate is when `sdlc status` and `sdlc stop` tell a person that stories
