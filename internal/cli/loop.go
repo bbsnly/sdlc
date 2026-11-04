@@ -1351,25 +1351,41 @@ func requireEvidence(ctx context.Context, rd *reading, id string, gate model.Gat
 		return requireCriteria(s, id)
 	case model.GateTestsFrozen:
 		return requireFreeze(ctx, rd, id, record)
-	case model.GatePlan, model.GateImplementation, model.GateVerification:
+	case model.GatePlan, model.GateImplementation:
 		// The freeze is only worth anything if it is still intact every time
 		// the loop moves. Checking once at Gate 3 would let it be lifted in
 		// silence the moment the implementation got difficult.
 		return rd.requireIntactFreeze(ctx, id, record)
-	case model.GateCommit:
+	case model.GateVerification:
 		if err := rd.requireIntactFreeze(ctx, id, record); err != nil {
 			return err
 		}
-		if err := requireFreshReviews(ctx, rd, id, record); err != nil {
-			return err
-		}
-		if err := requireApproval(ctx, rd, id, record); err != nil {
-			return err
-		}
-		return requireCommitted(ctx, s)
+		return requireFindings(ctx, rd, gate, record, model.GateDesignReview)
+	case model.GateCommit:
+		return requireCommitEvidence(ctx, rd, id, record)
 	default:
 		return nil
 	}
+}
+
+// requireCommitEvidence is what the commit gate holds the story to, in the order
+// a person would want to hear it.
+func requireCommitEvidence(ctx context.Context, rd *reading, id string, record *model.Record) error {
+	if err := rd.requireIntactFreeze(ctx, id, record); err != nil {
+		return err
+	}
+	// Before the reviews are re-asked: a finding fixed now changes the tree,
+	// and a reviewer asked about the tree before that would be asked again.
+	if err := requireFindings(ctx, rd, model.GateCommit, record, model.GateDesignReview, model.GateCodeReview); err != nil {
+		return err
+	}
+	if err := requireFreshReviews(ctx, rd, id, record); err != nil {
+		return err
+	}
+	if err := requireApproval(ctx, rd, id, record); err != nil {
+		return err
+	}
+	return requireCommitted(ctx, rd.s)
 }
 
 // headCommit is the commit HEAD is on, for a record to name. A repository with

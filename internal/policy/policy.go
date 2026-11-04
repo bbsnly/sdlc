@@ -348,8 +348,8 @@ var Rules = []Rule{
 	},
 	{
 		ID: "reviewer-reviews",
-		Route: "record the verdict with `sdlc review add <gate> <role> approve|block --important <n> --nits <n>`, " +
-			"and say what is wrong rather than fixing it -- a reviewer that " +
+		Route: "record the verdict with `sdlc review add <gate> <role> approve|block --important <n> --nits <n> --finding \"<important|nit> [path]: <text>\"`, " +
+			"one --finding for each finding it counts, and say what is wrong rather than fixing it -- a reviewer that " +
 			"changes the work is reviewing its own",
 		check: func(r Request) string {
 			role := NormalizeAgent(r.Agent)
@@ -396,7 +396,8 @@ var Rules = []Rule{
 	},
 	{
 		ID: "review-is-written-by-the-tool",
-		Route: "run `sdlc review add <gate> <role> <verdict> --important <n> --nits <n>` and give it the review; " +
+		Route: "run `sdlc review add <gate> <role> <verdict> --important <n> --nits <n> --finding \"<important|nit> [path]: <text>\"`, " +
+			"one --finding for each finding it counts, and give it the review; " +
 			"it records who reviewed what, and what they were looking at",
 		check: func(r Request) string {
 			if !inReviews(r.Path) {

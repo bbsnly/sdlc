@@ -158,7 +158,8 @@ func stfOffWalk(t *testing.T, asJSON bool) string {
 	// Gate 4: nobody has reviewed, then the architect blocks, then everybody
 	// reports and the gate passes.
 	tr.run("", "gate", "design_review", "pass", "--note", "nobody objected")
-	tr.run("# architect\n", "review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-1 has no step")
+	tr.run("# architect\n", "review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-1 has no step",
+		"--finding", "important AC-1 has no step")
 	tr.run("", "gate", "design_review", "pass")
 	tr.run("# nobody\n", "review", "add", "design_review", "code-reviewer", "approve")
 	tr.run("# architect\n", "review", "add", "design_review", "architect", "approve")
@@ -169,6 +170,9 @@ func stfOffWalk(t *testing.T, asJSON bool) string {
 	tr.run("", "gate", "design_review", "pass")
 	tr.run("# human-advocate\n", "review", "add", "design_review", "human-advocate", "approve")
 	tr.run("", "gate", "design_review", "pass", "--note", "approved")
+	// US-117: the block's finding holds the verification gate until it is
+	// closed. The closing is out of the transcript, which is about the staffing.
+	mustRun(t, "finding", "close", "design_review", "architect", "F-1", "--fixed")
 
 	writeFile(t, root, "internal/invoice.go", "package internal\n\nfunc Invoice() {}\n")
 	tr.run("", "gate", "implementation", "pass", "--note", "frozen tests green")
@@ -229,12 +233,78 @@ func stfWithoutReviewPolicy(transcript string) string {
 		regexp.MustCompile(`,\s*"policy":\s*"[^"]*"`),
 		regexp.MustCompile(`"policy":\s*"[^"]*",\s*`),
 		regexp.MustCompile(`,"REVIEW\.md"`),
-		// --important is in the walk's command line, which the goldens have.
-		regexp.MustCompile(`(?mi)^[^$\n].*(review policy|REVIEW\.md|\bimportant\b).*\n`),
+		// --important and --finding are in the walk's command line, which the
+		// goldens have. A line about the block's finding is US-117's.
+		regexp.MustCompile(`(?mi)^[^$\n].*(review policy|REVIEW\.md|\bimportant\b|\bfindings?\b|\bF-\d+\b|\bfixed\b).*\n`),
 	} {
 		transcript = gone.ReplaceAllString(transcript, "")
 	}
 	return transcript
+}
+
+// stfFindingKey is a JSON key of what US-117 added: the findings of a review,
+// and the referred findings status lists.
+var stfFindingKey = regexp.MustCompile(`"(findings?|referred)[a-z_]*":\s*`)
+
+// stfWithoutFindings is a transcript with every value under a key of US-117's
+// taken out, with the comma that joined it to its object, and every event that
+// names a finding: the walk's one block lists a finding, and a closing outside
+// the transcript closes it. US-117's own tests hold what they print. A value
+// holds brackets of its own, so it is read to its end rather than matched.
+func stfWithoutFindings(transcript string) string {
+	for from := 0; ; {
+		loc := stfFindingKey.FindStringIndex(transcript[from:])
+		if loc == nil {
+			break
+		}
+		start, end := from+loc[0], stfJSONValueEnd(transcript, from+loc[1])
+		trimmed := strings.TrimRight(transcript[:start], " \t\r\n")
+		switch {
+		case strings.HasSuffix(trimmed, ","):
+			start = len(trimmed) - 1
+		default:
+			rest := strings.TrimLeft(transcript[end:], " \t\r\n")
+			if strings.HasPrefix(rest, ",") {
+				end = len(transcript) - len(rest) + 1
+				end += len(transcript[end:]) - len(strings.TrimLeft(transcript[end:], " \t\r\n"))
+			}
+		}
+		transcript = transcript[:start] + transcript[end:]
+		from = start
+	}
+	return regexp.MustCompile(`\{[^{}]*\bfindings?\b[^{}]*\},\s*`).ReplaceAllString(transcript, "")
+}
+
+// stfJSONValueEnd is where the JSON value that starts at from ends: past its
+// closing bracket, string or word.
+func stfJSONValueEnd(text string, from int) int {
+	depth, inString := 0, false
+	for i := from; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case inString && c == '\\':
+			i++
+		case c == '"':
+			inString = !inString
+			if !inString && depth == 0 {
+				return i + 1
+			}
+		case inString:
+		case c == '[' || c == '{':
+			depth++
+		case c == ']' || c == '}':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+			if depth < 0 {
+				return i
+			}
+		case depth == 0 && (c == ',' || c == '\n'):
+			return i
+		}
+	}
+	return len(text)
 }
 
 func TestAC10WithNoStaffingSectionEveryCommandPrintsWhatItPrintedBeforeTheStory(t *testing.T) {
@@ -252,8 +322,8 @@ func TestAC10WithNoStaffingSectionEveryCommandPrintsWhatItPrintedBeforeTheStory(
 			if err != nil {
 				t.Fatalf("the output the tool printed before the story is not there to compare with: %v", err)
 			}
-			got := stfWithoutReviewPolicy(stfWithoutConfigComments(t, stfOffWalk(t, form.json)))
-			wanted := stfWithoutReviewPolicy(stfWithoutConfigComments(t, string(want)))
+			got := stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, stfOffWalk(t, form.json))))
+			wanted := stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, string(want))))
 			if got == wanted {
 				return
 			}

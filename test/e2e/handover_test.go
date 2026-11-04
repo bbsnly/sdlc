@@ -164,7 +164,7 @@ func TestUS008ABlockAtTheLimitHandsTheStoryOverOrChangesNothingInTheSandbox(t *t
 		sb.worksGate(t, model.Gate(gate))
 	}
 	blocked := model.ReviewEvent(model.GateDesignReview, "architect", model.VerdictBlock)
-	block := []string{"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 has no step"}
+	block := []string{"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step"}
 
 	// `sdlc init` sets loop.max_review_rounds to 2.
 	t.Run("AC-4 a block below the limit is recorded without git", func(t *testing.T) {

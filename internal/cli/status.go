@@ -43,6 +43,10 @@ type statusPayload struct {
 	// Staffing is "none" or "recorded" for the active story where the project
 	// has the staffing on, so a session knows whether to ask for one.
 	Staffing string `json:"staffing,omitempty"`
+	// Findings is every finding the active story's reviews listed, with its
+	// closings; Referred is those closed as referred, which are the person's.
+	Findings []findingInfo `json:"findings,omitempty"`
+	Referred []findingInfo `json:"referred,omitempty"`
 	// Waiting is every story handed to a person and not yet answered. The
 	// iteration ended when it was handed over, so nothing else here says so.
 	Waiting []waitingStory `json:"waiting,omitempty"`
@@ -207,6 +211,12 @@ func (v *statusView) readActive(cmd *cobra.Command, p *config.Project) error {
 		return err
 	}
 	payload.Cost = describeCost(p.Config.Budget, record)
+	payload.Findings = findingsOf(record)
+	for _, f := range payload.Findings {
+		if f.State == model.ClosedReferred {
+			payload.Referred = append(payload.Referred, f)
+		}
+	}
 	if p.Config.Staffing.Enabled {
 		payload.Staffing = "none"
 		if staffed(record) {
@@ -233,6 +243,10 @@ func (v *statusView) print(w io.Writer) {
 		v.printActive(w, finished, notHere, notHereNext)
 	} else {
 		fmt.Fprintln(w, "No iteration running.")
+	}
+	printHeldFindings(w, payload.Findings)
+	for _, f := range payload.Referred {
+		printFinding(w, "referred", f)
 	}
 	fmt.Fprintf(w, "\n  backlog  %s\n", describeCounts(payload.Backlog))
 	for _, ws := range payload.Waiting {

@@ -344,6 +344,19 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	// BlockWithoutImportant, is held by
 	// TestAC3TheBlockCodeIsNamedBlockWithoutImportantIsDocumentedAndSaysWhatToDo.
 	released = append(released, pin{registered("SDLC-E0086"), "SDLC-E0086"})
+	// US-117 AC-2 to AC-5: findings that do not agree with the review's counts, a
+	// closing that needs a reason and has none, a finding in a file the story
+	// changes closed as referred, and a gate refused while a finding is open.
+	// US-109 is under way beside this story and pins SDLC-E0087 and SDLC-E0088,
+	// so these take the four after them. Pinned outright and found by number, as
+	// SDLC-E0086 is: each row fails by rendering as nothing until its code is
+	// registered. TestAC2AC3AC4AC5TheFindingCodesAreDocumentedAndSayWhatToDo says
+	// what each is for.
+	// SDLC-E0093, from its design review, is a gate refused on a record whose
+	// findings an older sdlc dropped when it saved it.
+	for _, id := range []string{"SDLC-E0089", "SDLC-E0090", "SDLC-E0091", "SDLC-E0092", "SDLC-E0093"} {
+		released = append(released, pin{registered(id), id})
+	}
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
 			t.Errorf("%s now renders as %s: a released code was renumbered", r.id, got)

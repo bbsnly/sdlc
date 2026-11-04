@@ -67,6 +67,7 @@ type logEntry struct {
 	Rounds         map[string]int   `json:"rounds,omitempty"`
 	Blocks         []logBlock       `json:"blocks,omitempty"`
 	ReviewCounts   []logReviewCount `json:"review_counts,omitempty"`
+	Findings       []findingInfo    `json:"findings,omitempty"`
 	Reopened       []logEvent       `json:"reopened,omitempty"`
 	Unfrozen       []logEvent       `json:"unfrozen,omitempty"`
 	Escalations    []logEscalation  `json:"escalations,omitempty"`
@@ -275,6 +276,7 @@ func describeCommitted(r *model.Record, b *model.Backlog) logEntry {
 		e.NotInBacklog = true
 	}
 	noteReviews(&e, r)
+	e.Findings = findingsOf(r)
 	noteEvents(&e, r)
 	noteStaffing(&e, r)
 	for _, esc := range r.Escalations {
@@ -501,12 +503,15 @@ func printLogReviews(w io.Writer, e logEntry) {
 	if len(e.Blocks) > 0 {
 		blocks := make([]string, 0, len(e.Blocks))
 		for _, b := range e.Blocks {
-			blocks = append(blocks, fmt.Sprintf("%s %s (round %d)", b.Gate, oneLine(b.Role), b.Round))
+			blocks = append(blocks, fmt.Sprintf("%s %s (round %d)", oneLine(b.Gate), oneLine(b.Role), b.Round))
 		}
 		fmt.Fprintf(w, "  blocks     %d: %s\n", len(e.Blocks), strings.Join(blocks, ", "))
 	}
 	for _, c := range e.ReviewCounts {
-		fmt.Fprintf(w, "  counts     %s %s (round %d): %s\n", c.Gate, oneLine(c.Role), c.Round, describeReviewCounts(c))
+		fmt.Fprintf(w, "  counts     %s %s (round %d): %s\n", oneLine(c.Gate), oneLine(c.Role), c.Round, describeReviewCounts(c))
+	}
+	for _, f := range e.Findings {
+		printFinding(w, "finding", f)
 	}
 }
 

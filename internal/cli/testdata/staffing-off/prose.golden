@@ -395,7 +395,7 @@ sdlc: design_review cannot pass until its reviews are in
 
   SDLC-E0029  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029
 
-$ sdlc review add design_review architect block --important 1 --note AC-1 has no step
+$ sdlc review add design_review architect block --important 1 --note AC-1 has no step --finding important AC-1 has no step
 exit 0
 stdout:
 US-001  design_review  architect  block (round 1)

@@ -181,7 +181,7 @@ With it on, `sdlc:project-manager` runs twice more, after Gates 1 and 2, and eac
 reviewer it leaves out is one run fewer at Gate 4, Gate 7 or both. Every one
 starts from a fresh context, and none reads another's work at the same gate. The
 one exception is a Gate 4 reviewer asked to look again at a revised plan, which is
-resumed instead. It is given its own findings and their answers, not everyone's,
+resumed instead. It is given its own findings and their closings, not everyone's,
 and the diff shows what the others' findings changed. The independence that
 remains is the first look. A gate that keeps failing, or a reviewer that keeps
 blocking, hands the story to a person after
@@ -284,8 +284,10 @@ budget the contract states. Red-team and human-advocate report but cannot stop
 the gate, and none of the five can be skipped (unless the project's staffing
 leaves one out for this story, see [The staffing](#the-staffing)).
 
-A gate whose blocking reviewers approve passes with nits unaddressed. The nits go in the
-implementer's brief for how a step is written, and never come back as rework that changes the plan.
+Each finding a reviewer lists is closed before the story moves on ([the scout
+rule](#the-scout-rule)). A nit in a file the story changes is fixed in the same rework pass, or
+declined with a reason. A wave with only nits is closed by the implementer fixing them and only
+the reviewers who raised them looking again, not the whole set.
 
 **Refused without it:** a pass with the plan missing, a reviewer that has not
 reported, a blocking reviewer that has not approved, a block from perf, or an
@@ -296,8 +298,9 @@ approval of a plan that has since changed.
 **Who:** `sdlc:implementer`. **Produces:** the code.
 
 The plan is carried out one step at a time, running the tests after each. The
-implementer cannot touch any test file, and cannot add a new one. Its brief carries the nits the
-Gate 4 reviewers left.
+implementer cannot touch any test file, and cannot add a new one. It closes each design review
+finding with `sdlc finding close`: fixed, declined with a reason, or, for something outside the
+story's files that cannot wait, referred with a reason.
 
 **Refused without it:** a pass when the freeze is gone or broken.
 
@@ -309,11 +312,16 @@ A verifier that has not seen the implementer's reasoning re-derives what each ac
 criterion should mean, compares that with the frozen tests, runs every command
 the project configures, and hunts by hand for the thing tests cannot catch: an
 implementation that passes them without the behaviour being there. It checks
-every gaming vector the red team named at Gate 4. An approval passes with nits unaddressed; they go
-to the retro, and never come back as rework that changes the tree.
+every gaming vector the red team named at Gate 4. Before it approves, it checks the findings
+ledger: every design review finding closed, each fix in the diff, each decline's reason sound, and
+nothing the diff touches referred.
 
 **Refused without it:** a pass with the verification document missing, a broken
-freeze, or a verifier that blocked or has not approved the current tree.
+freeze, a design review finding still open
+([`SDLC-E0092`](troubleshooting.md#sdlc-e0092)) or referred in a file the story
+changes ([`SDLC-E0091`](troubleshooting.md#sdlc-e0091)), findings an older `sdlc`
+dropped from the record ([`SDLC-E0093`](troubleshooting.md#sdlc-e0093)), or a
+verifier that blocked or has not approved the current tree.
 
 ## Gate 7 — `code_review`
 
@@ -322,8 +330,9 @@ freeze, or a verifier that blocked or has not approved the current tree.
 
 The diff is reviewed in a context that never saw the reasoning that produced it.
 That is the whole value: a reviewer that inherited the justification cannot
-notice what only makes sense if you already knew why. A gate whose blocking reviewers approve
-passes with nits unaddressed. Having no next gate, they go to the retro.
+notice what only makes sense if you already knew why. Each finding is closed as at Gate 4: a
+nit in a file the story changes is fixed in the same rework pass or declined with a reason, and a
+wave with only nits is closed by the implementer and the reviewers who raised them.
 
 **Refused without it:** the same conditions as the design review, against the
 tree rather than the plan.
@@ -391,16 +400,20 @@ everything that landed on trunk in between, unless the story was put onto a
 later trunk commit, where the range starts at that commit.
 
 **Refused without it:** a pass while anything is uncommitted, with a broken
-freeze, with code that has changed since the reviewers saw it, or, in a paused
-tier, with work no person has approved.
+freeze, with a design or code review finding still open
+([`SDLC-E0092`](troubleshooting.md#sdlc-e0092)) or referred in a file the story
+changes ([`SDLC-E0091`](troubleshooting.md#sdlc-e0091)), with findings an older
+`sdlc` dropped from the record ([`SDLC-E0093`](troubleshooting.md#sdlc-e0093)),
+with code that has changed since the reviewers saw it, or, in a paused tier,
+with work no person has approved.
 
 ## Gate 9 — `retro`
 
 **Who:** `sdlc:bookkeeper`. **Produces:** `RETRO.md`.
 
 What deviated from the plan, what sent the story back and where it could have
-been caught one gate earlier, what this story actually demonstrated, and what
-was deliberately left undone.
+been caught one gate earlier, and what this story actually demonstrated. It
+lists the referred findings for the person to read, and opens no story.
 
 **Refused without it:** a pass with the retro missing.
 
@@ -433,6 +446,38 @@ what matters.
 A person changes the policy by hand: they commit it on trunk between stories, and a running story
 keeps the copy it was cut from. To apply a change to the story in front of you, end the story, commit
 on trunk and start again. No agent writes it, and no story lands a change to it.
+
+## The scout rule
+
+A story leaves what it touches better than it found it. A finding raised in its reviews is fixed
+in the story or declined with a reason on the record, never deferred to a later story, and a
+defect noticed in a file the story changes is fixed there too.
+
+The loop holds the rule in three places:
+
+- **The findings ledger.** A reviewer lists each finding it counts with `--finding`, and each is
+  closed with `sdlc finding close` as `--fixed`, `--declined` or `--referred`, the last two
+  with a reason. An open design review finding stops `sdlc gate verification pass`, and an open
+  design or code review finding stops `sdlc gate commit pass`.
+- **The verifier,** which checks the ledger against the diff before it approves, and reads the
+  review documents where an older `sdlc` dropped a reviewer's findings between its rounds.
+- **The retro,** which lists the referred findings for the person and opens no story.
+
+The words it uses:
+
+- A **finding** is one thing a review lists, numbered F-1, F-2 and so on by gate and role,
+  across the reviewer's rounds.
+- A **closing** is how a finding was dealt with: fixed, declined, or referred. A later closing
+  replaces an earlier one, and both stay on the record.
+- **Referred** is a closing, not an escalation. It is for something outside the story's files that
+  cannot wait; it changes no story's state, and the person reads it when the story ends.
+  [Escalating](#introduction) hands the whole story to a person instead.
+- The **ledger** is the findings and their closings on the story's record, which
+  `sdlc status --json` lists under `findings`.
+
+Two things only a reader can judge: whether a `--fixed` is true, and whether a decline's reason
+holds. The reviewer who raised the finding judges both when it looks again, and so does the
+verifier.
 
 ## Rework
 
@@ -490,7 +535,7 @@ stamp is still taken when the review is recorded, and the gate still waits for
 each reviewer's verdict on the plan as it now stands. Only what the reviewer is
 shown changes. A reviewer asked to look again is resumed and given what
 [`sdlc artifact diff plan --since <role>`](commands.md#sdlc-artifact-diff-plan)
-prints, the path to `PLAN.md`, and its own findings with their answers. It reads
+prints, the path to `PLAN.md`, and its own findings with their closings. It reads
 the diff for what changed and the plan for how that fits the rest.
 
 Where the diff is refused, because the review's revision was not kept or no longer

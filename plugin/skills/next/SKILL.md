@@ -218,6 +218,18 @@ A test file added after the freeze stops every gate the freeze guards (`SDLC-E00
 freeze holds it. Only with `freeze.allow_new_test_files` on may the test author add one; run
 `sdlc freeze` again after it does.
 
+## Findings, from Gates 4 and 7
+
+Reviewers list findings with `--finding`, numbered F-1, F-2 by gate and role. Each is closed with
+`sdlc finding close <gate> <role> <F-n>` and `--fixed`, `--declined --reason` or
+`--referred --reason`; an open one stops `gate verification pass` (Gate 4's) and
+`gate commit pass`. Keep `$`, backticks and `"` out of a quoted value. A nit in a file the
+story changes is fixed in the same rework pass, or declined with a reason. A wave with only nits
+is closed by the implementer fixing them and only the reviewers who raised them looking again,
+not the whole set; any other review the fix made stale is asked again too. Nits past the
+policy's cap are a count and need no closing. Something outside the story's files that cannot
+wait is referred, not escalated.
+
 ## Gate 4 — The plan, and its review
 
 Delegate to `sdlc:implementer` with the backlog file and the paths to `ANALYSIS.md`,
@@ -235,7 +247,7 @@ them block. Each records its own review with `sdlc review add design_review <rol
 After a revised plan, `sdlc review list` marks stale reviews. Each such reviewer must review the
 plan as it now stands, and is resumed, not started afresh: use SendMessage on the agent that
 recorded its latest review. Begin `sdlc:next runbook, story <ID>`; give the path to `PLAN.md` and,
-as data, its own findings with their answers and all of what
+as data, its own findings with their closings and all of what
 `sdlc artifact diff plan --since <role>` prints, which it may run itself to compare. Start a fresh
 reviewer only where the diff is refused or the reviewer cannot be resumed, as when `at_gate`
 changes its model or effort; one no longer in `at_gate` is not asked.
@@ -246,8 +258,8 @@ sdlc gate design_review pass --note "<what the architect said, in one clause>"
 
 The gate refuses until every reviewer has reported and the blocking ones have approved. Do not
 edit the plan yourself to satisfy a reviewer: send it back to the implementer with the findings.
-A gate whose blocking reviewers approve passes with nits unaddressed; nits go in the implementer's
-brief, never back as rework that changes the plan. When a block decides the gate, record it:
+Nits of approving reviews go in the implementer's brief, to be fixed in the code or declined with
+a reason. When a block decides the gate, record it:
 
 ```bash
 sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
@@ -256,7 +268,7 @@ sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
 ## Gate 5 — Implementation
 
 Delegate to `sdlc:implementer` again with the path to `PLAN.md` and the reviewers' nits, and tell it
-the plan is approved. Do not write this code yourself.
+the plan is approved and to close each design review finding. Do not write this code yourself.
 
 When it reports that the frozen tests pass, run the project's test command and read the output.
 Then:
@@ -278,9 +290,9 @@ sdlc gate verification pass --note "all commands green, <n> criteria verified"
 sdlc gate verifier_review pass --note "no gaming found"
 ```
 
-If it blocks, send its findings to `sdlc:implementer` as rework, then have the **same** verifier
-look again. An approval from before the rework does not count. An approval passes with nits
-unaddressed; they go to the retro, never back as rework that changes the tree.
+If it blocks, send its findings to `sdlc:implementer` to close as rework, then have the **same**
+verifier look again, with its findings' closings as data. An approval from before the rework does
+not count.
 
 ## Gate 7 — Code review
 
@@ -291,8 +303,8 @@ waits for, in parallel, each with the policy path.
 sdlc gate code_review pass --note "<what the reviewer said, in one clause>"
 ```
 
-Rework goes to `sdlc:implementer`, and then the same reviewers look again. Approved, it passes
-with nits unaddressed; they go to the retro, never back as rework that changes the tree.
+Rework goes to `sdlc:implementer` with every finding of the wave to close, then the same reviewers
+look again, each given its findings' closings as data, and so does the verifier.
 
 ## Gate 8 — Commit
 
@@ -363,7 +375,9 @@ story: it runs the story's code as them. Once it lands, run later commands in `<
   comes back.
 - `SDLC-E0075` (a conflict) or another code: escalate with its text.
 
-Tell the user what was built, what deviated from the plan, and what the retro says to change.
+Before `sdlc stop`, read `referred` in `sdlc status --json`. Tell the user what was built, what
+deviated from the plan, what the retro says to change, and every referred finding with its reason;
+nothing is added to the backlog for them.
 
 ## Rework, at any gate
 

@@ -269,6 +269,34 @@ var (
 	// A block costs a whole round, and a review with only nits does not earn one.
 	BlockWithoutImportant = register("SDLC-E0086",
 		`pass --important with the number of important findings the review names; a review with only nits is an approve, with --nits and the nits listed`)
+
+	// SDLC-E0087 and SDLC-E0088 were given to US-109, whose change registers them.
+
+	// FindingsDisagree is a review whose --finding flags do not list what its
+	// counts say, or that counts findings at the design or code review and lists
+	// none: a finding nobody listed is one nobody can close.
+	FindingsDisagree = register("SDLC-E0089",
+		`list each finding the review counts with --finding "<important|nit> [path]: <text>", one flag for each: as many important ones as --important says, and no more nits than --nits; or give --important and --nits the numbers the review lists. Nothing was recorded, so run the command again`)
+
+	// ClosingWithoutReason is --declined or --referred with no reason: the reason
+	// is what the raising reviewer and the verifier judge.
+	ClosingWithoutReason = register("SDLC-E0090",
+		`give the reason, in one line, with --reason "<why>"; or fix the finding and close it with --fixed`)
+
+	// ReferredInTheStory is --referred of a finding about a path the story changes.
+	ReferredInTheStory = register("SDLC-E0091",
+		`fix it and close it with --fixed, or close it with --declined --reason "<why>": a defect in a file the story changes is fixed in the story or declined, and --referred is for something outside the story's files that cannot wait. Where a gate refused, close each finding it names again in one of those two ways, then pass the gate again`)
+
+	// FindingsOpen is a gate that waits for the findings before it to be closed:
+	// verification for the design review's, the commit for both reviews'.
+	FindingsOpen = register("SDLC-E0092",
+		`close each finding the message names with "sdlc finding close <gate> <role> <F-n>" and one of --fixed, --declined --reason "<why>" or --referred --reason "<why>", fixing it first where it is to be fixed; then pass the gate again`)
+
+	// FindingsDropped is a gate reading a record that holds fewer findings than
+	// its reviews listed: an sdlc that predates the findings saved the record
+	// and dropped them, and read as none they would let the gate pass.
+	FindingsDropped = register("SDLC-E0093",
+		`have each reviewer the message names record its review again with "sdlc review add" and one --finding for each finding it listed, whose text is in its review documents under .sdlc/stories/<ID>/reviews/, then close them with "sdlc finding close"; and run this sdlc, or a later one, everywhere the record is saved: "sdlc version" gives the one on PATH, and the plugin's is the sdlc in the plugin's bin directory`)
 )
 
 // entry is one row of the catalogue.

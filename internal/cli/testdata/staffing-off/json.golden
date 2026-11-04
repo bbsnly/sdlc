@@ -270,7 +270,7 @@ stdout:
 {"ok":false,"error":"design_review cannot pass until its reviews are in","why":"architect has not reviewed; red-team has not reviewed; security has not reviewed; perf has not reviewed; human-advocate has not reviewed","fix":"delegate to the reviewers this gate expects -- \"sdlc review list\" shows who is outstanding","code":"SDLC-E0029","docs":"https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029"}
 stderr:
 
-$ sdlc review add design_review architect block --important 1 --note AC-1 has no step --json
+$ sdlc review add design_review architect block --important 1 --note AC-1 has no step --finding important AC-1 has no step --json
 exit 0
 stdout:
 {"ok":true,"story":"US-001","gate":"design_review","role":"architect","verdict":"block","round":1,"path":".sdlc/stories/US-001/reviews/design_review-architect-1.md","subject":"<sha>"}

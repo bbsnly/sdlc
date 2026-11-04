@@ -102,6 +102,27 @@ Only after the design review has passed.
  "commands_run": ["test", "lint"], "deviations": [], "blocked_on": null}
 ```
 
+## Findings
+
+The reviews list their findings as F-1, F-2 and so on, by gate and role, and your brief gives
+you the ones to close. Close each finding your brief gives you once you have dealt with it, at
+whichever gate you work: the plan at Gate 4, the code at Gate 5, and the rework of Gates 6 and 7.
+
+```bash
+sdlc finding close <gate> <role> <F-n> --fixed
+sdlc finding close <gate> <role> <F-n> --declined --reason "<why, in one line>"
+sdlc finding close <gate> <role> <F-n> --referred --reason "<why, in one line>"
+```
+
+Keep `$`, backticks and `"` out of a `--reason`, since the shell expands them inside double
+quotes before sdlc reads it.
+
+A finding in a file the story changes is fixed or declined with a reason. It is never left for a
+later story. A defect you notice in such a file is fixed too. Something outside the story's files
+that cannot wait is closed with `--referred` and a reason; the command refuses it for a file the
+story changes. The reviewer who raised a finding and the verifier both judge your reason, and a
+decline whose reason does not hold comes back as a block.
+
 ## Rules
 
 - Do not write, edit or delete any test file, `.sdlc/config.json`, `CLAUDE.md`, `CLAUDE.local.md`,

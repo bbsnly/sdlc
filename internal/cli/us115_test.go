@@ -304,8 +304,10 @@ func TestAC3ABlockWithAnImportantFindingStopsTheGateAsABlockAlwaysDid(t *testing
 	t.Parallel()
 	planned(t)
 	approveAll(t, "design_review", "architect", "red-team")
-	mustRunWith(t, "# red team\n", "review", "add", "design_review", "red-team", "block", "--important", "1")
-	r := runWith(t, "# architect\n", "review", "add", "design_review", "architect", "block", "--important=1", "--note", "AC-3 has no step")
+	mustRunWith(t, "# red team\n", "review", "add", "design_review", "red-team", "block", "--important", "1",
+		"--finding", "important the input is not bounded")
+	r := runWith(t, "# architect\n", "review", "add", "design_review", "architect", "block", "--important=1", "--note", "AC-3 has no step",
+		"--finding=important AC-3 has no step")
 	if r.code != 0 {
 		t.Fatalf("a block naming one important finding was refused:\n%s", r.stderr)
 	}
@@ -363,10 +365,13 @@ func TestAC3TheCountsAreAcceptedWithEveryVerdictAndKeptAsGiven(t *testing.T) {
 		flags           []string
 		important, nits int
 	}{
-		{"architect", "block", []string{"--important", "2", "--nits", "3"}, 2, 3},
+		// US-117 AC-2 lists the findings the counts give: every important one, and
+		// no more nits than --nits.
+		{"architect", "block", []string{"--important", "2", "--nits", "3",
+			"--finding", "important AC-3 has no step", "--finding", "important AC-4 has no step", "--finding", "nit a long name"}, 2, 3},
 		{"security", "approve", []string{"--important", "0", "--nits", "0"}, 0, 0},
-		{"red-team", "note", []string{"--nits=4"}, notGiven, 4},
-		{"perf", "note", []string{"--important=1"}, 1, notGiven},
+		{"red-team", "note", []string{"--nits=4", "--finding=nit a long line"}, notGiven, 4},
+		{"perf", "note", []string{"--important=1", "--finding", "important p99 is over its budget"}, 1, notGiven},
 		{"human-advocate", "approve", nil, notGiven, notGiven},
 	}
 	for i, c := range rows {
@@ -1216,7 +1221,8 @@ func TestAC3ACountAboveTheBoundIsRefusedInItsOwnWords(t *testing.T) {
 	}
 	t.Run("AC-3 the bound itself is a count", func(t *testing.T) {
 		payload := rpPayloadCounts(t, mustRunWith(t, "# security\n",
-			"review", "add", "design_review", "security", "approve", "--json", "--nits", "1000000"))
+			"review", "add", "design_review", "security", "approve", "--json", "--nits", "1000000",
+			"--finding", "nit one of them"))
 		rpWantCount(t, "the payload", payload, "nits", 1000000)
 	})
 }

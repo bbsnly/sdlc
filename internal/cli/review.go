@@ -86,6 +86,7 @@ func newReviewCmd() *cobra.Command {
 func newReviewAddCmd() *cobra.Command {
 	var storyID, file, note string
 	var important, nits int
+	var findings []string
 	cmd := &cobra.Command{
 		Use:   "add GATE ROLE VERDICT",
 		Short: "Record one reviewer's conclusion",
@@ -95,15 +96,21 @@ func newReviewAddCmd() *cobra.Command {
 			"lets the gate pass; a note is a finding worth recording that does not stand\n" +
 			"in the way.\n\n" +
 			"A block names at least one important finding, counted with --important: a\n" +
-			"review with only nits is an approve. The counts are the reviewer's own, and\n" +
-			"sdlc does not judge them.\n\n" +
+			"review with only nits is an approve. The counts are the reviewer's own; at\n" +
+			"design_review and code_review, --finding lists what they count, one flag\n" +
+			"for each, numbered F-1, F-2 and so on across the reviewer's rounds. A path\n" +
+			"with a space in it is read as text. Keep $, backticks and double quotes out\n" +
+			"of a finding and a note: the shell expands them.\n\n" +
 			"The document comes from standard input, or from --file.",
-		Example: "  sdlc review add design_review architect block --important 2 --nits 1 < review.md\n" +
+		Example: "  sdlc review add design_review architect block --important 1 \\\n" +
+			"      --finding \"important the plan: AC-3 has no step\" < review.md\n" +
+			"  sdlc review add code_review code-reviewer approve --nits 1 --file review.md \\\n" +
+			"      --finding \"nit internal/cli/review.go:42: the name says nothing\"\n" +
 			"  sdlc review add code_review perf note --file /tmp/perf.md",
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReviewAdd(cmd, args, reviewFlags{story: storyID, file: file, note: note,
-				important: givenCount(cmd, flagImportant, important), nits: givenCount(cmd, flagNits, nits)})
+				important: givenCount(cmd, flagImportant, important), nits: givenCount(cmd, flagNits, nits), findings: findings})
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "read the review from this path instead of standard input")
@@ -111,6 +118,10 @@ func newReviewAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&storyID, "story", "", "record against this story instead of the one being worked on")
 	cmd.Flags().IntVar(&important, flagImportant, 0, "how many important findings this review names")
 	cmd.Flags().IntVar(&nits, flagNits, 0, "how many nits this review found")
+	// An array, not a slice: a slice flag splits its value at commas, and a
+	// finding's text has them.
+	cmd.Flags().StringArrayVar(&findings, flagFinding, nil,
+		`one finding, as "<important|nit> [path]: <text>"; once for each finding the review counts, and left out at 0`)
 	return cmd
 }
 
@@ -171,6 +182,7 @@ func refuseCounts(verdict model.Verdict, f reviewFlags) error {
 type reviewFlags struct {
 	story, file, note string
 	important, nits   *int
+	findings          []string
 }
 
 func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
@@ -193,6 +205,10 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 			"a reviewer approves, blocks, or leaves a note")
 	}
 	if err := refuseCounts(verdict, f); err != nil {
+		return err
+	}
+	findings, err := readFindings(gate, f)
+	if err != nil {
 		return err
 	}
 
@@ -242,9 +258,10 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 	path := store.ReviewPath(id, gate, reviewer.Role, doc.Round)
 	rev := record.AddReview(model.Review{
 		Gate: gate, Role: reviewer.Role, Verdict: verdict,
-		Subject: subject, File: path, Note: f.note, Important: f.important, Nits: f.nits,
+		Subject: subject, File: path, Note: f.note, Important: f.important, Nits: f.nits, Findings: findings,
 	}, s.Now())
 	record.Append(model.EventReview, model.ReviewEvent(gate, reviewer.Role, verdict), s.Now())
+	noteListedFindings(record, rev, s.Now())
 	late.record(record, s.Now())
 	handedOver, message, err := saveReview(cmd, s, record, reviewer, doc, verdict, f.note)
 	if err != nil {

@@ -36,11 +36,13 @@ gives.
    was recorded at the time or discovered afterwards. Facts, not blame.
 2. **Rework.** Read the reviews. What sent this back, how many rounds, and what would have
    caught it one gate earlier. This is the most useful thing in the document.
-   List too the nits that approving reviews left at Gates 6 and 7: nobody else takes them up.
 3. **Lessons.** Only what this story actually demonstrated. A lesson that could have been
    written before the story started is not a lesson, and a retro full of them is noise that
    makes the real ones harder to find.
-4. **Follow-ups.** Anything deliberately left undone, with enough detail to become a story.
+4. **Referred findings.** List every finding closed `--referred`, with its reason, from the
+   `findings` of each review in `gate-record.json`. They are with the person, who decides what
+   becomes of each. Write nothing meant to be turned into a new story, and add nothing to the
+   backlog.
 5. **CODEMAP.** If the change added a module, a boundary, or an entry point, add it. Facts only,
    no opinions, and nothing that duplicates what the code says. How depends on the brief:
    - **The brief names a worktree.** Do not edit `CODEMAP.md`: a file changed there stops the
@@ -115,13 +117,15 @@ sdlc artifact write retro <<'SDLC_DOCUMENT'
 |---|---|---|---|
 
 ## Lessons
-## Follow-ups
+## Referred findings, with the person
+| Finding | Gate and role | Reason |
+|---|---|---|
 SDLC_DOCUMENT
 ```
 
 ```json
 {"retro": "<path>", "deviations": 0, "rework_rounds": 0, "lessons": 0,
- "follow_ups": 0, "codemap_updated": false}
+ "referred": 0, "codemap_updated": false}
 ```
 
 ## Rules

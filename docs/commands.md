@@ -316,6 +316,19 @@ story's agents' time at that gate has passed it, `status` also prints one line o
 standard error, with `--json` too, and nothing else about it changes. It records
 nothing: the next `sdlc gate` or `sdlc review add` puts the gate's event in the record.
 
+For the active story, `status` lists each open finding of the design and code reviews, with one
+line under them on how to close the first, then each declined one, and every finding closed as
+referred, with its reason. `--json` has every finding under `findings`, with its closings and the
+`subject` its review was given, and the referred ones again under `referred`. A decline's
+reason is in `--json` and in `sdlc log`:
+
+```console
+  finding    design_review architect F-1 open, important: the plan: AC-3 has no step
+  to close   sdlc finding close design_review architect F-1 --fixed once it is fixed, or --declined --reason "<why>"
+  declined   design_review architect F-2 declined, nit, internal/invoice.go:12: the name says nothing
+  referred   design_review architect F-3 referred, nit, docs/elsewhere.md: a stale sentence on another page; reason: another page, and the person should see it
+```
+
 An active story with no gate left reads as `finished` rather than `in progress`,
 because there is nothing left to work on it: what it wants is `sdlc stop`.
 
@@ -980,6 +993,16 @@ A review that gave a count has a row of its own, one per round, `review_counts` 
   counts     code_review code-reviewer (round 1): 3 nits
 ```
 
+Each finding the story's reviews listed has a line of its own, `findings` in `--json`, with
+its state and the reason of its latest closing; `--json` has every closing, with its time and
+session:
+
+```console
+  finding    design_review architect F-1 fixed, important: the plan: AC-3 has no step
+  finding    design_review architect F-2 declined, nit, internal/invoice.go:12: the name says nothing; reason: the name is the domain's word
+  finding    design_review architect F-3 referred, nit, docs/elsewhere.md: a stale sentence on another page; reason: another page, and the person should see it
+```
+
 ### How a story's range is found
 
 The range is the one the commit gate recorded; see
@@ -1523,6 +1546,25 @@ finished story is reopened later, so that story's range can also span
 everything that landed on trunk in between, unless it was put onto a later trunk
 commit, as above.
 
+`verification pass` reads the design review's findings, and `commit pass` the design and code
+reviews', in every round. Each is refused:
+
+- with [SDLC-E0093](troubleshooting.md#sdlc-e0093) where the record holds fewer findings for a
+  reviewer than its reviews listed, because an older `sdlc` saved it; that reviewer runs
+  `sdlc review add` again with its `--finding` flags;
+- with [SDLC-E0092](troubleshooting.md#sdlc-e0092) while a finding is open, naming each as
+  `<gate> <role> F-n`; close it with
+  [`sdlc finding close`](#sdlc-finding-close-gate-role-f-n);
+- with [SDLC-E0091](troubleshooting.md#sdlc-e0091) where a finding's latest closing is a
+  referral and the story has changed its file since, or the story's commits cannot be read,
+  saying which for each.
+
+```console
+sdlc: verification cannot pass while a finding of design_review is open
+
+  why  a finding nobody has closed is a decision nobody has made; to close one that is fixed: sdlc finding close design_review architect F-1 --fixed; open: design_review architect F-1, design_review architect F-2; sdlc status shows each with its text
+```
+
 ## `sdlc artifact list`
 
 See which documents this version of `sdlc` can store. The names it prints are
@@ -1763,7 +1805,8 @@ Record one reviewer's conclusion. Each reviewing agent runs this when it has
 finished, with the review itself on standard input.
 
 ```console
-$ sdlc review add design_review architect block --important 1 --nits 2 --note "AC-3 has no step" < review.md
+$ sdlc review add design_review architect block --important 1 --finding "important the plan: AC-3 has no step" < review.md
+$ sdlc review add code_review code-reviewer approve --nits 1 --finding "nit internal/cli/review.go:42: the name says nothing" --file review.md
 $ sdlc review add code_review perf note --file /tmp/perf.md
 ```
 
@@ -1773,6 +1816,7 @@ $ sdlc review add code_review perf note --file /tmp/perf.md
 | `--note` | the headline finding, in one line |
 | `--important` | how many important findings this review names |
 | `--nits` | how many nits this review found |
+| `--finding` | one finding, as `"<important\|nit> [path]: <text>"`; once for each finding the review counts, and left out at 0 |
 | `--story` | record against this story instead of the one being worked on. The id has to be in the backlog |
 
 The verdicts are `approve`, `block` and `note`.
@@ -1784,7 +1828,8 @@ with only nits is an approve with the nits listed. Either count may go with any 
 `--nits` with a block is fine. A count that is negative, or above 1,000,000, is refused with
 [SDLC-E0034](troubleshooting.md#sdlc-e0034) on any verdict, and so is a word.
 
-The counts are the reviewer's own, and `sdlc` does not judge them. A number typed to get past
+The counts are the reviewer's own, and `sdlc` does not judge them; at `design_review` and
+`code_review` it checks only that `--finding` lists what they count. A number typed to get past
 the refusal passes it, and an approve with an important count is recorded as given and lets the
 gate through. A block still stops the gate, so the most a false count costs is a round.
 `gate-record.json` and `sdlc log` show what each review gave.
@@ -1819,9 +1864,104 @@ it saves after finding a gate past its number, it also writes a `budget` event
 for that gate into the record with the review, so a hand-over carries it; a review that is
 refused records none.
 
+Each `--finding` is one finding: `<important|nit>`, then a path relative to the repository's
+root where it is about one file or directory, then a colon, a space and the text. A path with a
+space in it is read as text, and so is anything before the first colon and space that is more
+than one word.
+
+The record keeps the path as written, and reads it as the file it names, both to refuse a path
+that is absolute or leaves the repository and to match it against the story's changes
+([SDLC-E0091](troubleshooting.md#sdlc-e0091)). It reads past a line number after the path
+(`:12`, `:12-14`, `:12:3`, `:12:3-9`, `:12-`, `:L12`, `#L12`, `#L12C3` or `#L12-L14`), backticks
+or quotes around the whole path or only around the name (`` `internal/a.go`:12 ``), and a `,`,
+`.`, `;` or `)` that ends it. A colon not followed by a number stays in the name, so
+`docs/a:b.md` is one file. A path whose last segments are a changed file's, or that ends with a
+changed file's whole path, matches it: `a.go`, `cli/a.go` and `other/internal/cli/a.go` all
+match a changed `internal/cli/a.go`, while `internal/c` does not match `internal/cli`.
+Backticks are read past, but in a double-quoted shell value the shell runs them as a command
+first, so put a value that holds them in single quotes:
+``--finding 'nit `internal/a.go`:12: the name says nothing'``.
+
+A finding is kept on the review and numbered F-1, F-2 and so on, per gate and role across every
+round, so a second round goes on from where the first stopped. The important ones have to
+number `--important`, and the nits listed no more than `--nits`, which counts those past the
+policy's cap too; at `design_review` and `code_review` a count above 0 has to list what it
+counts. Otherwise the command records nothing and is refused with
+[SDLC-E0089](troubleshooting.md#sdlc-e0089):
+
+```console
+sdlc: the findings listed with --finding do not agree with --important and --nits
+
+  why  --finding lists 1 important and 0 nits, and the review counts 2 important and no nits
+```
+
+A finding longer than 1,000 bytes, or holding a line break, a control character, a line or
+paragraph separator, or any of Unicode's default-ignorable code points, which a terminal
+draws as nothing (a format character such as a bidirectional control, a zero-width one, a byte
+order mark or a tag character; a variation selector; the combining grapheme joiner; a Hangul
+filler), is refused with [SDLC-E0034](troubleshooting.md#sdlc-e0034); so are more than 100
+findings. Accented letters, combining accents, dashes and curly quotes are taken. In double
+quotes the shell expands `$`, backticks and `"` before `sdlc` reads the finding, so keep them
+out of a double-quoted value, or put the value in single quotes.
+
+Each review that lists findings also writes a `findings` event, `<gate> <role> listed F-a to
+F-b`, into the record's history. An older `sdlc` keeps that event when it saves the record and
+drops the findings, and the gates read the two together
+([SDLC-E0093](troubleshooting.md#sdlc-e0093)).
+
 > [!NOTE]
 > Rounds are kept rather than overwritten, so "what did the architect say last
 > time" stays answerable.
+
+## `sdlc finding close GATE ROLE F-N`
+
+Close one finding a review listed, on the story being worked on.
+
+```console
+$ sdlc finding close code_review code-reviewer F-1 --fixed
+$ sdlc finding close design_review architect F-2 --declined --reason "step 4 covers it"
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--fixed` | the finding is fixed in the story |
+| `--declined` | the finding is declined, with `--reason` |
+| `--referred` | the finding is outside the story's files, cannot wait, and goes to a person, with `--reason` |
+| `--reason` | why it was declined or referred, in one line |
+
+It takes exactly one of the three, for a finding of the story being worked on, in the checkout
+that holds it, at any gate. `sdlc finding` on its own prints this help.
+
+- `--declined` or `--referred` with no reason, or a blank one, is refused with
+  [SDLC-E0090](troubleshooting.md#sdlc-e0090). A reason is one line of at most 1,000 bytes, and
+  is refused with [SDLC-E0034](troubleshooting.md#sdlc-e0034) as a finding is. Keep `$`,
+  backticks and `"` out of it: in double quotes the shell expands them before `sdlc` reads it.
+- `--referred` of a finding about a path the story changes, or a directory that holds one, is
+  refused with [SDLC-E0091](troubleshooting.md#sdlc-e0091). The path is matched as the file it
+  names, past a line number, quotes and closing punctuation, and by its last segments, as
+  `review add` says. A finding with no path can always be referred.
+  `sdlc gate verification pass` and `sdlc gate commit pass` ask the same again later.
+- Where code review has passed and the record does not say where the story's commits begin, a
+  referral of a finding with a path is refused with SDLC-E0091 too: whether the story changes it
+  cannot be told.
+
+The closing is kept on the finding in the story's record, `gate-record.json`, with the time and
+the id of the session the command ran in, where it ran in one. The record is a tracked file, so
+the session id goes into the project's history with it. A later closing replaces an earlier one
+as the finding's state, and both stay on the record.
+
+The line it prints says how many findings of `design_review` and `code_review`, the two whose
+findings hold a gate, are still open, and names the first; for a referral, it says that a person
+reads it when the story ends:
+
+```console
+$ sdlc finding close design_review architect F-1 --fixed
+US-001  design_review architect F-1  fixed; 1 finding of design_review or code_review is still open: design_review architect F-2
+$ sdlc finding close code_review code-reviewer F-1 --referred --reason "another page, and the person should see it"
+US-001  code_review code-reviewer F-1  referred for a person to read when the story ends; 1 finding of design_review or code_review is still open: code_review code-reviewer F-2
+$ sdlc finding close design_review architect F-2 --declined --reason "the name is the domain's word" --json
+{"ok":true,"story":"US-001","gate":"design_review","role":"architect","id":"F-2","closing":{"at":"2026-11-03T19:52:33Z","as":"declined","reason":"the name is the domain's word","session":"3f2c9a6e-5d1b-4c8e-9a7f-2b6d4e8c1a90"}}
+```
 
 ## `sdlc staffing`
 

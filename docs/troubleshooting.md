@@ -2168,6 +2168,97 @@ reviewer's own, and `sdlc` does not judge it.
 `unknown flag: --important` is a different failure, [SDLC-E0034](#sdlc-e0034): the binary is older
 than the plugin, so upgrade `sdlc`.
 
+### SDLC-E0089
+
+`sdlc review add` was given findings with `--finding` that do not agree with `--important` and
+`--nits`, or, at `design_review` or `code_review`, a count above 0 and no `--finding` at all, so
+nothing was recorded. A finding nobody listed is one nobody can close.
+
+Give one `--finding "<important|nit> [path]: <text>"` for each finding the review counts: as many
+important ones as `--important` says, and no more nits than `--nits`, which counts the nits past
+the policy's cap too. Or give `--important` and `--nits` the numbers the review lists.
+
+### SDLC-E0090
+
+`sdlc finding close` was given `--declined` or `--referred` with no `--reason`, or a blank one,
+so nothing was recorded. The reviewer who raised the finding and the verifier judge the reason.
+
+Give the reason in one line with `--reason "<why>"`, or fix the finding and close it with
+`--fixed`.
+
+### SDLC-E0091
+
+`sdlc finding close ... --referred` names a finding about a path the story changes, or a
+directory that holds one, so nothing was recorded. Under the scout rule, a defect in a file the
+story changes is fixed in the story, or declined with a reason; `--referred` is for something
+outside the story's files that cannot wait.
+
+The path is matched as the file it names, and the record keeps it as it was written. A line
+number after it (`:12`, `:12-14`, `:12:3`, `:12:3-9`, `:12-`, `:L12`, `#L12`, `#L12C3` or
+`#L12-L14`) is read past, and so are backticks or quotes around the whole path or only the name
+(`` `internal/a.go`:12 ``) and a `,`, `.`, `;` or `)` that ends it. A colon not followed by a
+number stays in the name, so `docs/a:b.md` is one file. A path whose last segments are a changed
+file's, or that ends with a changed file's whole path, matches it: `a.go`, `cli/a.go` and
+`other/internal/cli/a.go` all match a changed `internal/cli/a.go`. Backticks are read past, but
+in a double-quoted shell value the shell runs them as a command first, so a finding that holds
+them is given in single quotes.
+
+`sdlc gate verification pass` and `sdlc gate commit pass` ask the same again of every finding
+whose latest closing is a referral, and refuse when the story has changed its file since. Where
+the record does not say where the story's commits begin, whether it changes the file cannot be
+told, and the referral is refused too. A gate's refusal says which of the two applies to each
+finding it names:
+
+```console
+sdlc: commit cannot pass while a finding in a file the story changes stands referred
+
+  why  code_review code-reviewer F-1 was referred, and the story has since changed "notes.md"; to close one that is fixed: sdlc finding close code_review code-reviewer F-1 --fixed
+```
+
+Fix it and close it with `--fixed`, or close it with `--declined --reason "<why>"`. Where a gate
+refused, close each finding it names again in one of those two ways, then pass the gate again.
+
+### SDLC-E0092
+
+`sdlc gate verification pass` was refused while a finding of the design review is open, or
+`sdlc gate commit pass` while one of the design review or the code review is. The message names
+each open finding by gate, role and number, in every round, a superseded one included, and
+`sdlc status` shows each with its text.
+
+Close each with `sdlc finding close <gate> <role> <F-n>` and one of `--fixed`,
+`--declined --reason "<why>"` or `--referred --reason "<why>"`, fixing it first where it is to be
+fixed, then pass the gate again.
+
+### SDLC-E0093
+
+`sdlc gate verification pass` or `sdlc gate commit pass` was refused because the record holds
+fewer findings for a reviewer than its reviews listed. `sdlc review add` notes in the record's
+history how many findings each review listed, where an older `sdlc` keeps it; an older `sdlc`
+that saved the record since, such as a plugin's own binary older than the one on PATH, dropped
+the findings themselves. Read as none, they would let the gate pass.
+
+Have each reviewer the message names record its review again with `sdlc review add` and one
+`--finding` for each finding it listed, then close them with `sdlc finding close`. The record no
+longer holds the lost findings' text; each review's document under
+`.sdlc/stories/<ID>/reviews/` does.
+
+Then keep every `sdlc` that saves the record on this release or a later one, so that it does not
+happen again. The hook runs the plugin's `sdlc`, the one in the plugin's `bin` directory, and the
+agents run the one on your `PATH`. `sdlc version` gives the one on your `PATH`, and with
+`SDLC_DEBUG_FILE` set, the `sdlc-hook` line in the debug log names the binary the hook ran.
+
+A later round can hide an erasure. Where an older `sdlc` dropped a reviewer's findings between
+two of its rounds, the next round is numbered from F-1 again, and once it lists as many findings
+as were lost, the gate has nothing to count against: the record's history then holds two
+`findings` events for that gate and role whose ranges start over (`listed F-1 to F-2`, then
+`listed F-1 to F-2` again). The gate cannot tell a reviewer listing the lost findings again from
+one listing new ones, so the verifier checks it: for each such restart, it reads the reviewer's
+documents and confirms the lost findings were listed again, and blocks where they were not.
+
+An older `sdlc` that runs `sdlc gate verification pass` or `sdlc gate commit pass` itself, rather
+than only saving the record, checks no findings at all; this release refuses only at a gate it
+runs. [What is not held](enforcement.md#the-findings-ledger) says what still stands in its way.
+
 ## Warnings the hook prints
 
 These are not error codes. They arrive in the session working a story as a system message, and

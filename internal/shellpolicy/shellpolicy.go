@@ -2346,13 +2346,13 @@ func runsSubcommand(words []string, sub string) bool {
 }
 
 // flagReadBothWays is a flag that came to take a value after the rules that read
-// sdlc's subcommand were written: the staffing commands' and the counts on
-// `sdlc review add`. With the flag taken out the words are read as they were
-// before there was one, so the word after it is read as the subcommand as well
-// as the flag's value: read only as the value, a command only a person runs that
-// was refused there stopped being refused.
+// sdlc's subcommand were written: the staffing commands', and the counts and
+// the findings on `sdlc review add`. With the flag taken out the words are read
+// as they were before there was one, so the word after it is read as the
+// subcommand as well as the flag's value: read only as the value, a command only
+// a person runs that was refused there stopped being refused.
 func flagReadBothWays(word string) bool {
-	return word == "--model" || word == "--effort" || word == "--important" || word == "--nits"
+	return word == "--model" || word == "--effort" || word == "--important" || word == "--nits" || word == "--finding"
 }
 
 // ValueFlags are the flags of sdlc that take the next word as their value. The
@@ -2362,7 +2362,7 @@ var ValueFlags = map[string]bool{
 	"--file": true, "--gate": true, "--message": true, "--note": true,
 	"--reason": true, "--reject": true, "--since": true, "--story": true, "--through": true,
 	"--usd": true, "--model": true, "--effort": true,
-	"--important": true, "--nits": true,
+	"--important": true, "--nits": true, "--finding": true,
 }
 
 // checkCommit puts the commit gate in front of the commit, for a commit in this

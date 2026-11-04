@@ -751,7 +751,8 @@ that it finished, and the same is true of its reviews and its documents below.
 
 Refuses any write under a story's `reviews/` directory.
 
-*Instead:* `sdlc review add <gate> <role> <verdict> --important <n> --nits <n>`, which stamps the
+*Instead:* `sdlc review add <gate> <role> <verdict> --important <n> --nits <n>`, with one
+`--finding "<important|nit> [path]: <text>"` for each finding the review counts, which stamps the
 review with what was in front of the reviewer. Each number is the reviewer's own count.
 
 ### `gate-artifact-is-written-by-the-tool`
@@ -900,8 +901,9 @@ reviewer can work something out on paper; the verdict itself still goes through
 `sdlc review add`, which the rule above holds it to.
 
 *Instead:* record the verdict with
-`sdlc review add <gate> <role> approve|block --important <n> --nits <n>`
-and say what is wrong rather than fixing it.
+`sdlc review add <gate> <role> approve|block --important <n> --nits <n>`, with one
+`--finding "<important|nit> [path]: <text>"` for each finding the review counts, and say what is
+wrong rather than fixing it.
 
 ### `bookkeeper-writes-the-retro-and-the-map`
 
@@ -3498,6 +3500,24 @@ how you would notice.
   landing goes by the name, so a change to the target lands. This is a person's own layout, and the
   backlog behaves the same way. A change left in the story's commits shows in its diff under the
   target's name.
+
+#### The findings ledger
+
+- **A record two releases share.** An `sdlc` older than the findings drops them when it saves the
+  story's record, and keeps the `findings` events `sdlc review add` writes beside them; the
+  verification and commit gates count the two and refuse with
+  [SDLC-E0093](troubleshooting.md#sdlc-e0093). Three cases get past that count. An older `sdlc`
+  that also dropped events would, though none does. A later round of the same reviewer, numbered
+  from F-1 again on the erased record, can list as many findings as were lost and hide the loss:
+  the verifier reads the review documents wherever two `findings` events of one gate and role
+  start over. And an older `sdlc` that runs `sdlc gate verification pass` or `sdlc gate commit
+  pass` itself checks no findings at all. That last is the general problem of an older release
+  running the loop, which every gate check added since shares and this ledger does not widen. A
+  story in a risk tier the project pauses (`high`, by default) still waits at the commit gate for
+  a person's `sdlc approve`. Keep the plugin's `sdlc` and the one on your `PATH` on one release.
+- **A path the match does not read.** A glob, or a path written only inside a finding's text, is
+  not matched against the story's changes, so such a finding can be referred while the story
+  changes the file. The verifier reads every referred finding's path and text against the diff.
 
 #### Commands the rules do not read
 

@@ -58,17 +58,17 @@ func TestAReviewerThatKeepsBlockingIsHandedToAPerson(t *testing.T) {
 	// the rework lost.
 	for range 3 {
 		if r := decode[reviewPayload](t, mustRunWith(t, "# red team\n",
-			"review", "add", "design_review", "red-team", "block", "--important", "1", "--json")); r.HandedOver != "" {
+			"review", "add", "design_review", "red-team", "block", "--important", "1", "--finding", "important the one finding", "--json")); r.HandedOver != "" {
 			t.Fatalf("an advisory block handed the story over: %+v", r)
 		}
 	}
 
 	if first := decode[reviewPayload](t, mustRunWith(t, "# architect\n",
-		"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 has no step", "--json")); first.HandedOver != "" {
+		"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step", "--json")); first.HandedOver != "" {
 		t.Fatalf("the first block handed the story over: %+v", first)
 	}
 	second := decode[reviewPayload](t, mustRunWith(t, "# architect\n",
-		"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 still has no step", "--json"))
+		"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 still has no step", "--json"))
 	if second.HandedOver != "review_not_converging" {
 		t.Fatalf("the second block, at loop.max_review_rounds, did not hand the story over: %+v", second)
 	}
@@ -85,12 +85,12 @@ func TestAHandOverFromAReviewSaysWhatAPersonDoesNext(t *testing.T) {
 	planned(t)
 
 	first := mustRunWith(t, "# architect\n",
-		"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 has no step")
+		"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step")
 	if strings.Contains(first.stdout, "handed to a person") {
 		t.Fatalf("the first block was announced as a hand-over:\n%s", first.stdout)
 	}
 	out := mustRunWith(t, "# architect\n",
-		"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 still has no step").stdout
+		"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 still has no step").stdout
 	for _, want := range []string{
 		"US-001 is handed to a person",
 		"loop.max_review_rounds is 2",

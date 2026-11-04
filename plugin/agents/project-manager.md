@@ -111,6 +111,9 @@ sdlc staffing amend perf --needed --model <model> --effort <effort> --reason "..
 sdlc staffing amend red-team --left-out --reason "..."
 ```
 
+Keep `$`, backticks and `"` out of a `--reason`, since the shell expands them inside double
+quotes before sdlc reads it, and the reason is kept in the story's record.
+
 Write every `sdlc` command with its words spelled out, never from a variable: the hook refuses a
 command it cannot read.
 

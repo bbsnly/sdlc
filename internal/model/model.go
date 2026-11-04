@@ -695,6 +695,8 @@ type Review struct {
 	// which an old review has too, and not the same as 0.
 	Important *int `json:"important,omitempty"`
 	Nits      *int `json:"nits,omitempty"`
+	// Findings are what the review lists, each numbered F-n by AddReview.
+	Findings []Finding `json:"findings,omitempty"`
 }
 
 // GateStatus is the outcome recorded for a gate.
@@ -1040,6 +1042,7 @@ func (r *Record) SetSecuritySensitive(v bool) { r.Security = &v }
 func (r *Record) AddReview(rev Review, at time.Time) Review {
 	rev.At = Timestamp(at)
 	rev.Round = r.Round(rev.Gate, rev.Role) + 1
+	r.numberFindings(&rev)
 	r.Reviews = append(r.Reviews, rev)
 	return rev
 }
@@ -1090,6 +1093,13 @@ const (
 // replayed from it, and "sdlc trace" reads only the gate notice, to mark the
 // gate. Any event ends a story still under way, as the replay reads it.
 const EventBudget = "budget"
+
+// EventFindings says how far a review's findings were numbered, as "<gate>
+// <role> listed F-a to F-b". It is an event because an sdlc older than the
+// findings keeps an event's type and message when it saves the record, and
+// drops the findings: the gates read the two together to tell a record that
+// lost its findings from one that never had any.
+const EventFindings = "findings"
 
 // GateEvent is how a gate's outcome is written into the record's history.
 func GateEvent(g Gate, s GateStatus) string { return string(g) + " " + string(s) }

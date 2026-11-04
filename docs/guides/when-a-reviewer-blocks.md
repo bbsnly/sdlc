@@ -77,20 +77,23 @@ A reviewer records its conclusion with `sdlc review add GATE ROLE VERDICT`. The 
 comes from standard input or `--file`, and `--note` carries the headline. `--important` and `--nits`
 carry the reviewer's own counts: a block with no important finding is refused
 ([SDLC-E0086](../troubleshooting.md#sdlc-e0086)), and a review with only nits is an approve with the
-nits listed. The numbers below are examples. When the architect first blocked, the review was
-recorded like this:
+nits listed. At `design_review` and `code_review`, `--finding` lists each finding counted, and
+each is numbered F-1, F-2 and so on. The numbers below are examples. When the architect first
+blocked, the review was recorded like this:
 
 ```console
-$ sdlc review add design_review architect block --important 1 --note "AC-2 has no step" < review.md
+$ sdlc review add design_review architect block --important 1 --finding "important the plan: AC-2 has no step" --note "AC-2 has no step" < review.md
 US-001  design_review  architect  block (round 1)
   .sdlc/stories/US-001/reviews/design_review-architect-1.md
 ```
 
-When the rework is in, the **same** reviewer looks again. Its new verdict is a
-new round, and the gate reads the latest one:
+The implementer closes the finding once the plan has the step, with
+`sdlc finding close design_review architect F-1 --fixed`. When the rework is in, the **same**
+reviewer looks again. It reads the finding's closing first, and its new verdict is a new round,
+which the gate reads:
 
 ```console
-$ sdlc review add design_review architect approve --important 0 --nits 2 < review.md
+$ sdlc review add design_review architect approve --important 0 --nits 2 --finding "nit the plan: step 4 is long" --finding "nit the plan: AC-1 and AC-2 share a step" < review.md
 US-001  design_review  architect  approve (round 2)
   .sdlc/stories/US-001/reviews/design_review-architect-2.md
 ```
@@ -162,7 +165,7 @@ person. The configuration `sdlc init` writes sets it to 2, so had the architect
 blocked again in round 2:
 
 ```console
-$ sdlc review add design_review architect block --important 1 --note "AC-2 still has no step" < review.md
+$ sdlc review add design_review architect block --important 1 --finding "important the plan: AC-2 still has no step" --note "AC-2 still has no step" < review.md
 US-001  design_review  architect  block (round 2)
   .sdlc/stories/US-001/reviews/design_review-architect-2.md
 

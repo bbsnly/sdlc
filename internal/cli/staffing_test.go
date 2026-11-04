@@ -814,7 +814,7 @@ func TestAC3AReviewerTheStaffingKeepsIsStillWaitedFor(t *testing.T) {
 	}
 	// A block from a reviewer the story needs stops the gate as it always did.
 	stfReviewed(t, model.GateDesignReview, "red-team", "perf", "architect")
-	mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 has no step")
+	mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step")
 	stfRefused(t, run(t, "gate", "design_review", "pass"), "SDLC-E0030", "architect")
 }
 
@@ -1112,8 +1112,8 @@ func TestDecision9AnAmendmentCannotLeaveOutAReviewerWhoseLatestReviewAtAGateNotY
 	t.Parallel()
 	root := stfStaffed(t)
 	stfThrough(t, root, model.GateDesignReview)
-	mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "block", "--important", "1", "--note", "AC-3 has no step")
-	mustRunWith(t, "# security\n", "review", "add", "design_review", "security", "block", "--important", "1", "--note", "the path is not checked")
+	mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step")
+	mustRunWith(t, "# security\n", "review", "add", "design_review", "security", "block", "--important", "1", "--finding", "important the one finding", "--note", "the path is not checked")
 
 	r := stfUnchanged(t, root, "", "staffing", "amend", "architect", "--left-out", "--reason", "the design is simple after all")
 	stfRefused(t, r, stfCodeBlocked, "architect")
@@ -1144,8 +1144,8 @@ func TestDecision9ABlockAtAGateThatHasPassedDoesNotHoldTheStaffingAndOneAtAGateR
 	stfThrough(t, root, model.GateDesignReview)
 	// The human advocate and red-team advise: the gate passes over their blocks.
 	stfReviewed(t, model.GateDesignReview, "human-advocate", "red-team")
-	mustRunWith(t, "# human-advocate\n", "review", "add", "design_review", "human-advocate", "block", "--important", "1", "--note", "the message is unclear")
-	mustRunWith(t, "# red-team\n", "review", "add", "design_review", "red-team", "block", "--important", "1", "--note", "the input is not bounded")
+	mustRunWith(t, "# human-advocate\n", "review", "add", "design_review", "human-advocate", "block", "--important", "1", "--finding", "important the one finding", "--note", "the message is unclear")
+	mustRunWith(t, "# red-team\n", "review", "add", "design_review", "red-team", "block", "--important", "1", "--finding", "important the one finding", "--note", "the input is not bounded")
 	mustRun(t, "gate", "design_review", "pass", "--note", "approved over two advisory blocks")
 
 	mustRun(t, "staffing", "amend", "human-advocate", "--left-out", "--reason", "no message changes from here on")

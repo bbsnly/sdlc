@@ -151,7 +151,7 @@ func TestAC8InitWritesThePolicyReviewListNamesItAndABlockWithoutAnImportantFindi
 	}
 
 	r := sb.does(t, tree, "architect", "# architect\n\nAC-3 has no step.\n",
-		"review", "add", "design_review", "architect", "block", "--important", "1", "--nits", "2", "--note", "AC-3 has no step")
+		"review", "add", "design_review", "architect", "block", "--important", "1", "--nits", "2", "--finding", "important the one finding", "--note", "AC-3 has no step")
 	if r.code != 0 || !strings.Contains(r.stdout, "block (round 1)") {
 		t.Fatalf("AC-3 a block with a count: exit %d\n%s%s", r.code, r.stdout, r.stderr)
 	}

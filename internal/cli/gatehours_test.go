@@ -359,7 +359,7 @@ var ghCommands = []ghCommand{
 	{name: "a gate that fails", args: []string{"gate", "plan", "fail", "--note", "again"}},
 	{name: "a gate refused for its documents", args: []string{"gate", "analysis", "pass"}, refused: true},
 	{name: "a review", stdin: "# architect\n", args: []string{"review", "add", "design_review", "architect", "approve"}},
-	{name: "a block", stdin: "# architect\n", args: []string{"review", "add", "design_review", "architect", "block", "--important", "1", "--note", "no step"}},
+	{name: "a block", stdin: "# architect\n", args: []string{"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "no step"}},
 	{name: "a review the project does not expect", stdin: "# advocate\n", args: []string{"review", "add", "dor", "human-advocate", "approve"}, refused: true},
 	{name: "status", args: []string{"status"}},
 }

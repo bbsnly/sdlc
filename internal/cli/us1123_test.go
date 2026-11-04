@@ -129,8 +129,9 @@ func rvReview(t *testing.T, role, verdict string) reviewPayload {
 	t.Helper()
 	args := []string{"review", "add", "design_review", role, verdict, "--json"}
 	if verdict == string(model.VerdictBlock) {
-		// US-115 AC-3: a block names at least one important finding.
-		args = append(args, "--important", "1")
+		// US-115 AC-3: a block names at least one important finding, and US-117
+		// AC-2 lists it.
+		args = append(args, "--important", "1", "--finding", "important the one finding")
 	}
 	return decode[reviewPayload](t, mustRunWith(t, "# "+role+"\n", args...))
 }

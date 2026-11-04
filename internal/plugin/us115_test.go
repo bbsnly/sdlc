@@ -248,43 +248,40 @@ func TestAC5TheRunbookGivesEveryReviewerThePolicyInItsOwnGate(t *testing.T) {
 	}
 }
 
-// AC-5: what becomes of the nits, in each gate whose reviews can leave any.
-// Approved reading: Gate 7's go to the retro, as there is no next gate's work.
-func TestAC5TheRunbookSaysNitsNeverComeBackAsRework(t *testing.T) {
+// AC-5, as US-117 AC-7 leaves it. US-115 sent no nit back as rework, let a gate
+// pass with its nits unaddressed and sent Gate 6's and Gate 7's to the retro. Under
+// the scout rule a nit in a file the story changes is fixed or declined with a
+// reason, so no gate's section says any of that now; US-117's
+// TestAC7TheRunbookHoldsNitsToTheScoutRule holds what it says instead. What stays
+// of US-115's rule is that the design review's nits go into the implementer's brief.
+func TestAC5TheRunbookGivesTheDesignReviewsNitsToTheImplementerAndNoneToTheRetro(t *testing.T) {
 	t.Parallel()
-	passes := func(what string) rpDuty {
-		return rpDuty{"that " + what + " passes with the nits unaddressed",
-			[][]string{{"nits"}, {"approv"}, {"passes"}, {"unaddressed"}}}
-	}
-	never := func(changes string) rpDuty {
-		return rpDuty{"that nits are never sent back as rework that changes the " + changes,
-			[][]string{{"never"}, {"rework"}, {changes}}}
-	}
-	for _, c := range []struct {
-		gate string
-		says []rpDuty
-	}{
-		{"Gate 4", []rpDuty{
-			passes("a gate whose blocking reviewers approve"),
-			{"that the nits go into the implementer's brief", [][]string{{"nits"}, {"implementer"}, {"brief"}}},
-			never("plan"),
-		}},
-		{"Gate 6", []rpDuty{
-			passes("the gate"),
-			{"where the nits go", [][]string{{"retro", "brief"}}},
-			never("tree"),
-		}},
-		{"Gate 7", []rpDuty{
-			passes("the gate"),
-			{"that the nits go to the retro", [][]string{{"retro"}}},
-			never("tree"),
-		}},
-	} {
-		section := rpRunbookSection(t, c.gate)
-		for _, d := range c.says {
-			t.Run("AC-5 "+c.gate+" says "+d.name, func(t *testing.T) {
+	t.Run("AC-5 Gate 4 says that the nits go into the implementer's brief", func(t *testing.T) {
+		t.Parallel()
+		rpSaysIn(t, "Gate 4", rpRunbookSection(t, "Gate 4"),
+			rpDuty{"that the nits go into the implementer's brief", [][]string{{"nits"}, {"implementer"}, {"brief"}}})
+	})
+	for _, gate := range []string{"Gate 4", "Gate 6", "Gate 7"} {
+		section := rpRunbookSection(t, gate)
+		for _, c := range []struct {
+			d rpDuty
+			// unless is the words of a sentence that says the opposite: the scout
+			// rule may well say that no nit is left unaddressed.
+			unless []string
+		}{
+			{rpDuty{"that nits are never sent back as rework", [][]string{fdNit, {"never"}, {"rework"}}}, nil},
+			{rpDuty{"that nits go to the retro", [][]string{fdNit, {"retro"}}}, nil},
+			{rpDuty{"that a gate passes with its nits unaddressed", [][]string{fdNit, {"unaddressed"}}},
+				[]string{"never", "not ", "no nit", "none"}},
+		} {
+			t.Run("US-117 AC-7 "+gate+" no longer says "+c.d.name, func(t *testing.T) {
 				t.Parallel()
-				rpSaysIn(t, c.gate, section, d)
+				for _, sentence := range rpSentences(section) {
+					lower := strings.ToLower(sentence)
+					if c.d.holds(sentence) && !slices.ContainsFunc(c.unless, func(w string) bool { return strings.Contains(lower, w) }) {
+						t.Errorf("%s of the next runbook still says %s: %q", gate, c.d.name, sentence)
+					}
+				}
 			})
 		}
 	}
@@ -292,10 +289,11 @@ func TestAC5TheRunbookSaysNitsNeverComeBackAsRework(t *testing.T) {
 
 // Q7: the room for AC-5 comes out of the runbook, not out of the cap. This is
 // TestTheRunbookFitsWhatCompactionKeeps again on purpose, with the number written
-// here: changing the cap there has to be seen here too.
+// here: changing the cap there has to be seen here too. US-117: a person raised it
+// from 17,500 to make room for the findings ledger.
 func TestAC5TheRunbookStaysUnderTheCapThatCompactionKeeps(t *testing.T) {
 	t.Parallel()
-	const maxBytes = 17500
+	const maxBytes = 18500
 	raw, err := os.ReadFile(filepath.Join(pluginDir, "skills", "next", "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)

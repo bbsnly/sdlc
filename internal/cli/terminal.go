@@ -80,4 +80,4 @@ func spell(b []byte, final bool) (out, rest []byte) {
 // spelled out here.
 func oneLine(s string) string { return lineBreaks.Replace(s) }
 
-var lineBreaks = strings.NewReplacer("\r", `\r`, "\n", `\n`, "\t", `\t`)
+var lineBreaks = strings.NewReplacer("\r", `\r`, "\n", `\n`, "\t", `\t`, "\u2028", `\u2028`, "\u2029", `\u2029`)

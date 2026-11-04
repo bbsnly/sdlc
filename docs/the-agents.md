@@ -23,7 +23,7 @@ than the code.
 
 There is one exception. A Gate 4 reviewer asked to look again at a revised plan is
 resumed, not started afresh, and it is given the diff with its own findings and
-their answers, not everyone's. It still never sees the argument that produced the
+their closings, not everyone's. It still never sees the argument that produced the
 plan, and what the other reviewers found reaches it only as what changed. The
 independence that remains is the first look, which every reviewer takes alone.
 
@@ -82,7 +82,11 @@ at Gate 6, so a vector it misses is one nobody looks for.
 before it reads a single test, then compares that with what was actually
 written. It runs your commands rather than concluding from reading, and it
 verifies at least one criterion end to end itself rather than through the test
-that claims it.
+that claims it. Before it approves, it checks the findings ledger: every design
+and code review finding closed, each `--fixed` visible in the diff, or in
+`PLAN.md` for a finding about the plan, each decline's reason sound, and nothing
+the diff touches referred. Where an older `sdlc` dropped a reviewer's findings
+between its rounds, it reads the review documents for the lost ones.
 
 **`sdlc:human-advocate`** is the only one checking that the change is usable
 rather than correct: that errors say what to do, that names match your glossary
@@ -195,8 +199,10 @@ The next three go to particular roles:
   that belong to its role, reports at most the policy's cap of nits and gives the rest as a count,
   and reports nothing a configured command enforces. It passes its own counts with `--important`
   and `--nits`, whatever its verdict. A block names at least one important finding, and a review
-  with only nits is an approve with the nits listed. A `note` stays a note where that role's own
-  command line gives one.
+  with only nits is an approve with the nits listed. Each lists its findings with `--finding`,
+  and the implementer closes each with `sdlc finding close` as `--fixed`, `--declined` or
+  `--referred`, under the scout rule. A `note` stays a note where that role's own command line
+  gives one.
 
 ## Prompt injection
 

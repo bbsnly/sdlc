@@ -317,7 +317,7 @@ func checkRecorder(words []string, s State) (Finding, bool) {
 var sdlcCommands = []string{
 	"init", "status", "story", "log", "ack", "start", "stop", "gate", "artifact", "review", "freeze",
 	"unfreeze", "escalate", "approve", "release", "cost", "doctor", "version", "staffing",
-	"codemap", "remap",
+	"codemap", "remap", "trace", "finding",
 }
 
 // checkManager holds the project manager to the staffing and to what only
