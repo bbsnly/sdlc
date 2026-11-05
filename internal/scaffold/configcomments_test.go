@@ -28,7 +28,7 @@ import (
 // template writes them.
 var ccSettings = []string{
 	"version", "backlog", "git", "commands", "thresholds", "paths",
-	"spec", "loop", "reviews", "freeze", "human_gates", "budget",
+	"spec", "loop", "team", "freeze", "human_gates", "budget",
 }
 
 // ccDocURL is what the last line of every block starts with.

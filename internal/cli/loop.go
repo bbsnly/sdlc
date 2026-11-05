@@ -761,6 +761,9 @@ type gatePayload struct {
 	// HandedOver is the kind of escalation, when this failure was one too many
 	// and the story went to a person.
 	HandedOver string `json:"handed_over,omitempty"`
+	// Disabled is every agent the team disables but the project manager,
+	// which takes no part in a gate.
+	Disabled []string `json:"disabled,omitempty"`
 }
 
 // settleStory keeps the backlog honest about a story whose gates have all
@@ -902,7 +905,7 @@ type gateRun struct {
 	record *model.Record
 }
 
-func runGate(cmd *cobra.Command, args []string, flags gateFlags) error {
+func runGate(cmd *cobra.Command, args []string, flags gateFlags) (err error) {
 	gate, status, err := parseGate(args)
 	if err != nil {
 		return err
@@ -941,6 +944,7 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) error {
 	// What this gate asks git about the tree and HEAD, up to saving the
 	// record, which writes nothing either of them measures.
 	g := &gateRun{cmd: cmd, s: s, rd: readingOf(s), id: id, gate: gate, status: status, note: flags.note, record: record}
+	defer sayTeamOnRefusal(cmd, s, &err)
 	// The one thing a gate writes whether or not it is then refused, and before
 	// checkAndStaff has put anything else on the record: which commits are the
 	// story's own.
@@ -974,6 +978,16 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) error {
 		}
 	}
 	return g.report(reopened, done, handedOver, message)
+}
+
+// sayTeamOnRefusal names the disabled agents on stderr where the gate was
+// refused: a refused gate is where a person most wants to know who is not
+// coming.
+func sayTeamOnRefusal(cmd *cobra.Command, s *store.Store, err *error) {
+	if *err != nil {
+		team := s.Config().Team
+		sayTeam(cmd.ErrOrStderr(), team, gateDisabled(team))
+	}
 }
 
 // parseGate is the gate and the outcome the command line names.
@@ -1018,6 +1032,9 @@ func (g *gateRun) checkAndStaff(flags gateFlags) error {
 		return err
 	}
 	if g.gate == model.GateAnalysis && g.cmd.Flags().Changed(securityFlag) {
+		if err := refuseSensitiveLeftOut(g.s.Config().Team, record, flags.securitySensitive); err != nil {
+			return err
+		}
 		noteSensitivity(g.s, record, flags.securitySensitive)
 		record.SetSecuritySensitive(flags.securitySensitive)
 	}
@@ -1244,7 +1261,7 @@ func (g *gateRun) report(reopened []string, done bool, handedOver, message strin
 			OK: true, Story: id, Gate: string(gate), Status: string(g.status), Note: note,
 			CommitBase: start, Commit: end, RangeUnknown: gate == model.GateCommit && record.RangeUnknown,
 			HeadPastCommit: past, Reopened: reopened,
-			Done: done, HandedOver: handedOver,
+			Done: done, HandedOver: handedOver, Disabled: gateDisabled(g.s.Config().Team),
 		})
 	}
 	w := cmd.OutOrStdout()
@@ -1266,6 +1283,11 @@ func (g *gateRun) report(reopened []string, done bool, handedOver, message strin
 	} else if _, remaining := record.NextGate(); !remaining && inItsWorktree(g.s, id) {
 		fmt.Fprintf(w, "\nEvery gate on %s has passed. `sdlc stop` in %s lands it on %s.\n",
 			id, worktreeIn(id), trunkName(g.s))
+	}
+	team := g.s.Config().Team
+	sayTeam(w, team, gateDisabled(team))
+	if next, remaining := record.NextGate(); remaining {
+		sayByHand(w, team, next)
 	}
 	if handedOver != "" {
 		sayHandedOver(w, id, message)

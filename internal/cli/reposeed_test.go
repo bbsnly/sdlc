@@ -135,6 +135,8 @@ func seedGitInit(t *testing.T, root string) {
 		t.Helper()
 		wtGit(t, scratch, "init", "--quiet", "--initial-branch=main")
 		runIn(t, scratch, "init")
+		// As initialised does, and for the same reason: US-109 AC-3.
+		projectManagerOff(t, scratch)
 	}))
 }
 

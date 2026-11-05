@@ -76,7 +76,8 @@ $ sdlc init --force
 ### SDLC-E0004
 
 `.sdlc/config.json` exists but could not be parsed. Usually this is a trailing comma or an
-unquoted key left behind by a hand edit.
+unquoted key left behind by a hand edit, or a `//` comment copied from the example in
+[Every setting at once](configuration.md#every-setting-at-once); JSON takes none.
 
 It is also the code for a setting of the wrong type, such as `"3"` where a number belongs, or a
 string where a list does. That is valid JSON, so a JSON checker finds nothing wrong with it. The
@@ -507,6 +508,18 @@ $ sdlc review list --gate <gate>
 
 Then run `sdlc review add` again with one of those roles. If a role you want is not there, it is
 not part of this gate.
+
+The message says which of these it is, and only that one:
+
+- **The gate does not expect the role.** As above.
+- **The agent is disabled** in `team.agents.<agent>.enabled`, so its review is not waited for. A
+  person turns it back on in `.sdlc/config.json`; a disabled verifier or code reviewer is still
+  recorded by a person under its own name.
+- **The staffing did not pick it** for this story. The project manager changes that with
+  `sdlc staffing amend <agent> --needed --reason "..."`.
+- **The name is past `instances`.** An instance is named for its role with a number after it, such
+  as `security-2`, and `team.agents.<agent>.instances` says how many there are. Use a name within
+  it, or have a person raise it.
 
 `sdlc artifact diff plan` needs `--since` to name one of the design review's reviewers, because a
 diff starts from the plan that reviewer last reviewed. `sdlc review list --gate design_review`
@@ -1639,19 +1652,19 @@ that widened the built-in one, and nothing raises it now. The number is not give
 
 ### SDLC-E0067
 
-A `sdlc staffing` command was run in a project where the staffing is off. There is no staffing to
-show, record or change: every agent takes part in every story, and each runs as its definition
+A `sdlc staffing` command that records or changes a staffing was run in a project where the
+project manager is disabled, in `team.agents.project-manager.enabled`. There is no staffing to
+record or change: every enabled agent takes part in every story, and each runs as its definition
 says. Nothing was changed.
 
-To use it, a person sets `staffing.enabled` to `true` in the project's configuration, with the
-models and efforts a staffing may ask for. [Configuration](configuration.md#staffing) has a worked
-example.
+To use the staffing, a person deletes that setting, or sets it to `true`, in `.sdlc/config.json`.
+[Configuration](configuration.md#team) says what the team section holds.
 
 ### SDLC-E0068
 
-The staffing is on and none is recorded for the story. `sdlc gate analysis pass` refuses until
-there is one, `sdlc staffing amend` has nothing to change, and `sdlc staffing show` has nothing to
-show. Until one is recorded every agent is needed.
+The project manager is enabled and no staffing is recorded for the story. `sdlc gate analysis pass`
+refuses until there is one, `sdlc staffing amend` has nothing to change, and `sdlc staffing show`
+has nothing to show. Until one is recorded every enabled agent is needed.
 
 To put it right, delegate to `sdlc:project-manager`, which records the staffing with
 `sdlc staffing set`. The runbook does this when a story is found ready.
@@ -1659,8 +1672,8 @@ To put it right, delegate to `sdlc:project-manager`, which records the staffing 
 ### SDLC-E0069
 
 `sdlc staffing set` was given something that is not a whole staffing, or the story already has
-one. A staffing names each of the plugin's twelve agents once, says whether the story needs it
-with a reason, and for each agent it needs gives a model, an effort and a reason for them. The
+one. A staffing names each enabled agent, and each of its instances, once, says whether the story
+needs it with a reason, and for each one it needs gives a model, an effort and a reason for them. The
 reason in the message says which of these was missing. Nothing was recorded.
 
 Give the whole staffing again. One that is already recorded is changed an agent at a time with
@@ -1677,11 +1690,12 @@ Keep the agent. To spend less on it, ask for a lower model or effort instead.
 
 ### SDLC-E0071
 
-A model or an effort was asked for that `staffing.models` or `staffing.efforts` does not list, or
-that is below what `staffing.lowest` has for the agent. The names are compared exactly. The reason
-lists what is allowed for the agent, from the lowest up. Nothing was recorded.
+A model or an effort was asked for that `team.models` or `team.efforts` does not list, or that is
+below what `team.agents.<agent>.lowest` has for the agent; an instance takes its role's `lowest`.
+The names are compared exactly. The reason lists what is allowed for the agent, from the lowest
+up. Nothing was recorded.
 
-Ask for one of those. A person changes the lists in the `staffing` section of the project's
+Ask for one of those. A person changes the lists in the `team` section of the project's
 configuration.
 
 ### SDLC-E0072
@@ -2167,6 +2181,44 @@ reviewer's own, and `sdlc` does not judge it.
 
 `unknown flag: --important` is a different failure, [SDLC-E0034](#sdlc-e0034): the binary is older
 than the plugin, so upgrade `sdlc`.
+
+### SDLC-E0087
+
+`.sdlc/config.json` still holds a setting that the `team` section replaced: something under
+`staffing`, or `reviews.gate7_advisory` set to `true`. The file is refused rather than read without
+it, since the agents would then run otherwise than the file says. Every command that loads the
+configuration refuses, and the message names each old setting and the key that replaced it. A
+message that would run past about 2,000 characters stops there and counts the rest, as
+`; and 12 more`: move those it names and run the command again to see the others. The settings a
+file holds once are always among those it names: `version`, `backlog.path`, `reviews.policy` and
+the limits that are one number each. A problem in a list, such as `budget.gate_hours` or a path
+under `paths.conflict_markers_intended` or `bring_back`, can be among those it counts.
+
+For a story in flight, editing the story's own copy of the file only moves the refusal to the
+landing. [Upgrading from the staffing section](configuration.md#upgrading-from-the-staffing-section)
+gives the route.
+
+Move each setting to its key under `team` in `.sdlc/config.json`, as the message and that section
+say, and delete the old one. An empty `"staffing": {}` is still refused, so delete the whole
+section once its keys have moved. Do not run `sdlc init --force` for this: it writes the defaults
+over the project's own settings.
+
+### SDLC-E0088
+
+The `team` section of `.sdlc/config.json` cannot be used: it names an agent that does not exist,
+or an instance's name as an agent, or an agent named more than once under `team.agents`, or
+holds a value the loop cannot use, such as a blank or repeated name in `team.models` or
+`team.efforts`, a `lowest` that is not in those lists, `retries` outside 0 to 20, `instances`
+outside 1 to 16, `max_rounds` below 1, or `bring_back` on an agent that does not review the
+code. The message lists every problem in the file at once, up to about 2,000 characters, and
+counts the rest after them, as `; and 12 more`. The settings a file holds once are always among
+those it names: `version`, `backlog.path`, `reviews.policy` and the limits that are one number
+each. A problem in a list, such as `budget.gate_hours` or a path under
+`paths.conflict_markers_intended` or `bring_back`, can be among those it counts.
+
+Correct each one in `.sdlc/config.json` and run the command again: the problems the message
+counted are listed once these are fixed. [Configuration](configuration.md#team) says what each
+setting takes.
 
 ### SDLC-E0089
 

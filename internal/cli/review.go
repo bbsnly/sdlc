@@ -63,6 +63,10 @@ type reviewInfo struct {
 	LeftOut       bool   `json:"left_out,omitempty"`
 	Reason        string `json:"reason,omitempty"`
 	BroughtBackBy string `json:"brought_back_by,omitempty"`
+	// Disabled is a reviewer the project disables in team.agents, which the
+	// gate does not wait for, bar the verifier and the code reviewer, whose
+	// review a person then records.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 func newReviewCmd() *cobra.Command {
@@ -185,29 +189,40 @@ type reviewFlags struct {
 	findings          []string
 }
 
-func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
+// readReviewArgs reads what the command line says of the review, before
+// anything is read from the store: the gate, the reviewer, the verdict, and the
+// findings the counts list.
+func readReviewArgs(args []string, f reviewFlags) (model.Gate, model.Reviewer, model.Verdict, []model.Finding, error) {
 	gate := model.Gate(args[0])
 	if !gate.Valid() {
-		return sdlcerr.New(sdlcerr.UnknownGate,
+		return "", model.Reviewer{}, "", nil, sdlcerr.New(sdlcerr.UnknownGate,
 			"there is no gate called "+quote(args[0]),
 			"this version knows "+model.GateNames())
 	}
 	reviewer, ok := model.FindReviewer(gate, args[1])
 	if !ok {
-		return sdlcerr.New(sdlcerr.UnknownReviewer,
+		return "", model.Reviewer{}, "", nil, sdlcerr.New(sdlcerr.UnknownReviewer,
 			string(gate)+" does not expect a review from "+quote(args[1]),
 			"it expects "+model.ReviewerNames(gate))
 	}
 	verdict := model.Verdict(strings.ToLower(strings.TrimSpace(args[2])))
 	if !verdict.Valid() {
-		return sdlcerr.New(sdlcerr.UnknownVerdict,
+		return "", model.Reviewer{}, "", nil, sdlcerr.New(sdlcerr.UnknownVerdict,
 			quote(args[2])+" is not a verdict",
 			"a reviewer approves, blocks, or leaves a note")
 	}
 	if err := refuseCounts(verdict, f); err != nil {
-		return err
+		return "", model.Reviewer{}, "", nil, err
 	}
 	findings, err := readFindings(gate, f)
+	if err != nil {
+		return "", model.Reviewer{}, "", nil, err
+	}
+	return gate, reviewer, verdict, findings, nil
+}
+
+func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
+	gate, reviewer, verdict, findings, err := readReviewArgs(args, f)
 	if err != nil {
 		return err
 	}
@@ -243,6 +258,9 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 		return sdlcerr.New(sdlcerr.UnknownReviewer,
 			string(gate)+" does not expect a review from "+quote(reviewer.Role)+" in this project",
 			"it does only when human_gates.dor_advocate_check is on in .sdlc/config.json")
+	}
+	if err := refuseUnwaited(cmd.Context(), s, record, gate, reviewer.Role); err != nil {
+		return err
 	}
 	subject, err := gateSubject(cmd.Context(), readingOf(s), id, gate)
 	if err != nil {
@@ -283,6 +301,33 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 	return nil
 }
 
+// refuseUnwaited refuses a review the gate does not wait for, before anything
+// is recorded or counted: a reviewer the gate does not wait for cannot block
+// it, or hand the story over by blocking. Each case says only itself, since
+// the fixes differ: a disabled agent is the file's, a reviewer not picked the
+// project manager's, and an instance past instances the file's other setting.
+func refuseUnwaited(ctx context.Context, s *store.Store, record *model.Record, gate model.Gate, name string) error {
+	team := s.Config().Team
+	base := model.BaseRole(name)
+	what := string(gate) + " does not wait for a review from " + quote(name)
+	if _, n, ok := model.InstanceOf(name); ok && team.Enabled(base) && n > team.Seats(base) {
+		return sdlcerr.New(sdlcerr.UnknownReviewer, what,
+			fmt.Sprintf("%s is past team.agents.%s.instances, which gives %s %d", name, base, base, team.Seats(base)))
+	}
+	out, _, err := waited(ctx, readingOf(s), record, gate, name)
+	switch {
+	case err != nil:
+		return err
+	case !out:
+		return nil
+	case !team.Enabled(base):
+		return sdlcerr.New(sdlcerr.UnknownReviewer, what,
+			base+" is disabled in team.agents."+base+".enabled, so it takes no part in any story")
+	}
+	return sdlcerr.New(sdlcerr.UnknownReviewer, what,
+		"the staffing left "+name+" out of this story; delegate to sdlc:project-manager to amend the staffing if the story needs it")
+}
+
 // reviewedStory is the story a review is recorded against: the one named, or
 // the one being worked on.
 func reviewedStory(s *store.Store, named string) (string, error) {
@@ -307,12 +352,17 @@ func saveReview(cmd *cobra.Command, s *store.Store, record *model.Record, review
 		return "", "", saveRecorded(s, record, doc)
 	}
 	gate := doc.Gate
-	limit := s.Config().Loop.MaxReviewRounds
+	// The agent's own limit where it has one, counted for each name, so an
+	// instance counts its own blocks under its role's setting.
+	limit, setting := s.Config().Loop.MaxReviewRounds, "loop.max_review_rounds"
+	if own, ok := s.Config().Team.MaxRounds(reviewer.Role); ok {
+		limit, setting = own, "team.agents."+model.BaseRole(reviewer.Role)+".max_rounds"
+	}
 	blocks := record.SinceDecision(model.EventReview,
 		model.ReviewEvent(gate, reviewer.Role, model.VerdictBlock))
-	message = fmt.Sprintf("%s has blocked %s %d times, and loop.max_review_rounds is %d, "+
+	message = fmt.Sprintf("%s has blocked %s %d times, and %s is %d, "+
 		"so the rework is not converging on what it asks for. The last note: %s",
-		reviewer.Role, gate, blocks, limit, lastNote(note))
+		reviewer.Role, gate, blocks, setting, limit, lastNote(note))
 	handedOver, err = handOverAt(cmd, s, record, doc, limitCount{
 		count: blocks, limit: limit, kind: "review_not_converging", message: message, what: "the block",
 	})
@@ -406,22 +456,29 @@ func describePolicyFile(cfg config.Config, p string) string {
 }
 
 // describeReviewers is where each expected reviewer's review stands, for one
-// gate or for all of them.
+// gate or for all of them, each instance the team gives a reviewer included.
 func describeReviewers(ctx context.Context, s *store.Store, record *model.Record, id string, only model.Gate) ([]reviewInfo, error) {
 	infos := make([]reviewInfo, 0, len(model.Reviewers))
 	policy := reviewPolicy(s, record)
 	// One tree for every reviewer listed: they were all stamped
 	// against the same one.
 	rd := readingOf(s)
-	for _, r := range model.Reviewers {
-		if (only != "" && r.Gate != only) || !r.Expected(policy) {
+	team := s.Config().Team
+	for _, gate := range model.Gates {
+		if only != "" && gate != only {
 			continue
 		}
-		info, err := describeReviewer(ctx, rd, record, id, r, policy)
-		if err != nil {
-			return nil, err
+		for _, r := range team.ReviewersFor(gate) {
+			if !r.Expected(policy) {
+				continue
+			}
+			info, err := describeReviewer(ctx, rd, record, id, r, policy)
+			if err != nil {
+				return nil, err
+			}
+			info.Disabled = !team.Enabled(r.Role)
+			infos = append(infos, info)
 		}
-		infos = append(infos, info)
 	}
 	return infos, nil
 }
@@ -437,7 +494,7 @@ func describeReviewer(ctx context.Context, rd *reading, record *model.Record, id
 	info := reviewInfo{
 		Gate: string(r.Gate), Role: r.Role,
 		Blocking:       r.Blocks(policy),
-		BlocksOnBreach: !r.Blocks(policy) && r.BlocksOnBreach,
+		BlocksOnBreach: !r.Blocks(policy) && r.OnBreach(policy),
 	}
 	if latest, ok := record.LatestReview(r.Gate, r.Role); ok {
 		info.Verdict, info.Round = string(latest.Verdict), latest.Round
@@ -450,7 +507,8 @@ func describeReviewer(ctx context.Context, rd *reading, record *model.Record, id
 		return reviewInfo{}, err
 	}
 	if info.LeftOut || info.BroughtBackBy != "" {
-		info.Reason = staffingRow(record, r.Role).Reason
+		row, _ := staffingRow(record, r.Role)
+		info.Reason = row.Reason
 	}
 	return info, nil
 }
@@ -459,8 +517,10 @@ func describeReviewPower(i reviewInfo) string {
 	switch {
 	case i.Blocking:
 		return "blocking"
-	case i.BlocksOnBreach:
+	case i.BlocksOnBreach && model.BaseRole(i.Role) == "perf":
 		return "on budget"
+	case i.BlocksOnBreach:
+		return "can block"
 	default:
 		return "advisory"
 	}
@@ -473,11 +533,18 @@ func describeReviewState(i reviewInfo) string {
 		i.BroughtBackBy = ""
 		return describeReviewState(i) + " (brought back by " + quote(by) + ")"
 	}
+	base := model.BaseRole(i.Role)
 	switch {
+	case i.Disabled && i.LeftOut:
+		return "disabled in team.agents." + base + ".enabled; a person enables it there if the story needs it"
+	case i.Disabled:
+		i.Disabled = false
+		return describeReviewState(i) + " (disabled in team.agents." + base + ".enabled: a person records this review by hand)"
 	case i.LeftOut:
 		// The reason is a model's, and is printed quoted so that it cannot end
 		// the line and start one that reads as the tool's.
-		return "left out -- " + quote(i.Reason)
+		return "left out by the staffing -- " + quote(i.Reason) +
+			"; delegate to sdlc:project-manager to amend the staffing if the story needs it"
 	case i.Verdict == "":
 		return "not reviewed"
 	case i.ReviewedSubject != "":
@@ -519,14 +586,15 @@ func gateSubject(ctx context.Context, rd *reading, id string, gate model.Gate) (
 	}
 }
 
-// reviewPolicy is what decides who is expected and who blocks, for this story
-// in this project. It is not the review policy file, which says what they report:
-// that is policyFileIn.
+// reviewPolicy is who is expected and who can block, for this story in this
+// project: the team's can_block. It is not the review policy, the file every
+// reviewer reads, which policyFileIn names; no string a person reads calls
+// this that.
 func reviewPolicy(s *store.Store, record *model.Record) model.ReviewPolicy {
 	return model.ReviewPolicy{
-		SecuritySensitive:  record.SecuritySensitive(),
-		CodeReviewAdvisory: s.Config().Reviews.Gate7Advisory,
-		DoRAdvocate:        s.Config().HumanGates.DoRAdvocateCheck,
+		SecuritySensitive: record.SecuritySensitive(),
+		CanBlock:          s.Config().Team.CanBlock(),
+		DoRAdvocate:       s.Config().HumanGates.DoRAdvocateCheck,
 	}
 }
 
@@ -580,7 +648,7 @@ func expectedReviewers(ctx context.Context, rd *reading, record *model.Record, g
 ) ([]model.Reviewer, map[string]string, error) {
 	var reviewers []model.Reviewer
 	back := map[string]string{}
-	for _, r := range model.ReviewersFor(gate) {
+	for _, r := range rd.s.Config().Team.ReviewersFor(gate) {
 		out, by, err := waited(ctx, rd, record, gate, r.Role)
 		if err != nil {
 			return nil, nil, err

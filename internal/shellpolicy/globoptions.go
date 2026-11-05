@@ -260,21 +260,21 @@ func segmentEnd(command string, i int) bool {
 // under the split reading as well, `rm -f (CLAUDE|README).md` was told it
 // started a session of its own. A reading that is let go records nothing:
 // State.Commits is called only for the answer that stands.
-func inspectShellGlobs(command string, s State) (Finding, bool) {
+func inspectShellGlobs(command string, s State, reading assignments) (Finding, bool) {
 	read, changed := shellGlobReading(command, s, readAll)
 	if !changed {
 		return Finding{}, false
 	}
 	committed, record := false, s.Commits
 	s.Commits = func() { committed = true }
-	f, refused := inspectWritten(read, s)
+	f, refused := inspectWritten(read, s, reading)
 	if !refused {
 		return Finding{}, false
 	}
 	if committed && record != nil {
 		record()
 	}
-	return withDotClause(f, command, s), true
+	return withDotClause(f, command, s, reading), true
 }
 
 // dotClauses are what a refusal says where only a reading of a leading dot
@@ -293,14 +293,14 @@ var dotClauses = []struct {
 // withDotClause is f, refused under a held-name rule, with the clause for
 // the dot reading that alone refuses the command. It is read again only for
 // a refusal, which is rare, and not at all where another reading refuses.
-func withDotClause(f Finding, command string, s State) Finding {
+func withDotClause(f Finding, command string, s State, reading assignments) Finding {
 	if f.Rule != ruleLoopState && f.Rule != "protected-path-through-the-tool" && f.Rule != ruleFrozenTest {
 		return f
 	}
 	s.Commits = nil
-	without := func(reading int) bool {
-		read, _ := shellGlobReading(command, s, reading)
-		_, refused := inspectWritten(read, s)
+	without := func(glob int) bool {
+		read, _ := shellGlobReading(command, s, glob)
+		_, refused := inspectWritten(read, s, reading)
 		return refused
 	}
 	if without(readGroups) {

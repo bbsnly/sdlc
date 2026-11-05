@@ -51,6 +51,12 @@ func satisfy(t *testing.T, root string, gate model.Gate) {
 	case model.GateAnalysis:
 		mustRunWith(t, "# Analysis\n", "artifact", "write", "analysis")
 		mustRunWith(t, "# Threats\n", "artifact", "write", "threats")
+		// US-109 AC-3: with the project manager on, this gate waits for a staffing.
+		// Every project the helpers make has it off; the one a test made with
+		// `sdlc init` itself has it on, and walks through it as the runbook would.
+		if decode[statusPayload](t, mustRun(t, "status", "--json")).Staffing == "none" {
+			stfSet(t, stfFull())
+		}
 	case model.GateTestsFrozen:
 		writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// AC-1\n")
 		mustRunWith(t, "# Test plan\n", "artifact", "write", "test_plan")

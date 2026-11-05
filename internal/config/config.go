@@ -57,23 +57,12 @@ type Config struct {
 	HumanGates  HumanGates        `json:"human_gates"`
 	Budget      Budget            `json:"budget"`
 	Consolidate Consolidate       `json:"consolidate"`
-	Staffing    Staffing          `json:"staffing"`
-}
-
-// Staffing turns the staffing on and bounds what one may ask for. Absent or
-// off, every agent takes part in every story and nothing here is read.
-type Staffing struct {
-	Enabled bool `json:"enabled"`
-	// Models and Efforts are the names a staffing may ask for, lowest first.
-	// The order is the ranking: nothing ranks a model or an effort by its name.
-	Models  []string `json:"models"`
-	Efforts []string `json:"efforts"`
-	// Lowest is, for an agent, the lowest of each it may be asked for. An agent
-	// with no entry may be asked for from the first name in each list.
-	Lowest map[string]Lowest `json:"lowest"`
-	// BringBack lists, for a reviewer of the code, the paths a change to which
-	// brings it back to the code review after a staffing left it out.
-	BringBack map[string][]string `json:"bring_back"`
+	// Staffing is the section the team replaced, kept only to refuse: the
+	// decoder's own reading, any case and any value, null included, since a
+	// RawMessage is handed even a null. omitempty, so a file written back from
+	// a Config never gains a key it would then refuse.
+	Staffing json.RawMessage `json:"staffing,omitempty"`
+	Team     Team            `json:"team"`
 }
 
 // Lowest is the lowest model and effort one agent may be asked for. An empty
@@ -153,10 +142,13 @@ type Loop struct {
 	MaxStopBlocks   int `json:"max_stop_blocks"`
 }
 
-// Reviews configures whether the code-review gate can block, and where the
-// review policy every reviewer reads is. Policy stays empty unless a person names
-// a file, so doctor can tell a file they asked for from the default.
+// Reviews says where the review policy every reviewer reads is. Policy stays
+// empty unless a person names a file, so doctor can tell a file they asked for
+// from the default.
 type Reviews struct {
+	// Gate7Advisory is read only to refuse: true is what the released tool
+	// acted on, and moved to team.agents.code-reviewer.can_block; false is a
+	// leftover doctor reports.
 	Gate7Advisory bool   `json:"gate7_advisory"`
 	Policy        string `json:"policy,omitempty"`
 }
@@ -210,50 +202,87 @@ type Budget struct {
 	GateHours      json.RawMessage `json:"gate_hours,omitempty"`
 }
 
-// GateHoursSet is the hours budget.gate_hours gives each gate key, and
-// everything wrong with it, in the order of the keys so that one file gets one
-// message every time. validate refuses a file with any problem, so a caller
-// that loaded the configuration reads only numbers the loader let through; an
-// entry with a problem is not among the hours.
+// GateHoursSet is the hours budget.gate_hours gives each gate key, and what is
+// wrong with it, as much as a refusal keeps, in the order of the keys so that
+// one file gets one message every time. validate refuses a file with any
+// problem, so a caller that loaded the configuration reads only numbers the
+// loader let through; an entry with a problem is not among the hours.
 //
 // Absent is the setting off. What is not an object, null included, is refused,
 // as is a number that is negative or too large to hold: 0 is how a gate is
 // turned off.
-func (b Budget) GateHoursSet() (hours map[string]float64, problems []string) {
+func (b Budget) GateHoursSet() (map[string]float64, []string) {
+	var p problems
+	hours := b.gateHours(&p)
+	return hours, p.other
+}
+
+// gateHours is GateHoursSet adding its problems to p, so that past the size a
+// refusal keeps they are only counted. Kept in a slice, every problem took the
+// load of a gate_hours of 100,000 bad keys from 28 MB to 63 MB, and the hook
+// loads the file on every tool call.
+func (b Budget) gateHours(p *problems) map[string]float64 {
 	raw := b.GateHours
 	if len(raw) == 0 {
-		return nil, nil
+		return nil
 	}
+	before := p.otherFound
 	var entries map[string]json.RawMessage
 	if json.Unmarshal(raw, &entries) != nil || entries == nil {
-		problems = append(problems, "budget.gate_hours is not an object of hours by gate key")
+		p.addOther("budget.gate_hours is not an object of hours by gate key")
 	}
-	hours = map[string]float64{}
+	hours := map[string]float64{}
 	for _, key := range slices.Sorted(maps.Keys(entries)) {
-		gate := model.Gate(key)
-		if !gate.Valid() {
-			problems = append(problems, fmt.Sprintf("budget.gate_hours has the key %q, which is not a gate key", key))
-		}
-		// Decoded as any, so that null is not read as 0; one too large to hold
-		// is an error that leaves a 0 behind, and is not a number either.
-		var value any
-		err := json.Unmarshal(entries[key], &value)
-		number, isNumber := value.(float64)
-		isNumber = isNumber && err == nil
-		switch {
-		case !isNumber:
-			problems = append(problems, fmt.Sprintf("budget.gate_hours.%s is not a number of hours", key))
-		case number < 0:
-			problems = append(problems, fmt.Sprintf("budget.gate_hours.%s is %v, and 0 is how it is turned off", key, number))
-		case gate.Valid():
+		if number, ok := gateHoursEntry(p, key, entries[key]); ok {
 			hours[key] = number
 		}
 	}
-	if len(problems) > 0 {
-		problems = append(problems, "budget.gate_hours takes a gate key ("+model.GateNames()+
+	if p.otherFound > before {
+		p.addOther("budget.gate_hours takes a gate key (" + model.GateNames() +
 			") and a number of hours, 0 or more")
 	}
-	return hours, problems
+	return hours
+}
+
+// gateHoursEntry is the hours one entry of budget.gate_hours gives its gate, or
+// false, with what is wrong with it added to p.
+func gateHoursEntry(p *problems, key string, raw json.RawMessage) (float64, bool) {
+	gate := model.Gate(key)
+	// Decoded as any, so that null is not read as 0; one too large to hold is
+	// an error that leaves a 0 behind, and is not a number either.
+	var value any
+	err := json.Unmarshal(raw, &value)
+	number, isNumber := value.(float64)
+	isNumber = isNumber && err == nil
+	bad := 0
+	if !gate.Valid() {
+		bad++
+	}
+	if !isNumber || number < 0 {
+		bad++
+	}
+	switch {
+	case bad == 0:
+		return number, true
+	case p.full():
+		p.count(&p.otherFound, bad)
+		return 0, false
+	}
+	// A key that is no gate is the file's own text, quoted and cut: written raw
+	// after budget.gate_hours., "x\ny" put a line of the file's into the
+	// refusal, and a key of a megabyte made a refusal of one.
+	name := key
+	if !gate.Valid() {
+		name = quoted(key)
+		p.addOther(fmt.Sprintf("budget.gate_hours has the key %s, which is not a gate key", name))
+	}
+	switch {
+	case !isNumber:
+		p.addOther(fmt.Sprintf("budget.gate_hours.%s is not a number of hours", name))
+	case number < 0:
+		p.addOther(fmt.Sprintf("budget.gate_hours.%s is %v, and 0 is how it is turned off", name, number))
+	}
+	return 0, false
 }
 
 // Default is the configuration a project gets before it changes anything. It is
@@ -404,8 +433,8 @@ func Parse(raw []byte) (Config, error) {
 	// Windows PowerShell 5 saves a file with a byte order mark, and the file is
 	// otherwise fine.
 	raw = bytes.TrimPrefix(raw, []byte("\ufeff"))
-	cfg := Default()
-	if err := json.Unmarshal(raw, &cfg); err != nil {
+	cfg, err := decode(raw)
+	if err != nil {
 		// A setting of the wrong type is valid JSON, and a JSON checker finds
 		// nothing wrong with it, so the message names the setting instead.
 		var typ *json.UnmarshalTypeError
@@ -419,10 +448,38 @@ func Parse(raw []byte) (Config, error) {
 			File+" is not valid JSON",
 			describeJSONError(raw, err)).WithCause(err)
 	}
-	if err := cfg.validate(); err != nil {
+	if err = cfg.validate(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// ForRules reads root/.sdlc/config.json for the hook's rules. A file refused
+// only for a setting the team replaced, or for its team section, was read, and
+// its values are the project's own: read as the defaults, a project that
+// upgraded with a staffing section would have its test paths, backlog, trunk and
+// limits dropped while a model works. So such a file answers with its values,
+// and the refusal it set aside. Anything else, a file from a newer format among
+// it, answers as Load does.
+func ForRules(root string) (cfg Config, setAside, err error) {
+	cfg, err = Load(root)
+	if err == nil {
+		return cfg, nil, nil
+	}
+	raw, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(File)))
+	if readErr != nil {
+		return Config{}, nil, err
+	}
+	read, decodeErr := decode(bytes.TrimPrefix(raw, []byte("\ufeff")))
+	if decodeErr != nil {
+		return Config{}, nil, err
+	}
+	var p problems
+	read.check(&p)
+	if p.otherFound > 0 || p.empty() {
+		return Config{}, nil, err
+	}
+	return read, err, nil
 }
 
 // validate refuses the settings the loop cannot honour, every one of them in
@@ -431,23 +488,49 @@ func Parse(raw []byte) (Config, error) {
 // outside the repository was neither committed with the work nor protected
 // while a story ran, and a negative limit was a limit turned off.
 func (c Config) validate() error {
-	var problems []string
+	p := problems{mapOld: true}
+	c.check(&p)
+	switch {
+	case p.empty():
+		return nil
+	case p.oldFound > 0:
+		return sdlcerr.New(sdlcerr.OldSettingReplaced,
+			File+" holds settings the team section replaced", p.text())
+	case p.teamFound > 0:
+		return sdlcerr.New(sdlcerr.TeamUnusable,
+			File+" has a team section sdlc cannot use", p.text())
+	}
+	return sdlcerr.New(sdlcerr.ConfigInvalid,
+		File+" has settings sdlc cannot use", p.text())
+}
+
+// check adds every problem in the file. The settings a file holds once each go
+// in first, so the version, backlog.path, reviews.policy and the limits that
+// are one number each are always in the text; then the old keys, the team and
+// the lists of entries, which a file can hold without bound, in the order of
+// the code a person fixes first. Added before the rest, a large staffing or
+// team section filled the refusal and left the version counted in "and N more".
+// A list's problems, a negative gate_hours entry or a conflict-marker path
+// outside the repository among them, can be counted there: added before the old
+// keys, a long list leaves an E0087 naming none of the settings it is about,
+// and one list still pushes out another.
+func (c Config) check(p *problems) {
 	switch {
 	case c.Version > FormatVersion:
-		problems = append(problems, fmt.Sprintf("version is %d, and this sdlc reads version %d: "+
+		p.addOther(fmt.Sprintf("version is %d, and this sdlc reads version %d: "+
 			"a newer sdlc wrote the file, so upgrade sdlc", c.Version, FormatVersion))
 	case c.Version < 1:
-		problems = append(problems, fmt.Sprintf("version is %d, and the format is version %d",
+		p.addOther(fmt.Sprintf("version is %d, and the format is version %d",
 			c.Version, FormatVersion))
 	}
-	if p := c.Backlog.Path; p != "" && !filepath.IsLocal(filepath.FromSlash(p)) {
-		problems = append(problems, fmt.Sprintf("backlog.path is %q, which leaves the repository: "+
-			"give it relative to the repository root", p))
+	if path := c.Backlog.Path; path != "" && !filepath.IsLocal(filepath.FromSlash(path)) {
+		p.addOther(fmt.Sprintf("backlog.path is %s, which leaves the repository: "+
+			"give it relative to the repository root", quoted(path)))
 	}
-	if p := c.Reviews.Policy; p != "" && !reviewPolicyPathOK(p) {
-		problems = append(problems, fmt.Sprintf("reviews.policy is %q: give a file relative to the repository root, "+
+	if path := c.Reviews.Policy; path != "" && !reviewPolicyPathOK(path) {
+		p.addOther(fmt.Sprintf("reviews.policy is %s: give a file relative to the repository root, "+
 			"with no `..` in it and none of the characters the shell rules cannot hold in a name: white space, "+
-			"a control or format character, a quote, a backslash, a backtick, or any of $;&|<>()", p))
+			"a control or format character, a quote, a backslash, a backtick, or any of $;&|<>()", quoted(path)))
 	}
 	for _, n := range []struct {
 		name  string
@@ -461,85 +544,17 @@ func (c Config) validate() error {
 		{"budget.per_story_usd", c.Budget.PerStoryUSD},
 	} {
 		if n.value < 0 {
-			problems = append(problems, fmt.Sprintf("%s is %v, and 0 is how it is turned off", n.name, n.value))
+			p.addOther(fmt.Sprintf("%s is %v, and 0 is how it is turned off", n.name, n.value))
 		}
 	}
 	if n := c.Consolidate.NudgeAfter; n < 0 {
-		problems = append(problems, fmt.Sprintf("consolidate.nudge_after is %d, and it must be 0 or more: "+
+		p.addOther(fmt.Sprintf("consolidate.nudge_after is %d, and it must be 0 or more: "+
 			"0 turns the reminder to run /sdlc:consolidate off", n))
 	}
-	_, gateHours := c.Budget.GateHoursSet()
-	problems = append(problems, gateHours...)
-	if c.Staffing.Enabled {
-		problems = append(problems, c.Staffing.problems()...)
-	}
-	problems = append(problems, c.Paths.conflictMarkerProblems()...)
-	if len(problems) == 0 {
-		return nil
-	}
-	return sdlcerr.New(sdlcerr.ConfigInvalid,
-		File+" has settings sdlc cannot use",
-		strings.Join(problems, "; "))
-}
-
-// problems is what is wrong with a staffing section that is on. One that is
-// on and cannot be used must not load: read as a staffing with no bounds, a
-// mistyped list allowed anything, and a path that matches nothing was a
-// protection a person believed in that was not there.
-func (s Staffing) problems() []string {
-	problems := s.listProblems()
-	problems = append(problems, s.lowestProblems()...)
-	return append(problems, s.bringBackProblems()...)
-}
-
-// listProblems checks the two lists a staffing may ask from.
-func (s Staffing) listProblems() []string {
-	var problems []string
-	for _, l := range []struct {
-		name  string
-		names []string
-	}{{"staffing.models", s.Models}, {"staffing.efforts", s.Efforts}} {
-		if len(l.names) == 0 {
-			problems = append(problems, l.name+" is empty, and the staffing is on: list what a staffing may ask for, lowest first")
-		}
-		seen := map[string]bool{}
-		for _, n := range l.names {
-			if strings.TrimSpace(n) == "" || seen[n] {
-				problems = append(problems, fmt.Sprintf("%s has %q, which is blank or listed twice", l.name, n))
-			}
-			seen[n] = true
-		}
-	}
-	return problems
-}
-
-func (s Staffing) lowestProblems() []string {
-	var problems []string
-	for _, agent := range slices.Sorted(maps.Keys(s.Lowest)) {
-		low := s.Lowest[agent]
-		if low.Model != "" && !slices.Contains(s.Models, low.Model) {
-			problems = append(problems, fmt.Sprintf("staffing.lowest has the model %q for %s, which staffing.models does not list", low.Model, agent))
-		}
-		if low.Effort != "" && !slices.Contains(s.Efforts, low.Effort) {
-			problems = append(problems, fmt.Sprintf("staffing.lowest has the effort %q for %s, which staffing.efforts does not list", low.Effort, agent))
-		}
-	}
-	return problems
-}
-
-func (s Staffing) bringBackProblems() []string {
-	var problems []string
-	for _, reviewer := range slices.Sorted(maps.Keys(s.BringBack)) {
-		for _, p := range s.BringBack[reviewer] {
-			// A path is matched segment by segment against what git reports, so
-			// one git never reports matches nothing, and an empty one everything.
-			if !bringBackPathOK(p) {
-				problems = append(problems, fmt.Sprintf("staffing.bring_back has %q for %s: give a file or a directory "+
-					"relative to the repository root, with / between its parts and no pattern", p, reviewer))
-			}
-		}
-	}
-	return problems
+	c.checkOld(p)
+	c.Team.check(p)
+	c.Budget.gateHours(p)
+	c.Paths.checkConflictMarkers(p)
 }
 
 // reviewPolicyPathOK is whether a path can be the review policy. A `..` segment
@@ -599,6 +614,17 @@ func UnknownKeys(root string) []string {
 
 func unknownIn(v any, t reflect.Type, prefix string, unknown *[]string) {
 	object, ok := v.(map[string]any)
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	// A map of entries, such as team.agents, is walked into each entry: a
+	// misspelt key there was a floor a person believed in that was not there.
+	if ok && t.Kind() == reflect.Map && t.Key().Kind() == reflect.String {
+		for _, key := range slices.Sorted(maps.Keys(object)) {
+			unknownIn(object[key], t.Elem(), prefix+key+".", unknown)
+		}
+		return
+	}
 	if !ok || t.Kind() != reflect.Struct {
 		return
 	}

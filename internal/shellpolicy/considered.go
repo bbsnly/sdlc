@@ -66,9 +66,9 @@ type readingsAsked struct {
 // here-strings out of an 8 KB PowerShell command again, a scan that lexes a
 // later line for every here-string before it, and those were most of what
 // the hook-time leg's here-string shape cost.
-func (in *inspection) readingsOf(command string, powerShell bool) []pair {
+func (in *inspection) readingsOf(command string, powerShell bool, reading assignments) []pair {
 	if in == nil {
-		return readings(command, powerShell)
+		return readings(command, powerShell, reading)
 	}
 	asked := readingsAsked{command: command, powerShell: powerShell}
 	if read, ok := in.read[asked]; ok {
@@ -77,7 +77,7 @@ func (in *inspection) readingsOf(command string, powerShell bool) []pair {
 	if in.read == nil {
 		in.read = map[readingsAsked][]pair{}
 	}
-	read := readings(command, powerShell)
+	read := readings(command, powerShell, reading)
 	in.read[asked] = read
 	return read
 }

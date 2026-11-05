@@ -8,7 +8,7 @@
 - [What each verdict does](#what-each-verdict-does)
 - [When the rework does not converge](#when-the-rework-does-not-converge)
 - [Why the other approvals go stale too](#why-the-other-approvals-go-stale-too)
-- [`reviews.gate7_advisory`](#reviewsgate7_advisory)
+- [Making a reviewer advisory with `can_block`](#making-a-reviewer-advisory-with-can_block)
 - [Where to go next](#where-to-go-next)
 
 ## Introduction
@@ -140,8 +140,8 @@ If it was never set, the story is treated as sensitive and security blocks.
 block only when the change breaks a performance budget stated in `CLAUDE.md`, so
 a block from it means a stated budget, not a preference.
 
-`reviews.gate7_advisory` moves the code reviewer to advisory. See the
-[last section](#reviewsgate7_advisory).
+`can_block` set to false moves a reviewer, the code reviewer among them, to advisory.
+See the [last section](#making-a-reviewer-advisory-with-can_block).
 
 ## What each verdict does
 
@@ -224,12 +224,13 @@ again too, and refuses with SDLC-E0029, sending the story back to
 `verifier_review` and `code_review`. See
 [why approvals go stale](../the-loop.md#why-approvals-go-stale).
 
-## `reviews.gate7_advisory`
+## Making a reviewer advisory with `can_block`
 
 If you would rather the code reviewer could not stop Gate 7, there is a setting
-for it. [Configuration](../configuration.md#reviewsgate7_advisory) describes
-it: it makes the code reviewer advisory, and it is off by default. With it on,
-`sdlc review list` shows the change:
+for it: `team.agents.code-reviewer.can_block` set to false.
+[Configuration](../configuration.md#an-agents-entry) describes it: it makes the
+reviewer advisory, and it is true by default. Set to false, `sdlc review list`
+shows the change:
 
 ```console
 $ sdlc review list --gate code_review
@@ -242,13 +243,14 @@ Review policy: REVIEW.md
 
 Advisory does not mean skipped: `code_review` still waits for the code reviewer's report
 on the tree as it stands, and a missing or stale one holds the gate, but its
-`block` no longer stops it. Nothing else moves. The verifier stays blocking,
+`block` no longer stops it. Its findings are still closed before the commit, as
+every reviewer's are. Nothing else moves. The verifier stays blocking,
 perf still blocks on a budget, and security still blocks on a security-sensitive
 story. It blocks here only because this story's sensitivity was never recorded.
 
 > [!WARNING]
-> Turning it on is a real loosening: Gate 7 is the last review between a change
-> and trunk.
+> Setting it to false is a real loosening: Gate 7 is the last review between a
+> change and trunk.
 
 ## Where to go next
 

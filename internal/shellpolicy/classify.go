@@ -28,14 +28,14 @@ const maxProgram = 64
 // 2026-10-28). A command the lexer cannot read whole is other, with no
 // program. The program is kept only where it is a plain file name, so nothing
 // the shell would expand, and no text a model wrote, reaches the trace.
-func Classify(command string, powerShell bool, configured map[string]string) (class, program string) {
-	words, marks, ok := leadingCommand(command, powerShell)
+func classifyOnce(command string, powerShell bool, configured map[string]string, reading assignments) (class, program string) {
+	words, marks, ok := leadingCommand(command, powerShell, reading)
 	if !ok {
 		return ClassOther, ""
 	}
 	program = programName(marks[0])
 	for _, c := range []string{ClassTest, ClassBuild, ClassLint} {
-		if runsConfigured(words, configured[c], powerShell) {
+		if runsConfigured(words, configured[c], powerShell, reading) {
 			return c, program
 		}
 	}
@@ -56,8 +56,8 @@ func Classify(command string, powerShell bool, configured map[string]string) (cl
 
 // leadingCommand is the words, and the words as marked, of the command
 // Classify reads, or not ok where there is none or the line cannot be read.
-func leadingCommand(command string, powerShell bool) (words, marks []string, ok bool) {
-	l := lex(command, powerShell)
+func leadingCommand(command string, powerShell bool, reading assignments) (words, marks []string, ok bool) {
+	l := lexUnder(command, powerShell, reading)
 	if l.unclosed || l.subshells.unread != nil {
 		return nil, nil, false
 	}
@@ -66,7 +66,7 @@ func leadingCommand(command string, powerShell bool) (words, marks []string, ok 
 			continue
 		}
 		m := l.marks[i]
-		for len(w) > 0 && isAssignment(w[0]) {
+		for len(w) > 0 && reading.is(w[0]) {
 			w, m = w[1:], m[1:]
 		}
 		w, m = afterTime(w, m)
@@ -120,11 +120,11 @@ func programName(mark string) string {
 
 // runsConfigured reports whether words start with the project's own command
 // for a class, read the same way: the same program, then the same words.
-func runsConfigured(words []string, configured string, powerShell bool) bool {
+func runsConfigured(words []string, configured string, powerShell bool, reading assignments) bool {
 	if strings.TrimSpace(configured) == "" {
 		return false
 	}
-	want, _, ok := leadingCommand(configured, powerShell)
+	want, _, ok := leadingCommand(configured, powerShell, reading)
 	if !ok || len(want) > len(words) || base(want[0]) != base(words[0]) {
 		return false
 	}

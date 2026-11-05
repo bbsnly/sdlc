@@ -344,6 +344,14 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	// BlockWithoutImportant, is held by
 	// TestAC3TheBlockCodeIsNamedBlockWithoutImportantIsDocumentedAndSaysWhatToDo.
 	released = append(released, pin{registered("SDLC-E0086"), "SDLC-E0086"})
+	// US-109 AC-12 and AC-13: an old setting the team replaced, and a team section
+	// that cannot be used, take SDLC-E0087 and SDLC-E0088, the two numbers after
+	// US-115's SDLC-E0086. Pinned outright, and found by number as SDLC-E0085 is:
+	// each row fails by rendering as nothing until its code is registered.
+	// SDLC-E0045 stays live for everything outside the team.
+	// TestAC12AC13TheTeamCodesAreDocumentedAndSayWhatToDo says what each is for.
+	released = append(released, pin{registered("SDLC-E0087"), "SDLC-E0087"})
+	released = append(released, pin{registered("SDLC-E0088"), "SDLC-E0088"})
 	// US-117 AC-2 to AC-5: findings that do not agree with the review's counts, a
 	// closing that needs a reason and has none, a finding in a file the story
 	// changes closed as referred, and a gate refused while a finding is open.

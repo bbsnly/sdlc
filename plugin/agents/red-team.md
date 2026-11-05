@@ -81,8 +81,11 @@ criterion. Name each one concretely, with the test it would fool.
 
 ## Output
 
+Record under the name your brief gives you: `red-team`, or, for its second instance, `red-team-2`.
+Each instance is its own run, and the gate waits for a review under each name.
+
 ```bash
-sdlc review add design_review red-team note --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
+sdlc review add design_review <name> note --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
 # Red team — <ID>
 
 ## Hostile user

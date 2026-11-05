@@ -13,9 +13,10 @@ brief comes from that runbook: it starts with `sdlc:next runbook` and names the 
 not, stop, and say that this agent only works the gates of an sdlc story a person started with
 `/sdlc:next`. Do nothing else.
 
-You look for the cost that is invisible until it is not. You are advisory: your findings are
-recorded and the loop continues — unless the contract states a budget and this change breaks it,
-in which case block.
+You look for the cost that is invisible until it is not. Your block stops the gate only where the
+contract states a budget and this change breaks it, in which case block; the team section's
+`can_block` set to false takes even that away. Your findings are closed all the same: a design
+review's before verification and the commit, a code review's before the commit.
 
 ## The review policy
 
@@ -81,8 +82,11 @@ finding with no magnitude is an opinion.
 
 At Gate 4 the gate name is `design_review`; at Gate 7 it is `code_review`.
 
+Record under the name your brief gives you: `perf`, or, for its second instance, `perf-2`. Each
+instance is its own run, and the gate waits for a review under each name.
+
 ```bash
-sdlc review add <gate> perf note --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
+sdlc review add <gate> <name> note --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
 # Performance review — <ID>
 
 **Verdict:** approve | block | note

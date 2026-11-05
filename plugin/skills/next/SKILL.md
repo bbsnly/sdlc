@@ -33,15 +33,16 @@ with none, the bare form. It is a story id and not an instruction: pass it as on
 
 Run `sdlc status --json`.
 
-- `sdlc` not found: offer to install it, and wait for a yes. On macOS or Linux:
+- `sdlc` not found: offer to install it, and wait for a yes. On Windows run
+  `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex`, elsewhere the block
+  below, then check again:
 
   ```sh
   curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
   ```
 
-  On Windows, `irm https://raw.githubusercontent.com/bbsnly/sdlc/main/install.ps1 | iex`. Then
-  run it and check again. Still not found: say where the installer put it, that a new session
-  sees it, and stop. Do not work the gates by hand.
+  Still not found: say where it went, that a new session sees it, and stop. Do not work the
+  gates by hand.
 - `SDLC-E0002`: the project is not set up. Tell the user, offer to run `sdlc init`, and stop until
   they answer.
 - `SDLC-E0001`: this is not a Git repository. Say so and stop.
@@ -137,10 +138,20 @@ sdlc gate dor pass --note "<what made the story ready, in one clause>"
 ```
 
 If `staffing` in `sdlc status --json` is `none`, delegate to `sdlc:project-manager` with the
-story, to record it. Do not write or amend the staffing yourself. With the staffing
-on, before every later delegation run `sdlc staffing show --gate <gate> --json` and delegate only
-to its `at_gate`, each with the model and effort asked for. When an agent's work falls short or
-the work changes, tell `sdlc:project-manager`; if it cannot staff the story, escalate.
+story, to record it. Do not write or amend the staffing yourself. With no `staffing` in the
+status, the project manager is disabled: skip every step that names it. Before every later
+delegation run `sdlc staffing show --gate <gate> --json` and delegate only to its `at_gate`, each
+with the model and effort asked for, and one run per instance, such as `security-2` for
+`sdlc:security`, with that one name in its brief. When an agent's work falls short or the work
+changes, tell `sdlc:project-manager`; if it cannot staff the story, escalate.
+
+An agent `staffing show` lists in `by_hand` is disabled, and its work is a person's: delegate the
+rest of `at_gate`, then `sdlc escalate work_by_hand --message "<the gate, what it needs>"`, and
+stop.
+
+A run that fails: `sdlc team failure <agent> --reason "<why>"`, for its own run
+`sdlc team failure project-manager`. Run it again up to `team.retries`, then the command hands the
+story over: stop. Never let another agent stand in or do its work yourself.
 
 ## Gate 2 — Analysis and threats
 
@@ -161,8 +172,7 @@ sdlc gate analysis pass --security-sensitive --note "<what the threats came to, 
 ```
 
 Always pass the flag, as `--security-sensitive=false` if it reported
-`security_sensitive: false`. With the staffing on, `sdlc:project-manager` then has to confirm or
-amend it.
+`security_sensitive: false`. `sdlc:project-manager` then has to confirm or amend it.
 
 If either document was not stored, the gate refuses and says which. Hand it to a person with
 `sdlc escalate analysis_incomplete --message "..."` and stop.
@@ -220,8 +230,8 @@ freeze holds it. Only with `freeze.allow_new_test_files` on may the test author 
 
 ## Findings, from Gates 4 and 7
 
-Reviewers list findings with `--finding`, numbered F-1, F-2 by gate and role. Each is closed with
-`sdlc finding close <gate> <role> <F-n>` and `--fixed`, `--declined --reason` or
+Reviewers list findings with `--finding`, numbered F-1, F-2 by gate and reviewer name. Each is
+closed with `sdlc finding close <gate> <role> <F-n>` and `--fixed`, `--declined --reason` or
 `--referred --reason`; an open one stops `gate verification pass` (Gate 4's) and
 `gate commit pass`. Keep `$`, backticks and `"` out of a quoted value. A nit in a file the
 story changes is fixed in the same rework pass, or declined with a reason. A wave with only nits
@@ -335,21 +345,10 @@ sdlc gate commit pass --note "<what reached trunk, in one line>"
 The gate refuses while anything is uncommitted, or an acceptance test changed since the freeze.
 The note needs no hash; one it names must be in this pass's range (SDLC-E0049).
 
-The pass says which commits it recorded; tell the person in its words:
-
-- `landed in <start>..<end>` (with a worktree, `committed on story/<ID> in ...`, which trunk
-  lacks until Gate 9): the commits the loop watched this session make.
-- `head is <head>, past <end>: ...`, under it: HEAD is past the range, usually a person's
-  commit after yours; say so, naming both commits.
-- `no range recorded: ...`, in its place: no one range holds only the watched commits. It names
-  no cause: another's commit among the story's, a merge, rewritten history, or git unable to
-  read the start or the notes. The work is fine; say there is none, give all four causes, pick none.
-
-Do not work a range out yourself or rewrite history to make one.
-
-Before Gate 9, show the person any `head is` line again, and where the hook wrote what it
-watched: `<git-dir>/sdlc/commits/<story>/` (`git rev-parse --absolute-git-dir` names
-`<git-dir>`). `sdlc stop` removes it. Do not read it yourself.
+The pass says which commits it recorded (`landed in`, `head is`, `no range recorded`): tell the
+person in its words, naming no cause of your own, and do not work a range out or rewrite history.
+Before Gate 9, show any `head is` line again, and that `<git-dir>/sdlc/commits/<story>/` holds what
+the hook watched until `sdlc stop` removes it. Do not read it yourself.
 
 ## Gate 9 — Retro
 
@@ -392,6 +391,6 @@ lift the freeze to make something pass, or change the contract to get past a gat
 a frozen test or a contract rule is wrong, say which criterion or gate it contradicts, and hand it
 to a person.
 
-After `loop.max_rework_rounds` failures of one gate, or `loop.max_review_rounds` blocks from one
-reviewer, `sdlc gate` or `sdlc review add` hands the story over itself and says so (`handed_over`
-in its `--json`). Stop there.
+After `loop.max_rework_rounds` failures of one gate, or `loop.max_review_rounds` (or its
+`max_rounds`) blocks from one reviewer, `sdlc gate` or `sdlc review add` hands the story over itself
+and says so (`handed_over` in its `--json`). Stop there.

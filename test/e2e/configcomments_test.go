@@ -18,7 +18,7 @@ import (
 // commentedSettings is the twelve top-level settings that each get a block.
 var commentedSettings = []string{
 	"version", "backlog", "git", "commands", "thresholds", "paths",
-	"spec", "loop", "reviews", "freeze", "human_gates", "budget",
+	"spec", "loop", "team", "freeze", "human_gates", "budget",
 }
 
 // objectKeys calls visit for every key of every object in raw, in document

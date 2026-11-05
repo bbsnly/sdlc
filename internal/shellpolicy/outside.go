@@ -87,14 +87,14 @@ func plainCommand(command string, s State) []plainRun {
 // them, and its words at every space, so the two can differ; and where they
 // do, anywhere in the command, the walk's words are not what the shell will be
 // given, and no path of the command is placed.
-func (m *memo) readAlike(segments []string) bool {
+func (m *memo) readAlike(segments []string, reading assignments) bool {
 	if len(m.whole) == 0 || len(m.whole) != len(segments) {
 		return false
 	}
 	ticked := false
 	for idx, marked := range segments {
 		segment, _, _ := subshellMarks(marked, &ticked)
-		words, redirects, _ := parse(segment)
+		words, redirects, _ := parse(segment, reading)
 		if !slices.Equal(m.whole[idx].words, words) || !slices.Equal(m.whole[idx].redirects, redirects) {
 			return false
 		}

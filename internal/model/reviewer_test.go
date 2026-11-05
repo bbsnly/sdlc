@@ -24,10 +24,10 @@ func TestReviewerExpectedOnlyTheDoRAdvocateIsConditional(t *testing.T) {
 	}
 }
 
-// Blocks combines what the roster says with what the project chose: the code
-// reviewer is the only one a project can loosen, and security only blocks a
-// story that is actually sensitive.
-func TestReviewerBlocksCombinesTheRosterAndTheProjectsPolicy(t *testing.T) {
+// Blocks combines what the roster says with the story: security only blocks a
+// story that is actually sensitive. What a project chooses per agent, can_block,
+// is held in internal/cli/team_test.go, where the setting is read.
+func TestReviewerBlocksCombinesTheRosterAndTheStory(t *testing.T) {
 	for name, c := range map[string]struct {
 		r    Reviewer
 		p    ReviewPolicy
@@ -35,12 +35,6 @@ func TestReviewerBlocksCombinesTheRosterAndTheProjectsPolicy(t *testing.T) {
 	}{
 		"a plain blocking reviewer always blocks": {
 			Reviewer{Blocking: true}, ReviewPolicy{}, true,
-		},
-		"an advisable reviewer still blocks until the project loosens it": {
-			Reviewer{Blocking: true, Advisable: true}, ReviewPolicy{}, true,
-		},
-		"the project's advisory setting reaches only an advisable reviewer": {
-			Reviewer{Blocking: true, Advisable: true}, ReviewPolicy{CodeReviewAdvisory: true}, false,
 		},
 		"security blocks a story that is sensitive": {
 			Reviewer{WhenSecuritySensitive: true}, ReviewPolicy{SecuritySensitive: true}, true,

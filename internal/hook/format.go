@@ -50,7 +50,7 @@ func formatWritten(raw []byte, getenv func(string) string, warn func(string)) tu
 	if outside || rel == "" || strings.HasPrefix(strings.ToLower(rel), config.Dir+"/") {
 		return reply
 	}
-	cfg, err := config.Load(project)
+	cfg, err := loadConfig(project)
 	if err != nil {
 		return reply
 	}

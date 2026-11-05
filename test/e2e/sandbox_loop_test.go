@@ -84,6 +84,23 @@ func (sb sandbox) nextGate(t *testing.T) string {
 	return status.NextGate
 }
 
+// statusStaffing is what `sdlc status --json` says of the staffing: "none" is the one
+// value the runbook acts on.
+func (sb sandbox) statusStaffing(t *testing.T) string {
+	t.Helper()
+	var status struct {
+		Staffing string `json:"staffing"`
+	}
+	stdout, stderr, code := sb.outcome(t, sandboxSession, sb.tree(), "", "status", "--json")
+	if code != 0 {
+		t.Fatalf("sdlc status --json exited %d:\n%s%s", code, stdout, stderr)
+	}
+	if err := json.Unmarshal([]byte(stdout), &status); err != nil {
+		t.Fatalf("sdlc status --json printed something that is not JSON: %v\n%s", err, stdout)
+	}
+	return status.Staffing
+}
+
 // The documents the session under test stores, and the two files it writes.
 const (
 	sandboxAnalysis     = "# Analysis\n\nAC-1 is testable.\n"
@@ -108,6 +125,11 @@ func (sb sandbox) worksGate(t *testing.T, gate model.Gate) {
 	case model.GateAnalysis:
 		sb.works(t, tree, "researcher", sandboxAnalysis, "artifact", "write", "analysis")
 		sb.works(t, tree, "researcher", sandboxThreats, "artifact", "write", "threats")
+		// US-109 AC-3: the project manager is on in a project `sdlc init` wrote, and this
+		// is where the runbook delegates to it.
+		if sb.statusStaffing(t) == "none" {
+			sb.works(t, tree, "project-manager", staffingDocument(t), "staffing", "set")
+		}
 	case model.GateTestsFrozen:
 		sb.writesFile(t, "sdet", "invoice_test.go", sandboxTest)
 		sb.works(t, tree, "sdet", sandboxTestPlan, "artifact", "write", "test_plan")
@@ -167,6 +189,20 @@ func stored(name, file, body string) string {
 
 func passed(gate, note string) string {
 	return "US-001  " + gate + "  pass\n  " + note + "\n"
+}
+
+// loggedStaffing is what `sdlc log` prints of the staffing staffingDocument records.
+func loggedStaffing() string {
+	var out strings.Builder
+	for _, agent := range model.Agents {
+		asked, why := "sonnet at medium", "a small change that a later gate checks"
+		if agent == "verifier" {
+			asked, why = "opus at high", "nothing checks the checker"
+		}
+		out.WriteString("  staffing   " + agent + ": asked for " + asked + " -- \"" + agent + " has work on this story\"; \"" + why + "\"\n")
+	}
+	out.WriteString("  staffing   <time>  staffing_set: 12 agents needed, 0 left out; staffing changes on the record before this: 0\n")
+	return out.String()
 }
 
 func reviewedBy(gate, role string) string {
@@ -281,6 +317,7 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 					"/sdlc:next typed in a new session in this checkout begins the next story instead.\n"},
 			ran{dir: tree, args: []string{"status"},
 				stdout: "US-001  in progress  " + title + "\n\n  no gates recorded yet\n\n  tests  not frozen\n  cost   $0.00 of $60.00 (0%)\n\n" +
+					"  staffing  none recorded, so every agent is needed\n\n" +
 					"  next   dor\n\n  backlog  1 in progress\n" + held +
 					"\nA person types /sdlc:next in Claude Code to carry on, or runs `sdlc stop` to put it down.\n"},
 			ran{dir: tree, args: []string{"review", "list"}, stdout: reviews("blocking", "blocking", "not reviewed")},
@@ -302,6 +339,8 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 				stdout: stored("analysis", "ANALYSIS.md", sandboxAnalysis)},
 			ran{dir: tree, agent: "researcher", stdin: sandboxThreats, args: []string{"artifact", "write", "threats"},
 				stdout: stored("threats", "THREATS.md", sandboxThreats)},
+			ran{dir: tree, agent: "project-manager", stdin: staffingDocument(t), args: []string{"staffing", "set"},
+				stdout: "US-001  staffing recorded: 12 agents needed, 0 left out\n"},
 			ran{dir: tree, args: []string{"gate", "analysis", "pass", "--security-sensitive=false"},
 				stdout: "US-001  analysis  pass\n"},
 		)
@@ -380,6 +419,7 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 					"  commit           pass  committed\n" +
 					"  retro            pass  no deviations\n\n" +
 					"  tests  1 test file frozen at <time>\n  cost   $2.40 of $60.00 (4%)\n\n" +
+					"  staffing  recorded: every agent is needed\n\n" +
 					"  backlog  1 in progress\n" + held +
 					"\nEvery gate has passed. Run `sdlc stop` here to land it on main.\n"},
 			// Every gate has passed, so this stop is the session's own to run:
@@ -399,7 +439,7 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 					"Add a story to user_stories.json (schema: .sdlc/templates/story.schema.json).\n"},
 			ran{dir: main, args: []string{"log"},
 				stdout: "<sha>..<sha>  US-001  " + title + "\n" +
-					"  rounds     design_review 1 · verifier_review 1 · code_review 1\n  spent      $2.40\n"},
+					"  rounds     design_review 1 · verifier_review 1 · code_review 1\n" + loggedStaffing() + "  spent      $2.40\n"},
 			ran{dir: main, args: []string{"story", "list"},
 				stdout: "  US-001  done   1  " + title + "\n\nNothing to start: the one story in the backlog is finished.\n"},
 			ran{dir: main, args: []string{"doctor"}, stdout: doctor("none"), code: 1},
@@ -545,7 +585,7 @@ func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunSt
 				"  rounds     design_review 1 · verifier_review 1 · code_review 1\n" +
 				"  reopened   tests_frozen reopened: the freeze was lifted: AC-1's test asserted the wrong total\n" +
 				"  unfrozen   AC-1's test asserted the wrong total\n" +
-				"  escalated  spec_unclear: is a zero total refused too? (answered)\n"})
+				"  escalated  spec_unclear: is a zero total refused too? (answered)\n" + loggedStaffing()})
 		// Acknowledging is refused always, to any session, story or none.
 		for _, session := range []string{sandboxSession, sandboxOther} {
 			sb.refuses(t, session, main, map[string]any{"command": "sdlc ack --through HEAD"},

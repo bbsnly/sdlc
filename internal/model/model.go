@@ -557,10 +557,6 @@ type Reviewer struct {
 	Gate                  Gate
 	Blocking              bool // always blocks
 	WhenSecuritySensitive bool // blocks only when the story touches a trust boundary
-	// Advisable is a blocking reviewer the project can make advisory. Only the
-	// code reviewer is, through reviews.gate7_advisory: a loosening the project
-	// chooses, and not one the verifier or a security review can be given.
-	Advisable bool
 	// WhenDoRAdvocate is a review the gate expects only when the project asks
 	// for it, through human_gates.dor_advocate_check.
 	WhenDoRAdvocate bool
@@ -574,9 +570,18 @@ type Reviewer struct {
 // expected and whether it blocks: the story's security sensitivity, and what
 // the project chose.
 type ReviewPolicy struct {
-	SecuritySensitive  bool
-	CodeReviewAdvisory bool // reviews.gate7_advisory
-	DoRAdvocate        bool // human_gates.dor_advocate_check
+	SecuritySensitive bool
+	DoRAdvocate       bool // human_gates.dor_advocate_check
+	// CanBlock is team.agents.<agent>.can_block, keyed by the base role, for
+	// each agent the project set it on; an agent not in it keeps the roster's
+	// power. So an instance reviews with its role's power.
+	CanBlock map[string]bool
+}
+
+// canBlock is the project's can_block for this reviewer, and whether it set one.
+func (r Reviewer) canBlock(p ReviewPolicy) (can, set bool) {
+	can, set = p.CanBlock[BaseRole(r.Role)]
+	return can, set
 }
 
 // Expected reports whether the gate waits for this reviewer in this project.
@@ -584,17 +589,71 @@ func (r Reviewer) Expected(p ReviewPolicy) bool {
 	return !r.WhenDoRAdvocate || p.DoRAdvocate
 }
 
-// Blocks reports whether this reviewer can refuse the gate for this story.
+// Blocks reports whether this reviewer can refuse the gate for this story:
+// whether the gate waits for its approval. can_block false makes any reviewer
+// advisory; true gives a reviewer no more than the roster says, so security
+// still blocks only a story that is sensitive.
 func (r Reviewer) Blocks(p ReviewPolicy) bool {
-	if r.Advisable && p.CodeReviewAdvisory {
+	if can, set := r.canBlock(p); set && !can {
 		return false
 	}
 	return r.Blocking || (r.WhenSecuritySensitive && p.SecuritySensitive)
 }
 
+// OnBreach reports whether a block from this reviewer stops the gate though the
+// gate never waits for its approval: perf's, and an advisory reviewer's that
+// the project set can_block true on, which reads as perf's does.
+func (r Reviewer) OnBreach(p ReviewPolicy) bool {
+	can, set := r.canBlock(p)
+	if set && !can {
+		return false
+	}
+	return r.BlocksOnBreach || set && !r.Blocking && !r.WhenSecuritySensitive
+}
+
 // Stops reports whether this verdict from this reviewer refuses the gate.
 func (r Reviewer) Stops(p ReviewPolicy, v Verdict) bool {
-	return v == VerdictBlock && (r.Blocks(p) || r.BlocksOnBreach)
+	return v == VerdictBlock && (r.Blocks(p) || r.OnBreach(p))
+}
+
+// FindReviewerAnywhere is the agent's row of the roster, at whichever gate it
+// first reviews, and whether it reviews at all.
+func FindReviewerAnywhere(agent string) (Reviewer, bool) {
+	for _, r := range Reviewers {
+		if r.Role == agent {
+			return r, true
+		}
+	}
+	return Reviewer{}, false
+}
+
+// BlocksByDefault is the power the roster gives the reviewer, as can_block
+// reads it: true for one whose block can stop a gate, a sensitive story's
+// security and perf on a budget included.
+func (r Reviewer) BlocksByDefault() bool {
+	return r.Blocking || r.WhenSecuritySensitive || r.BlocksOnBreach
+}
+
+// CanStop reports whether a block from this reviewer can stop a gate in some
+// story under this policy: max_rounds counts only such blocks. Security's
+// depends on the story, so it can.
+func (r Reviewer) CanStop(p ReviewPolicy) bool {
+	if can, set := r.canBlock(p); set && !can {
+		return false
+	}
+	return r.Blocks(p) || r.OnBreach(p) || r.WhenSecuritySensitive
+}
+
+// SaidWhenAdvisory reports whether every gate's output says so where the
+// project sets can_block false on the agent: security, the verifier and the
+// code reviewer, whose blocks a person would otherwise count on. It is a row
+// and not a branch at each caller, so that another such agent is a case here.
+func SaidWhenAdvisory(agent string) bool {
+	switch agent {
+	case roleSecurity, roleVerifier, roleCodeReviewer:
+		return true
+	}
+	return false
 }
 
 // The agent names that the roster, the agent list and the staffing rules each
@@ -623,7 +682,7 @@ var Reviewers = []Reviewer{
 
 	{Role: roleVerifier, Gate: GateVerifierReview, Blocking: true},
 
-	{Role: roleCodeReviewer, Gate: GateCodeReview, Blocking: true, Advisable: true},
+	{Role: roleCodeReviewer, Gate: GateCodeReview, Blocking: true},
 	{Role: roleSecurity, Gate: GateCodeReview, WhenSecuritySensitive: true},
 	{Role: rolePerf, Gate: GateCodeReview, BlocksOnBreach: true},
 	{Role: roleHumanAdvocate, Gate: GateCodeReview},
@@ -652,15 +711,69 @@ func ReviewersFor(g Gate) []Reviewer {
 	return out
 }
 
-// FindReviewer looks one up by the gate and the role a person types.
+// FindReviewer looks one up by the gate and the role a person types. An
+// instance's name, such as security-2, answers with its role's row carrying the
+// instance's name in Role, so it blocks and is expected as its role is. Both
+// `sdlc review add` and the shell rule that keeps a review its reviewer's own
+// read names through here: a name one of them learnt alone would let a session
+// record another reviewer's review with nothing refusing it.
 func FindReviewer(g Gate, role string) (Reviewer, bool) {
 	role = strings.ToLower(strings.TrimSpace(role))
+	base := role
+	if b, _, ok := InstanceOf(role); ok {
+		base = b
+	}
 	for _, r := range Reviewers {
-		if r.Gate == g && r.Role == role {
+		if r.Gate == g && r.Role == base {
+			r.Role = role
 			return r, true
 		}
 	}
 	return Reviewer{}, false
+}
+
+// maxInstance bounds the number InstanceOf reads, far above any instances
+// setting, so that a long run of digits is no name rather than an overflow.
+const maxInstance = 1 << 20
+
+// InstanceOf reads a reviewer instance's name: a roster role, a hyphen, and a
+// whole number from 2 up in ASCII digits with no leading zero. The role itself
+// is the first instance, so role-1 is no name, and neither is an instance of
+// an agent that does not review, such as researcher-2. It is the closed
+// reading: a looser one, read differently by the hook and by sdlc, would let a
+// name through one of them.
+func InstanceOf(name string) (role string, n int, ok bool) {
+	i := strings.LastIndexByte(name, '-')
+	if i <= 0 || i == len(name)-1 {
+		return "", 0, false
+	}
+	digits := name[i+1:]
+	if digits[0] == '0' {
+		return "", 0, false
+	}
+	for _, c := range digits {
+		if c < '0' || c > '9' {
+			return "", 0, false
+		}
+		n = n*10 + int(c-'0')
+		if n > maxInstance {
+			return "", 0, false
+		}
+	}
+	role = name[:i]
+	if n < 2 || !IsReviewRole(role) {
+		return "", 0, false
+	}
+	return role, n, true
+}
+
+// BaseRole is the role a name stands for: an instance's role, or the name
+// itself.
+func BaseRole(name string) string {
+	if role, _, ok := InstanceOf(name); ok {
+		return role
+	}
+	return name
 }
 
 // ReviewerNames lists the roles one gate expects, for a message that has to say.
@@ -734,6 +847,10 @@ type Event struct {
 	// byte for byte as it was before they existed.
 	AgentType string `json:"agent_type,omitempty"`
 	AgentID   string `json:"agent_id,omitempty"`
+	// Reason is what an agent_failure event's session said went wrong. It is
+	// kept out of Message, which SinceDecision counts by equality, since a
+	// reason written by a model would make each failure a message of its own.
+	Reason string `json:"reason,omitempty"`
 }
 
 // Escalation is a point where the loop stopped and asked a person.
@@ -763,6 +880,38 @@ type Approval struct {
 	// no commit of the story to name, and on one an older sdlc recorded.
 	Commit string `json:"commit,omitempty"`
 }
+
+// The kinds of hand-over the team adds. An approval of either is a person
+// saying the loop may go on past a failing agent or a gate done by hand, not
+// that the work may be committed.
+const (
+	KindAgentFailed = "agent_failed"
+	KindWorkByHand  = "work_by_hand"
+)
+
+// AnswersCommit reports whether this answer is a person's decision on the work
+// itself, the answer the pre-commit pause waits for. Only an approval of the
+// two kinds above is not: a session can raise either routinely, and a person
+// approving a failing agent's hand-over has not read the work. A rejection
+// sends the work back whatever the kind, which is the safe direction.
+func (a Approval) AnswersCommit() bool {
+	return a.Decision != DecisionApproved || a.Type != KindAgentFailed && a.Type != KindWorkByHand
+}
+
+// ApprovalEvent is how an answer is written into the record's history, so
+// that what sdlc approve writes and what a reader of the history compares
+// against cannot drift apart.
+func ApprovalEvent(decision, kind string) string {
+	return decision + " (" + kind + ")"
+}
+
+// EventAgentFailure is an agent's run that failed, reported by the session.
+// Its message is exactly "<gate> <agent>", so SinceDecision counts one agent's
+// failures at one gate.
+const EventAgentFailure = "agent_failure"
+
+// AgentFailureEvent is the message of an agent_failure event.
+func AgentFailureEvent(g Gate, agent string) string { return string(g) + " " + agent }
 
 // Record is everything known about one story's iteration.
 type Record struct {
@@ -944,10 +1093,34 @@ var Doers = []struct {
 	{GateRetro, roleBookkeeper},
 }
 
+// WorkerAt is the agent whose work the gate is, a worker's: the agent of
+// Doers, or the verifier or the code reviewer at its own review, the two
+// reviews whose gate waits on that one reviewer. With the agent disabled, the
+// gate is a person's to do by hand. Doers has no code reviewer, so this is a
+// table of its own.
+func WorkerAt(g Gate) (string, bool) {
+	for _, d := range Doers {
+		if d.Gate == g {
+			return d.Agent, true
+		}
+	}
+	switch g {
+	case GateVerifierReview:
+		return roleVerifier, true
+	case GateCodeReview:
+		return roleCodeReviewer, true
+	default:
+		return "", false
+	}
+}
+
 // NeverLeftOut reports whether a staffing may not leave the agent out: every
 // agent that is not a reviewer, the verifier, the code reviewer, and security
-// on a story that is security-sensitive.
+// on a story that is security-sensitive. An instance takes its role's floor:
+// read as a name that is not a reviewer, security-2 was held in on a story
+// that is not sensitive and perf-2 could never be left out.
 func NeverLeftOut(agent string, sensitive bool) bool {
+	agent = BaseRole(agent)
 	return !IsReviewRole(agent) || agent == roleVerifier || agent == roleCodeReviewer || agent == roleSecurity && sensitive
 }
 
@@ -1187,10 +1360,13 @@ func (r *Record) LatestDecision() (Approval, bool) {
 }
 
 // DecisionFor is the latest decision a person gave on the work as tree has it.
-// The latest one counts, so work approved and then sent back is sent back.
+// The latest one counts, so work approved and then sent back is sent back. An
+// approval that does not answer for the work is read past, so the answer
+// before it still stands, and holds no answer of its own: otherwise approving
+// a failing agent's hand-over would approve the work for commit.
 func (r *Record) DecisionFor(tree string) (Approval, bool) {
 	for _, v := range slices.Backward(r.Approvals) {
-		if v.TreeHash == tree {
+		if v.TreeHash == tree && v.AnswersCommit() {
 			return v, true
 		}
 	}
@@ -1212,7 +1388,7 @@ func (r *Record) WaitsForApproval(tier, tree string) string {
 		// refusal, and one that ended the sentence could add a route of its own.
 		return "a person sent this work back, saying " + strconv.Quote(d.Reason)
 	}
-	if len(r.Approvals) > 0 {
+	if slices.ContainsFunc(r.Approvals, Approval.AnswersCommit) {
 		return "the work has changed since a person last decided on it, " +
 			"and a decision holds only for the work it was given for"
 	}

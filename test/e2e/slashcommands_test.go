@@ -237,19 +237,19 @@ func TestAC14EachPersonOnlySlashCommandTypedInTheAppMakesThePersonsDecisionThrou
 		sb.sameAsAPerson(t, sandboxOther, main, "sdlc:remap", "US-001", "remap", "US-001")
 	})
 
-	t.Run("AC-14 /sdlc:assign with the staffing off", func(t *testing.T) {
+	t.Run("AC-14 /sdlc:assign with no staffing recorded", func(t *testing.T) {
 		sb.sameAsAPerson(t, sandboxOther, main, "sdlc:assign", `architect --model opus --reason "mine"`,
 			"staffing", "assign", "architect", "--model", "opus", "--reason", "mine")
 	})
 }
 
-// /sdlc:assign where the staffing is on, typed in the session working the
+// /sdlc:assign where a staffing is recorded, typed in the session working the
 // story: the one place `sdlc staffing assign` itself refuses to run (it sees
 // the session), so the hook has to run it as a terminal would, with none.
 func TestAC14AssignTypedInTheAppRecordsThePersonsStaffingThroughTheLauncher(t *testing.T) {
 	parallel(t)
 	sb := newSandbox(t)
-	sb.turnsTheStaffingOn(t)
+	sb.setsTheTeam(t, sandboxTeam())
 	main, tree := sb.repo, sb.tree()
 	sb.works(t, main, "", "", "start")
 	sb.works(t, tree, "", "", "gate", "dor", "pass", "--note", "the criteria are testable")

@@ -307,9 +307,24 @@ on the story.
 | any gate | the same gate failed `loop.max_rework_rounds` times | `gate_failing`, by `sdlc gate` |
 | a review | the same reviewer blocked `loop.max_review_rounds` times | `review_not_converging`, by `sdlc review add` |
 | any time | the `Stop` hook sent back `loop.max_stop_blocks` stops in a row with nothing recorded, and the session stopped again | `loop_stalled`, by the `Stop` hook |
+| any gate | an agent's run failed more than `team.retries` times at the gate, each reported with `sdlc team failure` | `agent_failed`, by `sdlc team failure` |
+| any gate | the gate's work, or the verifier's or the code reviewer's review, belongs to an agent the project disabled | `work_by_hand` |
 
-The rows down to Gate 8 are written into the `/sdlc:next` runbook. The last
-three are done by `sdlc` itself, so no session can talk its way past them:
+Approving an `agent_failed` or a `work_by_hand` hand-over lets the loop carry on, and it does
+not answer the pre-commit question: a story in a paused tier still waits for your approval
+before its commit. That holds only for `agent_failed` and `work_by_hand`: every other kind of
+hand-over you approve, at Gate 8 or before it, is read as your answer to the pre-commit question
+on the work as it stands.
+
+For a `work_by_hand` hand-over, the gate's work is yours. In your own terminal: run
+`sdlc approve <ID>`, which says which gate is open; do that gate's work by hand; record it with
+`sdlc gate <gate> pass --story <ID>`; then type `/sdlc:next`, or run `sdlc start <ID>`, to carry
+on. Carrying on before the gate is recorded hands the story over again at the same gate. For an
+`agent_failed` hand-over, read the reasons it lists, and approve to let the loop run the agent
+again, or reject.
+
+The rows down to Gate 8 are written into the `/sdlc:next` runbook. The three
+after it, and `agent_failed`, are done by `sdlc` itself, so no session can talk its way past them:
 another attempt would meet the same wall, and a person deciding to carry on is
 what starts the count again. The limits are in
 [`loop`](../configuration.md#loop).

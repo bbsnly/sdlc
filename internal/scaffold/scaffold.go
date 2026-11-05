@@ -114,17 +114,20 @@ func InitAt(root, shared string, force bool) (*Result, error) {
 		trunk = found
 	}
 	if force {
-		if old, err := config.Load(root); err == nil {
+		// A file refused only for a setting the team replaced, or for its team
+		// section, was read, and its places are its own: read as the defaults,
+		// --force dropped a custom backlog, trunk and policy.
+		if old, _, err := config.ForRules(root); err == nil {
 			backlogPath, trunk = old.Backlog.Path, old.Git.TrunkBranch
 			policyPath, namedPolicy = old.ReviewPolicyPath(), old.Reviews.Policy
 		}
 	}
 
-	cfg, err := renderConfig(stack, backlogPath, trunk)
+	cfg, err := renderConfigKeeping(stack, backlogPath, trunk, namedPolicy)
 	if err != nil {
 		return nil, err
 	}
-	if err := res.write(root, config.File, keepPolicyPath(cfg, namedPolicy), true); err != nil {
+	if err := res.write(root, config.File, cfg, true); err != nil {
 		return nil, err
 	}
 
@@ -156,17 +159,6 @@ func InitAt(root, shared string, force bool) (*Result, error) {
 		return nil, err
 	}
 	return res, nil
-}
-
-// keepPolicyPath puts a path a person named back into a rendered configuration,
-// as `--force` keeps the backlog's. Through quoteJSON because %q's escapes are not
-// all JSON. A reworded template line would make this a no-op, which the force
-// tests catch.
-func keepPolicyPath(cfg []byte, named string) []byte {
-	if named == "" {
-		return cfg
-	}
-	return bytes.Replace(cfg, []byte(`"reviews": { `), []byte(`"reviews": { "policy": `+quoteJSON(named)+`, `), 1)
 }
 
 // renderReviewPolicy is the template with the commands init wrote for this stack
@@ -345,6 +337,13 @@ func (r *Result) writeRaw(root, rel string, data []byte, note string) error {
 // renderConfig fills the configuration template from the detected stack, with
 // the backlog and trunk the project already has.
 func renderConfig(stack Stack, backlogPath, trunk string) ([]byte, error) {
+	return renderConfigKeeping(stack, backlogPath, trunk, "")
+}
+
+// renderConfigKeeping is renderConfig with the review policy a person named,
+// which --force keeps as it keeps the backlog's path. A fresh file names none:
+// left out, the policy is REVIEW.md.
+func renderConfigKeeping(stack Stack, backlogPath, trunk, policy string) ([]byte, error) {
 	raw, err := templates.ReadFile("templates/config.json.tmpl")
 	if err != nil {
 		return nil, embedFailure(err)
@@ -367,7 +366,9 @@ func renderConfig(stack Stack, backlogPath, trunk string) ([]byte, error) {
 		TestDirs    []string
 		TestGlobs   []string
 		SrcDirs     []string
+		Policy      string
 	}{
+		Policy:      policy,
 		BacklogPath: backlogPath,
 		TrunkBranch: trunk,
 		StackNote:   stackNote(stack),

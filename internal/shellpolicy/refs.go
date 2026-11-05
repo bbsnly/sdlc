@@ -68,6 +68,9 @@ func (j *gitRules) branch(g gitRead, r ran, dir string, e *environment, asGit bo
 		if h == nil {
 			return f, true
 		}
+		// Held, it is answered after the walk, past where inSubscript adds
+		// the alias's clause.
+		f = definingAlias(f, r.alias)
 		f.Via = j.s.via
 		h.keep(f)
 	}

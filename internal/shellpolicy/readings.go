@@ -64,8 +64,8 @@ type worklist struct {
 // their like are the program to them, and they read the string such a builtin
 // is given as a script of its own, whose readings the program walk counts
 // toward the line's (programScan.command).
-func program(words []string) invocation {
-	return readEvery(words, false)
+func program(words []string, reading assignments) invocation {
+	return readEvery(words, false, reading)
 }
 
 // programUnderEval is program with the builtins that hand the shell a string
@@ -83,18 +83,18 @@ func program(words []string) invocation {
 // met no path rule (security, round 6, B1). Each turn is a turn of the one
 // reader, so the readings under any number of builtins share the command's
 // one cap.
-func programUnderEval(words []string) invocation {
-	return readEvery(words, true)
+func programUnderEval(words []string, reading assignments) invocation {
+	return readEvery(words, true, reading)
 }
 
 // readEvery is the first reading of words, with the others in its others.
-func readEvery(words []string, throughEval bool) invocation {
+func readEvery(words []string, throughEval bool, reading assignments) invocation {
 	w := &worklist{throughEval: throughEval}
-	run := w.read(resume{rest: words})
+	run := w.read(resume{rest: words}, reading)
 	for len(w.queue) > 0 && !w.unread {
 		next := w.queue[0]
 		w.queue = w.queue[1:]
-		run.others = append(run.others, w.read(next))
+		run.others = append(run.others, w.read(next, reading))
 	}
 	run.unread = w.unread
 	return run
@@ -130,10 +130,10 @@ func everyReading(run invocation) iter.Seq2[int, invocation] {
 // read makes the reading r resumes: the table's reader, where it stopped in a
 // wrapper's options, and then the program reader, which takes off one wrapper
 // at a time until the program stands first.
-func (w *worklist) read(r resume) invocation {
+func (w *worklist) read(r resume, reading assignments) invocation {
 	run, words := r.run, r.rest
 	if r.table != nil {
-		words = w.options(&run, r.table, r.at, words)
+		words = w.options(&run, r.table, r.at, words, reading)
 	}
 	for len(words) > 0 {
 		first := opened(words[0])
@@ -152,14 +152,13 @@ func (w *worklist) read(r resume) invocation {
 				// -C, from anywhere among its words, and zsh ran `{ emulate
 				// sh } always { rm … -c x }`, whose `}` stood in no reading
 				// (security, round 7, B3).
-				w.scan(run, words, 1, from)
-				run.evals++
+				w.turn(&run, first, words, from)
 				words = handed
 				continue
 			}
 		}
 		var done bool
-		if words, done = w.unwrap(&run, first, words); done {
+		if words, done = w.unwrap(&run, first, words, reading); done {
 			break
 		}
 	}
@@ -176,6 +175,31 @@ func (w *worklist) scan(run invocation, words []string, i, j int) {
 	for ; i < j; i++ {
 		if startsAReading(words, i) {
 			w.push(resume{rest: words[i+1:], run: run})
+		}
+	}
+}
+
+// turn counts a turn into what the builtin first hands the shell, and pushes
+// the readings of its own words: those scan finds, and an alias command's
+// later values.
+func (w *worklist) turn(run *invocation, first string, words []string, from int) {
+	w.scan(*run, words, 1, from)
+	run.evals++
+	if base(first) == "alias" {
+		w.laterAliases(*run, words)
+		run.alias = aliasName(words, aliasOperand(words, 1))
+	}
+}
+
+// laterAliases pushes a reading of the value of each alias an alias command's
+// words define after the first, which evaluated hands on: `alias a=ls
+// r='rm …'` defines both, and the turn reads only the first.
+func (w *worklist) laterAliases(run invocation, words []string) {
+	for at := aliasOperand(words, aliasOperand(words, 1)+1); at > 0; at = aliasOperand(words, at+1) {
+		if handed, _ := aliasHanded(words, at); len(handed) > 0 {
+			later := run
+			later.alias = aliasName(words, at)
+			w.push(resume{rest: handed, run: later})
 		}
 	}
 }

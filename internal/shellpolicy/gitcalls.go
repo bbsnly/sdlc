@@ -120,8 +120,7 @@ func (e *environment) record(r ran) {
 		m[strings.ToUpper(name)] = value
 	}
 	for _, a := range r.sets {
-		name, value, _ := strings.Cut(a, "=")
-		keep(name, value)
+		keep(assignedSetting(a))
 	}
 	if len(r.words) > 1 && base(r.words[0]) == "unset" {
 		for _, name := range r.words[1:] {
@@ -156,10 +155,24 @@ func (e *environment) get(r ran, name string) (value string, here, ok bool) {
 	return e.outer(name)
 }
 
+// assignedSetting is the name an assignment sets and the value it gives it. An
+// append's value is the old one and more, and a subscripted write sets an
+// element: neither is the value written, so neither is known.
+func assignedSetting(assign string) (name, value string) {
+	name, value, _ = strings.Cut(assign, "=")
+	if read, ok := readAssignment(assign); ok {
+		name, value = read.name, read.value
+		if read.appends || read.indexed {
+			value = unknownValue
+		}
+	}
+	return name, value
+}
+
 // assigned is the last value assigns, NAME=value, gives name.
 func assigned(assigns []string, name string) (string, bool) {
 	for _, assign := range slices.Backward(assigns) {
-		if n, v, _ := strings.Cut(assign, "="); strings.ToUpper(n) == name {
+		if n, v := assignedSetting(assign); strings.ToUpper(n) == name {
 			return v, true
 		}
 	}
@@ -544,7 +557,7 @@ var indexWriters = map[string]bool{
 // check applies the git rules to r, run from dir with e. An alias being
 // defined is judged as it would run: the commit gate is left to the command
 // that runs it, and only another checkout's commit is refused.
-func (j *gitRules) check(r ran, dir string, e *environment, depth int, defining bool) (gitCommit, Finding, bool) {
+func (j *gitRules) check(r ran, dir string, e *environment, depth int, defining bool, reading assignments) (gitCommit, Finding, bool) {
 	words := r.marked
 	if len(words) == 0 {
 		words = r.words
@@ -567,7 +580,7 @@ func (j *gitRules) check(r ran, dir string, e *environment, depth int, defining 
 	lookup := func(name string) (string, bool, bool) { return e.get(r, name) }
 	var first gitCommit
 	for n, g := range gitReadings(words[1:], env, lookup, j.s.undecoded) {
-		c, f, ok := j.judge(g, r, dir, e, words[0], judging{asGit: asGit, depth: depth, defining: defining})
+		c, f, ok := j.judge(g, r, dir, e, words[0], judging{asGit: asGit, depth: depth, defining: defining}, reading)
 		if ok {
 			return c, f, true
 		}
@@ -589,7 +602,7 @@ type judging struct {
 }
 
 // judge applies the git rules to one reading of a git command.
-func (j *gitRules) judge(g gitRead, r ran, dir string, e *environment, program string, how judging) (gitCommit, Finding, bool) {
+func (j *gitRules) judge(g gitRead, r ran, dir string, e *environment, program string, how judging, reading assignments) (gitCommit, Finding, bool) {
 	asGit, depth, defining := how.asGit, how.depth, how.defining
 	c := gitCommit{asGit: asGit}
 	if g.unread != "" {
@@ -601,7 +614,7 @@ func (j *gitRules) judge(g gitRead, r ran, dir string, e *environment, program s
 		}
 	}
 	here := placeDir(r, dir, g)
-	if f, ok := j.subcommand(g, r, here, e, depth, defining); ok {
+	if f, ok := j.subcommand(g, r, here, e, depth, defining, reading); ok {
 		return c, f, true
 	}
 	if f, ok := j.branch(g, r, dir, e, asGit, depth, defining); ok {
@@ -634,19 +647,19 @@ func unreadGit(g gitRead, program string, asGit bool) Finding {
 // subcommand applies the rules that go by the subcommand itself, worktree's
 // and config's, and then, where an alias hands the shell a command line,
 // judges that line. here is where the command works.
-func (j *gitRules) subcommand(g gitRead, r ran, here string, e *environment, depth int, defining bool) (Finding, bool) {
+func (j *gitRules) subcommand(g gitRead, r ran, here string, e *environment, depth int, defining bool, reading assignments) (Finding, bool) {
 	switch g.sub {
 	case "worktree":
 		if action, reads := worktreeAction(g.args[g.at+1:]); !reads {
 			return worktreeFinding(action), true
 		}
 	case "config":
-		if f, ok := j.config(g, r, here, e, depth); ok {
+		if f, ok := j.config(g, r, here, e, depth, reading); ok {
 			return f, true
 		}
 	}
 	if g.script != "" {
-		if f, ok := j.script(g.script, r, here, e, g.settings, depth, defining); ok {
+		if f, ok := j.script(g.script, r, here, e, g.settings, depth, defining, reading); ok {
 			return f, true
 		}
 	}
@@ -696,7 +709,7 @@ func (j *gitRules) commit(r ran, dir string, c gitCommit, placed, defining bool)
 // alias hands the shell, with the settings of the git command running it. git
 // hands it to sh, on Windows as well.
 func (j *gitRules) script(line string, r ran, dir string, e *environment, handed []setting, depth int,
-	defining bool) (Finding, bool) {
+	defining bool, reading assignments) (Finding, bool) {
 	if depth >= maxGitDepth {
 		return unreadable("an alias's command line, nested deeper than the rules read"), true
 	}
@@ -707,14 +720,17 @@ func (j *gitRules) script(line string, r ran, dir string, e *environment, handed
 			"through aliases that run one another"
 		return f, true
 	}
-	runs, t := programsAt(line, false)
+	runs, t := programsAt(line, false, reading)
 	if t.unread != nil {
 		return *t.unread, true
+	}
+	if f, ok := j.sdlcLine(line, runs, defining, reading); ok {
+		return f, true
 	}
 	inner := e.within(r, t, handed)
 	for _, sr := range runs {
 		inner.record(sr)
-		c, f, ok := j.check(sr, dir, inner, depth+1, defining)
+		c, f, ok := j.check(sr, dir, inner, depth+1, defining, reading)
 		if !sr.extra && len(sr.words) > 0 {
 			// Not written down as a commit: the command that runs the alias is
 			// the one the recorder reads.
@@ -729,9 +745,92 @@ func (j *gitRules) script(line string, r ran, dir string, e *environment, handed
 	return Finding{}, false
 }
 
+// sdlcLine asks the sdlc rules of an alias's command line. Read by the git
+// rules alone, `git -c 'alias.r=!sdlc approve US-001' r` ran a person's
+// command no rule read. A line being defined, whose use the command does not
+// show, is read with one made word after it standing for the use's words, so
+// `git config alias.s '!sdlc'` leaves sdlc's command to a word the rules
+// cannot see.
+func (j *gitRules) sdlcLine(line string, runs []ran, defining bool, reading assignments) (Finding, bool) {
+	if defining {
+		runs, _ = programsAt(line+" "+cutMark, false, reading)
+	}
+	for _, sr := range runs {
+		var f Finding
+		ok := false
+		switch {
+		case len(sr.words) == 0:
+		case sr.extra:
+			f, ok = checkReviewer(sr.words, sr.marked, sr.substituted, j.s)
+		default:
+			f, ok = checkSdlcCommands(sr.words, sr.marked, sr.piped, sr.substituted, j.s)
+		}
+		if ok {
+			return gitAliasFinding(f, defining), true
+		}
+	}
+	return Finding{}, false
+}
+
+// gitAliasFinding says how a refusal came from a git alias: where the use's
+// words are read as made, what git does with them.
+func gitAliasFinding(f Finding, defining bool) Finding {
+	if defining {
+		f.Reason += "; git puts the words typed after the alias's name at its use after its command line, so the " +
+			"alias could run any sdlc command"
+		f.Route += "; or write the subcommand into the alias, as `git config alias.st '!sdlc status'`"
+		return f
+	}
+	f.Reason += "; it was read from a git alias's command line, which git hands the shell"
+	return f
+}
+
+// gitAliasLines are the command lines the git `!` aliases on a line hand the
+// shell, read from every source of git's settings the git rules read, with
+// a line being defined given one made word for the use's words. HumanDecisions
+// reads them, which runs no git rule of its own. unreadAlias is set where an
+// alias's value cannot be read, which the git rules refuse in Inspect.
+func gitAliasLines(text string, runs []ran, t *subshells, powerShell bool) (lines []string, unreadAlias bool) {
+	e := newEnvironment(text, State{PowerShell: powerShell}, t)
+	for _, r := range runs {
+		e.record(r)
+		words := r.marked
+		if len(words) == 0 || r.extra || !isGit(words) {
+			continue
+		}
+		env, unread := e.settings(r)
+		if unread != "" {
+			continue
+		}
+		lookup := func(name string) (string, bool, bool) { return e.get(r, name) }
+		for _, g := range gitReadings(words[1:], env, lookup, false) {
+			unreadAlias = unreadAlias || strings.HasPrefix(g.unread, theAlias)
+			if g.script != "" {
+				lines = append(lines, g.script)
+			}
+			if g.sub == "config" {
+				lines = append(lines, definedAliasLines(g)...)
+			}
+		}
+	}
+	return lines, unreadAlias
+}
+
+// definedAliasLines are the `!` aliases a `git config` defines, each given
+// one made word for the words of a use the line cannot see.
+func definedAliasLines(g gitRead) []string {
+	var lines []string
+	for _, change := range configChanges(g.args[g.at+1:]) {
+		if value, ok := strings.CutPrefix(change.value, "!"); ok && strings.HasPrefix(strings.ToLower(change.key), aliasPrefix) {
+			lines = append(lines, value+" "+cutMark)
+		}
+	}
+	return lines
+}
+
 // config applies the git rules to what `git config` writes: core.worktree and
 // core.bare, an include, and an alias, judged as it would run.
-func (j *gitRules) config(g gitRead, r ran, dir string, e *environment, depth int) (Finding, bool) {
+func (j *gitRules) config(g gitRead, r ran, dir string, e *environment, depth int, reading assignments) (Finding, bool) {
 	for _, change := range configChanges(g.args[g.at+1:]) {
 		key := strings.ToLower(change.key)
 		switch {
@@ -752,7 +851,7 @@ func (j *gitRules) config(g gitRead, r ran, dir string, e *environment, depth in
 		case isInclude(key, change.section):
 			return unreadable(shown(change.key) + ", an include, which reads settings from a file the hook does not read"), true
 		case !change.section && strings.HasPrefix(key, aliasPrefix):
-			if f, ok := j.aliasChange(change, r, dir, e, depth); ok {
+			if f, ok := j.aliasChange(change, r, dir, e, depth, reading); ok {
 				return f, true
 			}
 		}
@@ -763,28 +862,28 @@ func (j *gitRules) config(g gitRead, r ran, dir string, e *environment, depth in
 // aliasChange judges `git config` defining an alias. One whose value the
 // shell has yet to expand is left to the reading that expands it, where there
 // is one to come, and is unreadable where there is not.
-func (j *gitRules) aliasChange(change configChange, r ran, dir string, e *environment, depth int) (Finding, bool) {
+func (j *gitRules) aliasChange(change configChange, r ran, dir string, e *environment, depth int, reading assignments) (Finding, bool) {
 	if unexpanded(change.value) {
 		if j.s.undecoded {
 			return Finding{}, false
 		}
 		return unreadable(theAlias + shown(change.key) + ", whose value the shell has yet to expand"), true
 	}
-	return j.alias(change.value, r, dir, e, depth)
+	return j.alias(change.value, r, dir, e, depth, reading)
 }
 
 // alias judges an alias being defined as it would run: `git config alias.gone
 // 'worktree prune'` is refused as `git worktree prune` is.
-func (j *gitRules) alias(value string, r ran, dir string, e *environment, depth int) (Finding, bool) {
+func (j *gitRules) alias(value string, r ran, dir string, e *environment, depth int, reading assignments) (Finding, bool) {
 	if depth >= maxGitDepth {
 		return unreadable("an alias nested deeper than the rules read"), true
 	}
 	if script, ok := strings.CutPrefix(value, "!"); ok {
-		return j.script(script, r, dir, e, nil, depth+1, true)
+		return j.script(script, r, dir, e, nil, depth+1, true, reading)
 	}
 	words := append([]string{"git"}, splitAlias(value)...)
 	run := ran{words: words, marked: words, group: r.group, env: r.env}
-	c, f, ok := j.check(run, dir, e, depth+1, true)
+	c, f, ok := j.check(run, dir, e, depth+1, true, reading)
 	if ok {
 		return f, true
 	}

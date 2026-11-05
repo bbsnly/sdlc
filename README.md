@@ -192,7 +192,9 @@ Two limits are worth knowing from the start:
 [Enforcement](https://github.com/bbsnly/sdlc/blob/main/docs/enforcement.md)
 lists every rule and what to do instead, and
 [Agents](https://github.com/bbsnly/sdlc/blob/main/docs/the-agents.md) says who does
-the work at each gate and which of them can block.
+the work at each gate and which of them can block. The `team` section of
+`.sdlc/config.json` sets which agents run and which can block
+([Configuration](https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#team)).
 
 ## Documentation
 

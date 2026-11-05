@@ -41,7 +41,7 @@ const agentsConfigReason = "in the person's ~/.agents, the folder Codex, Cursor,
 // command as Inspect does, with the same readings and the same walk of where
 // it runs, and asks nothing but this; only Dir, Root, PowerShell and the
 // ClaudeConfig and AgentsConfig pairs of s are read.
-func ClaudeConfigWrites(command string, s State) (Finding, bool) {
+func claudeConfigWritesOnce(command string, s State, reading assignments) (Finding, bool) {
 	if s.ClaudeConfig == nil && s.ClaudeConfigHeld == nil && s.AgentsConfig == nil && s.AgentsConfigHeld == nil {
 		// Allowed without the bound on links, which is sound: with nothing to
 		// ask, no word is placed on disk and no link is followed. The hook
@@ -51,7 +51,7 @@ func ClaudeConfigWrites(command string, s State) (Finding, bool) {
 	s.configOnly = true
 	s.seen = newInspection()
 	s.seen.line = command
-	return inspectAs(command, command, s)
+	return inspectAs(command, command, s, reading)
 }
 
 // configKind is one of the person's places the shell holds in every session:
@@ -72,16 +72,16 @@ type configKind struct {
 // home (`cp -r dotfiles/. ~`, `rm -rf ~`) writes both, and its refusal names
 // the folder that is less known to be there; any other write into ~/.claude
 // is not under ~/.agents, so it keeps its own rule.
-func checkPersonsConfig(q pathQuestion) (Finding, bool) {
+func checkPersonsConfig(q pathQuestion, reading assignments) (Finding, bool) {
 	s := q.s
-	if f, ok := checkConfig(q, agentsKind(s)); ok {
+	if f, ok := checkConfig(q, agentsKind(s), reading); ok {
 		return f, true
 	}
 	claude := configKind{
 		rule: ruleClaudeConfig, route: claudeConfigRoute, what: claudeConfigReason,
 		named: "the person's Claude Code configuration", in: s.ClaudeConfig, held: s.ClaudeConfigHeld,
 	}
-	return checkConfig(q, claude)
+	return checkConfig(q, claude, reading)
 }
 
 // agentsKind is the person's ~/.agents, as checkPersonsConfig and
@@ -101,12 +101,12 @@ func agentsKind(s State) configKind {
 // the whole line, as checkPersonsConfig asks it, `cd "$D" && rm -rf
 // .sdlc/state && ls .agents` and `python3 -c 'open(".agents/x","w")'` lost
 // the released rules that refuse them.
-func checkAgentsNamedWord(q pathQuestion) (Finding, bool) {
+func checkAgentsNamedWord(q pathQuestion, reading assignments) (Finding, bool) {
 	k := agentsKind(q.s)
 	if k.in == nil || len(q.run.words) == 0 {
 		return Finding{}, false
 	}
-	return q.writtenConfig(k, true)
+	return q.writtenConfig(k, true, reading)
 }
 
 // checkConfig refuses a command of one segment that writes one of the
@@ -118,7 +118,7 @@ func checkAgentsNamedWord(q pathQuestion) (Finding, bool) {
 // write rather than what they name: a copy's destination and not its source,
 // and sed or perl only when they edit in place, so that reading the
 // configuration stays free.
-func checkConfig(q pathQuestion, k configKind) (Finding, bool) {
+func checkConfig(q pathQuestion, k configKind, reading assignments) (Finding, bool) {
 	run := q.run
 	if k.in == nil || len(run.words) == 0 {
 		return Finding{}, false
@@ -141,13 +141,13 @@ func checkConfig(q pathQuestion, k configKind) (Finding, bool) {
 				"otherwise " + k.route,
 		}, true
 	}
-	return q.writtenConfig(k, false)
+	return q.writtenConfig(k, false, reading)
 }
 
 // writtenConfig is the refusal of the first word the command writes that is
 // the place, or a directory that holds it. With spelt set, only a word whose
 // own spelling names the place is asked.
-func (q pathQuestion) writtenConfig(k configKind, spelt bool) (Finding, bool) {
+func (q pathQuestion) writtenConfig(k configKind, spelt bool, reading assignments) (Finding, bool) {
 	inside, held, line := q.configWordsOf()
 	// The words of the whole line, which a segment fed on standard input is
 	// given, are passed over where every one of them has been asked from
@@ -171,18 +171,18 @@ func (q pathQuestion) writtenConfig(k configKind, spelt bool) (Finding, bool) {
 	if q.lost && (q.from == "~" || strings.HasPrefix(q.from, "~/")) {
 		dirs = append(dirs, q.from)
 	}
-	if f, ok := q.configWordsFrom(k, dirs, inside, false, spelt, skip); ok {
+	if f, ok := q.configWordsFrom(k, dirs, inside, false, spelt, skip, reading); ok {
 		return f, true
 	}
 	if hasLine && !q.m.lineNamesConfig(q.line, k.agents) {
 		q.m.configLines[lineAsk] = true
 	}
-	return q.configWordsFrom(k, dirs, held, true, spelt, [2]int{})
+	return q.configWordsFrom(k, dirs, held, true, spelt, [2]int{}, reading)
 }
 
 // configWordsFrom is configWordFrom of each of words, but those from skip[0]
 // up to skip[1], until one is refused.
-func (q pathQuestion) configWordsFrom(k configKind, dirs, words []string, held, spelt bool, skip [2]int) (Finding, bool) {
+func (q pathQuestion) configWordsFrom(k configKind, dirs, words []string, held, spelt bool, skip [2]int, reading assignments) (Finding, bool) {
 	// Operands first, so the refusal names the word the command acts on:
 	// asked in order, `cd ~/lc && rm -f x` named ~/lc/-f as the
 	// configuration (US-035, verifier round 12). Options are still asked.
@@ -194,7 +194,7 @@ func (q pathQuestion) configWordsFrom(k configKind, dirs, words []string, held, 
 		if spelt && !q.spells(k, raw) {
 			continue
 		}
-		if f, ok := q.configWordFrom(k, dirs, raw, held); ok {
+		if f, ok := q.configWordFrom(k, dirs, raw, held, reading); ok {
 			return f, true
 		}
 	}
@@ -241,14 +241,14 @@ func (m *memo) lineNamesConfig(line string, agents bool) bool {
 // took three quarters of the time Inspect spent on that 45 KB command. Only
 // what found nothing is kept, so the first word refused is the one it always
 // was.
-func (q pathQuestion) configWordFrom(k configKind, dirs []string, raw string, held bool) (Finding, bool) {
-	ask := q.configAskOf(k, raw, held)
+func (q pathQuestion) configWordFrom(k configKind, dirs []string, raw string, held bool, reading assignments) (Finding, bool) {
+	ask := q.configAskOf(k, raw, held, reading)
 	if q.m.configAsked(q.line)[ask] {
 		return Finding{}, false
 	}
 	for _, dir := range dirs {
 		for _, w := range q.m.spell(q.s, dir, []string{raw}) {
-			if f, ok := q.configWord(k, w, raw, held); ok {
+			if f, ok := q.configWord(k, w, raw, held, reading); ok {
 				return f, true
 			}
 		}
@@ -261,7 +261,7 @@ func (q pathQuestion) configWordFrom(k configKind, dirs []string, raw string, he
 // the State and the line, which are one for a memo: where the walk is, lost
 // or not and spelt from ~ (writtenConfig's dirs, and configUnplaced), and,
 // for a word that names the place, whether the shell expands a glob in it in
-// this segment (expandsAGlob), the one question configWord asks of the
+// this segment (expandsAGlobAs), the one question configWord asks of the
 // segment.
 type configAsk struct {
 	rule, dir, from, raw string
@@ -270,11 +270,11 @@ type configAsk struct {
 }
 
 // configAskOf is the configAsk of raw, asked of k from where q is.
-func (q pathQuestion) configAskOf(k configKind, raw string, held bool) configAsk {
+func (q pathQuestion) configAskOf(k configKind, raw string, held bool, reading assignments) configAsk {
 	ask := configAsk{rule: k.rule, dir: q.dir, from: q.from, raw: raw, lost: q.lost, held: held}
 	if q.m.wordNamesConfig(raw, k.agents) {
 		ask.glob = 1
-		if q.expandsAGlob(raw) {
+		if q.expandsAGlobAs(raw, reading) {
 			ask.glob = 2
 		}
 	}
@@ -347,7 +347,7 @@ func climbsOutOf(word, name string) bool {
 // place, or with held set, a directory that holds it; or where it cannot be
 // placed and the command names the place. raw is the word as the command
 // gave it, before it was placed.
-func (q pathQuestion) configWord(k configKind, w, raw string, held bool) (Finding, bool) {
+func (q pathQuestion) configWord(k configKind, w, raw string, held bool, reading assignments) (Finding, bool) {
 	c := clean(w)
 	if c == "" || strings.HasPrefix(c, "-") {
 		return Finding{}, false
@@ -368,7 +368,7 @@ func (q pathQuestion) configWord(k configKind, w, raw string, held bool) (Findin
 	// question first: the word is on the line, so where that finds nothing
 	// neither can the others.
 	if q.configUnplaced(c) && q.m.namesConfig(q.line, k.agents, true) &&
-		(q.m.namesConfig(q.line, k.agents, false) || q.m.wordNamesConfig(raw, k.agents) && q.expandsAGlob(raw)) {
+		(q.m.namesConfig(q.line, k.agents, false) || q.m.wordNamesConfig(raw, k.agents) && q.expandsAGlobAs(raw, reading)) {
 		return Finding{
 			Rule: k.rule,
 			Reason: shortened(c) + " is not known until the shell runs the command, which names " +
@@ -474,19 +474,19 @@ func programOnStdin(words []string, fed bool) bool {
 	return true
 }
 
-// expandsAGlob reports whether the shell would expand a glob in a word the
-// segment gives: a `*`, `?` or `[` outside every quote and not escaped, as the
-// command spells it. `"$HOME"/.cla*""` is expanded and `'s/.*//'` is a sed
+// expandsAGlobAs reports whether, under reading, the shell would expand a
+// glob in a word the segment gives: a `*`, `?` or `[` outside every quote and
+// not escaped, as the command spells it. `"$HOME"/.cla*""` is expanded and `'s/.*//'` is a sed
 // script. Every word that unquotes to raw is read, and one expanded is
 // enough: read by the first alone, the quoted twin in `rm -rf "$HOME/.cla*"
 // $HOME/.cla*` hid the bare one the shell expands. A word the segment does not
 // spell as a word of its own, a redirect's target or a name the walk made, is
 // read as expanded.
-func (q pathQuestion) expandsAGlob(raw string) bool {
+func (q pathQuestion) expandsAGlobAs(raw string, reading assignments) bool {
 	m := q.m
 	if m.spelledFor != q.segment || m.spelled == nil {
 		m.spelledFor = q.segment
-		m.unspelled, m.spelled = spelledFields(q.segment)
+		m.unspelled, m.spelled = spelledFields(q.segment, reading)
 		m.globbed = nil
 	}
 	// The same for every word that unquotes to raw, so worked out once: asked
@@ -956,30 +956,31 @@ var terminalGivers = map[string]bool{
 	"tmux": true, "screen": true, "zellij": true, "expect": true, "unbuffer": true, "script": true,
 }
 
-// checkSecondSession refuses a command that starts a Claude Code session that
-// would expand one of a person's slash commands: a session started from here
-// that reads /sdlc:approve as its prompt makes the decision as if a person had
-// typed it. It is the reading for a session that holds no story, which
-// HumanDecisions asks, and for the session holding one, Inspect asks it last,
-// for the spellings checkNestedSession does not read as Claude Code.
+// checkSecondSessionAs refuses, under reading, a command that starts a Claude
+// Code session that would expand one of a person's slash commands: a session
+// started from here that reads /sdlc:approve as its prompt makes the decision
+// as if a person had typed it. It is the reading for a session that holds no
+// story, which HumanDecisions asks, and for the session holding one, Inspect
+// asks it last, for the spellings checkNestedSession does not read as Claude
+// Code.
 //
 // The prompt is read where it can be. A session whose prompt cannot be read --
 // held in a variable, substituted, fed on standard input or by xargs, or
 // typed later into a terminal it was given -- is refused as one that could;
 // one with a literal prompt that names no person's command, `claude
 // --version` and `claude mcp list` are not.
-func checkSecondSession(command string, powerShell bool) (Finding, bool) {
-	return checkSecondSessionRead(command, powerShell, readings)
+func checkSecondSessionAs(command string, powerShell bool, reading assignments) (Finding, bool) {
+	return checkSecondSessionRead(command, powerShell, func(command string, powerShell bool) []pair { return readings(command, powerShell, reading) }, reading)
 }
 
-// checkSecondSessionRead is checkSecondSession with the readings of the
+// checkSecondSessionRead is checkSecondSessionAs with the readings of the
 // command made by read.
-func checkSecondSessionRead(command string, powerShell bool, read func(string, bool) []pair) (Finding, bool) {
+func checkSecondSessionRead(command string, powerShell bool, read func(string, bool) []pair, reading assignments) (Finding, bool) {
 	lower := strings.ToLower(command)
 	if !strings.ContainsAny(command, "$%`*?[") && !mayNameClaude(lower) {
 		return Finding{}, false
 	}
-	runs, named := everyRun(read(command, powerShell), powerShell)
+	runs, named := everyRun(read(command, powerShell), powerShell, reading)
 	// What can type into a session later: `tmux new 'claude'`, then send-keys.
 	given := slices.ContainsFunc(wordsIn(lower), func(w string) bool { return terminalGivers[base(w)] })
 	for _, run := range runs {
@@ -1042,9 +1043,9 @@ func copiesAProgram(r ran) bool {
 // everyRun is every command each of a line's readings runs, and whether a
 // person's slash command is named anywhere in it, in a reading or in the words
 // of a command one runs.
-func everyRun(read []pair, powerShell bool) (all []ran, named bool) {
+func everyRun(read []pair, powerShell bool, reading assignments) (all []ran, named bool) {
 	for _, r := range read {
-		runs, _ := programsAt(r.text, powerShell)
+		runs, _ := programsAt(r.text, powerShell, reading)
 		all = append(all, runs...)
 		named = named || namesAPersonsCommand(r.text)
 		for _, run := range runs {
@@ -1138,10 +1139,10 @@ var secondSessionFinding = Finding{
 		"in Claude Code or in their own terminal",
 }
 
-// secondSession is checkSecondSession, whose refusal is read from the command
+// secondSession is checkSecondSessionAs, whose refusal is read from the command
 // as it arrived.
-func secondSession(command string, powerShell bool, read func(string, bool) []pair) (Finding, bool) {
-	f, ok := checkSecondSessionRead(command, powerShell, read)
+func secondSession(command string, powerShell bool, read func(string, bool) []pair, reading assignments) (Finding, bool) {
+	f, ok := checkSecondSessionRead(command, powerShell, read, reading)
 	if ok {
 		f.Via = viaReleased
 	}

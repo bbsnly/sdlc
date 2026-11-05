@@ -352,7 +352,7 @@ const unknownDir = "\x00"
 
 // checkTakesACheckout refuses a command that takes away a checkout of the
 // repository, or a directory holding one.
-func checkTakesACheckout(line, segment string, run invocation, t takeAway) (Finding, bool) {
+func checkTakesACheckout(line, segment string, run invocation, t takeAway, reading assignments) (Finding, bool) {
 	words := run.words
 	if len(words) == 0 {
 		return Finding{}, false
@@ -365,7 +365,7 @@ func checkTakesACheckout(line, segment string, run invocation, t takeAway) (Find
 	if f, ok := t.rsyncDestination(words); ok {
 		return f, true
 	}
-	if f, ok := t.findRemoval(words); ok {
+	if f, ok := t.findRemoval(words, reading); ok {
 		return f, true
 	}
 	if f, ok := t.pipedRemover(run, removed, line); ok {
@@ -405,8 +405,8 @@ func (t takeAway) rsyncDestination(words []string) (Finding, bool) {
 }
 
 // findRemoval refuses a find that removes a checkout.
-func (t takeAway) findRemoval(words []string) (Finding, bool) {
-	if base(words[0]) == "find" && (hasWord(words[1:], findDelete) || findRemoves(words[1:])) {
+func (t takeAway) findRemoval(words []string, reading assignments) (Finding, bool) {
+	if base(words[0]) == "find" && (hasWord(words[1:], findDelete) || findRemoves(words[1:], reading)) {
 		return t.find(words[1:])
 	}
 	return Finding{}, false
@@ -826,14 +826,14 @@ func findDepth(args []string, option string, def int) int {
 
 // findRemoves reports whether find runs a remover on what it finds: `-exec rm
 // -rf {} +`, `-execdir mv {} ...`.
-func findRemoves(args []string) bool {
+func findRemoves(args []string, reading assignments) bool {
 	for i, a := range args {
 		if !findRuns(a) {
 			continue
 		}
 		// Any reading that removes what find found: `-exec strace -J 1 rm
 		// {} +` removes it read one way.
-		for _, exec := range everyReading(program(args[i+1:])) {
+		for _, exec := range everyReading(program(args[i+1:], reading)) {
 			if len(exec.words) > 0 && hasWord(takenAway(exec.words), "{}") {
 				return true
 			}

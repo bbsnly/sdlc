@@ -964,6 +964,11 @@ They apply to every tool that runs a command: `Bash`, `PowerShell` and
 
 This is pattern matching, not a shell. It is deliberately narrow.
 
+A failed run of an agent is reported with `sdlc team failure`, which the session running the
+story uses, its own report of a failed `sdlc:project-manager` run included. The project manager
+may not run it itself ([`project-manager-only-staffs`](#project-manager-only-staffs)), and no
+other rule here refuses it.
+
 If a refusal sent you here, go straight to the rule it named. The next section
 says how a command is read before any rule judges it, and you may skip it until
 you need to know why a particular spelling was, or was not, read.
@@ -1153,8 +1158,9 @@ Outside quotes, a backslash keeps the character after it in the word:
 - Before an ordinary character the backslash stays in the word, as a Windows
   path keeps it, so `C:\Users\dev\sdlc.exe` is `sdlc`. The word is read with
   the backslash taken out too, so `g\it com\mit` and `git $'commit'` are
-  `git commit`, with `$'…'` decoded. Before `#`, `~` or a glob character
-  (`*`, `?`, `[`) the backslash stays in both readings, and the word is read
+  `git commit`, with `$'…'` decoded, the string ending where the shells end
+  it. Before `#`, `~` or a glob character (`*`, `?`, `[`) the backslash
+  stays in both readings, and the word is read
   unexpanded, as the shell leaves it.
 - An escaped quote, as in `'it'\''s'`, is a quote inside the word, not the
   start of a string.
@@ -2253,11 +2259,82 @@ in their own terminal is not asked.
 *Instead:* delegate to the reviewer, which reads the work and records its own
 verdict.
 
+An instance of a reviewer records under its own name: with `instances` set to 2 on security in
+the [`team`](configuration.md#an-agents-entry) section, `sdlc:security` run with `security-2` in
+its brief records as `security-2`, and only that run may. This rule reads no configuration, so a
+session's `sdlc:verifier` can still record its review where the project has disabled the
+verifier.
+
+#### How a review's command is read
+
+These are hook decisions that changed in this release. Where `sdlc` is the program run, a word
+the shell makes, or a word the hook cannot line up with what it read, anywhere from the program
+word through the gate and the role, refuses `sdlc review add` to every session, the reviewer
+itself included, and refuses every command only a person runs: `approve`, `unfreeze`, `ack`,
+`remap`, `release` and `staffing assign`. The program word is the command's first word, the
+program's name. A word the shell makes is one it fills in when the command runs: a
+substitution, a backtick, a variable, a parameter expansion, a pattern, a brace list, a tilde, a
+caret, and under PowerShell a leading `@`. The hook does not list the ways a shell can make a
+word; where its reading cannot see a word as written, it refuses.
+
+Two places are the reviewer's own and are not refused: a flag's value before `add`'s first
+positional word, as in `sdlc review add --note "$NOTE" code_review code-reviewer approve`, and
+every value after the gate and the role.
+
+Two places are read more narrowly, because the program there may not be `sdlc` at all: a
+program word the shell makes in which `sdlc` cannot be read, such as `$CC` or `"$EDITOR"`, and
+a made option of `env`, `nice`, `sudo`, `stdbuf`, `nohup` or `timeout` left in front of `sdlc`.
+There the words after are refused only where they read `review add` or a person's command, or,
+behind a wrapper's made option, where `sdlc`'s subcommand is made. Every other rule still reads
+the line as it did.
+
+Every reading the hook builds is read for made words this way: scripts and strings a shell runs
+later, alias values, an alias's or a `hash` name's use, the command line of a git `!` alias, and
+a here-string handed to a shell with no script. An alias is read where it is defined, by every
+rule, as the command it runs, so `alias r='rm -f .sdlc/state/tests.lock'` is refused as the `rm`
+is, used or not, and the refusal ends: "defining the alias `r` is refused: it runs
+`rm -f .sdlc/state/tests.lock`, and an alias is read as the command it runs".
+
+A line is read twice where it holds a subscripted or appending assignment in front of a program,
+such as `a[1]=x git push --force origin HEAD`, or a brace at the start of a word, such as
+`cp {p}/* .`: once as bash and zsh read it, and once more as the hook read it before. The second
+time, `a[1]=x` is the program, as dash runs it, and a `{` at a word's start opens a group, so
+`p}/*` is a program name, which a pattern can make into one the rules refuse. A refusal only the
+second reading makes says so in its reason and names the word. Its route says what to write
+instead: put the setting on its own line, before the command; write the brace list out
+(`cp a/* b/* .`); or quote a brace that is no list (`cp '{p}'/* .`).
+
+What it costs, and what to write instead:
+
+| Refused now | Write instead |
+| --- | --- |
+| a made flag value before the subcommand, `sdlc --story "$ID" status` | put the flag after the subcommand and its verb: `sdlc status --story "$ID"` |
+| a quoted value between the gate and the role | write the gate and the role together as bare words, and the flags after them |
+| a subcommand partly made by a substitution, `sdlc st$(echo a)tus` | write the subcommand whole |
+| a made version in the program word, `npx sdlc@$V status` | type the version, `npx sdlc@0.9.0 status`, or run the installed `sdlc` |
+| a made program word or a wrapper's made option before `review add` or a person's command, `$TOOL approve x`, `env -u "$V" sdlc review add ...` | write the program and the wrapper's options out, typing an option's value (`timeout 30 sdlc ...`). A variable the command needs goes in front of the program as an assignment: `FOO="$X" sdlc review add ...` |
+| an alias whose command would be refused written out, refused where it is defined, whether or not it is used: `alias p='git push --force'` | run the command written out where it is allowed, and do not define an alias that runs a refused command |
+| a git alias whose command line leaves `sdlc`'s command to the words at its use, `git config alias.s '!sdlc'` | write the subcommand in the alias, `git config alias.st '!sdlc status'`, or run `sdlc` itself |
+| a reviewer's own review on a line that changes what a name runs before it, `alias ll='ls -l'; sdlc review add code_review code-reviewer approve` | make the change in its own command, and record the review in the next one. A change after the review on the same line costs nothing |
+| after a change to what a name runs, a later run whose words read `review add` or a person's command, `alias g=git; g tag release` | make the change in its own command |
+| a person's command through an alias, `alias s=sdlc; s approve US-001` | a person runs `sdlc approve` written out, in their own terminal |
+| a help request through a name the line changed, `alias s=sdlc; s unfreeze --help` | ask for help in a command of its own, with `sdlc` written out: `sdlc unfreeze --help` |
+| a trap that sets an action, on any condition, before a later command on the line whose words read a review or a person's command, `trap 'rm -f "$tmp"' EXIT; git tag release` | drop the trap and clean up after the command, or run the command on a line of its own |
+| a line whose quotes the rules cannot follow, with `sdlc` or `git` in its text, `echo "${x:-"'"}"; git commit -m x` | run `sdlc` or `git` on a line without that string; put the quoted text in a variable, `d="it's"; git commit -m "${x:-$d}"` |
+| in a session holding no story, a git alias whose value is a variable, `git -c alias.l="$V" l` | write the alias's value out |
+| a command after a subscripted or appending assignment in front of it, `a[1]=x git push --force origin HEAD`, `SDLC_ENFORCE+=0 sdlc status` | nothing: the command now meets the rule it meets without the assignment, as the shells run it |
+| an expansion that assigns with a zsh flag or modifier, or with bash's `!`, `: ${(L)x:=y}`, `: ${!n:=v}` | assign by the name itself in a command of its own, `x=y`; to keep `:=`'s meaning, test first, `[ -n "$x" ] \|\| x=y` |
+| on a line that declares a nameref, a value that reads as a refused command, `declare -n r=PATH; m='sdlc approve US-001'` | write to the variable by its own name, or put the nameref and the value in separate commands |
+| zsh's `set -A AI_AGENT …` | nothing: the session's agent variable is not the session's to change |
+
+A `$'\c'`, `$'\c\''`, `$$'` or backslash-newline prefix no longer hides a refusal: an ANSI-C
+string is decoded, and ends, where the shells end it.
+
 ### `assignment-is-a-human-decision`
 
 Refuses `sdlc staffing assign` run from a tool call, in any session, in any
 project with `.sdlc/config.json` the call reaches, whether or not a story is
-being worked on and whether the staffing is on or off.
+being worked on and whether the project manager is enabled or not.
 
 What `sdlc staffing assign` records says a person chose a model or an effort for
 an agent, and the project manager cannot change it afterwards. A session that
@@ -2279,19 +2356,61 @@ it is refused unless it asks for help.
 
 The same rule refuses a run of `sdlc` whose subcommand cannot be read, because
 it could be this command or another only a person runs. That is a run where the
-word after `sdlc` comes from a variable, a substitution or a pattern, and a run
-that is handed its words on standard input by `xargs` or GNU `parallel`. It
-applies to every `sdlc` command, not only the staffing's, and the refusal says
-which of the two it met.
+word after `sdlc` comes from a variable, a substitution, a pattern or a brace
+list, as in `sdlc {review,} add code_review code-reviewer approve`, and a run
+that is handed its words on standard input by `xargs` or GNU `parallel`. A
+subcommand partly made by a substitution, as in `sdlc st$(echo a)tus`, is
+refused as a wholly made one is. It applies to every `sdlc` command, not only
+the staffing's, and the refusal says which of the two it met.
+
+So does a run whose program word the shell partly makes, as in
+`sdlc$(true) staffing set`, where the subcommand written after it is one other
+than `review`: the shell can hand `sdlc` more words in front of the written
+ones. With `review` written there, [`review-is-recorded-by-its-reviewer`](#review-is-recorded-by-its-reviewer)
+refuses it.
 
 *Instead:* write the subcommand out as a literal word, `sdlc status` and not a
-variable that holds `status`; and pass the words on the command line.
+variable that holds `status` or a brace list that makes it; write the program word out, `sdlc` and not
+`sdlc$(true)`; and pass the words on the command line.
 
 Where `sdlc` is not the program a command runs but a later word of it, as in a
 copy of a built binary or a `cd` into a directory of that name, none of this
 applies: only a written-out `staffing` followed by a verb other than the three
 is refused there, and so is a `staffing` command handed its words on standard
 input.
+
+#### A line that changes what a name runs
+
+A line can change what a name runs before it runs it: an alias, a function, a hashed path, zsh's
+lists of names (`commands`, `functions`, `aliases`) and bash's `BASH_CMDS` and `BASH_ALIASES`.
+On such a line, every later run of `sdlc`, and of a name the change names, whose words read
+`review add` or a person's command is refused, since the hook cannot be sure what the shell
+will run there. A change that acts on names it does not write makes every later command on the
+line read this way: a builtin that moves names, such as `enable` or `disable`, a not-found
+handler, a trap that sets an action on any condition, and a zsh global or suffix alias. An alias
+is read where it is defined, by the rules on `sdlc` and on git, as the command it runs, so an
+alias that would run a refused `sdlc` or git command is refused there, as
+`alias p='git push --force'` is.
+
+A value written to one of the lists whose values are code (`functions`, `aliases`, `galiases`,
+`saliases` and their `dis_` lists, and `BASH_ALIASES`) is read where it is written, as the code it
+is: a written key's value, each element of a whole-list literal, and each value zsh's `set -A` or
+`set +A` assigns to such a list. So `set -A functions s 'sdlc approve'; s US-001` is refused as
+`functions=(s 'sdlc approve'); s US-001` is. A `set -A` or `set +A` whose list name the shell
+makes, as in `set -A $n …`, may write any list, and is read as a change to every name.
+
+*Instead:* make the change in a command of its own, and run what follows in the next one.
+
+#### A line whose quotes the rules cannot follow
+
+The rules read quotes the way bash and zsh do, and two shapes are known where their reading can
+end a quote somewhere the shells do not: a `'` inside a `${…}` within a double-quoted string, and
+the two array forms listed under [Not held](#not-held). A line of either shape with `sdlc` or
+`git` in its text, written out, quoted, escaped or inside a word, or with words that read a
+person's command, is refused. A closing quote later on the line does not change that.
+
+*Instead:* run `sdlc` or `git` on a line of its own, and put the quoted text in a variable:
+`d="it's"; git commit -m "${x:-$d}"`.
 
 ### `slash-command-is-a-human-decision`
 
@@ -3465,7 +3584,8 @@ how you would notice.
   template where no file exists during a story is declined for the same reason.
 
   The other listed classes are these: a target carried by a substitution, `for`, `read`, `set --` or
-  `printf -v`; a program name the shell makes, a function or an alias; text piped to a shell;
+  `printf -v`; a program name the shell makes, a function, or an alias defined outside the
+  command (one the line defines is read as the command it runs); text piped to a shell;
   `xargs` fed by a program; an interpreter's or a tool's own output that the rules do not read, a
   patch, a sync of a directory; git moving a file by a branch, a merge, the index, a sparse checkout
   or a submodule; PowerShell through a variable or a .NET call; a copy whose source is not on the
@@ -3647,11 +3767,14 @@ how you would notice.
   `echo 'git worktree prune' | sh`, `echo commit -m x | xargs git -C <main>`,
   and a script run from a file, such as `sh tidy.sh`. Such a command can remove
   or prune a worktree, or commit in another checkout, and the same holds for
-  every rule that turns on which program a command runs. A person's decision
-  run this way, as in `echo 'sdlc approve US-001' | sh`,
-  `bash <<< 'sdlc approve US-001'`, `echo 'sdlc unfreeze --reason x' | sh` or
-  a script run from a file, is refused by the command itself, with
-  SDLC-E0079, in every session, the one holding the story included. Run after
+  every rule that turns on which program a command runs. A here-string
+  handed to a shell given no script, as in `bash <<< 'sdlc approve US-001'`,
+  is read as the script it is, and refused by the hook and by the command
+  itself, with SDLC-E0079. A person's decision run another
+  way, as in `echo 'sdlc approve US-001' | sh`,
+  `echo 'sdlc unfreeze --reason x' | sh` or a script run from a file, is
+  refused by the command itself, with SDLC-E0079, in every session, the one
+  holding the story included. Run after
   a command has removed Claude Code's markers, a person's decision is not
   caught this way, and a model working a story could lift its own freeze
   (the last entry of this list). Ending the iteration part-way with
@@ -3719,6 +3842,13 @@ how you would notice.
     write the lock. It is left open because the rules would have to run the
     substitution to know what it prints.
 
+  A `${…}` inside a double-quoted string and the two array forms above still
+  leave the rules reading a quote the shells close, but a line whose quotes
+  the rules cannot follow is now refused where `sdlc` or `git` is in its text
+  ([A line whose quotes the rules cannot follow](#a-line-whose-quotes-the-rules-cannot-follow)),
+  so `echo "${x:-"'"}"; git commit -m x` no longer runs a commit unseen. The
+  `case` item, whose line closes, stays as it is.
+
   A here-document opened on or after a line with a `case` in a substitution,
   a `'` in a double-quoted `${…}` or a `#` just after an array's `)` is read
   as one the hook is not sure of. None of these reaches more than commands
@@ -3746,20 +3876,24 @@ how you would notice.
   `git -c alias.x='!echo y > CLAUDE.md' x`. No other rule reads it: a file it
   writes or deletes with a program, as in
   `git -c alias.x='!rm -rf .sdlc/state' x`, is not refused, nor is anything
-  else only the other rules would refuse. A person's decision run this way, as
-  in `git -c alias.x='!sdlc approve A-1' x`, is refused by the command itself,
-  with SDLC-E0079. `git status` shows a file it changed, and the
+  else only the other rules would refuse. The rules on `sdlc` read the command
+  line too, so `git -c alias.x='!sdlc approve A-1' x` is refused by the hook,
+  and by the command itself with SDLC-E0079. `git status` shows a file it changed, and the
   story's `gate-record.json` lists every approval and unfreeze with when it
   was made, so one nobody remembers making shows there.
 - **`sdlc` reached under another name.** The shell rules find `sdlc` only
   where the word is written out, or where the line assigns it to the variable
-  it runs. Reached through a variable the line does not assign, as in
-  `"$SDLC_BIN" approve A-1`, through a shell alias,
-  as in `alias s=sdlc; s approve A-1`, through a command substitution, as in
-  `$(command -v sdlc) approve A-1`, or as a copy under another name, as in
-  `cp bin/sdlc /tmp/s && /tmp/s approve A-1`, a person's command is refused by
-  the command itself, with SDLC-E0079. The story's `gate-record.json` lists
-  every approval and unfreeze with when it was made.
+  it runs. An alias the line defines is read as the command it runs, so
+  `alias s=sdlc; s approve A-1` is refused by the hook, and by the command
+  itself with SDLC-E0079. Reached through a
+  variable the line does not assign, as in `"$SDLC_BIN" approve A-1`, or a
+  command substitution, as in `$(command -v sdlc) approve A-1`, the hook
+  refuses it where the words after read a person's command
+  ([How a review's command is read](#how-a-reviews-command-is-read)), and the
+  command itself refuses it with SDLC-E0079. As a
+  copy under another name, as in `cp bin/sdlc /tmp/s && /tmp/s approve A-1`,
+  a person's command is refused by the command itself, with SDLC-E0079. The
+  story's `gate-record.json` lists every approval and unfreeze with when it was made.
 - **Code or a string that runs `sdlc`.** Code handed to an interpreter that
   runs `sdlc` itself, as `python3 -c` does with
   `subprocess.run(["sdlc", "approve", "A-1"])`, runs it where the shell rules
@@ -3932,6 +4066,161 @@ how you would notice.
   was not a run Claude Code reported. A forged run fakes the cost figures,
   never a gate: `first_pass`, the review rounds, the escalations and every gate
   come from reviews and gate events, which agent events do not touch.
+
+#### What the reading of `sdlc` leaves out
+
+This is a discipline tool, not a sandbox: the hook reads what a line shows and the scripts and
+strings it hands on, and a session that means to get past it can. These have no reading built
+for them, each led by its example.
+
+*A script handed to a shell in a way the rules do not read:*
+
+- a script a shell reads from standard input, other than a here-string to a shell given no
+  script or given `-s`: `echo '...' | sh`, and `bash /dev/stdin <<< '...'`;
+- a process substitution: `bash <(echo '...')`, `source <(echo '...')`;
+- a file the line writes and then runs: `printf '...' > /tmp/x.sh && sh /tmp/x.sh`;
+- `fish -c '...'` and `su -c '...'`;
+- a string the shell expands later as a prompt: `PS4='$(sdlc …)'` with `set -x`;
+- a function handed to a child shell in its environment:
+  `env 'BASH_FUNC_s%%=() { sdlc …; }' bash -c s`.
+
+*`sdlc` under another name:*
+
+- a symbolic link to `sdlc`, or a copy of it, under another name:
+  `ln -s "$(command -v sdlc)" s && ./s ...`;
+- a zsh global or suffix alias whose value holds words of `sdlc`'s own command:
+  `alias -g R='review add design_review architect'`, then `sdlc R approve`. Every later command
+  on the line after such an alias is read as after a change to what any name runs, so
+  `alias -g Q='| sdlc'`, then `echo Q approve US-001`, is refused; what the rules cannot read is
+  `sdlc`'s own words hidden in the value.
+
+*Set up outside the command:*
+
+- an alias, a function, a trap or a git alias defined outside the command, in a person's shell
+  profile or git configuration, or by the session in an earlier command: after
+  `git config alias.r '!sdlc approve US-001'`, let through while no story waits, a later `git r`
+  is read without it;
+- a program git runs from its own settings or variables: `GIT_SSH_COMMAND`, `core.sshCommand`,
+  `core.editor`, `credential.helper`, the command of `git submodule foreach`, and a `!` alias
+  given standard input, `git -c 'alias.r=!sh' r <<< '...'`.
+
+*A program or a variable in front of `sdlc`:*
+
+- a program the rules do not read in front of `sdlc`: `docker run sdlc ...`,
+  `perl -e 'exec @ARGV' sdlc ...`;
+- a whole command a variable or a substitution holds: `$C`, `eval "$C"`, `sh -c "$C"`,
+  `bash <<< "$C"`;
+- an option of `env`, `timeout` or `sudo` that a variable fills in, with nothing written after
+  `sdlc`: `env $X sdlc`, `timeout $D sdlc`;
+- a directory a substitution fills in front of a written `sdlc`: `$(go env GOPATH)/bin/sdlc`,
+  kept because that is how a Go install runs it.
+
+What has a second check behind these: `approve`, `unfreeze`, `ack`, `remap`, `release` and
+`staffing assign` reached any of these ways are still refused by the command itself, with
+SDLC-E0079. What has none: a review recorded this way, and a push. `sdlc review add` makes no
+such check.
+
+#### Spellings the hook should refuse and does not
+
+These are spellings the hook is meant to refuse and does not. Each is listed with the kind of
+line it belongs to, what still stops it, and how you would notice. They differ from the commands
+in the list above, which the hook does not read on purpose. This is a discipline tool, not a
+sandbox.
+
+- **A git command the shell makes, on a line whose quotes the rules cannot follow:**
+  `echo "${x:-"'"}"; $(echo g)it push --force`. On such a line the rules read `sdlc` however it
+  is made, and `git` only where it is written, quoted or escaped. What still stops it: nothing
+  after the hook stops a push, so protect the branch on the server. How you would notice: a push
+  in the remote's history that nobody ran by hand.
+- **A change to what a name runs, made through a builtin whose name the shell fills in:**
+  `X=alias; $X s=sdlc` in one command, then `s approve US-001` in a later one. What still stops
+  it: `sdlc approve`, `unfreeze`, `ack`, `remap`, `release` and `staffing assign` refuse
+  themselves when an agent session runs them (SDLC-E0079); nothing after the hook stops
+  `sdlc review add`. How you would notice: SDLC-E0079 in the session's output, or a review in
+  `sdlc review list` with no run of its reviewer behind it in `sdlc trace`.
+- **A person's command written as the arguments of a shell or a function whose program name the
+  shell fills in:** `sh -c '"$(printf sdlc)" "$@"' x approve US-001`, and zsh's
+  `() { "$(printf sdlc)" "$@" } approve US-001`. What still stops it, and how you would notice:
+  as for the entry above.
+- **A command after an assignment whose subscript holds a blank or a separator:**
+  `a[x y]=v git push --force origin HEAD`, the same after `then`, `do`, `!` or `time`,
+  `a[x;y]=v git push --force origin HEAD`, and
+  `BASH_CMDS[s s]=/path/to/sdlc; 's s' review add design_review architect approve`. bash reads
+  the subscript to its `]` and runs the command after it; the rules read the word up to the blank
+  or the separator as the program, so the command after it is not checked. What still stops it,
+  and how you would notice: for a push, as for the first entry; for `sdlc`'s commands, as for the
+  second.
+- **A command after an assignment behind `time`:** `time a[1]=x git push --force origin HEAD`.
+  The shells run the push; the rules read the assignment as the program `time` runs, so the push
+  is not checked. What still stops it, and how you would notice: as for the first entry.
+- **A nameref the command does not declare itself:** `declare -n x=BASH_ALIASES` in a file the
+  command sources, or in an earlier command while the same shell session stays open between
+  commands, then `x[s]='sdlc approve US-001'` and `s`. The rules read one command at a time, so
+  `x[s]=...` looks like an ordinary write to a variable named `x`, and `s` is not seen as running
+  `sdlc approve`. What still stops it, and how you would notice: as for the second entry.
+- **A zsh named directory built on one the line already gave:**
+  `c=/; c+=work/project; rm -rf ~c/.sdlc/state`, where the project is `/work/project`. The rules
+  keep the first directory the line gives `c` and do not join an append to it, since joining
+  would let through lines that only look as if they reach the project. What still stops it:
+  nothing for the files themselves. How you would notice: the next `sdlc` command that reads the
+  loop's state fails, and `sdlc doctor` reports it.
+- **A value a zsh module builtin hands on from its own store:**
+  `zstyle ':x' y s 'sdlc approve US-001'; zstyle -a ':x' y functions; s`. The rules read the line
+  as changing what any name runs, but the value is not written where the change is made, and `s`
+  carries no words to read. What still stops it, and how you would notice: as for the second
+  entry.
+- **A setting whose value the shell splits into the program, after `env` or `sudo`:**
+  `env A=$(printf "1 sdlc") approve US-001`, and
+  `env A=$(printf "1 git -c x.y=a") push --force origin HEAD`. The shell splits the unquoted
+  value, so `env` is handed `A=1` and runs `sdlc approve US-001`, or git; the rules read the
+  whole word as a setting and `approve` or `push` as the program, so the command is not checked.
+  What still stops it, and how you would notice: for `sdlc`'s commands, as for the second entry;
+  for a push, as for the first.
+- **A program name and a subcommand that the shell makes from substitutions:**
+  `$(printf 'sdlc approve') US-001`, and the same inside `bash -c "..."`. The shell builds
+  `sdlc approve` from the one substitution, so the hook sees a program it cannot name and no
+  subcommand to check, and lets the line through in every session. Two more spellings of the
+  kind are let through in a session that holds no story, though a session working one refuses
+  them: each word made by a substitution of its own, `"$(printf sdlc)" "$(printf approve)" US-001`,
+  which the `PowerShell` tool also lets through in every session; and the substitution handed to
+  `find`, `find . -exec $(printf 'sdlc approve') US-001 \;`. What still stops it: `sdlc approve`
+  run this way refuses itself, with SDLC-E0079, as `unfreeze`, `ack`, `remap`, `release` and
+  `staffing assign` do; nothing after the hook stops `sdlc review add`. How you would notice: as
+  for the second entry.
+
+These kinds of line are not covered by the rules, because each hands a command on in a way the
+rules did not read:
+
+- a shell or a string handed a script, a git `!` alias, an alias's use, a renamed program word,
+  or a shell's standard input;
+- the shell's lists of what names run (`commands`, `functions`, `aliases`, `BASH_CMDS`,
+  `BASH_ALIASES`), an alias chain, or a program git runs from its settings;
+- zsh's disabled, global and suffix lists and the builtins that move names between them, a
+  not-found handler, a DEBUG hook, or a trap on any condition, a signal the line sends itself
+  included;
+- a name written through a nameref, however the nameref is pointed and wherever its function
+  body is written, through an expansion, through `read` or `set -A`, or through a whole-list
+  literal, each with a use that has no words;
+- a builtin whose name the shell makes, a definition hidden in an ANSI-C string handed to `eval`
+  or a shell, a person's command passed as a shell's or a function's arguments, or one whose
+  program name and subcommand substitutions make;
+- a program word made on a line no reading closes; a subscripted or appending assignment in front
+  of the program, and the same word where it is not an assignment: in a shell that has none of
+  that kind, such as dash, and after `env` or `sudo`, where the shell first splits an expansion in
+  it; a subscript holding a blank or a separator there.
+
+Changes to the hook itself can open the same kind of gap, in four ways: a change to which words
+are settings, since bash and zsh read some words as settings that dash runs as the program, and
+that the shell splits into the program after `env` or `sudo`; a change to how a subscript is
+read, since joining one the shells read two ways would hide commands zsh runs; a change to which
+name a reader takes, which can put a wrong value on a name a path rule trusts; and a test that
+places no path the way the hook does, which hides such a change until the hook runs.
+
+The rules read a line the way bash and zsh do, and a line can be built that one of them reads
+differently: where a quote ends, where a `$'…'` string ends, or through a change to what names
+run that this page does not list. Such a line meets the rules as they read it, so what still
+stops it is what stops the entries above. If you find one, report it as `SECURITY.md` says, and
+it will be added here with the kind of line it is.
 
 #### Other checkouts and claims
 

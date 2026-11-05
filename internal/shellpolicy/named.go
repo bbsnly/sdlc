@@ -502,7 +502,7 @@ func mayNameOnly(command string) bool {
 }
 
 // nameOnly finds what a command only names.
-func nameOnly(command string, s State) naming {
+func nameOnly(command string, s State, reading assignments) naming {
 	n := naming{asked: command, named: command}
 	if !mayNameOnly(command) {
 		return n
@@ -515,8 +515,8 @@ func nameOnly(command string, s State) naming {
 		n.stop = scan.stop
 		return n
 	}
-	j := &judge{cmds: scan.cmds, carried: s.Carried, rereads: rereads(scan.cmds)}
-	j.each()
+	j := &judge{cmds: scan.cmds, carried: s.Carried, rereads: rereads(scan.cmds, reading)}
+	j.each(reading)
 	if len(j.help)+len(j.sure)+len(j.maybe) > maxSwaps {
 		n.stop = whyTooMany
 		return n
@@ -564,16 +564,16 @@ func swapped(command string, swaps []swap) string {
 // text to something that runs it or is one the scanner does not follow: a
 // shell, eval, xargs, a loop, a program named by a variable. What such a
 // command runs is not on the line to be read.
-func rereads(cmds []namedCommand) string {
+func rereads(cmds []namedCommand, reading assignments) string {
 	for _, c := range cmds {
-		if why := rereadsText(c); why != "" {
+		if why := rereadsText(c, reading); why != "" {
 			return why
 		}
 	}
 	return ""
 }
 
-func rereadsText(c namedCommand) string {
+func rereadsText(c namedCommand, reading assignments) string {
 	if len(c.words) == 0 {
 		return ""
 	}
@@ -590,7 +590,7 @@ func rereadsText(c namedCommand) string {
 	// safe because the program walk refuses a line it did not read through,
 	// past its count or past four nested strings, and Inspect and
 	// HumanDecisions ask it first (security, round 8, N1).
-	for _, run := range everyReading(programUnderEval(c.texts())) {
+	for _, run := range everyReading(programUnderEval(c.texts(), reading)) {
 		if run.shell || run.piped || run.evals > 0 || len(run.words) > 0 && runsHere[base(run.words[0])] {
 			return whyRereads
 		}
@@ -630,12 +630,12 @@ func filledIn(c namedCommand) bool {
 // commands the path rules read the whole line for, since the files such a
 // program touches are in no argument; and a program can find the words of
 // the line it runs on without the shell handing them over.
-func runsCode(c namedCommand) bool {
+func runsCode(c namedCommand, reading assignments) bool {
 	if len(c.words) == 0 {
 		return false
 	}
 	// Every reading, as rereadsText reads them, and on what the same rests.
-	for _, run := range everyReading(programUnderEval(c.texts())) {
+	for _, run := range everyReading(programUnderEval(c.texts(), reading)) {
 		if runsInlineCode(run.words, "") || runsAProgramOfItsOwn(run.words) {
 			return true
 		}
@@ -645,11 +645,11 @@ func runsCode(c namedCommand) bool {
 
 // carries says why a command could be given the words of one before it on
 // the line, or nothing.
-func carries(c namedCommand) string {
+func carries(c namedCommand, reading assignments) string {
 	switch {
 	case filledIn(c):
 		return whyLaterWord
-	case runsCode(c):
+	case runsCode(c, reading):
 		return whyLaterCode
 	}
 	return ""
@@ -684,11 +684,11 @@ type judge struct {
 	first             doubt
 }
 
-func (j *judge) each() {
+func (j *judge) each(reading assignments) {
 	j.placed = true
 	j.after = make([]string, len(j.cmds)+1)
 	for i := len(j.cmds) - 1; i >= 0; i-- {
-		j.after[i] = firstOf(carries(j.cmds[i]), j.after[i+1])
+		j.after[i] = firstOf(carries(j.cmds[i], reading), j.after[i+1])
 	}
 	for i, c := range j.cmds {
 		if len(c.words) == 0 {
@@ -1093,17 +1093,17 @@ func pathRule(rule string) bool {
 // taken out, or the scanner did not follow the line and it holds a text flag
 // or a pathspec that leaves a path out. A real act beside a doubtful mention
 // keeps the words it always had, because the line is refused either way.
-func (n naming) told(f Finding, command string, s State) Finding {
+func (n naming) told(f Finding, command string, s State, reading assignments) Finding {
 	if !pathRule(f.Rule) {
 		return f
 	}
 	switch {
 	case n.stop != "":
-		if git, held := candidateHeld(command, s.PowerShell); held {
+		if git, held := candidateHeld(command, s.PowerShell, reading); held {
 			return cannotTell(f, n.stop, git)
 		}
 	case n.lenient != "":
-		if _, refused := inspectAs(n.asked, n.lenient, s); !refused {
+		if _, refused := inspectAs(n.asked, n.lenient, s, reading); !refused {
 			return cannotTell(f, n.doubt.why, n.doubt.git)
 		}
 	}
@@ -1129,9 +1129,9 @@ func cannotTell(f Finding, why string, git bool) Finding {
 // candidateHeld reports whether a line the scanner did not follow holds a
 // text flag of sdlc or a pathspec that leaves a path out, as the lexer reads
 // it, and which.
-func candidateHeld(command string, powerShell bool) (git, held bool) {
-	for _, r := range readings(command, powerShell) {
-		runs, _ := programsAt(r.text, powerShell)
+func candidateHeld(command string, powerShell bool, reading assignments) (git, held bool) {
+	for _, r := range readings(command, powerShell, reading) {
+		runs, _ := programsAt(r.text, powerShell, reading)
 		for _, run := range runs {
 			if holdsTextFlag(run.words) {
 				return false, true

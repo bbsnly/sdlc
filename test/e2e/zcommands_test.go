@@ -80,6 +80,7 @@ func knownGaps() map[string]string {
 		"staffing": "prints its help only; its work is done by staffing show, set, amend and assign",
 		"codemap":  "prints its help only; its work is done by codemap write",
 		"finding":  "prints its help only; its work is done by finding close",
+		"team":     "prints its help only; its work is done by team failure",
 	}
 	if runtime.GOOS == "windows" {
 		gaps["codemap write"] = "its cases land stories through the POSIX launcher (skipWithoutTheLauncher)"

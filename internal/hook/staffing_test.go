@@ -28,11 +28,17 @@ import (
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
-const staffingOn = `{"version":1,"staffing":{"enabled":true,` +
+// staffingOn is a project with a staffing to read, in the form US-109 gives it: the
+// project manager is on because nothing disables it.
+const staffingOn = `{"version":1,"team":{` +
 	`"models":["haiku","sonnet","opus"],"efforts":["low","medium","high","xhigh","max"],` +
-	`"lowest":{"verifier":{"model":"opus","effort":"high"}},"bring_back":{"security":["internal/hook/"]}}}`
+	`"agents":{"verifier":{"lowest":{"model":"opus","effort":"high"}},"security":{"bring_back":["internal/hook/"]}}}}`
 
-// staffedProject is loopProject in a project that turns the staffing on.
+// staffingOff is a project whose person disabled the project manager, which is the only
+// way a staffing on the record stops deciding who waits (US-109 AC-3).
+const staffingOff = `{"version":1,"team":{"agents":{"project-manager":{"enabled":false}}}}`
+
+// staffedProject is loopProject in a project with a staffing to read.
 func staffedProject(t *testing.T) string {
 	t.Helper()
 	root := loopProject(t)
@@ -78,7 +84,9 @@ var everyone = []string{
 
 func TestAC8TheSessionWorkingAStoryIsRefusedStaffingAssignWhoeverRunsIt(t *testing.T) {
 	t.Parallel()
-	for name, root := range map[string]string{"the staffing on": staffedProject(t), "the staffing off": loopProject(t)} {
+	off := loopProject(t)
+	write(t, off, ".sdlc/config.json", staffingOff)
+	for name, root := range map[string]string{"the project manager on": staffedProject(t), "the project manager disabled": off} {
 		for _, cmd := range assignCommands {
 			for _, agent := range everyone {
 				refusedUnder(t, call(t, command(root, agent, cmd), noEnv), "assignment-is-a-human-decision",
@@ -280,8 +288,8 @@ func TestAC12TheProjectManagerReadsAndStaffsAndNothingStopsIt(t *testing.T) {
 // with nobody to bring it up to date. The rows beside it are every way that
 // must not become "no review is held to": a reviewer that is kept, one a
 // changed path brought back when code review passed (AC-7), security on a
-// story recorded as sensitive (AC-4), and a project with the staffing off
-// (AC-10), where a staffing in the record says nothing.
+// story recorded as sensitive (AC-4), and a project with the project manager
+// disabled (US-109 AC-3), where a staffing in the record says nothing.
 func TestAC3ACommitIsNotHeldToTheStaleReviewOfAReviewerTheStaffingLeavesOut(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -305,94 +313,137 @@ func TestAC3ACommitIsNotHeldToTheStaleReviewOfAReviewerTheStaffingLeavesOut(t *t
 		{"AC_4 security left out of a story recorded as sensitive", staffingOn, "security",
 			func(r *model.Record) { r.SetSecuritySensitive(true) }, true},
 		{"AC_3 security left out of a story that is not sensitive", staffingOn, "security", nil, false},
-		{"AC_10 a staffing in the record of a project with the staffing off", `{"version":1}`, "perf", nil, true},
+		{"AC_10 a staffing in the record of a project with the project manager disabled", staffingOff, "perf", nil, true},
+		{"AC_3 no team section, where the project manager is on by default", `{"version":1}`, "perf", nil, false},
 		{"AC_10 no staffing recorded", staffingOn, "perf", func(r *model.Record) { r.Staffing = nil }, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			root := loopProject(t)
-			write(t, root, ".sdlc/config.json", tc.config)
-			t.Setenv("GIT_DIR", filepath.Join(root, ".git"))
-			t.Setenv("GIT_WORK_TREE", root)
-			initRepo := exec.CommandContext(t.Context(), "git", "init", "--quiet")
-			initRepo.Dir = root
-			if out, err := initRepo.CombinedOutput(); err != nil {
-				t.Fatalf("git init: %v\n%s", err, out)
-			}
-			write(t, root, "invoice.go", "package invoice\n")
-			cfg, err := config.Load(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			tree, err := store.New(&config.Project{Root: root, Config: cfg}).ReviewSubject(t.Context())
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			at := time.Now()
-			record := model.NewRecord("A-1", at)
-			for _, g := range model.GateCommit.Before() {
-				record.SetGate(g, model.GatePass, "", at)
-			}
-			record.SetSecuritySensitive(false)
-			record.Staffing = &model.Staffing{At: model.Timestamp(at)}
-			for _, agent := range model.Agents {
-				record.Staffing.Agents = append(record.Staffing.Agents, model.Staffed{
-					Agent: agent, Needed: agent != "perf" && agent != "security" && agent != "human-advocate", Reason: "for the test",
-				})
-			}
-			if tc.change != nil {
-				tc.change(record)
-			}
-			for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
-				for _, r := range model.ReviewersFor(gate) {
-					subject := tree
-					if r.Role == tc.stale {
-						subject = "the tree before the rework"
-					}
-					record.AddReview(model.Review{Gate: gate, Role: r.Role, Verdict: model.VerdictApprove, Subject: subject}, at)
-				}
-			}
-			raw, err := json.Marshal(record)
-			if err != nil {
-				t.Fatal(err)
-			}
-			write(t, root, ".sdlc/stories/A-1/gate-record.json", string(raw))
-
-			r := call(t, command(root, "", "git commit -m done"), noEnv)
-			reason := r.HookSpecificOutput.PermissionDecisionReason
-			switch {
-			case !tc.refused && denied(r):
-				t.Errorf("the commit was held to the stale review of %s, which the staffing leaves out: %s", tc.stale, reason)
-			case tc.refused && !denied(r):
-				t.Errorf("the commit went through with a stale review from %s, which the story still needs", tc.stale)
-			case tc.refused && !strings.Contains(reason, tc.stale):
-				t.Errorf("the refusal does not say whose review is stale (%s): %s", tc.stale, reason)
-			}
+			commitHeldTo(t, tc.config, tc.stale, tc.change, tc.refused)
 		})
 	}
 }
 
-// T6: a staffing section that is on and cannot be used does not load. The hook
-// then works from the defaults, in which the staffing is off, and answers as
-// it does everywhere: it does not stop answering, and it does not let a
-// person's command through.
-func TestAC5TheHookStillAnswersWhenTheStaffingSectionCannotBeUsed(t *testing.T) {
+// commitHeldTo asks the hook about a commit in a project with the configuration given,
+// on a record that passed every gate before it. The staffing on the record leaves perf,
+// security and the human advocate out of a story that is not sensitive, every reviewer of
+// Gates 6 and 7 approved this tree, and stale's review is of another. refused is whether
+// the commit is, and then it names stale.
+func commitHeldTo(t *testing.T, cfgText, stale string, change func(r *model.Record), refused bool) {
+	t.Helper()
+	root := loopProject(t)
+	write(t, root, ".sdlc/config.json", cfgText)
+	t.Setenv("GIT_DIR", filepath.Join(root, ".git"))
+	t.Setenv("GIT_WORK_TREE", root)
+	initRepo := exec.CommandContext(t.Context(), "git", "init", "--quiet")
+	initRepo.Dir = root
+	if out, err := initRepo.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	write(t, root, "invoice.go", "package invoice\n")
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := store.New(&config.Project{Root: root, Config: cfg}).ReviewSubject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	at := time.Now()
+	record := model.NewRecord("A-1", at)
+	for _, g := range model.GateCommit.Before() {
+		record.SetGate(g, model.GatePass, "", at)
+	}
+	record.SetSecuritySensitive(false)
+	record.Staffing = &model.Staffing{At: model.Timestamp(at)}
+	for _, agent := range model.Agents {
+		record.Staffing.Agents = append(record.Staffing.Agents, model.Staffed{
+			Agent: agent, Needed: agent != "perf" && agent != "security" && agent != "human-advocate", Reason: "for the test",
+		})
+	}
+	if change != nil {
+		change(record)
+	}
+	for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
+		for _, r := range model.ReviewersFor(gate) {
+			subject := tree
+			if r.Role == stale {
+				subject = "the tree before the rework"
+			}
+			record.AddReview(model.Review{Gate: gate, Role: r.Role, Verdict: model.VerdictApprove, Subject: subject}, at)
+		}
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, ".sdlc/stories/A-1/gate-record.json", string(raw))
+
+	r := call(t, command(root, "", "git commit -m done"), noEnv)
+	reason := r.HookSpecificOutput.PermissionDecisionReason
+	switch {
+	case !refused && denied(r):
+		t.Errorf("the commit was held to the stale review of %s, which nothing waits for: %s", stale, reason)
+	case refused && !denied(r):
+		t.Errorf("the commit went through with a stale review from %s, which the story still needs", stale)
+	case refused && !strings.Contains(reason, stale):
+		t.Errorf("the refusal does not say whose review is stale (%s): %s", stale, reason)
+	}
+}
+
+// T7: every value here is refused to a command, and the hook goes on answering: it does not
+// stop, it does not turn the refusal into a blanket denial, and it does not let a person's
+// command through. Each value goes through the hook, because the validation that cannot
+// panic is what stands between a value in the file and a crash on every tool call of a
+// session. What the hook reads from a file it was able to read, and from one it was not, is
+// TestAC13TheHookReadsTheProjectsOwnSettingsFromARefusedFile in team_test.go: this row holds
+// with `config.Load` at every site, and that one does not (red team V2).
+func TestAC13TheHookStillAnswersWhenTheFileIsRefused(t *testing.T) {
 	t.Parallel()
-	for name, section := range map[string]string{
-		"no models":            `{"enabled":true,"models":[],"efforts":["low"]}`,
-		"a lowest not allowed": `{"enabled":true,"models":["opus"],"efforts":["low"],"lowest":{"verifier":{"model":"fable"}}}`,
-		"the wrong type":       `{"enabled":"yes"}`,
-		"an agent not shipped": `{"enabled":true,"models":["opus"],"efforts":["low"],"lowest":{"designer":{"model":"opus"}}}`,
+	deep := strings.Repeat(`{"x":`, 5000) + `1` + strings.Repeat(`}`, 5000)
+	huge := `["` + strings.Repeat(`a","`, 200000) + `a"]`
+	for name, rest := range map[string]string{
+		"AC_12 a staffing section":              `"staffing":{"enabled":true,"models":[],"efforts":["low"]}`,
+		"AC_12 a staffing section that is off":  `"staffing":{"enabled":false}`,
+		"AC_12 a staffing of null":              `"staffing":null`,
+		"AC_12 gate7_advisory true":             `"reviews":{"gate7_advisory":true}`,
+		"AC_12 gate7_advisory true then null":   `"reviews":{"gate7_advisory":true,"gate7_advisory":null}`,
+		"AC_13 team of the wrong type":          `"team":"yes"`,
+		"AC_13 team null":                       `"team":null`,
+		"AC_13 retries of the wrong type":       `"team":{"retries":"two"}`,
+		"AC_13 no models":                       `"team":{"models":[]}`,
+		"AC_13 models null":                     `"team":{"models":null}`,
+		"AC_13 agents of the wrong type":        `"team":{"agents":[1,2]}`,
+		"AC_13 an agent of null":                `"team":{"agents":{"security":null}}`,
+		"AC_13 an agent of the wrong type":      `"team":{"agents":{"security":"off"}}`,
+		"AC_13 a key that is not an agent":      `"team":{"agents":{"designer":{"enabled":false}}}`,
+		"AC_13 a lowest of the wrong type":      `"team":{"agents":{"security":{"lowest":7}}}`,
+		"AC_13 instances of a huge number":      `"team":{"agents":{"security":{"instances":1e300}}}`,
+		"AC_8 instances past the ceiling":       `"team":{"agents":{"security":{"instances":17}}}`,
+		"AC_8 instances far past the ceiling":   `"team":{"agents":{"security":{"instances":2000000000}}}`,
+		"AC_9 retries past the ceiling":         `"team":{"retries":21}`,
+		"AC_9 retries at the top of an int":     `"team":{"retries":9223372036854775807}`,
+		"AC_13 a huge list":                     `"team":{"models":` + huge + `}`,
+		"AC_13 a huge bring_back":               `"team":{"agents":{"code-reviewer":{"bring_back":` + huge + `}}}`,
+		"AC_13 deep nesting in a map value":     `"team":{"agents":{"security":{"lowest":` + deep + `}}}`,
+		"AC_13 deep nesting under a key":        `"team":{"agents":` + deep + `}`,
+		"AC_13 a misspelt key with deep values": `"team":{"agents":{"security":{"lowset":` + deep + `}}}`,
 	} {
-		root := loopProject(t)
-		write(t, root, ".sdlc/config.json", `{"version":1,"staffing":`+section+`}`)
-		refusedUnder(t, call(t, command(root, "", "sdlc staffing assign security --reason x"), noEnv),
-			"assignment-is-a-human-decision", "with "+name+", the main conversation", "sdlc staffing assign")
-		if r := call(t, command(root, "", "go test ./... -count=1"), noEnv); denied(r) {
-			t.Errorf("with %s, an ordinary command was not let through: %+v", name, r)
-		}
-		if !denied(call(t, command(root, "", "git commit -m early"), noEnv)) {
-			t.Errorf("with %s, the commit gate stopped standing in front of a commit", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := loopProject(t)
+			write(t, root, ".sdlc/config.json", `{"version":1,`+rest+`}`)
+			refusedUnder(t, call(t, command(root, "", "sdlc staffing assign security --reason x"), noEnv),
+				"assignment-is-a-human-decision", "the main conversation", "sdlc staffing assign")
+			if r := call(t, command(root, "", "go test ./... -count=1"), noEnv); denied(r) {
+				t.Errorf("an ordinary command was not let through: %+v", r)
+			}
+			if r := call(t, command(root, "", "sdlc doctor"), noEnv); denied(r) {
+				t.Errorf("sdlc doctor, which names the fix, was refused: %+v", r)
+			}
+			if !denied(call(t, command(root, "", "git commit -m early"), noEnv)) {
+				t.Error("the commit gate stopped standing in front of a commit")
+			}
+		})
 	}
 }

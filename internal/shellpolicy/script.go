@@ -53,7 +53,7 @@ func (w *pathWalk) enters(run invocation, quoted bool) {
 // scriptStart asks the path rules of a segment of a script handed to a shell
 // once more from where the script began: the refusing side, since the
 // script's words were read from there before its cds were followed.
-func (w *pathWalk) scriptStart(j segmentRules, segment string, run invocation) (Finding, bool) {
+func (w *pathWalk) scriptStart(j segmentRules, segment string, run invocation, reading assignments) (Finding, bool) {
 	if w.script == nil {
 		return Finding{}, false
 	}
@@ -64,7 +64,7 @@ func (w *pathWalk) scriptStart(j segmentRules, segment string, run invocation) (
 	k := j
 	k.dir, k.lost, k.from, k.certain = at.dir, at.lost, at.from, false
 	k.away.dir, k.away.lost = at.dir, at.lost
-	return k.judge(segment, run)
+	return k.judge(segment, run, reading)
 }
 
 // place is where the walk is, as a subshell keeps it.
@@ -147,7 +147,7 @@ func (u *unquotedWalk) subshells(opens, closes int) {
 
 // fromUnquoted asks the path rules of a segment once more from where the
 // unquoted walk is, where that is somewhere else.
-func (w *pathWalk) fromUnquoted(j segmentRules, segment string, run invocation) (Finding, bool) {
+func (w *pathWalk) fromUnquoted(j segmentRules, segment string, run invocation, reading assignments) (Finding, bool) {
 	u := w.unquoted
 	if u == nil {
 		return Finding{}, false
@@ -162,13 +162,13 @@ func (w *pathWalk) fromUnquoted(j segmentRules, segment string, run invocation) 
 	k := j
 	k.dir, k.lost, k.from, k.certain = at.dir, at.lost, at.from, false
 	k.away.dir, k.away.lost, k.away.pwd, k.away.pwdLost, k.away.old = at.dir, at.lost, u.at.dir, u.at.lost, u.at.old
-	if f, ok := k.judge(segment, run); ok {
+	if f, ok := k.judge(segment, run, reading); ok {
 		return f, true
 	}
 	if run.chdir != "" || !u.at.lost || w.s.configOnly {
 		return Finding{}, false
 	}
-	return u.at.near.judge(k, segment, run, u.at.dir)
+	return u.at.near.judge(k, segment, run, u.at.dir, reading)
 }
 
 // samePlace reports whether a and b are the same place.

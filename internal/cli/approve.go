@@ -142,17 +142,14 @@ func runApprove(cmd *cobra.Command, args []string, reject string) error {
 	}
 	// Read before the record is touched: a tip that cannot be read fails the
 	// command with nothing answered.
-	commit, forCommits, err := answerForCommits(cmd.Context(), s, id, record)
+	commit, forCommits, err := answerForCommits(cmd.Context(), s, id, record, answersTheWork(record, rejected))
 	if err != nil {
 		return err
 	}
 	approval, _ := record.Decide(!rejected, reject, tree, s.Now())
 	// On the stored answer: Decide returns a copy.
 	record.Approvals[len(record.Approvals)-1].Commit = commit
-	event := approval.Decision + " (" + approval.Type + ")"
-	if rejected {
-		event += ": " + reject
-	}
+	event := approvalEvent(approval, reject)
 	record.Append(model.EventApproval, event, s.Now())
 	if err := s.SaveRecord(record); err != nil {
 		return err
@@ -170,9 +167,57 @@ func runApprove(cmd *cobra.Command, args []string, reject string) error {
 			Reason: approval.Reason, Tree: tree, Commit: commit,
 		})
 	}
+	if err := sayWhatIsStillOpen(cmd.OutOrStdout(), s, record, id, approval); err != nil {
+		return err
+	}
 	sayApproved(cmd.OutOrStdout(), s, record, id, event, rejected)
 	if !rejected && forCommits != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", forCommits)
+	}
+	return nil
+}
+
+// approvalEvent is the answer as the record's history keeps it: the kind
+// alone for an approval, which answeredSince matches whole, and the reason
+// after a rejection's.
+func approvalEvent(approval model.Approval, reject string) string {
+	event := model.ApprovalEvent(approval.Decision, approval.Type)
+	if approval.Decision == model.DecisionRejected {
+		event += ": " + reject
+	}
+	return event
+}
+
+// answersTheWork is whether the answer about to be given to the pending
+// escalation answers the work, asked of the one predicate before Decide.
+func answersTheWork(record *model.Record, rejected bool) bool {
+	pending, _ := record.PendingEscalation()
+	decision := model.DecisionApproved
+	if rejected {
+		decision = model.DecisionRejected
+	}
+	return model.Approval{Decision: decision, Type: pending.Type}.AnswersCommit()
+}
+
+// sayWhatIsStillOpen is said after an approval that does not answer the work:
+// that the pre-commit question is still open, where the tier waits for one,
+// and after a by-hand gate's hand-over, that the gate is recorded before the
+// story carries on, or /sdlc:next hands it over again at the same gate.
+func sayWhatIsStillOpen(w io.Writer, s *store.Store, record *model.Record, id string, approval model.Approval) error {
+	if approval.AnswersCommit() {
+		return nil
+	}
+	_, pauses, err := s.CommitPause(id)
+	if err != nil {
+		return err
+	}
+	if pauses {
+		fmt.Fprintf(w, "This approval lets the loop carry on; it does not answer the pre-commit question, "+
+			"which %s is still asked before its commit.\n", id)
+	}
+	if gate, remaining := record.NextGate(); approval.Type == model.KindWorkByHand && remaining {
+		fmt.Fprintf(w, "Do the %s gate's work by hand and record it first, with `sdlc gate %s pass --story %s`: "+
+			"carrying on before then hands the story over again at the same gate.\n", gate, gate, id)
 	}
 	return nil
 }

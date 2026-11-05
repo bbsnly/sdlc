@@ -25,12 +25,12 @@ const assignmentBefore = cdpathBefore + "`"
 // value can hold another variable, `T=x; U=$T`, and a long line of values or of
 // uses makes a reading too big to read in the hook's time. Both bounds refuse: a
 // line near neither is what a person writes.
-func inspectAssigned(command string, s State) (Finding, bool) {
+func inspectAssigned(command string, s State, reading assignments) (Finding, bool) {
 	// A comment ends at its newline whatever comes before it, so a line with one
 	// is read in addCommentReadings' spellings as well as joined.
 	for _, spelled := range commentLines(command) {
-		for _, line := range commentReadings(spelled) {
-			if f, refused := inspectAssignedLine(line, s); refused {
+		for _, line := range commentReadings(spelled, reading) {
+			if f, refused := inspectAssignedLine(line, s, reading); refused {
 				return f, true
 			}
 		}
@@ -38,11 +38,11 @@ func inspectAssigned(command string, s State) (Finding, bool) {
 	// Joined once for every reading: removed only where values were read, a
 	// continuation between the `$` and the name of a use left `rm "$\<newline>T"`
 	// unread, which the shell runs as `rm "$T"` (security, US-115 Gate 7).
-	return inspectAssignedLine(strings.ReplaceAll(command, "\\\n", ""), s)
+	return inspectAssignedLine(strings.ReplaceAll(command, "\\\n", ""), s, reading)
 }
 
 // inspectAssignedLine is inspectAssigned for one spelling of the line.
-func inspectAssignedLine(command string, s State) (Finding, bool) {
+func inspectAssignedLine(command string, s State, reading assignments) (Finding, bool) {
 	if !strings.Contains(command, "$") || !strings.Contains(command, "=") {
 		return Finding{}, false
 	}
@@ -61,7 +61,7 @@ func inspectAssignedLine(command string, s State) (Finding, bool) {
 			asked = append(asked, line)
 			s.seen = newInspection()
 			s.seen.line = line
-			if f, refused := inspectNamed(line, s); refused {
+			if f, refused := inspectNamed(line, s, reading); refused {
 				return readAsAssigned(f, asked[i], values, j), true
 			}
 		}

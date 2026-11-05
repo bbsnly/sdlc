@@ -33,10 +33,10 @@ func setConfigOnDisk(t *testing.T, root, key string, value any) {
 	}
 }
 
-// reviews.gate7_advisory was read by nothing: the code reviewer blocked whatever
-// the project said. It makes that one reviewer advisory -- still expected to
-// report, no longer able to stop the gate -- and nobody else.
-func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
+// team.agents.code-reviewer.can_block makes that one reviewer advisory -- still
+// expected to report, no longer able to stop the gate -- and nobody else
+// (US-109 AC-6, which moves what reviews.gate7_advisory did here).
+func TestAC6AProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
 	t.Parallel()
 	for _, advisory := range []bool{false, true} {
 		name := map[bool]string{false: "blocking by default", true: "advisory when configured"}[advisory]
@@ -44,7 +44,7 @@ func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
 			t.Parallel()
 			root := gitProjectInitialised(t)
 			if advisory {
-				setConfigOnDisk(t, root, "reviews", map[string]any{"gate7_advisory": true})
+				setTeamAgentOnDisk(t, root, "code-reviewer", map[string]any{"can_block": false})
 			}
 			mustRun(t, "start")
 			reach(t, root, model.GateCodeReview)
@@ -68,7 +68,7 @@ func TestAProjectCanMakeTheCodeReviewerAdvisory(t *testing.T) {
 			for _, r := range decode[reviewListPayload](t, mustRun(t, "review", "list", "--json")).Reviews {
 				key := r.Gate + "/" + r.Role
 				if (key == "verifier_review/verifier" || key == "code_review/security") && !r.Blocking {
-					t.Errorf("%s stopped blocking with gate7_advisory = %v", key, advisory)
+					t.Errorf("%s stopped blocking with code-reviewer advisory = %v", key, advisory)
 				}
 			}
 		})

@@ -90,8 +90,11 @@ gives.
 
 At Gate 4 the gate name is `design_review`; at Gate 7 it is `code_review`.
 
+Record under the name your brief gives you: `security`, or, for its second instance, `security-2`.
+Each instance is its own run, and the gate waits for a review under each name.
+
 ```bash
-sdlc review add <gate> security approve --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
+sdlc review add <gate> <name> approve --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
 # Security review — <ID>
 
 **Verdict:** approve | block

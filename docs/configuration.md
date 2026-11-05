@@ -2,6 +2,7 @@
 
 - [Introduction](#introduction)
 - [What `init` writes for a Go project](#what-init-writes-for-a-go-project)
+- [Every setting at once](#every-setting-at-once)
 - [`commands`](#commands)
   - [Trusting the commands](#trusting-the-commands)
   - [The freeze check](#the-freeze-check)
@@ -33,11 +34,14 @@
 - [`human_gates`](#human_gates)
 - [`budget`](#budget)
 - [`consolidate`](#consolidate)
-- [`staffing`](#staffing)
+- [`team`](#team)
+  - [An agent's entry](#an-agents-entry)
   - [Models and efforts](#models-and-efforts)
   - [Setting a floor with `lowest`](#setting-a-floor-with-lowest)
   - [Bringing a reviewer back with `bring_back`](#bringing-a-reviewer-back-with-bring_back)
   - [What a staffing cannot do](#what-a-staffing-cannot-do)
+  - [When a setting takes effect](#when-a-setting-takes-effect)
+  - [Upgrading from the staffing section](#upgrading-from-the-staffing-section)
 - [Settings read from the environment](#settings-read-from-the-environment)
   - [`SDLC_HOOK_DEADLINE_MS`](#sdlc_hook_deadline_ms)
 - [The other half of the contract](#the-other-half-of-the-contract)
@@ -98,7 +102,25 @@ for Go:
   },
   "spec": { "paths": ["docs/", "spec/", "README.md"] },
   "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
-  "reviews": { "gate7_advisory": false },
+  "team": {
+    "retries": 2,
+    "models": ["haiku", "sonnet", "opus"],
+    "efforts": ["low", "medium", "high", "xhigh", "max"],
+    "agents": {
+      "project-manager": { "enabled": true, "instances": 1 },
+      "researcher":      { "enabled": true, "instances": 1 },
+      "sdet":            { "enabled": true, "instances": 1 },
+      "implementer":     { "enabled": true, "instances": 1 },
+      "verifier":        { "enabled": true, "can_block": true, "instances": 1 },
+      "bookkeeper":      { "enabled": true, "instances": 1 },
+      "architect":       { "enabled": true, "can_block": true, "instances": 1 },
+      "security":        { "enabled": true, "can_block": true, "instances": 1 },
+      "red-team":        { "enabled": true, "can_block": false, "instances": 1 },
+      "perf":            { "enabled": true, "can_block": true, "instances": 1 },
+      "human-advocate":  { "enabled": true, "can_block": false, "instances": 1 },
+      "code-reviewer":   { "enabled": true, "can_block": true, "instances": 1 }
+    }
+  },
   "freeze": { "allow_new_test_files": false },
   "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
   "budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] }
@@ -129,6 +151,118 @@ A comment block belongs at the top level only. A list under a `_` key inside
 
 The sections below follow the order of the settings you are most likely to
 change, starting with `commands`.
+
+## Every setting at once
+
+The `//` comments are for reading here. JSON takes none, so leave them out of your copy: a file
+with a `//` in it is refused as [SDLC-E0004](troubleshooting.md#sdlc-e0004). The file itself is
+plain JSON. To annotate your own file, use a top-level key that starts with `_`, as `sdlc init`
+does ([Introduction](#introduction)).
+
+Every setting is at its default, with a comment naming the values it can take. `security` also
+shows the three keys `sdlc init` writes for no agent, `max_rounds`, `lowest` and `bring_back`, and
+four settings `sdlc init` does not write are shown too: `git.worktrees`, `budget.gate_hours`,
+`paths.conflict_markers_intended` and `reviews.policy`. Each of these seven is at the value its
+absence means, so it changes nothing. Name `reviews.policy` only to move the file every reviewer
+reads: named, with no file at that path, it makes `sdlc doctor` warn, where leaving it out does
+not.
+
+A new project's `sdlc init` writes the rest, with no `//`. Do not run `sdlc init --force` on a
+project you have: it writes the `team` section back at its defaults, and your own is lost.
+
+```jsonc
+{
+  "version": 1,                              // the file's format; leave it at 1
+  "backlog": { "path": "user_stories.json" }, // relative to the repository root, and inside it
+  "git": {
+    "trunk_branch": "main",                  // the branch stories start from and land on
+    "remote": false,                         // true or false; true: sdlc start fetches from origin and refuses while trunk is behind
+    "worktrees": true                        // true or false; false: stories are worked in this checkout, one at a time
+  },
+  // each a command run from the repository root; "" skips the step that runs it
+  "commands": {
+    "smoke": "",
+    "build": "",
+    "test": "",
+    "lint": "",
+    "fmt": "",
+    "fmt_check": "",
+    "fmt_file": "",
+    "coverage": "",
+    "mutation": "",
+    "freeze_check": ""
+  },
+  "thresholds": { "coverage_min": 80, "mutation_min": 70 }, // percentages; 0 turns one off
+  "paths": {
+    "tests": {
+      "dirs": ["tests/", "test/"],
+      "file_globs": ["*_test.go", "*.test.ts", "*.spec.ts", "test_*.py", "*_test.py", "*Test.java", "*_spec.rb"]
+    },
+    "src": ["src/", "internal/", "pkg/", "cmd/", "lib/"],
+    "conflict_markers_intended": []          // files that hold conflict markers on purpose
+  },
+  "spec": { "paths": ["docs/", "spec/", "README.md"] },
+  // whole numbers, 0 or more; 0 turns that limit off
+  "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
+  "team": {
+    "retries": 2,                            // 0 to 20: runs of an agent that may fail at a gate before the story is handed to you
+    "models": ["haiku", "sonnet", "opus"],   // the models a staffing may ask for, lowest first
+    "efforts": ["low", "medium", "high", "xhigh", "max"], // the efforts a staffing may ask for, lowest first
+    "agents": {
+      // enabled: true or false; false: the agent is not run, and a worker's gate, or the
+      //   verifier's or the code reviewer's review, is yours to do by hand
+      // instances: 1 to 16, how many instances of a reviewer review each gate it reviews
+      // can_block and instances act on an agent that reviews; on the others they do nothing
+      "project-manager": { "enabled": true, "instances": 1 },
+      "researcher":      { "enabled": true, "instances": 1 },
+      "sdet":            { "enabled": true, "instances": 1 },
+      "implementer":     { "enabled": true, "instances": 1 },
+      // can_block: true or false; false: its block is advisory and does not stop the gate
+      "verifier":        { "enabled": true, "can_block": true, "instances": 1 },
+      "bookkeeper":      { "enabled": true, "instances": 1 },
+      "architect":       { "enabled": true, "can_block": true, "instances": 1 },
+      "security": {
+        "enabled": true,
+        "can_block": true,
+        "instances": 1,
+        // max_rounds: 1 or more, the blocks that stop the gate before the story is handed
+        //   to you; left out, it is loop.max_review_rounds
+        "max_rounds": 2,
+        // lowest: the floor the project manager may not staff this agent below: a model
+        //   from team.models (haiku, sonnet, opus) and an effort from team.efforts
+        //   (low, medium, high, xhigh, max)
+        "lowest": { "model": "haiku", "effort": "low" },
+        // bring_back: paths relative to the project's root; a change touching one brings
+        //   this agent back where the staffing left it out; only an agent that reviews the
+        //   code takes it: security, perf, human-advocate and code-reviewer
+        "bring_back": []
+      },
+      "red-team":        { "enabled": true, "can_block": false, "instances": 1 },
+      "perf":            { "enabled": true, "can_block": true, "instances": 1 },
+      "human-advocate":  { "enabled": true, "can_block": false, "instances": 1 },
+      "code-reviewer":   { "enabled": true, "can_block": true, "instances": 1 }
+    }
+  },
+  // the file every reviewer reads, relative to the repository root; leave it out to use
+  // REVIEW.md, and name it only to move the file: sdlc doctor warns where the named file
+  // is not there
+  "reviews": { "policy": "REVIEW.md" },
+  "freeze": { "allow_new_test_files": false }, // true or false; true: a test file may be added after the freeze
+  "human_gates": {
+    "pre_commit_pause_tiers": ["high"],      // any of the risk tiers low, medium and high; [] turns the pause off
+    "dor_advocate_check": false              // true or false; true: the human advocate reads each story at Gate 1 too
+  },
+  "budget": {
+    "per_story_usd": 60,                     // US dollars, 0 or more; 0 turns the budget off
+    "alert_fractions": [0.5, 0.8, 1.0],      // shares of per_story_usd at which sdlc warns you
+    // hours by gate key, such as {"plan": 1}; the keys are dor, analysis, tests_frozen,
+    //   plan, design_review, implementation, verification, verifier_review, code_review,
+    //   commit and retro; 0 or absent is off
+    "gate_hours": {}
+  },
+  "consolidate": { "nudge_after": 3 }        // finished stories before the reminder, 0 or more; 0 turns it off
+}
+```
 
 ## `commands`
 
@@ -626,7 +760,7 @@ The defaults of 2, 3 and 3 are rarely worth changing.
 
 | Key | What it means |
 | --- | --- |
-| `max_review_rounds` | how many times one reviewer may block a gate before `sdlc review add` hands the story to a person. A block that cannot stop the gate is not counted |
+| `max_review_rounds` | how many times one reviewer may block a gate before `sdlc review add` hands the story to a person, unless the agent has `max_rounds` in [`team`](#an-agents-entry). A block that cannot stop the gate is not counted |
 | `max_rework_rounds` | how many times one gate may be recorded as failed before `sdlc gate` hands the story to a person |
 | `max_stop_blocks` | how many stops in a row, with nothing recorded on the story, the `Stop` hook sends back before it hands the story to a person. See [stopping mid-story](enforcement.md#stopping-mid-story) |
 
@@ -635,20 +769,17 @@ refused.
 
 ## `reviews`
 
-`reviews` changes how much a reviewer's word counts, and what reviewers are told to look for.
-It has two keys, `gate7_advisory` and `policy`.
+`reviews` holds where the review policy is, the file every reviewer reads first. It has one key,
+`policy`. How much a reviewer's word counts is set per agent in `team`, with `can_block`.
 
 ### `reviews.gate7_advisory`
 
-This makes the code reviewer advisory rather than blocking. It is off by
-default, and turning it on is a real loosening: Gate 7 is the last thing between
-a change and trunk.
-
-Advisory is not skipped. `code_review` still waits for the code reviewer's
-report on the change as it stands (a missing or stale review holds the gate as
-it always does), but a `block` from it no longer stops the gate.
-`sdlc review list` shows it as advisory. The verifier stays blocking, and so
-does security on a story Gate 2 called security-sensitive.
+This key moved to `team.agents.code-reviewer.can_block`, which takes the opposite value: to make
+the code reviewer advisory, set `"can_block": false` on it ([`team`](#an-agents-entry)).
+`"gate7_advisory": true` is refused as [SDLC-E0087](troubleshooting.md#sdlc-e0087), and
+`"gate7_advisory": false` is a leftover that changes nothing: `sdlc doctor` reports it, and the
+line can be deleted. [Upgrading from the staffing section](#upgrading-from-the-staffing-section)
+shows both.
 
 ### `reviews.policy`
 
@@ -674,7 +805,9 @@ No agent writes the file while a story is being worked on
 change to it. A person commits a change on trunk between stories, and a running story keeps the
 copy it was cut from. To apply a change to the story in front of you, end the story, commit on trunk
 and start again. A configuration that will not load holds `REVIEW.md`, not the file it named, until
-it is fixed; `sdlc doctor` reports the configuration and skips this check.
+it is fixed. A file refused only as [SDLC-E0087](troubleshooting.md#sdlc-e0087) or
+[SDLC-E0088](troubleshooting.md#sdlc-e0088) is still read for this key, so it holds the policy it
+names. `sdlc doctor` reports the configuration and skips this check.
 
 ## `freeze`
 
@@ -797,44 +930,64 @@ Only the names of the files are read, never what is in them.
 [Consolidating what the retros say](guides/consolidating-what-the-retros-say.md#the-reminder)
 says more.
 
-## `staffing`
+## `team`
 
-Staffing lets a project manager agent say, story by story, which agents the
-story needs and what model and effort each is asked for. It is off unless the
-project turns it on: with the section absent, or `enabled` false, every agent
-takes part in every story, each runs as its definition says, and nothing else in
-the section is read.
+`team` says which agents run, which of them can block a gate, how many instances of a reviewer
+there are, how often a run may fail, and what the project manager may ask for. Every agent is on
+by default, the project manager included: `sdlc:project-manager` says, story by story, which
+agents the story needs and the model and effort each is asked for, and records that as the
+story's staffing. `sdlc init` writes the section with every agent at its default.
 
 | Key | What it means |
 | --- | --- |
-| `enabled` | turns the staffing on. Default `false` |
-| `models` | the model names a staffing may ask for, **lowest first** |
-| `efforts` | the effort names a staffing may ask for, **lowest first** |
-| `lowest` | for an agent, the lowest `model` and `effort` it may be asked for |
-| `bring_back` | for a reviewer of the code, the paths a change to which brings it back |
+| `retries` | how many times a run of one agent may fail at a gate, reported with [`sdlc team failure`](commands.md#sdlc-team-failure), before the story is handed to a person. Default `2`; `0` hands it over at the first failure; above `20` is refused |
+| `models` | the model names a staffing may ask for, **lowest first**. Default `["haiku", "sonnet", "opus"]` |
+| `efforts` | the effort names a staffing may ask for, **lowest first**. Default `["low", "medium", "high", "xhigh", "max"]` |
+| `agents` | one entry per agent, under the name the plugin gives it, with the keys below. An agent with no entry keeps every default |
 
-Let's take a look at an example that turns the staffing on:
+The model and effort a staffing records are what is asked for. The environment can override
+both, and sdlc does not observe what a delegation is given.
+
+> [!WARNING]
+> Two settings loosen the loop: `enabled` set to `false` takes an agent out of every story, and
+> `can_block` set to `false` lets a gate pass over that reviewer's block. This file can be written
+> by a session on the project between stories, so read a change to either before you commit it.
+
+### An agent's entry
+
+| Key | What it means |
+| --- | --- |
+| `enabled` | whether the agent runs. Default `true`. `false` takes it out of every story: a worker's gate, or the verifier's or the code reviewer's review, is then yours to do by hand, and the loop hands the story to you there with `sdlc escalate work_by_hand`. A disabled reviewer of the plan or the change is not waited for. With the project manager disabled no story is staffed, and every enabled agent takes part in every story |
+| `can_block` | for an agent that reviews, whether its block stops the gate. Default `true` for the architect, security, perf, the verifier and the code reviewer, and `false` for red-team and the human advocate. `false` makes its review advisory: still waited for, never skipped, and its block does not stop the gate it reviews. Its findings are still closed like any other reviewer's: those of the design review before verification and the commit, and those of the code review before the commit. `true` gives a reviewer no more than its row says, so security still blocks only a story recorded as security-sensitive; on red-team or the human advocate, `true` makes a block stop the gate as perf's does |
+| `max_rounds` | how many blocks that stop the gate one reviewer may make before the story is handed to a person. Left out, it is `loop.max_review_rounds`; below `1` is refused. It counts only blocks that stop the gate, so it does nothing on an advisory agent, one with `can_block` false, or on one that reviews nothing; `sdlc doctor` says so where it is set on one |
+| `instances` | how many instances of a reviewer review each gate it reviews, from `1` to `16`. Default `1`. The second is `security-2`, the third `security-3`: each is its own run under its own name, and the gate waits for a review from each. On an agent that reviews nothing it does nothing |
+| `lowest` | the lowest `model` and `effort` the project manager may ask for this agent: a model from `models` and an effort from `efforts`. An agent with no `lowest` may be asked for from the first name in each list |
+| `bring_back` | for a reviewer of the code, the paths a change to which brings it back where the staffing left it out |
+
+Each agent has one entry. A second entry for the same agent is refused as
+[SDLC-E0088](troubleshooting.md#sdlc-e0088), not taken in place of the first: JSON keeps the
+last of a repeated key without a word, so a second `perf` entry would quietly undo the first.
+A key repeated inside one entry is not refused: the entry keeps the last value given for it, so
+write each of an agent's settings once.
+
+The tool cannot see that two instances were two runs: one run can record a review as both
+`security` and `security-2`, so instances are worth having only where the session runs each on
+its own. Nothing shows them to be independent; `sdlc trace` shows how many runs there were.
+
+Lowering `instances` drops the reviews and blocks of the instances it removes, and turning the
+project manager back on during a story applies the staffing's rows again, a left-out reviewer's
+block included.
+
+Let's take a look at an entry that keeps a second security review and a floor for the verifier:
 
 ```json
-"staffing": {
-  "enabled": true,
-  "models": ["haiku", "sonnet", "opus"],
-  "efforts": ["low", "medium", "high"],
-  "lowest": {
-    "verifier": { "model": "opus", "effort": "high" },
-    "security": { "model": "sonnet" }
-  },
-  "bring_back": {
-    "security": ["internal/hook/", "install.sh"],
-    "perf": ["internal/hot/"]
+"team": {
+  "agents": {
+    "security": { "instances": 2, "bring_back": ["internal/hook/", "install.sh"] },
+    "verifier": { "lowest": { "model": "opus", "effort": "high" } }
   }
 }
 ```
-
-> [!WARNING]
-> Turning it on is a real loosening. A gate then waits for fewer reviewers than
-> it does today, and this file is writable by a session on the project between
-> stories.
 
 ### Models and efforts
 
@@ -847,41 +1000,126 @@ order. The names are whatever the project's Claude Code takes for a delegation.
 sdlc checks what is asked for against these lists and against nothing else, so a
 name mistyped here is asked for as it is typed.
 
-The model and effort are what is asked for. The environment can override both,
-and sdlc does not observe what a delegation is given.
-
 ### Setting a floor with `lowest`
 
-A key of `lowest` is one of the twelve agents: `researcher`, `sdet`,
-`implementer`, `verifier`, `bookkeeper`, `architect`, `security`, `red-team`,
-`perf`, `human-advocate`, `code-reviewer`, `project-manager`. An entry may give
-a model, an effort or both. An agent with no entry may be asked for from the
-first name in each list.
+`lowest` sits in an agent's own entry, and any of the twelve agents may have one: `researcher`,
+`sdet`, `implementer`, `verifier`, `bookkeeper`, `architect`, `security`, `red-team`, `perf`,
+`human-advocate`, `code-reviewer`, `project-manager`. It may give a model, an effort or both. An
+instance has its role's floor.
 
 ### Bringing a reviewer back with `bring_back`
 
-A key of `bring_back` is a reviewer of the code the staffing may leave out:
-`security`, `perf` or `human-advocate`. Each path is a file or a directory
-relative to the repository root, with `/` between its parts and no pattern; it
-matches by path segment, without regard to case. `sdlc staffing show` prints the
-paths as they were read, which is where a path typed wrongly shows: it loads,
-and matches nothing.
+`bring_back` sits in the entry of a reviewer of the code: `security`, `perf`, `human-advocate`
+or `code-reviewer`. Each path is a file or a directory relative to the repository root, with `/`
+between its parts and no pattern; it matches by path segment, without regard to case. A path
+brings back every instance of its reviewer. `sdlc staffing show` prints the paths as they were
+read, which is where a path typed wrongly shows: it loads, and matches nothing.
 
 ### What a staffing cannot do
 
 What a staffing cannot do is not a setting: the agents that do a gate's work,
-the verifier and the code reviewer are never left out, and neither is security
-on a story the analysis recorded as security-sensitive.
+the verifier and the code reviewer are never left out while they are enabled, and neither is
+security on a story the analysis recorded as security-sensitive.
 
-Two things it can do are worth knowing before it is on. The architect can be
-left out, and nothing brings it back at the design review, where there is no
-change to read. And perf can be left out, with `bring_back` all that returns it,
-so a project with a performance budget lists its hot paths there.
+Two things it can do are worth knowing. The architect can be left out, and nothing brings it back
+at the design review, where there is no change to read. And perf can be left out, with
+`bring_back` all that returns it, so a project with a performance budget lists its hot paths
+there.
 
-With the staffing on, a section sdlc cannot use does not load
-([SDLC-E0045](troubleshooting.md#sdlc-e0045)): an empty list, a name listed
-twice, a `lowest` its list does not have, a key that is not an agent, or a path
-that is not a plain relative one.
+A `team` section sdlc cannot use does not load
+([SDLC-E0088](troubleshooting.md#sdlc-e0088)): an agent that does not exist or an instance's name
+as an agent, a blank or repeated name in `models` or `efforts`, an empty list, a `lowest` its list
+does not have, `retries`, `instances` or `max_rounds` outside its range, or a `bring_back` path
+that is not a plain relative one, or on an agent that does not review the code. Two of these go
+further than the settings need, and on purpose. The ranges are there because the hook reads a
+refused file's values all the same, and an `instances` in the billions would run it out of memory.
+A name in `models` or `efforts` that holds a control character is refused because the lists are
+printed to the project manager and to you, where a newline would make a line that looks like the
+tool's own.
+
+### When a setting takes effect
+
+A gate's output says which agents are disabled, and the gate record keeps no history of it: only
+git's history of `.sdlc/config.json` says afterwards what the team was.
+
+A setting reaches the stories started after it is on trunk. With worktrees on, a story reads its
+own worktree's file, cut from trunk when it started, so turning off a failing agent on trunk in
+the middle of a story changes nothing in that story. To change that story's team, end it, commit
+the change on trunk, and start it again.
+
+`sdlc init --force` writes every setting back at its default except the stories, `backlog.path`,
+the trunk branch and `reviews.policy`, so it writes the `team` section back at its defaults too.
+It is not the fix for SDLC-E0087.
+
+### Upgrading from the staffing section
+
+This release replaced the `staffing` section and `reviews.gate7_advisory` with `team`. A file
+that still has either is refused as [SDLC-E0087](troubleshooting.md#sdlc-e0087), by every
+command that loads it, and the message names each old key and the key that replaced it. If a
+story is in flight in a worktree, editing that worktree's file makes the commands work, and then
+the landing refuses the story, since a story cannot carry a change to `.sdlc/`: edit the file on
+trunk, as below.
+
+| Before | After |
+| --- | --- |
+| `"staffing": {"enabled": true}` | delete the whole `"staffing"` section once its other keys have moved: an empty `"staffing": {}` is still refused. The project manager is on by default |
+| `"staffing": {"enabled": false}` | `"team": {"agents": {"project-manager": {"enabled": false}}}`, which keeps the project manager off, as the old default had it |
+| `"staffing": {"models": ["haiku", "sonnet", "opus"]}` | `"team": {"models": ["haiku", "sonnet", "opus"]}` |
+| `"staffing": {"efforts": ["low", "high"]}` | `"team": {"efforts": ["low", "high"]}` |
+| `"staffing": {"lowest": {"verifier": {"model": "sonnet", "effort": "high"}}}` | `"team": {"agents": {"verifier": {"lowest": {"model": "sonnet", "effort": "high"}}}}` |
+| `"staffing": {"bring_back": {"security": ["internal/auth/"]}}` | `"team": {"agents": {"security": {"bring_back": ["internal/auth/"]}}}` |
+| `"reviews": {"gate7_advisory": true}` | `"team": {"agents": {"code-reviewer": {"can_block": false}}}`; delete the `gate7_advisory` line, and keep `policy` if you have one: an empty `"reviews": {}` loads |
+| `"reviews": {"gate7_advisory": false}` | nothing to do: a leftover that is not refused. `sdlc doctor` reports it, and the line can be deleted, keeping `policy` if you have one |
+
+So `staffing.enabled` goes to `enabled` in `team.agents.project-manager`, `staffing.models` to
+`team.models`, `staffing.efforts` to `team.efforts`, `staffing.lowest` and `staffing.bring_back`
+to each agent's own entry, and `reviews.gate7_advisory` to `team.agents.code-reviewer.can_block`,
+with the opposite value. `reviews.policy` stays where it is. Two codes are new:
+[SDLC-E0087](troubleshooting.md#sdlc-e0087), an old setting the team replaced, and
+[SDLC-E0088](troubleshooting.md#sdlc-e0088), a team that cannot be used.
+
+If `sdlc doctor`, or any command, says SDLC-E0087, start at case 3; otherwise start at case 1.
+Then follow each case that applies.
+
+1. **No `staffing`, and `gate7_advisory` false or absent.** No edit. Your next story is staffed by
+   the project manager, which the old default left off, and its run comes before each gate's
+   agents. To keep it off, add `"team": {"agents": {"project-manager": {"enabled": false}}}`.
+2. **A story in flight.** It is staffed by the project manager from its next gate: a story past
+   analysis with no staffing waits for every enabled agent, and the runbook delegates to the
+   project manager first when it resumes. To keep the project manager off for the stories you
+   start from now on, add `"team": {"agents": {"project-manager": {"enabled": false}}}` to
+   `.sdlc/config.json` on trunk. A story already in a worktree of its own reads that worktree's
+   file, and editing it is refused when the story lands, so such a story is staffed from its next
+   gate either way.
+3. **`staffing`, or `gate7_advisory` true.** Once the new binary is installed, every command that
+   loads the file is refused as SDLC-E0087 until a person edits it. `sdlc stop` is one of them: it
+   loads the file of the checkout it runs in, and a landing reads the main checkout's too, so a
+   story cannot land while either still holds an old key. A worktree reads its own file, and a
+   story cannot carry the edit.
+
+   **Before you update**, land what is in flight with the binary you have, then edit
+   `.sdlc/config.json` on trunk as the table says, commit it, and update the binary and the
+   plugin, in one sitting.
+
+   **Already updated, with nothing in flight**, edit `.sdlc/config.json` on trunk as the table
+   says and commit it.
+
+   **Already updated, with a story in flight**, the story cannot land as it is, so:
+   1. edit `.sdlc/config.json` on trunk in the main checkout, and commit it there;
+   2. in the story's worktree, run `git rebase --autostash <trunk>`: before Gate 8 the story's
+      work is not committed, and a plain rebase refuses a tree with changes;
+   3. HEAD has then moved off the story's base, so every gate before the commit is refused as
+      [SDLC-E0046](troubleshooting.md#sdlc-e0046). Ask the session to run
+      `sdlc escalate trunk_moved --message "config moved on trunk"` for the story, or run it
+      yourself in the story's checkout; then, in your own terminal, `sdlc approve <ID>`; then
+      `sdlc start <ID>` from the main checkout, which picks the story up from where trunk is.
+
+To check the upgrade took: `sdlc doctor` exits 0, and its `ok` line names the team only where it
+differs from the defaults; `sdlc staffing show` lists every enabled agent, with the project
+manager's staffing where it is on; and `sdlc status` shows a story in flight with its next gate.
+
+Update the binary and the plugin together, as [Updating](installation.md#updating) says: an old
+hook beside a new command does not know an instance's name.
 
 ## Settings read from the environment
 

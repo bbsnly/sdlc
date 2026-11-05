@@ -192,19 +192,19 @@ var (
 		`in the checkout named above, stash the changes it names, or commit them (a commit moves trunk, so the next stop puts the story onto it before it lands), then run "sdlc stop" in the story's worktree again; they are a person's changes, so an assistant hands the story to a person with "sdlc escalate" and stops`)
 
 	StaffingOff = register("SDLC-E0067",
-		`to use the staffing, a person sets "staffing.enabled" to true in the project's configuration, with the models and efforts it may ask for (docs/configuration.md has an example); until then every agent takes part and each runs as its definition says`)
+		`the project manager is disabled in team.agents.project-manager.enabled, so there is no staffing to record or change; every enabled agent takes part and each runs as its definition says. To use the staffing, a person deletes that setting or sets it to true in .sdlc/config.json (docs/configuration.md says how)`)
 
 	StaffingNone = register("SDLC-E0068",
-		`no staffing is recorded for the story: delegate to sdlc:project-manager, which records one with "sdlc staffing set"; until it has, every agent is needed`)
+		`no staffing is recorded for the story: delegate to sdlc:project-manager, which records one with "sdlc staffing set"; until it has, every enabled agent is needed`)
 
 	StaffingInvalid = register("SDLC-E0069",
-		`a staffing names each of the plugin's agents once, with a reason, and for each agent it needs a model, an effort and a reason for them; one that is recorded is changed with "sdlc staffing amend <agent> --reason ..."`)
+		`a staffing names each enabled agent and each of its instances once, with a reason, and for each one it needs a model, an effort and a reason for them; one that is recorded is changed with "sdlc staffing amend <agent> --reason ..."`)
 
 	StaffingNeverLeftOut = register("SDLC-E0070",
 		`keep the agent: the agents that do a gate's work, the verifier, the code reviewer, and security on a story recorded as security-sensitive always take part; ask for a lower model or effort instead of leaving it out`)
 
 	StaffingOutsideLimits = register("SDLC-E0071",
-		`ask for a model from "staffing.models" and an effort from "staffing.efforts", neither below what "staffing.lowest" has for the agent; a person changes those lists in the project's configuration`)
+		`ask for a model from "team.models" and an effort from "team.efforts", neither below what the agent's "lowest" in team.agents has; a person changes those lists in the project's configuration`)
 
 	StaffingAssigned = register("SDLC-E0072",
 		`a person chose this for the agent, so it stays as it is: leave it out of the change; only a person changes it, with "/sdlc:assign", or "sdlc staffing assign" in their own terminal`)
@@ -270,7 +270,16 @@ var (
 	BlockWithoutImportant = register("SDLC-E0086",
 		`pass --important with the number of important findings the review names; a review with only nits is an approve, with --nits and the nits listed`)
 
-	// SDLC-E0087 and SDLC-E0088 were given to US-109, whose change registers them.
+	// OldSettingReplaced is a configuration that still holds a setting the team
+	// section replaced. A file that loaded with the old key ignored would run a
+	// project with its agents configured otherwise than its person wrote them.
+	OldSettingReplaced = register("SDLC-E0087",
+		`move each setting the message names to its key in the team section of .sdlc/config.json, as the message says, and delete the old one; docs/configuration.md#upgrading-from-the-staffing-section has the table. For a story in flight, that section gives the route: edit the file on trunk, since editing the file in the story's worktree only moves the refusal to the landing`)
+
+	// TeamUnusable is a team section that names an agent that does not exist, or
+	// holds a value the loop cannot use. Every problem in the file is listed at once.
+	TeamUnusable = register("SDLC-E0088",
+		`correct each problem the message lists in the team section of .sdlc/config.json; docs/configuration.md#team says what each setting takes`)
 
 	// FindingsDisagree is a review whose --finding flags do not list what its
 	// counts say, or that counts findings at the design or code review and lists

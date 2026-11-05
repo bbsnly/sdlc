@@ -74,6 +74,12 @@ func worktreesOff(t *testing.T, dir string) {
 	setConfig(t, dir, "git", "worktrees", false)
 }
 
+// projectManagerOff disables the project manager in dir's configuration.
+func projectManagerOff(t *testing.T, dir string) {
+	t.Helper()
+	setConfig(t, dir, "team", "agents", map[string]any{"project-manager": map[string]any{"enabled": false}})
+}
+
 // storyRepository is repository as a project has it that never heard of story
 // worktrees: no git.worktrees in its configuration, which is on.
 func storyRepository(t *testing.T, binary string, stories ...spec) checkout {

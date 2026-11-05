@@ -74,20 +74,26 @@ func (p Paths) IntendsConflictMarkers(rel string) bool {
 	return false
 }
 
-// conflictMarkerProblems is what is wrong with the paths where conflict markers
+// checkConflictMarkers adds what is wrong with the paths where conflict markers
 // are meant, one problem for each entry that cannot mean what it says. Pure
 // slash logic, so that a glob loads the same on every platform. An entry that
 // matched nothing would be a protection a person believed in that was not
-// there, and doctor would list it as if it were.
-func (p Paths) conflictMarkerProblems() []string {
-	var problems []string
+// there, and doctor would list it as if it were. Past the size a refusal keeps
+// an entry is only counted: kept in a slice, every problem took the load of
+// 100,000 bad entries from 13 MB to 45 MB, and the hook loads the file on every
+// tool call.
+func (p Paths) checkConflictMarkers(found *problems) {
 	for i, pattern := range p.ConflictMarkersIntended {
-		if why := badIntendedPath(pattern); why != "" {
-			problems = append(problems, fmt.Sprintf("paths.conflict_markers_intended[%d] is %q, which %s: "+
-				"give a path or a glob from the repository root, slash-separated, as in \"docs/**\"", i, pattern, why))
+		why := badIntendedPath(pattern)
+		switch {
+		case why == "":
+		case found.full():
+			found.count(&found.otherFound, 1)
+		default:
+			found.addOther(fmt.Sprintf("paths.conflict_markers_intended[%d] is %s, which %s: "+
+				"give a path or a glob from the repository root, slash-separated, as in \"docs/**\"", i, quoted(pattern), why))
 		}
 	}
-	return problems
 }
 
 // badIntendedPath says why pattern is not a path or a glob from the root, or

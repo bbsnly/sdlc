@@ -449,20 +449,20 @@ type pair struct {
 // other's: read the input as it arrived and the lexer meets a live backtick,
 // which it reads as a substitution (commands.go:170-173), which is not what the
 // released tool answers.
-func readings(command string, powerShell bool) []pair {
+func readings(command string, powerShell bool, reading assignments) []pair {
 	released, shell := command, command
 	if powerShell {
 		released = strings.ReplaceAll(command, "`", "")
 		shell = withoutEscapes(command)
 	}
 	out := make([]pair, 0, 3)
-	out = addReadings(out, withoutDocuments(released, powerShell, true), released, false, viaReleased)
-	out = addReadings(out, withoutDocuments(shell, powerShell, false), shell, false, viaShell)
+	out = addReadings(out, withoutDocuments(released, powerShell, true, reading), released, false, viaReleased)
+	out = addReadings(out, withoutDocuments(shell, powerShell, false, reading), shell, false, viaShell)
 	if !powerShell {
-		out = addDecodedReadings(out, shell)
-		out = addHandedReadings(out, shell)
-		out = addCommentReadings(out, shell)
-		out = addWordReadings(out)
+		out = addDecodedReadings(out, shell, reading)
+		out = addHandedReadings(out, shell, reading)
+		out = addCommentReadings(out, shell, reading)
+		out = addWordReadings(out, reading)
 		// And each once more with its brace lists expanded, where it has one.
 		for _, p := range slices.Clone(out) {
 			if text := bracesExpanded(p.text); text != p.text {
@@ -493,7 +493,7 @@ func addReadings(out []pair, texts []string, spelling string, undecoded bool, vi
 // pays nothing for it. Decoded after the documents are taken out, because a
 // document is text and its quote -- the apostrophe of "don't" -- would
 // otherwise open a string that hid every line after it.
-func addDecodedReadings(out []pair, shell string) []pair {
+func addDecodedReadings(out []pair, shell string, reading assignments) []pair {
 	d := decoded(shell)
 	if d == shell {
 		return out
@@ -504,7 +504,7 @@ func addDecodedReadings(out []pair, shell string) []pair {
 	// Each undecoded text is decoded, the released reading's too, so
 	// that every reading that leaves a word to a decoded one has one.
 	for _, released := range []bool{true, false} {
-		texts := withoutDocuments(shell, false, released)
+		texts := withoutDocuments(shell, false, released, reading)
 		for i, text := range texts {
 			texts[i] = decoded(text)
 		}
@@ -528,7 +528,7 @@ func addDecodedReadings(out []pair, shell string) []pair {
 // it goes by the decoded reading's name: the names the log is told are four
 // (US-035, D1), and this too is the line once the shell has taken a backslash
 // out.
-func addHandedReadings(out []pair, shell string) []pair {
+func addHandedReadings(out []pair, shell string, reading assignments) []pair {
 	if !strings.Contains(shell, `\`) {
 		return out
 	}
@@ -537,7 +537,7 @@ func addHandedReadings(out []pair, shell string) []pair {
 		r = handedSeparators
 	}
 	if text := r.Replace(shell); text != shell {
-		return addReadings(out, withoutDocuments(text, false, false), text, false, viaDecoded)
+		return addReadings(out, withoutDocuments(text, false, false, reading), text, false, viaDecoded)
 	}
 	return out
 }
@@ -553,10 +553,10 @@ func addHandedReadings(out []pair, shell string) []pair {
 // hands one as surely as `sh -c` does. Any `#` will do, in a word or not: a
 // reading can only add a refusal, and a line with no comment pays two Contains
 // for it.
-func addCommentReadings(out []pair, shell string) []pair {
+func addCommentReadings(out []pair, shell string, reading assignments) []pair {
 	for _, line := range commentLines(shell) {
-		for _, text := range commentReadings(line) {
-			out = addReadings(out, withoutDocuments(text, false, false), text, false, viaDecoded)
+		for _, text := range commentReadings(line, reading) {
+			out = addReadings(out, withoutDocuments(text, false, false, reading), text, false, viaDecoded)
 		}
 	}
 	return out
@@ -583,9 +583,9 @@ func commentLines(shell string) []string {
 // shell's join is made with the documents taken out, since a document is not
 // read for quotes: the apostrophe of "don't" in one opened a string that ran to
 // the end, and the line after a comment was then read with nothing joined.
-func commentReadings(line string) []string {
+func commentReadings(line string, reading assignments) []string {
 	texts := []string{commentLinesApart(line)}
-	for _, text := range withoutDocuments(line, false, false) {
+	for _, text := range withoutDocuments(line, false, false, reading) {
 		texts = append(texts, commentsEnded(text, false), commentsEnded(text, true))
 	}
 	return texts
@@ -677,8 +677,8 @@ func commentOpens(line string, i int) bool {
 // Quotes are not followed, so a `#` in quotes counts, and a quoted string handed
 // to a shell is read in the line's own physical lines; a `$'...'` one is read
 // in the line as decoded (commentLines).
-func commentMayHideALine(command string) bool {
-	for _, text := range withoutDocuments(command, false, false) {
+func commentMayHideALine(command string, reading assignments) bool {
+	for _, text := range withoutDocuments(command, false, false, reading) {
 		lines := strings.Split(text, "\n")
 		for i, line := range lines[:len(lines)-1] {
 			line = strings.TrimSuffix(line, "\r")
@@ -761,23 +761,37 @@ func mayHandAString(line string) bool {
 // command the shell runs, and with the plain reader given that line to read,
 // taking out a quoted text with a space in it made a command plain that was
 // not, and the refusal of a path it writes said the path might only be named.
-func Inspect(command string, s State) (Finding, bool) {
+func inspectOnce(command string, s State, reading assignments) (Finding, bool) {
 	s.seen = newInspection()
 	s.seen.line = command
-	if f, refused := inspectNamed(command, s); refused {
+	if f, refused := inspectNamed(command, s, reading); refused {
 		return f, true
 	}
 	// After every rule a command was refused under before there was this one:
 	// the Claude Code sessions checkNestedSession does not read as one, where
 	// they would expand a person's command.
-	if f, refused := secondSession(command, s.PowerShell, s.seen.readingsOf); refused {
+	// Every rule below walks the line's readings, made once: made again by
+	// each, they tripled the time of a long here-string.
+	read := func(command string, powerShell bool) []pair { return s.seen.readingsOf(command, powerShell, reading) }
+	if f, refused := secondSession(command, s.PowerShell, read, reading); refused {
 		return f, true
 	}
-	if f, refused := inspectAssigned(command, s); refused {
+	if f, refused := inspectAssigned(command, s, reading); refused {
+		return f, true
+	}
+	if f, refused := checkRenamed(command, s, reading); refused {
+		return f, true
+	}
+	if f, refused := tableChanged(command, s.PowerShell, reading, read, func(value string) (Finding, bool) {
+		return inspectOnce(value, s, reading)
+	}); refused {
+		return f, true
+	}
+	if f, refused := unclosedLine(command, s.PowerShell, reading, read); refused {
 		return f, true
 	}
 	// Last, so a line a rule reads keeps that rule's reason.
-	if !s.PowerShell && slices.ContainsFunc(commentLines(command), commentMayHideALine) {
+	if !s.PowerShell && slices.ContainsFunc(commentLines(command), func(line string) bool { return commentMayHideALine(line, reading) }) {
 		return commentHidesALine(), true
 	}
 	return Finding{}, false
@@ -785,27 +799,27 @@ func Inspect(command string, s State) (Finding, bool) {
 
 // inspectNamed is Inspect without the reading of a second session, with the
 // paths a command only names let go of.
-func inspectNamed(command string, s State) (Finding, bool) {
-	if f, ok := inspectShellGlobs(command, s); ok {
+func inspectNamed(command string, s State, reading assignments) (Finding, bool) {
+	if f, ok := inspectShellGlobs(command, s, reading); ok {
 		return f, true
 	}
-	return inspectWritten(command, s)
+	return inspectWritten(command, s, reading)
 }
 
 // inspectWritten is inspectNamed for the globs as the line spells them.
-func inspectWritten(command string, s State) (Finding, bool) {
+func inspectWritten(command string, s State, reading assignments) (Finding, bool) {
 	s.whole = plainCommand(command, s)
-	n := nameOnly(command, s)
+	n := nameOnly(command, s, reading)
 	if n.rewritten(command) {
-		if _, refused := inspectAs(n.asked, n.named, s); !refused {
+		if _, refused := inspectAs(n.asked, n.named, s, reading); !refused {
 			return Finding{}, false
 		}
 	}
-	f, refused := inspectAs(command, command, s)
+	f, refused := inspectAs(command, command, s, reading)
 	if !refused {
 		return Finding{}, false
 	}
-	return n.told(f, command, s), true
+	return n.told(f, command, s, reading), true
 }
 
 // inspectAs applies the rules to a command. The rules for what a command runs
@@ -813,17 +827,17 @@ func inspectWritten(command string, s State) (Finding, bool) {
 // same line except where nameOnly took a mention out, and the text of an sdlc
 // flag is taken out of named alone, so a decision written inside a note is
 // still read as it always was.
-func inspectAs(asked, named string, s State) (Finding, bool) {
+func inspectAs(asked, named string, s State, reading assignments) (Finding, bool) {
 	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}, landed: map[string][]Landing{},
-		disk: &diskAnswers{}, whole: s.whole, tildes: namedDirectories(named)}
+		disk: &diskAnswers{}, whole: s.whole, tildes: namedDirectories(named, reading)}
 	s.hold = &branchHold{}
 	s = s.bounded()
 	var f Finding
 	var ok bool
 	if asked == named {
-		f, ok = inspectEach(asked, s, m, inspectReading)
-	} else if f, ok = inspectEach(asked, s, m, inspectPrograms); !ok {
-		f, ok = inspectEach(named, s, m, inspectPaths)
+		f, ok = inspectEach(asked, s, m, func(r pair, s State, m *memo) (Finding, bool) { return inspectReading(r, s, m, reading) }, reading)
+	} else if f, ok = inspectEach(asked, s, m, func(r pair, s State, m *memo) (Finding, bool) { return inspectPrograms(r, s, m, reading) }, reading); !ok {
+		f, ok = inspectEach(named, s, m, func(r pair, s State, m *memo) (Finding, bool) { return inspectPaths(r, s, m, reading) }, reading)
 	}
 	if ok {
 		return f, true
@@ -844,8 +858,8 @@ func inspectAs(asked, named string, s State) (Finding, bool) {
 
 // inspectEach puts every reading of a line to one set of rules, in the order
 // readings gives them.
-func inspectEach(line string, s State, m *memo, rules func(pair, State, *memo) (Finding, bool)) (Finding, bool) {
-	for _, r := range s.seen.readingsOf(line, s.PowerShell) {
+func inspectEach(line string, s State, m *memo, rules func(pair, State, *memo) (Finding, bool), reading assignments) (Finding, bool) {
+	for _, r := range s.seen.readingsOf(line, s.PowerShell, reading) {
 		// With a branch move found, a reading is started only within the
 		// bound, and its text is charged to it before it is parsed.
 		if s.hold.charge(len(r.text)) {
@@ -873,29 +887,29 @@ func inspectEach(line string, s State, m *memo, rules func(pair, State, *memo) (
 	return Finding{}, false
 }
 
-func inspectReading(r pair, s State, m *memo) (Finding, bool) {
+func inspectReading(r pair, s State, m *memo, reading assignments) (Finding, bool) {
 	if s.configOnly {
-		return inspectPaths(r, s, m)
+		return inspectPaths(r, s, m, reading)
 	}
-	if f, ok := inspectPrograms(r, s, m); ok {
+	if f, ok := inspectPrograms(r, s, m, reading); ok {
 		return f, true
 	}
-	return inspectPaths(r, s, m)
+	return inspectPaths(r, s, m, reading)
 }
 
 // inspectPrograms applies the rules for what a reading runs.
-func inspectPrograms(r pair, s State, _ *memo) (Finding, bool) {
-	if f, ok := checkAssignedEnforcement(r.text, s.PowerShell); ok {
+func inspectPrograms(r pair, s State, _ *memo, reading assignments) (Finding, bool) {
+	if f, ok := checkAssignedEnforcement(r.text, s.PowerShell, reading); ok {
 		return f, true
 	}
-	return checkPrograms(r.text, s)
+	return checkPrograms(r.text, s, reading)
 }
 
 // inspectPaths applies the rules for the paths a reading names.
-func inspectPaths(r pair, s State, m *memo) (Finding, bool) {
+func inspectPaths(r pair, s State, m *memo, reading assignments) (Finding, bool) {
 	text, command := r.text, r.command
 	w := &pathWalk{command: command, text: text, s: s, m: m, dir: s.Dir, lost: false}
-	w.unsure = movesInAScript(text, s.PowerShell)
+	w.unsure = movesInAScriptAs(text, s.PowerShell, reading)
 	w.old = unknownDir
 	// The find expression reader needs the command as it is spelled, with the
 	// separators the shell hid from find left as markers. It is made once, the
@@ -904,13 +918,13 @@ func inspectPaths(r pair, s State, m *memo) (Finding, bool) {
 	if strings.Contains(text, "$(") || strings.Contains(text, "`") {
 		w.filled = markedSegments(pathTextIn(text, s.PowerShell, true))
 	}
-	w.alike = m.readAlike(w.plain)
+	w.alike = m.readAlike(w.plain, reading)
 	w.unbalanced = quotesLeftOpen(w.plain, s.PowerShell)
 	for idx, marked := range w.plain {
 		if s.hold.charge(1) {
 			return s.hold.finding, true
 		}
-		if f, ok := w.segment(idx, marked); ok {
+		if f, ok := w.segment(idx, marked, reading); ok {
 			return f, true
 		}
 	}
@@ -920,9 +934,9 @@ func inspectPaths(r pair, s State, m *memo) (Finding, bool) {
 // checkAssignedEnforcement refuses a command that assigns one of the
 // variables the enforcement goes by, in any of its segments, or AI_AGENT as
 // its text form reads it.
-func checkAssignedEnforcement(text string, powerShell bool) (Finding, bool) {
+func checkAssignedEnforcement(text string, powerShell bool, reading assignments) (Finding, bool) {
 	for _, segment := range segments(text) {
-		if _, _, assigns := parse(segment); len(assigns) > 0 {
+		if _, _, assigns := parse(segment, reading); len(assigns) > 0 {
 			if f, ok := checkEnforcement(assigns); ok {
 				return f, true
 			}
@@ -935,7 +949,7 @@ func checkAssignedEnforcement(text string, powerShell bool) (Finding, bool) {
 			return f, true
 		}
 	}
-	return agentText(text, powerShell)
+	return agentText(text, powerShell, reading)
 }
 
 // walkPlace is where the command was when a subshell opened: what a `cd`
@@ -1013,9 +1027,9 @@ type pathWalk struct {
 
 // segment applies the path rules to one segment of the command, and then
 // follows a `cd` it makes.
-func (w *pathWalk) segment(idx int, marked string) (Finding, bool) {
+func (w *pathWalk) segment(idx int, marked string, reading assignments) (Finding, bool) {
 	w.leaving = false
-	f, ok := w.read(idx, marked)
+	f, ok := w.read(idx, marked, reading)
 	if w.leaving {
 		w.leaveScript()
 	}
@@ -1032,7 +1046,7 @@ func commandOfSegment(words, redirects []string) []string {
 }
 
 // read is segment, before the walk leaves a script the segment ends.
-func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
+func (w *pathWalk) read(idx int, marked string, reading assignments) (Finding, bool) {
 	s := w.s
 	segment, opens, closes := subshellMarks(marked, &w.ticked)
 	if !s.PowerShell {
@@ -1040,12 +1054,12 @@ func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 		w.unquoted.subshells(opens, closes)
 	}
 	quoted := w.quoting(segment)
-	words, redirects, _ := parse(segment)
+	words, redirects, _ := parse(segment, reading)
 	words = commandOfSegment(words, redirects)
 	if len(words) == 0 {
 		return Finding{}, false
 	}
-	run := programUnderEval(words)
+	run := programUnderEval(words, reading)
 	if run.unread {
 		// Past its cap the command's readings were cut short, so it is not
 		// judged on those made before the cap; the program walk refuses the
@@ -1055,10 +1069,10 @@ func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 	}
 	evals := run.evals
 	w.enters(run, quoted)
-	run.cut = w.cutWords(idx, marked)
+	run.cut = w.cutWords(idx, marked, reading)
 	s.seen.tell(s, run.words)
 	// A find's expression is read once, here, for every rule that asks.
-	found := w.find(idx, segment, run, evals)
+	found := w.find(idx, segment, run, evals, reading)
 	at, atLost, atFrom := w.runsAt(run)
 	s.seen.parents(s, at, run.words)
 	j := segmentRules{
@@ -1067,7 +1081,7 @@ func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 		certain: w.alike && evals == 0 && !atLost && len(run.words) == len(words) && w.m.readFrom(idx, at),
 		away:    takeAway{s: s, m: w.m, dir: at, lost: atLost, pwd: w.dir, pwdLost: w.lost, old: w.old, exp: &found.exp},
 	}
-	if f, ok := j.judge(segment, run); ok {
+	if f, ok := j.judge(segment, run, reading); ok {
 		return withEditorRoute(f, run.words), true
 	}
 	if found.spent && !s.configOnly {
@@ -1087,14 +1101,14 @@ func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 		whole.words = found.words
 		// These are not the words the plain reader was compared with.
 		j.certain = false
-		if f, ok := j.judge(found.segment, whole); ok {
+		if f, ok := j.judge(found.segment, whole, reading); ok {
 			if found.toEnd && !changesFiles(run.words) {
 				f = laterAction(f)
 			}
 			return f, true
 		}
 	}
-	if f, ok := w.elsewhere(j, segment, quoted, run, found); ok {
+	if f, ok := w.elsewhere(j, segment, quoted, run, found, reading); ok {
 		return f, true
 	}
 	// A script handed to a shell runs in a process of its own: its cd moves
@@ -1110,14 +1124,14 @@ func (w *pathWalk) read(idx int, marked string) (Finding, bool) {
 // elsewhere asks the rules of what the segment runs beyond its first reading's
 // words: the scripts and finds behind them, its other readings, and a quoted
 // word the walk's split cut that the shell keeps whole.
-func (w *pathWalk) elsewhere(j segmentRules, segment string, quoted bool, run invocation, found foundFind) (Finding, bool) {
-	if f, ok := w.beyondWords(j, segment, run, found); ok {
+func (w *pathWalk) elsewhere(j segmentRules, segment string, quoted bool, run invocation, found foundFind, reading assignments) (Finding, bool) {
+	if f, ok := w.beyondWords(j, segment, run, found, reading); ok {
 		return f, true
 	}
-	if f, ok := w.otherReadings(j, segment, run.cut, run.others); ok {
+	if f, ok := w.otherReadings(j, segment, run.cut, run.others, reading); ok {
 		return f, true
 	}
-	return w.asTheShellSplits(j, segment, quoted, run)
+	return w.asTheShellSplits(j, segment, quoted, run, reading)
 }
 
 // runsAt is where a reading of a segment runs, as the walk's dir, lost and
@@ -1141,7 +1155,7 @@ func (w *pathWalk) runsAt(run invocation) (at string, lost bool, from string) {
 // gave up on, read as reaching everything below where it starts (unreadFind).
 // In `strace -J 1 rm .sdlc/state/tests.lock` the first reading runs 1, and
 // the second the rm.
-func (w *pathWalk) otherReadings(j segmentRules, segment string, cut []string, readings []invocation) (Finding, bool) {
+func (w *pathWalk) otherReadings(j segmentRules, segment string, cut []string, readings []invocation, reading assignments) (Finding, bool) {
 	for _, r := range readings {
 		if len(r.words) == 0 {
 			continue
@@ -1153,10 +1167,10 @@ func (w *pathWalk) otherReadings(j segmentRules, segment string, cut []string, r
 		k.certain = false
 		found := foundFind{exp: unfollowed(causeDiffer, r.words[0], whyDiffer)}
 		k.exp, k.away.exp = &found.exp, &found.exp
-		if f, ok := k.judge(segment, r); ok {
+		if f, ok := k.judge(segment, r, reading); ok {
 			return f, true
 		}
-		if f, ok := w.beyondWords(k, segment, r, found); ok {
+		if f, ok := w.beyondWords(k, segment, r, found, reading); ok {
 			return f, true
 		}
 	}
@@ -1171,38 +1185,38 @@ func (w *pathWalk) otherReadings(j segmentRules, segment string, cut []string, r
 // and `/usr/bin/time -f '%e %M' rm .sdlc/state/tests.lock` ran a program
 // called %M (US-112, Gate 5). Only a segment that is one command, and opens
 // and closes no quote it does not close and open, is split again.
-func (w *pathWalk) asTheShellSplits(j segmentRules, segment string, quoted bool, run invocation) (Finding, bool) {
+func (w *pathWalk) asTheShellSplits(j segmentRules, segment string, quoted bool, run invocation, reading assignments) (Finding, bool) {
 	if quoted || !strings.ContainsAny(segment, `'"`) {
 		return Finding{}, false
 	}
-	l := lex(segment, w.s.PowerShell)
+	l := lexUnder(segment, w.s.PowerShell, reading)
 	if l.unclosed || l.subshells.unread != nil || len(l.commands) != 1 {
 		return Finding{}, false
 	}
 	words := l.commands[0]
-	for len(words) > 0 && isAssignment(words[0]) {
+	for len(words) > 0 && reading.is(words[0]) {
 		words = words[1:]
 	}
-	split := programUnderEval(words)
+	split := programUnderEval(words, reading)
 	if len(split.words) == 0 || len(run.words) > 0 && split.words[0] == run.words[0] {
 		return Finding{}, false
 	}
 	if split.unread {
 		return tooManyReadings(words[0], false), true
 	}
-	return w.otherReadings(j, segment, run.cut, append([]invocation{split}, split.others...))
+	return w.otherReadings(j, segment, run.cut, append([]invocation{split}, split.others...), reading)
 }
 
 // cutWords are the words of the segment at idx, as the path rules read them,
 // that a substitution inside them was cut from: gluedIn drops one that does not
 // start a word, so `cp -r /tmp/p/x$(echo y) ..` was read as copying the plain
 // name /tmp/p/x, where the shell copies whatever the substitution names.
-func (w *pathWalk) cutWords(idx int, marked string) []string {
+func (w *pathWalk) cutWords(idx int, marked string, reading assignments) []string {
 	if idx >= len(w.filled) {
 		return nil
 	}
-	read, _ := spelledFields(marked)
-	filled, _ := spelledFields(w.filled[idx])
+	read, _ := spelledFields(marked, reading)
+	filled, _ := spelledFields(w.filled[idx], reading)
 	var cut []string
 	for i := range min(len(read), len(filled)) {
 		if read[i] != filled[i] {
@@ -1214,20 +1228,20 @@ func (w *pathWalk) cutWords(idx int, marked string) []string {
 
 // beyondWords asks what the segment's own words, judged where the walk is, do
 // not show: the commands a find's -exec runs, then where a lost walk could be.
-func (w *pathWalk) beyondWords(j segmentRules, segment string, run invocation, found foundFind) (Finding, bool) {
-	if f, ok := judgeExecs(j, segment, run, found); ok {
+func (w *pathWalk) beyondWords(j segmentRules, segment string, run invocation, found foundFind, reading assignments) (Finding, bool) {
+	if f, ok := judgeExecs(j, segment, run, found, reading); ok {
 		return f, true
 	}
-	if f, ok := w.linkedWalk(j, segment, run); ok {
+	if f, ok := w.linkedWalk(j, segment, run, reading); ok {
 		return f, true
 	}
-	if f, ok := w.scriptStart(j, segment, run); ok {
+	if f, ok := w.scriptStart(j, segment, run, reading); ok {
 		return f, true
 	}
-	if f, ok := w.lostWalk(j, segment, run); ok {
+	if f, ok := w.lostWalk(j, segment, run, reading); ok {
 		return f, true
 	}
-	return w.fromUnquoted(j, segment, run)
+	return w.fromUnquoted(j, segment, run, reading)
 }
 
 // linkedWalk asks the path rules of a segment once more from where the
@@ -1236,7 +1250,7 @@ func (w *pathWalk) beyondWords(j segmentRules, segment string, run invocation, f
 // cd gave it: with st a link to the loop's state, `cd st && touch
 // ../config.json` wrote the loop's configuration, read as the project's own
 // config.json (US-035, code review round 4).
-func (w *pathWalk) linkedWalk(j segmentRules, segment string, run invocation) (Finding, bool) {
+func (w *pathWalk) linkedWalk(j segmentRules, segment string, run invocation, reading assignments) (Finding, bool) {
 	// Only after a cd: where the command starts is placed by the hook as the
 	// disk has it.
 	if w.lost || w.kept == "" || w.dir == "" || run.chdir != "" || j.s.Resolve == nil {
@@ -1249,14 +1263,14 @@ func (w *pathWalk) linkedWalk(j segmentRules, segment string, run invocation) (F
 	k := j
 	k.dir, k.certain = at, false
 	k.away.dir = at
-	return k.judge(segment, run)
+	return k.judge(segment, run, reading)
 }
 
 // judgeExecs asks the path rules of each command a find's -exec runs, as they
 // ask of the command xargs runs: asked of find alone, `find q -exec cp -r {}
 // .. \;` was allowed where its xargs twin was refused (verifier r4 gap 1). The
 // find is judged first, so a refusal of it keeps its rule.
-func judgeExecs(j segmentRules, segment string, run invocation, found foundFind) (Finding, bool) {
+func judgeExecs(j segmentRules, segment string, run invocation, found foundFind, reading assignments) (Finding, bool) {
 	words := run.words
 	if found.more {
 		words = found.words
@@ -1266,7 +1280,7 @@ func judgeExecs(j segmentRules, segment string, run invocation, found foundFind)
 	}
 	j.certain = false
 	for _, command := range execCommands(words[1:], found.exp) {
-		exec := program(command)
+		exec := program(command, reading)
 		if exec.unread {
 			// Its readings were cut short at the cap. ClaudeConfigWrites runs
 			// this walk alone, with no program walk to count them first
@@ -1281,7 +1295,7 @@ func judgeExecs(j segmentRules, segment string, run invocation, found foundFind)
 			// from the path rules' words, which lost a substitution inside a
 			// word; the reader's own keep it as `$SUB`.
 			e.cut = run.cut
-			if f, ok := j.judge(segment, e); ok {
+			if f, ok := j.judge(segment, e, reading); ok {
 				return f, true
 			}
 		}
@@ -1315,11 +1329,11 @@ func execCommands(args []string, exp findExpression) [][]string {
 
 // lostWalk is what is known of a lost walk asked of the segment
 // (lostPlace.judge), where the segment runs where the walk is.
-func (w *pathWalk) lostWalk(j segmentRules, segment string, run invocation) (Finding, bool) {
+func (w *pathWalk) lostWalk(j segmentRules, segment string, run invocation, reading assignments) (Finding, bool) {
 	if run.chdir != "" || !w.lost || w.s.configOnly {
 		return Finding{}, false
 	}
-	return w.near.judge(j, segment, run, w.dir)
+	return w.near.judge(j, segment, run, w.dir, reading)
 }
 
 // follow moves the walk to where a `cd` among the segment's words leaves the
@@ -1422,14 +1436,14 @@ func (w *pathWalk) subshells(opens, closes int) {
 
 // find reads the expression of a segment that runs find, and is the zero
 // answer for one that does not.
-func (w *pathWalk) find(idx int, segment string, run invocation, evals int) foundFind {
+func (w *pathWalk) find(idx int, segment string, run invocation, evals int, reading assignments) foundFind {
 	if len(run.words) == 0 || base(run.words[0]) != "find" {
 		return foundFind{}
 	}
 	if w.scan == nil {
-		w.scan = newFindScan(findSpelling(w.text, w.s.PowerShell), w.plain)
+		w.scan = newFindScan(findSpelling(w.text, w.s.PowerShell), w.plain, reading)
 	}
-	return w.scan.read(idx, segment, run.words, evals)
+	return w.scan.read(idx, segment, run.words, evals, reading)
 }
 
 // movedTo reports whether a move to next leaves the command somewhere the
@@ -1470,21 +1484,43 @@ type segmentRules struct {
 }
 
 // judge asks the path rules about a command of the segment, spelled segment.
-func (j segmentRules) judge(segment string, run invocation) (Finding, bool) {
+func (j segmentRules) judge(segment string, run invocation, reading assignments) (Finding, bool) {
+	f, ok := j.judgeRules(segment, run, reading)
+	if ok && run.alias != "" {
+		f = definingAlias(f, definedAlias{name: run.alias, value: aliasValueIn(segment, run.alias, j.s.PowerShell)})
+	}
+	return f, ok
+}
+
+// aliasValueIn is the value the alias name is given in segment, read as the
+// shell reads its quotes, which the path rules' words do not follow.
+func aliasValueIn(segment, name string, powerShell bool) string {
+	for _, words := range lex(segment, powerShell).commands {
+		for _, w := range words {
+			if value, ok := strings.CutPrefix(w, name+"="); ok && value != "" {
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+// judgeRules is judge before the clause an alias's value is refused with.
+func (j segmentRules) judgeRules(segment string, run invocation, reading assignments) (Finding, bool) {
 	run.words = withEnvironmentOptions(run.words, j.command, j.s.Carried)
 	q := pathQuestion{
 		line: j.command, segment: segment, exp: j.exp, run: run, redirects: j.redirects,
 		dir: j.dir, lost: j.lost, from: j.from, certain: j.certain, s: j.s, m: j.m,
 	}
 	if j.s.configOnly {
-		return checkPersonsConfig(q)
+		return checkPersonsConfig(q, reading)
 	}
 	// A glob that can come back through `..` is refused for that first,
 	// under the same rule: refused for the `.sdlc` it could match as well,
 	// `rm -rf build/.*` was sent to `sdlc artifact write` when it had asked
 	// to clear a directory.
 	if backThroughDotDot(run.words) {
-		if f, ok := checkTakesACheckout(j.command, segment, run, j.away); ok {
+		if f, ok := checkTakesACheckout(j.command, segment, run, j.away, reading); ok {
 			return f, true
 		}
 	}
@@ -1495,42 +1531,42 @@ func (j segmentRules) judge(segment string, run invocation) (Finding, bool) {
 	}
 	// Before the loop-state rule too, whose name match refuses a ~/.agents
 	// word as the project's .agents.
-	if f, ok := checkAgentsNamedWord(q); ok {
+	if f, ok := checkAgentsNamedWord(q, reading); ok {
 		return f, true
 	}
-	if f, ok := checkLoopState(q); ok {
+	if f, ok := checkLoopState(q, reading); ok {
 		return f, true
 	}
 	// The freeze counts a script that moves and then writes as lost too.
 	frozen := q
 	frozen.lost = j.lost || j.unsure
-	if f, ok := checkFrozenTests(frozen); ok {
+	if f, ok := checkFrozenTests(frozen, reading); ok {
 		return f, true
 	}
 	// After the rules a command was refused under before there was one, so
 	// that it keeps the rule it was refused under.
-	if f, ok := checkTakesACheckout(j.command, segment, run, j.away); ok {
+	if f, ok := checkTakesACheckout(j.command, segment, run, j.away, reading); ok {
 		return f, true
 	}
 	// Last for the same reason: a write the rules above refuse keeps their
 	// name.
-	if f, ok := checkPersonsConfig(q); ok {
+	if f, ok := checkPersonsConfig(q, reading); ok {
 		return f, true
 	}
 	if f, ok := checkFromDisk(q); ok {
 		return f, true
 	}
-	return checkFillsAbove(q)
+	return checkFillsAbove(q, reading)
 }
 
-// movesInAScript reports whether a script handed to a shell changes directory
-// and then writes a file. The path rules read a quoted script's commands as
-// segments of the command around it, from the directory outside it, so where
-// that write lands is not known to them: `sh -c 'cd internal && cp e
-// x_test.go'`. A script that moves and writes nothing says nothing about the
-// rest of the command.
-func movesInAScript(text string, powerShell bool) bool {
-	runs, subshells := programsAt(text, powerShell)
+// movesInAScriptAs reports whether, under reading, a script handed to a
+// shell changes directory and then writes a file. The path rules read a
+// quoted script's commands as segments of the command around it, from the
+// directory outside it, so where that write lands is not known to them:
+// `sh -c 'cd internal && cp e x_test.go'`. A script that moves and writes
+// nothing says nothing about the rest of the command.
+func movesInAScriptAs(text string, powerShell bool, reading assignments) bool {
+	runs, subshells := programsAt(text, powerShell, reading)
 	moved := map[int]bool{}
 	for _, r := range runs {
 		if len(r.words) == 0 || r.extra {
@@ -1557,13 +1593,13 @@ func movesInAScript(text string, powerShell bool) bool {
 // checkPrograms applies the rules that turn on which program a command runs,
 // read with its quoting: the sdlc subcommands a person keeps, a review recorded
 // by its reviewer, and the commit gate.
-func checkPrograms(text string, s State) (Finding, bool) {
+func checkPrograms(text string, s State, reading assignments) (Finding, bool) {
 	// Where each subshell is. A `cd` moves only the subshell it runs in, and a
 	// subshell starts where the one that opened it was. Followed as a move of
 	// the shell around it, `(cd .. && ls) && git commit` was a commit in another
 	// repository; not followed at all, `(cd /tmp/fixture && git commit)` was a
 	// commit in this one.
-	runs, subshells := programsAt(text, s.PowerShell)
+	runs, subshells := programsAt(text, s.PowerShell, reading)
 	if subshells.unread != nil {
 		return *subshells.unread, true
 	}
@@ -1593,7 +1629,7 @@ func checkPrograms(text string, s State) (Finding, bool) {
 	w.env = newEnvironment(text, s, subshells)
 	w.git = &gitRules{s: s, m: &memo{landed: map[string][]Landing{}}}
 	for _, r := range runs {
-		if f, ok := w.run(r); ok {
+		if f, ok := w.run(r, reading); ok {
 			return inSubscript(f, r), true
 		}
 	}
@@ -1603,13 +1639,31 @@ func checkPrograms(text string, s State) (Finding, bool) {
 // inSubscript is f, the refusal of r, with what brought r to be read where it
 // came from a substitution inside `[ ]` in a word, which no rule's own words
 // say: a person who had quoted the text met a refusal of a command they had
-// not run, with nothing that named the brackets (human advocate, Gate 7).
+// not run, with nothing that named the brackets (human advocate, Gate 7). An
+// alias's value says so too (definingAlias).
 func inSubscript(f Finding, r ran) Finding {
+	f = definingAlias(f, r.alias)
 	if r.subscript {
 		f.Reason += "; it was read from a `$( )` or a backtick inside `[ ]` in a word, which bash and zsh run " +
 			"where they read the word as a number or a name, quoted or not"
 		f.Route += "; if it is only text, keep the substitution out of the brackets, or write the text to a file " +
 			"with a file tool"
+	}
+	return f
+}
+
+// definingAlias is f, the refusal of what an alias's value runs, with a
+// clause that says so where a is an alias: the value is read where the alias
+// is defined, so the refusal stands on a line that runs nothing yet, and its
+// own reason named a command the person never wrote out.
+func definingAlias(f Finding, a definedAlias) Finding {
+	switch {
+	case a.name == "":
+	case a.value == "":
+		f.Reason += "; defining the alias `" + a.name + "` is refused: an alias is read as the command it runs"
+	default:
+		f.Reason += "; defining the alias `" + a.name + "` is refused: it runs `" + a.value +
+			"`, and an alias is read as the command it runs"
 	}
 	return f
 }
@@ -1630,28 +1684,46 @@ type programWalk struct {
 
 // run applies the program rules to one command, and then follows a move it
 // makes.
-func (w *programWalk) run(r ran) (Finding, bool) {
+// extraRun reads a script with its substitutions standing where they were.
+func (w *programWalk) extraRun(r ran, dir string, reading assignments) (Finding, bool) {
+	// Read without them, `sh -c "sdlc $(printf review) add …"` was a written
+	// `sdlc add` and recorded the code reviewer's approval.
+	if f, ok := checkReviewer(r.words, r.marked, r.substituted, w.s); ok {
+		return f, true
+	}
+	if _, ok := checkUnread(r.words, r.marked, false, r.substituted, w.s.PowerShell, w.s.undecoded); ok {
+		return madeFinding(madeInScript), true
+	}
+	if _, f, ok := w.git.check(r, dir, w.env, 0, false, reading); ok {
+		return f, true
+	}
+	// Read without its substitutions, `sh plugin/bin/sdlc-hook
+	// "$(echo UserPromptExpansion)"` ran the launcher on no event at all.
+	if f, ok := checkHandRunHook(r, w.text); ok {
+		return f, true
+	}
+	return checkAgentEnv(r, w.text)
+}
+
+func (w *programWalk) run(r ran, reading assignments) (Finding, bool) {
 	words := r.words
 	dir, unplaced := w.place(r.group)
 	w.env.record(r)
 	w.git.lost = unplaced
 	if r.extra {
-		if _, f, ok := w.git.check(r, dir, w.env, 0, false); ok {
-			return f, true
-		}
-		// Read without its substitutions, `sh plugin/bin/sdlc-hook
-		// "$(echo UserPromptExpansion)"` ran the launcher on no event at all.
-		if f, ok := checkHandRunHook(r, w.text); ok {
-			return f, true
-		}
-		return checkAgentEnv(r, w.text)
+		return w.extraRun(r, dir, reading)
 	}
 	if len(words) == 0 {
 		// An assignment alone: `V=AI_AGENT`, kept for a later `unset "$V"`.
 		return checkAgentEnv(r, w.text)
 	}
 	w.s.seen.tell(w.s, words)
-	if f, ok := checkSdlcCommands(words, r.piped, r.substituted, w.s); ok {
+	// In a string a shell runs later, a made subcommand is refused as any
+	// made word there is: only on the line is it checkUnread's, by name.
+	if r.script && madeSubcommand(words, r.marked, w.s.PowerShell) {
+		return madeFinding(madeInScript), true
+	}
+	if f, ok := checkSdlcCommands(words, r.marked, r.piped, r.substituted, w.s); ok {
 		return f, true
 	}
 	// After the rules above, so that what any of them refused keeps its name.
@@ -1661,7 +1733,7 @@ func (w *programWalk) run(r ran) (Finding, bool) {
 	// Asked before the commit gate and answered after it, so that a commit
 	// the gate refused before git was read this way keeps the rule it was
 	// refused under.
-	commit, gitFinding, refused := w.git.check(r, dir, w.env, 0, false)
+	commit, gitFinding, refused := w.git.check(r, dir, w.env, 0, false, reading)
 	// env -C runs the command where it says, as a cd in front of it
 	// would. Read from where the shell was, `env -C <main checkout> git
 	// commit` was a commit in this one.
@@ -1707,7 +1779,7 @@ func (w *programWalk) place(group int) (dir string, unplaced bool) {
 // checkSdlcCommands applies the rules for what a command hands sdlc, each
 // under its own name and in this order. cut is set for a command a word of
 // which held a substitution, where a help flag is not believed.
-func checkSdlcCommands(words []string, piped, cut bool, s State) (Finding, bool) {
+func checkSdlcCommands(words, marked []string, piped, cut bool, s State) (Finding, bool) {
 	if f, ok := checkAssign(words, piped, cut); ok {
 		return f, true
 	}
@@ -1732,28 +1804,28 @@ func checkSdlcCommands(words []string, piped, cut bool, s State) (Finding, bool)
 	if f, ok := checkStop(words, s); ok {
 		return f, true
 	}
-	if f, ok := checkReviewer(words, s); ok {
+	if f, ok := checkReviewer(words, marked, cut, s); ok {
 		return f, true
 	}
 	// After the rules above, so that what a person keeps and a review that is
 	// not the project manager's are refused under their own names; and the
 	// subcommand that cannot be read last, so that one from the project
 	// manager is refused as everything else it may not run is.
-	return checkManagerAndLast(words, piped, cut, s)
+	return checkManagerAndLast(words, marked, piped, cut, s)
 }
 
 // checkManagerAndLast applies the project manager's rule and the two after
 // it.
-func checkManagerAndLast(words []string, piped, cut bool, s State) (Finding, bool) {
+func checkManagerAndLast(words, marked []string, piped, cut bool, s State) (Finding, bool) {
 	f, ok := checkManager(words, s, func(args []string) bool { return !cut && asksForHelp(args) })
 	if !ok {
-		return checkLast(words, piped)
+		return checkLast(words, marked, piped, cut, s.PowerShell, s.undecoded)
 	}
 	// A command with a help flag that sdlc would not read as help alone was
 	// let past this rule before, and some were then refused by one after it.
 	// Those keep the name they were refused under.
 	if _, before := checkManager(words, s, namesHelp); !before {
-		if later, ok := checkLast(words, piped); ok {
+		if later, ok := checkLast(words, marked, piped, cut, s.PowerShell, s.undecoded); ok {
 			return later, true
 		}
 	}
@@ -1761,8 +1833,8 @@ func checkManagerAndLast(words []string, piped, cut bool, s State) (Finding, boo
 }
 
 // checkLast applies the two rules that come after the project manager's.
-func checkLast(words []string, piped bool) (Finding, bool) {
-	if f, ok := checkUnread(words, piped); ok {
+func checkLast(words, marked []string, piped, cut, powerShell, undecoded bool) (Finding, bool) {
+	if f, ok := checkUnread(words, marked, piped, cut, powerShell, undecoded); ok {
 		return f, true
 	}
 	return checkNestedSession(words)
@@ -1923,30 +1995,40 @@ func mayName(text, name string) bool {
 // A command that only asks sdlc for help decides nothing, and is not reported:
 // the command is read with each of those taken out, as Inspect reads it, and
 // what is reported is what the command as written is reported for.
-func HumanDecisions(command string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
-	if f, reported := humanDecisionsNamed(command, powerShell, storyWaits); reported {
+func humanDecisionsOnce(command string, powerShell bool, storyWaits func(dir string) bool, reading assignments) (Finding, bool) {
+	if f, reported := humanDecisionsNamed(command, powerShell, storyWaits, reading); reported {
 		return f, true
 	}
 	// A Claude Code session started from here that would expand a person's
 	// slash command makes the decision as surely as the command would, in a
 	// session that holds no story as in the one that does. Asked after the
 	// decisions, so that each keeps the name it was reported under.
-	return secondSession(command, powerShell, readings)
+	seen := newInspection()
+	read := func(command string, powerShell bool) []pair { return seen.readingsOf(command, powerShell, reading) }
+	if f, ok := secondSession(command, powerShell, read, reading); ok {
+		return f, true
+	}
+	if f, ok := tableChanged(command, powerShell, reading, read, func(value string) (Finding, bool) {
+		return humanDecisionsOnce(value, powerShell, storyWaits, reading)
+	}); ok {
+		return f, true
+	}
+	return unclosedLine(command, powerShell, reading, read)
 }
 
 // humanDecisionsNamed is HumanDecisions without the reading of a second
 // session, with the commands that only ask for help let go of.
-func humanDecisionsNamed(command string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
-	n := nameOnly(command, State{PowerShell: powerShell})
+func humanDecisionsNamed(command string, powerShell bool, storyWaits func(dir string) bool, reading assignments) (Finding, bool) {
+	n := nameOnly(command, State{PowerShell: powerShell}, reading)
 	if n.asked != command {
-		if _, reported := humanDecisionsAs(n.asked, powerShell, storyWaits); !reported {
+		if _, reported := humanDecisionsAs(n.asked, powerShell, storyWaits, reading); !reported {
 			return Finding{}, false
 		}
 	}
-	return humanDecisionsAs(command, powerShell, storyWaits)
+	return humanDecisionsAs(command, powerShell, storyWaits, reading)
 }
 
-func humanDecisionsAs(command string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
+func humanDecisionsAs(command string, powerShell bool, storyWaits func(dir string) bool, reading assignments) (Finding, bool) {
 	// Both readings, as Inspect asks them and in the same order. This is the
 	// entry point the hook uses when no story is being worked on (hook.go:229),
 	// so it is where an approval, an unfreeze or an ack is reported at all: a
@@ -1954,8 +2036,8 @@ func humanDecisionsAs(command string, powerShell bool, storyWaits func(dir strin
 	// the shape the four rows of
 	// TestTheShapesOnlyTheReleasedReadingRefusesStayRefused hold for Inspect
 	// stops being reported here.
-	for _, r := range readings(command, powerShell) {
-		if f, ok := humanDecisionsOn(r.text, powerShell, storyWaits); ok {
+	for _, r := range readings(command, powerShell, reading) {
+		if f, ok := humanDecisionsOn(r.text, powerShell, r.undecoded, storyWaits, reading); ok {
 			f.Via = r.via
 			return f, true
 		}
@@ -1963,8 +2045,14 @@ func humanDecisionsAs(command string, powerShell bool, storyWaits func(dir strin
 	return Finding{}, false
 }
 
-func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) bool) (Finding, bool) {
-	runs, subshells := programsAt(text, powerShell)
+func humanDecisionsOn(text string, powerShell, undecoded bool, storyWaits func(dir string) bool, reading assignments) (Finding, bool) {
+	return humanDecisionsAt(text, powerShell, undecoded, storyWaits, reading, 0)
+}
+
+// humanDecisionsAt is humanDecisionsOn for a git alias's command line depth
+// aliases deep, read as the line it hands the shell.
+func humanDecisionsAt(text string, powerShell, undecoded bool, storyWaits func(dir string) bool, reading assignments, depth int) (Finding, bool) {
+	runs, subshells := programsAt(text, powerShell, reading)
 	if subshells.unread != nil {
 		return *subshells.unread, true
 	}
@@ -1972,36 +2060,83 @@ func humanDecisionsOn(text string, powerShell bool, storyWaits func(dir string) 
 	// a move there was one that cannot be read.
 	places := map[int]decisionPlace{0: {dir: "."}}
 	for _, r := range runs {
-		// A script read again with its substitutions in place is asked only
-		// whether it runs the hook, as the program walk asks it; the other
-		// rules read the script once, as they always have.
+		// A script read again with its substitutions in place is asked
+		// whether it runs the hook, as the program walk asks it, and then
+		// whether sdlc's program word or subcommand is made there; the
+		// person's own rules read the script once, so their names hold.
 		if len(r.words) == 0 || r.extra {
-			if f, ok := wordlessDecision(r, text); ok {
+			if f, ok := wordlessDecision(r, text, powerShell, undecoded); ok {
 				return inSubscript(f, r), true
 			}
 			continue
 		}
 		here := placeIn(places, subshells.parent, r.group)
-		if f, ok := humanDecisionBy(r, here, text, storyWaits); ok {
+		if f, ok := humanDecisionBy(r, here, text, powerShell, undecoded, storyWaits); ok {
 			return inSubscript(f, r), true
 		}
 		if next, ok := changedDir(here.dir, r.words); ok {
 			places[r.group] = here.moved(r, next)
 		}
 	}
+	if f, ok := renamedDecisions(runs, places, subshells, text, powerShell, undecoded, storyWaits); ok {
+		return f, true
+	}
+	if f, ok := gitAliasDecisions(text, runs, subshells, powerShell, storyWaits, reading, depth); ok {
+		return f, true
+	}
 	// AI_AGENT as text, last, as Inspect reads it beside setsSession: a
 	// session that holds no story can still forge a recorded event.
-	return agentText(text, powerShell)
+	return agentText(text, powerShell, reading)
+}
+
+// renamedDecisions asks the runs a line's renames splice, where each run
+// stands.
+func renamedDecisions(runs []ran, places map[int]decisionPlace, t *subshells, text string, powerShell, undecoded bool,
+	storyWaits func(dir string) bool) (Finding, bool) {
+	for _, r := range renamedRuns(runs) {
+		if f, ok := humanDecisionBy(r, placeIn(places, t.parent, r.group), text, powerShell, undecoded, storyWaits); ok {
+			return renamedFinding(f, r), true
+		}
+	}
+	return Finding{}, false
+}
+
+// gitAliasDecisions asks the command lines the line's git aliases hand the
+// shell, to the depth the git rules read aliases to.
+func gitAliasDecisions(text string, runs []ran, t *subshells, powerShell bool, storyWaits func(dir string) bool,
+	reading assignments, depth int) (Finding, bool) {
+	if depth >= maxGitDepth {
+		return Finding{}, false
+	}
+	lines, unreadAlias := gitAliasLines(text, runs, t, powerShell)
+	for _, line := range lines {
+		if f, ok := humanDecisionsAt(line, false, false, storyWaits, reading, depth+1); ok {
+			return gitAliasFinding(f, strings.HasSuffix(line, " "+cutMark)), true
+		}
+	}
+	if unreadAlias {
+		// A value the shell makes is a made word in what sdlc may be handed.
+		f := unread(false)
+		f.Reason = "a git alias on this line has a value the shell makes when the command runs, so the hook cannot " +
+			"read the command line git hands the shell, and it could be a command only a person runs"
+		f.Route = "write the alias's value out, with no variable or substitution in it"
+		return f, true
+	}
+	return Finding{}, false
 }
 
 // wordlessDecision asks a command with no words, or a script read again with
-// its substitutions in place, the two questions such a command can answer:
-// whether it runs the hook, and whether it takes AI_AGENT away.
-func wordlessDecision(r ran, text string) (Finding, bool) {
+// its substitutions in place, the questions such a command can answer:
+// whether it runs the hook, whether it takes AI_AGENT away, and for the script
+// whether sdlc's program word or subcommand is made there.
+func wordlessDecision(r ran, text string, powerShell, undecoded bool) (Finding, bool) {
 	if f, ok := checkHandRunHook(r, text); ok {
 		return f, true
 	}
-	return checkAgentEnv(r, text)
+	if f, ok := checkAgentEnv(r, text); ok || !r.extra {
+		return f, ok
+	}
+	return checkUnread(r.words, r.marked, r.piped, r.substituted, powerShell, undecoded)
 }
 
 // placeIn is where the subshell group is, from the nearest one followed
@@ -2032,7 +2167,7 @@ func (here decisionPlace) moved(r ran, next string) decisionPlace {
 
 // humanDecisionBy refuses one command, run from here, that makes a decision
 // a person keeps, or that takes AI_AGENT away. text is the reading.
-func humanDecisionBy(r ran, here decisionPlace, text string, storyWaits func(dir string) bool) (Finding, bool) {
+func humanDecisionBy(r ran, here decisionPlace, text string, powerShell, undecoded bool, storyWaits func(dir string) bool) (Finding, bool) {
 	// An assignment is refused whatever the project holds, as an
 	// acknowledgement is: a person can assign to a story at any point after
 	// it is started, so whether one waits is never asked.
@@ -2065,7 +2200,7 @@ func humanDecisionBy(r ran, here decisionPlace, text string, storyWaits func(dir
 	}
 	// After the decision above, so that an approval or an unfreeze handed
 	// to sdlc on standard input keeps the name of its own rule.
-	if f, ok := checkUnread(r.words, r.piped); ok {
+	if f, ok := checkUnread(r.words, r.marked, r.piped, r.substituted, powerShell, undecoded); ok {
 		return f, true
 	}
 	// Last but one, so that `echo UserPromptExpansion | xargs sdlc hook`
@@ -2107,6 +2242,9 @@ func assignedNames(assigns []string) []string {
 	names := make([]string, 0, len(assigns))
 	for _, a := range assigns {
 		name, _, _ := strings.Cut(a, "=")
+		if read, ok := readAssignment(a); ok {
+			name = read.name
+		}
 		names = append(names, name)
 	}
 	return names
@@ -2289,13 +2427,43 @@ func checkRemap(words []string) (Finding, bool) {
 
 // checkReviewer keeps a review the reviewer's own.
 //
+// The words are read on their marks, from sdlc to the gate and role pair: a
+// word the shell makes there could hand sdlc another reviewer's gate and role
+// than the words show, so it is refused to every agent, the reviewer it may
+// name among them. Read on the words alone, `code-reviewer-$N`, `"$ROLE"` and
+// a made value between the gate and the role passed as the agent's own.
+//
 // Every reviewer records its own verdict with `sdlc review add`, and nothing
 // asked who was running it: the implementer could record the code reviewer's
 // approval of its own work, and the gate passed on it. A person recording one
-// in their own terminal is not asked.
-func checkReviewer(words []string, s State) (Finding, bool) {
-	role, ok := reviewRole(words)
-	if !ok || role == s.Agent {
+// in their own terminal is not asked. An instance's review is its role's to
+// record, since the one agent of the role runs as each instance; the role of the
+// name is what is compared, so an agent whose own name reads like an instance's
+// is no reviewer.
+func checkReviewer(words, marked []string, cut bool, s State) (Finding, bool) {
+	words, marks := linedUp(words, marked)
+	if f, ok := checkMadeProgram(words, marks, cut, s.PowerShell, s.undecoded); ok {
+		return f, true
+	}
+	role := ""
+	for _, u := range sdlcUses(words) {
+		if u.way != ranSdlc {
+			continue
+		}
+		read, f, refused := reviewUse(words, marks, len(words)-len(u.args), cut, s.PowerShell)
+		if refused {
+			return f, true
+		}
+		if role == "" {
+			role = read
+		}
+	}
+	// The released reading, which finds sdlc behind a program it does not
+	// know as well, still answers where the closed reading found no pair.
+	if role == "" {
+		role, _ = reviewRole(words)
+	}
+	if role == "" || model.BaseRole(role) == s.Agent {
 		return Finding{}, false
 	}
 	who := "the main conversation"
@@ -2306,7 +2474,7 @@ func checkReviewer(words []string, s State) (Finding, bool) {
 		Rule: "review-is-recorded-by-its-reviewer",
 		Reason: who + " is recording a review as " + role + ", and a review is only worth " +
 			"having from the reviewer it names",
-		Route: "delegate to sdlc:" + role + ", which reads the work and records its own verdict " +
+		Route: "delegate to sdlc:" + model.BaseRole(role) + ", which reads the work and records its own verdict " +
 			"with `sdlc review add`",
 	}, true
 }
@@ -2456,7 +2624,7 @@ func findChanges(words []string) bool {
 }
 
 // checkLoopState stops the shell being the way around every other rule.
-func checkLoopState(q pathQuestion) (Finding, bool) {
+func checkLoopState(q pathQuestion, reading assignments) (Finding, bool) {
 	segment, run := q.segment, q.run
 	if q.findsOutside() {
 		// find does not leave where it starts: only where its output is sent
@@ -2495,7 +2663,7 @@ func checkLoopState(q pathQuestion) (Finding, bool) {
 	// A glob given to find that cannot be read could pick any of the loop's own
 	// files, from a directory that can come to them; and so could an expression
 	// the reader cannot follow at all.
-	return q.unreadFind(ruleLoopState, nil, func(string) string { return "the loop's own files" })
+	return q.unreadFind(ruleLoopState, nil, func(string) string { return "the loop's own files" }, reading)
 }
 
 // optionsLast is words with the options, those that start with `-` before a
@@ -2718,12 +2886,12 @@ func loopFileFinding(c string, s State, m *memo) (Finding, bool) {
 // come to what the rule protects. frozen is the frozen tests, or nil for the
 // loop's own files alone, and what names what is protected, given the test
 // the root holds.
-func (q pathQuestion) unreadFind(rule string, frozen []string, what func(test string) string) (Finding, bool) {
+func (q pathQuestion) unreadFind(rule string, frozen []string, what func(test string) string, reading assignments) (Finding, bool) {
 	run := q.run
 	if len(run.words) == 0 || base(run.words[0]) != "find" || !changesFiles(run.words) {
 		return Finding{}, false
 	}
-	if glob, cause, ok := unreadGlob(q.segment, run.words); ok {
+	if glob, cause, ok := unreadGlob(q.segment, run.words, reading); ok {
 		if r, test, ok := q.rootThatCouldHold(frozen); ok {
 			return unreadFinding(rule, glob, r, cause, what(test), placedRoot(r, q.dir, q.lost, q.s, q.m)), true
 		}
@@ -2795,7 +2963,7 @@ func sharedState(word string, s State, m *memo) (Finding, bool) {
 // shell command went straight past them: `Write` to `x_test.go` was refused as
 // a frozen acceptance test, and `echo cheat > x_test.go` was allowed. One
 // redirect was the whole way round the hinge the loop turns on.
-func checkFrozenTests(q pathQuestion) (Finding, bool) {
+func checkFrozenTests(q pathQuestion, reading assignments) (Finding, bool) {
 	s, run := q.s, q.run
 	if len(s.Frozen) == 0 && s.IsTest == nil && s.NewTest == nil && s.ImplementerTest == nil {
 		return Finding{}, false
@@ -2840,7 +3008,7 @@ func checkFrozenTests(q pathQuestion) (Finding, bool) {
 	}
 	return q.unreadFind(ruleFrozenTest, s.Frozen, func(test string) string {
 		return "a frozen acceptance test (" + cmp.Or(test, s.Frozen[0]) + ")"
-	})
+	}, reading)
 }
 
 // frozenByName is whether a bare name is read as the end of a frozen path.
@@ -3492,8 +3660,10 @@ type invocation struct {
 	cleared bool
 	unsets  []string
 	// evals counts the builtins programUnderEval took off the front of this
-	// reading: eval, trap's action, emulate -c and mapfile's -C callback.
+	// reading: eval, trap's action, emulate -c, mapfile's -C callback and an
+	// alias's value; alias is the alias whose value it is, or "".
 	evals int
+	alias string
 	// others are the command's readings besides this one, and unread is set
 	// where it has more than maxReadings of them, past which none was made.
 	// Only the first reading has either; everyReading gives them all.
@@ -3507,7 +3677,7 @@ type invocation struct {
 // nothing: run then has its words. A wrapper whose options are in a table
 // (optionTables) is read by it, and an option the table does not know forks
 // the reading into w.
-func (w *worklist) unwrap(run *invocation, first string, words []string) ([]string, bool) {
+func (w *worklist) unwrap(run *invocation, first string, words []string, reading assignments) ([]string, bool) {
 	switch name := base(first); name {
 	case "if", "then", "else", "elif", "do", "while", "until",
 		// zsh's precommand modifiers run the command after them as it is:
@@ -3530,7 +3700,7 @@ func (w *worklist) unwrap(run *invocation, first string, words []string) ([]stri
 		// environment with -c and -d (security, round 3, N2).
 		words = run.arch(words[1:])
 	case "env":
-		words = run.env(words[1:])
+		words = run.env(words[1:], reading)
 	case "command", "builtin", "nohup", "setsid", "unbuffer", "chronic", "firejail", "valgrind":
 		// Their options are flags, or --name=value.
 		words = skipOptions(words[1:])
@@ -3569,7 +3739,7 @@ func (w *worklist) unwrap(run *invocation, first string, words []string) ([]stri
 		// takes them from standard input where there are none.
 		run.shell = run.shell || t.shell
 		run.piped = run.piped || t.piped
-		words = w.options(run, t, place{owed: t.operands}, words[1:])
+		words = w.options(run, t, place{owed: t.operands}, words[1:], reading)
 	}
 	return words, false
 }
@@ -3605,16 +3775,20 @@ func afterCmdSwitches(words []string) []string {
 // evaluated is what a builtin hands the shell to parse as a command line, in
 // words as the path rules split a segment, quotes not followed: eval's words;
 // trap's action, with the signals after it, which name no file; zsh
-// emulate's -c; and the callback mapfile and readarray run with -C. Read as
-// the program, `trap 'rm .sdlc/state/tests.lock' EXIT` wrote nothing, while
-// the same under eval was refused (security, round 3, N1). It is not ok for
+// emulate's -c; the callback mapfile and readarray run with -C; and the value
+// of the first alias an alias command defines, which the shell runs where the
+// name is used. Read as the program, `trap 'rm .sdlc/state/tests.lock' EXIT`
+// wrote nothing, while the same under eval was refused (security, round 3,
+// N1); and `alias r='rm -f .sdlc/state/tests.lock'; r` took the freeze away,
+// since the program walk read the value but no path rule did. It is not ok for
 // any other command, or where nothing is handed over: `eval --` alone hands
 // over nothing, so no turn leaves a reading without words.
 //
 // first is words[0] with what opens a group taken off it, and from is where
 // in words the first word handed on whole stands: 1 for eval, 2 past its
-// `--`, the first after trap's options, emulate's command, and mapfile's
-// callback or the -C word that holds it glued. The words before from are the
+// `--`, the first after trap's options, emulate's command, mapfile's
+// callback or the -C word that holds it glued, and the word that holds an
+// alias's name and its value glued after `=`. The words before from are the
 // builtin's own, which the reader scans for zsh's short forms (worklist.read).
 // Each case but a glued callback hands on a slice of words, so a chain of
 // these builtins is read without a copy at each (perf, round 7).
@@ -3641,8 +3815,42 @@ func evaluated(first string, words []string) (handed []string, from int, ok bool
 			}
 			return slices.Concat([]string{v}, words[at+1:]), at, true
 		}
+	case "alias":
+		if at := aliasOperand(words, 1); at > 0 {
+			handed, from = aliasHanded(words, at)
+			return handed, from, len(handed) > 0
+		}
 	}
 	return nil, 0, false
+}
+
+// aliasOperand is the index of the first word at or after i in an alias
+// command's words that defines an alias, `name=value`, or -1 where none does.
+// An option is no definition.
+func aliasOperand(words []string, i int) int {
+	for ; i < len(words); i++ {
+		if name, _, ok := strings.Cut(words[i], "="); ok && name != "" && !strings.HasPrefix(name, "-") {
+			return i
+		}
+	}
+	return -1
+}
+
+// aliasName is the name of the alias words[at] defines.
+func aliasName(words []string, at int) string {
+	name, _, _ := strings.Cut(words[at], "=")
+	return name
+}
+
+// aliasHanded is the command the alias words[at] defines runs, and where it
+// starts in words. The quotes are not followed, so the words after the value's
+// first run on into it: `alias r=' rm -f x'` is `r=`, then `rm`, and a value
+// left empty there is read from the next word.
+func aliasHanded(words []string, at int) (handed []string, from int) {
+	if _, v, _ := strings.Cut(words[at], "="); v != "" {
+		return slices.Concat([]string{v}, words[at+1:]), at
+	}
+	return words[at+1:], at + 1
 }
 
 // withoutSignals is trap's operands with the signals after its action taken
@@ -3894,7 +4102,7 @@ type memo struct {
 	tildes map[string]string
 	// spelled is the segment being judged as the command spells it, and
 	// unspelled each word of it unquoted, split once for that segment; and
-	// globbed what expandsAGlob answered there, by the word it was asked.
+	// globbed what expandsAGlobAs answered there, by the word it was asked.
 	spelledFor         string
 	spelled, unspelled []string
 	globbed            map[string]bool
@@ -4238,16 +4446,16 @@ func inAPath(r rune) bool {
 // released and the shell pick which reading this is; see readings. It answers
 // one text, and two where a here-string marker nothing closes leaves the tail to
 // be read in two ways that cannot be put in one text.
-func withoutDocuments(command string, powerShell, released bool) []string {
+func withoutDocuments(command string, powerShell, released bool, reading assignments) []string {
 	var scan documentScan
-	texts := documentsOut(command, powerShell, released, &scan)
+	texts := documentsOut(command, powerShell, released, &scan, reading)
 	if scan.doubt {
 		// Where the reader was in doubt, the command is read zsh's way
 		// too. Read bash's alone, `cat <<EOF "${x:-'}"`, a line `'`, `EOF`
 		// and `sdlc approve US-1` took the `'` for a quote that ran to the
 		// end, so no body was taken out, and the line `'` hid the approve
 		// zsh ran (US-112, Gate 7 round 7, verifier 1).
-		texts = append(texts, documentsOut(command, powerShell, released, &documentScan{plain: true})...)
+		texts = append(texts, documentsOut(command, powerShell, released, &documentScan{plain: true}, reading)...)
 	}
 	return texts
 }
@@ -4256,7 +4464,7 @@ func withoutDocuments(command string, powerShell, released bool) []string {
 // that is not a body, and carries from one to the next what a line leaves
 // it inside: a string, a substitution, an array or arithmetic that runs over
 // lines, in which a `<<` may open no document (documentScan).
-func documentsOut(command string, powerShell, released bool, scan *documentScan) []string {
+func documentsOut(command string, powerShell, released bool, scan *documentScan, reading assignments) []string {
 	lines := strings.Split(command, "\n")
 	kept := make([]string, 0, len(lines))
 	// bodies is the command from the first document the reader is unsure of
@@ -4283,14 +4491,14 @@ func documentsOut(command string, powerShell, released bool, scan *documentScan)
 				}
 				return withBodies(unclosedHereString(kept, opener, lines[i+1:]), bodies)
 			}
-			kept = withoutHereString(kept, lines, i, end, opener, quote)
+			kept = withoutHereString(kept, lines, i, end, opener, quote, reading)
 			i = end
 			continue
 		}
 		opening, last := scan.opening(lines, i, powerShell)
 		kept = append(kept, lines[i+1:last+1]...)
 		var sure bool
-		if i, sure = pastDocuments(lines, last, opening, scan.delimiters(), powerShell); !sure && bodies == nil {
+		if i, sure = pastDocuments(lines, last, opening, scan.delimiters(), powerShell, reading); !sure && bodies == nil {
 			bodies = slices.Concat(kept, lines[last+1:])
 		}
 	}
@@ -4371,7 +4579,7 @@ func unclosedHereString(kept []string, opener string, rest []string) []string {
 // withoutHereString is kept with a here-string taken out of it: one that
 // opens on lines[i], the last line kept, and closes on lines[end]. The
 // markers go, and the body with them unless something runs it.
-func withoutHereString(kept, lines []string, i, end int, opener, quote string) []string {
+func withoutHereString(kept, lines []string, i, end int, opener, quote string, reading assignments) []string {
 	closer := strings.TrimPrefix(strings.TrimLeft(lines[end], " \t"), quote+"@")
 	kept[len(kept)-1] = opener
 	// A here-string is usually put in a variable and used on a later
@@ -4388,7 +4596,7 @@ func withoutHereString(kept, lines []string, i, end int, opener, quote string) [
 			}
 		}
 	}
-	if runsAScript(strings.Join(rest, "\n")) {
+	if runsAScript(strings.Join(rest, "\n"), reading) {
 		kept = append(kept, lines[i+1:end]...)
 	}
 	return append(kept, closer)
@@ -4406,8 +4614,8 @@ func withoutHereString(kept, lines []string, i, end int, opener, quote string) [
 // the end of the command, nor where the delimiter is one it is not sure of.
 // withoutDocuments then reads the command once more with this body and
 // every later one left in.
-func pastDocuments(lines []string, i int, opening string, delimiters []delimiter, powerShell bool) (int, bool) {
-	if len(delimiters) == 0 || runsAScript(opening) {
+func pastDocuments(lines []string, i int, opening string, delimiters []delimiter, powerShell bool, reading assignments) (int, bool) {
+	if len(delimiters) == 0 || runsAScript(opening, reading) {
 		return i, true
 	}
 	sure := true
@@ -4995,14 +5203,14 @@ func escapedAs(c byte) byte {
 // counted, so a review whose note said "the error source is lost" handed its
 // document to `source`, and a table row in it that said `git commit` was a
 // commit.
-func runsAScript(line string) bool {
-	for _, words := range commandsIn(line, false) {
-		for len(words) > 0 && isAssignment(words[0]) {
+func runsAScript(line string, reading assignments) bool {
+	for _, words := range lexUnder(line, false, reading).commands {
+		for len(words) > 0 && reading.is(words[0]) {
 			words = words[1:]
 		}
 		// Every reading: in `strace -J 1 python3 <<'X'` the interpreter is
 		// the program of the second (security, round 5, N3).
-		for _, run := range everyReading(program(words)) {
+		for _, run := range everyReading(program(words, reading)) {
 			if readsItsInput(run) {
 				return true
 			}
@@ -5332,7 +5540,7 @@ func splitSegments(command string, marked bool) []string {
 
 // parse splits one segment into its words, the targets of its redirections, and
 // the names of any environment assignments in front of the command.
-func parse(segment string) (words, redirects, assigns []string) {
+func parse(segment string, reading assignments) (words, redirects, assigns []string) {
 	fields := spacedFields(segment)
 	leading := true
 	for i := 0; i < len(fields); i++ {
@@ -5346,8 +5554,11 @@ func parse(segment string) (words, redirects, assigns []string) {
 			i = j
 		case fields[i].op:
 			i, _ = targetOf(fields, i)
-		case isAssignment(f) && (leading || exporting(words)):
+		case reading.is(f) && (leading || exporting(words)):
 			name, _, _ := strings.Cut(f, "=")
+			if a, ok := readAssignment(f); ok {
+				name = a.name
+			}
 			assigns = append(assigns, name)
 		default:
 			leading = false
@@ -5470,19 +5681,6 @@ func fieldQuote(segment string, i int, r, quote rune) (rune, bool) {
 		return r, false
 	}
 	return quote, false
-}
-
-func isAssignment(f string) bool {
-	name, _, ok := strings.Cut(f, "=")
-	if !ok || name == "" {
-		return false
-	}
-	for _, r := range name {
-		if !nameRune(r) {
-			return false
-		}
-	}
-	return true
 }
 
 // nameRune is what a shell allows in an environment variable's name.

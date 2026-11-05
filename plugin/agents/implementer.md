@@ -104,7 +104,8 @@ Only after the design review has passed.
 
 ## Findings
 
-The reviews list their findings as F-1, F-2 and so on, by gate and role, and your brief gives
+The reviews list their findings as F-1, F-2 and so on, by gate and reviewer name, so `security
+F-1` and `security-2 F-1` are two findings, closed with that name as `<role>`. Your brief gives
 you the ones to close. Close each finding your brief gives you once you have dealt with it, at
 whichever gate you work: the plan at Gate 4, the code at Gate 5, and the rework of Gates 6 and 7.
 

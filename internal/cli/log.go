@@ -78,6 +78,9 @@ type logEntry struct {
 	// wrote the record since.
 	Staffing       *logStaffing `json:"staffing,omitempty"`
 	StaffingEvents []logEvent   `json:"staffing_events,omitempty"`
+	// Failures is every failed run of an agent the session reported, with its
+	// reason, so a failure is seen before the budget for it is spent.
+	Failures []logEvent `json:"failures,omitempty"`
 	// HeldBy is the checkout holding a story not yet finished, where the
 	// repository has more than one.
 	HeldBy string `json:"held_by,omitempty"`
@@ -319,6 +322,9 @@ func noteEvents(e *logEntry, r *model.Record) {
 			e.Unfrozen = append(e.Unfrozen, logEvent{At: ev.At, Message: ev.Message})
 		case ev.Type == model.EventStaffingSet || ev.Type == model.EventStaffingAmend || ev.Type == model.EventStaffingAssign:
 			e.StaffingEvents = append(e.StaffingEvents, logEvent{At: ev.At, Message: ev.Type + ": " + ev.Message})
+		case ev.Type == model.EventAgentFailure:
+			// The reason is a model's, quoted so it cannot end the line.
+			e.Failures = append(e.Failures, logEvent{At: ev.At, Message: "failed " + ev.Message + ": " + quote(ev.Reason)})
 		}
 	}
 }
@@ -453,6 +459,9 @@ func printLogEntry(w io.Writer, e logEntry) {
 	}
 	for _, ev := range e.Unfrozen {
 		fmt.Fprintf(w, "  unfrozen   %s\n", oneLine(ev.Message))
+	}
+	for _, ev := range e.Failures {
+		fmt.Fprintf(w, "  %s\n", oneLine(ev.Message))
 	}
 	for _, esc := range e.Escalations {
 		answer := "waiting"

@@ -610,8 +610,8 @@ func (c unreadCause) String() string {
 // again as parse splits it, and the glob is the field in the same place: never
 // found by searching the segment for its text, which an earlier word can hold
 // too.
-func unreadGlob(segment string, words []string) (string, unreadCause, bool) {
-	_, raw := spelledFields(segment)
+func unreadGlob(segment string, words []string, reading assignments) (string, unreadCause, bool) {
+	_, raw := spelledFields(segment, reading)
 	raw = raw[max(len(raw)-len(words), 0):]
 	args := words[1:]
 	_, at := findRoots(args)
@@ -631,8 +631,8 @@ func unreadGlob(segment string, words []string) (string, unreadCause, bool) {
 // unquoted beside the word as the command spells it, the two lists in step.
 // The find expression reader and unreadGlob both read the as-spelled word to
 // see what the shell would do to it, which the parsed word has lost.
-func spelledFields(segment string) (unquoted, raw []string) {
-	for _, f := range wordFields(segment) {
+func spelledFields(segment string, reading assignments) (unquoted, raw []string) {
+	for _, f := range wordFields(segment, reading) {
 		unquoted = append(unquoted, unquote(f.text))
 		raw = append(raw, f.text)
 	}

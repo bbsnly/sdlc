@@ -28,7 +28,9 @@ func TestAC1ReviewsPolicyIsAPathThatDefaultsToREVIEWmd(t *testing.T) {
 		name, raw, path, named string
 	}{
 		{"no reviews section", `{"version":1}`, "REVIEW.md", ""},
-		{"reviews with no policy", `{"version":1,"reviews":{"gate7_advisory":true}}`, "REVIEW.md", ""},
+		// US-109 refuses gate7_advisory true as SDLC-E0087, so the section holds the
+		// value every released init wrote.
+		{"reviews with no policy", `{"version":1,"reviews":{"gate7_advisory":false}}`, "REVIEW.md", ""},
 		{"an empty policy", `{"version":1,"reviews":{"policy":""}}`, "REVIEW.md", ""},
 		{"the default named", `{"version":1,"reviews":{"policy":"REVIEW.md"}}`, "REVIEW.md", "REVIEW.md"},
 		{"another file", `{"version":1,"reviews":{"policy":"docs/review-policy.md"}}`, "docs/review-policy.md", "docs/review-policy.md"},
@@ -138,13 +140,15 @@ func TestAC1APolicyPathInTheRepositoryIsAccepted(t *testing.T) {
 		t.Errorf("UnknownKeys = %v", unknown)
 	}
 
-	// The new key sits beside the old one in the one section.
-	cfg, err := Parse([]byte(`{"version":1,"reviews":{"gate7_advisory":true,"policy":"docs/p.md"}}`))
+	// The new key sits beside the old one in the one section. US-109 refuses the old
+	// key at true (SDLC-E0087) and keeps it at false, the value released init wrote,
+	// so the file a project already has is the one that must read its policy.
+	cfg, err := Parse([]byte(`{"version":1,"reviews":{"gate7_advisory":false,"policy":"docs/p.md"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.Reviews.Gate7Advisory {
-		t.Error("reviews.gate7_advisory was lost beside reviews.policy")
+	if got := cfg.ReviewPolicyPath(); got != "docs/p.md" {
+		t.Errorf("reviews.policy beside reviews.gate7_advisory reads as %q", got)
 	}
 }
 

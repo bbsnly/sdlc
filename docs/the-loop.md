@@ -160,7 +160,7 @@ needed. The sections after it say the same in full.
 | 4 | `plan`, `design_review` | `sdlc:implementer` | `sdlc:architect` blocks; `sdlc:security` blocks when the story is security-sensitive; `sdlc:perf` blocks only on a stated budget; `sdlc:red-team` and `sdlc:human-advocate` are advisory | `PLAN.md`, up to five reviews | a reviewer that keeps blocking |
 | 5 | `implementation` | `sdlc:implementer` | none | the code | a broken freeze |
 | 6 | `verification`, `verifier_review` | `sdlc:verifier` | the verifier's own verdict blocks | `VERIFICATION.md` | a verifier that keeps blocking |
-| 7 | `code_review` | nobody: the diff from Gate 5 is reviewed | `sdlc:code-reviewer` blocks unless `reviews.gate7_advisory`; `sdlc:security`, `sdlc:perf` and `sdlc:human-advocate` as at Gate 4 | up to four reviews | a reviewer that keeps blocking |
+| 7 | `code_review` | nobody: the diff from Gate 5 is reviewed | `sdlc:code-reviewer` blocks unless its `can_block` is false; `sdlc:security`, `sdlc:perf` and `sdlc:human-advocate` as at Gate 4 | up to four reviews | a reviewer that keeps blocking |
 | 8 | `commit` | the conversation | none | the commit | `sdlc approve`, for a story in a paused risk tier (`high` by default) |
 | 9 | `retro` | `sdlc:bookkeeper` | none | `RETRO.md`, and `CODEMAP.md` for anything new | `sdlc log` and `sdlc ack`, once the story is on trunk |
 
@@ -168,16 +168,23 @@ needed. The sections after it say the same in full.
 
 The staffing is, for one story, which agents the story needs and the model
 and effort each is asked for, with a reason for each. It is recorded in the
-story's gate record by `sdlc:project-manager` where the project has
-[`staffing.enabled`](configuration.md#staffing), and a gate then waits only for
-the reviewers the story needs. It is not the plan: the plan is Gate 4's
+story's gate record by `sdlc:project-manager`, which is on unless
+`team.agents.project-manager.enabled` is false in the
+[`team`](configuration.md#team) section, and a gate then waits only for the
+reviewers the story needs.
+
+The team is the agents a project runs, set in `team`: whether each is enabled,
+whether a reviewer's block can stop a gate (`can_block`), and how many instances
+of a reviewer there are. An instance is one more review by the same reviewer at
+each gate it reviews, under its own name: with `"instances": 2` on security, the
+gate waits for `security` and for `security-2`. It is not the plan: the plan is Gate 4's
 document, and says how the change is made, not who makes it.
 [Agents](the-agents.md#the-staffing) says how it is chosen and where to read it.
 
-Twelve agents take part. With the staffing off, a story that needs no rework
+Twelve agents take part. With the project manager disabled, a story that needs no rework
 runs agents fifteen times: one each at Gates 2, 3, 5, 6 and 9, six at Gate 4 and
 four at Gate 7, plus the human advocate at Gate 1 when the project asks for it.
-With it on, `sdlc:project-manager` runs twice more, after Gates 1 and 2, and each
+With it enabled, `sdlc:project-manager` runs twice more, after Gates 1 and 2, and each
 reviewer it leaves out is one run fewer at Gate 4, Gate 7 or both. Every one
 starts from a fresh context, and none reads another's work at the same gate. The
 one exception is a Gate 4 reviewer asked to look again at a revised plan, which is

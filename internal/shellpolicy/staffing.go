@@ -255,14 +255,66 @@ func checkAssign(words []string, piped, cut bool) (Finding, bool) {
 //
 // It is asked only where sdlc is the program run. Behind a program the reading
 // does not know, a word that cannot be read is as likely a path or a pattern.
-func checkUnread(words []string, piped bool) (Finding, bool) {
-	for _, u := range sdlcUses(words) {
-		fed := piped || u.fed
-		if first, _, found := nextWord(u.args); u.way == ranSdlc && (fed || found && !writtenOut(first)) {
-			return unread(fed), true
+//
+// The subcommand is read on its mark: the lexer takes a substitution out of a
+// word and leaves the rest, so a subcommand partly made by one read as the
+// written part, and the shell ran a person's command behind it.
+func checkUnread(words, marked []string, piped, cut, powerShell, undecoded bool) (Finding, bool) {
+	words, marks := linedUp(words, marked)
+	uses := sdlcUses(words)
+	for _, u := range uses {
+		at := len(words) - len(u.args)
+		switch {
+		case u.way != ranSdlc:
+		case piped || u.fed:
+			return unread(true), true
+		case at > 0 && programMade(words[at-1], marks[at-1], powerShell) && !asksForHelp(u.args):
+			return madeProgramUnread(), true
+		case subcommandMade(marks[at:], powerShell):
+			return unread(false), true
 		}
 	}
+	m, ok := readMadeProgram(words, marks, uses, cut, powerShell, undecoded)
+	switch {
+	case !ok:
+	case m.wrapped && subcommandMade(m.marks, powerShell):
+		return unread(false), true
+	case m.sdlcRead && !asksForHelp(m.args), !m.sdlcRead && personOnly(m.args):
+		return madeProgramUnread(), true
+	}
 	return Finding{}, false
+}
+
+// madeSubcommand reports whether sdlc, run as the program, is handed a
+// subcommand the shell makes, read on the marks.
+func madeSubcommand(words, marked []string, powerShell bool) bool {
+	words, marks := linedUp(words, marked)
+	for _, u := range sdlcUses(words) {
+		if u.way == ranSdlc && subcommandMade(marks[len(words)-len(u.args):], powerShell) {
+			return true
+		}
+	}
+	return false
+}
+
+// subcommandMade reports whether the subcommand in marks, sdlc's words read
+// on their marks, is made.
+func subcommandMade(marks []string, powerShell bool) bool {
+	first, _, found := nextWord(marks)
+	return found && madeWord(first, powerShell)
+}
+
+// madeProgramUnread is checkUnread's refusal of a program word the shell
+// makes: what it names may be sdlc, and its words a person's command.
+func madeProgramUnread() Finding {
+	return Finding{
+		Rule: assignmentRule,
+		Reason: "the program word that runs sdlc is made by the shell when the command runs, so the hook cannot " +
+			"read what sdlc is handed, and it could be a command only a person runs",
+		Route: "write the program word (the program name, the command's first word) out, `sdlc` or " +
+			"`npx sdlc@<version>` with the version typed, and the subcommand as a plain word; approve, unfreeze, " +
+			"ack, remap, release and `staffing assign` are a person's to run, in their own terminal",
+	}
 }
 
 func unread(fed bool) Finding {
@@ -317,7 +369,7 @@ func checkRecorder(words []string, s State) (Finding, bool) {
 var sdlcCommands = []string{
 	"init", "status", "story", "log", "ack", "start", "stop", "gate", "artifact", "review", "freeze",
 	"unfreeze", "escalate", "approve", "release", "cost", "doctor", "version", "staffing",
-	"codemap", "remap", "trace", "finding",
+	"codemap", "remap", "trace", "finding", "team",
 }
 
 // checkManager holds the project manager to the staffing and to what only

@@ -18,13 +18,13 @@ import (
 // place: `env -S 'git commit -m x'` and `env -S 'sdlc approve A-1'` were a
 // program called `git commit -m x`. An option with a value takes it: `env -u
 // HOME git commit` was a command called HOME.
-func (run *invocation) env(args []string) []string {
+func (run *invocation) env(args []string, reading assignments) []string {
 	// A bound, since each -S can hand over another.
 	for range 8 {
 		var split string
 		var found bool
 		args, split, found = run.envOptions(args)
-		for len(args) > 0 && isAssignment(args[0]) {
+		for len(args) > 0 && reading.is(args[0]) {
 			run.assigns = append(run.assigns, args[0])
 			args = args[1:]
 		}
@@ -456,7 +456,7 @@ func tableOf(name string) *optionTable {
 // on the words after its value takes it the other way (worklist.push).
 // Either reading's refusal refuses: `strace -J 1 git commit -m x` runs git,
 // or 1.
-func (w *worklist) options(run *invocation, t *optionTable, at place, words []string) []string {
+func (w *worklist) options(run *invocation, t *optionTable, at place, words []string, reading assignments) []string {
 	for len(words) > 0 {
 		a := words[0]
 		switch {
@@ -470,7 +470,7 @@ func (w *worklist) options(run *invocation, t *optionTable, at place, words []st
 				at.owed--
 				at.ended = at.ended || !t.optionsAfterOperands
 			default:
-				for t.assigns && len(words) > 0 && isAssignment(words[0]) {
+				for t.assigns && len(words) > 0 && reading.is(words[0]) {
 					run.assigns = append(run.assigns, words[0])
 					words = words[1:]
 				}

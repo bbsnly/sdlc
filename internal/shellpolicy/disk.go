@@ -164,21 +164,30 @@ func (q pathQuestion) inProject(dir string) bool {
 // variable given an absolute path, or `hash -d name=path`. Read as user c's
 // home, which there is not, `c=<root>; rm -rf ~c/.sdlc/state` was placed
 // outside the project.
-func namedDirectories(line string) map[string]string {
+func namedDirectories(line string, reading assignments) map[string]string {
 	if !strings.Contains(line, "~") || !strings.Contains(line, "=") {
 		return nil
 	}
 	var named map[string]string
+	var written []string
 	for _, f := range strings.FieldsFunc(line, func(r rune) bool { return strings.ContainsRune(" \t\n;&|()", r) }) {
-		if !isAssignment(f) {
+		a, ok := reading.of(f)
+		if !ok {
 			continue
 		}
-		name, value, _ := strings.Cut(f, "=")
-		if v := clean(value); isAbsolute(v) {
+		// c+=/. or c[1]=// after c=<root> leaves ~c in the project in zsh;
+		// read as a directory of their own, they moved it off. An append to a
+		// name the line has not written is its value, as zsh makes it.
+		before := slices.Contains(written, a.name)
+		written = append(written, a.name)
+		if a.indexed || a.appends && before {
+			continue
+		}
+		if v := clean(a.value); isAbsolute(v) {
 			if named == nil {
 				named = map[string]string{}
 			}
-			named[name] = v
+			named[a.name] = v
 		}
 	}
 	return named

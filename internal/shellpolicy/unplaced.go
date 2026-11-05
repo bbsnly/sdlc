@@ -201,18 +201,18 @@ func (l lostPlace) placeCount() int {
 // its rule. Where nothing places the walk, a command that fills a directory
 // it names relatively is refused, since that directory could be any, one
 // above the project among them.
-func (l lostPlace) judge(j segmentRules, segment string, run invocation, dir string) (Finding, bool) {
-	if f, ok := judgedFrom(j, segment, run, distinctPlaces(l.dirs, l.searched)); ok {
+func (l lostPlace) judge(j segmentRules, segment string, run invocation, dir string, reading assignments) (Finding, bool) {
+	if f, ok := judgedFrom(j, segment, run, distinctPlaces(l.dirs, l.searched), reading); ok {
 		return f, true
 	}
 	if l.tail != "" {
 		k := j
 		k.dir, k.certain = l.tail, false
-		if f, ok := k.judge(segment, run); ok {
+		if f, ok := k.judge(segment, run, reading); ok {
 			return f, true
 		}
 	}
-	if f, ok := judgedFrom(j, segment, run, homeDirs(j)); ok {
+	if f, ok := judgedFrom(j, segment, run, homeDirs(j), reading); ok {
 		return f, true
 	}
 	// A walk lost in an absolute glob is placed from the glob, and one spelt
@@ -224,7 +224,7 @@ func (l lostPlace) judge(j segmentRules, segment string, run invocation, dir str
 		j.s.Root == "" || len(run.words) == 0 {
 		return Finding{}, false
 	}
-	for _, d := range filledDirs(run, segment) {
+	for _, d := range filledDirs(run, segment, reading) {
 		if c := clean(d.dir); !isAbsolute(c) && !strings.HasPrefix(c, "~") {
 			return Finding{
 				Rule:   ruleAbove,
@@ -233,7 +233,7 @@ func (l lostPlace) judge(j segmentRules, segment string, run invocation, dir str
 			}, true
 		}
 	}
-	if f, ok := l.fromHeld(j, segment, run); ok {
+	if f, ok := l.fromHeld(j, segment, run, reading); ok {
 		return f, true
 	}
 	if f, ok := l.globRefusal(j, run); ok {
@@ -262,12 +262,12 @@ func distinctPlaces(lists ...[]string) []string {
 
 // judgedFrom asks the path rules of a segment from each of dirs, as a walk
 // placed there.
-func judgedFrom(j segmentRules, segment string, run invocation, dirs []string) (Finding, bool) {
+func judgedFrom(j segmentRules, segment string, run invocation, dirs []string, reading assignments) (Finding, bool) {
 	for _, d := range dirs {
 		k := j
 		k.dir, k.lost, k.from, k.certain = d, false, "", false
 		k.away.dir, k.away.lost = d, false
-		if f, ok := k.judge(segment, run); ok {
+		if f, ok := k.judge(segment, run, reading); ok {
 			return f, true
 		}
 	}
@@ -298,12 +298,12 @@ func homeDirs(j segmentRules) []string {
 // word could be a held path from: the walk could be in any directory, so a
 // word is judged from each. By its name alone, `cd - && rm -rf state` took
 // .sdlc/state away.
-func (l lostPlace) fromHeld(j segmentRules, segment string, run invocation) (Finding, bool) {
+func (l lostPlace) fromHeld(j segmentRules, segment string, run invocation, reading assignments) (Finding, bool) {
 	for _, hd := range j.heldFrom(run, l.tail) {
 		k := j
 		k.dir, k.lost, k.from, k.certain = path.Join(j.s.Root, hd.dir), false, "", false
 		k.away.dir, k.away.lost = k.dir, false
-		f, ok := k.judge(segment, run)
+		f, ok := k.judge(segment, run, reading)
 		if !ok {
 			continue
 		}

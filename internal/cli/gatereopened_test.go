@@ -170,6 +170,9 @@ func TestAC2RecordingAGateThatReopensNothingPrintsWhatItPrintedBefore(t *testing
 	t.Run("pass with a gate after it still pending", func(t *testing.T) {
 		t.Parallel()
 		root := startedAt(t, model.GateVerification)
+		// With nothing disabled (US-109 AC-4), which is what the released tool's
+		// output is a guard for.
+		setConfigOnDisk(t, root, "team", map[string]any{})
 		satisfy(t, root, model.GateVerification)
 		out := mustRun(t, "gate", "verification", "pass", "--note", "all commands green").stdout
 		if want := "US-001  verification  pass\n  all commands green\n"; out != want {

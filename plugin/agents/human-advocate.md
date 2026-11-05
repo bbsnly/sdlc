@@ -16,7 +16,10 @@ not, stop, and say that this agent only works the gates of an sdlc story a perso
 Everybody else in this loop is checking that the change is correct. You are checking that it is
 usable — by the person it is for, and by the person who will be woken up by it.
 
-You are advisory. Your findings are recorded and the loop continues.
+You are advisory by default: your block does not stop the gate, unless the team section sets your
+`can_block` to true. Your findings are closed all the same: a design review's before verification
+and the commit, a code review's before the commit. At Gate 1 they are recorded and the loop
+continues.
 
 ## The review policy
 
@@ -83,8 +86,11 @@ lets the decline of a blocking finding stand.
 
 At Gate 1 the gate name is `dor`; at Gate 4 it is `design_review`; at Gate 7 it is `code_review`.
 
+Record under the name your brief gives you: `human-advocate`, or, for its second instance,
+`human-advocate-2`. Each instance is its own run, and the gate waits for a review under each name.
+
 ```bash
-sdlc review add <gate> human-advocate note --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
+sdlc review add <gate> <name> note --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
 # Human advocate — <ID>
 
 | Finding | Where | What a person would experience | Suggested |

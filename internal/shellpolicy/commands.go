@@ -5,9 +5,10 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"unicode"
 )
 
-// commandsIn reads a command line the way a shell runs it, far enough to know
+// lexUnder reads a command line the way a shell runs it, far enough to know
 // which commands it runs and with which words: a quoted string is one word
 // however many spaces, semicolons or backticks it holds, and a command inside
 // `$(...)` or backticks is a command of its own. It follows the common forms,
@@ -28,23 +29,29 @@ import (
 // (escaped), and inside double quotes one before `"`, `\`, `$` or a backtick
 // does. Before any other it is left in the word, as it is in a Windows path
 // and in PowerShell, and the decoded reading takes it out.
-func commandsIn(line string, powerShell bool) [][]string {
-	return lex(line, powerShell).commands
+//
+// A brace at a word's start is read as the reading says (wordBrace). Every
+// caller a rule decides on passes the reading it is under: one that lexed
+// widened alone left the second reading nothing to read again.
+func lexUnder(line string, powerShell bool, reading assignments) *lexer {
+	return lexIn(line, powerShell, newSubshells(), 0, reading)
 }
 
+// lex is lexUnder widened, noting nothing: for text a person reads, which no
+// rule decides on.
 func lex(line string, powerShell bool) *lexer {
-	return lexIn(line, powerShell, newSubshells(), 0)
+	return lexUnder(line, powerShell, assignments{})
 }
 
 // lexIn reads a line that runs in the subshell numbered group, numbering the
 // subshells it opens in t.
-func lexIn(line string, powerShell bool, t *subshells, group int) *lexer {
-	return lexAt(line, powerShell, t, group, 0)
+func lexIn(line string, powerShell bool, t *subshells, group int, reading assignments) *lexer {
+	return lexAt(line, powerShell, t, group, 0, reading)
 }
 
 // lexAt is lexIn for a line substituted depth levels inside another.
-func lexAt(line string, powerShell bool, t *subshells, group, depth int) *lexer {
-	l := &lexer{powerShell: powerShell, subshells: t, open: []int{group}, depth: depth}
+func lexAt(line string, powerShell bool, t *subshells, group, depth int, reading assignments) *lexer {
+	l := &lexer{powerShell: powerShell, subshells: t, open: []int{group}, depth: depth, reading: reading}
 	l.read([]rune(line))
 	l.endCommand()
 	return l
@@ -74,6 +81,9 @@ type subshells struct {
 	// would stand in the refusal of every later line.
 	unread   *Finding
 	readings int
+	// misread is set where the lexer of any script the walk read parted
+	// from the shells (lexer.misread), which ends with that lexer otherwise.
+	misread bool
 }
 
 func newSubshells() *subshells {
@@ -108,7 +118,9 @@ func (t *subshells) scriptOf(g int) int {
 
 type lexer struct {
 	powerShell bool
-	commands   [][]string
+	// reading decides a brace at a word's start (wordBrace).
+	reading  assignments
+	commands [][]string
 	// marks is each command's words again, with every substitution in them
 	// written as $SUB where commands has nothing: `git "$(echo worktree)"
 	// prune` is a command whose subcommand the shell has yet to work out, not
@@ -159,6 +171,20 @@ type lexer struct {
 	// subscripted is set for each command read from a substitution inside
 	// `[ ]` in a word (subscripts), which a refusal of it says.
 	subscripted []bool
+	// defines is set for each command that defines a function, `f() {` or
+	// `function f {`, which is read as a run of the names alone, and
+	// defining the one being read's.
+	defines  []bool
+	defining bool
+	// literals is each command's array literal, the text between the `(`
+	// after `NAME=` or `NAME+=` and its `)`, and literal the one being
+	// read's. The lexer reads the elements as a subshell of their own.
+	literals []string
+	literal  string
+	// misread is set where the lexer reads the line otherwise than the
+	// shells: an array literal holding a `;` outside quotes, or one whose
+	// `)` a `#` follows.
+	misread bool
 }
 
 func (l *lexer) endWord() {
@@ -206,11 +232,14 @@ func (l *lexer) endCommand() {
 		l.fed = append(l.fed, l.feeding)
 		l.joins = append(l.joins, l.ending)
 		l.subscripted = append(l.subscripted, false)
+		l.defines = append(l.defines, l.defining || l.words[0] == "function")
+		l.literals = append(l.literals, l.literal)
 		l.call = false
 		l.words, l.marked = nil, nil
 		l.feeding = false
 	}
 	l.input, l.here = nil, false
+	l.defining, l.literal = false, ""
 	l.redirected = false
 	l.substituting = false
 	l.ending = ""
@@ -225,7 +254,7 @@ func (l *lexer) group() int {
 func (l *lexer) substitute(inner []rune) {
 	l.started = true
 	l.substituting = true
-	l.mark.WriteString("$SUB")
+	l.mark.WriteString(cutMark)
 	l.runs(inner)
 }
 
@@ -315,7 +344,7 @@ func (l *lexer) runs(inner []rune) {
 		l.subshells.unread = cmp.Or(l.subshells.unread, &tooDeep)
 		return
 	}
-	sub := lexAt(string(inner), l.powerShell, l.subshells, l.subshells.start(l.group()), l.depth+1)
+	sub := lexAt(string(inner), l.powerShell, l.subshells, l.subshells.start(l.group()), l.depth+1, l.reading)
 	l.commands = append(l.commands, sub.commands...)
 	l.marks = append(l.marks, sub.marks...)
 	l.groups = append(l.groups, sub.groups...)
@@ -326,7 +355,10 @@ func (l *lexer) runs(inner []rune) {
 	l.fed = append(l.fed, sub.fed...)
 	l.joins = append(l.joins, sub.joins...)
 	l.subscripted = append(l.subscripted, sub.subscripted...)
+	l.defines = append(l.defines, sub.defines...)
+	l.literals = append(l.literals, sub.literals...)
 	l.unclosed = l.unclosed || sub.unclosed
+	l.misread = l.misread || sub.misread
 }
 
 func (l *lexer) read(rs []rune) {
@@ -367,8 +399,33 @@ func (l *lexer) wordBrace(rs []rune, i int) (int, bool) {
 		// and is read as before.
 		l.putRune(r)
 		return i, true
+	case r == '{' && !l.powerShell && !l.reading.released && i+1 < len(rs) && !unicode.IsSpace(rs[i+1]) && !strings.ContainsRune(";&|()<>", rs[i+1]):
+		// A brace that opens a group is a word of its own, so one with a
+		// word's character after it starts a word, a brace list among them.
+		// Read as a group, `sdlc review {add,} …` was two commands, and the
+		// list the shell makes into `add` was never read as the verb. The
+		// released reading reads it as a group still, and the line is read
+		// that way too: read only as a word, `cp {p}/* .`, which that
+		// reading refused for the program name `p}/*` a glob may make, was
+		// let through.
+		if m := l.reading.met; m != nil && m.brace == "" {
+			m.brace = wordAfter(rs, i+1)
+		}
+		l.putRune(r)
+		l.started = true
+		return i, true
 	}
 	return i, false
+}
+
+// wordAfter is the text from i to the next blank or operator, as a refusal
+// names it, cut at a length a reason can hold.
+func wordAfter(rs []rune, i int) string {
+	end := i
+	for end < len(rs) && end-i < 40 && !unicode.IsSpace(rs[end]) && !strings.ContainsRune(";&|()<>", rs[end]) {
+		end++
+	}
+	return string(rs[i:end])
 }
 
 // readQuoting reads the character at i where it opens an escape, a quote or
@@ -429,6 +486,161 @@ func (l *lexer) readQuoting(rs []rune, i int) (int, bool) {
 	return i, true
 }
 
+// codeValues reads each value assigns writes to a list whose values are code,
+// zsh's functions and aliases and bash's BASH_ALIASES, as the code it is,
+// where it is written, as an alias's value is: read as a value,
+// `functions[s]='sdlc approve US-001'` ran the approve at its use `s`.
+func (p *programScan) codeValues(assigns []string, c lexedCommand, reading assignments) {
+	for _, set := range assigns {
+		a, ok := readAssignment(set)
+		if !ok || !codeTable(a.name) || !p.nests() {
+			continue
+		}
+		values := []string{a.value}
+		if a.value == "" && c.literal != "" {
+			values = literalValues(c.literal, reading)
+		}
+		h := c.handed()
+		h.value = true
+		for _, v := range values {
+			if v != "" {
+				p.out = append(p.out, programsWithin(v, p.powerShell, p.t, c.in, p.depth+1, h, reading)...)
+			}
+		}
+	}
+}
+
+// setAValues reads zsh's `set -A name …` and `set +A name …` as codeValues
+// reads a literal: where name is a list whose values are code, or a name the
+// shell makes, which may be one, each value is read where it is written.
+// Only noted as a change, `set -A functions s 'sdlc approve'; s US-001` ran
+// the approve at its use `s`, where `functions=(s 'sdlc approve')` was read.
+func (p *programScan) setAValues(c lexedCommand, reading assignments) {
+	words, marks := linedUp(c.run.words, c.marked.words)
+	at, ok := setAOperands(words)
+	if !ok || !p.nests() || !codeTable(words[at]) && writtenOut(marks[at]) {
+		return
+	}
+	h := c.handed()
+	h.value = true
+	for _, v := range words[at+1:] {
+		if v != "" {
+			p.out = append(p.out, programsWithin(v, p.powerShell, p.t, c.in, p.depth+1, h, reading)...)
+		}
+	}
+}
+
+// setAOperands is where the list's name stands in `set -A name …` or
+// `set +A name …`, the values following it: after an option word that holds
+// A, which zsh takes in any cluster (`-sA`, `-xA`), with `-o` and `+o` taking
+// the word after them.
+func setAOperands(words []string) (at int, ok bool) {
+	if len(words) == 0 || base(words[0]) != "set" {
+		return 0, false
+	}
+	for i := 1; i+1 < len(words); i++ {
+		word := words[i]
+		if word == "-o" || word == "+o" {
+			i++
+			continue
+		}
+		if (strings.HasPrefix(word, "-") || strings.HasPrefix(word, "+")) && strings.ContainsRune(word, 'A') {
+			return i + 1, true
+		}
+	}
+	return 0, false
+}
+
+// literalValues is each element of an array literal read as code: a `[k]=v`
+// element's value, and every other element whole, since a brace list, a
+// glob or an expansion changes how many words an element makes, and which
+// written element is a value is the shell's to decide.
+func literalValues(literal string, reading assignments) []string {
+	var out []string
+	for _, element := range slices.Concat(lexUnder(literal, false, reading).commands...) {
+		if a, ok := readAssignment("x" + element); ok && a.indexed {
+			element = a.value
+		}
+		out = append(out, element)
+	}
+	return out
+}
+
+// openParen reads a `(`: it ends the command, after noting whether it
+// defines a function or opens an array's literal, and opens a subshell.
+func (l *lexer) openParen(rs []rune, i int) {
+	l.endWord()
+	l.defining = definesAt(l.words, rs, i)
+	if n := len(l.words); n > 0 && strings.HasSuffix(l.words[n-1], "=") {
+		text, misread := literalAt(rs, i)
+		l.literal, l.misread = text, l.misread || misread
+	}
+	l.endCommand()
+	l.open = append(l.open, l.subshells.start(l.group()))
+}
+
+// literalAt is the array literal whose `(` is at i, to the `)` that closes
+// it, quoted strings, substitutions and expansions skipped, and whether the
+// shells read it otherwise than the lexer: a `;` outside quotes in it, or a
+// `#` at once after its `)`.
+func literalAt(rs []rune, i int) (string, bool) {
+	misread := false
+	for j := i + 1; j < len(rs); j++ {
+		switch r := rs[j]; {
+		case r == '\\':
+			j++
+		case r == '\'' || r == '"' || r == '`':
+			j = find(rs, j+1, r)
+		case r == '$' && j+1 < len(rs) && (rs[j+1] == '(' || rs[j+1] == '{'):
+			j = matching(rs, j+1)
+		case r == ';':
+			misread = true
+		case r == ')':
+			return string(rs[i+1 : j]), misread || j+1 < len(rs) && rs[j+1] == '#'
+		}
+	}
+	return string(rs[i+1:]), misread
+}
+
+// matching is the index of the bracket that closes the one at i, or the end.
+func matching(rs []rune, i int) int {
+	open, closer, depth := rs[i], ')', 0
+	if open == '{' {
+		closer = '}'
+	}
+	for j := i; j < len(rs); j++ {
+		switch rs[j] {
+		case open:
+			depth++
+		case closer:
+			if depth--; depth == 0 {
+				return j
+			}
+		}
+	}
+	return len(rs) - 1
+}
+
+// definesAt reports whether the `(` at i, after words, defines a function:
+// it follows at least one word, other than an array's assignment, and only
+// blanks stand between it and a `)`. Read as a run of the names alone,
+// `s t () { … }` was no change to what `s` runs.
+func definesAt(words []string, rs []rune, i int) bool {
+	if len(words) == 0 || strings.HasSuffix(words[len(words)-1], "=") {
+		return false
+	}
+	for j := i + 1; j < len(rs); j++ {
+		switch rs[j] {
+		case ' ', '\t':
+		case ')':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 // readPlain reads the character at i, one readQuoting did not take: a
 // comment, a redirect, a separator, or a character of a word. It returns the
 // index of the last character it read.
@@ -453,8 +665,7 @@ func (l *lexer) readPlain(rs []rune, i int) int {
 	case r == ' ' || r == '\t' || r == '\r':
 		l.endWord()
 	case r == '(':
-		l.endCommand()
-		l.open = append(l.open, l.subshells.start(l.group()))
+		l.openParen(rs, i)
 	case r == ')':
 		l.endCommand()
 		if len(l.open) > 1 {
@@ -541,10 +752,14 @@ func loneAmpersand(rs []rune, i int) bool {
 // returns where it closes. A command substituted inside it still runs.
 func (l *lexer) quoted(rs []rune, i int) int {
 	l.started = true
+	start := i
 	for ; i < len(rs); i++ {
 		switch r := rs[i]; {
 		case r == '"':
 			return i
+		case r == '$' && !l.powerShell && i+1 < len(rs) && rs[i+1] == '{':
+			l.misread = l.misread || misreadsParameter(rs, start, i)
+			l.putRune(r)
 		case r == '\\' && !l.powerShell && continues(rs, i+1):
 			// A line continuation is taken out inside double quotes too:
 			// `"gi\<newline>t" commit -m x` runs git.
@@ -565,6 +780,44 @@ func (l *lexer) quoted(rs []rune, i int) int {
 		}
 	}
 	return i
+}
+
+// misreadsParameter reports whether a `${` at i, inside a double-quoted
+// string whose text starts at start, holds a double quote that leaves this
+// lexer out of step with the shells: the lexer ends the string at that quote,
+// and where the quotes after it do not bring it back to a closing quote at
+// the shells' end of the string, it read the rest of the line otherwise than
+// they do. `"${x:-"'"}"; sdlc approve US-001 #'` ran the approve in bash and
+// zsh while every reading here took it for a comment.
+func misreadsParameter(rs []rune, start, i int) bool {
+	end := parameterEnd(rs, i)
+	if end >= len(rs) || !slices.Contains(rs[i:end], '"') {
+		return false
+	}
+	closer := -1
+	for j := end + 1; j < len(rs) && closer < 0; j++ {
+		switch rs[j] {
+		case '\\':
+			j++
+		case '"':
+			closer = j
+		}
+	}
+	if closer < 0 {
+		return false
+	}
+	state := '"'
+	for j := start; j < closer; j++ {
+		switch r := rs[j]; {
+		case r == '\\' && state != '\'':
+			j++
+		case state == 0 && (r == '\'' || r == '"'):
+			state = r
+		case r == state:
+			state = 0
+		}
+	}
+	return state != '"'
 }
 
 // redirect reads a redirection from its operator and returns where the
@@ -682,6 +935,24 @@ type ran struct {
 	// subscript is set when the command, or the one that handed it to a
 	// shell, was read from a substitution inside `[ ]` in a word.
 	subscript bool
+	// script is set when the command is in a string handed to a shell, to
+	// eval, or to a builtin that runs it later, rather than on the line.
+	script bool
+	// defines is set where the command defines a function: the names it
+	// was read as are the function's.
+	defines bool
+	// value is set when the command is in a value a builtin keeps to run
+	// later, an alias's or a trap's: read where it is defined, it is no
+	// later command of the line.
+	value bool
+	// alias is the alias whose value the command is, read where it is
+	// defined.
+	alias definedAlias
+	// literal is the text of the array literal the command assigns.
+	literal string
+	// renamedFrom is the words as written of a run whose program word the
+	// line renamed, which the refusal shows beside what they run.
+	renamedFrom string
 }
 
 // handed is what a line is handed by the command that hands it to a shell, or
@@ -695,26 +966,29 @@ type handed struct {
 	cleared                   bool
 	unsets                    []string
 	subscript                 bool
+	script, value             bool
+	alias                     definedAlias
 }
 
 // programsAt is the commands a line runs, with what only wraps them taken off,
 // the subshell each runs in, and which subshell opened each. A shell handed a
 // string, `cmd /c`, PowerShell's -Command and `eval` run that string, so it is
 // read in turn for the commands it runs.
-func programsAt(line string, powerShell bool) ([]ran, *subshells) {
+func programsAt(line string, powerShell bool, reading assignments) ([]ran, *subshells) {
 	t := newSubshells()
-	return programsWithin(line, powerShell, t, 0, 0, handed{}), t
+	return programsWithin(line, powerShell, t, 0, 0, handed{}, reading), t
 }
 
-func programsWithin(line string, powerShell bool, t *subshells, group, depth int, h handed) []ran {
+func programsWithin(line string, powerShell bool, t *subshells, group, depth int, h handed, reading assignments) []ran {
 	p := programScan{powerShell: powerShell, t: t, depth: depth, h: h}
-	p.l = lexIn(line, powerShell, t, group)
+	p.l = lexIn(line, powerShell, t, group, reading)
 	// A line the walk stopped reading is refused whatever follows, so past
 	// the mark nothing more is read. Read on, the readings of scripts nested
 	// in one another grew as 2^k with the nesting, some fifteen million for
 	// one line, where the mark bounds them by the line's length.
+	t.misread = t.misread || p.l.misread
 	for i := 0; i < len(p.l.commands) && t.unread == nil; i++ {
-		p.command(i, p.l.commands[i])
+		p.command(i, p.l.commands[i], reading)
 	}
 	return p.out
 }
@@ -752,32 +1026,100 @@ type lexedCommand struct {
 	cleared   bool
 	unsets    []string
 	subscript bool
+	// defines is set where the command defines a function, and literal is
+	// its array literal's text.
+	defines bool
+	literal string
 }
 
 // handed is what the command hands a script it runs.
 func (c lexedCommand) handed() handed {
 	return handed{substituted: c.cut, piped: c.fed, input: c.input, replace: c.replace, cleared: c.cleared,
-		unsets: c.unsets, subscript: c.subscript}
+		unsets: c.unsets, subscript: c.subscript, script: true}
 }
 
 // command adds what the i-th command of the line runs, read every way it can
 // be (program): `strace -J 1 git commit -m x` is a commit read one way, and
 // each rule the program walk feeds reads both.
-func (p *programScan) command(i int, words []string) {
-	c := p.lexed(i, words)
+func (p *programScan) command(i int, words []string, reading assignments) {
+	c := p.lexed(i, words, reading)
 	if !p.counted(c.first, c.run) {
 		return
 	}
 	for k, run := range everyReading(c.run) {
 		switch {
 		case len(run.words) > 0:
-			p.reading(i, p.as(c, k))
+			p.reading(i, p.as(c, k), reading)
 		case k == 0 && len(c.prefix) > 0 && !run.shell:
 			// A line of assignments alone keeps them for what follows:
 			// `GIT_DIR=/elsewhere/.git; git log`.
 			p.out = append(p.out, ran{group: c.in, sets: slices.Concat(c.defaults, c.prefix)})
+			p.codeValues(c.prefix, c, reading)
+			p.out[len(p.out)-1].literal = c.literal
 		}
 	}
+	p.hereString(i, c, words, reading)
+}
+
+// hereString adds what a shell given no script runs: its here-string, read
+// as its script in a subshell of its own. Read as data, `bash <<< 'sdlc
+// approve US-001'` ran a person's command no rule read. The text is the
+// lexer's, already marked, so a word the outer shell makes in it reads as
+// made.
+func (p *programScan) hereString(i int, c lexedCommand, words []string, reading assignments) {
+	if p.powerShell || i >= len(p.l.inputs) || len(p.l.inputs[i]) == 0 || !runsInput(words, reading) || !p.nests() {
+		return
+	}
+	for _, text := range p.l.inputs[i] {
+		in := p.t.start(c.in)
+		p.t.script[in] = true
+		p.t.startsWith(in, c.env)
+		p.out = append(p.out, programsWithin(text, p.powerShell, p.t, in, p.depth+1, c.handed(), reading)...)
+	}
+}
+
+// runsInput reports whether words run a POSIX shell that reads its script
+// from standard input: given no script, or given -s, alone or in a cluster,
+// whose operands are then its arguments. -o and -O take a value, and `--`
+// ends the options.
+func runsInput(words []string, reading assignments) bool {
+	for len(words) > 0 && (reading.is(words[0]) || words[0] == "exec") {
+		words = words[1:]
+	}
+	if len(words) == 0 {
+		return false
+	}
+	switch base(words[0]) {
+	case "sh", "bash", "zsh", "dash", "ksh":
+		return readsInput(words[1:])
+	}
+	return false
+}
+
+// readsInput reports whether a POSIX shell given args reads its script from
+// standard input.
+func readsInput(words []string) bool {
+	fromInput := false
+	for j := 0; j < len(words); j++ {
+		w := words[j]
+		switch {
+		case w == "--":
+			return true
+		case w == "-o" || w == "-O" || w == "+o" || w == "+O":
+			j++
+		case len(w) > 1 && (w[0] == '-' || w[0] == '+'):
+			if strings.HasPrefix(w, "--") {
+				continue
+			}
+			if strings.ContainsRune(w[1:], 'c') {
+				return false
+			}
+			fromInput = fromInput || w[0] == '-' && strings.ContainsRune(w[1:], 's')
+		default:
+			return fromInput
+		}
+	}
+	return true
 }
 
 // counted adds the other readings of a command, its first word first, to
@@ -797,12 +1139,12 @@ func (p *programScan) counted(first string, run invocation) bool {
 }
 
 // reading adds what one reading of the i-th command runs.
-func (p *programScan) reading(i int, c lexedCommand) {
+func (p *programScan) reading(i int, c lexedCommand, reading assignments) {
 	run := c.run
 	script := run.words
 	switch {
 	case run.shell:
-		c = p.shellStarts(c, script)
+		c = p.shellStarts(c, script, reading)
 	case base(script[0]) == "eval":
 		// eval runs its string in this shell, so a `cd` in it moves this one,
 		// and what is set in front of it stays set, as it does for the
@@ -814,18 +1156,24 @@ func (p *programScan) reading(i int, c lexedCommand) {
 			p.out = append(p.out, ran{group: c.in, sets: c.env})
 		}
 	default:
-		p.plain(i, c)
-		if code := codeIn(run.words); code != "" && p.nests() {
+		p.plain(i, c, reading)
+		for _, code := range keptCode(run.words) {
+			if !p.nests() {
+				break
+			}
 			// A string the shell runs itself later, in this shell, as eval runs
 			// one now (security, round 3, N1).
-			p.out = append(p.out, programsWithin(code, p.powerShell, p.t, c.in, p.depth+1, c.handed())...)
+			h := c.handed()
+			h.value, h.alias = true, code.alias
+			p.out = append(p.out, programsWithin(code.text, p.powerShell, p.t, c.in, p.depth+1, h, reading)...)
+			p.markedCode(code, c, reading)
 		}
 		return
 	}
 	if !p.nests() {
 		return
 	}
-	p.script(script, c)
+	p.script(script, c, reading)
 }
 
 // nests reports whether a script found at this depth is read: one inside
@@ -864,20 +1212,21 @@ func endsOptions(w string) bool {
 // lexed is the i-th command of the line as read: what it runs, as written
 // and as the lexer marked it, with every other reading of each, what it is
 // handed, and the assignments in front of it.
-func (p *programScan) lexed(i int, words []string) lexedCommand {
+func (p *programScan) lexed(i int, words []string, reading assignments) lexedCommand {
 	l := p.l
 	marks := l.marks[i]
 	var c lexedCommand
-	for len(words) > 0 && isAssignment(words[0]) {
+	for len(words) > 0 && reading.is(words[0]) {
 		c.prefix = append(c.prefix, marks[0])
 		words, marks = words[1:], marks[1:]
 	}
 	if len(marks) > 0 {
 		c.first = marks[0]
 	}
-	c.run, c.marked = program(words), program(marks)
+	c.run, c.marked = program(words, reading), program(marks, reading)
 	c.in, c.cut, c.input = l.groups[i], p.h.substituted || l.substituted[i], p.h.input || l.fed[i]
 	c.subscript = p.h.subscript || l.subscripted[i]
+	c.defines, c.literal = l.defines[i], l.literals[i]
 	if !p.powerShell {
 		c.defaults = defaulted(l.marks[i])
 	}
@@ -904,7 +1253,7 @@ func (p *programScan) as(c lexedCommand, k int) lexedCommand {
 }
 
 // shellStarts opens the script a shell runs, and returns the command in it.
-func (p *programScan) shellStarts(c lexedCommand, script []string) lexedCommand {
+func (p *programScan) shellStarts(c lexedCommand, script []string, reading assignments) lexedCommand {
 	t := p.t
 	c.in = t.start(c.in)
 	t.script[c.in] = true
@@ -912,7 +1261,7 @@ func (p *programScan) shellStarts(c lexedCommand, script []string) lexedCommand 
 	if c.replace != "" && len(script) > 1 && script[0] == c.replace && p.nests() {
 		// `xargs -I{} sh {} 'sdlc approve A-1'`: the replacement may be -c,
 		// and then the word after it is the command line the shell runs.
-		p.out = append(p.out, programsWithin(script[1], p.powerShell, t, c.in, p.depth+1, c.handed())...)
+		p.out = append(p.out, programsWithin(script[1], p.powerShell, t, c.in, p.depth+1, c.handed(), reading)...)
 	}
 	return c
 }
@@ -935,6 +1284,42 @@ func codeIn(words []string) string {
 		return v
 	}
 	return ""
+}
+
+// keptString is a string a builtin keeps to run later, at in the builtin's words,
+// and, where it is an alias's value, the alias.
+type keptString struct {
+	text  string
+	at    int
+	alias definedAlias
+}
+
+// definedAlias is an alias a command defines, by its name and its value, which
+// a refusal of what the value runs names; the zero value is none.
+type definedAlias struct{ name, value string }
+
+// keptCode is each string a builtin keeps to run later: codeIn's, or each
+// value an alias command defines. bash runs an alias's value on a later line
+// with expand_aliases and zsh in a script, so it is read where it is defined,
+// used or not: read as the alias's name alone, `alias s='sdlc approve
+// US-001'` then `s` ran a person's command unread.
+func keptCode(words []string) []keptString {
+	if base(words[0]) != "alias" {
+		if code := codeIn(words); code != "" {
+			return []keptString{{text: code, at: -1}}
+		}
+		return nil
+	}
+	var out []keptString
+	for i, a := range words[1:] {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		if name, value, ok := strings.Cut(a, "="); ok && value != "" {
+			out = append(out, keptString{text: value, at: i + 1, alias: definedAlias{name: name, value: value}})
+		}
+	}
+	return out
 }
 
 // trapAction is trap's action, the first word after its options where a
@@ -1011,13 +1396,16 @@ func mapfileCallback(words []string) (callback string, at int, ok bool) {
 
 // plain adds a command that hands no string to a shell, and with a find the
 // commands its -exec run.
-func (p *programScan) plain(i int, c lexedCommand) {
+func (p *programScan) plain(i int, c lexedCommand, reading assignments) {
 	l, run, marked := p.l, c.run, c.marked
-	sets := slices.Concat(c.defaults, exported(marked.words, l.inputs[i], p.powerShell))
+	sets := slices.Concat(c.defaults, exported(marked.words, l.inputs[i], p.powerShell, reading))
+	p.codeValues(slices.Concat(c.env, sets), c, reading)
+	p.setAValues(c, reading)
 	p.out = append(p.out, ran{words: run.words, group: c.in, redirects: l.writes[i], substituted: c.cut,
 		marked: marked.words, env: c.env, sets: sets, chdir: marked.chdir, piped: c.fed, input: c.input,
 		expression: p.powerShell && !l.calls[i], replace: c.replace, cleared: c.cleared, unsets: c.unsets,
-		subscript: c.subscript})
+		subscript: c.subscript, script: p.h.script, defines: c.defines, value: p.h.value, alias: p.h.alias,
+		literal: c.literal})
 	if base(run.words[0]) != "find" {
 		return
 	}
@@ -1032,7 +1420,12 @@ func (p *programScan) plain(i int, c lexedCommand) {
 		if !findRuns(w) {
 			continue
 		}
-		if args := execArguments(run.words[j+1:]); len(args) > 0 && !p.findExec(c, args) {
+		args := execArguments(run.words[j+1:])
+		var margs []string
+		if len(marked.words) == len(run.words) {
+			margs = execArguments(marked.words[j+1:])
+		}
+		if len(args) > 0 && !p.findExec(c, args, margs, reading) {
 			return
 		}
 	}
@@ -1040,38 +1433,148 @@ func (p *programScan) plain(i int, c lexedCommand) {
 
 // findExec adds each reading of the command one -exec runs, args, and is
 // false where the line's readings passed the count, which ends the reading.
-func (p *programScan) findExec(c lexedCommand, args []string) bool {
-	exec := program(args)
+// margs are the same words on their marks, or nil where they do not pair.
+//
+// Each reading is read on the marked reading at the same index. Set to its
+// own words, `re$(printf view)` read as a written `re`, and find handed sdlc
+// the code reviewer's pair.
+func (p *programScan) findExec(c lexedCommand, args, margs []string, reading assignments) bool {
+	exec := program(args, reading)
 	if !p.counted(args[0], exec) {
 		return false
 	}
+	var marked invocation
+	paired := len(margs) == len(args)
+	if paired {
+		marked = program(margs, reading)
+		paired = len(marked.others) == len(exec.others)
+	}
 	// find puts each file it finds in `{}`, which the shell does not show.
-	for _, e := range everyReading(exec) {
+	for k, e := range everyReading(exec) {
 		if len(e.words) == 0 {
 			continue
 		}
+		var me invocation
+		if paired {
+			me = readingAt(marked, k)
+		}
+		marks := pairedMarks(e.words, me.words, c.cut)
 		p.out = append(p.out, ran{words: e.words, group: c.in, substituted: c.cut,
-			marked: e.words, env: c.env, piped: c.fed, replace: "{}", cleared: c.cleared || e.cleared,
-			unsets: slices.Concat(c.unsets, e.unsets), subscript: c.subscript})
+			marked: marks, env: c.env, piped: c.fed, replace: "{}", cleared: c.cleared || e.cleared,
+			unsets: slices.Concat(c.unsets, e.unsets), subscript: c.subscript, script: p.h.script})
 		if e.shell && p.nests() {
-			p.execScript(c, e)
+			p.execScript(c, e, me.words, reading)
 		}
 	}
 	return true
 }
 
+// readingAt is run's k-th reading, as everyReading counts them.
+func readingAt(run invocation, k int) invocation {
+	if k == 0 {
+		return run
+	}
+	return run.others[k-1]
+}
+
+// pairedMarks are the marks to read words on: the marks wherever there are
+// any, paired one for one or not, as a run outside find carries them and
+// every reader lines them up (linedUp); else, where a
+// substitution was cut, words with every word after the program made, and
+// else the words themselves, which hide nothing. Words in place of marks that
+// did not pair let `find . -exec "$(printf sdlc)" approve US-001 \;` through:
+// the made word is empty in the words reading and dropped, so `approve` read
+// as the program and the made program name was never seen.
+func pairedMarks(words, marks []string, cut bool) []string {
+	switch {
+	case len(marks) > 0:
+		return marks
+	case cut:
+		return madeAfterProgram(words)
+	}
+	return words
+}
+
+// madeAfterProgram is words with every word after the first marked as made:
+// what a reading shows where a substitution was cut and its marks do not pair.
+func madeAfterProgram(words []string) []string {
+	out := make([]string, len(words))
+	for i, w := range words {
+		out[i] = cutMark
+		if i == 0 {
+			out[i] = w
+		}
+	}
+	return out
+}
+
+// cutMark is how the lexer marks a substitution it cut out of a word.
+const cutMark = "$SUB"
+
 // execScript adds the commands of the script a find's -exec hands a shell,
 // read as a shell's script is, with `{}` as the word find fills in: read as
 // one word, `find . -exec sh -c 'git commit -m x' \;` was a program called
 // `git commit -m x` (US-112, security N4).
-func (p *programScan) execScript(c lexedCommand, e invocation) {
+//
+// It is read as script() reads a shell's string: as written, decoded, and on
+// its marks, marked being e's words on their marks or nil.
+func (p *programScan) execScript(c lexedCommand, e invocation, marked []string, reading assignments) {
 	t := p.t
-	in := t.start(c.in)
-	t.script[in] = true
-	t.startsWith(in, c.env)
+	start := func() int {
+		in := t.start(c.in)
+		t.script[in] = true
+		t.startsWith(in, c.env)
+		return in
+	}
 	h := handed{substituted: c.cut, piped: c.fed || e.piped, replace: "{}", cleared: c.cleared || e.cleared,
-		unsets: slices.Concat(c.unsets, e.unsets), subscript: c.subscript}
-	p.out = append(p.out, programsWithin(strings.Join(e.words, " "), p.powerShell, t, in, p.depth+1, h)...)
+		unsets: slices.Concat(c.unsets, e.unsets), subscript: c.subscript, script: true}
+	text := strings.Join(e.words, " ")
+	p.out = append(p.out, programsWithin(text, p.powerShell, t, start(), p.depth+1, h, reading)...)
+	if d := decoded(text); !p.powerShell && d != text {
+		p.out = append(p.out, programsWithin(d, p.powerShell, t, start(), p.depth+1, h, reading)...)
+	}
+	p.againMarked(text, marked, len(marked) == len(e.words), c.cut, start, h, reading)
+}
+
+// markedCode reads the string a builtin runs later once more on its marks.
+// Read as written alone, `trap "sdlc re$(printf view) add …" EXIT` read a
+// written `re`, and the trap handed sdlc the code reviewer's pair.
+func (p *programScan) markedCode(code keptString, c lexedCommand, reading assignments) {
+	var marked []string
+	if len(c.marked.words) == len(c.run.words) {
+		for _, m := range keptCode(c.marked.words) {
+			if m.at == code.at {
+				marked = []string{m.text}
+				break
+			}
+		}
+	}
+	h := c.handed()
+	h.alias = code.alias
+	p.againMarked(code.text, marked, marked != nil, c.cut, func() int { return c.in }, h, reading)
+}
+
+// againMarked adds a handed string's runs read once more as extra runs: on
+// marked, the string's words with each substitution standing where it was,
+// where they pair; or, where they do not and something was cut, on the
+// string as written with every word after each run's program made. Read
+// without the marks, a word the outer shell cut from the string read as
+// written.
+func (p *programScan) againMarked(text string, marked []string, paired, cut bool, start func() int, h handed, reading assignments) {
+	var runs []ran
+	switch joined := strings.Join(marked, " "); {
+	case paired && joined != text:
+		runs = programsWithin(joined, p.powerShell, p.t, start(), p.depth+1, h, reading)
+	case !paired && cut:
+		runs = programsWithin(text, p.powerShell, p.t, start(), p.depth+1, h, reading)
+		for i := range runs {
+			runs[i].marked = madeAfterProgram(runs[i].words)
+		}
+	}
+	for _, r := range runs {
+		r.extra = true
+		p.out = append(p.out, r)
+	}
 }
 
 // execArguments are the words of a find -exec command, up to its `;` or `+`
@@ -1087,10 +1590,10 @@ func execArguments(words []string) []string {
 
 // script adds the commands a string handed to a shell or to eval runs,
 // script being the words of that string.
-func (p *programScan) script(script []string, c lexedCommand) {
+func (p *programScan) script(script []string, c lexedCommand, reading assignments) {
 	t := p.t
 	text := strings.Join(script, " ")
-	p.out = append(p.out, programsWithin(text, p.powerShell, t, c.in, p.depth+1, c.handed())...)
+	p.out = append(p.out, programsWithin(text, p.powerShell, t, c.in, p.depth+1, c.handed(), reading)...)
 	// The script once more as the shell that runs it decodes `$'...'` and a
 	// backslash, as readings decodes the line: the line's decoding leaves a
 	// quoted script as written, and `bash -c "\$'sdlc' approve US-1"` and
@@ -1100,25 +1603,24 @@ func (p *programScan) script(script []string, c lexedCommand) {
 		again := t.start(c.in)
 		t.script[again] = c.run.shell
 		t.startsWith(again, c.env)
-		p.out = append(p.out, programsWithin(d, p.powerShell, t, again, p.depth+1, c.handed())...)
+		p.out = append(p.out, programsWithin(d, p.powerShell, t, again, p.depth+1, c.handed(), reading)...)
 	}
 	// The script once more as the shell will run it, with each substitution
 	// standing where it was: to the reading above, `sh -c "git $(echo
 	// worktree) prune"` is `git  prune`, and git's subcommand is not empty.
-	if len(c.marked.words) < len(script) {
-		return
+	// Where the marks' tail is shorter than the script, they do not pair, and
+	// a cut makes every word after each run's program.
+	var markedScript []string
+	if len(c.marked.words) >= len(script) {
+		markedScript = c.marked.words[len(c.marked.words)-len(script):]
 	}
-	markedScript := c.marked.words[len(c.marked.words)-len(script):]
-	if slices.Equal(markedScript, script) {
-		return
+	start := func() int {
+		again := t.start(c.in)
+		t.script[again] = c.run.shell
+		t.startsWith(again, c.env)
+		return again
 	}
-	again := t.start(c.in)
-	t.script[again] = c.run.shell
-	t.startsWith(again, c.env)
-	for _, r := range programsWithin(strings.Join(markedScript, " "), p.powerShell, t, again, p.depth+1, c.handed()) {
-		r.extra = true
-		p.out = append(p.out, r)
-	}
+	p.againMarked(text, markedScript, markedScript != nil, c.cut, start, c.handed(), reading)
 }
 
 // exported is what export, declare and their like set for the commands after
@@ -1127,7 +1629,7 @@ func (p *programScan) script(script []string, c lexedCommand) {
 // after them hands it to git: read as neither, `printf -v GIT_DIR %s
 // /elsewhere/.git; export GIT_DIR; git commit` was a commit in this checkout.
 // input is the command's here-strings, which read reads.
-func exported(words, input []string, powerShell bool) []string {
+func exported(words, input []string, powerShell bool, reading assignments) []string {
 	if len(words) == 0 {
 		return nil
 	}
@@ -1147,7 +1649,7 @@ func exported(words, input []string, powerShell bool) []string {
 	}
 	var sets []string
 	for _, w := range words[1:] {
-		if isAssignment(w) {
+		if reading.is(w) {
 			sets = append(sets, w)
 		}
 	}

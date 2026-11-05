@@ -380,7 +380,7 @@ func TestAC1ATrunkBroughtForwardToTheStorysTipLeavesTheChangeMeasuredFromTheCut(
 func TestAC1ATrunkBroughtForwardToTheStorysTipDoesNotHideWhatTheStoryCommitted(t *testing.T) {
 	t.Parallel()
 	const own = "internal/hook/own.go"
-	main := ldRepository(t, func(root string) { setConfigOnDisk(t, root, "staffing", stfSection()) })
+	main := ldRepository(t, func(root string) { setConfigOnDisk(t, root, "team", stfSection()) })
 	otIdentity(t, main)
 	cut := ldTrunk(t, main)
 	wt := swCheckStarted(t, main, "US-001", ldSession, swStarted(t, main, ldSession))

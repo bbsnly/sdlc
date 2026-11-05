@@ -20,12 +20,12 @@ import (
 // (wordsKept). It is added to the others, so it can only add refusals, and a
 // text with no quote, no parameter, no process substitution, no carriage
 // return and no escaped backslash before a newline pays nothing for it.
-func addWordReadings(out []pair) []pair {
+func addWordReadings(out []pair, reading assignments) []pair {
 	for _, p := range out {
 		if !mayKeepWords(p.text) {
 			continue
 		}
-		if text := wordsKept(p.text); text != p.text {
+		if text := wordsKept(p.text, reading); text != p.text {
 			out = addReadings(out, []string{text}, p.command, p.undecoded, p.via)
 		}
 	}
@@ -41,14 +41,14 @@ func mayKeepWords(text string) bool {
 }
 
 // wordsKept is text with wordsScan's rewrites made.
-func wordsKept(text string) string {
+func wordsKept(text string, reading assignments) string {
 	rs := []rune(text)
 	at := make([]int, len(rs))
 	for i := range at {
 		at[i] = i
 	}
 	s := &wordsScan{edits: map[int]string{}, read: map[[3]int]bool{}}
-	s.line(rs, at, 0)
+	s.line(rs, at, 0, reading)
 	if len(s.edits) == 0 {
 		return text
 	}
@@ -182,17 +182,17 @@ func (c *wordsCommand) part(p quotedPart) {
 }
 
 // line reads rs, a line of commands whose characters stand at at in the text.
-func (s *wordsScan) line(rs []rune, at []int, depth int) {
+func (s *wordsScan) line(rs []rune, at []int, depth int, reading assignments) {
 	if depth > maxNesting {
 		return
 	}
 	c := &wordsCommand{}
 	for i := 0; i < len(rs); i++ {
-		if end, ok := s.quoting(rs, at, i, c, depth); ok {
+		if end, ok := s.quoting(rs, at, i, c, depth, reading); ok {
 			i = end
 			continue
 		}
-		if end, ok := s.substitution(rs, at, i, c, depth); ok {
+		if end, ok := s.substitution(rs, at, i, c, depth, reading); ok {
 			i = end
 			continue
 		}
@@ -202,17 +202,17 @@ func (s *wordsScan) line(rs []rune, at []int, depth int) {
 			if start > 0 && strings.ContainsRune(";&|)", rs[start]) && (rs[start-1] == '\'' || rs[start-1] == '"') {
 				s.edits[at[start]] = " " + string(rs[start])
 			}
-			s.command(c, depth)
+			s.command(c, depth, reading)
 			c = &wordsCommand{}
 		}
 	}
-	s.command(c, depth)
+	s.command(c, depth, reading)
 }
 
 // quoting reads the character at i where it opens an escape, a quote or a
 // parameter, and returns the index of the last character it read. It is not
 // ok for any other character, of which it has read nothing.
-func (s *wordsScan) quoting(rs []rune, at []int, i int, c *wordsCommand, depth int) (int, bool) {
+func (s *wordsScan) quoting(rs []rune, at []int, i int, c *wordsCommand, depth int, reading assignments) (int, bool) {
 	r, next := rs[i], runeAt(rs, i+1)
 	switch {
 	case r == '\\' && next != 0:
@@ -235,7 +235,7 @@ func (s *wordsScan) quoting(rs []rune, at []int, i int, c *wordsCommand, depth i
 	case r == '$' && next == '{':
 		return c.parameter(rs, at, i), true
 	case r == '"':
-		return s.double(rs, at, i+1, c, depth), true
+		return s.double(rs, at, i+1, c, depth, reading), true
 	}
 	return i, false
 }
@@ -248,7 +248,7 @@ func (s *wordsScan) quoting(rs []rune, at []int, i int, c *wordsCommand, depth i
 // `=(...)` at a word's start: read only at a word's start, `rm -f a<(true)
 // FILE` and `cat x<(true) > FILE` moved FILE out of its command, and bash
 // removed or emptied it (US-112, Gate 7 round 5, code review B1).
-func (s *wordsScan) substitution(rs []rune, at []int, i int, c *wordsCommand, depth int) (int, bool) {
+func (s *wordsScan) substitution(rs []rune, at []int, i int, c *wordsCommand, depth int, reading assignments) (int, bool) {
 	r, next := rs[i], runeAt(rs, i+1)
 	var from, end int
 	switch {
@@ -262,7 +262,7 @@ func (s *wordsScan) substitution(rs []rune, at []int, i int, c *wordsCommand, de
 	default:
 		return i, false
 	}
-	s.substituted(rs[from:end], at[from:end], depth+1)
+	s.substituted(rs[from:end], at[from:end], depth+1, reading)
 	c.word.WriteString("$SUB")
 	stop := min(end+1, len(rs))
 	c.current.put(rs[i:stop], at[i:stop], false)
@@ -272,14 +272,14 @@ func (s *wordsScan) substitution(rs []rune, at []int, i int, c *wordsCommand, de
 
 // substituted reads rs, the text a substitution runs, as a line of its own,
 // unless it has been read already (wordsScan.read).
-func (s *wordsScan) substituted(rs []rune, at []int, depth int) {
+func (s *wordsScan) substituted(rs []rune, at []int, depth int, reading assignments) {
 	key := [3]int{len(at)}
 	if len(at) > 0 {
 		key = [3]int{len(at), at[0], at[len(at)-1]}
 	}
 	if !s.read[key] {
 		s.read[key] = true
-		s.line(rs, at, depth)
+		s.line(rs, at, depth, reading)
 	}
 }
 
@@ -332,7 +332,7 @@ func runeAt(rs []rune, i int) rune {
 // quote, `rm "${x:-"a;b"}" FILE` ended the string at the inner one, and the
 // `;` was read as the end of rm, which removed FILE (US-112, Gate 7 round 5,
 // security N4).
-func (s *wordsScan) double(rs []rune, at []int, i int, c *wordsCommand, depth int) int {
+func (s *wordsScan) double(rs []rune, at []int, i int, c *wordsCommand, depth int, reading assignments) int {
 	var p quotedPart
 	for ; i < len(rs); i++ {
 		switch r := rs[i]; {
@@ -354,7 +354,7 @@ func (s *wordsScan) double(rs []rune, at []int, i int, c *wordsCommand, depth in
 			if r == '$' {
 				end, from = closing(rs, i+2), i+2
 			}
-			s.substituted(rs[from:end], at[from:end], depth+1)
+			s.substituted(rs[from:end], at[from:end], depth+1, reading)
 			stop := min(end+1, len(rs))
 			p.put(rs[i:stop], at[i:stop], false)
 			i = end
@@ -416,7 +416,7 @@ func parameterEnd(rs []rune, i int) int {
 // command ends a command: each of its quoted parts that holds a character
 // segments splits at is written over, or, where the command hands its words
 // to a shell, read as the script it is.
-func (s *wordsScan) command(c *wordsCommand, depth int) {
+func (s *wordsScan) command(c *wordsCommand, depth int, reading assignments) {
 	c.endWord()
 	var parts []quotedPart
 	for _, p := range c.parts {
@@ -427,9 +427,9 @@ func (s *wordsScan) command(c *wordsCommand, depth int) {
 	if len(parts) == 0 {
 		return
 	}
-	if handsAScript(c.words) {
+	if handsAScript(c.words, reading) {
 		for _, script := range scripts(c) {
-			s.line(script.rs, script.at, depth+1)
+			s.line(script.rs, script.at, depth+1, reading)
 		}
 		return
 	}
@@ -460,6 +460,8 @@ func scripts(c *wordsCommand) []quotedPart {
 		for j, w := range c.written[k+from : k+from+len(handed)] {
 			if j > 0 {
 				script.put([]rune{' '}, []int{-1}, true)
+			} else {
+				w = gluedTail(w, handed[0])
 			}
 			script.put(w.rs, w.at, true)
 		}
@@ -492,8 +494,8 @@ func splits(p quotedPart) bool {
 // handsAScript reports whether every reading of a command's words hands its
 // words on to a shell, eval or trap as a script, so that a quoted word of it
 // is read as a script's text and not as a word.
-func handsAScript(words []string) bool {
-	for len(words) > 0 && isAssignment(words[0]) {
+func handsAScript(words []string, reading assignments) bool {
+	for len(words) > 0 && reading.is(words[0]) {
 		words = words[1:]
 	}
 	if len(words) == 0 {
@@ -501,13 +503,27 @@ func handsAScript(words []string) bool {
 	}
 	// A command whose readings were cut short at the cap is refused by both
 	// walks whatever this reading says, so the readings made are enough.
-	run := programUnderEval(words)
+	run := programUnderEval(words, reading)
 	for _, r := range everyReading(run) {
 		if !r.shell && r.evals == 0 {
 			return false
 		}
 	}
 	return true
+}
+
+// gluedTail is the end of the written word w that holds the first word handed
+// on, where that is glued to the builtin's own: an alias's value after its
+// `name=`, and mapfile's callback after -C. Read with the word whole, the
+// script handed on began `r=rm …`, an assignment in front of a command
+// called -f.
+func gluedTail(w quotedPart, first string) quotedPart {
+	n := utf8.RuneCountInString(first)
+	if n >= len(w.rs) {
+		return w
+	}
+	cut := len(w.rs) - n
+	return quotedPart{rs: w.rs[cut:], at: w.at[cut:], fixed: w.fixed[cut:]}
 }
 
 // ansiEnd is the index of the quote that closes a `$'...'` whose text starts

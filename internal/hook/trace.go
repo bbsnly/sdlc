@@ -191,7 +191,7 @@ func noteEvent(event string, raw []byte, getenv func(string) string, read Transc
 	if (event == eventToolUsed || event == eventToolFailed) && !shellpolicy.Tools[p.ToolName] &&
 		p.ToolName != handBackTool {
 		// Write, Edit and the rest record nothing, and are most of a
-		// session's calls: asked after findLoop, config.Load and the store,
+		// session's calls: asked after findLoop, loading the configuration and the store,
 		// each one paid for all three.
 		return
 	}
@@ -226,7 +226,7 @@ func heldFor(getenv func(string) string, p notePayload) (*held, bool) {
 	if story == "" {
 		return nil, false
 	}
-	cfg, err := config.Load(project)
+	cfg, err := loadConfig(project)
 	if err != nil {
 		cfg = config.Default()
 	}
@@ -390,18 +390,27 @@ func startOf(record *model.Record, id string) string {
 // askedFor is the model and effort the staffing asked for the agent, with what
 // a person assigned over it, and nothing for an agent the loop does not staff.
 // It is cli's rule (staffingRow and assigned in internal/cli/staffing.go):
-// a change to one is made to both, since hook may not import cli.
+// a change to one is made to both, since hook may not import cli. Every
+// instance of a role runs as the role's agent type, so where the role has an
+// instance's row nothing is said: the trace does not know which instance this
+// run was, and claiming one would record a model nobody asked of it.
 func askedFor(record *model.Record, agentType string) (askedModel, askedEffort string) {
 	if record.Staffing == nil || !policy.IsLoopRole(agentType) {
 		return "", ""
 	}
 	agent := policy.NormalizeAgent(agentType)
 	for _, a := range record.Staffing.Agents {
+		if a.Agent != agent && model.BaseRole(a.Agent) == agent {
+			return "", ""
+		}
 		if a.Agent == agent {
 			askedModel, askedEffort = a.AskedModel, a.AskedEffort
 		}
 	}
 	for _, a := range record.Staffing.Assigned {
+		if a.Agent != agent && model.BaseRole(a.Agent) == agent {
+			return "", ""
+		}
 		if a.Agent == agent {
 			askedModel, askedEffort = cmp.Or(a.Model, askedModel), cmp.Or(a.Effort, askedEffort)
 		}

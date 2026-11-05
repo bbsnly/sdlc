@@ -40,12 +40,15 @@ Commands the loop's agents run:
 - [`sdlc codemap write`](#sdlc-codemap-write)
 - [`sdlc review list`](#sdlc-review-list)
 - [`sdlc review add GATE ROLE VERDICT`](#sdlc-review-add-gate-role-verdict)
+- [`sdlc finding close GATE ROLE F-N`](#sdlc-finding-close-gate-role-f-n)
 - [`sdlc staffing`](#sdlc-staffing)
 - [`sdlc staffing show`](#sdlc-staffing-show)
 - [`sdlc staffing set`](#sdlc-staffing-set)
 - [`sdlc staffing amend AGENT`](#sdlc-staffing-amend-agent)
 - [`sdlc staffing assign AGENT`](#sdlc-staffing-assign-agent), a person's
   command, refused to every session
+- [`sdlc team`](#sdlc-team)
+- [`sdlc team failure AGENT`](#sdlc-team-failure-agent)
 - [`sdlc freeze`](#sdlc-freeze)
 - [`sdlc escalate`](#sdlc-escalate)
 - [`sdlc hook EVENT`](#sdlc-hook-event)
@@ -329,6 +332,19 @@ reason is in `--json` and in `sdlc log`:
   referred   design_review architect F-3 referred, nit, docs/elsewhere.md: a stale sentence on another page; reason: another page, and the person should see it
 ```
 
+Where the [`team`](configuration.md#team) section disables an agent other than the project
+manager, or sets `can_block` to false on security, the verifier or the code reviewer, `status`
+says so under its `next` line: one line for each disabled agent, then one for each of those three
+that cannot block. `--json` lists every disabled agent, the project manager included, under
+`disabled`:
+
+```console
+  next   implementation
+
+  verifier is disabled in team.agents.verifier.enabled
+  code-reviewer cannot block: team.agents.code-reviewer.can_block is false
+```
+
 An active story with no gate left reads as `finished` rather than `in progress`,
 because there is nothing left to work on it: what it wants is `sdlc stop`.
 
@@ -336,7 +352,7 @@ An active story that has gone from the backlog reads as `(not in the backlog)`,
 with `"not_in_backlog": true` in `--json`. The commit gate refuses such a story,
 so put it back, or run `sdlc stop` to end the iteration.
 
-In addition, three fields in `--json` are worth knowing by name, because a skill
+In addition, these fields in `--json` are worth knowing by name, because a skill
 reads them to decide what to do:
 
 | Field | What it says |
@@ -344,6 +360,7 @@ reads them to decide what to do:
 | `next_gate` | the gate to work now — the first one that has not passed. Absent when every gate is behind you, or when no story is active |
 | `next` | the story `sdlc start` would pick up. Only present when nothing is active, and absent while a story waits for a person |
 | `waiting` | every story handed to a person with `sdlc escalate` and not yet answered, with the question it asks |
+| `disabled` | every agent the `team` section disables, the project manager included. Absent where none is, or when no story is active |
 | `landing` | whoever holds the landing lock: the `story`, the `command` (`stop`, or `remap`, which lands nothing), `since` when, and its `pid`; `gone` is `true` where that process is not running, with `takeable_from`, the time a stop can take the lock from. `story`, `command` and `since` are there together or not at all: a lock whose owner cannot be read has only `gone`, and `pid` where one is named. Absent while no lock is there |
 | `waiting_to_land` | every `sdlc stop` or `sdlc remap` waiting for the landing lock, with its `story`, `command`, `since` and `pid`, and `for`, the story of the running stop it waits for. Absent while nothing waits |
 | `consolidate` | `finished`, how many stories have finished since the last `/sdlc:consolidate`, and `last`, the date of the newest consolidation file, which is `null` where there has been none. Absent below `consolidate.nudge_after` stories, and where that is `0` |
@@ -408,7 +425,7 @@ the landing lock, and pid 4242 is not running; a stop can take it from about
 lock, pid <pid>, since <time>`, because neither is a story landing. A stop shows as
 waiting only while its process runs.
 
-Where the project has the [staffing](#sdlc-staffing) on, a `staffing` line says
+Where the project manager is enabled, a [`staffing`](#sdlc-staffing) line says
 whether one is recorded for the active story and names who it leaves out, and
 `staffing` in `--json` is `none` or `recorded`.
 
@@ -798,6 +815,12 @@ If nothing on the story is waiting for a decision, `approve` is refused with
 [SDLC-E0035](troubleshooting.md#sdlc-e0035). A story held by another checkout is
 refused with [SDLC-E0050](troubleshooting.md#sdlc-e0050), and `--reject` with no
 reason is [SDLC-E0034](troubleshooting.md#sdlc-e0034).
+
+After a `work_by_hand` hand-over, approving does not do the gate's work: `approve` says which
+gate is open and that you record it with `sdlc gate <gate> pass --story <ID>`, after doing its
+work by hand. Carrying on before then hands the story over again at the same gate. Neither a
+`work_by_hand` nor an `agent_failed` approval answers the pre-commit question: a story in a
+paused tier is still asked before its commit, and `approve` says so.
 
 ## `sdlc unfreeze`
 
@@ -1476,6 +1499,13 @@ range, sets `range_unknown` in `--json`, and says so in place of `landed in`:
   no range recorded: the loop watched this story's commits, but no single range holds only them
 ```
 
+The line names no cause, and there are four: somebody else's commit among the story's, a merge
+that brought in a side branch, history rewritten under the loop, or git unable to read the start
+or the notes. The work itself is fine; the record only says there is no range. `committed on
+story/<ID>` means the commits are on the story's own branch, in its worktree, and trunk has none
+of them until `sdlc stop` lands the story. `git rev-parse --absolute-git-dir`, run in the
+checkout, names the `<git-dir>` that holds what the hook watched.
+
 When the range it records ends before HEAD, it says which commit HEAD is:
 
 ```text
@@ -1802,7 +1832,9 @@ whose stamp can name a revision, and for no other review.
 ## `sdlc review add GATE ROLE VERDICT`
 
 Record one reviewer's conclusion. Each reviewing agent runs this when it has
-finished, with the review itself on standard input.
+finished, with the review itself on standard input. ROLE is the reviewer's name:
+its role, or an instance's name, such as `security-2`, where the `team` section
+gives it more than one.
 
 ```console
 $ sdlc review add design_review architect block --important 1 --finding "important the plan: AC-3 has no step" < review.md
@@ -1882,8 +1914,9 @@ Backticks are read past, but in a double-quoted shell value the shell runs them 
 first, so put a value that holds them in single quotes:
 ``--finding 'nit `internal/a.go`:12: the name says nothing'``.
 
-A finding is kept on the review and numbered F-1, F-2 and so on, per gate and role across every
-round, so a second round goes on from where the first stopped. The important ones have to
+A finding is kept on the review and numbered F-1, F-2 and so on, per gate and reviewer name across
+every round, so a second round goes on from where the first stopped, and `security F-1` and
+`security-2 F-1` are two findings. The important ones have to
 number `--important`, and the nits listed no more than `--nits`, which counts those past the
 policy's cap too; at `design_review` and `code_review` a count above 0 has to list what it
 counts. Otherwise the command records nothing and is refused with
@@ -1915,7 +1948,8 @@ drops the findings, and the gates read the two together
 
 ## `sdlc finding close GATE ROLE F-N`
 
-Close one finding a review listed, on the story being worked on.
+Close one finding a review listed, on the story being worked on. ROLE is the name
+the review was recorded under, an instance's such as `security-2` included.
 
 ```console
 $ sdlc finding close code_review code-reviewer F-1 --fixed
@@ -1965,13 +1999,14 @@ $ sdlc finding close design_review architect F-2 --declined --reason "the name i
 
 ## `sdlc staffing`
 
-You will not need these commands unless your project has turned the staffing on.
 The staffing is, for one story, which of the plugin's agents the story needs and
-the model and effort each is asked for. It is off unless the project sets
-[`staffing.enabled`](configuration.md#staffing); while it is off, each of the
-four commands below is refused with
-[SDLC-E0067](troubleshooting.md#sdlc-e0067) and every agent takes part in every
-story. [Agents](the-agents.md#the-staffing) says how it is chosen.
+the model and effort each is asked for. It is on by default, and recorded by
+`sdlc:project-manager`. Where the project disables the project manager, with
+`team.agents.project-manager.enabled` set to false in the
+[`team`](configuration.md#team) section, `set`, `amend` and `assign` are refused
+with [SDLC-E0067](troubleshooting.md#sdlc-e0067), `show` says there is no
+staffing, and every enabled agent takes part in every story.
+[Agents](the-agents.md#the-staffing) says how it is chosen.
 
 `sdlc staffing` on its own prints what the four commands are.
 
@@ -2011,8 +2046,11 @@ the agent that does the gate's work and each reviewer the gate waits for, with
 what each is asked for. `amendments` is every change, each with `at`, `agent`,
 `change`, `reason` and `by`.
 
-With the staffing on and none recorded it fails with
-[SDLC-E0068](troubleshooting.md#sdlc-e0068).
+Where the project manager is enabled and no staffing is recorded it fails with
+[SDLC-E0068](troubleshooting.md#sdlc-e0068). With the project manager disabled it
+exits 0 and says so: `no staffing: the project manager is disabled in
+team.agents.project-manager.enabled`. Where an agent is disabled, its line says
+so, and an agent whose gate is a person's is listed under `by_hand`.
 
 ## `sdlc staffing set`
 
@@ -2054,8 +2092,10 @@ outside the project's lists, or below the agent's lowest, is refused with
 person assigned stands: a staffing that disagrees with it is refused with
 [SDLC-E0072](troubleshooting.md#sdlc-e0072).
 
-While the staffing is on, `sdlc gate analysis pass` waits for one to be
-recorded.
+While the project manager is enabled, `sdlc gate analysis pass` waits for one
+to be recorded. A staffing names every enabled agent, and each instance of a
+reviewer the `team` section gives more than one, such as `security-2`. A disabled
+agent needs no row, and a row that needs it is refused.
 
 ## `sdlc staffing amend AGENT`
 
@@ -2072,13 +2112,14 @@ $ sdlc staffing amend researcher --model opus --reason "its first pass missed th
 | --- | --- |
 | `--needed` | the story needs the agent after all; give `--model` and `--effort` with it |
 | `--left-out` | the story does not need the agent |
-| `--model` | the model to ask for, one of `staffing.models` |
-| `--effort` | the effort to ask for, one of `staffing.efforts` |
+| `--model` | the model to ask for, one of `team.models` |
+| `--effort` | the effort to ask for, one of `team.efforts` |
 | `--reason` | why, from what happened or what the work is. Required |
 | `--story` | the story being worked on, which is the only one a staffing is amended for |
 
 What changed, when and why is kept, and `sdlc staffing show` and `sdlc log`
-print it.
+print it. `AGENT` may be an instance within the reviewer's `instances`, such as
+`security-2`, and amending one with no row writes its row.
 
 A gate that has passed stays passed when a reviewer is brought in: the reviewer
 is waited for from then on, at the next gate it reviews, and at the commit gate
@@ -2104,8 +2145,8 @@ $ sdlc staffing assign security --model opus --effort high --reason "this one to
 
 | Flag | What it does |
 | --- | --- |
-| `--model` | the model to ask for, one of `staffing.models` |
-| `--effort` | the effort to ask for, one of `staffing.efforts` |
+| `--model` | the model to ask for, one of `team.models` |
+| `--effort` | the effort to ask for, one of `team.efforts` |
 | `--reason` | why. Required |
 | `--story` | a story that has been started, instead of the one being worked on |
 
@@ -2122,6 +2163,41 @@ and it cannot take an agent off a story.
 > Code's environment variables is, and the hook refuses it to every
 > session ([enforcement](enforcement.md#assignment-is-a-human-decision)). What
 > `set_by: person` records is that this command wrote the row.
+
+## `sdlc team`
+
+Report what happened to an agent of the team. It has one subcommand, `failure`. The team itself
+is set in the [`team`](configuration.md#team) section of `.sdlc/config.json`, which a person
+edits.
+
+## `sdlc team failure AGENT`
+
+Record that a run of an agent failed at the gate the story is at: it returned nothing usable,
+or broke off. The `/sdlc:next` runbook runs it, the project manager's own failed runs included,
+and runs the agent again while [`team.retries`](configuration.md#team) allows. The failure after
+that hands the story to a person as `agent_failed`, and the person reads the reasons and decides
+with [`sdlc approve`](#sdlc-approve).
+
+```console
+$ sdlc team failure researcher --reason "it returned nothing"
+US-001  analysis  researcher failed: 1 failure at this gate, and a person is asked at 3; run it again
+  "it returned nothing"
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--reason` | what went wrong with the run, in a sentence. Required |
+| `--story` | the story being worked on, which is the only one a failure is counted on |
+| `--json` | print `ok`, `story`, `agent`, `gate`, `failures`, and `handed_over` where it handed the story over |
+
+`AGENT` is an agent of the plugin or an instance within its reviewer's `instances`, such as
+`security-2`. The count is the agent's at that gate, since a person last decided on the story;
+with `team.retries` at 2, the third failure hands the story over.
+
+It records nothing else, and nothing passes because of it: no gate, review, staffing or freeze
+changes. Nobody takes the agent's place, and no other agent is a substitute for it. Approving
+the hand-over does not answer the pre-commit question, which a story in a paused tier is still
+asked before its commit.
 
 ## `sdlc freeze`
 

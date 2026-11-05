@@ -1,19 +1,18 @@
-// US-026 in a sandbox: one story worked with the staffing on, by the built
+// US-026 in a sandbox: one story worked with a staffing, by the built
 // binary, with every call of the session under test put to the hook first as
 // the agent making it. internal/cli has each criterion's edges and
 // internal/shellpolicy every spelling; this is the two barriers agreeing, and
 // the one thing neither can show alone: that `git commit` is not held to the
 // stale review of a reviewer the staffing has since left out (AC-3).
 //
-// The sandbox is a project `sdlc init` set up, which has no staffing section.
-// The test turns it on there, as a person would, and commits it. Nothing reads
-// this repository's own configuration (decision 11).
+// The sandbox is a project `sdlc init` set up. The test sets its team there, as a
+// person would, and commits it. Nothing reads this repository's own configuration
+// (decision 11).
 
 package e2e
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -88,37 +87,35 @@ type staffed struct {
 	} `json:"amendments"`
 }
 
-// turnsTheStaffingOn is the person's step: the section written into the
-// sandbox's configuration and committed to trunk, before any story starts.
-func (sb sandbox) turnsTheStaffingOn(t *testing.T) {
+// setsTheTeam is the person's step: the team section written into the sandbox's
+// configuration and committed to trunk, before any story starts. nil takes the section
+// out, as in a project `sdlc init` set up before this section existed.
+func (sb sandbox) setsTheTeam(t *testing.T, section map[string]any) {
 	t.Helper()
 	path := filepath.Join(sb.repo, ".sdlc", "config.json")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var cfg map[string]any
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		t.Fatal(err)
+	readJSON(t, path, &cfg)
+	if section == nil {
+		delete(cfg, "team")
+	} else {
+		cfg["team"] = section
 	}
-	cfg["staffing"] = map[string]any{
-		"enabled": true,
+	writeJSON(t, path, cfg)
+	sb.mustGit(t, sb.repo, "add", "-A")
+	sb.mustGit(t, sb.repo, "commit", "--quiet", "--allow-empty", "-m", "chore: set the team")
+}
+
+// sandboxTeam is the section the staffing test sets: the lists, the verifier's floor,
+// and the path that brings security back.
+func sandboxTeam() map[string]any {
+	return map[string]any{
 		"models":  []string{"haiku", "sonnet", "opus"},
 		"efforts": []string{"low", "medium", "high", "xhigh", "max"},
-		"lowest":  map[string]any{"verifier": map[string]any{"model": "opus", "effort": "high"}},
-		"bring_back": map[string]any{
-			"security": []string{"guarded/"},
+		"agents": map[string]any{
+			"verifier": map[string]any{"lowest": map[string]any{"model": "opus", "effort": "high"}},
+			"security": map[string]any{"bring_back": []string{"guarded/"}},
 		},
 	}
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, out, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sb.mustGit(t, sb.repo, "add", "-A")
-	sb.mustGit(t, sb.repo, "commit", "--quiet", "-m", "chore: turn the staffing on")
 }
 
 // refusesAs puts a command of the session under test to the hook as the agent
@@ -199,7 +196,7 @@ func (sb sandbox) staffedGate(t *testing.T, gate model.Gate, out ...string) {
 func TestUS026AStoryIsStaffedByTheProjectManagerAndWorkedToTrunkInTheSandbox(t *testing.T) {
 	parallel(t)
 	sb := newSandbox(t)
-	sb.turnsTheStaffingOn(t)
+	sb.setsTheTeam(t, sandboxTeam())
 	main, tree := sb.repo, sb.tree()
 
 	sb.works(t, main, "", "", "start")
@@ -506,40 +503,4 @@ func TestUS026AStoryIsStaffedByTheProjectManagerAndWorkedToTrunkInTheSandbox(t *
 	if got := storiesOf(t, main); got["US-001"] != "done" {
 		t.Fatalf("the story is %q at the end of the run, want done", got["US-001"])
 	}
-}
-
-// AC-10 beside it: the same sandbox with the configuration as `sdlc init`
-// wrote it. TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox holds
-// every command's prose there to what it was before this story; this holds
-// that the new command says the staffing is off and that nothing about it
-// reaches the output or the record.
-func TestUS026WithTheStaffingOffTheSandboxAsksNothingOfAStory(t *testing.T) {
-	parallel(t)
-	sb := newSandbox(t)
-	main, tree := sb.repo, sb.tree()
-	sb.works(t, main, "", "", "start")
-
-	t.Run("AC-10 the staffing commands say it is off", func(t *testing.T) {
-		for _, args := range [][]string{{"staffing", "show"}, {"staffing", "show", "--json"}} {
-			r := sb.does(t, tree, "", "", args...)
-			if r.code != 1 || !strings.Contains(r.stdout+r.stderr, "SDLC-E0067") || !strings.Contains(r.stdout+r.stderr, "staffing.enabled") {
-				t.Errorf("sdlc %s with the staffing off: exit %d\nstdout %q\nstderr %q\nwant SDLC-E0067 naming staffing.enabled",
-					strings.Join(args, " "), r.code, r.stdout, r.stderr)
-			}
-		}
-	})
-	sb.worksEveryGate(t)
-	t.Run("AC-10 nothing about the staffing reaches the output or the record", func(t *testing.T) {
-		for _, args := range [][]string{
-			{"status"}, {"status", "--json"}, {"review", "list"}, {"review", "list", "--json"}, {"log"}, {"log", "--json"},
-		} {
-			if out := sb.works(t, tree, "", "", args...); strings.Contains(out, "staffing") || strings.Contains(out, "left out") || strings.Contains(out, "left_out") {
-				t.Errorf("sdlc %s says something about the staffing:\n%s", strings.Join(args, " "), out)
-			}
-		}
-		record := readFile(t, filepath.Join(main, ".sdlc", "stories", "US-001", "gate-record.json"))
-		if strings.Contains(record, "staffing") {
-			t.Errorf("the record of a story worked with the staffing off holds one:\n%s", record)
-		}
-	})
 }

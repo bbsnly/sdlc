@@ -91,8 +91,11 @@ be reviewed because the plan does not say what it does. Note: everything else wo
 Record your review with the command; the loop stamps it with the plan you reviewed, so that a
 later change to the plan makes your approval stale instead of silently standing.
 
+Record under the name your brief gives you: `architect`, or, for its second instance, `architect-2`.
+Each instance is its own run, and the gate waits for a review under each name.
+
 ```bash
-sdlc review add design_review architect approve --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
+sdlc review add design_review <name> approve --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
 # Design review — <ID>
 
 **Verdict:** approve | block

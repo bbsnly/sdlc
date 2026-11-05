@@ -81,7 +81,7 @@ func TestAC11TheAgentsPageSaysHowTheStaffingIsChosen(t *testing.T) {
 	t.Parallel()
 	agents := stfFolded(page(t, "the-agents.md"))
 	for _, want := range []string{
-		"`sdlc:project-manager`", "staffing", "`staffing.enabled`", "`sdlc staffing assign`",
+		"`sdlc:project-manager`", "staffing", "`team`", "`sdlc staffing assign`",
 		"never left out", "risk tier",
 	} {
 		if !strings.Contains(agents, want) {
@@ -127,7 +127,7 @@ func TestAC2TheDocumentationCallsItWhatWasAskedForAndNeverWhatAnAgentRanAt(t *te
 	for _, where := range []struct{ what, text string }{
 		{"the section for `sdlc staffing show`", stfDocSection(t, "commands.md", "## `sdlc staffing show")},
 		{"the Models section of docs/the-agents.md", stfDocSection(t, "the-agents.md", "## Models")},
-		{"the staffing section of docs/configuration.md", stfDocSection(t, "configuration.md", "## `staffing`")},
+		{"the team section of docs/configuration.md", stfDocSection(t, "configuration.md", "## `team`")},
 	} {
 		if !strings.Contains(where.text, "asked for") {
 			t.Errorf("%s does not call the model and effort what was asked for", where.what)
@@ -139,40 +139,209 @@ func TestAC2TheDocumentationCallsItWhatWasAskedForAndNeverWhatAnAgentRanAt(t *te
 	}
 }
 
-func TestAC11TheConfigurationPageDocumentsTheStaffingSectionAndWhatTurningItOnLoosens(t *testing.T) {
+// AC-14: the section replaces `staffing` and its warning, says every agent is on by
+// default and who picks, and names what loosens the loop.
+func TestAC14TheConfigurationPageDocumentsTheTeamSectionAndWhatLoosensTheLoop(t *testing.T) {
 	t.Parallel()
-	section := stfDocSection(t, "configuration.md", "## `staffing`")
-	for _, key := range []string{"`enabled`", "`models`", "`efforts`", "`lowest`", "`bring_back`"} {
+	if strings.Contains(page(t, "configuration.md"), "\n## `staffing`") {
+		t.Error("docs/configuration.md still has a `staffing` section")
+	}
+	section := stfDocSection(t, "configuration.md", "## `team`")
+	for _, key := range []string{
+		"`retries`", "`models`", "`efforts`", "`agents`", "`enabled`", "`can_block`", "`max_rounds`", "`instances`", "`lowest`", "`bring_back`",
+	} {
 		if !strings.Contains(section, key) {
-			t.Errorf("the staffing section of docs/configuration.md does not document %s", key)
+			t.Errorf("AC-14 the team section of docs/configuration.md does not document %s", key)
 		}
 	}
-	// T6: the file is writable by a session between stories, and this section
-	// lets a gate wait for fewer reviewers. The page says so.
-	if !strings.Contains(section, "fewer") && !strings.Contains(section, "loosen") {
-		t.Error("the staffing section does not say that turning it on has a gate wait for fewer reviewers")
+	for _, def := range []string{"haiku", "sonnet", "opus", "low", "medium", "high", "xhigh", "max", "`loop.max_review_rounds`"} {
+		if !strings.Contains(section, def) {
+			t.Errorf("AC-14 the team section does not give the default %s", def)
+		}
 	}
-	// AC-10: absent is off, and the page says what off means.
-	if !strings.Contains(section, "off") {
-		t.Error("the staffing section does not say the staffing is off unless the project turns it on")
+	for _, says := range []struct{ why, want string }{
+		{"every agent is on by default", "on by default"},
+		{"the project manager picks story by story", "story by story"},
+		{"a disabled worker's gate is the person's", "by hand"},
+		{"what loosens the loop", "loosen"},
+		// T4: this file is writable by a session between stories, and the warning this
+		// section replaces said so. The fact stays with it.
+		{"a session can write the file between stories", "between stories"},
+		// T15: the default flips on upgrade with nothing to stop it.
+		{"what an upgrade changes", "upgrad"},
+		// T3: the tool cannot see that two copies were two runs.
+		{"copies are not shown to be independent", "independen"},
+		// AC-7 as D-3 settled it: docs and doctor say where the limit does nothing.
+		{"max_rounds counts blocks that stop the gate", "stop the gate"},
+		{"max_rounds does nothing on an advisory agent", "advisory"},
+	} {
+		if !strings.Contains(section, says.want) {
+			t.Errorf("AC-14 the team section does not say %s (%q)", says.why, says.want)
+		}
 	}
-	// Decision 11, in plain words (T1): the architect can be left out and
-	// nothing brings it back at the design review, where there is no change to
-	// read; perf can be left out, and bring_back is all that returns it.
+	for _, loosens := range []string{"`enabled`", "`can_block`"} {
+		if !regexp.MustCompile(`(?i)loosen[^.]*` + regexp.QuoteMeta(loosens) + `|` + regexp.QuoteMeta(loosens) + `[^.]*loosen`).MatchString(section) {
+			t.Errorf("AC-14 the team section does not say in one sentence that %s loosens the loop", loosens)
+		}
+	}
+	// Decision 11 of US-026, still in plain words: the architect can be left out and
+	// nothing brings it back at the design review, where there is no change to read; perf
+	// can be left out, and bring_back is all that returns it.
 	if !regexp.MustCompile(`architect[^.]*\.?[^.]*design review`).MatchString(section) &&
 		!regexp.MustCompile(`design review[^.]*\.?[^.]*architect`).MatchString(section) {
-		t.Error("the staffing section does not say that nothing brings the architect back at the design review")
+		t.Error("the team section does not say that nothing brings the architect back at the design review")
 	}
 	if !strings.Contains(section, "perf") {
-		t.Error("the staffing section does not say that perf can be left out and only bring_back returns it")
+		t.Error("the team section does not say that perf can be left out and only bring_back returns it")
 	}
-	// What init writes is unchanged, so the example at the top of the page has
-	// no staffing section (TestTheConfigurationExampleIsWhatInitWrites holds
-	// the example to init).
+	// AC-12: a person refused with the new code is sent here, and finds what each old key
+	// became. SDLC-E0087 and SDLC-E0088 are named, with the code that stays (D-2).
+	for _, want := range []string{
+		"`staffing.enabled`", "`team.agents.project-manager`", "`staffing.models`", "`team.models`", "`staffing.efforts`", "`team.efforts`",
+		"`staffing.lowest`", "`staffing.bring_back`", "`reviews.gate7_advisory`", "`team.agents.code-reviewer.can_block`",
+		"SDLC-E0087", "SDLC-E0088",
+	} {
+		if !strings.Contains(section, want) {
+			t.Errorf("AC-12 the team section does not say %s, for a person the refusal sends here", want)
+		}
+	}
+	// What init writes has the team and no reviews (TestTheConfigurationExampleIsWhatInitWrites
+	// holds the example to init).
 	_, rest, _ := strings.Cut(page(t, "configuration.md"), "```json\n")
 	example, _, _ := strings.Cut(rest, "```")
-	if strings.Contains(example, "staffing") {
-		t.Error("the example of what init writes has a staffing section, and init writes none")
+	if !strings.Contains(example, `"team"`) || strings.Contains(example, `"reviews"`) || strings.Contains(example, `"staffing"`) {
+		t.Errorf("AC-2 the example of what init writes is not what init writes now:\n%s", example)
+	}
+	// D-1: the leftover is documented where the refused value is, under its own heading.
+	if leftover := stfDocSection(t, "configuration.md", "## `reviews`"); !strings.Contains(leftover, "`team.agents.code-reviewer.can_block`") {
+		t.Errorf("AC-12 the `reviews` section does not say what replaced it: %s", leftover)
+	}
+}
+
+// AC-14: the pages stop describing the staffing as off unless turned on. The configuration
+// page and the troubleshooting page may name the old key, to map it to the new one, and no
+// other may send a person to it.
+func TestAC14NoPageDescribesTheStaffingAsOffUnlessTurnedOn(t *testing.T) {
+	t.Parallel()
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]string{"README.md": string(readme)}
+	for _, name := range []string{
+		"commands.md", "configuration.md", "the-agents.md", "the-loop.md", "troubleshooting.md", "enforcement.md",
+		"guides/when-a-reviewer-blocks.md",
+	} {
+		pages["docs/"+name] = page(t, name)
+	}
+	said := regexp.MustCompile(`(?i)off unless|(turns?|turned|turning) the staffing on|with the staffing (on|off)|the staffing is (on|off)|configuration\.md#staffing`)
+	for name, body := range pages {
+		if found := said.FindString(stfFolded(body)); found != "" {
+			t.Errorf("AC-14 %s still says %q", name, found)
+		}
+		if name == "docs/configuration.md" || name == "docs/troubleshooting.md" {
+			continue
+		}
+		for _, old := range []string{"staffing.enabled", "staffing.models", "staffing.efforts", "staffing.lowest", "staffing.bring_back", "gate7_advisory"} {
+			if strings.Contains(body, old) {
+				t.Errorf("AC-14 %s sends a person to %s, which is refused or does nothing", name, old)
+			}
+		}
+	}
+	for name, wants := range map[string][]string{
+		"the-agents.md":                    {"`can_block`", "by hand"},
+		"the-loop.md":                      {"`can_block`", "`team`"},
+		"guides/when-a-reviewer-blocks.md": {"`can_block`"},
+	} {
+		for _, want := range wants {
+			if !strings.Contains(stfFolded(page(t, name)), want) {
+				t.Errorf("AC-14 docs/%s does not say %s", name, want)
+			}
+		}
+	}
+	if !strings.Contains(string(readme), "team") {
+		t.Error("AC-14 README.md does not say how the team is set")
+	}
+}
+
+// AC-9: a command a session runs has its section, and what it counts is said there.
+func TestAC9TheCommandsPageHasASectionForTheFailureCommand(t *testing.T) {
+	t.Parallel()
+	section := stfDocSection(t, "commands.md", "## `sdlc team failure")
+	for _, want := range []string{"`--reason`", "`team.retries`", "`--json`", "gate", "`sdlc approve`"} {
+		if !strings.Contains(section, want) {
+			t.Errorf("AC-9 the section for `sdlc team failure` does not say %s", want)
+		}
+	}
+	// What it cannot do is the point of it (T6).
+	if !strings.Contains(section, "substitute") && !strings.Contains(section, "nothing passes") {
+		t.Error("T6 the section does not say that a failure passes nothing and nobody takes the agent's place")
+	}
+	// The guide a person is sent to lists the kinds of hand-over.
+	if !strings.Contains(page(t, "guides/human-approval-gates.md"), "team failure") {
+		t.Error("AC-9 docs/guides/human-approval-gates.md does not list this hand-over")
+	}
+	if !strings.Contains(stfDocSection(t, "enforcement.md", "## Rules on shell commands"), "team failure") {
+		t.Error("AC-9 docs/enforcement.md does not say who may report a failure")
+	}
+}
+
+// The findings of the plan's reviews that a person relies on reading. Each row holds that the
+// sentence is there, not that it is true: a person is told, or the docs claim more than the
+// tool does.
+func TestAC14ThePagesSayWhatTheReviewsOfThePlanAskedThemToSay(t *testing.T) {
+	t.Parallel()
+	team := stfDocSection(t, "configuration.md", "## `team`")
+	guide := stfFolded(page(t, "guides/human-approval-gates.md"))
+	agentsPage := stfFolded(page(t, "the-agents.md"))
+	for _, tc := range []struct {
+		why, where, text string
+		wants            []string
+	}{
+		// Red team H1: a session can hand over under any other word, and a person who has
+		// read that "failure hand-overs do not count" trusts the look-alike.
+		{"the closure is for those two kinds only", "guides/human-approval-gates.md", guide,
+			[]string{"`agent_failed`", "`work_by_hand`", "pre-commit"}},
+		// Security note 7, T3: one run can record both, and the docs may not claim otherwise.
+		{"one run may record both names, and the trace shows the runs", "the-agents.md", agentsPage,
+			[]string{"`security-2`", "`security`", "`sdlc trace`"}},
+		// Red team C2: the natural reply to a failing agent is to turn it off, and in a worktree
+		// the running story does not read that.
+		{"a setting reaches stories started after it is on trunk", "configuration.md", team,
+			[]string{"started after", "trunk"}},
+		// Human advocate 1: the code's own section knows the three new cases.
+		{"E0027 covers the reasons the story adds", "troubleshooting.md", stfFolded(page(t, "troubleshooting.md")),
+			[]string{"`team.agents", "`instances`"}},
+		// Human advocate 4: the page that owns the word.
+		{"the glossary owns instance", "the-loop.md", stfFolded(page(t, "the-loop.md")),
+			[]string{"instance", "`security-2`"}},
+	} {
+		for _, want := range tc.wants {
+			if !strings.Contains(tc.text, want) {
+				t.Errorf("AC-14 docs/%s does not say that %s (%q)", tc.where, tc.why, want)
+			}
+		}
+	}
+	if !regexp.MustCompile(`(?i)\b(only|other kind|another kind|every other)\b[^.]*(\x60agent_failed\x60|\x60work_by_hand\x60)|(\x60agent_failed\x60|\x60work_by_hand\x60)[^.]*\b(only|other kind|another kind|every other)\b`).MatchString(guide) {
+		t.Error("AC-14 docs/guides/human-approval-gates.md does not say the closure is for those two kinds only")
+	}
+	if !regexp.MustCompile(`(?i)\b(one|single|same) run\b`).MatchString(agentsPage) {
+		t.Error("AC-14 docs/the-agents.md does not say that one run may record both names")
+	}
+	// The word a person meets beside the setting.
+	if found := regexp.MustCompile(`(?i)\bcop(y|ies)\b`).FindString(team); found != "" {
+		t.Errorf("AC-8 the team section says %q, and the word is instance", found)
+	}
+	// Architect note 1: the install offer stays, and the two pages that promise it still do.
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"docs/installation.md": page(t, "installation.md"), "README.md": string(readme)} {
+		folded := stfFolded(body)
+		if !strings.Contains(folded, "/sdlc:next") || !strings.Contains(folded, "offers to install") {
+			t.Errorf("AC-14 %s no longer says /sdlc:next offers to install", name)
+		}
 	}
 }
 

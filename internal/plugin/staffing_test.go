@@ -148,7 +148,7 @@ func TestAC1TheProjectManagerIsToldWhatAStaffingIsMadeFrom(t *testing.T) {
 		"reason",
 		"every agent",
 		"model", "effort",
-		"`staffing.lowest`",
+		"`lowest`", // read from the agent's own entry in the team section
 		"never left out",
 	} {
 		if !strings.Contains(body, want) {
@@ -240,13 +240,190 @@ func TestAC11TheRunbookSaysEveryLaterDelegationUsesWhatTheStaffingRecords(t *tes
 			t.Errorf("the runbook does not say %q", phrase)
 		}
 	}
-	// AC-10: one runbook for every project, so it says what it does where the
-	// staffing is off.
-	if !regexp.MustCompile(`(?i)staffing (is )?(on|off)\b|staffing\.enabled`).MatchString(runbook) {
-		t.Error("the runbook does not say what it does where the project has the staffing off")
+	// US-109 AC-3: at_gate is read before every delegation, whether or not a project manager
+	// staffed the story, so nothing in the runbook says otherwise.
+	if regexp.MustCompile(`(?i)staffing (is )?(on|off)\b|staffing\.enabled`).MatchString(runbook) {
+		t.Error("AC-14 the runbook still describes the staffing as something a project turns on")
 	}
 	// AC-2: asked for, never what ran.
 	if regexp.MustCompile(`(?i)\bran (at|on|with)\b`).MatchString(runbook) {
 		t.Error("the runbook speaks of what an agent ran at, which nothing records")
 	}
+}
+
+// ------------------------------------------------------------------- US-109
+
+// AC-5: a gate whose work is a disabled agent's is not delegated. The runbook reads that
+// from the staffing, and hands it to the person.
+func TestAC5TheRunbookDoesNotDelegateADisabledWorkersGate(t *testing.T) {
+	runbook := theRunbook(t)
+	for _, want := range []string{"`by_hand`", "by hand", "person"} {
+		if !strings.Contains(runbook, want) {
+			t.Errorf("AC-5 the runbook does not say %q", want)
+		}
+	}
+	// Red team V8: the words and no way to act on them leave the session nothing to end its
+	// turn with, and it meets the Stop guard. It stands in Gate 1's staffing paragraph, before
+	// every later delegation.
+	_, rest, ok := strings.Cut(runbook, "## Gate 1 ")
+	if !ok {
+		t.Fatal("the runbook has no section for Gate 1")
+	}
+	gate1, _, _ := strings.Cut(rest, "## Gate 2 ")
+	for _, want := range []string{"`by_hand`", "sdlc escalate work_by_hand"} {
+		if !strings.Contains(gate1, want) {
+			t.Errorf("AC-5 the runbook's Gate 1 does not say %q", want)
+		}
+	}
+}
+
+// Architect note 1: `docs/installation.md` and `README.md` both say `/sdlc:next` offers to
+// install, and that it does nothing else until a person says yes. The offer is what a person
+// without the binary meets first, and it carries the two routes that need no Node, so the room
+// the runbook needs for the team does not come out of it. Asked from the AC-14 test of the
+// runbook's team text, since on its own it passed before the runbook changed.
+func runbookStillOffersToInstallTheBinaryAndWaitsForAYes(t *testing.T) {
+	t.Helper()
+	runbook := theRunbook(t)
+	for _, want := range []string{"offer to install", "wait for a yes", "install.sh", "install.ps1"} {
+		if !strings.Contains(runbook, want) {
+			t.Errorf("AC-14 the runbook does not say %q", want)
+		}
+	}
+}
+
+// Human advocate 4: the setting is `instances` and the glossary says instance, so a model
+// reading the runbook and a person reading the configuration page meet one word. The verb
+// stays anyone's: a definition may tell an agent not to copy a secret.
+func TestAC8TheWordIsInstanceWhereAnAgentReadsIt(t *testing.T) {
+	asAName := regexp.MustCompile(`(?i)\bcopies\b|\b(a|an|each|every|one|the|this|that|its|own) copy\b|\bcopy of\b`)
+	if found := asAName.FindString(theRunbook(t)); found != "" {
+		t.Errorf("AC-8 the runbook says %q, and the word is instance", found)
+	}
+	if !strings.Contains(theRunbook(t), "instance") {
+		t.Error("AC-8 the runbook does not say instance")
+	}
+	agents, err := Agents(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range agents {
+		if model.IsReviewRole(a.Name) || a.Name == projectManager {
+			if found := asAName.FindString(strings.Join(strings.Fields(a.Body), " ")); found != "" {
+				t.Errorf("AC-8 %s's definition says %q, and the word is instance", a.Name, found)
+			}
+		}
+	}
+}
+
+// AC-9: the runbook is who records a failure, the project manager's own included, since
+// the project manager's own list refuses it.
+func TestAC9TheRunbookRecordsAFailedRunAndRetriesUpToTheSetting(t *testing.T) {
+	runbook := theRunbook(t)
+	for _, want := range []string{"`sdlc team failure", "`team.retries`", "`sdlc team failure project-manager"} {
+		if !strings.Contains(runbook, want) {
+			t.Errorf("AC-9 the runbook does not say %q", want)
+		}
+	}
+	if !regexp.MustCompile(`(?i)\b(no|not|never)\b[^.]*\b(substitute|another agent|stand in|take its place)\b`).MatchString(runbook) {
+		t.Error("AC-9 the runbook does not say that nothing stands in for an agent that failed")
+	}
+}
+
+// AC-8 and T3: n instances are only worth having if each is its own run under its own name.
+// Nothing in the tool can see that (a review records no run), so the runbook says it.
+func TestAC8TheRunbookBriefsOneNamePerRun(t *testing.T) {
+	runbook := theRunbook(t)
+	if !regexp.MustCompile(`(?i)\bone name\b|\bone run\b|\beach instance\b`).MatchString(runbook) {
+		t.Error("AC-8 the runbook does not say that each instance is its own run, under its own name")
+	}
+}
+
+// AC-8: the seven reviewer definitions spell `sdlc review add <gate> <role>` literally. An
+// instance told only that records its review under its role, and the gate waits for ever. So
+// the command each definition gives takes the name from the brief: naming `<role>-2` in the
+// prose and leaving the command alone passes everything else here (red team V7).
+func TestAC8AReviewersDefinitionRecordsUnderTheNameItsBriefGivesIt(t *testing.T) {
+	agents, err := Agents(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	placeholder := regexp.MustCompile(`^<[a-z-]+>$`)
+	seen := 0
+	for _, a := range agents {
+		if !model.IsReviewRole(a.Name) {
+			continue
+		}
+		seen++
+		body := strings.Join(strings.Fields(a.Body), " ")
+		if !strings.Contains(body, a.Name+"-2") {
+			t.Errorf("AC-8 %s's definition does not say an instance records as %s-2", a.Name, a.Name)
+		}
+		if !strings.Contains(body, "brief") {
+			t.Errorf("AC-8 %s's definition does not take its name from the brief", a.Name)
+		}
+		// The role stands third after `add`'s gate: `sdlc review add GATE NAME VERDICT`.
+		commands := 0
+		for line := range strings.SplitSeq(a.Body, "\n") {
+			words := strings.Fields(line)
+			if len(words) < 6 || words[0] != "sdlc" || words[1] != "review" || words[2] != "add" {
+				continue
+			}
+			commands++
+			if !placeholder.MatchString(words[4]) {
+				t.Errorf("AC-8 %s's command records under %q, and takes no name from the brief: %s", a.Name, words[4], line)
+			}
+		}
+		if commands == 0 {
+			t.Errorf("AC-8 %s's definition has no command that records its review", a.Name)
+		}
+	}
+	if seen != 7 {
+		t.Errorf("found %d reviewers among the agents, want 7", seen)
+	}
+}
+
+// AC-3 and AC-8: the project manager picks from the enabled agents, and staffs each copy.
+func TestAC3AC8TheProjectManagerIsToldOfDisabledAgentsAndOfCopies(t *testing.T) {
+	body := strings.Join(strings.Fields(theProjectManager(t).Body), " ")
+	for _, want := range []string{"disabled", "`instances`", "-2"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the project manager's definition does not say %q", want)
+		}
+	}
+}
+
+// AC-14 and T4: no file the plugin ships sends anyone to an old key, and the list of what
+// loosens a check has the new ones.
+func TestAC14ThePluginNamesNoKeyTheTeamReplacedAndConsolidateListsWhatLoosens(t *testing.T) {
+	err := filepath.WalkDir(pluginDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, old := range []string{"staffing.enabled", "staffing.models", "staffing.efforts", "staffing.lowest", "staffing.bring_back", "gate7_advisory"} {
+			if strings.Contains(string(raw), old) {
+				t.Errorf("AC-14 %s names %s", path, old)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(pluginDir, "skills", "consolidate", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	consolidate := strings.Join(strings.Fields(string(raw)), " ")
+	for _, want := range []string{"`can_block`", "`enabled`"} {
+		if !strings.Contains(consolidate, want) {
+			t.Errorf("T4 /sdlc:consolidate does not list %s among what loosens a check", want)
+		}
+	}
+	// The runbook loses the old keys and gains the team, and keeps the offer to install.
+	runbookStillOffersToInstallTheBinaryAndWaitsForAYes(t)
 }

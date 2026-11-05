@@ -148,12 +148,21 @@ func rememberCommit(record *model.Record, at time.Time, migrating bool) {
 	record.Append(eventCommitRecorded, record.Commit, at)
 }
 
-// approvedCommit is the commit the person's latest answer names, where that
-// answer approved. An earlier answer's commit is never read: approved and then
-// sent back is sent back.
+// approvedCommit is the commit the person's latest answer to the work names,
+// where that answer approved. An earlier answer's commit is never read:
+// approved and then sent back is sent back. An approval that answers only a
+// failing agent or a gate done by hand is read past, not stopped at: stopping
+// there left a story held to a person's answer with no anchor, which reads as
+// nothing to check.
 func approvedCommit(record *model.Record) string {
-	if d, ok := record.LatestDecision(); ok && d.Decision == model.DecisionApproved {
-		return d.Commit
+	for _, d := range slices.Backward(record.Approvals) {
+		if !d.AnswersCommit() {
+			continue
+		}
+		if d.Decision == model.DecisionApproved {
+			return d.Commit
+		}
+		return ""
 	}
 	return ""
 }
@@ -165,8 +174,17 @@ func approvedCommit(record *model.Record) string {
 // standing result is gone once it is recorded as failed.
 func answeredSince(record *model.Record) bool {
 	pass := model.GateEvent(model.GateCommit, model.GatePass)
+	// The events carry no kind but in their words, and an approval writes
+	// nothing after its kind: the whole message tells the two that do not
+	// answer the work from a rejection or a look-alike kind.
+	notAnswers := []string{
+		model.ApprovalEvent(model.DecisionApproved, model.KindAgentFailed),
+		model.ApprovalEvent(model.DecisionApproved, model.KindWorkByHand),
+	}
 	for _, e := range slices.Backward(record.Events) {
 		switch {
+		case e.Type == model.EventApproval && slices.Contains(notAnswers, e.Message):
+			continue
 		case e.Type == model.EventApproval:
 			return true
 		case e.Type == model.EventGate && e.Message == pass:
@@ -683,8 +701,12 @@ func looseWhy(branch, trunk, recorded string, f *fault) string {
 // that branch: with HEAD detached or on another branch, HEAD is not what `sdlc
 // stop` lands, and an answer naming it would hold the story to commits nobody
 // was shown.
-func answerForCommits(ctx context.Context, s *store.Store, id string, record *model.Record) (commit, say string, err error) {
-	if !inItsWorktree(s, id) || record.Count(model.EventGate, model.GateEvent(model.GateCommit, model.GatePass)) == 0 {
+//
+// answers is whether the answer about to be given answers the work: an
+// approval of a failing agent's or a by-hand gate's hand-over does not, and
+// gives no commit and says nothing of the commits.
+func answerForCommits(ctx context.Context, s *store.Store, id string, record *model.Record, answers bool) (commit, say string, err error) {
+	if !answers || !inItsWorktree(s, id) || record.Count(model.EventGate, model.GateEvent(model.GateCommit, model.GatePass)) == 0 {
 		return "", "", nil
 	}
 	root, branch, trunk := s.Root(), store.StoryBranch(id), trunkName(s)

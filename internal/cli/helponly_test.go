@@ -35,6 +35,7 @@ var helpPersons = []helpVerb{
 var helpManagers = []helpVerb{
 	{[]string{"gate"}, []string{"analysis", "pass"}, "project-manager-only-staffs"},
 	{[]string{"escalate"}, []string{"spec_unclear", "--message", "x"}, "project-manager-only-staffs"},
+	{[]string{"team", "failure"}, []string{"researcher", "--reason", "x"}, "project-manager-only-staffs"},
 	{[]string{"freeze"}, nil, "project-manager-only-staffs"},
 	{[]string{"start"}, nil, "project-manager-only-staffs"},
 	{[]string{"cost", "add"}, []string{"--usd", "1"}, "project-manager-only-staffs"},

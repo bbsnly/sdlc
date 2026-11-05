@@ -27,7 +27,6 @@
   },
   "spec": { "paths": ["docs/", "spec/", "README.md"] },
   "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
-  "reviews": { "gate7_advisory": false },
   "freeze": { "allow_new_test_files": false },
   "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
   "budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] }

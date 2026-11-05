@@ -95,6 +95,11 @@ func project(t *testing.T, binary string) string {
 	// tool does in one checkout: the story is held where start runs (US-029.2
 	// AC-9). storyworktree_test.go has what it does with them on.
 	worktreesOff(t, root)
+	// Off too (US-109 AC-3): with it on, the analysis gate waits for a staffing, and
+	// the tests built on this are about what comes after it. Every enabled agent then
+	// takes part, which is what they have always walked through. The sandbox is the
+	// project as `sdlc init` wrote it, with the project manager on, and has its staffing.
+	projectManagerOff(t, root)
 	// Committed, as a project is before its first story: `sdlc start` begins new
 	// work only from a trunk with nothing uncommitted on it.
 	git(t, root, "add", "-A")

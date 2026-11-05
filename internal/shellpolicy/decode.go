@@ -39,13 +39,18 @@ func decoded(command string) string {
 			i = copySingleQuoted(&b, command, i)
 		case c == '"':
 			i = copyDoubleQuoted(&b, command, i)
-		case c == '$' && i+1 < len(command) && command[i+1] == '\'':
-			value, end := ansiC(command, i+2)
+		case c == '$' && i+1 < len(command) && command[i+1] == '$':
+			// `$$` is one parameter, so a quote after it opens a plain
+			// string: read as `$'`, `echo $$'\'; …` swallowed the line.
+			b.WriteString("$$")
+			i++
+		case c == '$' && quoteFrom(command, i+1) == '\'':
+			value, end := ansiC(command, skipJoins(command, i+1)+1)
 			b.WriteString(quoted(value))
 			i = end
-		case c == '$' && i+1 < len(command) && command[i+1] == '"':
+		case c == '$' && quoteFrom(command, i+1) == '"':
 			// A string translated for the locale is, untranslated, the string.
-			i = copyDoubleQuoted(&b, command, i+1)
+			i = copyDoubleQuoted(&b, command, skipJoins(command, i+1))
 		case c == '#' && (i == 0 || strings.IndexByte(" \t\r\n;&|()", command[i-1]) >= 0):
 			i = copyComment(&b, command, i)
 		default:
@@ -110,22 +115,50 @@ func copyDoubleQuoted(b *strings.Builder, command string, i int) int {
 	return i
 }
 
+// skipJoins is the index of the first character from i that is not part of a
+// backslash and newline, which the shells take out before they read a word:
+// `$\<newline>'...'` is an ANSI-C string.
+func skipJoins(command string, i int) int {
+	for i+1 < len(command) && command[i] == '\\' && command[i+1] == '\n' {
+		i += 2
+	}
+	return i
+}
+
+// quoteFrom is the character at i, past any backslash and newline, or 0.
+func quoteFrom(command string, i int) byte {
+	if i = skipJoins(command, i); i < len(command) {
+		return command[i]
+	}
+	return 0
+}
+
 // ansiC decodes a `$'...'` string from just after its opening quote, as bash
-// does, and returns it and the index of its closing quote.
+// does, and returns it and the index of its closing quote. Where the string
+// ends is found first, a backslash taking the next character whatever it is,
+// and only then are the escapes inside decoded, so that `\c` cannot take the
+// closing quote, or a backslash that escapes one: decoded as it went,
+// `$'\c'` ran on to the end of the line and every reading that waits for
+// this one let the line through.
 func ansiC(command string, i int) (string, int) {
-	var b strings.Builder
-	for ; i < len(command); i++ {
-		c := command[i]
-		if c == '\'' {
-			return b.String(), i
+	end := i
+	for end < len(command) && command[end] != '\'' {
+		if command[end] == '\\' {
+			end++
 		}
-		if c != '\\' || i+1 == len(command) {
+		end++
+	}
+	end = min(end, len(command))
+	body := command[i:end]
+	var b strings.Builder
+	for k := 0; k < len(body); k++ {
+		if c := body[k]; c != '\\' || k+1 == len(body) {
 			b.WriteByte(c)
 			continue
 		}
-		i = ansiEscape(&b, command, i+1)
+		k = ansiEscape(&b, body, k+1)
 	}
-	return b.String(), i
+	return b.String(), end
 }
 
 // ansiEscape decodes the escape whose letter is at i, just after its
@@ -153,9 +186,13 @@ func ansiEscape(b *strings.Builder, command string, i int) int {
 	case 'c':
 		// A control character: \cA is 1. \c? is 0x1f here, as bash 3.2
 		// makes it; bash 5 makes it DEL. Neither names a program or a path.
+		// At the very end of the string it is kept as written, as bash 5.3
+		// keeps it.
 		if i+1 < len(command) {
 			i++
 			b.WriteByte(command[i] & 0x1f)
+		} else {
+			b.WriteString(`\c`)
 		}
 	case 'x', 'u', 'U':
 		width := map[byte]int{'x': 2, 'u': 4, 'U': 8}[e]

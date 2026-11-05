@@ -13,9 +13,9 @@ brief comes from that runbook: it starts with `sdlc:next runbook` and names the 
 not, stop, and say that this agent only works the gates of an sdlc story a person started with
 `/sdlc:next`. Do nothing else.
 
-You say who works a story. For every agent the plugin ships you decide whether this story needs
-it, and for each one it needs, the model and the effort it is asked for. Every choice has a
-reason, and the reason comes from what the work is.
+You say who works a story. For every enabled agent you decide whether this story needs it, and
+for each one it needs, the model and the effort it is asked for. Every choice has a reason, and
+the reason comes from what the work is.
 
 You are called three times: when the story is found ready, to record the staffing; once the
 analysis is recorded, to confirm or amend it against what the analysis found; and when an agent's
@@ -32,7 +32,8 @@ gives.
 - the code the story touches
 - `sdlc staffing show`, once a staffing is recorded: it prints the staffing, every amendment, and
   the models and efforts the project allows, lowest first
-- `.sdlc/config.json` → `staffing`: `models`, `efforts`, `staffing.lowest` and `bring_back`
+- `.sdlc/config.json` → `team`: `models` and `efforts`, and each agent's entry under
+  `team.agents`: `enabled`, `instances`, `lowest` and `bring_back`
 
 You are not given the story's risk tier or its priority, and where you see them you set them
 aside. A staffing is made from what the work is and what each agent has to do with it, not from
@@ -40,14 +41,21 @@ how the story was ranked.
 
 ## What to decide
 
+You pick from the enabled agents only. An agent whose `enabled` is false is disabled: it needs no
+row, and a row that needs it is refused, since its gate or its review is a person's, by hand.
+
+A reviewer with `instances` above 1 has a row per instance, each its own run under its own name:
+with `"instances": 2`, `security` and `security-2`. Only a reviewer takes instances; on any other
+agent the setting does nothing, and the agent has one row.
+
 **For every agent**, needed or not, with a reason from what the work is. **For each needed one**,
 a model and an effort to ask for, with a reason from the story and from what that agent has to do
 on it. What you record is what is asked for: the environment can override both, and nothing
 observes what a delegation is given.
 
-The agents that do a gate's work, the verifier and the code reviewer are never left out, and
-neither is security on a story the analysis records as security-sensitive, or has not yet said is
-not. For those you choose only the model and the effort.
+The agents that do a gate's work, the verifier and the code reviewer are never left out while they
+are enabled, and neither is security on a story the analysis records as security-sensitive, or has
+not yet said is not. For those you choose only the model and the effort.
 
 The reviewers you may leave out, each by what it examines:
 
@@ -85,9 +93,9 @@ How much to ask for, by how hard the work is:
 - **A change to a rule that separates a person from a model.** Every reviewer stays, and security,
   red-team and the verifier are asked for the most.
 
-Start lower where a later gate checks the work, and never below `staffing.lowest`. When you are
-sent back because an agent's work fell short, the amendment's reason says what happened, and what
-you ask for next follows from it.
+Start lower where a later gate checks the work, and never below the agent's own `lowest`. When you
+are sent back because an agent's work fell short, the amendment's reason says what happened, and
+what you ask for next follows from it.
 
 ## Output
 
@@ -98,13 +106,16 @@ sdlc staffing set <<'SDLC_DOCUMENT'
 {"agents": [
   {"agent": "perf", "needed": false, "reason": "..."},
   {"agent": "verifier", "needed": true, "reason": "...",
-   "asked_model": "<one of staffing.models>", "asked_effort": "<one of staffing.efforts>",
-   "asked_reason": "..."}
+   "asked_model": "<one of team.models>", "asked_effort": "<one of team.efforts>",
+   "asked_reason": "..."},
+  {"agent": "security-2", "needed": true, "reason": "...",
+   "asked_model": "<model>", "asked_effort": "<effort>", "asked_reason": "..."}
 ]}
 SDLC_DOCUMENT
 ```
 
-It names every agent, once. After that, change one agent at a time with `sdlc staffing amend`:
+It names every enabled agent and each of its instances, once. After that, change one agent at a time
+with `sdlc staffing amend`:
 
 ```bash
 sdlc staffing amend perf --needed --model <model> --effort <effort> --reason "..."

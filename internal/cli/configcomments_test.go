@@ -24,10 +24,11 @@ import (
 	"testing"
 )
 
-// ccmSettings is the twelve top-level settings the story names.
+// ccmSettings is the twelve top-level settings the story names, with reviews out of
+// them since US-109: `sdlc init` writes no reviews section from then on.
 var ccmSettings = []string{
 	"version", "backlog", "git", "commands", "thresholds", "paths",
-	"spec", "loop", "reviews", "freeze", "human_gates", "budget",
+	"spec", "loop", "freeze", "human_gates", "budget",
 }
 
 // ccmStacks is every stack init detects, and none, with the smallest files it
@@ -137,7 +138,56 @@ func stfWithoutConfigComments(t *testing.T, transcript string) string {
 	if err != nil {
 		t.Fatalf("the configuration in the transcript: %v", err)
 	}
+	if section, err = ccmWithoutTeam(section); err != nil {
+		t.Fatalf("the configuration in the transcript: %v", err)
+	}
 	return transcript[:start] + section + transcript[start+n:]
+}
+
+// ccmWithoutTeam is text, a JSON object, with its top-level "team" member cut out:
+// the key, its value, the comma beside it, and the lines they stood on. US-109 AC-2
+// has `sdlc init` spell the section out, and what it holds is
+// TestAC2InitSpellsOutTheTeamDefaults's to say, by value; this is for the comparisons
+// by text of everything else in the file.
+func ccmWithoutTeam(text string) (string, error) {
+	dec := json.NewDecoder(strings.NewReader(text))
+	if _, err := dec.Token(); err != nil {
+		return "", fmt.Errorf("not a JSON object: %w", err)
+	}
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return "", err
+		}
+		key, _ := tok.(string)
+		keyEnd := int(dec.InputOffset())
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return "", err
+		}
+		if key != "team" {
+			continue
+		}
+		from, to := strings.LastIndex(text[:keyEnd], `"team"`), int(dec.InputOffset())
+		rest := strings.TrimLeft(text[to:], " \t\r\n")
+		if strings.HasPrefix(rest, ",") {
+			to = len(text) - len(rest) + 1
+		} else if before := strings.TrimRight(text[:from], " \t\r\n"); strings.HasSuffix(before, ",") {
+			from = len(before) - 1
+		}
+		out := text[:from] + text[to:]
+		var kept strings.Builder
+		for line := range strings.Lines(out) {
+			if strings.TrimSpace(line) != "" {
+				kept.WriteString(line)
+			}
+		}
+		if !json.Valid([]byte(kept.String())) {
+			return "", fmt.Errorf("what is left is not JSON:\n%s", kept.String())
+		}
+		return kept.String(), nil
+	}
+	return text, nil
 }
 
 // ccmRoundTrip is the layout the cut has to produce, and what it has to leave.
@@ -248,7 +298,7 @@ func TestAC4TheTranscriptComparisonCutsOnlyTheConfigurationsCommentKeys(t *testi
 // comment keys out of both sides of the comparison leaves the evidence as it
 // was and does not fix the wording of any block. It holds today and has to keep
 // holding.
-func TestAC4TheStaffingOffGoldenFilesHoldAConfigurationOnceItsCommentsAreCut(t *testing.T) {
+func TestAC4TheTeamDefaultsGoldenFilesHoldAConfigurationOnceItsCommentsAreCut(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"prose.golden", "json.golden"} {
 		raw, err := os.ReadFile(stfGolden(name))
@@ -271,8 +321,9 @@ func TestAC4TheStaffingOffGoldenFilesHoldAConfigurationOnceItsCommentsAreCut(t *
 // before the story. The files under testdata/init-config were captured from
 // the template as it stood before the story, with the top-level `_` keys cut
 // out, and nothing here reads the implementation to learn what to expect. It
-// passes today, by design: it guards what must not change, and it fails the day
-// a value, a command or the layout of a line moves.
+// fails the day a value, a command or the layout of a line moves. US-109 took the
+// `reviews` line out of each, since `init` writes none from then on (ANALYSIS.md,
+// section 10), and the team section is cut out of what is compared.
 func TestAC4EverySettingHasTheValueInitWroteBeforeTheStoryForEveryStackAndNone(t *testing.T) {
 	t.Parallel()
 	for _, stack := range ccmStacks {
@@ -289,6 +340,9 @@ func TestAC4EverySettingHasTheValueInitWroteBeforeTheStoryForEveryStackAndNone(t
 			}
 			got, err := ccmWithoutComments(string(raw))
 			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err = ccmWithoutTeam(got); err != nil {
 				t.Fatal(err)
 			}
 			wantRaw, err := os.ReadFile(filepath.Join("testdata", "init-config", stack.golden))

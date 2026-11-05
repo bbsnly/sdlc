@@ -43,6 +43,8 @@ type statusPayload struct {
 	// Staffing is "none" or "recorded" for the active story where the project
 	// has the staffing on, so a session knows whether to ask for one.
 	Staffing string `json:"staffing,omitempty"`
+	// Disabled is every agent the team disables.
+	Disabled []string `json:"disabled,omitempty"`
 	// Findings is every finding the active story's reviews listed, with its
 	// closings; Referred is those closed as referred, which are the person's.
 	Findings []findingInfo `json:"findings,omitempty"`
@@ -217,7 +219,8 @@ func (v *statusView) readActive(cmd *cobra.Command, p *config.Project) error {
 			payload.Referred = append(payload.Referred, f)
 		}
 	}
-	if p.Config.Staffing.Enabled {
+	payload.Disabled = disabledAgents(p.Config.Team)
+	if p.Config.Team.StaffingOn() {
 		payload.Staffing = "none"
 		if staffed(record) {
 			payload.Staffing = "recorded"
@@ -328,10 +331,25 @@ func (v *statusView) printActive(w io.Writer, finished bool, notHere, notHereNex
 	printFreeze(w, payload.Freeze)
 	printCost(w, payload.Cost)
 	if payload.Staffing != "" {
-		fmt.Fprintf(w, "\n  staffing  %s\n", describeStaffing(record))
+		fmt.Fprintf(w, "\n  staffing  %s\n", describeStaffing(v.s.Config().Team, record))
 	}
 	if payload.NextGate != "" {
 		fmt.Fprintf(w, "\n  next   %s\n", payload.NextGate)
+	}
+	if payload.NextGate != "" {
+		gate := model.Gate(payload.NextGate)
+		names, counts := failuresSince(record, gate)
+		for _, name := range names {
+			fmt.Fprintf(w, "  %s has failed %d %s at %s; a person is asked at %d\n", name, counts[name],
+				plural(counts[name], "time", "times"), gate, v.s.Config().Team.RetriesAllowed()+1)
+		}
+	}
+	if team := v.s.Config().Team; teamHasNews(team) {
+		fmt.Fprintln(w)
+		sayTeam(w, team, gateDisabled(team))
+		if payload.NextGate != "" {
+			sayByHand(w, team, model.Gate(payload.NextGate))
+		}
 	}
 	// Started from a terminal, or with the record of the session
 	// spoiled, the story holds no session, and nothing tells the

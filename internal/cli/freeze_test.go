@@ -40,11 +40,57 @@ func gitProject(t *testing.T) string {
 // Story worktrees are turned off: these tests are about one checkout, and hold
 // what `sdlc start` does there to the released tool (US-029.2 AC-9). What start
 // does with them on is storyworktree_test.go's.
+//
+// The project manager is disabled too (US-109 AC-3): with it on, the analysis gate
+// waits for a staffing, and these tests are about what comes after it. Every enabled
+// agent then takes part, which is what they have always walked through. A test of
+// the staffing puts it back: stfProjectFrom writes a team section of its own, and
+// team_test.go's teamOn does the same.
 func initialised(t *testing.T, root string) {
 	t.Helper()
 	runIn(t, root, "init")
 	worktreesOff(t, root)
+	projectManagerOff(t, root)
 	commitEverything(t, root)
+}
+
+// projectManagerOff disables the project manager in root's configuration, keeping
+// the rest of the team section as it is.
+func projectManagerOff(t *testing.T, root string) {
+	t.Helper()
+	setTeamAgentOnDisk(t, root, "project-manager", map[string]any{"enabled": false})
+}
+
+// setTeamAgentOnDisk replaces one agent's entry in the configuration's team section.
+func setTeamAgentOnDisk(t *testing.T, root, agent string, entry map[string]any) {
+	t.Helper()
+	path := filepath.Join(root, ".sdlc", "config.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	team, _ := cfg["team"].(map[string]any)
+	if team == nil {
+		team = map[string]any{}
+	}
+	agents, _ := team["agents"].(map[string]any)
+	if agents == nil {
+		agents = map[string]any{}
+	}
+	agents[agent] = entry
+	team["agents"] = agents
+	cfg["team"] = team
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(out, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // worktreesOff sets git.worktrees to false in root's configuration, keeping

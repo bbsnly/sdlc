@@ -250,7 +250,7 @@ func unreadClause(r unreadReason) (clause, route string) {
 // last name, and its spelt twins (the segment carries the quotes), so a quoted
 // `"$D"/docs` stays a plain name while an unquoted `$D/docs` and a quoted
 // `"$D"` do not, which the parsed word alone cannot tell apart.
-func unreadSource(source, segment string) (unreadReason, bool) {
+func unreadSource(source, segment string, reading assignments) (unreadReason, bool) {
 	c := clean(source)
 	switch {
 	case strings.Contains(source, "{}"):
@@ -274,7 +274,7 @@ func unreadSource(source, segment string) (unreadReason, bool) {
 	// `%` outside every quote, or an unclosed quote, in any spelt twin of the
 	// source: read by the first twin alone, a quoted `"$D"/docs` beside a bare
 	// `$D/docs` would hide the bare one.
-	if expandsLastName(source) || slices.ContainsFunc(speltTwins(source, segment), unreadSpelt) {
+	if expandsLastName(source) || slices.ContainsFunc(speltTwins(source, segment, reading), unreadSpelt) {
 		return unreadSpelling, true
 	}
 	return readSource, false
@@ -296,8 +296,8 @@ func expandsLastName(word string) bool {
 // speltTwins are the words of segment that unquote to source, as the command
 // spells them; or source itself where it is a word the walk made, which the
 // segment does not spell.
-func speltTwins(source, segment string) []string {
-	unquoted, raw := spelledFields(segment)
+func speltTwins(source, segment string, reading assignments) []string {
+	unquoted, raw := spelledFields(segment, reading)
 	var twins []string
 	for i, w := range unquoted {
 		if w == source {
@@ -469,14 +469,14 @@ func (q pathQuestion) aboveWord(spelt string) (Finding, bool) {
 // > CLAUDE.md` lost the protected-path rule it is refused under, while here
 // every named word was refused by loop state already. Not placed, `cd /wor?
 // && tar -xf /tmp/p.tar` filled /work.
-func checkFillsAbove(q pathQuestion) (Finding, bool) {
+func checkFillsAbove(q pathQuestion, reading assignments) (Finding, bool) {
 	if q.s.Root == "" || len(q.run.words) == 0 {
 		return Finding{}, false
 	}
 	if q.lost && q.from == "" && isAbsolute(q.dir) && strings.ContainsAny(q.dir, "*?[") {
 		q.from = q.dir
 	}
-	for _, d := range filledDirs(q.run, q.segment) {
+	for _, d := range filledDirs(q.run, q.segment, reading) {
 		shown, how, ok := q.aboveDir(clean(d.dir))
 		if !ok {
 			continue
@@ -519,7 +519,7 @@ func plainDirs(dirs []string) []filledDir {
 // "." is the one it runs in. make -C and git -C are left out: they run a
 // program there rather than copy files into it. segment is the command as
 // spelled, which unreadSource reads for a source's quotes.
-func filledDirs(run invocation, segment string) []filledDir {
+func filledDirs(run invocation, segment string, reading assignments) []filledDir {
 	words := run.words
 	name, args := base(words[0]), words[1:]
 	switch name {
@@ -530,7 +530,7 @@ func filledDirs(run invocation, segment string) []filledDir {
 		// is seen where it lands: `cp -rt .. /tmp/p/*` filled nothing read by
 		// linkArguments alone.
 		for _, r := range copyReadings(name, args) {
-			if dir, unread, ok := fillsDestination(r, args, run, segment); ok {
+			if dir, unread, ok := fillsDestination(r, args, run, segment, reading); ok {
 				dirs = append(dirs, filledDir{dir: dir, unread: unread})
 			}
 		}
@@ -573,14 +573,14 @@ func filledDirs(run invocation, segment string) []filledDir {
 // read as a plain name (Step 18). Counted for every recursive copy and every
 // move, `mv build.log ..` and `cp -r docs ..` were told they put an
 // instruction file above the project.
-func fillsDestination(r copyReading, args []string, run invocation, segment string) (string, unreadReason, bool) {
+func fillsDestination(r copyReading, args []string, run invocation, segment string, reading assignments) (string, unreadReason, bool) {
 	if slices.ContainsFunc(r.from, fillsWithContents) || noTargetDirectory(args) ||
 		slices.ContainsFunc(r.from, globsAnInstructionFile) || slices.ContainsFunc(r.from, isClaudeDirectory) {
 		return r.to, readSource, true
 	}
 	for _, f := range r.from {
 		// A word a substitution was cut from (run.cut) is spelt with one.
-		if unread, ok := unreadSource(f, segment); ok || slices.Contains(run.cut, f) {
+		if unread, ok := unreadSource(f, segment, reading); ok || slices.Contains(run.cut, f) {
 			return r.to, cmp.Or(unread, unreadSpelling), true
 		}
 	}

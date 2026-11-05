@@ -1,28 +1,29 @@
 package cli
 
-// US-026 AC-10: where the configuration does not turn the staffing on, every
-// gate waits for exactly the reviewers the released tool requires, and no
-// command's output changes.
+// US-109 AC-2: a project whose configuration has no team section behaves with every
+// default, and a project that changed nothing in the one `sdlc init` writes behaves the
+// same. No command's output changes beyond what the staffing being on prints.
+// The file and testdata/staffing-off keep trunk's names; staffing off now means the
+// project manager is turned off.
 //
-// "No output changes" is held against the output itself, not against a
-// description of it. The files under testdata/staffing-off were written by the
-// tree as it stood before the story (c7bb9d8), from the walk below: one story
-// taken from `sdlc init` to `sdlc ack`, with a refusal at each reviewed gate
-// and a hand-over to a person, every command in prose in one project and with
-// --json in another, and the story's record as it is on disk at the end. They are compared byte for byte
-// after what differs between two runs is replaced: where the project is, the
-// time, and the names of commits and trees.
+// "No output changes" is held against the output itself, not against a description
+// of it. The files under testdata/staffing-off were written by the tree as it stood
+// before the story (6a88c57), from the walk below, with the old section's staffing
+// turned on and the lists at the new defaults: one story taken from `sdlc init` to
+// `sdlc ack`, with a refusal at each reviewed gate and a hand-over to a person, every
+// command in prose in one project and with --json in another, and the story's record
+// as it is on disk at the end. They are compared byte for byte after what differs
+// between two runs is replaced: where the project is, the time, and the names of
+// commits and trees.
 //
-// US-002: the configuration `sdlc init` writes, which the walk prints, now has
-// a comment block above each setting, and the files still hold it as the tree
-// before US-026 wrote it. Their wording is not what AC-10 is about, so both the
-// golden and the walk are compared with the top-level `_` keys of that one file
-// cut out (stfWithoutConfigComments, in configcomments_test.go). The files are
-// untouched, and every other byte of both transcripts is still compared as it is.
+// The configuration `sdlc init` writes, which the walk prints, is compared with its
+// top-level `_` keys and the team section cut out (stfWithoutConfigComments, in
+// configcomments_test.go): the block's wording and the section's layout are not what
+// this is about, and team_test.go holds what the section says. The golden has no
+// `reviews` line, because `init` no longer writes one (ANALYSIS.md, section 10).
 //
 // test/e2e's TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox holds
-// the prose of the built binary the same way, with story worktrees on, and was
-// written before this story too.
+// the prose of the built binary the same way, with story worktrees on.
 
 import (
 	"encoding/json"
@@ -108,9 +109,10 @@ func (tr *stfTranscript) file(rel string) {
 	tr.out.WriteString("== " + rel + "\n" + tr.normalise(string(raw)) + "\n")
 }
 
-// stfOffWalk takes one story from `sdlc init` to `sdlc ack` in a project that
-// says nothing about the staffing, and returns everything the commands printed.
-func stfOffWalk(t *testing.T, asJSON bool) string {
+// stfOffWalk takes one story from `sdlc init` to `sdlc ack` in a project that sets
+// nothing in the team section, and returns everything the commands printed. With
+// noTeam, the section `init` wrote is taken out before the story starts.
+func stfOffWalk(t *testing.T, asJSON, noTeam bool) string {
 	t.Helper()
 	root := gitProject(t)
 	// doctor reports the binary the hook would run: one of the test's own,
@@ -136,6 +138,9 @@ func stfOffWalk(t *testing.T, asJSON bool) string {
 	tr.run("", "init")
 	tr.file(".sdlc/config.json")
 	worktreesOff(t, root)
+	if noTeam {
+		teamOutOfTheFile(t, root)
+	}
 	commitEverything(t, root)
 
 	tr.reads()
@@ -143,6 +148,7 @@ func stfOffWalk(t *testing.T, asJSON bool) string {
 	tr.reads()
 
 	tr.run("", "gate", "dor", "pass", "--note", "the criteria are testable")
+	tr.run(stfFull().text(t), "staffing", "set")
 	tr.run("", "gate", "analysis", "pass")
 	tr.run("# Analysis\n", "artifact", "write", "analysis")
 	tr.run("# Threats\n", "artifact", "write", "threats")
@@ -307,14 +313,39 @@ func stfJSONValueEnd(text string, from int) int {
 	return len(text)
 }
 
-func TestAC10WithNoStaffingSectionEveryCommandPrintsWhatItPrintedBeforeTheStory(t *testing.T) {
+// teamOutOfTheFile takes the team section out of root's configuration, as a project
+// from before the story has it.
+func teamOutOfTheFile(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, ".sdlc", "config.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	delete(cfg, "team")
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(out, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAC2WithEveryDefaultEveryCommandPrintsWhatTheStaffingPrintedBeforeTheStory(t *testing.T) {
 	t.Parallel()
 	for _, form := range []struct {
-		name, file string
-		json       bool
+		name, file   string
+		json, noTeam bool
 	}{
-		{"AC_10 in prose", "prose.golden", false},
-		{"AC_10 with --json", "json.golden", true},
+		{"AC_2 the section init wrote, in prose", "prose.golden", false, false},
+		{"AC_2 the section init wrote, with --json", "json.golden", true, false},
+		{"AC_2 no team section, in prose", "prose.golden", false, true},
+		{"AC_2 no team section, with --json", "json.golden", true, true},
 	} {
 		t.Run(form.name, func(t *testing.T) {
 			t.Parallel()
@@ -322,7 +353,7 @@ func TestAC10WithNoStaffingSectionEveryCommandPrintsWhatItPrintedBeforeTheStory(
 			if err != nil {
 				t.Fatalf("the output the tool printed before the story is not there to compare with: %v", err)
 			}
-			got := stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, stfOffWalk(t, form.json))))
+			got := stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, stfOffWalk(t, form.json, form.noTeam))))
 			wanted := stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, string(want))))
 			if got == wanted {
 				return
@@ -338,51 +369,10 @@ func TestAC10WithNoStaffingSectionEveryCommandPrintsWhatItPrintedBeforeTheStory(
 				}
 				if g != w {
 					from := max(0, i-12)
-					t.Fatalf("with no staffing section the output changed at line %d of %s:\n got  %q\n want %q\n\nthe lines before it:\n%s",
+					t.Fatalf("with every default the output changed at line %d of %s:\n got  %q\n want %q\n\nthe lines before it:\n%s",
 						i+1, form.file, g, w, strings.Join(gotLines[from:i], "\n"))
 				}
 			}
 		})
-	}
-}
-
-// A section that is there and off is the same as no section: nothing is asked
-// of the story and nothing more is printed.
-func TestAC10AStaffingSectionThatIsOffIsTheSameAsNone(t *testing.T) {
-	t.Parallel()
-	for _, section := range []map[string]any{
-		{"enabled": false},
-		{"enabled": false, "models": []string{"haiku", "opus"}, "efforts": []string{"low", "high"},
-			"lowest":     map[string]any{"verifier": map[string]string{"model": "opus", "effort": "high"}},
-			"bring_back": map[string]any{"security": []string{"internal/"}}},
-	} {
-		root := gitProjectInitialised(t)
-		before := run(t, "doctor", "--json").stdout
-		setConfigOnDisk(t, root, "staffing", section)
-		commitEverything(t, root)
-		if after := run(t, "doctor", "--json").stdout; after != before {
-			t.Errorf("doctor reads a staffing section that is off as something to report:\n%s\nbefore the section:\n%s", after, before)
-		}
-		mustRun(t, "start")
-		// Every gate passes with nothing recorded about the staffing, on the
-		// reviews the released tool asks for and no others.
-		reach(t, root, "")
-		for _, args := range [][]string{{"status", "--json"}, {"review", "list", "--json"}, {"log", "--json"}} {
-			var doc map[string]any
-			out := mustRun(t, args...).stdout
-			if err := json.Unmarshal([]byte(out), &doc); err != nil {
-				t.Fatal(err)
-			}
-			if strings.Contains(out, "staffing") || strings.Contains(out, "left_out") || strings.Contains(out, "asked_") {
-				t.Errorf("sdlc %s says something about the staffing in a project that has it off:\n%s", strings.Join(args, " "), out)
-			}
-		}
-		raw, err := os.ReadFile(filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(raw), "staffing") {
-			t.Errorf("the record of a story worked with the staffing off holds one:\n%s", raw)
-		}
 	}
 }

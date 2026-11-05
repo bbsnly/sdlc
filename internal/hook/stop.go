@@ -73,7 +73,7 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string), now f
 		return allow
 	}
 
-	cfg, err := config.Load(project)
+	cfg, err := loadConfig(project)
 	if err != nil {
 		cfg = config.Default()
 	}

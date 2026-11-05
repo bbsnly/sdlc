@@ -447,7 +447,7 @@ type findScan struct {
 // newFindScan cuts the spelled text into its pieces and lines them up with
 // plain, the path rules' segments of the same command. Each byte is looked at
 // once and each piece parsed once.
-func newFindScan(sp string, plain []string) *findScan {
+func newFindScan(sp string, plain []string, reading assignments) *findScan {
 	sc := &findScan{sp: sp, flat: asSplit(sp), budget: 32*len(sp) + 4096}
 	var q quoting
 	from, q0 := 0, q
@@ -476,14 +476,14 @@ func newFindScan(sp string, plain []string) *findScan {
 		}
 	}
 	cut(len(sp), false)
-	sc.lineUp(plain)
+	sc.lineUp(plain, reading)
 	return sc
 }
 
 // lineUp sets lined where every piece has the words of the plain segment in
 // the same place. There is no search and no second try: a find is read from the
 // piece that stands where its segment stands, or not at all.
-func (sc *findScan) lineUp(plain []string) {
+func (sc *findScan) lineUp(plain []string, reading assignments) {
 	if len(sc.pieces) != len(plain) {
 		return
 	}
@@ -491,8 +491,8 @@ func (sc *findScan) lineUp(plain []string) {
 	for i, p := range sc.pieces {
 		segment, _, _ := subshellMarks(plain[i], &tickPlain)
 		piece, _, _ := subshellMarks(sc.flat[p.from:p.to], &tickPiece)
-		want, _, _ := parse(segment)
-		got, _, _ := parse(piece)
+		want, _, _ := parse(segment, reading)
+		got, _, _ := parse(piece, reading)
 		if at, same := sameWords(got, want); !same {
 			sc.differ = at
 			return
@@ -535,7 +535,7 @@ func sameWords(got, want []string) (string, bool) {
 
 // wordFields are the fields of a segment that parse reads as words of the
 // command: not a redirect or its target, and not an assignment in front.
-func wordFields(segment string) []field {
+func wordFields(segment string, reading assignments) []field {
 	var out []field
 	var words []string
 	fields := spacedFields(segment)
@@ -545,7 +545,7 @@ func wordFields(segment string) []field {
 		switch {
 		case fields[i].op:
 			i, _ = targetOf(fields, i)
-		case isAssignment(f) && (leading || exporting(words)):
+		case reading.is(f) && (leading || exporting(words)):
 		default:
 			leading = false
 			words = append(words, f)
@@ -608,12 +608,12 @@ const (
 // or the whole text where the reader cannot say where the segment stands.
 // Judged on its segment alone, such a find with a separator inside a quoted
 // word had its action cut off, and was read as one that changes nothing.
-func (sc *findScan) read(idx int, segment string, words []string, evals int) foundFind {
+func (sc *findScan) read(idx int, segment string, words []string, evals int, reading assignments) foundFind {
 	var out foundFind
 	// from is where the find's own piece ends in the text.
 	from := 0
 	fail := func(cause findCause, word, why string) foundFind {
-		return sc.givenUp(segment, from, cause, word, why)
+		return sc.givenUp(segment, from, cause, word, why, reading)
 	}
 	if !sc.lined || idx >= len(sc.pieces) || len(words) == 0 {
 		return fail(causeDiffer, sc.differ, whyDiffer)
@@ -622,7 +622,7 @@ func (sc *findScan) read(idx int, segment string, words []string, evals int) fou
 	// the find has.
 	p := sc.pieces[idx]
 	from = p.to
-	fields := wordFields(sc.flat[p.from:p.to])
+	fields := wordFields(sc.flat[p.from:p.to], reading)
 	n := len(fields) - len(words)
 	if n < 0 {
 		return fail(causeDiffer, words[0], whyNoStart)
@@ -645,12 +645,12 @@ func (sc *findScan) read(idx int, segment string, words []string, evals int) fou
 	if b > p.to {
 		// The find runs on past where the path rules ended its segment: its own
 		// words are made from all of it, for the rules to be asked again with.
-		all, _, _ := parse(sc.flat[a:b])
+		all, _, _ := parse(sc.flat[a:b], reading)
 		// The first reading alone: these words start at the find itself, which
 		// is no wrapper, so its only other readings start at a `]]` or a `}`
 		// among find's words, and the path walk's loop reads those for the
 		// segment.
-		full := programUnderEval(all)
+		full := programUnderEval(all, reading)
 		if len(full.words) == 0 || base(full.words[0]) != "find" {
 			return fail(causeDiffer, words[0], whyNoStart)
 		}
@@ -664,7 +664,7 @@ func (sc *findScan) read(idx int, segment string, words []string, evals int) fou
 	if cause != causeNone {
 		return fail(cause, word, why)
 	}
-	out.exp = forkedActions(readFind(tokens))
+	out.exp = forkedActions(readFind(tokens), reading)
 	return out
 }
 
@@ -675,12 +675,12 @@ func (sc *findScan) read(idx int, segment string, words []string, evals int) fou
 // strace -J 1 rm {} \;` took strace for a program that only reads, read one
 // way, and removed every file it found, the loop's own among them, the other
 // (US-112, Gate 5).
-func forkedActions(exp findExpression) findExpression {
+func forkedActions(exp findExpression, reading assignments) findExpression {
 	if !exp.followed {
 		return exp
 	}
 	for _, e := range exp.execs {
-		if len(e) > 0 && len(program(e).others) > 0 {
+		if len(e) > 0 && len(program(e, reading).others) > 0 {
 			return unfollowed(causeForked, e[0], whyForked)
 		}
 	}
@@ -696,7 +696,7 @@ func substitutesAProcess(text string) bool {
 // givenUp is the answer for a find the reader gives up on: not followed, and
 // with every word to the end of the command for the rules to judge it by.
 // from is where the find's own piece ends in the text.
-func (sc *findScan) givenUp(segment string, from int, cause findCause, word, why string) foundFind {
+func (sc *findScan) givenUp(segment string, from int, cause findCause, word, why string, reading assignments) foundFind {
 	out := foundFind{exp: unfollowed(cause, word, why)}
 	// The bytes to the end are charged before they are read. Past the budget
 	// nothing is made: the command spends the budget itself, so the answer
@@ -706,13 +706,13 @@ func (sc *findScan) givenUp(segment string, from int, cause findCause, word, why
 		return out
 	}
 	out.segment = segment + " " + sc.flat[from:]
-	all, _, _ := parse(out.segment)
+	all, _, _ := parse(out.segment, reading)
 	// The first reading alone, though a wrapper before the find can fork:
 	// the path walk gives each other reading of the segment an unfollowed
 	// find of its own, so a reading that reaches another program through the
 	// fork is judged whole, from where the find would start (security, round
 	// 6, N3).
-	full := programUnderEval(all)
+	full := programUnderEval(all, reading)
 	out.more, out.toEnd, out.words = true, true, full.words
 	return out
 }

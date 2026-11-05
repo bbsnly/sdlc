@@ -7,14 +7,16 @@ package cli
 // staffing, because plan already names Gate 4's record and PLAN.md. So no name
 // below says plan for it.
 //
-// Every project here is one the test makes and turns the staffing on in. None
-// reads this repository's own configuration (decision 11).
+// Every project here is one the test makes, with a team section of its own and the
+// project manager on (US-109 moved the settings from `staffing` to `team`, and the
+// staffing is on unless a person disabled the project manager). None reads this
+// repository's own configuration (decision 11).
 //
 // What the tests bind that the criteria leave to the design (ANALYSIS.md, "The
 // surface, as proposed"): the subcommands show, set, amend and assign and their
 // flags; the document `staffing set` reads, which is the `agents` list
-// `staffing show --json` prints; the fields of that output; the settings under
-// `staffing`; and the codes SDLC-E0067 to SDLC-E0074.
+// `staffing show --json` prints; the fields of that output; and the codes
+// SDLC-E0067 to SDLC-E0074.
 
 import (
 	"encoding/json"
@@ -31,7 +33,7 @@ import (
 )
 
 const (
-	stfCodeOff        = "SDLC-E0067" // a staffing command where the staffing is off
+	stfCodeOff        = "SDLC-E0067" // writing a staffing where the project manager is disabled
 	stfCodeNone       = "SDLC-E0068" // no staffing recorded
 	stfCodeIncomplete = "SDLC-E0069" // a staffing that is not whole, or a second one
 	stfCodeFloor      = "SDLC-E0070" // leaving out an agent that is never left out
@@ -110,24 +112,24 @@ func (s stfShown) atGate(name string) (stfAtGate, bool) {
 	return stfAtGate{}, false
 }
 
-// stfSection is the staffing section the tests turn on.
+// stfSection is the team section these tests write: the lists, each agent's lowest
+// and its bring_back, with the project manager on.
 func stfSection() map[string]any {
 	return map[string]any{
-		"enabled": true,
 		"models":  []string{"haiku", "sonnet", "opus"},
 		"efforts": []string{"low", "medium", "high", "xhigh", "max"},
-		"lowest": map[string]any{
-			"verifier": map[string]any{"model": "opus", "effort": "high"},
-			"security": map[string]any{"model": "sonnet", "effort": "medium"},
-		},
-		"bring_back": map[string]any{
-			"security": []string{"internal/hook/", "install.sh"},
-			"perf":     []string{"internal/hot/"},
+		"agents": map[string]any{
+			"verifier": map[string]any{"lowest": map[string]any{"model": "opus", "effort": "high"}},
+			"security": map[string]any{
+				"lowest":     map[string]any{"model": "sonnet", "effort": "medium"},
+				"bring_back": []string{"internal/hook/", "install.sh"},
+			},
+			"perf": map[string]any{"bring_back": []string{"internal/hot/"}},
 		},
 	}
 }
 
-// stfProject is a project with the staffing on, committed, and nothing started.
+// stfProject is a project with the project manager on, committed, and nothing started.
 func stfProject(t *testing.T) string {
 	t.Helper()
 	root := gitProjectInitialised(t)
@@ -135,11 +137,11 @@ func stfProject(t *testing.T) string {
 	return root
 }
 
-// stfProjectFrom turns on the staffing in root, a project gitProjectInitialised
-// made, and commits it.
+// stfProjectFrom puts the project manager back in root, a project
+// gitProjectInitialised made, with the team section above, and commits it.
 func stfProjectFrom(t *testing.T, root string) {
 	t.Helper()
-	setConfigOnDisk(t, root, "staffing", stfSection())
+	setConfigOnDisk(t, root, "team", stfSection())
 	commitEverything(t, root)
 }
 
@@ -723,7 +725,7 @@ func TestAC2TheOutputCallsItWhatWasAskedForAndNeverWhatAnAgentRanAt(t *testing.T
 		}
 	}
 	for _, golden := range []string{"prose.golden", "json.golden"} {
-		released, err := os.ReadFile(filepath.Join("testdata", "staffing-off", golden))
+		released, err := os.ReadFile(stfGolden(golden))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -885,13 +887,24 @@ func TestAC4SecurityIsNeverLeftOutOnceTheAnalysisHasRecordedTheStoryAsSecuritySe
 	})
 }
 
-// T3 of the threats: the floor is asked when a gate asks, not only when the
-// staffing is written. A story recorded as sensitive after security was left
-// out waits for security again, with no amendment, and nothing passes in
-// between.
-func TestAC4RecordingTheStoryAsSecuritySensitiveBringsSecurityBackWhateverTheStaffingSays(t *testing.T) {
+// US-109 AC-10: a floor is a refusal now, not a silent addition. Recording a story
+// as sensitive over a staffing that leaves security out is refused, and the refusal
+// says the project manager has to staff the story again; the tool does not add the
+// agent itself. T3 of the threats still holds, because the floor is asked when a gate
+// asks: once it is in, nothing passes without it.
+func TestAC10RecordingTheStoryAsSecuritySensitiveOverAStaffingThatLeavesItOutIsRefused(t *testing.T) {
 	t.Parallel()
 	root := stfStaffed(t, "security", "red-team", "perf", "human-advocate")
+	r := stfUnchanged(t, root, "", "gate", "analysis", "pass", "--security-sensitive")
+	stfRefused(t, r, stfCodeFloor, "security")
+	if said := strings.ToLower(r.stderr); !strings.Contains(said, "project manager") && !strings.Contains(said, "project-manager") {
+		t.Errorf("AC-10 the refusal does not say the project manager staffs the story again:\n%s", r.stderr)
+	}
+	if a := stfShow(t).agent(t, "security"); a.Needed {
+		t.Errorf("AC-10 the tool added security itself: %+v", a)
+	}
+
+	mustRun(t, "staffing", "amend", "security", "--needed", "--model", "sonnet", "--effort", "medium", "--reason", "the story crosses a trust boundary")
 	mustRun(t, "gate", "analysis", "pass", "--security-sensitive")
 	stfThrough(t, root, model.GateDesignReview)
 
@@ -1364,6 +1377,29 @@ func TestAC8AnAssignmentMadeBeforeTheStaffingIsRecordedIsOneTheStaffingCannotCha
 	}
 }
 
+// stfForgeSensitive writes on the record what no command does: that the story is
+// security-sensitive, over whatever its staffing says.
+func stfForgeSensitive(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, ".sdlc", "stories", "US-001", "gate-record.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	record["security_sensitive"] = true
+	out, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func stfRunSet(t *testing.T, doc stfDoc) result {
 	t.Helper()
 	return runWith(t, doc.text(t), "staffing", "set")
@@ -1668,7 +1704,10 @@ func TestAC9AReasonCannotControlTheTerminalOrPassForALineOfTheToolsOwn(t *testin
 
 // --------------------------------------------------------------------- AC-10
 
-func TestAC10TheStaffingCommandsSayTheStaffingIsOffWhereTheConfigurationDoesNotTurnItOn(t *testing.T) {
+// US-109 AC-3: with the project manager disabled there is no staffing, so the commands
+// that write one have nothing to write: E0067 keeps its number and takes its words
+// from the team. `staffing show` is not among them (TestAC4...).
+func TestAC3TheCommandsThatWriteAStaffingAreRefusedWhereTheProjectManagerIsDisabled(t *testing.T) {
 	t.Parallel()
 	root := gitProjectInitialised(t)
 	mustRun(t, "start")
@@ -1677,28 +1716,29 @@ func TestAC10TheStaffingCommandsSayTheStaffingIsOffWhereTheConfigurationDoesNotT
 		stdin string
 		args  []string
 	}{
-		{"", []string{"staffing", "show"}},
-		{"", []string{"staffing", "show", "--json"}},
 		{stfFull().text(t), []string{"staffing", "set"}},
 		{"", []string{"staffing", "amend", "perf", "--left-out", "--reason", "nothing to measure"}},
 		{"", []string{"staffing", "assign", "perf", "--model", "opus", "--reason", "mine"}},
 	} {
 		r := stfUnchanged(t, root, tc.stdin, tc.args...)
-		if !strings.Contains(r.stderr+r.stdout, stfCodeOff) || !strings.Contains(r.stderr+r.stdout, "staffing.enabled") {
-			t.Errorf("sdlc %s where the staffing is off: want %s and the setting that turns it on\n%s%s",
+		if !strings.Contains(r.stderr+r.stdout, stfCodeOff) || !strings.Contains(r.stderr+r.stdout, "team.agents.project-manager") {
+			t.Errorf("AC-3 sdlc %s where the project manager is disabled: want %s and the setting that says so\n%s%s",
 				strings.Join(tc.args, " "), stfCodeOff, r.stdout, r.stderr)
+		}
+		if strings.Contains(r.stderr+r.stdout, "staffing.enabled") {
+			t.Errorf("AC-3 sdlc %s sends a person to a setting that is refused:\n%s%s", strings.Join(tc.args, " "), r.stdout, r.stderr)
 		}
 	}
 	// And nothing is asked of the story: the analysis gate passes as it did.
 	stfAnalysed(t, false)
 }
 
-// A project that turns the staffing on and has stories begun before it did:
+// A project that disabled the project manager and has stories begun then puts it back:
 // they have no staffing, and every reviewer is waited for (T5: never nobody).
-func TestAC10AStoryWithTheStaffingOnAndNoneRecordedWaitsForEveryReviewer(t *testing.T) {
+func TestAC3AStoryWithNoStaffingRecordedWaitsForEveryReviewer(t *testing.T) {
 	t.Parallel()
 	root := startedAt(t, model.GateDesignReview)
-	setConfigOnDisk(t, root, "staffing", stfSection())
+	setConfigOnDisk(t, root, "team", stfSection())
 
 	r := run(t, "gate", "design_review", "pass")
 	stfRefused(t, r, "SDLC-E0029", "architect", "red-team", "security", "perf", "human-advocate")
@@ -1713,65 +1753,6 @@ func TestAC10AStoryWithTheStaffingOnAndNoneRecordedWaitsForEveryReviewer(t *test
 	}
 	stfReviewed(t, model.GateDesignReview)
 	mustRun(t, "gate", "design_review", "pass", "--note", "approved")
-}
-
-// A staffing section that is on and cannot be used refuses to load: it is
-// never read as "anything is allowed" (T6).
-func TestAC5AStaffingSectionThatIsOnAndCannotBeUsedStopsEveryCommandAndDoctorNamesIt(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name   string
-		change func(section map[string]any)
-		// names is what the refusal has to name.
-		names []string
-	}{
-		{"AC_5 no models allowed", func(s map[string]any) { s["models"] = []string{} }, []string{"staffing.models"}},
-		{"AC_5 a lowest that is not allowed",
-			func(s map[string]any) { s["lowest"] = map[string]any{"verifier": map[string]any{"model": "fable"}} },
-			[]string{"staffing.lowest", "verifier", "fable"}},
-		{"AC_5 a lowest for an agent the plugin does not ship",
-			func(s map[string]any) { s["lowest"] = map[string]any{"designer": map[string]any{"model": "opus"}} },
-			[]string{"staffing.lowest", "designer"}},
-		{"AC_7 a bring_back for a reviewer that does not review at code review",
-			func(s map[string]any) { s["bring_back"] = map[string]any{"architect": []string{"internal/"}} },
-			[]string{"staffing.bring_back", "architect"}},
-		{"AC_7 a bring_back for an agent that reviews nothing",
-			func(s map[string]any) { s["bring_back"] = map[string]any{"researcher": []string{"internal/"}} },
-			[]string{"staffing.bring_back", "researcher"}},
-		{"AC_7 a bring_back for nobody the plugin ships",
-			func(s map[string]any) { s["bring_back"] = map[string]any{"designer": []string{"ui/"}} },
-			[]string{"staffing.bring_back", "designer"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			root := gitProjectInitialised(t)
-			mustRun(t, "start")
-			section := stfSection()
-			tc.change(section)
-			setConfigOnDisk(t, root, "staffing", section)
-
-			for _, args := range [][]string{{"status"}, {"gate", "dor", "pass"}, {"staffing", "show"}, {"review", "list"}} {
-				r := run(t, args...)
-				if r.code == 0 || !strings.Contains(r.stderr, "SDLC-E0045") {
-					t.Errorf("sdlc %s: exit %d, want SDLC-E0045\n%s", strings.Join(args, " "), r.code, r.stderr)
-				}
-				for _, want := range tc.names {
-					if !strings.Contains(r.stderr, want) {
-						t.Errorf("sdlc %s: the refusal does not name %q:\n%s", strings.Join(args, " "), want, r.stderr)
-					}
-				}
-			}
-			r := run(t, "doctor")
-			if r.code == 0 {
-				t.Errorf("doctor exits 0 with a staffing section sdlc cannot use:\n%s", r.stdout)
-			}
-			for _, want := range tc.names {
-				if !strings.Contains(r.stdout, want) {
-					t.Errorf("doctor does not name %q:\n%s", want, r.stdout)
-				}
-			}
-		})
-	}
 }
 
 // ------------------------------------- what the plan settled, and nothing ran
@@ -1962,9 +1943,11 @@ func TestAC2ShowSaysInProseWhoWasBroughtBackAndWhoIsNeededWithNothingAskedFor(t 
 		return found
 	}
 
-	// The floor: recorded as sensitive, security takes part whatever the
-	// staffing says (AC-4), and the staffing asked nothing for it.
-	mustRun(t, "gate", "analysis", "pass", "--security-sensitive")
+	// The floor stays as a defence (LeftOut's comment names the failure): a record
+	// that says the story is sensitive over a row that leaves security out, which no
+	// command now writes (US-109 AC-10), reads as needed, and the staffing asked
+	// nothing for it.
+	stfForgeSensitive(t, root)
 	if l := line("security"); strings.Contains(l, "left out") || !strings.Contains(l, "needed") || !strings.Contains(l, "nothing asked for") {
 		t.Errorf("security on a sensitive story, left out by the staffing, is shown as: %q", l)
 	}

@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Works only within a story a person started with /sdlc:next, when that runbook delegates this gate; not for general review, security, performance, testing, planning, analysis or retro requests. Code reviewer for Gate 7, blocking unless the project turns on reviews.gate7_advisory. Use it after verification to review the story's diff for correctness against the plan and the acceptance criteria, for maintainability, conventions, and hidden test-gaming. Fresh context, full read-only access, never the implementer's transcript.
+description: Works only within a story a person started with /sdlc:next, when that runbook delegates this gate; not for general review, security, performance, testing, planning, analysis or retro requests. Code reviewer for Gate 7, blocking unless the project sets team.agents.code-reviewer.can_block to false. Use it after verification to review the story's diff for correctness against the plan and the acceptance criteria, for maintainability, conventions, and hidden test-gaming. Fresh context, full read-only access, never the implementer's transcript.
 model: inherit
 tools: Read, Grep, Glob, Bash
 maxTurns: 80
@@ -98,8 +98,11 @@ gives.
 
 ## Output
 
+Record under the name your brief gives you: `code-reviewer`, or, for its second instance,
+`code-reviewer-2`. Each instance is its own run, and the gate waits for a review under each name.
+
 ```bash
-sdlc review add code_review code-reviewer approve --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
+sdlc review add code_review <name> approve --important <your count> --nits <your count> --finding "<important|nit> [path]: <text>" --note "<one line>" <<'SDLC_DOCUMENT'
 # Code review — <ID>
 
 **Verdict:** approve | block

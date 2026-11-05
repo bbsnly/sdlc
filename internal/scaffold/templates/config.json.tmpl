@@ -104,14 +104,41 @@
   ],
   "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
 
+  "_team": [
+    "Which agents run, which can block, and what a staffing may ask for",
+    "enabled: false turns an agent off in every story; can_block: false means a reviewer's block does not stop its gate.",
+    "Its design and code review findings are still closed before the commit, as every reviewer's are.",
+    "Each loosens the loop. max_rounds, left out, is loop.max_review_rounds; instances does nothing on an agent that reviews nothing.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#team"
+  ],
+  "team": {
+    "retries": 2,
+    "models": ["haiku", "sonnet", "opus"],
+    "efforts": ["low", "medium", "high", "xhigh", "max"],
+    "agents": {
+      "project-manager": { "enabled": true, "instances": 1 },
+      "researcher":      { "enabled": true, "instances": 1 },
+      "sdet":            { "enabled": true, "instances": 1 },
+      "implementer":     { "enabled": true, "instances": 1 },
+      "verifier":        { "enabled": true, "can_block": true, "instances": 1 },
+      "bookkeeper":      { "enabled": true, "instances": 1 },
+      "architect":       { "enabled": true, "can_block": true, "instances": 1 },
+      "security":        { "enabled": true, "can_block": true, "instances": 1 },
+      "red-team":        { "enabled": true, "can_block": false, "instances": 1 },
+      "perf":            { "enabled": true, "can_block": true, "instances": 1 },
+      "human-advocate":  { "enabled": true, "can_block": false, "instances": 1 },
+      "code-reviewer":   { "enabled": true, "can_block": true, "instances": 1 }
+    }
+  },
+{{- if .Policy}}
+
   "_reviews": [
-    "Whether the code review can block, and where the review policy is",
-    "gate7_advisory: true lets the code reviewer report without being able to block.",
-    "Its report is still required, but a block no longer stops Gate 7, the last review before the commit.",
+    "Where the review policy is",
     "policy: the file every reviewer reads, relative to the repository root. Left out, it is REVIEW.md.",
     "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#reviews"
   ],
-  "reviews": { "gate7_advisory": false },
+  "reviews": { "policy": {{q .Policy}} },
+{{- end}}
 
   "_freeze": [
     "Whether tests may be added after the freeze",

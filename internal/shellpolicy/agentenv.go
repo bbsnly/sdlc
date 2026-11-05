@@ -291,8 +291,8 @@ var setsAgent = sync.OnceValue(func() *regexp.Regexp {
 // agentText refuses a reading whose text assigns AI_AGENT as setsAgent reads
 // it, or, on a PowerShell line, takes it away through the env: drive, a new
 // environment for a process, or the quoted name.
-func agentText(text string, powerShell bool) (Finding, bool) {
-	if mayName(text, agentEnv) && setsAgent().MatchString(text) || powerShell && powerShellTakesAgent(text) {
+func agentText(text string, powerShell bool, reading assignments) (Finding, bool) {
+	if mayName(text, agentEnv) && setsAgent().MatchString(text) || powerShell && powerShellTakesAgent(text, reading) {
 		return agentMarkerFinding(), true
 	}
 	return Finding{}, false
@@ -312,7 +312,7 @@ func agentText(text string, powerShell bool) (Finding, bool) {
 //     PowerShell 7.4's `-Environment`, whose $null value removes a name);
 //   - and the name quoted alone, as .NET's ProcessStartInfo takes it, except
 //     as the name GetEnvironmentVariable( reads.
-func powerShellTakesAgent(text string) bool {
+func powerShellTakesAgent(text string, reading assignments) bool {
 	if quotesAgent(text) {
 		return true
 	}
@@ -322,7 +322,7 @@ func powerShellTakesAgent(text string) bool {
 		!strings.Contains(lower, "saps") {
 		return false
 	}
-	runs, _ := programsAt(text, true)
+	runs, _ := programsAt(text, true, reading)
 	if slices.ContainsFunc(runs, startsAfresh) {
 		return true
 	}

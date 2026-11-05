@@ -13,7 +13,9 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -171,10 +173,6 @@ func runChecks(ctx context.Context) []check {
 	// Which git is old enough depends on whether start makes each story a
 	// worktree, which only a configuration that reads can say.
 	add(gitCheck(ctx, err == nil && cfg.Git.WorktreesOn()))
-	if err == nil {
-		// What every other command refuses when it opens the project.
-		err = staffingRoster(cfg.Staffing)
-	}
 	if err != nil {
 		detail, fix := configurationProblem(err, root)
 		add(check{Name: checkConfiguration, State: stateProblem, Detail: detail, Fix: fix})
@@ -194,7 +192,17 @@ func runChecks(ctx context.Context) []check {
 	// On either branch, where the configuration loaded: a person who listed a
 	// path and misspelt another key still sees what the list holds.
 	intended := intendedLine(cfg.Paths)
+	if team := teamReport(cfg, root); len(team) > 0 {
+		intended += "\n" + strings.Join(team, "\n")
+	}
 	if unknown := config.UnknownKeys(root); len(unknown) > 0 {
+		for i, key := range unknown {
+			// Quoted only where it holds a control character, so an ordinary
+			// key reads as it always did, and a newline makes no line of its own.
+			if strings.ContainsFunc(key, unicode.IsControl) {
+				unknown[i] = strconv.Quote(key)
+			}
+		}
 		add(check{Name: checkConfiguration, State: stateProblem,
 			Detail: config.File + " has settings sdlc does not know, which change nothing: " +
 				strings.Join(unknown, ", ") + "\n" + intended,
@@ -221,6 +229,58 @@ func runChecks(ctx context.Context) []check {
 	out = append(out, commandChecks(root, cfg)...)
 	add(freezeCheckLine(cfg))
 	add(binaryCheck(env))
+	return out
+}
+
+// teamReport is what doctor says of a team other than the defaults: who is
+// disabled, a can_block that differs from the default, an instances above 1,
+// and a setting that does nothing, with the leftover reviews.gate7_advisory.
+// None of it is a problem: each is a person's choice, said so it is seen.
+func teamReport(cfg config.Config, root string) []string {
+	team := cfg.Team
+	policy := model.ReviewPolicy{CanBlock: team.CanBlock()}
+	var out []string
+	for _, agent := range model.Agents {
+		out = append(out, agentReport(team, policy, agent)...)
+	}
+	if config.LeftoverGate7(root) {
+		out = append(out, "reviews.gate7_advisory is false and does nothing: the team section replaced it "+
+			"with team.agents.code-reviewer.can_block, so delete it")
+	}
+	return out
+}
+
+// agentReport is teamReport's lines for one agent.
+func agentReport(team config.Team, policy model.ReviewPolicy, agent string) []string {
+	var out []string
+	key := "team.agents." + agent
+	reviewer, reviews := model.FindReviewerAnywhere(agent)
+	if !team.Enabled(agent) {
+		out = append(out, agent+" is disabled in "+key+".enabled")
+	}
+	if can, set := policy.CanBlock[agent]; set {
+		switch {
+		case !reviews:
+			out = append(out, key+".can_block does nothing: "+agent+" reviews nothing")
+		case can != reviewer.BlocksByDefault():
+			out = append(out, fmt.Sprintf("%s.can_block is %v, where the default is %v", key, can, !can))
+		}
+	}
+	if n := team.Instances(agent); n > 1 {
+		if reviews {
+			out = append(out, fmt.Sprintf("%s.instances is %d: %d instances of %s review", key, n, n, agent))
+		} else {
+			out = append(out, fmt.Sprintf("%s.instances is %d, which does nothing: %s reviews nothing", key, n, agent))
+		}
+	}
+	if _, set := team.MaxRounds(agent); set {
+		switch {
+		case !reviews:
+			out = append(out, key+".max_rounds does nothing: "+agent+" reviews nothing")
+		case !reviewer.CanStop(policy):
+			out = append(out, key+".max_rounds does nothing: "+agent+"'s block cannot stop a gate")
+		}
+	}
 	return out
 }
 
@@ -479,7 +539,7 @@ func configurationProblem(err error, root string) (detail, fix string) {
 		}
 		// The code a person looks up, for a setting they wrote that is refused;
 		// a file that does not parse keeps the words it had.
-		if e.Code == sdlcerr.ConfigInvalid {
+		if e.Code == sdlcerr.ConfigInvalid || e.Code == sdlcerr.OldSettingReplaced || e.Code == sdlcerr.TeamUnusable {
 			detail += " (" + e.Code.String() + ")"
 		}
 	}

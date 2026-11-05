@@ -52,7 +52,7 @@ stop the gate, and what it writes.
 
 | Agent | Gate | Can it block? | Writes |
 | --- | --- | --- | --- |
-| `sdlc:project-manager` | after 1 and 2, with [the staffing](#the-staffing) on | — | the staffing, through `sdlc staffing set` and `amend` |
+| `sdlc:project-manager` | after 1 and 2, unless `team.agents.project-manager.enabled` is false ([the staffing](#the-staffing)) | — | the staffing, through `sdlc staffing set` and `amend` |
 | `sdlc:researcher` | 2 | — | `ANALYSIS.md`, `THREATS.md`, `CODEMAP.md` |
 | `sdlc:sdet` | 3 | — | test files, `TEST-PLAN.md` |
 | `sdlc:implementer` | 4, 5 | — | `PLAN.md`, then production code |
@@ -62,7 +62,7 @@ stop the gate, and what it writes.
 | `sdlc:perf` | 4, 7 | Only against a stated budget | its review |
 | `sdlc:human-advocate` | 4, 7, and 1 with [`human_gates.dor_advocate_check`](configuration.md#human_gates) | — | its review |
 | `sdlc:verifier` | 6 | **Yes** | `VERIFICATION.md`, its verdict |
-| `sdlc:code-reviewer` | 7 | **Yes**, unless [`reviews.gate7_advisory`](configuration.md#reviewsgate7_advisory) is on | its review |
+| `sdlc:code-reviewer` | 7 | **Yes**, unless its [`can_block`](configuration.md#an-agents-entry) is false | its review |
 | `sdlc:bookkeeper` | 9 | — | `RETRO.md`, and the story's sections of `CODEMAP.md` |
 
 Don't worry if a reviewer is marked as unable to block. Advisory does not mean
@@ -112,13 +112,13 @@ See [enforcement](enforcement.md) for the full list and what each refusal says.
 
 ## The staffing
 
-By default every agent takes part in every story. If that is more than your
-project needs, you may turn on the staffing. A project that sets
-[`staffing.enabled`](configuration.md#staffing) has `sdlc:project-manager` say,
-story by story, which agents the story needs and what model and effort each is
-asked for, each with a reason. It records that once the story is found ready,
-confirms or amends it when the analysis is recorded, and amends it whenever an
-agent's work fell short.
+By default `sdlc:project-manager` says, story by story, which
+agents the story needs and what model and effort each is asked for, each with a
+reason. The [`team`](configuration.md#team) section of the configuration sets
+what it picks from, and turns it off with `team.agents.project-manager.enabled`
+set to false, in which case every enabled agent takes part in every story. It
+records that once the story is found ready, confirms or amends it when the
+analysis is recorded, and amends it whenever an agent's work fell short.
 
 To read what it decided, run `sdlc staffing show`. [Commands](commands.md#sdlc-staffing) has each staffing
 command, and [enforcement](enforcement.md#assignment-is-a-human-decision) says
@@ -133,13 +133,23 @@ what it decided:
   with it. It does not choose from the story's risk tier or its priority. Those
   say how much a mistake costs and when the story is done, which is a different
   question from who is needed to do the work.
-- **Inside the project's limits.** A model or an effort is one of
-  `staffing.models` or `staffing.efforts`, and not below the agent's
-  `staffing.lowest`.
+- **Inside the project's limits.** It picks from the enabled agents only. A
+  model or an effort is one of `team.models` or `team.efforts`, and not below
+  the agent's own `lowest` in `team.agents`.
+- **Disabled agents.** An agent whose `enabled` is false in `team.agents` takes
+  part in no story. Where it does a gate's work, or is the verifier or the code
+  reviewer, that work is yours, by hand: the loop hands the story to you at that
+  gate with `sdlc escalate work_by_hand`, and `sdlc staffing show` lists it under
+  `by_hand`.
+- **Instances.** A reviewer with `instances` above 1 in `team.agents` reviews
+  each gate more than once, each instance under its own name: `security`, then
+  `security-2`. The staffing has a row for each. The tool cannot see that they
+  were separate runs: one run can record both `security` and `security-2`, and
+  `sdlc trace` shows how many runs there were.
 - **Who is never left out.** The agents that do a gate's work, the verifier, the
   code reviewer, and security on a story that is security-sensitive or not yet
   said not to be. A reviewer left out is brought back to the code review when
-  the change touches a path listed for it under `staffing.bring_back`.
+  the change touches a path listed in its `bring_back` in `team.agents`.
 - **Where you read it.** `sdlc staffing show` prints the staffing and every
   change to it, `sdlc review list` shows who a gate does not wait for and why,
   and `sdlc log` keeps both for a story that is finished. `sdlc status` names
@@ -159,7 +169,7 @@ That is deliberate. Which model you pay for is your decision, not a plugin's,
 and a tier pinned in a file here would quietly override the choice you just
 made and go stale the first time the tiers are renamed.
 
-With [the staffing](#the-staffing) on, that is still true of the definitions,
+Where the project manager staffs the story, that is still true of the definitions,
 and the runbook passes each delegation the model and effort the staffing asks
 for, from the lists your configuration gives. That is what was asked for, not
 what was observed: the environment can override both, and `sdlc` records only
@@ -237,7 +247,7 @@ with no agent makes the gate wait forever.
 
 - [Enforcement](enforcement.md): what the hook refuses, and what each refusal says
 - [Commands: `sdlc staffing`](commands.md#sdlc-staffing)
-- [Configuration: `staffing`](configuration.md#staffing)
+- [Configuration: `team`](configuration.md#team)
 - [The loop](the-loop.md): the gates these agents work
 - [When a reviewer blocks](guides/when-a-reviewer-blocks.md): what a reviewer's
   verdict does to a gate

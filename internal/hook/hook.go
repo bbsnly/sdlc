@@ -593,7 +593,7 @@ func commandDir(resolver pathrules.Resolver, cwd string) string {
 // not read leaves each where the defaults put it, which is where it most likely
 // is.
 func heldPaths(project string) (backlog, policyFile string) {
-	cfg, err := config.Load(project)
+	cfg, err := loadConfig(project)
 	if err != nil {
 		cfg = config.Default()
 	}
@@ -693,7 +693,7 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	if policy.NormalizeAgent(p.AgentType) == "implementer" {
 		// A configuration that will not read is said by the rules that read it
 		// first; the defaults are a better guess at what a test is than none.
-		cfg, err := config.Load(project)
+		cfg, err := loadConfig(project)
 		if err != nil {
 			cfg = config.Default()
 		}
@@ -900,7 +900,7 @@ func frozenTestsIn(pl place, story string, warn func(string)) (frozen []string, 
 		gone, found = freezeRecorded(pl, story)
 	}
 	if err != nil || gone {
-		cfg, cfgErr := config.Load(project)
+		cfg, cfgErr := loadConfig(project)
 		if cfgErr != nil {
 			warn(unreadableFreezeAndConfig)
 			return nil, testset.New(config.Default().Paths.Tests).Match, nil
@@ -921,7 +921,7 @@ func frozenTestsIn(pl place, story string, warn func(string)) (frozen []string, 
 	// A test file the freeze does not hold is a new one, and adding one after
 	// the freeze is refused unless the project allows it -- through the shell as
 	// through the file tools.
-	cfg, err := config.Load(project)
+	cfg, err := loadConfig(project)
 	if err != nil {
 		warn(unreadableConfig)
 		cfg = config.Default()
@@ -1003,7 +1003,7 @@ func trunkOf(pl place) string {
 	if !found {
 		return ""
 	}
-	cfg, err := config.Load(dir)
+	cfg, err := loadConfig(dir)
 	if err != nil {
 		return ""
 	}
@@ -1038,11 +1038,11 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 	if record == nil || err != nil {
 		return true, "" // commitReady has already refused over this
 	}
-	reviews := stampedReviews(record)
-
-	cfg, err := config.Load(project)
+	cfg, err := loadConfig(project)
 	if err != nil {
-		if len(reviews) > 0 {
+		// Whether there is anything to warn about is asked of the defaults:
+		// a file that will not load says nothing about its team.
+		if len(stampedReviews(config.Default().Team, record)) > 0 {
 			slog.Debug("hook could not read the configuration to measure the tree", "err", err)
 			warn(unmeasuredTree)
 		}
@@ -1055,6 +1055,7 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 		return false, "the story could not be read from the backlog, so there is no telling " +
 			"whether its risk tier waits for a person's approval (`sdlc doctor` says why)"
 	}
+	reviews := stampedReviews(cfg.Team, record)
 	if len(reviews) == 0 && !pauses {
 		return true, ""
 	}
@@ -1083,11 +1084,13 @@ type stampedReview struct {
 	subject string
 }
 
-// stampedReviews are the latest reviews recorded at the two review gates.
-func stampedReviews(record *model.Record) []stampedReview {
+// stampedReviews are the latest reviews recorded at the two review gates, by
+// every instance the team gives a reviewer: enumerating the roster alone let a
+// copy's review of an older tree through.
+func stampedReviews(team config.Team, record *model.Record) []stampedReview {
 	var reviews []stampedReview
 	for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
-		for _, r := range model.ReviewersFor(gate) {
+		for _, r := range team.ReviewersFor(gate) {
 			if latest, ok := record.LatestReview(gate, r.Role); ok {
 				reviews = append(reviews, stampedReview{gate, r.Role, latest.Subject})
 			}
@@ -1149,11 +1152,13 @@ func reviewedTree(s *store.Store, record *model.Record, project string, budget f
 func staleReviewers(reviews []stampedReview, cfg config.Config, record *model.Record, tree string) []string {
 	var stale []string
 	for _, r := range reviews {
-		// A reviewer the staffing left out, that no changed path brought back
-		// when code review passed, is one the gate did not wait for: its old
-		// review of a tree since changed holds nothing. The record says who was
-		// brought back, because the hook makes no git call to work it out.
-		if cfg.Staffing.Enabled && record.StoodDown(r.role) {
+		// A reviewer the team or the staffing left out, that no changed path
+		// brought back when code review passed, is one the gate did not wait
+		// for: its old review of a tree since changed holds nothing. The record
+		// says who was brought back, because the hook makes no git call to work
+		// it out. It is the rule cli's gates ask, so the commit is held to the
+		// reviews the gate waited for and no others.
+		if cfg.Team.StoodDown(record, r.role) {
 			continue
 		}
 		if r.subject != tree {
@@ -1177,7 +1182,7 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 	if rel == "" {
 		return policy.Tests{}
 	}
-	cfg, err := config.Load(project)
+	cfg, err := loadConfig(project)
 	if err != nil {
 		// Reading no file as a test turned off every rule that asks what a test
 		// is: the implementer could write them, and a frozen one could be
@@ -1335,7 +1340,7 @@ func heldElsewhere(reached []string, session string) (project, story string) {
 		if !pl.co.Pointer() && !pl.co.HasWorktrees() {
 			continue
 		}
-		cfg, err := config.Load(root)
+		cfg, err := loadConfig(root)
 		if err != nil {
 			cfg = config.Default()
 		}

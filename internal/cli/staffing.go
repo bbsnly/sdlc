@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -38,8 +37,9 @@ func newStaffingCmd() *cobra.Command {
 		Long: "staffing records, for one story, which of the plugin's agents the story needs\n" +
 			"and the model and effort each is asked for. A gate then waits only for the\n" +
 			"reviewers the story needs.\n\n" +
-			"It is off unless the project turns it on with staffing.enabled. The project\n" +
-			"manager agent records it with set and changes it with amend; a person pins a\n" +
+			"It is on unless the project disables the project manager in\n" +
+			"team.agents.project-manager.enabled. The project manager agent records it\n" +
+			"with set and changes it with amend; a person pins a\n" +
 			"model or an effort for an agent with assign, in their own terminal; anyone\n" +
 			"reads it with show.\n\n" +
 			"The model and effort are what is asked for. The environment can override\n" +
@@ -78,10 +78,10 @@ func staffingStory(cmd *cobra.Command, named string) (*store.Store, string, *mod
 		unlock()
 		return nil, "", nil, nothing, err
 	}
-	if !s.Config().Staffing.Enabled {
-		return fail(sdlcerr.New(sdlcerr.StaffingOff,
-			"the staffing is off in this project",
-			"staffing.enabled is not true in "+config.File+", so every agent takes part in every story"))
+	// show answers with the project manager disabled as well: at_gate is what
+	// the runbook reads before every delegation, staffing or none.
+	if verb != verbShow && !s.Config().Team.StaffingOn() {
+		return fail(staffingOff())
 	}
 	id, err := staffingStoryID(cmd, s, verb, named)
 	if err != nil {
@@ -151,20 +151,126 @@ func staffed(record *model.Record) bool {
 	return record.Staffing != nil && record.Staffing.At != ""
 }
 
-func noStaffing(id string) error {
-	return sdlcerr.New(sdlcerr.StaffingNone,
-		"no staffing is recorded for "+id,
-		"the staffing is on, and the project manager has not said who this story needs")
+func noStaffing(id string, team config.Team) error {
+	why := "the project manager has not said who this story needs"
+	if off := disabledAgents(team); len(off) > 0 {
+		why += "; disabled in team.agents, and so needing no row: " + strings.Join(off, ", ")
+	}
+	return sdlcerr.New(sdlcerr.StaffingNone, "no staffing is recorded for "+id, why)
 }
 
-// staffingRow is the staffing's own row for an agent.
-func staffingRow(record *model.Record, agent string) *model.Staffed {
-	for i := range record.Staffing.Agents {
-		if record.Staffing.Agents[i].Agent == agent {
-			return &record.Staffing.Agents[i]
+func staffingOff() error {
+	return sdlcerr.New(sdlcerr.StaffingOff,
+		"there is no staffing in this project",
+		"team.agents.project-manager.enabled is false in "+config.File+", so every enabled agent takes part in every story")
+}
+
+// disabledAgents is every agent the team disables, in the plugin's order.
+func disabledAgents(team config.Team) []string {
+	var out []string
+	for _, agent := range model.Agents {
+		if !team.Enabled(agent) {
+			out = append(out, agent)
 		}
 	}
-	return &model.Staffed{Agent: agent, Needed: true}
+	return out
+}
+
+// byHand is the worker whose gate this is, where the team disables it: the
+// gate is then the person's to do by hand. Asked only of the gate spoken of,
+// so no other gate is ever called by hand.
+func byHand(team config.Team, gate model.Gate) string {
+	if worker, ok := model.WorkerAt(gate); ok && !team.Enabled(worker) {
+		return worker
+	}
+	return ""
+}
+
+// sayByHand is the line that a gate is the person's to do by hand.
+func sayByHand(w io.Writer, team config.Team, gate model.Gate) {
+	if worker := byHand(team, gate); worker != "" {
+		fmt.Fprintf(w, "  %s is the person's to do by hand: %s is disabled in team.agents.%s.enabled, so nobody is "+
+			"delegated its work. Do it, then run `sdlc gate %s pass`.\n", gate, worker, worker, gate)
+	}
+}
+
+// gateDisabled is the disabled agents a gate's outcome and `status` name:
+// every one but the project manager, which takes no part in a gate. Its being
+// disabled is said where the staffing is, by `staffing show`, and in the
+// `disabled` of `status --json`. A project that keeps it off, as the released
+// default had it, sees `status` print what it printed before.
+func gateDisabled(team config.Team) []string {
+	return slices.DeleteFunc(disabledAgents(team), func(agent string) bool { return agent == "project-manager" })
+}
+
+// sayTeam is what every gate's outcome, `status` and `staffing show` say of
+// the team: each disabled agent given, and each agent whose block a person
+// would count on that the project made advisory. With neither, nothing, byte
+// for byte.
+func sayTeam(w io.Writer, team config.Team, disabled []string) {
+	for _, agent := range disabled {
+		fmt.Fprintf(w, "  %s is disabled in team.agents.%s.enabled\n", agent, agent)
+	}
+	for _, agent := range madeAdvisory(team) {
+		fmt.Fprintf(w, "  %s cannot block: team.agents.%s.can_block is false\n", agent, agent)
+	}
+}
+
+// madeAdvisory is each agent whose block a person would count on that the
+// team made advisory, in roster order: the agents sayTeam says cannot block.
+func madeAdvisory(team config.Team) []string {
+	canBlock := team.CanBlock()
+	var out []string
+	for _, agent := range model.Agents {
+		if can, set := canBlock[agent]; set && !can && model.SaidWhenAdvisory(agent) {
+			out = append(out, agent)
+		}
+	}
+	return out
+}
+
+// teamHasNews reports whether sayTeam has a line to print for a gate. `status`
+// once asked only after disabled agents, so a team that made the code reviewer
+// advisory and disabled nothing never heard so there.
+func teamHasNews(team config.Team) bool {
+	return len(gateDisabled(team)) > 0 || len(madeAdvisory(team)) > 0
+}
+
+// staffingName is a name as the staffing's commands read it: lower-cased and
+// trimmed, so one agent is one row and one budget whatever its spelling.
+func staffingName(name string) string { return strings.ToLower(strings.TrimSpace(name)) }
+
+// notStaffable is the refusal of a name that is neither an agent nor an
+// instance within its role's seats.
+func notStaffable(team config.Team, name string) error {
+	return sdlcerr.New(sdlcerr.StaffingInvalid,
+		quote(name)+" is not an agent the plugin ships, or an instance the team gives one",
+		agentsAre+strings.Join(team.Names(), ", "))
+}
+
+// staffingRow is the staffing's own row for an agent, and whether there is
+// one. A seat with no row, as after instances is raised mid-story, is needed
+// with nothing asked for.
+func staffingRow(record *model.Record, agent string) (model.Staffed, bool) {
+	if record.Staffing != nil {
+		for _, row := range record.Staffing.Agents {
+			if row.Agent == agent {
+				return row, true
+			}
+		}
+	}
+	return model.Staffed{Agent: agent, Needed: true}, false
+}
+
+// setRow writes the agent's row, adding one for a seat that had none.
+func setRow(record *model.Record, row model.Staffed) {
+	for i := range record.Staffing.Agents {
+		if record.Staffing.Agents[i].Agent == row.Agent {
+			record.Staffing.Agents[i] = row
+			return
+		}
+	}
+	record.Staffing.Agents = append(record.Staffing.Agents, row)
 }
 
 // assigned is what a person pinned for an agent, and whether they pinned
@@ -190,20 +296,22 @@ func personAssigned(agent, what string) error {
 
 // refuseOutsideLimits holds what is asked for to the project's lists, from the
 // agent's lowest up. The order of a list is the ranking: no name ranks here.
-func refuseOutsideLimits(cfg config.Staffing, agent, askedModel, askedEffort string) error {
-	low := cfg.Lowest[agent]
+// An instance's floor is its role's.
+func refuseOutsideLimits(team config.Team, agent, askedModel, askedEffort string) error {
+	low := team.LowestFor(agent)
 	for _, l := range []struct {
 		kind, asked, lowest, setting string
 		names                        []string
 	}{
-		{"model", askedModel, low.Model, "staffing.models", cfg.Models},
-		{"effort", askedEffort, low.Effort, "staffing.efforts", cfg.Efforts},
+		{"model", askedModel, low.Model, "team.models", team.ModelList()},
+		{"effort", askedEffort, low.Effort, "team.efforts", team.EffortList()},
 	} {
 		allowed := l.names[max(slices.Index(l.names, l.lowest), 0):]
 		if l.asked != "" && !slices.Contains(allowed, l.asked) {
 			return sdlcerr.New(sdlcerr.StaffingOutsideLimits,
 				agent+" cannot be asked for the "+l.kind+" "+quote(l.asked),
-				l.setting+" and staffing.lowest allow "+agent+", from the lowest up: "+strings.Join(allowed, ", "))
+				l.setting+" and team.agents."+model.BaseRole(agent)+".lowest allow "+agent+", from the lowest up: "+
+					strings.Join(allowed, ", "))
 		}
 	}
 	return nil
@@ -213,13 +321,21 @@ func refuseOutsideLimits(cfg config.Staffing, agent, askedModel, askedEffort str
 // the floor, and a block that stands. A staffing recorded after reviews exist,
 // where the setting was turned on mid-story or an older sdlc dropped the
 // first, would otherwise pass a gate over a block an amendment could not.
-func refuseLeavingOut(record *model.Record, agent string) error {
+func refuseLeavingOut(team config.Team, record *model.Record, agent string) error {
+	// A disabled agent takes no part whatever its row says, so leaving it out
+	// changes nothing, and refusing would ask a person to staff what is off.
+	if !team.Enabled(agent) {
+		return nil
+	}
 	if model.NeverLeftOut(agent, record.SecuritySensitive()) {
 		e := sdlcerr.New(sdlcerr.StaffingNeverLeftOut,
 			agent+" is never left out of a story",
 			"the agents that do a gate's work, the verifier, the code reviewer, and security on a "+
 				"security-sensitive story always take part")
-		if agent == "security" && record.Security == nil {
+		if model.BaseRole(agent) == security {
+			e.Why += "; where the story is security-sensitive, the project manager staffs it again with " + agent + " needed"
+		}
+		if model.BaseRole(agent) == security && record.Security == nil {
 			e = e.WithFix("security stays in until the analysis records the story as not security-sensitive: " +
 				"leave it in now, and amend once `sdlc gate analysis pass --security-sensitive=false` has said so")
 		}
@@ -227,8 +343,9 @@ func refuseLeavingOut(record *model.Record, agent string) error {
 	}
 	for _, r := range model.Reviewers {
 		// The latest review, stale or not: a block of work that has since
-		// changed is still the reviewer's last word on it.
-		if latest, ok := record.LatestReview(r.Gate, r.Role); r.Role == agent && !record.Pass(r.Gate) &&
+		// changed is still the reviewer's last word on it. An instance's is
+		// recorded under its own name.
+		if latest, ok := record.LatestReview(r.Gate, agent); r.Role == model.BaseRole(agent) && !record.Pass(r.Gate) &&
 			ok && latest.Verdict == model.VerdictBlock {
 			return sdlcerr.New(sdlcerr.StaffingReviewBlocks,
 				agent+" blocked "+string(r.Gate)+", and that gate has not passed",
@@ -238,17 +355,18 @@ func refuseLeavingOut(record *model.Record, agent string) error {
 	return nil
 }
 
-// waited reports whether a gate does not wait for a reviewer, because the
-// staffing leaves it out, and the changed path that brings it back to the code
-// review where one does. The gates, `review list` and `staffing show` all ask
-// here, with one reading, so what one says another does.
+// waited reports whether a gate does not wait for a reviewer, because the team
+// or the staffing leaves it out, and the changed path that brings it back to
+// the code review where one does. The gates, `review list`, `staffing show` and
+// the hook all ask config.Team's one rule, so what one says another does.
 func waited(ctx context.Context, rd *reading, record *model.Record, gate model.Gate, role string) (out bool, broughtBack string, err error) {
-	cfg := rd.s.Config().Staffing
-	if !cfg.Enabled || !record.LeftOut(role) {
+	team := rd.s.Config().Team
+	out, returnable := team.StandsDown(record, role)
+	if !out {
 		return false, "", nil
 	}
-	listed := cfg.BringBack[role]
-	if gate != model.GateCodeReview || len(listed) == 0 {
+	listed := team.BringBackFor(role)
+	if !returnable || gate != model.GateCodeReview || len(listed) == 0 {
 		return true, "", nil
 	}
 	changed, err := rd.changedPaths(ctx, record)
@@ -270,7 +388,7 @@ func waited(ctx context.Context, rd *reading, record *model.Record, gate model.G
 // for the record: the hook reads it there, because it makes no git call.
 func broughtBack(ctx context.Context, rd *reading, record *model.Record) (map[string]string, error) {
 	var back map[string]string
-	for _, r := range model.ReviewersFor(model.GateCodeReview) {
+	for _, r := range rd.s.Config().Team.ReviewersFor(model.GateCodeReview) {
 		_, by, err := waited(ctx, rd, record, model.GateCodeReview, r.Role)
 		if err != nil {
 			return nil, err
@@ -291,13 +409,14 @@ func broughtBack(ctx context.Context, rd *reading, record *model.Record) (map[st
 // changed path brought back, with the reading that has just held the gate to
 // them, so the hook and the gate cannot disagree about who was waited for.
 func staffTheGate(ctx context.Context, rd *reading, id string, gate model.Gate, status model.GateStatus, record *model.Record) error {
-	if status != model.GatePass || !rd.s.Config().Staffing.Enabled {
+	team := rd.s.Config().Team
+	if status != model.GatePass || !team.StaffingOn() {
 		return nil
 	}
 	switch {
 	case !staffed(record):
 		if gate == model.GateAnalysis {
-			return noStaffing(id)
+			return noStaffing(id, team)
 		}
 	case gate == model.GateCodeReview || gate == model.GateCommit:
 		back, err := broughtBack(ctx, rd, record)
@@ -305,6 +424,30 @@ func staffTheGate(ctx context.Context, rd *reading, id string, gate model.Gate, 
 			return err
 		}
 		record.Staffing.BroughtBack = back
+	}
+	return nil
+}
+
+// refuseSensitiveLeftOut is asked before an analysis records the story as
+// security-sensitive: an enabled security, or an instance of it, that the
+// staffing leaves out would otherwise be waited for with no row asking for it.
+// The tool does not add it; the project manager staffs the story again.
+func refuseSensitiveLeftOut(team config.Team, record *model.Record, sensitive bool) error {
+	if !sensitive || !team.StaffingOn() || !staffed(record) || !team.Enabled(security) {
+		return nil
+	}
+	for _, name := range team.Names() {
+		if model.BaseRole(name) != security {
+			continue
+		}
+		if row, found := staffingRow(record, name); found && !row.Needed {
+			return sdlcerr.New(sdlcerr.StaffingNeverLeftOut,
+				name+" is left out of a story the analysis records as security-sensitive",
+				"security takes part in every security-sensitive story, and the tool does not add it: the project manager "+
+					"staffs the story again with "+name+" needed").
+				WithFix("delegate to sdlc:project-manager to amend the staffing (`sdlc staffing amend " + name +
+					" --needed --model <model> --effort <effort> --reason ...`), then pass the analysis again")
+		}
 	}
 	return nil
 }
@@ -319,41 +462,13 @@ func noteSensitivity(s *store.Store, record *model.Record, sensitive bool) {
 	}
 	change := "the story is recorded as not security-sensitive, so the staffing decides whether security takes part"
 	if sensitive {
-		change = "the story is recorded as security-sensitive, so security takes part whatever the staffing says"
+		change = "the story is recorded as security-sensitive, so security cannot be left out"
 	}
 	record.Staffing.Amendments = append(record.Staffing.Amendments, model.Amendment{
-		At: model.Timestamp(s.Now()), Agent: "security", Change: change,
+		At: model.Timestamp(s.Now()), Agent: security, Change: change,
 		Reason: "sdlc gate analysis pass --security-sensitive=" + strconv.FormatBool(sensitive), By: "gate analysis",
 	})
 	record.Append(model.EventStaffingAmend, "security: "+change, s.Now())
-}
-
-// staffingRoster is what config cannot check, because it does not know the
-// agents: that a lowest names one, and a bring_back a reviewer of the code.
-func staffingRoster(cfg config.Staffing) error {
-	if !cfg.Enabled {
-		return nil
-	}
-	var problems []string
-	for agent := range cfg.Lowest {
-		if !slices.Contains(model.Agents, agent) {
-			problems = append(problems, "staffing.lowest names "+quote(agent)+", which is not an agent: "+
-				agentsAre+strings.Join(model.Agents, ", "))
-		}
-	}
-	for reviewer := range cfg.BringBack {
-		if _, ok := model.FindReviewer(model.GateCodeReview, reviewer); !ok || reviewer != strings.ToLower(strings.TrimSpace(reviewer)) {
-			problems = append(problems, "staffing.bring_back names "+quote(reviewer)+", which does not review the code: "+
-				"the reviewers there are "+model.ReviewerNames(model.GateCodeReview))
-		}
-	}
-	if len(problems) == 0 {
-		return nil
-	}
-	slices.Sort(problems)
-	return sdlcerr.New(sdlcerr.ConfigInvalid,
-		config.File+" has settings sdlc cannot use",
-		strings.Join(problems, "; "))
 }
 
 // staffedInfo is one agent of a staffing as it is shown. set_by is the tool's
@@ -382,6 +497,11 @@ type staffingPayload struct {
 	Agents     []staffedInfo     `json:"agents"`
 	AtGate     []atGateInfo      `json:"at_gate"`
 	Amendments []model.Amendment `json:"amendments"`
+	// Disabled is every agent the team disables; ByHand is the worker whose
+	// gate this is where it is one of them, which the runbook reads before
+	// delegating, so it hands the gate to the person instead.
+	Disabled []string `json:"disabled,omitempty"`
+	ByHand   string   `json:"by_hand,omitempty"`
 }
 
 // staffingInfos is the staffing a row to an agent, with the floor applied as a
@@ -404,12 +524,12 @@ func staffingInfos(record *model.Record) []staffedInfo {
 
 // describeStaffing is the staffing in one line of `sdlc status`: who is left
 // out, by name. The reasons are `sdlc staffing show`'s to print.
-func describeStaffing(record *model.Record) string {
+func describeStaffing(team config.Team, record *model.Record) string {
 	if !staffed(record) {
 		return "none recorded, so every agent is needed"
 	}
 	var out []string
-	for _, agent := range model.Agents {
+	for _, agent := range team.Names() {
 		if record.LeftOut(agent) {
 			out = append(out, agent)
 		}
@@ -450,16 +570,19 @@ func runStaffingShow(cmd *cobra.Command, storyID, gateName string) error {
 	if err != nil {
 		return err
 	}
-	if !staffed(record) {
-		return noStaffing(id)
+	team := s.Config().Team
+	if team.StaffingOn() && !staffed(record) {
+		return noStaffing(id, team)
 	}
 	if gateName == "" {
 		gate, _ = record.NextGate()
 	}
 
-	payload := staffingPayload{
-		OK: true, Story: id, Gate: string(gate), Agents: staffingInfos(record),
-		AtGate: []atGateInfo{}, Amendments: append([]model.Amendment{}, record.Staffing.Amendments...),
+	payload := staffingPayload{OK: true, Story: id, Gate: string(gate), Agents: []staffedInfo{}, AtGate: []atGateInfo{},
+		Amendments: []model.Amendment{}, Disabled: disabledAgents(team), ByHand: byHand(team, gate)}
+	if team.StaffingOn() {
+		payload.Agents = staffingInfos(record)
+		payload.Amendments = append(payload.Amendments, record.Staffing.Amendments...)
 	}
 	if err := staffedAtGate(cmd.Context(), s, record, gate, &payload); err != nil {
 		return err
@@ -467,30 +590,36 @@ func runStaffingShow(cmd *cobra.Command, storyID, gateName string) error {
 	if wantJSON(cmd) {
 		return emitJSON(cmd.OutOrStdout(), payload)
 	}
-	printStaffing(cmd.OutOrStdout(), s.Config().Staffing, payload)
+	printStaffing(cmd.OutOrStdout(), team, payload)
 	return nil
 }
 
 // staffedAtGate lists who to delegate to at the gate: the agent that does its
 // work and each reviewer it waits for, and marks a reviewer a changed path
 // brought back.
+// A disabled agent is delegated nothing: a disabled verifier or code reviewer
+// is still waited for, and its review is a person's to record.
 func staffedAtGate(ctx context.Context, s *store.Store, record *model.Record, gate model.Gate, payload *staffingPayload) error {
+	team := s.Config().Team
 	at := func(agent string) {
-		row := staffingRow(record, agent)
+		var row model.Staffed
+		if team.StaffingOn() {
+			row, _ = staffingRow(record, agent)
+		}
 		payload.AtGate = append(payload.AtGate, atGateInfo{Agent: agent, AskedModel: row.AskedModel, AskedEffort: row.AskedEffort})
 	}
 	for _, d := range model.Doers {
-		if d.Gate == gate {
+		if d.Gate == gate && team.Enabled(d.Agent) {
 			at(d.Agent)
 		}
 	}
 	rd, policy := readingOf(s), reviewPolicy(s, record)
-	for _, r := range model.ReviewersFor(gate) {
+	for _, r := range team.ReviewersFor(gate) {
 		out, by, err := waited(ctx, rd, record, gate, r.Role)
 		if err != nil {
 			return err
 		}
-		if !out && r.Expected(policy) {
+		if !out && r.Expected(policy) && team.Enabled(r.Role) {
 			at(r.Role)
 		}
 		payload.markBroughtBack(r.Role, by)
@@ -507,19 +636,40 @@ func (p *staffingPayload) markBroughtBack(role, by string) {
 	}
 }
 
-func printStaffing(w io.Writer, cfg config.Staffing, p staffingPayload) {
+func printStaffing(w io.Writer, team config.Team, p staffingPayload) {
 	where := "every gate has passed"
 	if p.Gate != "" {
 		where = "at " + p.Gate
 	}
 	fmt.Fprintf(w, "%s  staffing, %s\n\n", p.Story, where)
+	if len(p.Disabled) > 0 || p.ByHand != "" {
+		sayTeam(w, team, p.Disabled)
+		sayByHand(w, team, model.Gate(p.Gate))
+		fmt.Fprintln(w)
+	}
+	if !team.StaffingOn() {
+		fmt.Fprintln(w, "  no staffing: the project manager is disabled in team.agents.project-manager.enabled,")
+		fmt.Fprintln(w, "  so every enabled agent takes part and each runs as its definition says")
+		fmt.Fprintln(w)
+		for _, a := range p.AtGate {
+			fmt.Fprintf(w, "  %-15s needed at this gate\n", a.Agent)
+		}
+		return
+	}
 	fmt.Fprintf(w, "  may be asked for, lowest first:  models %s;  efforts %s\n",
-		strings.Join(cfg.Models, ", "), strings.Join(cfg.Efforts, ", "))
-	for _, reviewer := range slices.Sorted(maps.Keys(cfg.BringBack)) {
-		fmt.Fprintf(w, "  %s is brought back to code_review by a change under %s\n", reviewer, quotePaths(cfg.BringBack[reviewer]))
+		strings.Join(team.ModelList(), ", "), strings.Join(team.EffortList(), ", "))
+	for _, agent := range model.Agents {
+		if paths := team.BringBackFor(agent); len(paths) > 0 {
+			fmt.Fprintf(w, "  %s is brought back to code_review by a change under %s\n", agent, quotePaths(paths))
+		}
 	}
 	fmt.Fprintln(w)
 	for _, a := range p.Agents {
+		if base := model.BaseRole(a.Agent); !team.Enabled(base) {
+			// The row is kept and not acted on: what to change is the file.
+			fmt.Fprintf(w, "  %-15s disabled in team.agents.%s.enabled; a person enables it there if the story needs it\n", a.Agent, base)
+			continue
+		}
 		fmt.Fprintf(w, "  %-15s %s\n", a.Agent, describeStaffed(a))
 	}
 	if len(p.Amendments) > 0 {
@@ -598,11 +748,12 @@ func runStaffingSet(cmd *cobra.Command, file, storyID string) error {
 	if staffed(record) {
 		return staffingNotRecorded(id, id+" already has a staffing, which `sdlc staffing amend` changes an agent at a time")
 	}
-	rows, err := rowsForEveryAgent(id, doc.Agents)
+	team := s.Config().Team
+	needed, err := checkStaffingRows(id, team, doc.Agents)
 	if err != nil {
 		return err
 	}
-	needed, err := checkStaffingRows(id, doc.Agents)
+	rows, err := rowsForEveryAgent(id, team, doc.Agents)
 	if err != nil {
 		return err
 	}
@@ -631,16 +782,21 @@ func runStaffingSet(cmd *cobra.Command, file, storyID string) error {
 	return err
 }
 
-// rowsForEveryAgent is the document's row for each agent, in the order the
-// agents are listed.
-func rowsForEveryAgent(id string, agents []model.Staffed) ([]model.Staffed, error) {
-	rows := make([]model.Staffed, 0, len(model.Agents))
-	for _, agent := range model.Agents {
-		at := slices.IndexFunc(agents, func(a model.Staffed) bool { return a.Agent == agent })
-		if at < 0 {
-			return nil, staffingNotRecorded(id, "it has no row for "+agent+": a staffing names every agent, needed or not")
+// rowsForEveryAgent is the document's row for each of the team's names, in the
+// order the agents are listed, each followed by its instances. A disabled
+// agent needs no row, and one it has is kept and not acted on.
+func rowsForEveryAgent(id string, team config.Team, agents []model.Staffed) ([]model.Staffed, error) {
+	names := team.Names()
+	rows := make([]model.Staffed, 0, len(names))
+	for _, name := range names {
+		at := slices.IndexFunc(agents, func(a model.Staffed) bool { return a.Agent == name })
+		switch {
+		case at >= 0:
+			rows = append(rows, agents[at])
+		case team.Enabled(name):
+			return nil, staffingNotRecorded(id, "it has no row for "+name+
+				": a staffing names every enabled agent and each of its instances, needed or not")
 		}
-		rows = append(rows, agents[at])
 	}
 	return rows, nil
 }
@@ -652,7 +808,7 @@ func staffingNotRecorded(id, why string) error {
 
 // checkStaffingRows holds each row of the document to what a row has to say,
 // and counts the agents it needs.
-func checkStaffingRows(id string, agents []model.Staffed) (needed int, err error) {
+func checkStaffingRows(id string, team config.Team, agents []model.Staffed) (needed int, err error) {
 	for _, a := range agents {
 		n := 0
 		for _, other := range agents {
@@ -661,12 +817,15 @@ func checkStaffingRows(id string, agents []model.Staffed) (needed int, err error
 			}
 		}
 		switch {
-		case !slices.Contains(model.Agents, a.Agent) || n > 1:
-			return 0, staffingNotRecorded(id, quote(a.Agent)+" is not an agent the plugin ships, or is named more than once: "+
-				agentsAre+strings.Join(model.Agents, ", "))
+		case !team.Staffable(a.Agent) || n > 1:
+			return 0, staffingNotRecorded(id, quote(a.Agent)+" is not an agent the plugin ships or an instance the team "+
+				"gives one, or is named more than once: "+agentsAre+strings.Join(team.Names(), ", "))
+		case a.Needed && !team.Enabled(a.Agent):
+			return 0, staffingNotRecorded(id, a.Agent+" is disabled in team.agents."+model.BaseRole(a.Agent)+
+				".enabled, so the staffing cannot need it: leave its row out, or say it is not needed")
 		case blankOrLong(a.Reason):
 			return 0, staffingNotRecorded(id, a.Agent+" has no reason, or one over "+strconv.Itoa(maxReason)+" characters: say why the story needs it or does not")
-		case a.Needed && (a.AskedModel == "" || a.AskedEffort == "" || blankOrLong(a.AskedReason)):
+		case a.Needed && team.Enabled(a.Agent) && (a.AskedModel == "" || a.AskedEffort == "" || blankOrLong(a.AskedReason)):
 			return 0, staffingNotRecorded(id, a.Agent+" is needed and has no asked_model, asked_effort or asked_reason")
 		}
 		if a.Needed {
@@ -680,27 +839,33 @@ func checkStaffingRows(id string, agents []model.Staffed) (needed int, err error
 // left out, and to the project's limits. A row left out is cleared of what was
 // asked for.
 func checkAgainstPins(s *store.Store, record *model.Record, rows []model.Staffed) error {
+	team := s.Config().Team
 	for i := range rows {
 		a := &rows[i]
 		pin, pinned := assigned(record, a.Agent)
 		switch {
+		case !team.Enabled(a.Agent):
+			// Kept and not acted on.
 		case pinned && !a.Needed:
 			return personAssigned(a.Agent, "a place in the story")
 		case pinned && (pin.Model != "" && pin.Model != a.AskedModel || pin.Effort != "" && pin.Effort != a.AskedEffort):
 			return personAssigned(a.Agent, strings.TrimSpace("the model "+quote(pin.Model)+" and the effort "+quote(pin.Effort)))
 		case !a.Needed:
-			if err := refuseLeavingOut(record, a.Agent); err != nil {
+			if err := refuseLeavingOut(team, record, a.Agent); err != nil {
 				return err
 			}
 			a.AskedModel, a.AskedEffort, a.AskedReason = "", "", ""
 		default:
-			if err := refuseOutsideLimits(s.Config().Staffing, a.Agent, a.AskedModel, a.AskedEffort); err != nil {
+			if err := refuseOutsideLimits(team, a.Agent, a.AskedModel, a.AskedEffort); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
 }
+
+// security is the agent a security-sensitive story never leaves out.
+const security = "security"
 
 // agentsAre begins the list of the agents a staffing may name.
 const agentsAre = "the agents are "
@@ -747,8 +912,8 @@ func newStaffingAmendCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&needed, "needed", false, "the story needs the agent after all; give --model and --effort with it")
 	cmd.Flags().BoolVar(&leftOut, "left-out", false, "the story does not need the agent")
-	cmd.Flags().StringVar(&askedModel, "model", "", "the model to ask for, one of staffing.models")
-	cmd.Flags().StringVar(&askedEffort, "effort", "", "the effort to ask for, one of staffing.efforts")
+	cmd.Flags().StringVar(&askedModel, "model", "", "the model to ask for, one of team.models")
+	cmd.Flags().StringVar(&askedEffort, "effort", "", "the effort to ask for, one of team.efforts")
 	cmd.Flags().StringVar(&reason, "reason", "", "why, from what happened or what the work is")
 	cmd.Flags().StringVar(&storyID, "story", "", "the story being worked on, which is the only one a staffing is amended for")
 	return cmd
@@ -777,13 +942,12 @@ func runStaffingAmend(cmd *cobra.Command, agent string, f amendFlags) error {
 	case f.leftOut && (f.needed || f.model != "" || f.effort != ""):
 		return usage(cmd, "--left-out takes no --needed, --model or --effort: an agent left out is asked for nothing")
 	}
-	if !slices.Contains(model.Agents, agent) {
-		return sdlcerr.New(sdlcerr.StaffingInvalid,
-			quote(agent)+" is not an agent the plugin ships",
-			agentsAre+strings.Join(model.Agents, ", "))
+	team := s.Config().Team
+	if agent = staffingName(agent); !team.Staffable(agent) {
+		return notStaffable(team, agent)
 	}
 	if !staffed(record) {
-		return noStaffing(id)
+		return noStaffing(id, team)
 	}
 	change, err := amendRow(cmd, s, record, agent, f)
 	if err != nil {
@@ -802,13 +966,20 @@ func runStaffingAmend(cmd *cobra.Command, agent string, f amendFlags) error {
 // amendRow changes the agent's row as the flags say, and returns the change as
 // the amendment keeps it.
 func amendRow(cmd *cobra.Command, s *store.Store, record *model.Record, agent string, f amendFlags) (string, error) {
-	row := staffingRow(record, agent)
+	team := s.Config().Team
+	if !f.leftOut && !team.Enabled(agent) {
+		return "", sdlcerr.New(sdlcerr.StaffingInvalid,
+			agent+" is disabled in team.agents."+model.BaseRole(agent)+".enabled",
+			"a disabled agent takes no part in any story, so its row is not acted on").
+			WithFix("a person enables it in " + config.File + " first, if the story needs it")
+	}
+	row, found := staffingRow(record, agent)
 	pin, pinned := assigned(record, agent)
 	switch {
 	case f.leftOut && !row.Needed:
 		return "", usage(cmd, agent+" is already left out: there is nothing to change")
 	case f.leftOut:
-		return leaveAgentOut(record, row, agent, f.reason, pinned)
+		return leaveAgentOut(team, record, agent, f.reason, pinned)
 	case !row.Needed && (f.model == "" || f.effort == ""):
 		return "", usage(cmd, agent+" is left out, and an agent brought in comes with --model and --effort")
 	case f.needed && row.Needed && f.model == "" && f.effort == "":
@@ -822,26 +993,30 @@ func amendRow(cmd *cobra.Command, s *store.Store, record *model.Record, agent st
 		Agent: agent, Needed: true, Reason: row.Reason, AskedReason: f.reason,
 		AskedModel: cmpOr(f.model, row.AskedModel), AskedEffort: cmpOr(f.effort, row.AskedEffort),
 	}
-	if err := refuseOutsideLimits(s.Config().Staffing, agent, to.AskedModel, to.AskedEffort); err != nil {
+	if err := refuseOutsideLimits(team, agent, to.AskedModel, to.AskedEffort); err != nil {
 		return "", err
 	}
-	change := describeAsked(*row) + " -> " + describeAsked(to)
-	if !row.Needed {
+	from := describeAsked(row)
+	if !found {
+		from = "no row"
+	}
+	change := from + " -> " + describeAsked(to)
+	if !row.Needed || to.Reason == "" {
 		to.Reason = f.reason
 	}
-	*row = to
+	setRow(record, to)
 	return change, nil
 }
 
 // leaveAgentOut takes the agent out of the staffing, if nothing stops it.
-func leaveAgentOut(record *model.Record, row *model.Staffed, agent, reason string, pinned bool) (string, error) {
+func leaveAgentOut(team config.Team, record *model.Record, agent, reason string, pinned bool) (string, error) {
 	if pinned {
 		return "", personAssigned(agent, "a place in the story")
 	}
-	if err := refuseLeavingOut(record, agent); err != nil {
+	if err := refuseLeavingOut(team, record, agent); err != nil {
 		return "", err
 	}
-	*row = model.Staffed{Agent: agent, Reason: reason}
+	setRow(record, model.Staffed{Agent: agent, Reason: reason})
 	return "needed -> left out", nil
 }
 
@@ -882,8 +1057,8 @@ func newStaffingAssignCmd() *cobra.Command {
 			return runStaffingAssign(cmd, args, assignFlags{story: storyID, model: askedModel, effort: askedEffort, reason: reason})
 		},
 	}
-	cmd.Flags().StringVar(&askedModel, "model", "", "the model to ask for, one of staffing.models")
-	cmd.Flags().StringVar(&askedEffort, "effort", "", "the effort to ask for, one of staffing.efforts")
+	cmd.Flags().StringVar(&askedModel, "model", "", "the model to ask for, one of team.models")
+	cmd.Flags().StringVar(&askedEffort, "effort", "", "the effort to ask for, one of team.efforts")
 	cmd.Flags().StringVar(&reason, "reason", "", "why")
 	cmd.Flags().StringVar(&storyID, "story", "", "a story that has been started, instead of the one being worked on")
 	return cmd
@@ -920,10 +1095,9 @@ func runStaffingAssign(cmd *cobra.Command, args []string, f assignFlags) error {
 		return err
 	}
 	defer unlock()
-	if !slices.Contains(model.Agents, agent) {
-		return sdlcerr.New(sdlcerr.StaffingInvalid,
-			quote(agent)+" is not an agent the plugin ships",
-			agentsAre+strings.Join(model.Agents, ", "))
+	team := s.Config().Team
+	if agent = staffingName(agent); !team.Staffable(agent) {
+		return notStaffable(team, agent)
 	}
 	if record.Staffing == nil {
 		record.Staffing = &model.Staffing{}
@@ -945,7 +1119,7 @@ func runStaffingAssign(cmd *cobra.Command, args []string, f assignFlags) error {
 // assignAgent pins what the agent is asked for, and returns the change as the
 // amendment keeps it.
 func assignAgent(cmd *cobra.Command, s *store.Store, record *model.Record, agent string, f assignFlags) (string, error) {
-	row := staffingRow(record, agent)
+	row, _ := staffingRow(record, agent)
 	if (!staffed(record) || !row.Needed) && (f.model == "" || f.effort == "") {
 		return "", usage(cmd, agent+" has nothing asked for yet, so give both --model and --effort")
 	}
@@ -953,7 +1127,7 @@ func assignAgent(cmd *cobra.Command, s *store.Store, record *model.Record, agent
 		Agent: agent, Needed: true, Reason: row.Reason, AskedReason: f.reason,
 		AskedModel: cmpOr(f.model, row.AskedModel), AskedEffort: cmpOr(f.effort, row.AskedEffort),
 	}
-	if err := refuseOutsideLimits(s.Config().Staffing, agent, to.AskedModel, to.AskedEffort); err != nil {
+	if err := refuseOutsideLimits(s.Config().Team, agent, to.AskedModel, to.AskedEffort); err != nil {
 		return "", err
 	}
 	pin, _ := assigned(record, agent)
@@ -962,11 +1136,11 @@ func assignAgent(cmd *cobra.Command, s *store.Store, record *model.Record, agent
 		func(a model.Assigned) bool { return a.Agent == agent }), pin)
 	change := "a person assigned " + strings.TrimSpace("model "+quote(pin.Model)+" effort "+quote(pin.Effort))
 	if staffed(record) {
-		if !row.Needed {
+		if !row.Needed || to.Reason == "" {
 			to.Reason = f.reason
 		}
-		change = describeAsked(*row) + " -> " + describeAsked(to)
-		*row = to
+		change = describeAsked(row) + " -> " + describeAsked(to)
+		setRow(record, to)
 	}
 	return change, nil
 }

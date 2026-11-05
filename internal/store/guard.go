@@ -691,8 +691,8 @@ func isTime(at string) bool {
 func commandLabel(what string) bool {
 	switch what {
 	case "ack", "approve", "escalate", "freeze", "gate", "release", "unfreeze", "hook Stop",
-		"artifact write", "codemap write", "cost add", "review add", "staffing set", "staffing amend",
-		"staffing assign":
+		"artifact write", "codemap write", "cost add", "review add", "finding close", "staffing set",
+		"staffing amend", "staffing assign", "team failure":
 		return true
 	}
 	command, id, _ := strings.Cut(what, " ")

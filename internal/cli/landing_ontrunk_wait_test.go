@@ -251,7 +251,7 @@ func TestAC13AStorySentBackWhileItsStopWaitedIsNotLanded(t *testing.T) {
 // commits there afterwards does bring them back.
 func TestAC9WhatTrunkGainedUnderARebasedStoryBringsNoReviewerBack(t *testing.T) {
 	t.Parallel()
-	main := ldRepository(t, func(root string) { setConfigOnDisk(t, root, "staffing", stfSection()) })
+	main := ldRepository(t, func(root string) { setConfigOnDisk(t, root, "team", stfSection()) })
 	otIdentity(t, main)
 	wt := swCheckStarted(t, main, "US-001", ldSession, swStarted(t, main, ldSession))
 	chdir(t, wt)
