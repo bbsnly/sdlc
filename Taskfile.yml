@@ -50,7 +50,7 @@ vars:
 
   # go test's limit for one package, which `test` and `check-linux` give it.
   # Its reasons are in `test`.
-  TEST_TIMEOUT: '{{if eq OS "windows"}}45m{{else}}20m{{end}}'
+  TEST_TIMEOUT: '{{if eq OS "windows"}}60m{{else if eq OS "darwin"}}40m{{else}}20m{{end}}'
 
   # The packages `test` and `check-linux` run without the race detector. Their
   # code, and the packages of this module it imports, starts no goroutine and
@@ -351,10 +351,15 @@ tasks:
         # the git processes the commands under test start, about 88,000 in a
         # run of its tests, and a shorter limit waits on fewer of them.
         #
-        # On Windows the limit is forty-five. With a fifth fewer of those
+        # On Windows the limit is sixty. With a fifth fewer of those
         # processes, CI run 40688726752 still saw go test kill internal/cli at
         # twenty on windows-latest and windows-11-arm, nothing hung: its
-        # tests were waiting their turn for the runner's four CPUs.
+        # tests were waiting their turn for the runner's four CPUs. It was
+        # forty-five until CI run 42051442385, where the tests of the 0.6.0
+        # stories took the windows-latest job past its hour, and the same run
+        # saw go test kill internal/cli at twenty on macos-latest, so macOS
+        # has forty. Both were raised to cut a release, not as the fix: the
+        # fix is internal/cli running fewer git processes.
         #
         # The limit only ever went up, because nothing said a package was
         # nearing it until one passed it. So go test writes events, and

@@ -27,9 +27,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     # A stalled step -- a module fetch, an installer test, a release download --
     # otherwise holds the runner for GitHub's default of six hours. On
-    # 7e94c69 check took 19 minutes on macOS. On Windows go test's limit is
-    # forty-five, not twenty (Taskfile.yml says why), so the job has an hour.
-    timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 60 || 30 }}
+    # 7e94c69 check took 19 minutes on macOS. go test's limit is sixty on
+    # Windows and forty on macOS, not twenty (Taskfile.yml says why), so those
+    # jobs have half an hour more than it.
+    timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 90 || startsWith(matrix.os, 'macos') && 70 || 30 }}
     strategy:
       fail-fast: false
       matrix:
@@ -305,7 +306,7 @@ jobs:
   install:
     name: install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 60 || 30 }}
+    timeout-minutes: ${{ startsWith(matrix.os, 'windows') && 90 || 30 }}
     strategy:
       fail-fast: false
       matrix:
