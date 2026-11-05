@@ -24,7 +24,9 @@
     "lint, fmt and fmt_check go through ./task so they use the golangci-lint the",
     "Taskfile pins and the gofmt of the toolchain go.mod pins, not whatever is on PATH.",
     "test is './task test' plus -count=1. npm_test is not one the loop runs by name:",
-    "it needs node on PATH, and is for a story that touches npm/."
+    "it needs node on PATH, and is for a story that touches npm/.",
+    "freeze_check lints the tree and compiles every test without running one, so a",
+    "test that does not lint or build is corrected before the freeze, not after it."
   ],
   "commands": {
     "smoke":     "test -z \"$(go list ./...)\" || go vet ./...",
@@ -36,7 +38,8 @@
     "fmt_check": "./task fmt-check",
     "fmt_file":  "case \"$FILE\" in *.go) GOTOOLCHAIN=\"$(sed -n 's/^toolchain //p' go.mod | head -n 1)\" go fmt \"$FILE\" >/dev/null ;; esac",
     "coverage":  "go test -timeout 20m ./... -count=1 -coverprofile=.sdlc/state/cover.out >/dev/null && go tool cover -func=.sdlc/state/cover.out | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'",
-    "mutation":  ""
+    "mutation":  "",
+    "freeze_check": "./task lint && go test -count=1 -run '^$' ./... >/dev/null"
   },
 
   "thresholds": {
@@ -56,40 +59,43 @@
 
   "loop": { "max_review_rounds": 2, "max_rework_rounds": 3, "max_stop_blocks": 3 },
 
-  "reviews": { "gate7_advisory": false },
-
   "freeze": { "allow_new_test_files": false },
 
   "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
 
   "budget": { "per_story_usd": 0, "alert_fractions": [0.5, 0.8, 1.0] },
 
-  "_staffing_doc": [
+  "_team_doc": [
     "Both lists are lowest first. The project manager chooses each agent's model",
-    "and effort from them, story by story; no 'lowest' is set, so nothing here",
+    "and effort from them, story by story; no agent sets 'lowest', so nothing here",
     "narrows that choice.",
     "bring_back: the paths the contract names as high risk bring security back,",
     "what runs on every tool call brings perf back, and what a person reads",
     "brings the human advocate back, even where the staffing left them out."
   ],
-  "staffing": {
-    "enabled": true,
+  "team": {
     "models": ["haiku", "sonnet", "opus", "fable"],
     "efforts": ["low", "medium", "high", "xhigh"],
-    "bring_back": {
-      "security": [
-        "internal/hook/", "internal/shellpolicy/", "internal/policy/", "internal/pathrules/",
-        "internal/testset/", "internal/store/",
-        "internal/cli/approve.go", "internal/cli/ack.go", "internal/cli/freeze.go",
-        "internal/cli/release.go", "internal/cli/staffing.go",
-        "install.sh", "install.ps1", "npm/", "plugin/hooks/",
-        ".github/workflows/", ".goreleaser.yml"
-      ],
-      "perf": ["internal/hook/", "internal/shellpolicy/", "internal/pathrules/", "cmd/sdlc/"],
-      "human-advocate": [
-        "docs/", "README.md", "internal/sdlcerr/", "plugin/skills/", "plugin/agents/",
-        "internal/scaffold/templates/"
-      ]
+    "agents": {
+      "security": {
+        "bring_back": [
+          "internal/hook/", "internal/shellpolicy/", "internal/policy/", "internal/pathrules/",
+          "internal/testset/", "internal/store/",
+          "internal/cli/approve.go", "internal/cli/ack.go", "internal/cli/freeze.go",
+          "internal/cli/release.go", "internal/cli/staffing.go",
+          "install.sh", "install.ps1", "npm/", "plugin/hooks/",
+          ".github/workflows/", ".goreleaser.yml"
+        ]
+      },
+      "perf": {
+        "bring_back": ["internal/hook/", "internal/shellpolicy/", "internal/pathrules/", "cmd/sdlc/"]
+      },
+      "human-advocate": {
+        "bring_back": [
+          "docs/", "README.md", "internal/sdlcerr/", "plugin/skills/", "plugin/agents/",
+          "internal/scaffold/templates/", "REVIEW.md"
+        ]
+      }
     }
   }
 }
