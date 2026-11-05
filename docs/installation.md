@@ -420,6 +420,11 @@ one behind.
 
 To update the plugin, `/plugin update sdlc@sdlc` in Claude Code.
 
+A release with breaking changes comes with a migration guide that says what to
+change, in what order, and how to check it worked:
+
+- [0.5.0 to 0.6.1](migrations/v0.5.0-to-v0.6.1.md)
+
 ## Uninstalling
 
 ```console

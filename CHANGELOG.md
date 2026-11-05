@@ -7,6 +7,127 @@ All notable changes to this project are documented here. The format follows
 Error codes are part of the interface: once published, a code's meaning does
 not change and it is never reused.
 
+## [0.6.1](https://github.com/bbsnly/sdlc/releases/tag/v0.6.1) - 2026-11-05
+
+Upgrading from 0.5.0: see
+[docs/migrations/v0.5.0-to-v0.6.1.md](docs/migrations/v0.5.0-to-v0.6.1.md).
+
+There is no 0.6.0 release. The `v0.6.0` tag was pushed, its check failed before anything was
+built, and a tag here cannot be moved, so these changes are first released as 0.6.1.
+
+### Added
+
+- A person can see where a story's time and money went. The hook now appends each tool call,
+  agent start and stop, and refusal to the story's `trace.jsonl`, and `sdlc trace <ID>` reads
+  them back by gate and by agent, with `--json` for a script and `--all` for every story side by
+  side. Recording never changes a decision: a failed write leaves the hook's answer as it was.
+  The trace stops at 4 MiB and says so, and it is refused if its name is a symbolic link, a hard
+  link or a FIFO. The shell rules protect the file as they protect the freeze, so a model cannot
+  forge or remove it; the forms of a command they still do not follow are listed under "Not held"
+  in `docs/enforcement.md`.
+- A person is told when a gate has taken too long. `budget.gate_hours` gives a gate key a number
+  of hours, and once the agents' time charged to that gate, as `sdlc trace` counts it, is past the
+  number, `sdlc gate`, `sdlc review add` and `sdlc status` each print one line on stderr for
+  it. Nothing they decide, print on stdout or exit with changes. The first `sdlc gate` or
+  `sdlc review add` that saves records a `budget` event, and `sdlc trace` marks the gate. A bad
+  value or a key that is not a gate key is refused with `SDLC-E0045`. Breaking: `sdlc doctor`'s
+  configuration detail ends with the code, `(SDLC-E0045)`, for every `SDLC-E0045` cause.
+- A test is checked before it is frozen. `commands.freeze_check` is a command `sdlc freeze` runs
+  first, with `SDLC_FREEZE_FILES` naming the new or changed test files, one per line. A check
+  that fails, or that changes a test file, takes no freeze and is refused with the new
+  `SDLC-E0085`, so the test author corrects the file while it can still be edited, and no
+  unfreeze is needed. It is empty until a project chooses one. Breaking: `sdlc init` writes the
+  key into a new config, and `sdlc doctor` prints a `freeze check` line and no longer reports a
+  shell builtin such as `continue`, `local` or `wait` in a configured command as a program that
+  is not installed, so it exits 0 where it exited 1.
+- A reviewer that is asked to look again reads only what changed. `sdlc artifact write plan` keeps
+  each plan under the story's `plans/<sha256>.md`, and `sdlc artifact diff plan --since <role>`
+  prints a unified diff from the revision that role's latest design review was stamped with to
+  the current `PLAN.md`. A revision that does not match its name is refused with the new
+  `SDLC-E0084`, and the reviewer then reads the whole plan. Breaking: `sdlc review list` names the
+  revision on the stale line of a design review, and `--json` gives it as `reviewed_subject`.
+- Every reviewer reads one review policy. `REVIEW.md`, or the path in `reviews.policy`, says which
+  passes to make, what counts as important, what is a nit and what not to review. `sdlc init`
+  writes it, `sdlc doctor` reports it, `sdlc review list` names it, and the file and shell rules
+  hold it from every agent. The landing refuses a story that changes it. Breaking: `sdlc review
+  add` takes `--important` and `--nits`, and a `block` with no `--important`, or 0, is refused
+  with the new `SDLC-E0086`; a review with only nits is an `approve` with the nits listed.
+- A review finding is recorded and has to be answered. `sdlc review add` takes `--finding
+  "<important|nit> <path>: <text>"` once for each finding, numbered `F-1` onwards on the review,
+  and the counts must agree with the findings listed (`SDLC-E0089`). `sdlc finding close <gate>
+  <role> F-n` records each as `--fixed`, `--declined --reason "<why>"` or `--referred --reason
+  "<why>"` with the time and the session (`SDLC-E0090` for a closing with no reason), and a
+  referral of a file the story changed is refused (`SDLC-E0091`). `sdlc status` and `sdlc log`
+  show the ledger. Breaking: the verification and commit gates refuse with `SDLC-E0092` while a
+  design or code review finding is open, and with `SDLC-E0093` for a record whose findings an
+  older `sdlc` dropped.
+- One `team` section configures every agent. `team.retries`, `team.models` and `team.efforts` hold
+  what all agents share, and `team.agents.<agent>` holds `enabled`, `instances`, `lowest`,
+  `bring_back` and, for a reviewer, `can_block`. `docs/configuration.md` shows every option under
+  "Every setting at once". `sdlc status` lists the agents the team disables and each reviewer
+  whose `can_block` is false, `--json` gains `disabled`, and `sdlc team failure` and `sdlc status`
+  say how many failures an agent has had at a gate and when a person is asked. Breaking: the
+  `staffing` section and `"reviews": {"gate7_advisory": true}` are refused by every command that
+  loads the file with the new `SDLC-E0087`, which names each old key and its replacement, a team
+  that cannot be used (an agent named twice among them) is refused with `SDLC-E0088`, and the
+  project manager now staffs every story unless `team.agents.project-manager.enabled` is false.
+  `"gate7_advisory": false` is a leftover that loads; `sdlc doctor` reports it. The hook still
+  reads a file refused only as `SDLC-E0087` or `SDLC-E0088`, so its rules still apply while a
+  person fixes it.
+- `sdlc status` and `sdlc stop` end with one line once `consolidate.nudge_after` stories (3 by
+  default, 0 turns it off) have finished since the date in the newest
+  `.sdlc/consolidation-<date>.md`, saying it is time to run `/sdlc:consolidate`; `sdlc status
+  --json` carries a `consolidate` field. Below the threshold both print what they always did. The
+  skill now writes its dated file even when it finds nothing, reads each story's review files as
+  evidence, proposes cuts when the contract section passes 150 lines, and does not propose again
+  what a person declined unless a newer story adds evidence.
+- For contributors, `./task migration-guide -- <from> <to>` writes
+  `docs/migrations/<from>-to-<to>.md` with one section per breaking commit between two tags. It
+  refuses a file that already exists and a word that is not an exact tag.
+
+### Changed
+
+- Breaking: a bare `sdlc start` takes `ready` stories only. A project that leaves every story
+  `todo` now gets `SDLC-E0010` and exit 1, which says how many stories it passed over and names up
+  to five, and `sdlc status` and `sdlc story list` name no next story, until a story is marked
+  `ready` or named with `sdlc start <ID>`. Naming a `todo` story still starts it, and resuming is
+  unchanged. A `todo` story that another checkout holds, or that waits on an unfinished
+  dependency, is not counted.
+- Every agent follows one contract. `docs/the-agents.md` defines the frontmatter that declares an
+  agent's kind, gates and team defaults, eight sections in a fixed order, a hand-back that is one
+  JSON object, and one review document shape that allows `approve` or `block` only. All twelve
+  agents are moved onto it with their instructions kept, tests in `internal/plugin` refuse an
+  agent that does not conform, and the runbook counts a message that is not the contract's JSON as
+  a run that returned nothing usable. The Gate 4 runbook resumes the reviewer that recorded the
+  latest review with the plan diff, and starts a fresh one only where the diff is refused.
+- Getting started, Installation and both READMEs tell a Claude Desktop user to add the marketplace
+  and install `sdlc` from the plugin browser, because typing the `/plugin` commands in the Code
+  tab opens a window that does not add the plugin, and name `/sdlc:init` and `/sdlc:doctor` beside
+  the terminal commands.
+
+### Removed
+
+- Breaking: `sdlc parallel` is gone, with its configuration section, its hook rule
+  `parallel-is-a-human-decision` and `--max` from the flags that take a value. It was the only
+  place the loop handed tools to a session nobody was watching. To work several stories at once,
+  start each with `sdlc start <ID>` and open a session in its worktree, as `docs/the-loop.md`
+  says. A `parallel` key left in `.sdlc/config.json` changes nothing, and `sdlc doctor` reports it
+  as any other setting it does not know and exits 1. `SDLC-E0057` to `SDLC-E0066` are retired,
+  each with a section in `docs/troubleshooting.md` saying what it refused. Update `sdlc` in a
+  terminal along with the plugin: an older binary still runs the command.
+
+### Security
+
+- Breaking: the shell rules read more of a command before they decide. A line is read both ways
+  where zsh and bash disagree and refused if either reading refuses; options a wrapper or tracer
+  takes, `eval` and its leading `--`, zsh's short forms, here-documents, arrays and substitutions
+  are followed; `zsh set -A` writes are read as code; `find -exec` with a made program word is
+  refused under `assignment-is-a-human-decision`; a redirect with no command, the `vi` family of
+  editors, a target assigned on the same line, and a comment that ends in a backslash with more
+  after it are refused or read; scripts nested past four levels are refused as too deep to read.
+  `sdlc review add` is refused to the code reviewer, and a command that was let through before
+  can now be refused. The spellings still not held are listed in `docs/enforcement.md`.
+
 ## [0.5.0](https://github.com/bbsnly/sdlc/releases/tag/v0.5.0) - 2026-10-28
 
 ### Added
