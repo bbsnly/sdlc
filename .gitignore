@@ -36,6 +36,11 @@
 # a project to commit its backlog, and docs/getting-started.md says so.
 /user_stories.json
 
+# What /sdlc:consolidate proposes, when sdlc runs on itself. The decisions that
+# matter land in CLAUDE.md or .sdlc/config.json; the proposals are working notes.
+# Again a rule about THIS repository -- the skill leaves committing them to you.
+/.sdlc/consolidation-*.md
+
 # .sdlc/state holds one load-bearing file, and the rest are not: tests.lock is
 # the freeze itself and belongs in history, while `active` and `session` are
 # which story this machine happens to be on and which session is working it,
