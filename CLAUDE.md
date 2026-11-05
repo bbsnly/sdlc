@@ -35,16 +35,18 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
 
 ### Architecture rules (the design reviewer blocks on these)
 
-- Dependency direction: `cmd/sdlc` → `cli`, `hook` → `store`, `scaffold`, `policy`,
-  `shellpolicy`, `testset` → `config`, `model` → `pathrules`, `sdlcerr`, and the leaves (`fsx`,
-  `gitx`, `shellx`, `logging`, `version`, `host`). `host` holds the shape of a host profile as
-  data and imports nothing of this module. A host's own profile sits at the edge in
-  `internal/hook/<host>` (today `claudecode`): only `cmd/sdlc` imports it, outside tests, and
-  builds the set it passes to `cli` and `hook`. New code elsewhere names no agent host, its
-  files, its variables or its tools; what still does is being moved out, not a pattern to
-  follow. `guard` sits between `cli`, `hook` and the layer below: both import it, it imports
-  `store`, `policy`, `shellpolicy` and `testset`, and it never imports `cli` or `hook`. Never
-  upward, and `cli` and `hook` never import each other. Nothing enforces this but review.
+- Dependency direction: `cmd/sdlc` → `cli`, `hook` → `store`, `trace`, `scaffold`, `policy`,
+  `shellpolicy`, `testset` → `config`, `model` → `pathrules`, `sdlcerr`, and the leaves
+  (`fsx`, `gitx`, `shellx`, `logging`, `version`, `host`, `codemap`). `host` holds the shape
+  of a host profile as data and imports nothing of this module. A host's own profile sits at
+  the edge in `internal/hook/<host>` (today `claudecode`): only `cmd/sdlc` imports it, outside
+  tests, and builds the set it passes to `cli` and `hook`. New code elsewhere names no agent
+  host, its files, its variables or its tools; what still does is being moved out, not a
+  pattern to follow. `guard` sits between `cli`, `hook` and the layer below: both import it,
+  it imports `store`, `policy`, `shellpolicy` and `testset`, and it never imports `cli` or
+  `hook`. Never upward, and `cli` and `hook` never import each other. Nothing enforces this
+  but review. `internal/release`, `internal/testscan` and `internal/tools` are build tooling
+  outside the binary.
 - `cmd/sdlc/main.go` stays a dispatcher. Behaviour goes in a package under `internal/`.
 - Stdout is a protocol surface: the hook's stdout is JSON that Claude Code parses. Diagnostics go
   through `internal/logging` to stderr or a file, never stdout.
@@ -76,8 +78,17 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
 - Determinism: no wall-clock sleeps, no network, fixed seeds, and nothing outside `t.TempDir()`.
 - A test that cannot run on one platform skips with the reason; it is not left out by a build tag
   unless the code under test is.
+- Before `sdlc freeze`, every new or changed test file passes `commands.lint` and compiles, and
+  each new row is seen to fail against the code as it is and to pass against a prototype of the
+  behaviour (a shell row in bash and zsh). A row a design review asks for is added before the
+  freeze; one found later goes to a person as an unfreeze with the row named.
+- Coverage headroom against `thresholds.coverage_min` is measured on the tree being judged, in
+  covered and total statements, before a brief quotes it; the one-decimal figure the command
+  prints is not a margin.
 - A story that changes a command, a gate or a hook decision adds or extends a sandbox test in
-  `test/e2e`; `CONTRIBUTING.md` says how to build a sandbox by hand.
+  `test/e2e`, and one that drives an outside tool or prints a command a person runs is not done
+  until a person has run it once for real; the retro records the run. `CONTRIBUTING.md` says
+  how to build a sandbox by hand.
 
 ### Code conventions
 
@@ -126,7 +137,10 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
   story-id and path validation in `internal/store`, `install.sh`, `install.ps1`, `npm/`,
   `plugin/hooks`, and release or workflow files. `SECURITY.md` says why each is in scope.
 - A shell spelling that gets past classification is the most valuable bug here: a change to
-  `internal/shellpolicy` comes with the evasions it was tried against.
+  `internal/shellpolicy` comes with the evasions it was tried against. A hole trunk already has
+  blocks a story only where the story's criteria or docs say it is closed; Gate 2 lists the
+  trunk-shared holes the story closes, and the rest go to the backlog as their own story, with
+  the spellings found.
 
 ### Story source
 
