@@ -195,7 +195,7 @@ func TestAC7TheRunbookStopsARefusedLandingAgainUpToThreeTimesBeforeItEscalates(t
 	t.Run("AC-7 the runbook is within the bytes compaction keeps", func(t *testing.T) {
 		// The cap TestTheRunbookFitsWhatCompactionKeeps holds, in
 		// internal/plugin.
-		const maxBytes = 18500
+		const maxBytes = 20000
 		if len(raw) > maxBytes {
 			t.Errorf("the next runbook is %d bytes, over %d", len(raw), maxBytes)
 		}

@@ -70,6 +70,17 @@ story's documents as `<main>/.sdlc/stories/<ID>/`, all absolute, and says every 
 agent reads or writes is under the worktree: the main checkout is the person's, and nothing stops
 a write there. Without `worktree`, every path is this checkout's.
 
+## What an agent hands back
+
+An agent's final message is one JSON object with the keys `agent`, `story`, `gate`, `status`,
+`documents`, `blocked_on`, `unchecked`, `addressed_me` and `details`, and for a reviewer `verdict`,
+`blocking` and `notes`. A role's own fields are `details.<field>`. Anything but one JSON object
+with those keys, prose or a code fence say, is a run that returned nothing usable: a failed run,
+counted as Gate 1 says. `status` `blocked` is a run that broke off, `blocked_on` the reason, unless
+the gate's section says otherwise. A gate reads what was stored, not what the message says: a
+reviewer's recorded review, not its `verdict`; `ANALYSIS.md` and `THREATS.md`, not the `details`
+repeating them. Show the person what `unchecked` and `addressed_me` hold when either is not empty.
+
 ## Handing a decision to a person
 
 Some questions are not yours to answer: criteria that contradict each other, a frozen test that
@@ -143,15 +154,16 @@ status, the project manager is disabled: skip every step that names it. Before e
 delegation run `sdlc staffing show --gate <gate> --json` and delegate only to its `at_gate`, each
 with the model and effort asked for, and one run per instance, such as `security-2` for
 `sdlc:security`, with that one name in its brief. When an agent's work falls short or the work
-changes, tell `sdlc:project-manager`; if it cannot staff the story, escalate.
+changes, tell `sdlc:project-manager`; if its `details.cannot_staff` is set, escalate with it.
 
 An agent `staffing show` lists in `by_hand` is disabled, and its work is a person's: delegate the
 rest of `at_gate`, then `sdlc escalate work_by_hand --message "<the gate, what it needs>"`, and
 stop.
 
 A run that fails: `sdlc team failure <agent> --reason "<why>"`, for its own run
-`sdlc team failure project-manager`. Run it again up to `team.retries`, then the command hands the
-story over: stop. Never let another agent stand in or do its work yourself.
+`sdlc team failure project-manager`. For a bad hand-back the reason says what was wrong: no
+object, a missing key or a code fence. Run it again up to `team.retries`, then the command hands
+the story over: stop. Never let another agent stand in or do its work yourself.
 
 ## Gate 2 — Analysis and threats
 
@@ -171,13 +183,14 @@ Read its JSON result and record the gate:
 sdlc gate analysis pass --security-sensitive --note "<what the threats came to, in one clause>"
 ```
 
-Always pass the flag, as `--security-sensitive=false` if it reported
-`security_sensitive: false`. `sdlc:project-manager` then has to confirm or amend it.
+Always pass the flag, as `--security-sensitive=false` if `details.security_sensitive` is false and
+the stored `THREATS.md` agrees; where they differ, the document rules.
+`sdlc:project-manager` then has to confirm or amend it.
 
 If either document was not stored, the gate refuses and says which. Hand it to a person with
 `sdlc escalate analysis_incomplete --message "..."` and stop.
 
-If the agent reports `open_questions` above zero, do not pass the gate.
+If the agent reports `details.open_questions` above zero, do not pass the gate.
 
 ```bash
 sdlc gate analysis fail --note "<n> open questions the specification does not settle"
@@ -198,7 +211,7 @@ Delegate to `sdlc:sdet`, with:
 
 Do not write the tests yourself or adjust them afterwards.
 
-If the agent reports anything in `untestable`, hand it to a person:
+If the agent reports anything in `details.untestable`, hand it to a person:
 
 ```bash
 sdlc gate tests_frozen fail --note "AC-3 cannot be observed from outside"
@@ -352,7 +365,8 @@ the hook watched until `sdlc stop` removes it. Do not read it yourself.
 
 ## Gate 9 — Retro
 
-Delegate to `sdlc:bookkeeper`, which stores `RETRO.md`. If the session knows its cost,
+Delegate to `sdlc:bookkeeper`, which stores `RETRO.md`. Pass the person its `details.codemap_note`,
+if set. If the session knows its cost,
 record it with `sdlc cost add --usd <amount>` while the story is still active. Then run
 `sdlc gate retro pass --note "<n> deviations, <n> lessons"`.
 

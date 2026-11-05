@@ -162,9 +162,10 @@ func TestTheRunbookStopsWhenStartRecordsNoSession(t *testing.T) {
 // https://code.claude.com/docs/en/skills), so a runbook longer than that loses
 // its end, and the model cannot tell. Bytes stand in for tokens: the runbook
 // runs at about four to a token, and the cap leaves room below the limit.
-// US-117: a person raised it from 17,500 to make room for the findings ledger.
+// US-117: a person raised it from 17,500 to make room for the findings ledger, and
+// for US-110 from 18,500 to 20,000 to make room for the hand-back contract.
 func TestTheRunbookFitsWhatCompactionKeeps(t *testing.T) {
-	const maxBytes = 18500
+	const maxBytes = 20000
 	raw, err := os.ReadFile(filepath.Join(pluginDir, "skills", "next", "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)

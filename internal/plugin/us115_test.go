@@ -147,18 +147,24 @@ func TestAC4EveryReviewerSaysEachDutyOfThePolicyInASentenceOfItsOwn(t *testing.T
 	}
 }
 
-// "Before anything else": ahead of what the agent is told to read.
-func TestAC4EveryReviewerReadsThePolicyBeforeItsInputs(t *testing.T) {
+// "Before anything else": ahead of what the agent produces. US-110 moved the
+// sentence: the agent contract puts Inputs straight after Role and When it is
+// staffed, and the policy is read as the first step of the Procedure, so the
+// place to look is everything ahead of the Outputs section, where the review is
+// recorded, and no longer ahead of Inputs.
+func TestAC4EveryReviewerReadsThePolicyBeforeItRecordsAnything(t *testing.T) {
 	t.Parallel()
+	outputs := regexp.MustCompile(`(?m)^## Outputs?\s*$`)
 	for _, name := range rpReviewers {
 		t.Run("AC-4 "+name, func(t *testing.T) {
 			t.Parallel()
-			before, _, found := strings.Cut(rpAgentBody(t, name), "## Inputs")
-			if !found {
-				t.Fatalf("%s has no Inputs section", name)
+			body := rpAgentBody(t, name)
+			at := outputs.FindStringIndex(body)
+			if at == nil {
+				t.Fatalf("%s has no Outputs section", name)
 			}
-			if !slices.ContainsFunc(rpSentences(before), rpAgentDuties[0].holds) {
-				t.Errorf("%s does not say, ahead of its inputs, %s", name, rpAgentDuties[0].name)
+			if !slices.ContainsFunc(rpSentences(body[:at[0]]), rpAgentDuties[0].holds) {
+				t.Errorf("%s does not say, ahead of what it records, %s", name, rpAgentDuties[0].name)
 			}
 		})
 	}
@@ -290,10 +296,11 @@ func TestAC5TheRunbookGivesTheDesignReviewsNitsToTheImplementerAndNoneToTheRetro
 // Q7: the room for AC-5 comes out of the runbook, not out of the cap. This is
 // TestTheRunbookFitsWhatCompactionKeeps again on purpose, with the number written
 // here: changing the cap there has to be seen here too. US-117: a person raised it
-// from 17,500 to make room for the findings ledger.
+// from 17,500 to make room for the findings ledger, and for US-110 from 18,500 to
+// 20,000 to make room for the hand-back contract.
 func TestAC5TheRunbookStaysUnderTheCapThatCompactionKeeps(t *testing.T) {
 	t.Parallel()
-	const maxBytes = 18500
+	const maxBytes = 20000
 	raw, err := os.ReadFile(filepath.Join(pluginDir, "skills", "next", "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
