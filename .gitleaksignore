@@ -9,3 +9,5 @@ b84d08de9f64e395f05d4cef22f3f64172c0a01c:internal/hook/visibility_test.go:github
 b84d08de9f64e395f05d4cef22f3f64172c0a01c:test/e2e/sandbox_linkbound_test.go:github-pat:49
 # Prose in docs/configuration.md ("It has one key, `...`") read as an API key.
 0c87b90662d42c5422381382bb4942e917330a76:docs/configuration.md:generic-api-key:437
+# Prose in docs/configuration.md ("It has two keys, `...` and `policy`") read as an API key.
+cefb9acd870f6f43486366217638663014366118:docs/configuration.md:generic-api-key:639
