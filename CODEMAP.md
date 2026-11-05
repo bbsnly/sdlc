@@ -1024,9 +1024,9 @@ all together:
   (`internal/plugin/plugin_test.go`), and in prose in `README.md`,
   `docs/the-agents.md`, `docs/the-loop.md` and `docs/installation.md`.
 
-`plugin/skills/next/SKILL.md` is capped at 17,500 bytes by
-`TestTheRunbookFitsWhatCompactionKeeps`, and was 17,492 at c7bb9d8 and 17,493
-once Gate 9 stopped committing the map.
+`plugin/skills/next/SKILL.md` is capped at 20,000 bytes by
+`TestTheRunbookFitsWhatCompactionKeeps` (raised from 18,500 by US-110; it was
+19,427 then). Earlier stories had it at 17,500.
 
 Inside a story's directory the shell rules protect `gate-record.json`,
 `reviews/` and the files `model.Artifacts` names, and nothing else
@@ -1698,8 +1698,7 @@ which spells out control characters other than newline, tab and a line-ending
 carriage return, so a document's text is not byte for byte on stdout. With
 `--json` a failure's JSON goes to stdout (`executeAt`, `internal/cli/root.go`).
 
-`plugin/skills/next/SKILL.md` was 17,489 bytes against the 17,500 cap of
-`TestTheRunbookFitsWhatCompactionKeeps` when US-112.3 was analysed.
+The runbook's byte cap is in the section on who a reviewed gate waits for.
 
 ## internal/cli/freezecheck.go: commands.freeze_check
 
@@ -1711,3 +1710,18 @@ slash-separated (`touchedSince`, `changedByCheck`). The lock is let go while the
 taken back only after a pass, so a failed check takes nothing back. A pass runs `take` again, which
 reads everything afresh. Every refusal is SDLC-E0085 (`sdlcerr.FreezeCheckRefused`) in one of six
 states: failed, changed, newline in a name, no shell, nested, moved.
+
+## internal/plugin: the agent contract tests (US-110)
+
+`docs/the-agents.md` defines the agent contract: frontmatter declaring kind,
+gates and team defaults, eight sections in a fixed order, shared Inputs, Rules
+and Never texts, a hand-back that is one JSON object with role fields under
+`details`, one review document shape, and approve or block only.
+
+`contract_check_test.go` checks each file in `plugin/agents` against it and
+reports one line per breach naming the file, the rule and the change.
+`contract_test.go` holds each agent's declarations to the binary's roster and
+team defaults, resolved through the binary's accessors. `contract_fixtures_test.go`
+holds the non-conforming agents the check must refuse. `contract_docs_test.go`
+holds the contract's text in `docs/the-agents.md` to the checks. The hand-back
+check reads only the `## Hand-back` section.
