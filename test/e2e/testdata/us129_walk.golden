@@ -1,0 +1,978 @@
+=== hook PreToolUse Bash: sdlc start --json #1: exit 0
+{"continue":true}
+=== start --json #1: exit 0
+{"ok":true,"story":"US-001","title":"Story US-001","resume":false,"next_gate":"dor","session":"e2e-first-story-session","worktree":"<main>/.sdlc/worktrees/US-001","branch":"story/US-001","main":"<main>"}
+--- stderr
+sdlc: commands.smoke was not run, because neither sh nor bash is on PATH, so this starts without knowing whether trunk works
+=== status --json #1: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","next_gate":"dor","backlog":{"in_progress":1,"ready":1},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Bash: cd "<tree>" && sdlc gate dor pass --note worked by the session #1: exit 0
+{"continue":true}
+=== gate dor pass --note worked by the session #1: exit 0
+US-001  dor  pass
+  worked by the session
+=== status --json #2: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"dor":"pass"},"next_gate":"analysis","backlog":{"in_progress":1,"ready":1},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Bash [sdlc:researcher]: cd "<tree>" && sdlc artifact write analysis #1: exit 0
+{"continue":true}
+=== artifact write analysis #1: exit 0
+US-001  analysis  .sdlc/stories/US-001/ANALYSIS.md (30 bytes)
+=== hook PreToolUse Bash [sdlc:researcher]: cd "<tree>" && sdlc artifact write threats #1: exit 0
+{"continue":true}
+=== artifact write threats #1: exit 0
+US-001  threats  .sdlc/stories/US-001/THREATS.md (45 bytes)
+=== hook PreToolUse Bash: cd "<tree>" && sdlc gate analysis pass --note worked by the session #1: exit 0
+{"continue":true}
+=== gate analysis pass --note worked by the session #1: exit 0
+US-001  analysis  pass
+  worked by the session
+=== status --json #3: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","dor":"pass"},"next_gate":"tests_frozen","backlog":{"in_progress":1,"ready":1},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Write [sdlc:sdet]: <tree>/invoice_test.go #1: exit 0
+{"continue":true}
+=== hook PreToolUse Bash [sdlc:sdet]: cd "<tree>" && sdlc artifact write test_plan #1: exit 0
+{"continue":true}
+=== artifact write test_plan #1: exit 0
+US-001  test_plan  .sdlc/stories/US-001/TEST-PLAN.md (37 bytes)
+=== hook PreToolUse Bash [sdlc:sdet]: cd "<tree>" && sdlc freeze #1: exit 0
+{"continue":true}
+=== freeze #1: exit 0
+US-001  1 test file frozen
+  invoice_test.go
+=== hook PreToolUse Bash: cd "<tree>" && sdlc gate tests_frozen pass --note worked by the session #1: exit 0
+{"continue":true}
+=== gate tests_frozen pass --note worked by the session #1: exit 0
+US-001  tests_frozen  pass
+  worked by the session
+=== status --json #4: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","dor":"pass","tests_frozen":"pass"},"next_gate":"plan","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Edit [sdlc:implementer]: <tree>/invoice_test.go #1: exit 0
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"invoice_test.go is a frozen acceptance test. It was locked by content when the test gate passed, and an agent that can edit its own tests will eventually edit them -- which makes every gate after this one theatre. Instead: change the code until the test passes; if the test itself is wrong, say which acceptance criterion it got wrong and stop: the person running the session lifts the freeze with `/sdlc:unfreeze`, or `sdlc unfreeze --reason \"...\"`, which puts the change on the record [frozen-test-is-not-edited]"}}
+=== hook PreToolUse Bash [sdlc:implementer]: cd "<tree>" && sdlc artifact write plan #1: exit 0
+{"continue":true}
+=== artifact write plan #1: exit 0
+US-001  plan  .sdlc/stories/US-001/PLAN.md (18 bytes)
+=== hook PreToolUse Bash: cd "<tree>" && sdlc gate plan pass --note worked by the session #1: exit 0
+{"continue":true}
+=== gate plan pass --note worked by the session #1: exit 0
+US-001  plan  pass
+  worked by the session
+=== status --json #5: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","dor":"pass","plan":"pass","tests_frozen":"pass"},"next_gate":"design_review","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Bash [sdlc:architect]: cd "<tree>" && sdlc review add design_review architect approve #1: exit 0
+{"continue":true}
+=== review add design_review architect approve #1: exit 0
+US-001  design_review  architect  approve (round 1)
+  .sdlc/stories/US-001/reviews/design_review-architect-1.md
+=== hook PreToolUse Bash [sdlc:red-team]: cd "<tree>" && sdlc review add design_review red-team approve #1: exit 0
+{"continue":true}
+=== review add design_review red-team approve #1: exit 0
+US-001  design_review  red-team  approve (round 1)
+  .sdlc/stories/US-001/reviews/design_review-red-team-1.md
+=== hook PreToolUse Bash [sdlc:security]: cd "<tree>" && sdlc review add design_review security approve #1: exit 0
+{"continue":true}
+=== review add design_review security approve #1: exit 0
+US-001  design_review  security  approve (round 1)
+  .sdlc/stories/US-001/reviews/design_review-security-1.md
+=== hook PreToolUse Bash [sdlc:perf]: cd "<tree>" && sdlc review add design_review perf approve #1: exit 0
+{"continue":true}
+=== review add design_review perf approve #1: exit 0
+US-001  design_review  perf  approve (round 1)
+  .sdlc/stories/US-001/reviews/design_review-perf-1.md
+=== hook PreToolUse Bash [sdlc:human-advocate]: cd "<tree>" && sdlc review add design_review human-advocate approve #1: exit 0
+{"continue":true}
+=== review add design_review human-advocate approve #1: exit 0
+US-001  design_review  human-advocate  approve (round 1)
+  .sdlc/stories/US-001/reviews/design_review-human-advocate-1.md
+=== hook PreToolUse Bash: cd "<tree>" && sdlc gate design_review pass --note worked by the session #1: exit 0
+{"continue":true}
+=== gate design_review pass --note worked by the session #1: exit 0
+US-001  design_review  pass
+  worked by the session
+=== status --json #6: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","plan":"pass","tests_frozen":"pass"},"next_gate":"implementation","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Write [sdlc:implementer]: <tree>/invoice.go #1: exit 0
+{"continue":true}
+=== hook PreToolUse Bash: cd "<tree>" && sdlc gate implementation pass --note worked by the session #1: exit 0
+{"continue":true}
+=== gate implementation pass --note worked by the session #1: exit 0
+US-001  implementation  pass
+  worked by the session
+=== status --json #7: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass"},"next_gate":"verification","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Bash [sdlc:verifier]: cd "<tree>" && sdlc artifact write verification #1: exit 0
+{"continue":true}
+=== artifact write verification #1: exit 0
+US-001  verification  .sdlc/stories/US-001/VERIFICATION.md (37 bytes)
+=== hook PreToolUse Bash: cd "<tree>" && sdlc gate verification pass --note worked by the session #1: exit 0
+{"continue":true}
+=== gate verification pass --note worked by the session #1: exit 0
+US-001  verification  pass
+  worked by the session
+=== status --json #8: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass"},"next_gate":"verifier_review","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Bash [sdlc:verifier]: cd "<tree>" && sdlc review add verifier_review verifier approve #1: exit 0
+{"continue":true}
+=== review add verifier_review verifier approve #1: exit 0
+US-001  verifier_review  verifier  approve (round 1)
+  .sdlc/stories/US-001/reviews/verifier_review-verifier-1.md
+=== hook PreToolUse Bash: cd "<tree>" && sdlc gate verifier_review pass --note worked by the session #1: exit 0
+{"continue":true}
+=== gate verifier_review pass --note worked by the session #1: exit 0
+US-001  verifier_review  pass
+  worked by the session
+=== status --json #9: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"next_gate":"code_review","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Bash [sdlc:code-reviewer]: cd "<tree>" && sdlc review add code_review code-reviewer approve #1: exit 0
+{"continue":true}
+=== review add code_review code-reviewer approve #1: exit 0
+US-001  code_review  code-reviewer  approve (round 1)
+  .sdlc/stories/US-001/reviews/code_review-code-reviewer-1.md
+=== hook PreToolUse Bash [sdlc:security]: cd "<tree>" && sdlc review add code_review security approve #1: exit 0
+{"continue":true}
+=== review add code_review security approve #1: exit 0
+US-001  code_review  security  approve (round 1)
+  .sdlc/stories/US-001/reviews/code_review-security-1.md
+=== hook PreToolUse Bash [sdlc:perf]: cd "<tree>" && sdlc review add code_review perf approve #1: exit 0
+{"continue":true}
+=== review add code_review perf approve #1: exit 0
+US-001  code_review  perf  approve (round 1)
+  .sdlc/stories/US-001/reviews/code_review-perf-1.md
+=== hook PreToolUse Bash [sdlc:human-advocate]: cd "<tree>" && sdlc review add code_review human-advocate approve #1: exit 0
+{"continue":true}
+=== review add code_review human-advocate approve #1: exit 0
+US-001  code_review  human-advocate  approve (round 1)
+  .sdlc/stories/US-001/reviews/code_review-human-advocate-1.md
+=== hook PreToolUse Bash: cd "<tree>" && sdlc gate code_review pass --note worked by the session #1: exit 0
+{"continue":true}
+=== gate code_review pass --note worked by the session #1: exit 0
+US-001  code_review  pass
+  worked by the session
+=== status --json #10: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","code_review":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"next_gate":"commit","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Bash: cd "<tree>" && git commit -m US-001 #1: exit 0
+{"continue":true}
+=== hook PreToolUse Bash: cd "<tree>" && sdlc gate commit pass --note worked by the session #1: exit 0
+{"continue":true}
+=== gate commit pass --note worked by the session #1: exit 0
+US-001  commit  pass
+  worked by the session
+  committed on story/US-001 in <hash>..<hash>
+=== status --json #11: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","code_review":"pass","commit":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"next_gate":"retro","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Bash [sdlc:bookkeeper]: cd "<tree>" && sdlc artifact write retro #1: exit 0
+{"continue":true}
+=== artifact write retro #1: exit 0
+US-001  retro  .sdlc/stories/US-001/RETRO.md (24 bytes)
+=== hook PreToolUse Bash: cd "<tree>" && sdlc gate retro pass --note worked by the session #1: exit 0
+{"continue":true}
+=== gate retro pass --note worked by the session #1: exit 0
+US-001  retro  pass
+  worked by the session
+
+Every gate on US-001 has passed. `sdlc stop` in .sdlc/worktrees/US-001 lands it on main.
+=== status --json #12: exit 0
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","code_review":"pass","commit":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","retro":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+=== hook PreToolUse Bash: cd "<tree>" && sdlc story list #1: exit 0
+{"continue":true}
+=== story list #1: exit 0
+> US-001  in_progress   1  Story US-001  (held in "<main>/.sdlc/worktrees/US-001", this checkout)
+  US-002  ready         2  Story US-002
+
+> is what `sdlc start` would pick.
+=== hook PreToolUse Bash: cd "<tree>" && sdlc staffing show #1: exit 0
+{"continue":true}
+=== staffing show #1: exit 0
+US-001  staffing, every gate has passed
+
+  project-manager is disabled in team.agents.project-manager.enabled
+
+  no staffing: the project manager is disabled in team.agents.project-manager.enabled,
+  so every enabled agent takes part and each runs as its definition says
+
+=== hook PreToolUse Bash: cd "<tree>" && sdlc review list #1: exit 0
+{"continue":true}
+=== review list #1: exit 0
+Review policy: REVIEW.md
+  design_review   architect       blocking  approve (round 1)
+  design_review   red-team        advisory  approve (round 1)
+  design_review   security        blocking  approve (round 1)
+  design_review   perf            on budget approve (round 1)
+  design_review   human-advocate  advisory  approve (round 1)
+  verifier_review verifier        blocking  approve (round 1)
+  code_review     code-reviewer   blocking  approve (round 1)
+  code_review     security        blocking  approve (round 1)
+  code_review     perf            on budget approve (round 1)
+  code_review     human-advocate  advisory  approve (round 1)
+=== hook PreToolUse Bash: cd "<tree>" && sdlc cost #1: exit 0
+{"continue":true}
+=== cost #1: exit 0
+US-001  $0.00 spent of $60.00 (0%)
+=== hook PreToolUse Bash: cd "<tree>" && sdlc trace US-001 #1: exit 0
+{"continue":true}
+=== trace US-001 #1: exit 0
+US-001  Story US-001
+
+time, by the gate the story was working towards:
+  gate             wall         agents       waiting on a person  between iterations  no agent and no person accounts for
+
+by kind of agent: no subagent run was recorded
+
+the main conversation, by gate:
+shell commands, by class:
+test runs: 0, <took> in all, 0 passed, 0 failed
+refusals, by rule, agent and code:
+  frozen-test-is-not-edited, sdlc:implementer: 1
+the change at the commit gate: 2 files, 6 lines added and 0 removed; of them the frozen tests 1 files, 3 added and 0 removed
+
+reviews, by gate:
+  design_review: 1 round, 0 blocks
+  verifier_review: 1 round, 0 blocks
+  code_review: 1 round, 0 blocks
+=== hook PreToolUse Bash: cd "<tree>" && sdlc doctor #1: exit 0
+{"continue":true}
+=== doctor #1: exit 1
+sdlc doctor
+
+  ok       git repository       <main>/.sdlc/worktrees/US-001
+  ok       git command          found on PATH
+  ok       configuration        .sdlc/config.json  (Go project)
+                                paths.conflict_markers_intended (this checkout's copy; "sdlc stop" reads trunk's): none
+                                project-manager is disabled in team.agents.project-manager.enabled
+  ok       backlog              <main>/user_stories.json  (2 stories, one runnable)
+  ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read; US-001 held in "<main>/.sdlc/worktrees/US-001", this checkout
+  ok       review policy        REVIEW.md
+  ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
+  ok       commands             build, coverage, fmt, fmt_check, fmt_file, lint, smoke, test
+  problem  commands on PATH     go is not installed, so build and coverage and smoke and test would fail
+                                fix: install go, or clear commands.build in .sdlc/config.json
+  problem  commands on PATH     gofmt is not installed, so fmt and fmt_check and fmt_file would fail
+                                fix: install gofmt, or clear commands.fmt in .sdlc/config.json
+  problem  commands on PATH     golangci-lint is not installed, so lint would fail
+                                fix: install golangci-lint, or clear commands.lint in .sdlc/config.json
+  problem  commands on PATH     grep is not installed, so coverage would fail
+                                fix: install grep, or clear commands.coverage in .sdlc/config.json
+  problem  commands on PATH     mktemp is not installed, so coverage would fail
+                                fix: install mktemp, or clear commands.coverage in .sdlc/config.json
+  problem  commands on PATH     tail is not installed, so coverage would fail
+                                fix: install tail, or clear commands.coverage in .sdlc/config.json
+  ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
+  problem  sdlc on PATH         the hooks cannot find sdlc, so nothing is enforced
+                                fix: install it with "npx @bbsnly/sdlc install", which puts it where the hooks find it without PATH; from a checkout "./task build" prints the line to add to PATH. A desktop app such as Claude Desktop keeps the PATH it started with, so quit it fully and reopen it after changing PATH, or set SDLC_BIN to the binary
+
+7 problems. The fix is above each one.
+=== hook PostToolUse Bash: cd "<tree>" && go test ./... #1: exit 0
+{"continue":true}
+=== hook PostToolUse Write: <tree>/notes.md #1: exit 0
+{"continue":true,"systemMessage":"sdlc: commands.fmt_file was not run on notes.md, because neither sh nor bash is on PATH."}
+=== hook SubagentStart [sdlc:bookkeeper] #1: exit 0
+{"continue":true}
+=== hook SubagentStop [sdlc:bookkeeper] #1: exit 0
+{"continue":true}
+=== hook Stop #1: exit 0
+{"continue":true,"decision":"block","reason":"every gate on US-001 has passed and the iteration is still open: end it with `sdlc stop`."}
+=== hook SessionStart #1: exit 0
+{"continue":true}
+=== hook PreToolUse Write [sdlc:bookkeeper]: <tree>/CODEMAP.md #1: exit 0
+{"continue":true}
+=== hook PreToolUse Bash: cd "<tree>" && git add CODEMAP.md && git commit -m 'docs: map US-001' #1: exit 0
+{"continue":true}
+=== hook PreToolUse Bash: cd "<tree>" && sdlc stop #1: exit 0
+{"continue":true}
+=== stop #1: exit 0
+main moved from <hash> to <hash> by fast-forward; the files in "<main>", which has main checked out, moved with it.
+The backlog and US-001's record are changed in the main checkout and not committed.
+Ended the iteration on US-001. Every gate passed, so the story is done and `sdlc start` moves on to the next one.
+Removed .sdlc/worktrees/US-001, with the files git ignored in it, and story/US-001.
+=== start --json #2: exit 0
+{"ok":true,"story":"US-002","title":"Story US-002","resume":false,"next_gate":"dor","session":"e2e-second-story-session","worktree":"<tree>","branch":"story/US-002","main":"<main>"}
+--- stderr
+sdlc: commands.smoke was not run, because neither sh nor bash is on PATH, so this starts without knowing whether trunk works
+=== stop #2: exit 0
+Stopped the iteration on US-002. Nothing was recorded; `sdlc start` picks it up again.
+=== release US-002 --reason to be worked in another checkout #1: exit 0
+Released US-002: the checkout at "<tree>" no longer holds it. "sdlc start US-002" picks it up in any checkout.
+Anything the checkout at "<tree>" has not committed stays there, and is not moved.
+=== file .sdlc/.gitignore
+/stories/*/trace.jsonl
+
+=== file .sdlc/config.json
+{
+  "_backlog": [
+    "Where your stories live",
+    "path is the backlog file, relative to the repository root.",
+    "It must sit inside the repository, since it is committed with the work.",
+    "An absolute path, or one that climbs out with .., is refused.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#backlog"
+  ],
+  "_budget": [
+    "What one story is expected to cost",
+    "per_story_usd is the amount, in US dollars, one story is expected to cost.",
+    "alert_fractions are the shares of that amount at which sdlc warns you.",
+    "Nothing blocks at the budget. 0 turns it off, and a negative number is refused.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#budget"
+  ],
+  "_commands": [
+    "The commands the loop runs",
+    "These build, test and check your project; the loop runs them rather than guessing.",
+    "An empty one is skipped, and a wrong one fails the step that runs it.",
+    "Guessed from a Go project. Check them, then run 'sdlc doctor'.",
+    "freeze_check is empty until you choose one: sdlc freeze runs it first, with the new test files in $SDLC_FREEZE_FILES, and refuses while it fails.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#commands"
+  ],
+  "_doc": [
+    "This is the machine-readable half of your project's contract with the loop.",
+    "The other half is the '## SDLC Contract' section of your CLAUDE.md, or of your",
+    "AGENTS.md where the project keeps its instructions there: rules a script",
+    "cannot check, written for the assistant to read.",
+    "Nothing here starts the loop: a person does, by typing /sdlc:next in Claude Code.",
+    "",
+    "Commands run from the repository root. Leave one empty to skip that step.",
+    "The coverage and mutation commands must print their percentage as the last",
+    "number on stdout.",
+    "",
+    "Run 'sdlc doctor' after changing anything here.",
+    "Reference: https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md"
+  ],
+  "_freeze": [
+    "Whether tests may be added after the freeze",
+    "allow_new_test_files: true lets the test author add a test file once the freeze is taken.",
+    "A test written after the code can be written to pass, which is why it is false by default.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#freeze"
+  ],
+  "_git": [
+    "Which branch is trunk, and where stories are worked",
+    "trunk_branch is where stories start and land; init guessed it from your repository.",
+    "remote: true makes sdlc start fetch from origin and refuse new work while trunk is behind.",
+    "worktrees: false works stories in this checkout, one at a time, not in a worktree each.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#git"
+  ],
+  "_human_gates": [
+    "Where the loop waits for a person",
+    "pre_commit_pause_tiers lists the risk tiers that wait for a person's approval before commit.",
+    "An empty list turns that pause off, so no story waits for approval.",
+    "dor_advocate_check: true has the human advocate read each story at Gate 1 as well.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#human_gates"
+  ],
+  "_loop": [
+    "How long the loop tries before it asks a person",
+    "max_review_rounds, max_rework_rounds and max_stop_blocks cap how often a review blocks, a gate fails and a stop is sent back.",
+    "Past a cap the story goes to a person; 0 turns that cap off, so the loop never stops to ask for that reason.",
+    "A negative number is refused.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#loop"
+  ],
+  "_paths": [
+    "Which files are tests, and which are source",
+    "tests decides what the freeze covers, and so what the implementer cannot touch.",
+    "What tests read, such as fixtures, is a way round the freeze if tests leaves it out.",
+    "src is where the researcher looks first and the implementer puts new code.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#paths"
+  ],
+  "_spec": [
+    "Where your specifications live",
+    "paths lists what the analysis gate reads before it writes anything.",
+    "A folder of specifications that is not listed is not given to that gate.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#spec"
+  ],
+  "_team": [
+    "Which agents run, which can block, and what a staffing may ask for",
+    "enabled: false turns an agent off in every story; can_block: false means a reviewer's block does not stop its gate.",
+    "Its design and code review findings are still closed before the commit, as every reviewer's are.",
+    "Each loosens the loop. max_rounds, left out, is loop.max_review_rounds; instances does nothing on an agent that reviews nothing.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#team"
+  ],
+  "_thresholds": [
+    "The numbers a change is held to",
+    "coverage_min and mutation_min are the percentages the verifier compares a change with.",
+    "Lowering one lets weaker work through; 0 turns it off, and a negative number is refused.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#thresholds"
+  ],
+  "_version": [
+    "Version of this file's format",
+    "A release that meets a newer number refuses the file rather than misread it.",
+    "A version of 0 or less is refused too.",
+    "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#version"
+  ],
+  "backlog": {
+    "path": "user_stories.json"
+  },
+  "budget": {
+    "alert_fractions": [
+      0.5,
+      0.8,
+      1
+    ],
+    "per_story_usd": 60
+  },
+  "commands": {
+    "build": "go build ./...",
+    "coverage": "p=$(mktemp) \u0026\u0026 trap 'rm -f \"$p\"' EXIT \u0026\u0026 go test ./... -count=1 -coverprofile=\"$p\" \u003e/dev/null \u0026\u0026 go tool cover -func=\"$p\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'",
+    "fmt": "gofmt -w .",
+    "fmt_check": "test -z \"$(gofmt -l .)\"",
+    "fmt_file": "case \"$FILE\" in *.go) gofmt -w \"$FILE\" ;; esac",
+    "freeze_check": "",
+    "lint": "golangci-lint run",
+    "mutation": "",
+    "smoke": "test -z \"$(go list ./...)\" || go vet ./...",
+    "test": "go test ./... -count=1"
+  },
+  "freeze": {
+    "allow_new_test_files": false
+  },
+  "git": {
+    "remote": false,
+    "trunk_branch": "main"
+  },
+  "human_gates": {
+    "dor_advocate_check": false,
+    "pre_commit_pause_tiers": [
+      "high"
+    ]
+  },
+  "loop": {
+    "max_review_rounds": 2,
+    "max_rework_rounds": 3,
+    "max_stop_blocks": 3
+  },
+  "paths": {
+    "src": [
+      "cmd/",
+      "internal/",
+      "pkg/"
+    ],
+    "tests": {
+      "dirs": [
+        "testdata/"
+      ],
+      "file_globs": [
+        "*_test.go"
+      ]
+    }
+  },
+  "spec": {
+    "paths": [
+      "docs/",
+      "spec/",
+      "README.md"
+    ]
+  },
+  "team": {
+    "agents": {
+      "project-manager": {
+        "enabled": false
+      }
+    },
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "models": [
+      "haiku",
+      "sonnet",
+      "opus"
+    ],
+    "retries": 2
+  },
+  "thresholds": {
+    "coverage_min": 80,
+    "mutation_min": 70
+  },
+  "version": 1
+}
+
+=== file .sdlc/stories/US-001/ANALYSIS.md
+# Analysis
+
+AC-1 is testable.
+
+=== file .sdlc/stories/US-001/PLAN.md
+# Plan
+
+One step.
+
+=== file .sdlc/stories/US-001/RETRO.md
+# Retro
+
+No deviations.
+
+=== file .sdlc/stories/US-001/TEST-PLAN.md
+# Test plan
+
+AC-1 -> TestRejectsZero
+
+=== file .sdlc/stories/US-001/THREATS.md
+# Threats
+
+Nothing crosses a trust boundary.
+
+=== file .sdlc/stories/US-001/VERIFICATION.md
+# Verification
+
+Every command green.
+
+=== file .sdlc/stories/US-001/gate-record.json
+{
+  "story": "US-001",
+  "created": "<time>",
+  "base": "<hash>",
+  "commit_base": "<hash>",
+  "commit": "<hash>",
+  "cut": "<hash>",
+  "forks": [
+    {
+      "from": "<hash>",
+      "first": "<hash>"
+    }
+  ],
+  "change": "b8c5c360b17654f793e27bd41c685e9624ee08a56ad4763250abc6a62119f63f",
+  "change_base": "<hash>",
+  "gates": {
+    "analysis": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "worked by the session"
+    },
+    "code_review": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "worked by the session"
+    },
+    "commit": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "worked by the session"
+    },
+    "design_review": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "worked by the session"
+    },
+    "dor": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "worked by the session"
+    },
+    "implementation": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "worked by the session"
+    },
+    "plan": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "worked by the session"
+    },
+    "retro": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "worked by the session"
+    },
+    "tests_frozen": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "worked by the session"
+    },
+    "verification": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "worked by the session"
+    },
+    "verifier_review": {
+      "status": "pass",
+      "at": "<time>",
+      "note": "worked by the session"
+    }
+  },
+  "events": [
+    {
+      "at": "<time>",
+      "type": "loop_start",
+      "message": "iteration started"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "dor pass"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "analysis stored at .sdlc/stories/US-001/ANALYSIS.md"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "threats stored at .sdlc/stories/US-001/THREATS.md"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "analysis pass"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "test_plan stored at .sdlc/stories/US-001/TEST-PLAN.md"
+    },
+    {
+      "at": "<time>",
+      "type": "freeze",
+      "message": "1 test file frozen"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "tests_frozen pass"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "plan stored at .sdlc/stories/US-001/PLAN.md"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "plan pass"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "design_review architect approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "design_review red-team approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "design_review security approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "design_review perf approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "design_review human-advocate approve"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "design_review pass"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "implementation pass"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "verification stored at .sdlc/stories/US-001/VERIFICATION.md"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "verification pass"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "verifier_review verifier approve"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "verifier_review pass"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "code_review code-reviewer approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "code_review security approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "code_review perf approve"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "code_review human-advocate approve"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "code_review pass"
+    },
+    {
+      "at": "<time>",
+      "type": "commit_recorded",
+      "message": "<hash>"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "commit pass"
+    },
+    {
+      "at": "<time>",
+      "type": "artifact",
+      "message": "retro stored at .sdlc/stories/US-001/RETRO.md"
+    },
+    {
+      "at": "<time>",
+      "type": "gate",
+      "message": "retro pass"
+    },
+    {
+      "at": "<time>",
+      "type": "agent_start",
+      "message": "",
+      "agent_type": "sdlc:bookkeeper",
+      "agent_id": "u129-1"
+    },
+    {
+      "at": "<time>",
+      "type": "agent_end",
+      "message": "",
+      "agent_type": "sdlc:bookkeeper",
+      "agent_id": "u129-1"
+    },
+    {
+      "at": "<time>",
+      "type": "landed",
+      "message": "main moved from <hash> to <hash> by fast-forward: <hash>..<hash> landed"
+    },
+    {
+      "at": "<time>",
+      "type": "loop_end",
+      "message": "iteration ended"
+    },
+    {
+      "at": "<time>",
+      "type": "unfreeze",
+      "message": "the story is finished, so its freeze is lifted"
+    }
+  ],
+  "escalations": null,
+  "approvals": null,
+  "reviews": [
+    {
+      "at": "<time>",
+      "gate": "design_review",
+      "role": "architect",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "7b067c2edbc98b0463f2b2a9a1987f6423ed2939c684ee300077868cd0297a95",
+      "file": ".sdlc/stories/US-001/reviews/design_review-architect-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "design_review",
+      "role": "red-team",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "7b067c2edbc98b0463f2b2a9a1987f6423ed2939c684ee300077868cd0297a95",
+      "file": ".sdlc/stories/US-001/reviews/design_review-red-team-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "design_review",
+      "role": "security",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "7b067c2edbc98b0463f2b2a9a1987f6423ed2939c684ee300077868cd0297a95",
+      "file": ".sdlc/stories/US-001/reviews/design_review-security-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "design_review",
+      "role": "perf",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "7b067c2edbc98b0463f2b2a9a1987f6423ed2939c684ee300077868cd0297a95",
+      "file": ".sdlc/stories/US-001/reviews/design_review-perf-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "design_review",
+      "role": "human-advocate",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "7b067c2edbc98b0463f2b2a9a1987f6423ed2939c684ee300077868cd0297a95",
+      "file": ".sdlc/stories/US-001/reviews/design_review-human-advocate-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "verifier_review",
+      "role": "verifier",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<hash>",
+      "file": ".sdlc/stories/US-001/reviews/verifier_review-verifier-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "code_review",
+      "role": "code-reviewer",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<hash>",
+      "file": ".sdlc/stories/US-001/reviews/code_review-code-reviewer-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "code_review",
+      "role": "security",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<hash>",
+      "file": ".sdlc/stories/US-001/reviews/code_review-security-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "code_review",
+      "role": "perf",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<hash>",
+      "file": ".sdlc/stories/US-001/reviews/code_review-perf-1.md"
+    },
+    {
+      "at": "<time>",
+      "gate": "code_review",
+      "role": "human-advocate",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<hash>",
+      "file": ".sdlc/stories/US-001/reviews/code_review-human-advocate-1.md"
+    }
+  ]
+}
+
+=== file .sdlc/stories/US-001/plans/7b067c2edbc98b0463f2b2a9a1987f6423ed2939c684ee300077868cd0297a95.md
+# Plan
+
+One step.
+
+=== file .sdlc/stories/US-001/reviews/code_review-code-reviewer-1.md
+# code-reviewer
+
+=== file .sdlc/stories/US-001/reviews/code_review-human-advocate-1.md
+# human-advocate
+
+=== file .sdlc/stories/US-001/reviews/code_review-perf-1.md
+# perf
+
+=== file .sdlc/stories/US-001/reviews/code_review-security-1.md
+# security
+
+=== file .sdlc/stories/US-001/reviews/design_review-architect-1.md
+# architect
+
+=== file .sdlc/stories/US-001/reviews/design_review-human-advocate-1.md
+# human-advocate
+
+=== file .sdlc/stories/US-001/reviews/design_review-perf-1.md
+# perf
+
+=== file .sdlc/stories/US-001/reviews/design_review-red-team-1.md
+# red-team
+
+=== file .sdlc/stories/US-001/reviews/design_review-security-1.md
+# security
+
+=== file .sdlc/stories/US-001/reviews/verifier_review-verifier-1.md
+# verifier
+
+=== file .sdlc/stories/US-001/trace.jsonl
+{"agent_type":"sdlc:implementer","at":"<time>","kind":"refusal","rule":"frozen-test-is-not-edited","tool":"Edit","v":1}
+{"added":6,"at":"<time>","files":2,"kind":"diff","removed":0,"test_added":3,"test_files":1,"test_removed":0,"v":1}
+{"at":"<time>","background":false,"class":"test","duration_ms":2000,"kind":"shell","outcome":"pass","program":"go","v":1}
+{"agent_id":"u129-1","agent_type":"sdlc:bookkeeper","at":"<time>","end":"<time>","kind":"agent_run","start":"<time>","status":"done","v":1}
+{"at":"<time>","kind":"turn","v":1}
+
+=== file .sdlc/stories/US-002/gate-record.json
+{
+  "story": "US-002",
+  "created": "<time>",
+  "base": "<hash>",
+  "cut": "<hash>",
+  "forks": [
+    {
+      "from": "<hash>"
+    }
+  ],
+  "gates": {},
+  "events": [
+    {
+      "at": "<time>",
+      "type": "loop_start",
+      "message": "iteration started"
+    },
+    {
+      "at": "<time>",
+      "type": "loop_end",
+      "message": "iteration ended"
+    },
+    {
+      "at": "<time>",
+      "type": "release",
+      "message": "to be worked in another checkout"
+    }
+  ],
+  "escalations": null,
+  "approvals": null
+}
+
+=== file .sdlc/templates/story.schema.json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SDLC loop backlog",
+  "type": "object",
+  "required": ["stories"],
+  "properties": {
+    "stories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "status", "acceptance_criteria"],
+        "properties": {
+          "id":       { "type": "string", "pattern": "^[A-Z][A-Z0-9]*-[0-9]+(\\.[0-9]+)*$" },
+          "title":    { "type": "string" },
+          "as_a":     { "type": "string" },
+          "i_want":   { "type": "string" },
+          "so_that":  { "type": "string" },
+          "priority": { "type": "integer", "minimum": 0, "description": "0 = fix-forward/urgent, 1 = highest normal" },
+          "status":   { "type": "string", "enum": ["todo", "ready", "in_progress", "awaiting_human", "blocked", "done", "dropped"] },
+          "risk_tier":{ "type": "string", "enum": ["low", "medium", "high"] },
+          "depends_on": { "type": "array", "items": { "type": "string" } },
+          "acceptance_criteria": {
+            "type": "array", "minItems": 1,
+            "items": { "type": "object", "required": ["id", "text"],
+              "properties": { "id": { "type": "string", "pattern": "^AC-[0-9]+$" }, "text": { "type": "string", "description": "EARS form: WHEN/WHILE/IF-THEN/WHERE/ubiquitous" }, "type": { "type": "string" } } }
+          },
+          "non_goals": { "type": "array", "items": { "type": "string" } },
+          "decisions": { "type": "array", "items": { "type": "object", "properties": { "at": {"type":"string"}, "by": {"type":"string"}, "text": {"type":"string"} } } },
+          "notes":    { "type": "string" },
+          "created":  { "type": "string" },
+          "updated":  { "type": "string" }
+        }
+      }
+    }
+  }
+}
+

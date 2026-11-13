@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -60,6 +62,7 @@ func (s *Store) ClearStopCount() error {
 	if s.leaves(path) {
 		return sdlcerr.New(sdlcerr.StateUnwritable, stopFile+couldNotBeRemoved, leavesWhy).WithFix(leavesFix)
 	}
+	s.reads.Forget(path)
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			stopFile+couldNotBeRemoved,
@@ -76,9 +79,21 @@ func (s *Store) RecordProgress(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return hashFile(filepath.Join(dir, recordFile), storiesDir+"/"+id+"/"+recordFile,
-		"the story's gate record could not be opened; check that gate-record.json "+
-			"is there and that you may read it")
+	// From the bytes the invocation has read, where it has: a hook call asks
+	// for the record and its progress together (US-129, AC-5).
+	raw, err := s.reads.File(filepath.Join(dir, recordFile))
+	if err != nil {
+		// The two texts hashFile gave: one for a file that would not open,
+		// one for a read that stopped (US-129 verification, N-3).
+		why := "the story's gate record could not be opened; check that gate-record.json " +
+			"is there and that you may read it"
+		if pe, ok := errors.AsType[*fs.PathError](err); ok && pe.Op == "read" {
+			why = "reading it stopped part way through"
+		}
+		return "", sdlcerr.New(sdlcerr.StateUnreadable, storiesDir+"/"+id+"/"+recordFile+couldNotBeRead, why).WithCause(err)
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // Escalate hands the story to a person: the question goes on its record, bound
@@ -323,6 +338,7 @@ func (s *Store) putBack(path string, was []byte) error {
 	if was != nil {
 		return s.writeFile(path, was)
 	}
+	s.reads.Forget(path)
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			relative(s.root, path)+couldNotBeRemoved,

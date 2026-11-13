@@ -74,9 +74,19 @@ func TreeHash(ctx context.Context, root string, overrides ...Override) (string, 
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
-	env := []string{"GIT_INDEX_FILE=" + filepath.Join(dir, "index")}
-	if _, err := git(ctx, root, env, "add", "-A", "--", ".", ":(exclude).sdlc"); err != nil {
+	index := filepath.Join(dir, "index")
+	env := []string{"GIT_INDEX_FILE=" + index}
+	// Asked for in the one layout treehash.go reads, whatever the repository's
+	// own index settings: the tree is then hashed here from the file, and
+	// write-tree is run only where the file is not of that shape.
+	if _, err := git(ctx, root, append(env, "GIT_INDEX_VERSION=2"),
+		"-c", "index.version=2", "-c", "core.splitIndex=false", "-c", "index.sparse=false",
+		"-c", "feature.manyFiles=false", "-c", "index.skipHash=false",
+		"add", "-A", "--", ".", ":(exclude).sdlc"); err != nil {
 		return "", err
+	}
+	if tree, ok, err := treeFromIndex(ctx, root, env, index, overrides); err != nil || ok {
+		return tree, err
 	}
 	for _, o := range overrides {
 		if err := applyOverride(ctx, root, env, o); err != nil {
@@ -147,7 +157,7 @@ func takeAt(ctx context.Context, root string, env []string, o Override) error {
 	for entry := range strings.SplitSeq(string(out), "\x00") {
 		meta, name, ok := strings.Cut(entry, "\t")
 		fields := strings.Fields(meta)
-		if !ok || name != o.Path || len(fields) != 3 || fields[1] != "blob" {
+		if !ok || name != o.Path || len(fields) != 3 || fields[1] != blobType {
 			continue
 		}
 		_, err := git(ctx, root, env, argUpdateIndex, "--cacheinfo", fields[0]+","+fields[2]+","+o.Path)
@@ -175,6 +185,12 @@ const NoCommits = "0000000000000000000000000000000000000000"
 // yet. Read as "", which a record from before HEAD was kept also holds, the
 // first story of a new project was held to no HEAD at all.
 func Head(ctx context.Context, root string) (string, error) {
+	// The checkout's own HEAD file, and the session for the ref it names:
+	// HEAD is one checkout's, and the session is the repository's (US-129
+	// design review, security F-9).
+	if head, ok := headFromFile(ctx, root); ok {
+		return head, nil
+	}
 	out, err := git(ctx, root, nil, argRevParse, argVerify, argQuiet, argHead)
 	if err != nil {
 		// A repository with no commits is still on a branch; a directory that
@@ -198,6 +214,9 @@ func Resolve(ctx context.Context, root, rev string) (string, error) {
 		return "", notACommitError{sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			strconv.Quote(rev)+" is not a commit",
 			"no revision starts with a dash, and git would read one that does as an option")}
+	}
+	if hash, ok := commitNamedBySession(ctx, root, rev); ok {
+		return hash, nil
 	}
 	out, err := git(ctx, root, nil, argRevParse, argVerify, rev+"^{commit}")
 	var exit *exec.ExitError
@@ -236,6 +255,11 @@ type Commit struct {
 // with anything uncommitted in it. A linked worktree has a git directory of its
 // own.
 func GitDir(ctx context.Context, root string) (string, error) {
+	// Read from .git where it can be; git is asked for a checkout whose .git
+	// says something else, such as one GIT_DIR once named.
+	if gitDir, _, err := GitDirOf(root); err == nil {
+		return gitDir, nil
+	}
 	out, err := git(ctx, root, nil, argRevParse, "--absolute-git-dir")
 	if err != nil {
 		return "", err
@@ -372,6 +396,9 @@ func Changes(ctx context.Context, root string) ([]string, error) {
 // shares to heads/<name>, so with a tag called main, HEAD on main read as a
 // branch called heads/main.
 func Branch(ctx context.Context, root string) (string, error) {
+	if name, ok := branchFromFile(root); ok {
+		return name, nil
+	}
 	out, err := git(ctx, root, nil, "symbolic-ref", argQuiet, argHead)
 	if err == nil {
 		if name, ok := strings.CutPrefix(firstLine(string(out)), headsPrefix); ok {
@@ -384,6 +411,39 @@ func Branch(ctx context.Context, root string) (string, error) {
 		return "", nil
 	}
 	return "", err
+}
+
+// branchFromFile is Branch read from the checkout's own HEAD file: a ref: line
+// that names a branch is the branch, and a bare hash is detached. false where
+// anything else is there, which is git's to read.
+//
+// The branch is taken from the line only where the files show what the ref
+// is (refInFiles): there, holding a commit's hash, or not there yet, as in a
+// repository with no commits. symbolic-ref follows a ref that names another,
+// so HEAD on such a one is on the branch at the end of the chain, and it
+// fails on one that holds neither; the line alone says neither. A ref outside
+// refs/heads/ is git's to follow too.
+func branchFromFile(root string) (string, bool) {
+	gitDir, _, err := GitDirOf(root)
+	if err != nil {
+		return "", false
+	}
+	head, ok := headFile(gitDir)
+	if !ok {
+		return "", false
+	}
+	ref, isRef := strings.CutPrefix(head, "ref: ")
+	if !isRef {
+		return "", fullHash(head)
+	}
+	name, onBranch := strings.CutPrefix(ref, headsPrefix)
+	if !onBranch {
+		return "", false
+	}
+	if there, absent := refInFiles(root, ref); !there && !absent {
+		return "", false
+	}
+	return name, true
 }
 
 // Trunk is what this repository most likely calls its trunk, for a
@@ -467,6 +527,13 @@ func git(ctx context.Context, root string, extra []string, args ...string) ([]by
 // environment, either of which could otherwise send what gitx measures, or the
 // worktree start makes, to another directory.
 func gitInput(ctx context.Context, root string, extra []string, stdin []byte, args ...string) ([]byte, error) {
+	return memoised(ctx, false, root, extra, stdin, nil, args, func() ([]byte, error) {
+		return runGit(ctx, root, extra, stdin, args...)
+	})
+}
+
+// runGit is gitInput's process.
+func runGit(ctx context.Context, root string, extra []string, stdin []byte, args ...string) ([]byte, error) {
 	full := args
 	if root != "" {
 		if abs, err := filepath.Abs(root); err == nil {
@@ -484,9 +551,10 @@ func gitInput(ctx context.Context, root string, extra []string, stdin []byte, ar
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		sub := failedSubcommand(args)
 		return nil, sdlcerr.New(sdlcerr.RepositoryUnreadable,
-			"git "+args[0]+" did not finish",
-			describeGitFailure(args[0], stderr.String())).WithCause(err)
+			"git "+sub+" did not finish",
+			describeGitFailure(sub, stderr.String())).WithCause(err)
 	}
 	return out, nil
 }
@@ -515,6 +583,20 @@ func Environ(extra ...string) []string {
 		}
 	}
 	return append(out, extra...)
+}
+
+// failedSubcommand is the subcommand a refusal names for args: what follows
+// git's own options, so that `-c index.version=2 add` is "add" and not "-c"
+// (US-008's hand-over rows read "git -c did not finish" when the tree hash's
+// `add` took its settings on the command line).
+func failedSubcommand(args []string) string {
+	if sub, _ := subcommand(args); sub != "" {
+		return sub
+	}
+	if len(args) == 0 {
+		return ""
+	}
+	return args[0]
 }
 
 // describeGitFailure says why a git command failed, for the subcommand it was

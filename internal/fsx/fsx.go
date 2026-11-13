@@ -20,14 +20,30 @@ import (
 // temporary directory: a rename across filesystems is a copy, and a copy is not
 // atomic. Missing parent directories are created.
 func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
+	_, err := WriteFileAtomicInfo(path, data, perm)
+	return err
+}
+
+// WriteFileAtomicInfo is WriteFileAtomic, and says which file it put at path:
+// the temporary file's FileInfo, whose identity, size and modification time
+// the rename carries to path. A caller that keeps what it wrote tells by it
+// whether path still holds that file.
+//
+// It is taken from the open handle, once the data is flushed, and not from
+// the path afterwards: a stat of the path describes whatever is there by
+// then, which may be another writer's file, and on Windows a FileInfo made
+// from a path loads its identity later still, at its first comparison. It is
+// nil where the handle could not be asked, which fails nothing: the write
+// itself is whole.
+func WriteFileAtomicInfo(path string, data []byte, perm fs.FileMode) (fs.FileInfo, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // G301: an ordinary directory other tools and the user read, as MkdirAll's callers expect
-		return fmt.Errorf("create %s: %w", dir, err)
+		return nil, fmt.Errorf("create %s: %w", dir, err)
 	}
 
 	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp*")
 	if err != nil {
-		return fmt.Errorf("create a temporary file in %s: %w", dir, err)
+		return nil, fmt.Errorf("create a temporary file in %s: %w", dir, err)
 	}
 	tmp := f.Name()
 	// Removing the temporary file is unconditional: after a successful rename
@@ -37,22 +53,23 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
 
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
-		return fmt.Errorf("write %s: %w", tmp, err)
+		return nil, fmt.Errorf("write %s: %w", tmp, err)
 	}
 	if err := f.Sync(); err != nil {
 		_ = f.Close()
-		return fmt.Errorf("flush %s: %w", tmp, err)
+		return nil, fmt.Errorf("flush %s: %w", tmp, err)
 	}
+	info, _ := f.Stat()
 	if err := f.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", tmp, err)
+		return nil, fmt.Errorf("close %s: %w", tmp, err)
 	}
 	if err := os.Chmod(tmp, perm); err != nil {
-		return fmt.Errorf("set permissions on %s: %w", tmp, err)
+		return nil, fmt.Errorf("set permissions on %s: %w", tmp, err)
 	}
 	if err := replace(tmp, path); err != nil {
-		return fmt.Errorf("move %s into place at %s: %w", tmp, path, err)
+		return nil, fmt.Errorf("move %s into place at %s: %w", tmp, path, err)
 	}
-	return nil
+	return info, nil
 }
 
 // How long a replacement waits for a reader to let go of the file it replaces.

@@ -273,6 +273,8 @@ func state(dir string, powerShell bool) shellpolicy.State {
 		Outside:   func(string, bool) bool { return false },
 		Trunk:     func() string { return cfg.Git.TrunkBranch },
 		IsTrunk:   func(string) bool { return false },
+		Readiness: func() (bool, string) { return false, "" },
+		Progress:  func() (bool, bool) { return false, false },
 		Fresh:     func() (bool, string) { return false, "" },
 		Commits:   func() {},
 		Nested:    func(string) bool { return false },

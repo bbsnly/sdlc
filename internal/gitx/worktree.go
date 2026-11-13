@@ -51,12 +51,15 @@ func AddWorktree(ctx context.Context, root, dir, branch, trunk string) error {
 		return notMade(strconv.Quote(branch)+" is not a name git takes for a branch",
 			failure(err, "a story's branch is named for it, and git refuses this name"), ErrBranchName)
 	}
-	out, err := git(ctx, root, nil, argRevParse, argVerify, argQuiet, headsPrefix+trunk+"^{commit}")
-	if err != nil {
-		return notMade("trunk, "+strconv.Quote(trunk)+", is not a branch with a commit in this repository",
-			"a story's branch is cut from the commit trunk's branch is on, and there is none to cut it from", ErrNoTrunk)
+	hash, ok := commitNamedBySession(ctx, root, headsPrefix+trunk)
+	if !ok {
+		out, err := git(ctx, root, nil, argRevParse, argVerify, argQuiet, headsPrefix+trunk+"^{commit}")
+		if err != nil {
+			return notMade("trunk, "+strconv.Quote(trunk)+", is not a branch with a commit in this repository",
+				"a story's branch is cut from the commit trunk's branch is on, and there is none to cut it from", ErrNoTrunk)
+		}
+		hash = firstLine(string(out))
 	}
-	hash := firstLine(string(out))
 
 	if err := refuseTaken(ctx, root, dir, branch); err != nil {
 		return err
@@ -115,7 +118,12 @@ func refuseTaken(ctx context.Context, root, dir, branch string) error {
 					"somebody's work, so start never reuses or removes it", ErrInTheWay)
 		}
 	}
-	if _, err := git(ctx, root, nil, "show-ref", argVerify, argQuiet, headsPrefix+branch); err == nil {
+	held, ok := refHeldBySession(ctx, root, branch)
+	if !ok {
+		_, err := git(ctx, root, nil, "show-ref", argVerify, argQuiet, headsPrefix+branch)
+		held = err == nil
+	}
+	if held {
 		return notMade(msgTheBranch+strconv.Quote(branch)+msgAlreadyExists,
 			"a story is begun on a new branch cut from trunk, and a branch that is already there may hold "+
 				"somebody's work, so start never reuses, resets or removes it", ErrInTheWay)
@@ -275,10 +283,14 @@ func count(ctx context.Context, root, commits string) (int, error) {
 // Holds reports whether the commit rev names has a file at path, a slash path
 // from the root of the repository: what a new worktree cut from it has.
 func Holds(ctx context.Context, root, rev, path string) (bool, error) {
-	if _, err := Resolve(ctx, root, rev); err != nil {
+	commit, err := Resolve(ctx, root, rev)
+	if err != nil {
 		return false, err
 	}
-	_, err := git(ctx, root, nil, "cat-file", "-e", rev+"^{commit}:"+path)
+	if has, ok := holdsFromSession(ctx, root, commit, path); ok {
+		return has, nil
+	}
+	_, err = git(ctx, root, nil, "cat-file", "-e", rev+"^{commit}:"+path)
 	var exit *exec.ExitError
 	switch {
 	case err == nil:

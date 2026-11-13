@@ -16,38 +16,53 @@ import (
 // A trailing "**" needs something beneath it: "e2e/**" is what is inside e2e/,
 // not a file called e2e. A malformed pattern matches nothing, as it did. The
 // match is exact: nothing here folds case, which is the callers' to decide.
+//
+// The segments are walked in place, a Cut at a time, rather than split into
+// two slices: the freeze asks it twice per glob for every path a shell
+// command names, and the two splits were a quarter of what the classifier
+// allocated for a command naming many files (US-129, AC-7).
 func MatchGlob(pattern, rel string) bool {
-	return matchSegments(strings.Split(pattern, "/"), strings.Split(rel, "/"))
+	return matchSegments(pattern, true, rel, true)
 }
 
-func matchSegments(pattern, name []string) bool {
-	for len(pattern) > 0 {
-		if pattern[0] == "**" {
-			return matchAnyDepth(pattern[1:], name)
+// matchSegments matches what is left of the pattern against what is left of
+// the name, each a string of slash-separated segments; more says whether any
+// segment is left at all, since the empty string is one empty segment where
+// it follows a slash and none otherwise.
+func matchSegments(pattern string, patternMore bool, name string, nameMore bool) bool {
+	for patternMore {
+		var segment string
+		segment, pattern, patternMore = strings.Cut(pattern, "/")
+		if segment == "**" {
+			return matchAnyDepth(pattern, patternMore, name, nameMore)
 		}
-		if len(name) == 0 {
+		if !nameMore {
 			return false
 		}
-		if ok, err := path.Match(pattern[0], name[0]); err != nil || !ok {
+		var first string
+		first, name, nameMore = strings.Cut(name, "/")
+		if ok, err := path.Match(segment, first); err != nil || !ok {
 			return false
 		}
-		pattern, name = pattern[1:], name[1:]
 	}
-	return len(name) == 0
+	return !nameMore
 }
 
 // matchAnyDepth is a "**" segment followed by rest: rest has to match what is
 // left of name after however many directories the "**" took.
-func matchAnyDepth(rest, name []string) bool {
-	if len(rest) == 0 {
-		return len(name) > 0
+func matchAnyDepth(rest string, restMore bool, name string, nameMore bool) bool {
+	if !restMore {
+		return nameMore
 	}
-	for i := 0; i <= len(name); i++ {
-		if matchSegments(rest, name[i:]) {
+	for {
+		if matchSegments(rest, true, name, nameMore) {
 			return true
 		}
+		if !nameMore {
+			return false
+		}
+		_, name, nameMore = strings.Cut(name, "/")
 	}
-	return false
 }
 
 // IntendsConflictMarkers reports whether the project says that the lines of an

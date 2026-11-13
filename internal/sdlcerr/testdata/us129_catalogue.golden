@@ -1,0 +1,246 @@
+SDLC-E0001
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0001
+  fix run "git init" first, or change to a directory inside your repository
+SDLC-E0002
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0002
+  fix if you want the loop in this repository, run "sdlc init" in its root yourself
+SDLC-E0003
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0003
+  fix edit .sdlc/config.json directly, or run "sdlc init --force" to overwrite it
+SDLC-E0004
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0004
+  fix fix the JSON in .sdlc/config.json, or delete it and run "sdlc init" again
+SDLC-E0005
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0005
+  fix run "sdlc doctor", which names every file it cannot read; restore a committed one from git, or fix its permissions — and if sdlc left it that way, open an issue at https://github.com/bbsnly/sdlc/issues
+SDLC-E0006
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0006
+  fix check that you can write to .sdlc/ and that the disk is not full
+SDLC-E0007
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0007
+  fix run "sdlc init" to create the backlog, or point backlog.path in .sdlc/config.json at the file you use
+SDLC-E0008
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0008
+  fix fix the JSON in your backlog file — every story needs an "id", a "title" and a "status" from the schema
+SDLC-E0009
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0009
+  fix run "sdlc story list" to see the ids you can use
+SDLC-E0010
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0010
+  fix add the next story, or unblock one — "sdlc story list" shows each story's status and what any blocked one is waiting on
+SDLC-E0011
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0011
+  fix a person runs "sdlc start", or types /sdlc:next in Claude Code, to begin an iteration on the next story
+SDLC-E0012
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0012
+  fix finish the current story, or run "sdlc stop" to end the iteration without recording a result
+SDLC-E0033
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0033
+  fix record a gate as failed to reopen it — "sdlc gate code_review fail --story ID --note ..." says on the record why the work came back
+SDLC-E0034
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0034
+  fix check the flag's value — "sdlc <command> --help" says what it takes
+SDLC-E0035
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0035
+  fix only a story handed to a person with "sdlc escalate" waits for a decision — "sdlc status" shows which stories are waiting
+SDLC-E0036
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0036
+  fix a person decides first, in Claude Code or in their own terminal: "/sdlc:approve <ID>", or "sdlc approve <ID>", or "sdlc approve <ID> --reject ..." to send the work back
+SDLC-E0037
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0037
+  fix a person reads the work and answers with "/sdlc:approve <ID>", or "sdlc approve <ID>", typing the first in Claude Code or running the second in their own terminal; once they have, the session commits the work they approved. An assistant does not answer for them: it hands the story to a person with "sdlc escalate pre_commit_approval --message 'ready for a person to approve before it is committed'" and stops
+SDLC-E0038
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0038
+  fix switch to the branch named by git.trunk_branch in .sdlc/config.json, then start again
+SDLC-E0039
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0039
+  fix commit it, stash it, or discard it, then start again — the loop's own files under .sdlc/ and the backlog do not count
+SDLC-E0040
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0040
+  fix bring trunk up to date — "git pull --rebase" — then start again
+SDLC-E0041
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0041
+  fix fix trunk, or revert what broke it, then start again — commands.smoke in .sdlc/config.json is the check that failed
+SDLC-E0043
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0043
+  fix remove the test files the freeze does not hold, or have a person run "/sdlc:unfreeze", or "sdlc unfreeze --reason ..." in their own terminal and freeze again, so they are frozen with the rest; in a story's own worktree a test file that only trunk changed since the story was cut is not held against the story, and one of trunk's that the story changed or took away is put back as trunk has it
+SDLC-E0044
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0044
+  fix write the story's acceptance_criteria in the backlog, each an observable behaviour — or record "sdlc gate dor fail" and hand the question to a person with "sdlc escalate spec_unclear --message ..."
+SDLC-E0013
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0013
+  fix run "sdlc gate --help" to see the gate names this version knows
+SDLC-E0014
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0014
+  fix use one of: pass, fail, pending
+SDLC-E0016
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0016
+  fix run "sdlc artifact list" to see what this version can store
+SDLC-E0017
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0017
+  fix pipe the document in, or pass --file with a path that has something in it
+SDLC-E0018
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0018
+  fix check the path given to --file, or pipe the document in instead
+SDLC-E0022
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0022
+  fix if the tests really have to change, run "/sdlc:unfreeze", or "sdlc unfreeze --reason ..." in your own terminal first
+SDLC-E0023
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0023
+  fix run "sdlc freeze" once the acceptance tests are written and failing
+SDLC-E0024
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0024
+  fix write the acceptance tests first, or widen paths.tests in .sdlc/config.json so it finds them
+SDLC-E0025
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0025
+  fix restore the frozen tests, or have a person run "/sdlc:unfreeze", or "sdlc unfreeze --reason ..." in their own terminal and freeze again, so the change is on the record
+SDLC-E0026
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0026
+  fix pass --reason with the one line that explains why the tests have to change
+SDLC-E0027
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0027
+  fix run "sdlc review list" to see which reviews this gate expects
+SDLC-E0028
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0028
+  fix use one of: approve, block, note
+SDLC-E0029
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029
+  fix delegate to the reviewers this gate expects -- "sdlc review list" shows who is outstanding
+SDLC-E0030
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0030
+  fix fix what the reviewer found, then have the same reviewer look again
+SDLC-E0031
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0031
+  fix record the earlier gate first -- "sdlc status" shows where this story stands
+SDLC-E0032
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0032
+  fix commit the work, or stash what does not belong to this story by path with "git stash push -- <path>", then record the gate
+SDLC-E0021
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0021
+  fix check that git is installed and that this directory is a repository git can read
+SDLC-E0020
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0020
+  fix store the gate's documents with "sdlc artifact write", then record the gate
+SDLC-E0019
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0019
+  fix store the document itself and link to the bulk from it — a gate's document is read by a person
+SDLC-E0015
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0015
+  fix rename the story so its id is letters, digits, dots, dashes and underscores -- for example AUTH-3
+SDLC-E0045
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0045
+  fix change the settings the message names in .sdlc/config.json — docs/configuration.md says what each one takes; for a newer version, upgrade sdlc
+SDLC-E0046
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0046
+  fix record the gate as failed, hand the story to a person with "sdlc escalate", and stop; a person keeps the commits or reverts them, and answers with "/sdlc:approve <ID>", or "sdlc approve <ID>", after which "sdlc start" picks the story up from where trunk is then
+SDLC-E0047
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0047
+  fix run "/sdlc:ack", or "sdlc ack --through <commit>" in your own terminal to acknowledge a commit git has, or remove .sdlc/state/acknowledged to list every story; meanwhile "sdlc log --since <commit>" starts after a commit you name, and "sdlc log --all" lists every story
+SDLC-E0048
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0048
+  fix a person takes the story over by typing /sdlc:next in this Claude Code session, or runs the command in their own terminal, outside Claude Code; an assistant stops and tells the person that the story is being worked on in another session and only they can move it here, and does not run "sdlc start"
+SDLC-E0049
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0049
+  fix re-run the gate with the sha corrected or dropped: `sdlc gate commit pass --note "..."`
+SDLC-E0050
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0050
+  fix a person runs the command in the checkout that holds the story, named above, or moves the story here with `/sdlc:release <ID> --reason "..."`, or `sdlc release <ID> --reason "..."` in their own terminal, then `sdlc start <ID>` in this checkout; an assistant stops and tells the person which checkout holds the story, and runs neither "sdlc start" nor "sdlc release"
+SDLC-E0051
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0051
+  fix if that checkout is gone for good, a person runs `/sdlc:release <ID> --reason "..."`, or `sdlc release <ID> --reason "..."` in their own terminal, after which `sdlc start <ID>` works in any checkout; until then no checkout can record anything for the story; an assistant stops and tells the person, and does not run it
+SDLC-E0052
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0052
+  fix work in a clone made without --bare, or in the main checkout of a repository made with "git init --separate-git-dir", where the backlog, the story records and the claims on stories can be kept
+SDLC-E0053
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0053
+  fix see the message above for what is in the way, then start again, or set git.worktrees to false in .sdlc/config.json; an assistant stops and tells the person
+SDLC-E0054
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0054
+  fix "sdlc stop" puts a story onto a trunk that only moved on by itself, so this is a state it does not: where trunk was rewritten or went back, or story/<ID> holds a merge, a person rebases story/<ID> onto trunk in the story's worktree, .sdlc/worktrees/<ID> in the main checkout, as the message above says, then runs "sdlc stop" there again, which runs the configured commands on the rebased tree, and an assistant hands the story to a person with "sdlc escalate" and stops; where trunk moved while the landing ran, run "sdlc stop" there again: an assistant does so up to three times and, where the third is refused too, hands the story to a person with "sdlc escalate" and stops
+SDLC-E0055
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0055
+  fix read what the message above says the check or the configured commands found. Where a configured command failed, the story stays with its session: run the command in a checkout that has trunk checked out with nothing uncommitted, which the main checkout usually is, and where it passes there, record `sdlc gate implementation fail --story <ID> --note "..."` in .sdlc/worktrees/<ID>, rework the story through its gates and run "sdlc stop" there again; where it fails there too the failure is trunk's own, and "sdlc stop" lands the story once a person has put trunk right. Any other check is a person's to put right: they do what the message says and run "sdlc stop" in .sdlc/worktrees/<ID> again, or reopen the story: answer the escalation first with "/sdlc:approve <ID>", or "sdlc approve <ID>" or its --reject in .sdlc/worktrees/<ID>, then run `sdlc gate implementation fail --story <ID> --note "..."` there, then /sdlc:next; "sdlc stop" run by a person runs the story's code and the repository's git settings with that person's own privileges, so read the story's changes first; for those checks an assistant hands the story to a person with "sdlc escalate" and stops
+SDLC-E0056
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0056
+  fix in the checkout named above, stash the changes it names, or commit them (a commit moves trunk, so the next stop puts the story onto it before it lands), then run "sdlc stop" in the story's worktree again; they are a person's changes, so an assistant hands the story to a person with "sdlc escalate" and stops
+SDLC-E0067
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0067
+  fix the project manager is disabled in team.agents.project-manager.enabled, so there is no staffing to record or change; every enabled agent takes part and each runs as its definition says. To use the staffing, a person deletes that setting or sets it to true in .sdlc/config.json (docs/configuration.md says how)
+SDLC-E0068
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0068
+  fix no staffing is recorded for the story: delegate to sdlc:project-manager, which records one with "sdlc staffing set"; until it has, every enabled agent is needed
+SDLC-E0069
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0069
+  fix a staffing names each enabled agent and each of its instances once, with a reason, and for each one it needs a model, an effort and a reason for them; one that is recorded is changed with "sdlc staffing amend <agent> --reason ..."
+SDLC-E0070
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0070
+  fix keep the agent: the agents that do a gate's work, the verifier, the code reviewer, and security on a story recorded as security-sensitive always take part; ask for a lower model or effort instead of leaving it out
+SDLC-E0071
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0071
+  fix ask for a model from "team.models" and an effort from "team.efforts", neither below what the agent's "lowest" in team.agents has; a person changes those lists in the project's configuration
+SDLC-E0072
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0072
+  fix a person chose this for the agent, so it stays as it is: leave it out of the change; only a person changes it, with "/sdlc:assign", or "sdlc staffing assign" in their own terminal
+SDLC-E0073
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0073
+  fix the reviewer's latest review is a block, and leaving it out would pass the gate over it: take its findings through rework and have it review again, then amend once its latest review is no longer a block; where the block itself is wrong, hand the story to a person with "sdlc escalate <type> --message ...", who answers the reviewer or records the gate as failed
+SDLC-E0074
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0074
+  fix "/sdlc:assign", or "sdlc staffing assign", is a person's: a person types the first in Claude Code, or runs the second in their own terminal, outside Claude Code; an assistant stops here and says what it would have asked for
+SDLC-E0075
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0075
+  fix a person, in their own terminal, in the story's worktree, .sdlc/worktrees/<ID> in the main checkout: "git rebase <trunk>"; they resolve the files it stops on, "git add" them and carry the rebase on as git says until it finishes; then "sdlc stop" there, which runs the configured commands on the result. Where an assistant handed the story over, "/sdlc:approve <ID>", or "sdlc approve <ID>", comes before that stop and after the resolving, so that the approval is of the work as it now is; in a tier that waits for a person the rebased work is approved again, and where no question is open that stop says so with SDLC-E0037. That rebase is git's own and not sdlc's: it runs the hooks, merge drivers, editor and filters the repository's configuration names, with that person's privileges, so read "git config --show-origin --list" and .gitattributes there first. An assistant does not resolve the conflict: it hands the story to a person with "sdlc escalate" and stops
+SDLC-E0076
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0076
+  fix the story has landed and stays landed; only its change to CODEMAP.md is waiting, kept in the repository's git directory. A person, in the main checkout, puts right what is named above and then uses "/sdlc:remap <ID>", or "sdlc remap <ID>", typing the first in Claude Code or running the second in their own terminal; either makes the change where it still applies, "/sdlc:remap <ID> --replace", or "sdlc remap <ID> --replace", puts the kept sections over what trunk's map holds under their headings, and "/sdlc:remap <ID> --drop", or "sdlc remap <ID> --drop", discards the kept change. An assistant says so and runs none of them
+SDLC-E0077
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0077
+  fix there is nothing to do for that story: "sdlc status" names each landed story whose change to CODEMAP.md is still waiting, and the command a person runs for it
+SDLC-E0078
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0078
+  fix send the whole set again on standard input, from a Bash heredoc so that every line ends with a line feed alone, its delimiter quoted so that the shell runs nothing in the text: each section is a line that is exactly "<!-- sdlc:add -->" or "<!-- sdlc:replace -->", then its heading as two hash marks, a space and the text, then at least one line under it, with no heading at that level or above, no fenced block left open and no conflict marker; storing again replaces what was stored
+SDLC-E0079
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0079
+  fix a person types the command's slash command in Claude Code with the same arguments, "/sdlc:approve" for "sdlc approve" and likewise "/sdlc:unfreeze", "/sdlc:ack", "/sdlc:remap", "/sdlc:release", and "/sdlc:assign" for "sdlc staffing assign", or, in Claude Desktop, types "!" and the command with the same arguments at the prompt, as "!sdlc approve US-001", or runs the command in a terminal outside Claude Code, in a window they opened themselves; an assistant stops here and says what it would have run, and tries no other way of running it
+SDLC-E0080
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0080
+  fix a person puts each file the message names right: they resolve the unresolved conflict in it, or take out the lines that are not one, commit, and run the commit gate or "sdlc stop" again; where the lines are meant to be there, a person lists the file in "paths.conflict_markers_intended" in .sdlc/config.json, in a commit to the trunk branch, because "sdlc stop" reads trunk's copy and not the story's, and then runs "sdlc stop" in the story's worktree again. An assistant hands the story to a person with "sdlc escalate" and stops: it does not resolve the conflict and does not edit that list
+SDLC-E0081
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0081
+  fix name the place the word leads to directly, without the links. To find it, follow the links one at a time: "readlink <link>" (macOS, Linux) or "(Get-Item <link>).Target" (PowerShell) prints where one link leads; "realpath" and other tools that resolve the whole path in one go stop at the system's own limit and fail on these words. From a working directory reached through that many links, "cd" to a directory with a shorter path, one that names the place without the links, then run the command again. If a chain of links that long is not one you made, find out who made it before writing through it; if you are an assistant, ask the person where it leads, or to run the command
+SDLC-E0082
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0082
+  fix split the command into several, each naming fewer paths that go through symbolic links, or name each place directly, without the links; the budget is a count of the links followed for one command, across all its words, not a time
+SDLC-E0083
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0083
+  fix make the full path shorter, from the root of the disk, by moving or renaming the directories on the way to it, and name it again; running the command from a directory nearer the file does not help, because the hook reads the full path whichever way it is named. From a working directory whose own path is that long, "cd" to a directory with a shorter path, then run the command again. If you are an assistant, ask the person to run it
+SDLC-E0084
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0084
+  fix give this reviewer the whole plan this round: start it afresh with the path to PLAN.md. Nothing else needs doing, and its verdict counts the same
+SDLC-E0085
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0085
+  fix read what the message above says commands.freeze_check found. Nothing was frozen. Where the check failed or changed a test file, the test author corrects the files it names and runs "sdlc freeze" again, and nobody needs a person for this; a name with a line break in it is renamed first. Anything no correction to a test file can clear is a person's: a shell that is not on PATH, a program the check needs that is missing, a check that fails whatever the tests hold, one that rewrites a test file every run, or one that runs "sdlc freeze" itself. The person puts commands.freeze_check right in the configuration, and "sdlc freeze" is then run again
+SDLC-E0086
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0086
+  fix pass --important with the number of important findings the review names; a review with only nits is an approve, with --nits and the nits listed
+SDLC-E0087
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0087
+  fix move each setting the message names to its key in the team section of .sdlc/config.json, as the message says, and delete the old one; docs/configuration.md#upgrading-from-the-staffing-section has the table. For a story in flight, that section gives the route: edit the file on trunk, since editing the file in the story's worktree only moves the refusal to the landing
+SDLC-E0088
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0088
+  fix correct each problem the message lists in the team section of .sdlc/config.json; docs/configuration.md#team says what each setting takes
+SDLC-E0089
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0089
+  fix list each finding the review counts with --finding "<important|nit> [path]: <text>", one flag for each: as many important ones as --important says, and no more nits than --nits; or give --important and --nits the numbers the review lists. Nothing was recorded, so run the command again
+SDLC-E0090
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0090
+  fix give the reason, in one line, with --reason "<why>"; or fix the finding and close it with --fixed
+SDLC-E0091
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0091
+  fix fix it and close it with --fixed, or close it with --declined --reason "<why>": a defect in a file the story changes is fixed in the story or declined, and --referred is for something outside the story's files that cannot wait. Where a gate refused, close each finding it names again in one of those two ways, then pass the gate again
+SDLC-E0092
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0092
+  fix close each finding the message names with "sdlc finding close <gate> <role> <F-n>" and one of --fixed, --declined --reason "<why>" or --referred --reason "<why>", fixing it first where it is to be fixed; then pass the gate again
+SDLC-E0093
+  url https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0093
+  fix have each reviewer the message names record its review again with "sdlc review add" and one --finding for each finding it listed, whose text is in its review documents under .sdlc/stories/<ID>/reviews/, then close them with "sdlc finding close"; and run this sdlc, or a later one, everywhere the record is saved: "sdlc version" gives the one on PATH, and the plugin's is the sdlc in the plugin's bin directory

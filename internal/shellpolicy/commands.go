@@ -1,11 +1,13 @@
 package shellpolicy
 
 import (
+	"bytes"
 	"cmp"
 	"path"
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // lexUnder reads a command line the way a shell runs it, far enough to know
@@ -144,11 +146,16 @@ type lexer struct {
 	open      []int // the subshells open around the command being read, innermost last
 	words     []string
 	marked    []string
-	word      strings.Builder
-	mark      strings.Builder
-	started   bool // a word has begun, even an empty quoted one
-	target    bool // the word being read is where a redirection goes
-	depth     int  // the substitutions this line is inside
+	// word and mark are the word being read, in both its spellings: buffers
+	// the lexer keeps from word to word, so that only the strings themselves
+	// are allocated, one where the spellings agree (US-129, AC-7: two
+	// Builders, reset after each word, grew again for every word of a
+	// thousand-line here-string).
+	word    []byte
+	mark    []byte
+	started bool // a word has begun, even an empty quoted one
+	target  bool // the word being read is where a redirection goes
+	depth   int  // the substitutions this line is inside
 	// inputs is each command's here-strings, `<<< word`, as marked, and input
 	// the command being read's; here is set while the word after `<<<` is
 	// read. What `read` sets is read from them.
@@ -194,28 +201,37 @@ func (l *lexer) endWord() {
 	if l.target {
 		l.target = false
 		if l.here {
-			l.input = append(l.input, l.mark.String())
+			l.input = append(l.input, string(l.mark))
 			l.here = false
 		}
 	} else {
-		l.words = append(l.words, l.word.String())
-		l.marked = append(l.marked, l.mark.String())
-		l.subscripts(l.words[len(l.words)-1])
+		word := string(l.word)
+		mark := word
+		if !bytes.Equal(l.mark, l.word) {
+			mark = string(l.mark)
+		}
+		if l.words == nil {
+			// Most commands have a few words: one allocation for them
+			// rather than one per doubling.
+			l.words, l.marked = make([]string, 0, 4), make([]string, 0, 4)
+		}
+		l.words = append(l.words, word)
+		l.marked = append(l.marked, mark)
+		l.subscripts(word)
 	}
-	l.word.Reset()
-	l.mark.Reset()
+	l.word, l.mark = l.word[:0], l.mark[:0]
 	l.started = false
 }
 
 // put and putRune add to the word being read, in both its spellings.
 func (l *lexer) put(s string) {
-	l.word.WriteString(s)
-	l.mark.WriteString(s)
+	l.word = append(l.word, s...)
+	l.mark = append(l.mark, s...)
 }
 
 func (l *lexer) putRune(r rune) {
-	l.word.WriteRune(r)
-	l.mark.WriteRune(r)
+	l.word = utf8.AppendRune(l.word, r)
+	l.mark = utf8.AppendRune(l.mark, r)
 }
 
 func (l *lexer) endCommand() {
@@ -254,7 +270,7 @@ func (l *lexer) group() int {
 func (l *lexer) substitute(inner []rune) {
 	l.started = true
 	l.substituting = true
-	l.mark.WriteString(cutMark)
+	l.mark = append(l.mark, cutMark...)
 	l.runs(inner)
 }
 
@@ -824,9 +840,8 @@ func misreadsParameter(rs []rune, start, i int) bool {
 // operator ends. The word after it is where the output goes, not an argument,
 // and a descriptor number stuck to the front, as in `2>`, is part of it.
 func (l *lexer) redirect(rs []rune, i int) int {
-	if l.started && strings.Trim(l.word.String(), "0123456789") == "" {
-		l.word.Reset()
-		l.mark.Reset()
+	if l.started && len(bytes.Trim(l.word, "0123456789")) == 0 {
+		l.word, l.mark = l.word[:0], l.mark[:0]
 		l.started = false
 	}
 	l.endWord()

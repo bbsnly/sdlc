@@ -28,6 +28,8 @@ vars:
   SHELLCHECK_VERSION: 0.11.0
   # golang.org/x/perf tags no releases, so benchstat's pin is a pseudo-version.
   BENCHSTAT_VERSION: 0.0.0-20261009192801-be2c69fb417e
+  # deadcode is golang.org/x/tools' and takes its version.
+  DEADCODE_VERSION: 0.52.0
 
   # A hook runs on every matching tool call, so package init is on the
   # latency path of the user's whole session. Budget in milliseconds.
@@ -72,6 +74,7 @@ vars:
   ACTIONLINT: go run github.com/rhysd/actionlint/cmd/actionlint@v{{.ACTIONLINT_VERSION}}
   GITLEAKS: go run github.com/zricethezav/gitleaks/v8@v{{.GITLEAKS_VERSION}}
   BENCHSTAT: go run golang.org/x/perf/cmd/benchstat@v{{.BENCHSTAT_VERSION}}
+  DEADCODE: go run golang.org/x/tools/cmd/deadcode@v{{.DEADCODE_VERSION}}
 
   # A scratch directory, wherever the platform keeps them. On Windows task runs
   # its own mktemp in place of the one on PATH, and that one knows only TMPDIR
@@ -566,6 +569,24 @@ tasks:
     # how to compare two trees with `benchstat`.
     cmds:
       - GOFLAGS= go test -run '^$' -bench '{{.BENCH | default "."}}' -benchmem -count {{.COUNT | default "10"}} {{.PKG | default "./..."}}
+
+  perf-report:
+    desc: Time every hook event and command of the loop as a process, in a sandbox, and compare with a base binary (RUNS=5, BASE=binary)
+    silent: true
+    # Not a leg of check: the report is for reading. GOFLAGS is emptied as it
+    # is for the sandbox, so a caller's flags change neither the build nor the
+    # run; with -race the figures are several times what a session pays.
+    cmds:
+      - GOFLAGS= go run ./internal/tools/perf report -runs {{.RUNS | default "5"}} {{if .BASE}}-base {{shellQuote .BASE}}{{end}}
+
+  deadcode:
+    desc: Report the functions nothing in the binary or its tests can reach
+    silent: true
+    # A report, not a leg of check: whether a function it lists goes is a
+    # decision. With -test a function only a test reaches is not listed, so
+    # what is listed is reached by nothing at all.
+    cmds:
+      - '{{.DEADCODE}} -test ./...'
 
   benchstat:
     desc: Compare two saved runs of ./task bench (OLD=file NEW=file)

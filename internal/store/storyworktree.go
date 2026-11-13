@@ -87,7 +87,7 @@ func (s *Store) At(root string) (*Store, error) {
 		return nil, err
 	}
 	out := New(&config.Project{Root: root, Config: cfg})
-	out.now, out.getenv = s.now, s.getenv
+	out.now, out.getenv, out.reads = s.now, s.getenv, s.reads
 	return out, nil
 }
 

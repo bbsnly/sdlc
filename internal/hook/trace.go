@@ -108,8 +108,9 @@ func RunHosted(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv 
 	// run reads the payload before anything else, so a copy taken as it reads
 	// costs the deadline nothing.
 	var kept bytes.Buffer
-	code := runOnTheClock(args, io.TeeReader(stdin, &kept), stdout, stderr, getenv)
-	noteEvent(args[0], kept.Bytes(), getenv, h.Transcripts)
+	call := newCallReads()
+	code := run(args, io.TeeReader(stdin, &kept), stdout, stderr, getenv, onTheClock(call))
+	noteEvent(args[0], kept.Bytes(), getenv, h.Transcripts, call)
 	return code
 }
 
@@ -171,7 +172,7 @@ type held struct {
 // noteEvent records one event the hook has answered. Nothing it does can
 // reach the answer: it runs after it, and a panic here is recovered and
 // logged rather than reaching cmd/sdlc's recover, which would write a second.
-func noteEvent(event string, raw []byte, getenv func(string) string, read Transcripts) {
+func noteEvent(event string, raw []byte, getenv func(string) string, read Transcripts, call *callReads) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Debug("trace: recording gave way, and nothing more is recorded for this event",
@@ -195,7 +196,7 @@ func noteEvent(event string, raw []byte, getenv func(string) string, read Transc
 		// each one paid for all three.
 		return
 	}
-	h, ok := heldFor(getenv, p)
+	h, ok := heldFor(getenv, p, call)
 	if !ok {
 		slog.Debug("trace: not recorded: no story is held by this session here", "event", event)
 		return
@@ -221,17 +222,17 @@ func noteEvent(event string, raw []byte, getenv func(string) string, read Transc
 // heldFor is the story the session holds where the event was made, found as
 // the rules find it. The command of a shell event is left out: where a command
 // ran is not where it is recorded.
-func heldFor(getenv func(string) string, p notePayload) (*held, bool) {
+func heldFor(getenv func(string) string, p notePayload, call *callReads) (*held, bool) {
 	project, story := findLoop(getenv, payload{SessionID: p.SessionID, CWD: p.CWD}, "", func(string) {})
 	if story == "" {
 		return nil, false
 	}
-	cfg, err := loadConfig(project)
+	pl := call.placeOf(project)
+	cfg, err := pl.config(project)
 	if err != nil {
 		cfg = config.Default()
 	}
-	pl := placeOf(project)
-	s := store.NewIn(&config.Project{Root: project, Config: cfg}, pl.co, pl.err)
+	s := pl.store(cfg)
 	dir, err := s.StoryDir(story)
 	if err != nil {
 		return nil, false
@@ -346,6 +347,9 @@ func (h *held) agentEvent(typ, agentType, id string) *model.Record {
 		return nil
 	}
 	defer g.Release()
+	// What was read before the lock may be from before another command's
+	// write; the record is read once more, and its progress is from that read.
+	h.s.Reads().Forget()
 	before, beforeErr := h.s.RecordProgress(h.story)
 	record, err := h.s.Record(h.story)
 	if err == nil {
@@ -422,7 +426,7 @@ func askedFor(record *model.Record, agentType string) (askedModel, askedEffort s
 // where there is none. A trace that will not read says why by its class: the
 // status then comes from the agent's last message.
 func (h *held) handedBack(id string) string {
-	reading, err := trace.Read(h.dir)
+	reading, err := trace.ReadKind(h.dir, "handback")
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			slog.Debug("trace: the hand-back status was not read", "why", unreadTrace(err))
@@ -430,7 +434,7 @@ func (h *held) handedBack(id string) string {
 		return ""
 	}
 	for _, r := range slices.Backward(reading.Records) {
-		if r[keyKind] == "handback" && r["agent_id"] == id {
+		if r["agent_id"] == id {
 			status, _ := r["status"].(string)
 			return knownStatus(status)
 		}

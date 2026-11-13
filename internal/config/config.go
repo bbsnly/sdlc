@@ -411,19 +411,30 @@ func ceilingEntries(getenv func(string) string) []ceiling {
 
 // Load reads root/.sdlc/config.json over the defaults.
 func Load(root string) (Config, error) {
+	raw, err := Read(root)
+	if err != nil {
+		return Config{}, err
+	}
+	return Parse(raw)
+}
+
+// Read is the bytes of the configuration file under root, with Load's
+// refusals for one that is not there or cannot be opened: for a caller that
+// parses them and walks the document too, reading the file once (US-129, AC-5).
+func Read(root string) ([]byte, error) {
 	path := filepath.Join(root, filepath.FromSlash(File))
 	raw, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return Config{}, sdlcerr.New(sdlcerr.NotInitialised,
+		return nil, sdlcerr.New(sdlcerr.NotInitialised,
 			"this project has not been set up for the loop",
 			"there is no "+File+" in "+root)
 	case err != nil:
-		return Config{}, sdlcerr.New(sdlcerr.ConfigUnreadable,
+		return nil, sdlcerr.New(sdlcerr.ConfigUnreadable,
 			File+" could not be read",
 			"opening it failed").WithCause(err)
 	}
-	return Parse(raw)
+	return raw, nil
 }
 
 // Parse is Load for the bytes of a configuration file, read from wherever they
@@ -602,6 +613,11 @@ func UnknownKeys(root string) []string {
 	if err != nil {
 		return nil
 	}
+	return UnknownKeysIn(raw)
+}
+
+// UnknownKeysIn is UnknownKeys for the file's bytes, already read.
+func UnknownKeysIn(raw []byte) []string {
 	var doc any
 	if json.Unmarshal(bytes.TrimPrefix(raw, []byte("\ufeff")), &doc) != nil {
 		return nil

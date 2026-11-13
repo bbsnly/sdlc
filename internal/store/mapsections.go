@@ -66,6 +66,7 @@ func (s *Store) WriteMapSections(story string, content []byte) error {
 	if err != nil {
 		return err
 	}
+	s.reads.Forget(path)
 	if err := fsx.WriteFileAtomic(path, content, 0o644); err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			theMapSections+" could not be written for "+story,
@@ -116,6 +117,7 @@ func (s *Store) DropMapSections(story string) error {
 	if err != nil {
 		return err
 	}
+	s.reads.Forget(path)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			theMapSections+" could not be removed for "+story,

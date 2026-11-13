@@ -176,6 +176,13 @@ func sealed(ctx context.Context, dir string, args ...string) ([]byte, error) {
 // its standard input, and its standard output sent to stdout where that is
 // not nil.
 func sealedCall(ctx context.Context, dir string, settings []string, stdin []byte, stdout io.Writer, args ...string) ([]byte, error) {
+	return memoised(ctx, true, dir, settings, stdin, stdout, args, func() ([]byte, error) {
+		return runSealed(ctx, dir, settings, stdin, stdout, args...)
+	})
+}
+
+// runSealed is sealedCall's process.
+func runSealed(ctx context.Context, dir string, settings []string, stdin []byte, stdout io.Writer, args ...string) ([]byte, error) {
 	private, err := os.MkdirTemp("", "sdlc-git-")
 	if err != nil {
 		return nil, sdlcerr.New(sdlcerr.RepositoryUnreadable,
@@ -213,9 +220,10 @@ func sealedCall(ctx context.Context, dir string, settings []string, stdin []byte
 	stderr := &firstBytes{limit: 4096}
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
+		sub := failedSubcommand(args)
 		return nil, sdlcerr.New(sdlcerr.RepositoryUnreadable,
-			"git "+args[0]+" did not finish",
-			describeGitFailure(args[0], string(stderr.kept))).WithCause(err)
+			"git "+sub+" did not finish",
+			describeGitFailure(sub, string(stderr.kept))).WithCause(err)
 	}
 	return out.Bytes(), nil
 }
@@ -295,17 +303,25 @@ func BranchTip(ctx context.Context, root, branch string) (string, error) {
 	if err := branchName(branch); err != nil {
 		return "", err
 	}
-	out, err := sealed(ctx, root, "show-ref", argVerify, "--hash", headsPrefix+branch)
+	tip, missing, ok := tipFromSession(ctx, root, branch)
+	if ok && !missing {
+		return tip, nil
+	}
+	var out []byte
+	var err error
+	if !ok {
+		out, err = sealed(ctx, root, "show-ref", argVerify, "--hash", headsPrefix+branch)
+	}
 	var exit *exec.ExitError
 	switch {
-	case errors.As(err, &exit):
+	case missing || errors.As(err, &exit):
 		return "", sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			"there is no branch "+strconv.Quote(branch)+" here",
 			"git has no refs/heads/"+branch+" in this repository").WithCause(fs.ErrNotExist)
 	case err != nil:
 		return "", err
 	}
-	tip := firstLine(string(out))
+	tip = firstLine(string(out))
 	if !fullHash(tip) {
 		return "", sdlcerr.New(sdlcerr.RepositoryUnreadable,
 			"git did not say which commit "+strconv.Quote(branch)+" is on",
@@ -321,6 +337,11 @@ func BranchTip(ctx context.Context, root, branch string) (string, error) {
 func IsAncestor(ctx context.Context, root, ancestor, descendant string) (bool, error) {
 	if err := fullHashes(ancestor, descendant); err != nil {
 		return false, err
+	}
+	// A commit is in its own history; git is still asked whether it is a
+	// commit here at all, since a hash it does not have is a failure.
+	if ancestor == descendant && isCommitInSession(ctx, root, ancestor) {
+		return true, nil
 	}
 	return recall("is-ancestor", root, ancestor, descendant, func() (bool, error) {
 		_, err := sealed(ctx, root, "merge-base", "--is-ancestor", ancestor, descendant)
@@ -340,6 +361,9 @@ func IsAncestor(ctx context.Context, root, ancestor, descendant string) (bool, e
 func MergeBase(ctx context.Context, root, a, b string) (string, error) {
 	if err := fullHashes(a, b); err != nil {
 		return "", err
+	}
+	if a == b && isCommitInSession(ctx, root, a) {
+		return a, nil
 	}
 	return recall("merge-base", root, a, b, func() (string, error) {
 		out, err := sealed(ctx, root, "merge-base", a, b)
@@ -389,6 +413,9 @@ func FirstAbove(ctx context.Context, root, base, tip string) (string, error) {
 func HasCommit(ctx context.Context, root, commit string) (bool, error) {
 	if err := fullHashes(commit); err != nil {
 		return false, err
+	}
+	if has, ok := commitFromSession(ctx, root, commit); ok {
+		return has, nil
 	}
 	out, err := sealedCall(ctx, root, nil, []byte(commit+"\n"), nil, "cat-file", "--batch-check")
 	said := firstLine(string(out))
@@ -496,6 +523,13 @@ func ModeAt(ctx context.Context, root, commit, path string) (string, error) {
 	if err := notAnOption(msgAPath, path); err != nil {
 		return "", err
 	}
+	// The tree that holds the path, from the session, where there is one.
+	if entry, found, ok := treeEntryOf(ctx, root, commit, path, len(commit)/2); ok {
+		if !found {
+			return "", nil
+		}
+		return modeText(entry.mode), nil
+	}
 	out, err := sealed(ctx, root, "ls-tree", "-z", "--full-tree", commit, "--", path)
 	if err != nil {
 		return "", err
@@ -507,6 +541,16 @@ func ModeAt(ctx context.Context, root, commit, path string) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+// modeText is mode as ls-tree prints it: six octal digits, a directory's
+// with its leading zero.
+func modeText(mode uint32) string {
+	text := strconv.FormatUint(uint64(mode), 8)
+	for len(text) < 6 {
+		text = "0" + text
+	}
+	return text
 }
 
 // FileAt is the file at path, a slash path from the root, as commit has it,
@@ -525,6 +569,9 @@ func FileAt(ctx context.Context, root, commit, path string) ([]byte, error) {
 			"a path with a line break in it cannot be handed to git a line at a time")
 	}
 	body, err := recall("file-at", root, commit, path, func() ([]byte, error) {
+		if body, ok := fileFromSession(ctx, root, commit, path); ok {
+			return body, nil
+		}
 		// One call: the commit first, so that a commit git does not have is
 		// told apart from a path the commit does not have.
 		out, err := sealedCall(ctx, root, nil, []byte(commit+"^{commit}\n"+commit+":"+path+"\n"), nil,
@@ -534,7 +581,7 @@ func FileAt(ctx context.Context, root, commit, path string) ([]byte, error) {
 		}
 		rest := out
 		var body []byte
-		for i, want := range []string{"commit", "blob"} {
+		for i, want := range []string{"commit", blobType} {
 			var err error
 			if body, rest, err = batchObject(rest, want, i == 1, path, commit); err != nil {
 				return nil, err
@@ -620,6 +667,9 @@ func partWay(gitDir string) (string, error) {
 // absoluteGitDir is the git directory of the checkout at dir: its own, for a
 // linked worktree.
 func absoluteGitDir(ctx context.Context, dir string) (string, error) {
+	if gitDir, _, err := GitDirOf(dir); err == nil {
+		return gitDir, nil
+	}
 	out, err := sealed(ctx, dir, argRevParse, "--absolute-git-dir")
 	if err != nil {
 		return "", err

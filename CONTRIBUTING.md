@@ -161,6 +161,75 @@ The leg is the last in `./task check` and adds about ten seconds to it on a
 quiet laptop, and on macOS several more to make and remove the links shape's
 12,750 links.
 
+### What a session pays for a call
+
+`./task perf-report` measures what a session pays for the binary: the wall
+time, the CPU time and the peak resident memory of each hook event and each
+command, run as a process, the way Claude Code and a person run them. It builds
+`sdlc` from the checkout and measures it in a sandbox of its own: a git
+repository with sdlc initialised, a backlog of 130 stories (about 10,000 lines),
+a story started and taken through its gates by the real commands, its gate
+record padded to 190 KB and its trace to 2,000 lines, and no `commands.*`
+configured, so that nothing it times is a project's build or a model's turn.
+The sandbox is put back from a snapshot before every run, so no run reads what
+the one before it wrote. The names it times, grouped so that the eye finds one:
+
+- `hook`, the events that decide: `PreToolUse` for Bash, Write and Edit,
+  `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `Notification`,
+  `StopFailure`, `PostCompact` and `UserPromptExpansion`;
+- `recording`, the events that write the story's record or read its trace:
+  `SubagentStart`, `SubagentStop` and `Stop`;
+- `command`, the short reads: `status`, `story list`, `staffing show` and
+  `cost`;
+- `story`, the commands that work a story's documents, reviews and freeze:
+  `artifact write`, `review add`, `review list`, `trace`, `doctor`, `freeze`
+  and `release`;
+- `landing`: `start` and `stop`;
+- `commit`: `gate commit pass`, the one command that asks git the most;
+- `launcher`: the PreToolUse event through `plugin/bin/sdlc-hook`, as
+  hooks.json runs every event, on POSIX.
+
+Together the events are every event `plugin/hooks/hooks.json` starts, and the
+commands every command of the loop a session or a person runs on a story. Each
+name runs `RUNS` times (5 by default). The report is for reading, not a leg of
+`./task check`: a process's time is the machine's as much as the code's.
+
+The report's header says how many runs each name had and the sizes of the
+sandbox they ran on. Each row is one name, its group, and three columns, each
+`p50, p95` over its runs: the median and the figure 95 of 100 runs are at or
+under, by nearest rank. The columns and their units:
+
+- `wall ms`: the process's life, from exec to exit, in milliseconds to one
+  decimal;
+- `cpu ms`: the CPU time the process used, user and system together, in
+  milliseconds; on Unix its children (the git processes it ran) are counted
+  with it, on Windows the process alone;
+- `peak rss KB`: the peak resident set, in kilobytes, from the operating
+  system's resource usage; Windows reports none, and the column says
+  `not reported` rather than 0.
+
+With `BASE=<binary>` a fourth column holds a trunk binary's p50 of each measure
+and, in brackets, this tree's change from it in percent, which is how to tell a
+busy machine from a change of yours. `<trunk>` is the project's trunk branch,
+the one `git.trunk_branch` names:
+
+```console
+$ git worktree add /tmp/trunk <trunk> && (cd /tmp/trunk && go build -o /tmp/sdlc-trunk ./cmd/sdlc)
+$ ./task perf-report RUNS=10 BASE=/tmp/sdlc-trunk
+```
+
+The report ends with the start-up split of one PreToolUse call: what `sdlc
+version` costs, so what the binary pays before any work; what the hook's
+decision adds; and what the launcher's shell adds around both. Where the change
+column says a name grew, `./task bench` and `go tool pprof` on the
+`BenchmarkHook*`, `BenchmarkCommand*`, `BenchmarkRecord*`, `BenchmarkBacklogLoad`
+and `BenchmarkConfigLoad` benchmarks say where the time or the bytes went.
+
+`./task deadcode` lists the functions nothing in the binary or its tests can
+reach, from `golang.org/x/tools/cmd/deadcode` at the version the Taskfile pins.
+It is a report, not a leg of `./task check`: whether a function goes is a
+decision, and a story that touches the file it is in takes it.
+
 ### How long the tests take
 
 go test kills a package that runs past its limit, `TEST_TIMEOUT` in the vars

@@ -25,30 +25,22 @@ const remoteTimeout = 60 * time.Second
 // smokeOutputLimit is how much of a failed smoke check the refusal carries.
 const smokeOutputLimit = 2000
 
-// checkTrunkForNewWork runs checkTrunk when start is about to begin a story
-// rather than pick one up again, and reports whether it ran. It runs before
-// start takes the lock, because the smoke check is the project's own command
-// and can run for longer than a lock is trusted to be held.
+// checkTrunkForNewWork runs checkTrunk for a start that has decided, under
+// the lock, to begin a story rather than pick one up again. It runs outside
+// the lock, because the smoke check is the project's own command and can run
+// for longer than a lock is trusted to be held.
 //
 // Whatever would refuse the start anyway -- nothing runnable, a story finished,
-// waiting on a person or held by another checkout -- refuses here first, in the
-// words start would use, because it says more than trunk would: it is the same
-// decision start makes under the lock. A named story that is not runnable is
-// the exception, refused after trunk as it always was. force skips the
-// decision, for a start that has already made it under the lock.
-func checkTrunkForNewWork(cmd *cobra.Command, asked string, force bool, said *startSaid) (bool, error) {
+// waiting on a person or held by another checkout -- has refused under the
+// lock before this runs, in the words start would use, because it says more
+// than trunk would. A named story that is not runnable is the exception,
+// refused after trunk as it always was.
+func checkTrunkForNewWork(cmd *cobra.Command, said *startSaid) error {
 	s, _, err := openStore(cmd)
 	if err != nil {
-		return false, err
+		return err
 	}
-	if !force {
-		plan, err := decideStart(s, asked, s.CommandSession())
-		said.passed = plan.passedOver
-		if err != nil || !plan.fresh {
-			return false, err
-		}
-	}
-	return true, checkTrunk(cmd, s, len(said.passed) > 0)
+	return checkTrunk(cmd, s, len(said.passed) > 0)
 }
 
 // checkTrunk is what new work asks first: that trunk is somewhere a story can
@@ -196,7 +188,9 @@ func smoke(cmd *cobra.Command, dir, command string, env []string) (failed error,
 	}
 	var out bytes.Buffer
 	check.Stdout, check.Stderr = &out, &out
-	if err := shellx.Run(check); err != nil {
+	runErr := shellx.Run(check)
+	gitx.Forget(cmd.Context())
+	if err := runErr; err != nil {
 		return err, shellx.Tail(out.String(), smokeOutputLimit), nil
 	}
 	return nil, "", nil

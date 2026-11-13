@@ -89,6 +89,7 @@ func (s *Store) ObserveCommit(ctx context.Context, id, head string) error {
 		return sdlcerr.New(sdlcerr.StateUnwritable, theCommit+head+couldNotBeWrittenDown,
 			"the observation could not be encoded as JSON").WithCause(err)
 	}
+	s.reads.Forget(path)
 	if err := fsx.WriteFileAtomic(path, append(raw, '\n'), 0o644); err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable, theCommit+head+couldNotBeWrittenDown,
 			"the repository's git directory may not be writable, or the disk may be full").WithCause(err)
@@ -144,6 +145,7 @@ func (s *Store) ClearObservedCommits(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	s.reads.Forget(dir)
 	if err := os.RemoveAll(dir); err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"the commits the loop watched for "+id+" could not be forgotten",

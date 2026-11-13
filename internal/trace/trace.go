@@ -11,6 +11,7 @@ package trace
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -20,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/pathrules"
@@ -36,6 +38,10 @@ const (
 	// KeyAgentType is the agent a record is of, left out for the main
 	// conversation.
 	KeyAgentType = "agent_type"
+	// keyKind and keyAt are what every record is, and when a truncated one
+	// was written.
+	keyKind = "kind"
+	keyAt   = "at"
 )
 
 // Reading is what Read found: the records it could read, in order, how many
@@ -119,13 +125,17 @@ var (
 // in the window between the two.
 var afterLstat func(path string)
 
-// knownKind is every kind the writer writes and the reader reads. A switch
-// and not a map: the package does no work before it is called (AC-14).
+// kinds is every kind the writer writes and the reader reads. An array of
+// constants and not a map: it is laid out by the linker, so the package does
+// no work before it is called (AC-14).
+var kinds = [...]string{KindAgentRun, KindTurn, "refusal", "shell", "diff", "notification", "api_error",
+	"compaction", "handback", KindTruncated}
+
 func knownKind(kind string) bool {
-	switch kind {
-	case KindAgentRun, KindTurn, "refusal", "shell", "diff", "notification", "api_error",
-		"compaction", "handback", KindTruncated:
-		return true
+	for _, k := range kinds {
+		if kind == k {
+			return true
+		}
 	}
 	return false
 }
@@ -201,7 +211,7 @@ func Stamp(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z
 
 // line is r as one line of the trace, stamped, or why it is not one.
 func line(r Record, now time.Time) ([]byte, error) {
-	kind, _ := r["kind"].(string)
+	kind, _ := r[keyKind].(string)
 	if !knownKind(kind) {
 		return nil, ErrKey
 	}
@@ -344,7 +354,16 @@ func checked(f *os.File, seen fs.FileInfo) (*os.File, fs.FileInfo, error) {
 // 4 MiB and never past the first truncated record. A trace that is not there
 // is an error that is fs.ErrNotExist; one that is there and is not a regular
 // file is ErrNotOurs, and the reader never waits on it.
-func Read(storyDir string) (Reading, error) {
+func Read(storyDir string) (Reading, error) { return read(storyDir, "") }
+
+// ReadKind is Read with only the records of one kind kept. A line of another
+// kind is told apart by its kind alone and never decoded whole: the hook asks
+// for one agent's newest hand-back at every SubagentStop, and reading the
+// whole trace into maps for it was 3 MB and 58,000 allocations at 2,000 lines
+// (US-129, AC-8). Skipped, Truncated and TruncatedAt are what Read would say.
+func ReadKind(storyDir, kind string) (Reading, error) { return read(storyDir, kind) }
+
+func read(storyDir, only string) (Reading, error) {
 	if err := inCheckout(storyDir); err != nil {
 		return Reading{}, err
 	}
@@ -364,7 +383,7 @@ func Read(storyDir string) (Reading, error) {
 	if fi, err = f.Stat(); err != nil || !fi.Mode().IsRegular() {
 		return Reading{}, ErrNotOurs
 	}
-	r, err := scan(io.LimitReader(f, limit))
+	r, err := scan(io.LimitReader(f, limit), only)
 	if err != nil {
 		return Reading{}, plain("the trace could not be read", err)
 	}
@@ -374,18 +393,34 @@ func Read(storyDir string) (Reading, error) {
 
 // scan reads the records in what is left of the first 4 MiB. A line that is
 // not an object, or whose kind is not known, is skipped and counted, and so is
-// a line the limit cut.
-func scan(in io.Reader) (Reading, error) {
+// a line the limit cut. With only set, a record of another kind is passed over
+// after its kind is read, and nothing else of it is decoded, where the line is
+// one kindOf is sure of; any other line is decoded whole, as Read decodes it.
+func scan(in io.Reader, only string) (Reading, error) {
 	var r Reading
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, startBuffer), limit+1)
 	for sc.Scan() {
+		if only != "" {
+			kind, at, object, sure := kindOf(sc.Bytes())
+			switch {
+			case !sure:
+			case !object || !knownKind(kind):
+				r.Skipped++
+				continue
+			case kind == KindTruncated:
+				r.Truncated, r.TruncatedAt = true, at
+				return r, nil
+			case kind != only:
+				continue
+			}
+		}
 		var rec Record
 		if json.Unmarshal(sc.Bytes(), &rec) != nil {
 			r.Skipped++
 			continue
 		}
-		kind, _ := rec["kind"].(string)
+		kind, _ := rec[keyKind].(string)
 		switch {
 		case !knownKind(kind):
 			r.Skipped++
@@ -393,13 +428,210 @@ func scan(in io.Reader) (Reading, error) {
 			// Two appenders at the limit can each see room; the lines after the
 			// first truncated record are never read, whatever the race left.
 			r.Truncated = true
-			r.TruncatedAt, _ = rec["at"].(string)
+			r.TruncatedAt, _ = rec[keyAt].(string)
 			return r, nil
-		default:
+		case only == "" || kind == only:
 			r.Records = append(r.Records, rec)
 		}
 	}
 	return r, sc.Err()
+}
+
+// kindOf is a line's kind and, for a truncated record, when it was written,
+// read as the map Read decodes the line into reads them, with nothing of the
+// line decoded: object is false where the map would not take the line (not
+// JSON, or not an object; null reads as an empty map), and a kind or an at
+// that is not a string is "". The map matches a key by its exact bytes and
+// keeps the last of a key given twice, which a struct's field does not: it
+// matched KIND and Kind too, and `{"kind":"handback","KIND":"shell"}` read as
+// a shell record (US-129 verification, F-3). sure is false where the fast
+// reading cannot be certain of the map's: a key with an escape in it, a
+// number with an exponent or over three hundred digits, which json.Unmarshal
+// may refuse as out of range; the caller then decodes the line whole.
+func kindOf(line []byte) (kind, at string, object, sure bool) {
+	if !json.Valid(line) {
+		return "", "", false, true
+	}
+	i := skipSpace(line, 0)
+	if i >= len(line) || line[i] != '{' {
+		return "", "", false, true
+	}
+	var kindRaw, atRaw []byte
+	for i++; ; {
+		i = skipSpace(line, i)
+		if i >= len(line) {
+			return "", "", true, false
+		}
+		if line[i] == '}' {
+			break
+		}
+		key, value, next, ok := member(line, i)
+		if !ok {
+			return "", "", true, false
+		}
+		switch string(key) {
+		case keyKind:
+			kindRaw = value
+		case keyAt:
+			atRaw = value
+		}
+		i = next
+	}
+	kind = kindText(kindRaw)
+	if kind == KindTruncated {
+		// Only a truncated record's at is read; every record carries one, and
+		// its string was the one allocation left per line passed over.
+		at = text(atRaw)
+	}
+	return kind, at, true, true
+}
+
+// kindText is text for a kind, with a known kind returned as its own
+// constant: passing a record over then allocates nothing, where the string
+// made for every line was the most numerous allocation of a stop that reads
+// the trace (US-129, round 6).
+func kindText(raw []byte) string {
+	if len(raw) >= 2 && raw[0] == '"' {
+		inner := raw[1 : len(raw)-1]
+		for _, k := range kinds {
+			if string(inner) == k {
+				return k
+			}
+		}
+	}
+	return text(raw)
+}
+
+// member is the key and the raw value of the object member at i, a comma
+// before it skipped, and the index after the value; false where the key holds
+// an escape or the value a number the map decode could refuse.
+func member(line []byte, i int) (key, value []byte, next int, ok bool) {
+	if line[i] == ',' {
+		i = skipSpace(line, i+1)
+	}
+	end, escaped := stringEnd(line, i)
+	if end < 0 || escaped {
+		return nil, nil, 0, false
+	}
+	key = line[i+1 : end-1]
+	i = skipSpace(line, end)
+	if i >= len(line) || line[i] != ':' {
+		return nil, nil, 0, false
+	}
+	i = skipSpace(line, i+1)
+	after, ok := valueEnd(line, i)
+	if !ok {
+		return nil, nil, 0, false
+	}
+	return key, line[i:after], after, true
+}
+
+// skipSpace is the index of the first byte at or after i that is not JSON
+// white space.
+func skipSpace(line []byte, i int) int {
+	for i < len(line) && (line[i] == ' ' || line[i] == '\t' || line[i] == '\n' || line[i] == '\r') {
+		i++
+	}
+	return i
+}
+
+// stringEnd is the index after the closing quote of the string that opens at
+// i, and whether it holds an escape; -1 where it does not close.
+func stringEnd(line []byte, i int) (end int, escaped bool) {
+	if i >= len(line) || line[i] != '"' {
+		return -1, false
+	}
+	for j := i + 1; j < len(line); j++ {
+		switch line[j] {
+		case '\\':
+			escaped = true
+			j++
+		case '"':
+			return j + 1, escaped
+		}
+	}
+	return -1, escaped
+}
+
+// valueEnd is the index after the value that starts at i in a line json.Valid
+// has passed, and false where the value holds a number the map decode could
+// refuse: one with an exponent, or longer than a float64 can hold.
+func valueEnd(line []byte, i int) (int, bool) {
+	if i >= len(line) {
+		return i, false
+	}
+	if line[i] == '{' || line[i] == '[' {
+		return nestedEnd(line, i)
+	}
+	return tokenEnd(line, i)
+}
+
+// nestedEnd is valueEnd for the object or array that opens at i.
+func nestedEnd(line []byte, i int) (int, bool) {
+	depth := 0
+	for j := i; j < len(line); j++ {
+		switch c := line[j]; {
+		case c == '{' || c == '[':
+			depth++
+		case c == '}' || c == ']':
+			if depth--; depth == 0 {
+				return j + 1, true
+			}
+		case c == '"' || c == '-' || '0' <= c && c <= '9':
+			end, ok := tokenEnd(line, j)
+			if !ok {
+				return j, false
+			}
+			j = end - 1
+		}
+	}
+	return len(line), false
+}
+
+// tokenEnd is the index after the string, number or literal at i, and false
+// where the string does not close or the number is one numberOK refuses.
+func tokenEnd(line []byte, i int) (int, bool) {
+	if line[i] == '"' {
+		end, _ := stringEnd(line, i)
+		return end, end > 0
+	}
+	k := i
+	for k < len(line) && !endsValue(line[k]) {
+		k++
+	}
+	return k, numberOK(line[i:k])
+}
+
+// endsValue reports whether c ends a literal or a number: a comma, a closing
+// bracket or white space.
+func endsValue(c byte) bool {
+	return c == ',' || c == '}' || c == ']' || c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+// numberOK is false where tok is a number json.Unmarshal could refuse as out
+// of range: one with an exponent, or over three hundred digits. A literal is
+// never refused.
+func numberOK(tok []byte) bool {
+	if len(tok) == 0 || tok[0] != '-' && (tok[0] < '0' || tok[0] > '9') {
+		return true
+	}
+	return len(tok) <= 300 && !bytes.ContainsAny(tok, "eE")
+}
+
+// text is the string a JSON value holds, as the map decode reads it, and ""
+// where the value is not a string. A string with no escape and only valid
+// UTF-8 is its own bytes; any other goes through json.Unmarshal, which
+// unescapes and replaces what is not UTF-8 as the map decode does.
+func text(raw []byte) string {
+	if len(raw) < 2 || raw[0] != '"' {
+		return ""
+	}
+	if bytes.IndexByte(raw, '\\') < 0 && utf8.Valid(raw) {
+		return string(raw[1 : len(raw)-1])
+	}
+	var s string
+	_ = json.Unmarshal(raw, &s)
+	return s
 }
 
 // plainError is an error from the file system with its path taken out: the

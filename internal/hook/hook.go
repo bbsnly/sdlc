@@ -146,11 +146,17 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 
 // runOnTheClock is run on the process's own clock.
 func runOnTheClock(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
-	return run(args, stdin, stdout, stderr, getenv, clock{
+	return run(args, stdin, stdout, stderr, getenv, onTheClock(nil))
+}
+
+// onTheClock is the process's own clock, carrying what the call has read.
+func onTheClock(call *callReads) clock {
+	return clock{
 		now:   time.Now,
 		after: time.After,
 		spawn: func(work func()) { go work() },
-	})
+		call:  call,
+	}
 }
 
 // run is Run on the clock it is handed.
@@ -194,7 +200,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	warn := said.warn
 
 	if args[0] == eventStop || args[0] == eventToolUsed {
-		return answerTurn(stdout, args[0], raw, getenv, said)
+		return answerTurn(stdout, args[0], raw, getenv, said, c.call)
 	}
 
 	limit := deadlineIn(getenv)
@@ -215,7 +221,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 
 	// Everything decide does runs here, on this goroutine, with no timer: a
 	// call the hook turns out not to check is answered as it always was.
-	rest, event, shell, note := decide(args[0], raw, getenv, warn, c.now)
+	rest, event, shell, note := decide(args[0], raw, getenv, warn, c.now, c.call)
 	// Read once decide has returned, so that it holds for every way the hook
 	// learns that it checks the call.
 	remaining = left()
@@ -244,6 +250,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 	// not be measured, which lets a commit through.
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
+	// One memo of git's answers for the call (gitx.Memo); its session is
+	// ended after the answer is written, which the deferred order gives.
+	ctx = gitx.WithMemo(ctx)
+	defer gitx.Close(ctx)
 	refuse := func(when string) int {
 		// The warnings are taken before git is cancelled. The work still
 		// running warns that the tree could not be measured the moment its git
@@ -286,11 +296,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(s
 
 // answerTurn answers a Stop or PostToolUse call, which have no deadline race
 // and no verdict of their own: the reply is the whole answer.
-func answerTurn(stdout io.Writer, event string, raw []byte, getenv func(string) string, said *warnings) int {
+func answerTurn(stdout io.Writer, event string, raw []byte, getenv func(string) string, said *warnings, call *callReads) int {
 	warn := said.warn
 	var reply turnReply
 	if event == eventStop {
-		reply = decideStop(raw, getenv, warn, time.Now)
+		reply = decideStopIn(raw, getenv, warn, time.Now, call)
 	} else {
 		reply = formatWritten(raw, getenv, warn)
 	}
@@ -380,7 +390,7 @@ func awaitOutcome(done <-chan outcome, timer <-chan time.Time) (o outcome, decid
 // Nothing here may be handed to another goroutine: until this returns, the
 // hook does not know that it has anything to say to the session at all.
 func decide(event string, raw []byte, getenv func(string) string, warn func(string),
-	now func() time.Time) (rest func(context.Context) outcome, name string, shell bool, note func(policy.Verdict)) {
+	now func() time.Time, call *callReads) (rest func(context.Context) outcome, name string, shell bool, note func(policy.Verdict)) {
 	// A human who started the session can turn enforcement off. This is read
 	// from the environment, which a session cannot change from the inside.
 	if getenv("SDLC_ENFORCE") == "0" {
@@ -426,7 +436,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 	}
 
 	// Found once, for the rules and for where a refusal is recorded.
-	pl := placeOf(project)
+	pl := call.placeOf(project)
 	note = refusalNote(pl, story, p)
 	if shellpolicy.Tools[p.ToolName] {
 		return func(ctx context.Context) outcome {
@@ -443,7 +453,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 			"tool", p.ToolName, "agent", p.AgentType, "role", policy.NormalizeAgent(p.AgentType),
 			"path", path, "rel", rel, "outside", outside, "story", story, "project", project)
 
-		backlog, policyFile := heldPaths(project)
+		backlog, policyFile := heldPaths(pl)
 		return outcome{ok: true, verdict: policy.Evaluate(policy.Request{
 			Tool:    p.ToolName,
 			Agent:   p.AgentType,
@@ -458,7 +468,7 @@ func decide(event string, raw []byte, getenv func(string) string, warn func(stri
 			// link on the way to a directory above has been followed.
 			AboveProject: outside && aboveProject(filepath.ToSlash(res.Root()), rel),
 			Story:        story,
-			Tests:        testState(project, story, rel, warn),
+			Tests:        testState(pl, story, rel, warn),
 			Backlog:      backlog,
 			ReviewPolicy: policyFile,
 		})}
@@ -592,8 +602,8 @@ func commandDir(resolver pathrules.Resolver, cwd string) string {
 // configuration refuses a name that itself leaves the repository. One that will
 // not read leaves each where the defaults put it, which is where it most likely
 // is.
-func heldPaths(project string) (backlog, policyFile string) {
-	cfg, err := loadConfig(project)
+func heldPaths(pl place) (backlog, policyFile string) {
+	cfg, err := pl.config(pl.project)
 	if err != nil {
 		cfg = config.Default()
 	}
@@ -684,16 +694,22 @@ func boundOnDisk(resolver pathrules.Resolver, word string) error {
 func inspectShell(ctx context.Context, pl place, story string, p payload, getenv func(string) string,
 	warn func(string), now func() time.Time) outcome {
 	project := pl.project
-	ready, why := commitReady(pl, story)
-	slog.Debug("hook considering a command",
-		"agent", p.AgentType, "story", story, "commit_ready", ready, "why", why)
+	slog.Debug("hook considering a command", "agent", p.AgentType, "story", story)
+	// Asked only by a command that commits: the record it reads is the largest
+	// file of the loop, and every other command paid for it (US-129, AC-8).
+	readiness := func() (bool, string) {
+		ready, why := commitReady(pl, story)
+		slog.Debug("hook asked whether the story may commit", "commit_ready", ready, "why", why)
+		return ready, why
+	}
+	progress := sync.OnceValues(func() (bool, bool) { return storyFinished(pl, story), storyCommitted(pl, story) })
 
 	frozen, isTest, newTest := frozenTestsIn(pl, story, warn)
 	var implementerTest func(string) bool
 	if policy.NormalizeAgent(p.AgentType) == "implementer" {
 		// A configuration that will not read is said by the rules that read it
 		// first; the defaults are a better guess at what a test is than none.
-		cfg, err := loadConfig(project)
+		cfg, err := pl.config(project)
 		if err != nil {
 			cfg = config.Default()
 		}
@@ -744,21 +760,20 @@ func inspectShell(ctx context.Context, pl place, story string, p payload, getenv
 	// the package. A field set here, or work added to Resolve, NewTest or
 	// ImplementerTest that every word of a command pays for, goes there too,
 	// or the leg times a classifier the hook does not run.
-	backlog, policyFile := heldPaths(project)
+	backlog, policyFile := heldPaths(pl)
 	state := shellpolicy.State{
-		CommitReady: ready, CommitWhy: why, Frozen: frozen, IsTest: isTest, NewTest: newTest,
+		Readiness: readiness, Frozen: frozen, IsTest: isTest, NewTest: newTest,
 		ImplementerTest: implementerTest, Dir: dir, Agent: policy.NormalizeAgent(p.AgentType),
 		Backlog: backlog, ReviewPolicy: policyFile, PowerShell: p.ToolName == toolPowerShell,
-		StoryFinished: storyFinished(pl, story),
-		Committed:     storyCommitted(pl, story),
-		Trunk:         trunk,
-		IsTrunk:       isTrunk,
-		Resolve:       func(word string) string { return onDisk(resolver, word) },
-		Root:          filepath.ToSlash(project),
-		Outside:       out.outside,
-		Fresh:         fresh,
-		Commits:       func() { commits = true },
-		Nested:        func(dir string) bool { return nestedRepository(project, dir) },
+		Progress: progress,
+		Trunk:    trunk,
+		IsTrunk:  isTrunk,
+		Resolve:  func(word string) string { return onDisk(resolver, word) },
+		Root:     filepath.ToSlash(project),
+		Outside:  out.outside,
+		Fresh:    fresh,
+		Commits:  func() { commits = true },
+		Nested:   func(dir string) bool { return nestedRepository(project, dir) },
 		// What git reads from the session's environment: the hook runs with
 		// the environment Claude Code runs the session's commands with.
 		Carried:   getenv,
@@ -886,7 +901,7 @@ func frozenTests(project, story string, warn func(string)) (frozen []string, isT
 // says one stands is kept in the main checkout.
 func frozenTestsIn(pl place, story string, warn func(string)) (frozen []string, isTest, newTest func(string) bool) {
 	project := pl.project
-	raw, err := os.ReadFile(filepath.Join(project, ".sdlc", "state", "tests.lock"))
+	raw, err := pl.reads.File(filepath.Join(project, ".sdlc", "state", "tests.lock"))
 	var lock model.Lock
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -900,7 +915,7 @@ func frozenTestsIn(pl place, story string, warn func(string)) (frozen []string, 
 		gone, found = freezeRecorded(pl, story)
 	}
 	if err != nil || gone {
-		cfg, cfgErr := loadConfig(project)
+		cfg, cfgErr := pl.config(project)
 		if cfgErr != nil {
 			warn(unreadableFreezeAndConfig)
 			return nil, testset.New(config.Default().Paths.Tests).Match, nil
@@ -921,7 +936,7 @@ func frozenTestsIn(pl place, story string, warn func(string)) (frozen []string, 
 	// A test file the freeze does not hold is a new one, and adding one after
 	// the freeze is refused unless the project allows it -- through the shell as
 	// through the file tools.
-	cfg, err := loadConfig(project)
+	cfg, err := pl.config(project)
 	if err != nil {
 		warn(unreadableConfig)
 		cfg = config.Default()
@@ -951,23 +966,24 @@ func frozenTestsIn(pl place, story string, warn func(string)) (frozen []string, 
 // cannot see a way through.
 func commitReady(pl place, story string) (bool, string) {
 	rel := ".sdlc/stories/" + story + "/" + model.RecordFile
-	dir, found := pl.records()
+	// Through the place, so that the record is read once in the call; the
+	// error kept tells a missing record from one that will not read or parse.
+	record, found, err := pl.record(story)
 	if !found {
 		return false, noMainCheckout
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, ".sdlc", "stories", story, model.RecordFile))
-	if errors.Is(err, fs.ErrNotExist) {
+	var syntax *json.SyntaxError
+	var mistyped *json.UnmarshalTypeError
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
 		return false, rel + " is missing, so no gate can be shown to have passed " +
 			"(`sdlc doctor` says more)"
-	}
-	if err != nil {
-		return false, rel + " could not be read, so no gate can be shown to have passed " +
-			"(`sdlc doctor` says why)"
-	}
-	var record model.Record
-	if err := json.Unmarshal(raw, &record); err != nil {
+	case errors.As(err, &syntax), errors.As(err, &mistyped):
 		return false, rel + " is not valid JSON, so no gate can be shown to have passed " +
 			"(`sdlc doctor` says more)"
+	case err != nil:
+		return false, rel + " could not be read, so no gate can be shown to have passed " +
+			"(`sdlc doctor` says why)"
 	}
 	for _, g := range model.GateCommit.Before() {
 		if !record.Pass(g) {
@@ -1003,7 +1019,7 @@ func trunkOf(pl place) string {
 	if !found {
 		return ""
 	}
-	cfg, err := loadConfig(dir)
+	cfg, err := pl.config(dir)
 	if err != nil {
 		return ""
 	}
@@ -1038,7 +1054,7 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 	if record == nil || err != nil {
 		return true, "" // commitReady has already refused over this
 	}
-	cfg, err := loadConfig(project)
+	cfg, err := pl.config(project)
 	if err != nil {
 		// Whether there is anything to warn about is asked of the defaults:
 		// a file that will not load says nothing about its team.
@@ -1048,7 +1064,7 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 		}
 		return true, ""
 	}
-	s := store.NewIn(&config.Project{Root: project, Config: cfg}, pl.co, pl.err)
+	s := pl.store(cfg)
 	tier, pauses, err := s.CommitPause(story)
 	if err != nil {
 		slog.Debug("hook could not read the story's risk tier", "err", err)
@@ -1178,11 +1194,11 @@ const unmeasuredTree = "the working tree could not be measured, so this commit w
 // rule among several, and a project whose configuration is broken should still
 // have its protected paths and its separation of duties enforced. A freeze
 // that will not parse is different, and is handled below.
-func testState(project, story, rel string, warn func(string)) policy.Tests {
+func testState(pl place, story, rel string, warn func(string)) policy.Tests {
 	if rel == "" {
 		return policy.Tests{}
 	}
-	cfg, err := loadConfig(project)
+	cfg, err := pl.config(pl.project)
 	if err != nil {
 		// Reading no file as a test turned off every rule that asks what a test
 		// is: the implementer could write them, and a frozen one could be
@@ -1195,7 +1211,7 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 	m := testset.New(cfg.Paths.Tests)
 	t := policy.Tests{IsTest: m.Match(rel), AllowNew: cfg.Freeze.AllowNewTestFiles}
 
-	lock, err := store.New(&config.Project{Root: project, Config: cfg}).Lock()
+	lock, err := pl.store(cfg).Lock()
 	if err != nil {
 		// A freeze that is there and cannot be read is not an absent freeze.
 		// Reading it as absent made corrupting tests.lock the way to edit a
@@ -1208,7 +1224,7 @@ func testState(project, story, rel string, warn func(string)) policy.Tests {
 	if lock == nil || lock.Story != story {
 		// Nor is one that went, or that was rewritten to name another story or
 		// none, while the story's record still holds it.
-		if standing, found := freezeRecorded(placeOf(project), story); standing {
+		if standing, found := freezeRecorded(pl, story); standing {
 			if found {
 				warn(lostFreeze(story))
 			} else {
@@ -1340,11 +1356,11 @@ func heldElsewhere(reached []string, session string) (project, story string) {
 		if !pl.co.Pointer() && !pl.co.HasWorktrees() {
 			continue
 		}
-		cfg, err := loadConfig(root)
+		cfg, err := pl.config(root)
 		if err != nil {
 			cfg = config.Default()
 		}
-		s := store.NewIn(&config.Project{Root: root, Config: cfg}, pl.co, pl.err)
+		s := pl.store(cfg)
 		if checkout, id := s.SessionHolder(session, store.SessionScanLimit); checkout != "" {
 			slog.Debug("hook: the session holds a story in another checkout", "checkout", checkout, "story", id)
 			return checkout, id

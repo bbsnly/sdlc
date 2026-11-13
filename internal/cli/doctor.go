@@ -169,7 +169,13 @@ func runChecks(ctx context.Context) []check {
 	}
 	add(check{Name: checkGitRepository, State: stateOK, Detail: root})
 
-	cfg, err := config.Load(root)
+	// As the command opened it, for the load and for the two walks of the
+	// document below: the root is the one found above, from the same directory.
+	p, raw, err := env.project()
+	var cfg config.Config
+	if err == nil {
+		cfg = p.Config
+	}
 	// Which git is old enough depends on whether start makes each story a
 	// worktree, which only a configuration that reads can say.
 	add(gitCheck(ctx, err == nil && cfg.Git.WorktreesOn()))
@@ -192,20 +198,13 @@ func runChecks(ctx context.Context) []check {
 	// On either branch, where the configuration loaded: a person who listed a
 	// path and misspelt another key still sees what the list holds.
 	intended := intendedLine(cfg.Paths)
-	if team := teamReport(cfg, root); len(team) > 0 {
+	if team := teamReport(cfg, raw); len(team) > 0 {
 		intended += "\n" + strings.Join(team, "\n")
 	}
-	if unknown := config.UnknownKeys(root); len(unknown) > 0 {
-		for i, key := range unknown {
-			// Quoted only where it holds a control character, so an ordinary
-			// key reads as it always did, and a newline makes no line of its own.
-			if strings.ContainsFunc(key, unicode.IsControl) {
-				unknown[i] = strconv.Quote(key)
-			}
-		}
+	if unknown := config.UnknownKeysIn(raw); len(unknown) > 0 {
 		add(check{Name: checkConfiguration, State: stateProblem,
 			Detail: config.File + " has settings sdlc does not know, which change nothing: " +
-				strings.Join(unknown, ", ") + "\n" + intended,
+				strings.Join(quotedWhereControl(unknown), ", ") + "\n" + intended,
 			Fix: "correct the spelling, or remove them — docs/configuration.md lists every setting, " +
 				"and a key that starts with _ is a comment"})
 	} else {
@@ -232,18 +231,30 @@ func runChecks(ctx context.Context) []check {
 	return out
 }
 
+// quotedWhereControl is keys, each quoted only where it holds a control
+// character, so an ordinary key reads as it always did and a newline makes no
+// line of its own.
+func quotedWhereControl(keys []string) []string {
+	for i, key := range keys {
+		if strings.ContainsFunc(key, unicode.IsControl) {
+			keys[i] = strconv.Quote(key)
+		}
+	}
+	return keys
+}
+
 // teamReport is what doctor says of a team other than the defaults: who is
 // disabled, a can_block that differs from the default, an instances above 1,
 // and a setting that does nothing, with the leftover reviews.gate7_advisory.
 // None of it is a problem: each is a person's choice, said so it is seen.
-func teamReport(cfg config.Config, root string) []string {
+func teamReport(cfg config.Config, raw []byte) []string {
 	team := cfg.Team
 	policy := model.ReviewPolicy{CanBlock: team.CanBlock()}
 	var out []string
 	for _, agent := range model.Agents {
 		out = append(out, agentReport(team, policy, agent)...)
 	}
-	if config.LeftoverGate7(root) {
+	if config.LeftoverGate7In(raw) {
 		out = append(out, "reviews.gate7_advisory is false and does nothing: the team section replaced it "+
 			"with team.agents.code-reviewer.can_block, so delete it")
 	}

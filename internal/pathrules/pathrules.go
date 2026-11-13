@@ -590,21 +590,38 @@ func (res Resolver) walk(abs string) (placeWalk, []string) {
 
 	// Down from the root, as resolveExisting goes, and for the same reason.
 	w := placeWalk{at: volume + sep, known: volume + sep, settled: true, isDir: true, left: maxLinks}
+	// Where abs is clean, each place on the way is a prefix of it, cut from
+	// it rather than joined: a command naming many files joined every
+	// directory of every word again (US-129, AC-7).
+	prefixes := cleanPrefixes(abs, volume)
+	end := len(volume) + len(sep)
 	for ; w.i < len(parts); w.i++ {
 		var stop bool
-		switch parts[w.i] {
+		switch part := parts[w.i]; part {
 		case ".":
 			w.dotted = true
 		case "..":
 			stop = res.stepParent(&w)
 		default:
-			stop = res.stepName(&w, parts[w.i])
+			next := ""
+			if prefixes {
+				next = abs[:end+len(part)]
+			}
+			stop = res.stepName(&w, part, next)
 		}
+		end += len(parts[w.i]) + len(sep)
 		if stop {
 			break
 		}
 	}
 	return w, parts
+}
+
+// cleanPrefixes reports whether every place on the way down abs is a prefix
+// of abs: abs is clean, so it has one separator between names and no `.` or
+// `..`, and it starts with its volume and a separator.
+func cleanPrefixes(abs, volume string) bool {
+	return len(abs) > len(volume) && os.IsPathSeparator(abs[len(volume)]) && filepath.Clean(abs) == abs
 }
 
 // absolute is p made absolute against the project, and false for a path whose
@@ -667,8 +684,10 @@ func (res Resolver) stepParent(w *placeWalk) bool {
 
 // stepName takes one name and says whether the walk is over, which it is where
 // the name is not there.
-func (res Resolver) stepName(w *placeWalk, name string) bool {
-	next := joinName(w.at, name)
+func (res Resolver) stepName(w *placeWalk, name, next string) bool {
+	if next == "" {
+		next = joinName(w.at, name)
+	}
 	e := res.lookUp(next, !w.settled)
 	if !e.there {
 		if e.unreadable {
@@ -1018,8 +1037,15 @@ func (res Resolver) existingPrefix(p string) (string, []string, string) {
 	parts := strings.Split(strings.TrimPrefix(p[len(volume):], sep), sep)
 	existing := volume + sep
 	linked := false
+	// Cut from p rather than joined where p is clean, as walk does.
+	prefixes := cleanPrefixes(p, volume)
+	end := len(volume) + len(sep)
 	for i := range parts {
-		next := filepath.Join(existing, parts[i])
+		next := p[:min(end+len(parts[i]), len(p))]
+		if !prefixes {
+			next = filepath.Join(existing, parts[i])
+		}
+		end += len(parts[i]) + len(sep)
 		e := res.lookUp(next, linked)
 		linked = linked || e.link
 		if !e.there {

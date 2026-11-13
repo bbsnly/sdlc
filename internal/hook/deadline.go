@@ -57,6 +57,8 @@ type clock struct {
 	// spawn runs work on a goroutine of its own. The hook does not wait for
 	// it to return.
 	spawn func(work func())
+	// call is what the call has read so far, nil for a call of its own.
+	call *callReads
 }
 
 // deadlineIn is the deadline in force. Only a whole number of milliseconds

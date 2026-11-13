@@ -70,15 +70,17 @@ func newStoryListCmd() *cobra.Command {
 			}
 
 			rows := make([]storyRow, 0, len(backlog.Stories))
+			blockedBy := backlog.Blocked()
 			for i := range backlog.Stories {
 				story := &backlog.Stories[i]
+				blocked := blockedBy(story)
 				rows = append(rows, storyRow{
 					ID:        story.ID,
 					Title:     story.Title,
 					Status:    string(story.Status),
 					Priority:  story.Priority,
-					BlockedBy: backlog.BlockedBy(story),
-					waiting:   backlog.Waiting(story),
+					BlockedBy: blocked,
+					waiting:   backlog.WaitingFor(blocked),
 					Next:      story.ID == nextID,
 				})
 				if h, ok := holders[story.ID]; ok && shown {

@@ -7,6 +7,7 @@
 package model
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/json"
 	"slices"
@@ -233,29 +234,40 @@ func isDigit(c byte) bool { return '0' <= c && c <= '9' }
 
 // BlockedBy lists the dependencies of s that are not done yet, so that "nothing
 // is runnable" can say why rather than just refusing.
-func (b *Backlog) BlockedBy(s *Story) []string {
-	done := map[string]bool{}
+func (b *Backlog) BlockedBy(s *Story) []string { return b.Blocked()(s) }
+
+// Blocked is BlockedBy for every story of the backlog in turn: the set of
+// what is done is built once, where BlockedBy builds it per story. Asked of
+// each of 130 stories for `story list`, that set was the command's largest
+// allocation (US-129, AC-9).
+func (b *Backlog) Blocked() func(s *Story) []string {
+	done := make(map[string]bool, len(b.Stories))
 	for i := range b.Stories {
 		if b.Stories[i].Status == StatusDone {
 			done[b.Stories[i].ID] = true
 		}
 	}
-	var out []string
-	for _, dep := range s.DependsOn {
-		if !done[dep] {
-			out = append(out, dep)
+	return func(s *Story) []string {
+		var out []string
+		for _, dep := range s.DependsOn {
+			if !done[dep] {
+				out = append(out, dep)
+			}
 		}
+		return out
 	}
-	return out
 }
 
 // Waiting is BlockedBy for a reader: each dependency that is not done, with the
 // reason when finishing it is not what would unblock s. A dropped story and an
 // id the backlog does not have are never done, and "waiting on A-1" alone left
 // a story blocked for good with nothing saying so.
-func (b *Backlog) Waiting(s *Story) []string {
+func (b *Backlog) Waiting(s *Story) []string { return b.WaitingFor(b.BlockedBy(s)) }
+
+// WaitingFor is Waiting for blocked, what BlockedBy or Blocked said of a story.
+func (b *Backlog) WaitingFor(blocked []string) []string {
 	var out []string
-	for _, dep := range b.BlockedBy(s) {
+	for _, dep := range blocked {
 		switch found, ok := b.Find(dep); {
 		case !ok:
 			out = append(out, dep+" (not in the backlog)")
@@ -1405,6 +1417,31 @@ func NewRecord(story string, at time.Time) *Record {
 		Events:  []Event{},
 		Metrics: map[string]any{},
 	}
+}
+
+// DecodeRecord is json.Unmarshal of a record's bytes into r, with r.Events
+// sized to what the bytes hold first. Appending a thousand events one at a
+// time grows the slice by doubling, which cost more than the strings in them
+// did: for a 190 KB record, 253 KB against 115 KB in a cold process (US-129,
+// AC-8). The count is of `"type":` from the events key on, which the arrays
+// after it can push over, never under, plus one: the record is append-only,
+// and a read is mostly followed by one event appended, which at a full slice
+// copied the lot again. A key that is absent or an empty array is left to
+// json.Unmarshal, so what r.Events is afterwards does not change. The scan
+// looks at no byte it has not counted: a record cut off just after its array
+// opened once made every reader of it panic, where json.Unmarshal says it is
+// not valid JSON (US-129 verification, F-1).
+func DecodeRecord(raw []byte, r *Record) error {
+	const eventsKey, typeKey, space = `"events":`, `"type":`, " \t\r\n"
+	if _, after, ok := bytes.Cut(raw, []byte(eventsKey)); ok {
+		rest := bytes.TrimLeft(after, space)
+		if len(rest) > 1 && rest[0] == '[' {
+			if first := bytes.TrimLeft(rest[1:], space); len(first) > 0 && first[0] != ']' {
+				r.Events = make([]Event, 0, bytes.Count(rest, []byte(typeKey))+1)
+			}
+		}
+	}
+	return json.Unmarshal(raw, r)
 }
 
 // Pass reports whether the gate has been recorded as passed.

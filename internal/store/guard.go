@@ -128,6 +128,29 @@ type realClock struct{}
 func (realClock) Now() time.Time        { return time.Now() }
 func (realClock) Sleep(d time.Duration) { time.Sleep(d) }
 
+// ErrLockBusy is TryLockOn's answer where a running command holds the
+// project's lock. It is never shown: the caller waits with LockOn, whose
+// refusal says everything a person reads.
+var ErrLockBusy error = lockBusyError{}
+
+type lockBusyError struct{}
+
+func (lockBusyError) Error() string { return "another sdlc command holds the loop's state" }
+
+// TryLockOn is LockOn without the wait: the lock where it is free, or left by
+// a holder that has gone, and ErrLockBusy where a running command holds it.
+// It is for what a command can decide before waiting: `sdlc start` refused a
+// story held elsewhere or finished in its own words and at once before it
+// took the lock, and once it decided under the lock first, a start that would
+// be refused anyway waited for the holder and was refused as the lock's
+// (US-129 verification 2, N-5).
+func TryLockOn(root, what string, clock Clock) (*Guard, error) {
+	if clock == nil {
+		clock = realClock{}
+	}
+	return take(guardPath(root), what, 0, clock, breakIfStale, func() error { return ErrLockBusy })
+}
+
 // Lock takes the project's loop-state lock, waiting for whoever has it, on the
 // real clock. See LockOn.
 //

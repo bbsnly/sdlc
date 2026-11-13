@@ -626,6 +626,11 @@ func LeftoverGate7(root string) bool {
 	if err != nil {
 		return false
 	}
+	return LeftoverGate7In(raw)
+}
+
+// LeftoverGate7In is LeftoverGate7 for the file's bytes, already read.
+func LeftoverGate7In(raw []byte) bool {
 	var doc map[string]json.RawMessage
 	if json.Unmarshal(bytes.TrimPrefix(raw, []byte("\ufeff")), &doc) != nil {
 		return false

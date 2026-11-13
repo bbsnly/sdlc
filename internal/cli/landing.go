@@ -50,9 +50,13 @@ func mainSettingsOf(s *store.Store) (mainSettings, error) {
 	if err != nil {
 		return mainSettings{}, err
 	}
-	cfg, err := config.Load(co.Main)
-	if err != nil {
-		return mainSettings{}, err
+	// The store's own configuration is the main checkout's where the store
+	// was opened there; loading the file again read it twice a command.
+	cfg := s.Config()
+	if co.Linked() {
+		if cfg, err = config.Load(co.Main); err != nil {
+			return mainSettings{}, err
+		}
 	}
 	return mainSettings{main: co.Main, trunk: trunkOf(cfg), backlog: backlogIn(cfg), policy: policyIn(cfg), cfg: cfg}, nil
 }
@@ -378,7 +382,7 @@ func landIfFinished(cmd *cobra.Command, s *store.Store, active string, unlock *f
 	}
 	// Held until stop returns, the commands included, so that a second stop
 	// cannot land the story beside this one while the project's lock is let go.
-	guard, err := s.LockLanding(id)
+	guard, err := lockHeld(l.cmd.Context(), func() (*store.Guard, error) { return s.LockLanding(id) })
 	if err != nil {
 		return true, l.refused(err)
 	}
@@ -447,7 +451,7 @@ func landingTurn(cmd *cobra.Command, s *store.Store, id string, unlock *func(), 
 	// holder is letting go of reads as a denial, which the store waits out for
 	// up to its guardWait before it says so: the same wait any command gives
 	// the project's lock, and only while a holder is on its way out.
-	turn, err := s.LockLandingsAs(w.command, id, 0)
+	turn, err := lockHeld(cmd.Context(), func() (*store.Guard, error) { return s.LockLandingsAs(w.command, id, 0) })
 	if err == nil {
 		return turn, false, nil
 	}
@@ -468,7 +472,7 @@ func landingTurn(cmd *cobra.Command, s *store.Store, id string, unlock *func(), 
 	queued, qerr := s.WaitToLandAs(w.command, id)
 	slog.Debug("recording the wait to land, for status", "story", id, "err", qerr)
 	fmt.Fprintf(cmd.ErrOrStderr(), "sdlc: %s; %s. Nothing has changed: %s\n", busy.Why, waitsHow(err), w.meanwhile)
-	turn, err = s.LockLandingsAs(w.command, id, landingWait)
+	turn, err = lockFresh(cmd.Context(), func() (*store.Guard, error) { return s.LockLandingsAs(w.command, id, landingWait) })
 	queued.Release()
 	if err != nil {
 		if errors.As(err, &busy) {
@@ -481,7 +485,9 @@ func landingTurn(cmd *cobra.Command, s *store.Store, id string, unlock *func(), 
 		}
 		return nil, false, err
 	}
-	g, err := store.LockOn(s.LockRoot(), string(w.command), envOf(cmd).lockClock)
+	g, err := lockFresh(cmd.Context(), func() (*store.Guard, error) {
+		return store.LockOn(s.LockRoot(), string(w.command), envOf(cmd).lockClock)
+	})
 	if err != nil {
 		return turn, true, err
 	}
@@ -1574,7 +1580,7 @@ func (l *lander) runLandingCommands(ctx context.Context, st landState) error {
 			return err
 		}
 	}
-	g, err := store.LockOn(l.s.LockRoot(), "stop", envIn(ctx).lockClock)
+	g, err := lockFresh(ctx, func() (*store.Guard, error) { return store.LockOn(l.s.LockRoot(), "stop", envIn(ctx).lockClock) })
 	if err != nil {
 		return err
 	}
@@ -1611,6 +1617,8 @@ func (l *lander) runCommand(ctx context.Context, st landState, key, command stri
 	c.Stdout, c.Stderr = io.MultiWriter(stdout, output), output
 	started := time.Now()
 	runErr := shellx.Run(c)
+	// The command may have done anything to the repository.
+	gitx.Forget(ctx)
 	exit := 0
 	var exited *exec.ExitError
 	switch {

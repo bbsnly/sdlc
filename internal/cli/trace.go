@@ -301,6 +301,7 @@ func storyReport(id string, rp *replay, record *model.Record, reading trace.Read
 // measuredLines is each record in measured's shape. A record whose fields
 // will not take it is counted with the lines skipped.
 func measuredLines(records []trace.Record) (lines []measured, bad int) {
+	lines = make([]measured, 0, len(records))
 	for _, r := range records {
 		raw, err := json.Marshal(r)
 		var m measured

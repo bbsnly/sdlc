@@ -448,11 +448,11 @@ func (m mapStep) notOnTrunk(f *mapFailure) *sdlcerr.Error {
 // directory is listed first, and almost always holds nothing, so a command
 // pays one directory read for it.
 func mapsWaiting(env commandEnv, stderr io.Writer) {
-	p, err := config.Open(env.dir)
+	p, _, err := env.project()
 	if err != nil {
 		return
 	}
-	s := store.New(p).WithEnv(env.getenv)
+	s := store.New(p).WithEnv(env.getenv).Reading(env.reads())
 	ids, err := s.StoriesWithMapSections()
 	if err != nil {
 		slog.Debug("the kept map sections could not be listed", "err", err)

@@ -149,11 +149,11 @@ func branchMovedByCheckout(sub string, rest []string) string {
 // moves none: one that names a commit, in the checkout a story has committed
 // in or in another checkout.
 func (j *gitRules) branchMovedByReset(g gitRead, r ran, dir string, e *environment, rest []string) string {
-	if !resetMoves(rest) || !j.s.Committed && !j.inAnotherCheckout(g, r, dir, e) {
+	if !resetMoves(rest) || !j.s.committed() && !j.inAnotherCheckout(g, r, dir, e) {
 		return ""
 	}
 	what := "`git reset` naming a commit moves the branch its checkout has checked out"
-	if !j.s.Committed {
+	if !j.s.committed() {
 		what += ", and this one is another checkout's"
 	}
 	return what
@@ -179,12 +179,13 @@ func branchFinding(what string) Finding {
 // refused like every other option, because the runbook only ever abandons a
 // rebase that stopped.
 func (j *gitRules) rebase(g gitRead, r ran, dir string, e *environment, asGit bool, depth int) (Finding, bool) {
+	ready, _ := j.s.commitReadiness()
 	switch {
-	case !j.s.CommitReady:
+	case !ready:
 		return Finding{}, false
 	case !j.ofThisRepository(g, r, dir, e):
 		return Finding{}, false
-	case !j.s.Committed:
+	case !j.s.committed():
 		if !makesACommit(append([]string{"git"}, g.args...), "rebase") {
 			return Finding{}, false
 		}

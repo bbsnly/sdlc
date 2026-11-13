@@ -1,7 +1,6 @@
 package hook
 
 import (
-	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/pathrules"
 	"github.com/bbsnly/sdlc/internal/shellpolicy"
+	"github.com/bbsnly/sdlc/internal/store"
 )
 
 // place is where a loop project sits among its repository's checkouts, found
@@ -29,6 +29,13 @@ type place struct {
 	// ask for the record five times, and it does not change while the command
 	// is judged.
 	read map[string]recordRead
+	// reads is what the call has read of the loop's files, shared with every
+	// store the call opens; configs is each configuration file the call has
+	// loaded, by the directory it is the configuration of. One hook call
+	// loaded the configuration at six sites and read the record at two, and
+	// each site read the file again (US-129, AC-5).
+	reads   *store.Reads
+	configs map[string]configRead
 }
 
 type recordRead struct {
@@ -37,9 +44,62 @@ type recordRead struct {
 	err    error
 }
 
-func placeOf(project string) place {
+type configRead struct {
+	cfg config.Config
+	err error
+}
+
+// placeOf is callReads.placeOf for a call of its own: the tests' way in, and
+// the paths that place another project than the call's.
+func placeOf(project string) place { return newCallReads().placeOf(project) }
+
+// callReads is what one hook call has read, shared between the decision and
+// the recording of the event once the answer is out, which RunHosted runs one
+// after the other: without it the Stop guard and the trace each placed the
+// project and loaded the configuration (US-129, AC-5). It is made by
+// RunHosted and carried on the clock, so that run's and decideStop's
+// signatures, which the tests call, stay as they are.
+type callReads struct {
+	reads   *store.Reads
+	configs map[string]configRead
+	placed  map[string]place
+}
+
+func newCallReads() *callReads {
+	return &callReads{reads: store.NewReads(), configs: map[string]configRead{}, placed: map[string]place{}}
+}
+
+// placeOf is where project sits among its repository's checkouts, found once
+// in the call.
+func (c *callReads) placeOf(project string) place {
+	if c == nil {
+		return newCallReads().placeOf(project)
+	}
+	if pl, ok := c.placed[project]; ok {
+		return pl
+	}
 	co, err := config.FindCheckout(project)
-	return place{project: project, co: co, err: err, read: map[string]recordRead{}}
+	pl := place{project: project, co: co, err: err, read: map[string]recordRead{}, reads: c.reads, configs: c.configs}
+	c.placed[project] = pl
+	return pl
+}
+
+// config is loadConfig for root, read once in this call.
+func (pl place) config(root string) (config.Config, error) {
+	if c, ok := pl.configs[root]; ok {
+		return c.cfg, c.err
+	}
+	cfg, err := loadConfig(root)
+	if pl.configs != nil {
+		pl.configs[root] = configRead{cfg, err}
+	}
+	return cfg, err
+}
+
+// store opens the store for the project with cfg, sharing what the call has
+// read.
+func (pl place) store(cfg config.Config) *store.Store {
+	return store.NewIn(&config.Project{Root: pl.project, Config: cfg}, pl.co, pl.err).Reading(pl.reads)
 }
 
 // records is the directory the backlog and the story records are kept under:
@@ -74,12 +134,12 @@ func (pl place) readRecord(story string) (record *model.Record, found bool, err 
 	if !found {
 		return nil, false, nil
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, ".sdlc", "stories", story, model.RecordFile))
+	raw, err := pl.reads.File(filepath.Join(dir, ".sdlc", "stories", story, model.RecordFile))
 	if err != nil {
 		return nil, true, err
 	}
 	record = new(model.Record)
-	if err := json.Unmarshal(raw, record); err != nil {
+	if err := model.DecodeRecord(raw, record); err != nil {
 		return nil, true, err
 	}
 	return record, true, nil

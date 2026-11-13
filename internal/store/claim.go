@@ -311,6 +311,7 @@ func (s *Store) Claim(id string) error {
 	}
 	data, err := encodeJSON(claim{Schema: claimSchema, Story: id, Checkout: here})
 	if err == nil {
+		s.reads.Forget(filepath.Join(dir, id+".json"))
 		err = fsx.WriteFileAtomic(filepath.Join(dir, id+".json"), data, 0o644)
 	}
 	if err != nil {
@@ -330,6 +331,7 @@ func (s *Store) ReleaseClaim(id string) error {
 	if !ok {
 		return nil
 	}
+	s.reads.Forget(filepath.Join(dir, id+".json"))
 	if err := os.Remove(filepath.Join(dir, id+".json")); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"the claim on "+quote(id)+couldNotBeRemoved,
@@ -381,6 +383,7 @@ func (s *Store) tidyClaims() error {
 	}
 	for id := range s.readClaims() {
 		if story, ok := b.Find(id); !ok || story.Status == model.StatusDone || story.Status == model.StatusDropped {
+			s.reads.Forget(filepath.Join(dir, id+".json"))
 			if err := os.Remove(filepath.Join(dir, id+".json")); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return err
 			}

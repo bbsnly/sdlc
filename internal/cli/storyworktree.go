@@ -51,22 +51,29 @@ func startInWorktree(cmd *cobra.Command, asked string, said *startSaid) error {
 // startRound decides what start is to do and does it, and reports whether it
 // has to go round again because what it decided changed under it.
 func startRound(cmd *cobra.Command, asked string, said *startSaid) (again bool, err error) {
+	// Decided under the lock first: a story that is held is picked up there,
+	// its files read once, and nothing is made. A new story comes back out
+	// with the plan, to have its worktree made outside the lock (US-129,
+	// AC-4 and AC-5).
+	// Checked before the wait for a held lock, trunk is not asked again
+	// after it: asked twice, an unreachable origin's warning printed twice
+	// (US-129 verification 4).
+	checked := false
+	plan, unchecked, err := startLocked(cmd, asked, false, said, func(s *store.Store, plan startPlan) error {
+		if err := checkTrunkFirst(cmd, s, trunkOf(s.Config()), plan, false); err != nil {
+			return err
+		}
+		checked = true
+		return nil
+	})
+	if err != nil || !unchecked {
+		return false, err
+	}
 	s, _, err := openStore(cmd)
 	if err != nil {
 		return false, err
 	}
-	plan, err := decideStart(s, asked, s.CommandSession())
-	said.passed = plan.passedOver
-	if err != nil {
-		return false, err
-	}
-	if !plan.fresh {
-		// Picked up again where it is held, and nothing is made. A story the
-		// lock finds new instead goes round, to have its worktree made
-		// outside it.
-		return startLocked(cmd, asked, false, said)
-	}
-	return beginInWorktree(cmd, s, asked, plan, said)
+	return beginInWorktree(cmd, s, asked, plan, said, checked)
 }
 
 // beginInWorktree makes the story's worktree, at .sdlc/worktrees/<ID> of the
@@ -76,10 +83,10 @@ func startRound(cmd *cobra.Command, asked string, said *startSaid) (again bool, 
 // Only trunk is held to anything. The main checkout's branch and what it has
 // not committed are the person's, and the worktree is cut from trunk, not from
 // them.
-func beginInWorktree(cmd *cobra.Command, s *store.Store, asked string, plan startPlan, said *startSaid) (bool, error) {
+func beginInWorktree(cmd *cobra.Command, s *store.Store, asked string, plan startPlan, said *startSaid, checked bool) (bool, error) {
 	ctx := cmd.Context()
 	trunk := trunkOf(s.Config())
-	if err := checkTrunkFirst(cmd, s, trunk, plan); err != nil {
+	if err := checkTrunkFirst(cmd, s, trunk, plan, checked); err != nil {
 		return false, err
 	}
 	co, err := s.Checkout()
@@ -129,10 +136,11 @@ func beginInWorktree(cmd *cobra.Command, s *store.Store, asked string, plan star
 }
 
 // checkTrunkFirst holds start to trunk before anything is made: it is checked
-// against its remote where the project has one, and only after that does a
-// story that cannot begin say why.
-func checkTrunkFirst(cmd *cobra.Command, s *store.Store, trunk string, plan startPlan) error {
-	if s.Config().Git.Remote {
+// against its remote where the project has one, unless checked says it was
+// before the wait for the lock, and only after that does a story that cannot
+// begin say why.
+func checkTrunkFirst(cmd *cobra.Command, s *store.Store, trunk string, plan startPlan, checked bool) error {
+	if !checked && s.Config().Git.Remote {
 		if err := checkRemote(cmd, s.Root(), trunk); err != nil {
 			return behindInWorktrees(err, trunk)
 		}

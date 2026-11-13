@@ -109,43 +109,77 @@ func runStart(cmd *cobra.Command, asked string, said *startSaid) error {
 		}
 		slog.Debug("start begins new work in this checkout: git.worktrees is false")
 	}
-	checked, err := checkTrunkForNewWork(cmd, asked, false, said)
-	if err != nil {
+	// Decided under the lock first: a story that is picked up is picked up
+	// there, its files read once. Only new work comes back out, for trunk to
+	// be checked outside the lock, and start then decides once more: the
+	// decision was once made outside the lock as well, to save taking it, and
+	// the files read for it had to be read again under it (US-129, AC-4 and
+	// AC-5).
+	// Checked before the wait for a held lock, trunk is not checked again
+	// after it: it is the same trunk, and the smoke is the project's own
+	// command.
+	checked := false
+	trunk := func(s *store.Store, _ startPlan) error {
+		if err := checkTrunk(cmd, s, len(said.passed) > 0); err != nil {
+			return err
+		}
+		checked = true
+		return nil
+	}
+	if _, unchecked, err := startLocked(cmd, asked, false, said, trunk); err != nil || !unchecked {
 		return err
 	}
-	unchecked, err := startLocked(cmd, asked, checked, said)
-	if err != nil || !unchecked {
-		return err
+	if !checked {
+		if err := checkTrunkForNewWork(cmd, said); err != nil {
+			return err
+		}
 	}
-	// What start begins was decided again under the lock, and another
-	// checkout had moved the story on in between: trunk is checked for it now,
-	// outside the lock, and start decides once more.
-	if _, err := checkTrunkForNewWork(cmd, asked, true, said); err != nil {
-		return err
-	}
-	_, err = startLocked(cmd, asked, true, said)
+	_, _, err := startLocked(cmd, asked, true, said, trunk)
 	return err
 }
 
 // startLocked is start under the repository's lock. It does nothing and says so
 // when the story it would begin is new and trunk has not been checked for it:
 // the check runs the project's own command, and is never run holding the lock.
-func startLocked(cmd *cobra.Command, asked string, checked bool, said *startSaid) (unchecked bool, err error) {
-	s, _, unlock, err := openStoreForWriting(cmd)
+// The plan is what it decided, for the caller that goes on outside the lock.
+//
+// trunk is the path's own check of trunk for new work, run before the wait
+// for a lock another command holds (below), and otherwise outside the lock by
+// the caller, as checked says. It changes nothing of what the lock decides:
+// new work comes back out as unchecked all the same, for the caller to make
+// what it makes outside the lock (two starts at one moment each began the
+// story in the main checkout when it did not; the e2e AC-8 row).
+func startLocked(cmd *cobra.Command, asked string, checked bool, said *startSaid,
+	trunk func(s *store.Store, plan startPlan) error) (plan startPlan, unchecked bool, err error) {
+	s, _, unlock, err := openStoreLocking(cmd, func(s *store.Store) error {
+		// Another command holds the lock: every refusal start gave before the
+		// lock at the base is given now, in its words, rather than the lock's
+		// after the wait -- held by another checkout or session, finished,
+		// waiting on a person, and for new work trunk's: not on it, uncommitted
+		// work, behind the remote, a failed smoke (US-129 verification 3). A
+		// named story that is not runnable is refused under the lock, after
+		// trunk, as it always was.
+		plan, err := decideStart(s, asked, s.CommandSession())
+		said.passed = plan.passedOver
+		if err != nil || !plan.fresh || checked {
+			return err
+		}
+		return trunk(s, plan)
+	})
 	if err != nil {
-		return false, err
+		return startPlan{}, false, err
 	}
 	defer unlock()
 
-	plan, err := decideStart(s, asked, s.CommandSession())
+	plan, err = decideStart(s, asked, s.CommandSession())
 	said.passed = plan.passedOver
 	switch {
 	case err != nil:
-		return false, err
+		return plan, false, err
 	case plan.fresh && !checked:
-		return true, nil
+		return plan, true, nil
 	case plan.refused != nil:
-		return false, plan.refused
+		return plan, false, plan.refused
 	}
 	// The iteration's own files go to the checkout that holds the story: the
 	// story's worktree, where the plan names it, or this checkout. The backlog
@@ -153,13 +187,13 @@ func startLocked(cmd *cobra.Command, asked string, checked bool, said *startSaid
 	target := s
 	if plan.at != "" {
 		if target, err = s.At(plan.at); err != nil {
-			return false, err
+			return plan, false, err
 		}
 	}
 	if plan.running {
-		return false, carryOnStory(cmd, target, plan, said)
+		return plan, false, carryOnStory(cmd, target, plan, said)
 	}
-	return false, beginIteration(cmd, s, target, plan, said)
+	return plan, false, beginIteration(cmd, s, target, plan, said)
 }
 
 // carryOnStory picks up an iteration that is already running in the target.
@@ -388,9 +422,10 @@ func describeWhyNothingRuns(b *model.Backlog) string {
 	}
 	counts := map[model.Status]int{}
 	waiting := 0
+	blockedBy := b.Blocked()
 	for i := range b.Stories {
 		counts[b.Stories[i].Status]++
-		if len(b.BlockedBy(&b.Stories[i])) > 0 {
+		if len(blockedBy(&b.Stories[i])) > 0 {
 			waiting++
 		}
 	}

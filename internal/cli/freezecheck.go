@@ -70,6 +70,7 @@ func (f *freezer) vet(id string, extending bool, before map[string]string) error
 
 	f.lock.letGo()
 	runErr := shellx.Run(c)
+	gitx.Forget(f.cmd.Context())
 
 	// How the check ended, not what it left holding its output: a pass with a
 	// daemon behind it is still a pass. This relies on shellx.Run returning an
@@ -83,7 +84,7 @@ func (f *freezer) vet(id string, extending bool, before map[string]string) error
 	if c.ProcessState == nil || c.ProcessState.ExitCode() != 0 {
 		return f.failed(runErr, tail.String())
 	}
-	g, err := store.LockOn(f.s.LockRoot(), "freeze", envOf(f.cmd).lockClock)
+	g, err := lockFresh(f.cmd.Context(), func() (*store.Guard, error) { return store.LockOn(f.s.LockRoot(), "freeze", envOf(f.cmd).lockClock) })
 	if err != nil {
 		return err
 	}

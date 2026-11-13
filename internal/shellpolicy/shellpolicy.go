@@ -70,13 +70,44 @@ const (
 	unsettledChars = "$%~*?[{"
 )
 
+// commitReadiness is CommitReady and CommitWhy, asked of Readiness where the
+// caller left them to it.
+func (s State) commitReadiness() (bool, string) {
+	if s.Readiness != nil {
+		return s.Readiness()
+	}
+	return s.CommitReady, s.CommitWhy
+}
+
+// storyFinished and committed are StoryFinished and Committed, asked of
+// Progress where the caller left them to it.
+func (s State) storyFinished() bool {
+	if s.Progress != nil {
+		finished, _ := s.Progress()
+		return finished
+	}
+	return s.StoryFinished
+}
+
+func (s State) committed() bool {
+	if s.Progress != nil {
+		_, committed := s.Progress()
+		return committed
+	}
+	return s.Committed
+}
+
 // State is what the loop knows, worked out by the caller. Keeping it out here
 // leaves this package a decision table that can be read and tested on its own.
 type State struct {
 	// CommitReady is whether the story has been through the gates that come
 	// before committing. CommitWhy says what is missing when it has not.
+	// Readiness, where set, answers both when a commit asks, in their place:
+	// the hook reads the story's gate record for them, and a command that
+	// commits nothing never needs it read (US-129, AC-8).
 	CommitReady bool
 	CommitWhy   string
+	Readiness   func() (ready bool, why string)
 
 	// StoryFinished is whether every gate on the story has passed, which is
 	// when ending the iteration is the runbook's last step rather than the way
@@ -87,6 +118,11 @@ type State struct {
 	// one rebase the session may run is its own branch onto trunk's, so that a
 	// story trunk has moved past can still land.
 	Committed bool
+
+	// Progress, where set, answers StoryFinished and Committed in their place,
+	// for the same reason as Readiness: both come from the story's gate record,
+	// and only `sdlc stop` and a few git commands ask (US-129, AC-8).
+	Progress func() (finished, committed bool)
 
 	// Trunk, when set, is the name of trunk's branch, and IsTrunk reports
 	// whether a name git reads in the session's own checkout is trunk's branch
@@ -828,7 +864,7 @@ func inspectWritten(command string, s State, reading assignments) (Finding, bool
 // flag is taken out of named alone, so a decision written inside a note is
 // still read as it always was.
 func inspectAs(asked, named string, s State, reading assignments) (Finding, bool) {
-	m := &memo{checked: map[string]bool{}, resolved: map[string]string{}, landed: map[string][]Landing{},
+	m := &memo{checked: map[spellingKey]bool{}, resolved: map[string]string{}, landed: map[string][]Landing{},
 		disk: &diskAnswers{}, whole: s.whole, tildes: namedDirectories(named, reading)}
 	s.hold = &branchHold{}
 	s = s.bounded()
@@ -881,7 +917,7 @@ func inspectEach(line string, s State, m *memo, rules func(pair, State, *memo) (
 		// differently. wordsIn over a 50 KB command is 262 us, so a later reader
 		// will see duplicated work here; sharing it is what would break the
 		// guarantee above.
-		m = &memo{checked: map[string]bool{}, resolved: m.resolved, landed: m.landed, folded: m.folded, disk: m.disk,
+		m = &memo{checked: map[spellingKey]bool{}, resolved: m.resolved, landed: m.landed, folded: m.folded, disk: m.disk,
 			whole: m.whole, tildes: m.tildes}
 	}
 	return Finding{}, false
@@ -2330,7 +2366,7 @@ func checkUnfreeze(words []string) (Finding, bool) {
 // gate had passed. Ending a story whose gates have all passed is the runbook's
 // last step, and is not refused.
 func checkStop(words []string, s State) (Finding, bool) {
-	if s.StoryFinished || !runsSubcommand(words, "stop") {
+	if !runsSubcommand(words, "stop") || s.storyFinished() {
 		return Finding{}, false
 	}
 	return Finding{
@@ -2552,9 +2588,10 @@ func checkCommit(words []string, dir string, placed bool, s State, away bool) (F
 	if !makesACommit(words, sub) {
 		return Finding{}, false
 	}
+	ready, why := s.commitReadiness()
 	// Once the gates have passed, a rebase is the branch rule's to judge, and
 	// its freshness is not asked: the landing checks the change it makes.
-	if s.CommitReady && sub == "rebase" {
+	if ready && sub == "rebase" {
 		return Finding{}, false
 	}
 	if f, ok := commitElsewhere(words, dir, s, away); ok {
@@ -2563,7 +2600,6 @@ func checkCommit(words []string, dir string, placed bool, s State, away bool) (F
 	if !inThisRepository(words, dir, s) {
 		return Finding{}, false
 	}
-	ready, why := s.CommitReady, s.CommitWhy
 	// The gates having passed is not the same as the commit being the work
 	// that passed them: code edited after the code review went through here
 	// and was committed, and only `sdlc gate commit pass` noticed, afterwards.
@@ -3716,7 +3752,7 @@ func (w *worklist) unwrap(run *invocation, first string, words []string, reading
 		run.shell = run.shell || line
 	case "direnv":
 		if len(words) < 3 || words[1] != "exec" {
-			run.words = append([]string{first}, words[1:]...)
+			run.words = withFirst(first, words)
 			return nil, true
 		}
 		words = words[3:]
@@ -3730,7 +3766,7 @@ func (w *worklist) unwrap(run *invocation, first string, words []string, reading
 	default:
 		t := tableOf(name)
 		if t == nil {
-			run.words = append([]string{first}, words[1:]...)
+			run.words = withFirst(first, words)
 			return nil, true
 		}
 		// What follows ssh's host, watch's options and a shell's is a command
@@ -3742,6 +3778,17 @@ func (w *worklist) unwrap(run *invocation, first string, words []string, reading
 		words = w.options(run, t, place{owed: t.operands}, words[1:], reading)
 	}
 	return words, false
+}
+
+// withFirst is words with first in place of their first word. Where it is
+// that word already they are the lexer's own, capped so that an append to
+// the reading's words cannot write into the lexer's: the copy was one
+// allocation for every command of a thousand-line here-string (US-129, AC-7).
+func withFirst(first string, words []string) []string {
+	if len(words) > 0 && words[0] == first {
+		return slices.Clip(words)
+	}
+	return append([]string{first}, words[1:]...)
 }
 
 // afterFirst is words without the first of them, where there is one: the
@@ -4059,7 +4106,7 @@ func isLetter(b byte) bool {
 // hundred `echo ... | xargs rm` took longer than Claude Code gives the hook,
 // which then let the command through without a word.
 type memo struct {
-	checked  map[string]bool      // a rule and a spelling it has found nothing in
+	checked  map[spellingKey]bool // a rule and a spelling it has found nothing in
 	resolved map[string]string    // what Resolve said of a word
 	landed   map[string][]Landing // what Shared said of a word
 	folded   []string             // the freeze, folded
@@ -4161,11 +4208,15 @@ func (m *memo) place(t *checkoutTree, word string) []string {
 	return p
 }
 
+// spellingKey is a rule and a spelling, as checked keys them: a struct rather
+// than the two joined, which was one allocation for every look (US-129, AC-7).
+type spellingKey struct{ rule, spelling string }
+
 // first reports whether this is the first time a rule looks at a spelling in
 // this command. A spelling that was looked at before found nothing, or the
 // command would have been refused then.
 func (m *memo) first(rule, spelling string) bool {
-	key := rule + "\x00" + spelling
+	key := spellingKey{rule, spelling}
 	if m.checked[key] {
 		return false
 	}

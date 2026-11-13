@@ -15,10 +15,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
 	"github.com/bbsnly/sdlc/internal/config"
+	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/sdlcerr"
 	"github.com/bbsnly/sdlc/internal/store"
 	"github.com/bbsnly/sdlc/internal/version"
@@ -173,6 +175,59 @@ type commandEnv struct {
 	// lock and the story's landing lock all held, before readyToMove. nil does
 	// nothing. Only this package's tests set it.
 	pauseLanding func()
+	// shared is what the invocation has read: the project, opened once, and
+	// the loop's files, read once between the command's own writes. nil, as a
+	// test's env leaves it, opens and reads at each site as before.
+	shared *invocationReads
+}
+
+// invocationReads is what one command has read, for every site that opens
+// the store: `sdlc start` opened it five times, and each open read the
+// configuration again (US-129, AC-5).
+type invocationReads struct {
+	once  sync.Once
+	raw   []byte
+	p     *config.Project
+	err   error
+	reads *store.Reads
+}
+
+// project is config.Open(env.dir), once per invocation. raw is the
+// configuration file's bytes, for a reader that walks the document itself.
+func (env commandEnv) project() (p *config.Project, raw []byte, err error) {
+	if env.shared == nil {
+		return openProject(env.dir)
+	}
+	env.shared.once.Do(func() {
+		env.shared.p, env.shared.raw, env.shared.err = openProject(env.dir)
+	})
+	return env.shared.p, env.shared.raw, env.shared.err
+}
+
+// openProject is config.Open(dir) with the file's bytes.
+func openProject(dir string) (p *config.Project, raw []byte, err error) {
+	root, err := config.FindRoot(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	raw, err = config.Read(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg, err := config.Parse(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &config.Project{Root: root, Config: cfg}, raw, nil
+}
+
+// reads is what the invocation has read of the loop's files, shared by every
+// store the command opens; nil where the env shares nothing.
+func (env commandEnv) reads() *store.Reads {
+	if env.shared == nil {
+		return nil
+	}
+	return env.shared.reads
 }
 
 type commandEnvKey struct{}
@@ -208,13 +263,19 @@ func executeAt(env commandEnv, args []string, stdin io.Reader, stdout, stderr io
 	stdout, stderr = out, errs
 	root := New(stdin, stdout, stderr)
 	root.SetArgs(args)
+	env.shared = &invocationReads{reads: store.NewReads()}
 	// Here and not in a hook of the command tree: a subcommand that set a hook
 	// of its own would take the notice away with nothing failing.
 	if noticeBefore(root, args) {
 		mapsWaiting(env, stderr)
 	}
 
-	err := root.ExecuteContext(context.WithValue(context.Background(), commandEnvKey{}, env))
+	// One invocation, one memo of what git has answered (gitx.Memo), ended
+	// once the command has finished, so that nothing is kept across the many
+	// commands one test process runs.
+	ctx := gitx.WithMemo(context.WithValue(context.Background(), commandEnvKey{}, env))
+	defer gitx.Close(ctx)
+	err := root.ExecuteContext(ctx)
 	if err == nil {
 		return 0
 	}
@@ -295,11 +356,40 @@ func openStore(cmd *cobra.Command) (*store.Store, *config.Project, error) {
 			"the current directory could not be read",
 			"sdlc works relative to where it is run").WithCause(env.dirErr)
 	}
-	p, err := config.Open(env.dir)
+	p, _, err := env.project()
 	if err != nil {
 		return nil, nil, err
 	}
-	return store.New(p).WithEnv(env.getenv), p, nil
+	return store.New(p).WithEnv(env.getenv).Reading(env.reads()), p, nil
+}
+
+// lockFresh is the lock take takes, and the git answers and the loop's files
+// the command kept so far forgotten: what another command wrote while this one
+// waited for the lock is read afresh after it, as a read with no memo would
+// read it (THREATS, point 3). Every site that takes a lock goes through it.
+// The files too, not the git answers alone: a kept read is checked against
+// the file's identity, size and time, which a write in place of the same
+// length within one tick of the clock leaves as they were (US-129
+// verification, F-6).
+func lockFresh(ctx context.Context, take func() (*store.Guard, error)) (*store.Guard, error) {
+	g, err := take()
+	if err == nil {
+		gitx.Forget(ctx)
+		envIn(ctx).reads().Forget()
+	}
+	return g, err
+}
+
+// lockHeld is lockFresh for a lock taken with the project's lock held, the
+// landing's and a turn tried at once: no other command can have written the
+// loop's files meanwhile, so what was read of them stands (AC-5 counts the
+// opens), and the git answers alone are let go, as they were at every site.
+func lockHeld(ctx context.Context, take func() (*store.Guard, error)) (*store.Guard, error) {
+	g, err := take()
+	if err == nil {
+		gitx.Forget(ctx)
+	}
+	return g, err
 }
 
 // openStoreForWriting is openStore for a command that changes loop state: it
@@ -315,6 +405,19 @@ func openStore(cmd *cobra.Command) (*store.Store, *config.Project, error) {
 // reading taken a moment before the write, which is what reading concurrently
 // means anywhere.
 func openStoreForWriting(cmd *cobra.Command) (*store.Store, *config.Project, func(), error) {
+	return openStoreLocking(cmd, nil)
+}
+
+// openStoreLocking is openStoreForWriting with beforeWait, where it is not
+// nil, run between a try of the lock that found it held and the wait for it:
+// what the command can refuse from the files as they are is refused in its
+// own words and at once. `sdlc start` refused a story held elsewhere or
+// finished before it took the lock, and once it decided under the lock first,
+// a start that would be refused anyway waited for the holder and was refused
+// as the lock's (US-129 verification 2, N-5). Where the lock is free nothing
+// is read twice, and what beforeWait read is forgotten when the lock is taken,
+// as everything read before a lock is.
+func openStoreLocking(cmd *cobra.Command, beforeWait func(*store.Store) error) (*store.Store, *config.Project, func(), error) {
 	nothing := noUnlock
 	s, p, err := openStore(cmd)
 	if err != nil {
@@ -322,7 +425,20 @@ func openStoreForWriting(cmd *cobra.Command) (*store.Store, *config.Project, fun
 	}
 	// One lock for every checkout of the repository: they share one backlog,
 	// and two checkouts starting at once took a lock each and the same story.
-	g, err := store.LockOn(s.LockRoot(), strings.TrimPrefix(cmd.CommandPath(), "sdlc "), envOf(cmd).lockClock)
+	what, clock := strings.TrimPrefix(cmd.CommandPath(), "sdlc "), envOf(cmd).lockClock
+	g, err := lockFresh(cmd.Context(), func() (*store.Guard, error) {
+		if beforeWait == nil {
+			return store.LockOn(s.LockRoot(), what, clock)
+		}
+		g, err := store.TryLockOn(s.LockRoot(), what, clock)
+		if !errors.Is(err, store.ErrLockBusy) {
+			return g, err
+		}
+		if err := beforeWait(s); err != nil {
+			return nil, err
+		}
+		return store.LockOn(s.LockRoot(), what, clock)
+	})
 	if err != nil {
 		return nil, nil, nothing, err
 	}

@@ -17,7 +17,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,7 +64,32 @@ const (
 // macOS and Linux alike. It does not end in a dot: Windows drops a trailing
 // dot from a directory name, so `A-1.` and `A-1` were two stories sharing one
 // directory, and starting one overwrote the other's record.
-var safeID = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9_-])?$`)
+//
+// Spelt out byte by byte rather than as the regular expression it was,
+// `^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9_-])?$`: every hook call
+// checks an id or two, and the expression's match state cost each call 36 KB
+// (US-129, AC-8). The two were held equal over every string of up to three
+// printable characters and the lengths at the edge (round 3's record).
+func safeID(id string) bool {
+	n := len(id)
+	if n == 0 || n > 64 || !idAlnum(id[0]) {
+		return false
+	}
+	for i := 1; i < n; i++ {
+		switch c := id[i]; {
+		case idAlnum(c), c == '_', c == '-':
+		case c == '.' && i < n-1:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// idAlnum reports whether c is an ASCII letter or digit.
+func idAlnum(c byte) bool {
+	return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '0' <= c && c <= '9'
+}
 
 // Store reads and writes one project's loop state.
 //
@@ -82,6 +106,9 @@ type Store struct {
 	// lockNow is the time the store's locks are aged on, nil for the real
 	// clock. Only lockAgesOn sets it, and only a test calls that.
 	lockNow func() time.Time
+	// reads is what the invocation has read of the loop's files, shared by
+	// every store opened for it (Reads).
+	reads *Reads
 }
 
 // placement is where the checkout the store was opened in sits in its
@@ -95,7 +122,7 @@ type placement struct {
 
 // New opens the store for a project.
 func New(p *config.Project) *Store {
-	return &Store{root: p.Root, cfg: p.Config, now: time.Now, getenv: os.Getenv, place: &placement{}}
+	return &Store{root: p.Root, cfg: p.Config, now: time.Now, getenv: os.Getenv, place: &placement{}, reads: NewReads()}
 }
 
 // NewIn opens the store for a project whose checkout the caller has already
@@ -105,6 +132,21 @@ func NewIn(p *config.Project, co config.Checkout, err error) *Store {
 	s.place.once.Do(func() { s.place.co, s.place.err = co, err })
 	return s
 }
+
+// Reading is a copy of the store that answers from reads: what the caller's
+// invocation has read already, shared so that two stores opened for one call
+// read each file once between them (US-129, AC-5).
+func (s *Store) Reading(reads *Reads) *Store {
+	out := *s
+	if reads != nil {
+		out.reads = reads
+	}
+	return &out
+}
+
+// Reads is what the store has read for its invocation, for another store or
+// a reader that shares it.
+func (s *Store) Reads() *Reads { return s.reads }
 
 // checkout is where the store's checkout sits in its repository.
 func (s *Store) checkout() (config.Checkout, error) {
@@ -234,7 +276,7 @@ func CheckID(id string) error {
 	// ".." anywhere, not only on its own: the hook refuses such an id and
 	// turns every rule off, so an id the CLI accepted and the hook did not was
 	// an iteration that ran with nothing enforced.
-	if safeID.MatchString(id) && !strings.Contains(id, "..") {
+	if safeID(id) && !strings.Contains(id, "..") {
 		return nil
 	}
 	shown := id
@@ -275,7 +317,7 @@ func (s *Store) readBacklog() ([]byte, *model.Backlog, error) {
 		return nil, nil, err
 	}
 	path := s.cfg.BacklogPath(shared)
-	raw, err := os.ReadFile(path)
+	raw, err := s.reads.File(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return nil, nil, sdlcerr.New(sdlcerr.BacklogMissing,
@@ -480,13 +522,21 @@ var claudeCodeMarkers = [...]string{"CLAUDECODE", SessionEnv, "CLAUDE_CODE_CHILD
 // the list is a copy no importer can write to, a test among them.
 func ClaudeCodeMarkers() [len(claudeCodeMarkers)]string { return claudeCodeMarkers }
 
-// safeSession is what a session id may contain. Claude Code's are UUIDs; this
-// is wider than that, and still nothing that could be a path.
-var safeSession = regexp.MustCompile(`^[A-Za-z0-9._-]{1,200}$`)
-
-// CheckSession reports whether id can be a Claude Code session id.
+// CheckSession reports whether id can be a Claude Code session id: letters,
+// digits, dots, dashes and underscores, one to two hundred of them. Claude
+// Code's are UUIDs; this is wider than that, and still nothing that could be a
+// path. Byte by byte, as safeID is, for `^[A-Za-z0-9._-]{1,200}$`: the
+// expression's match state cost every hook call it ran 12 KB (US-129, AC-8).
 func CheckSession(id string) bool {
-	return safeSession.MatchString(id)
+	if len(id) == 0 || len(id) > 200 {
+		return false
+	}
+	for i := range len(id) {
+		if c := id[i]; !idAlnum(c) && c != '.' && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // CommandSession is the Claude Code session the command runs in: SessionEnv,
@@ -538,6 +588,7 @@ func (s *Store) bindSession(id string) error {
 		return sdlcerr.New(sdlcerr.StateUnwritable, relative(s.root, path)+couldNotBeRemoved, leavesWhy).
 			WithFix(leavesFix)
 	}
+	s.reads.Forget(path)
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"the session working the story could not be recorded",
@@ -555,6 +606,7 @@ func (s *Store) ClearActive() error {
 		return sdlcerr.New(sdlcerr.StateUnwritable, "the iteration could not be ended", leavesWhy).WithFix(leavesFix)
 	}
 	for _, file := range []string{sessionFile, activeFile} {
+		s.reads.Forget(filepath.Join(s.root, filepath.FromSlash(file)))
 		err := os.Remove(filepath.Join(s.root, filepath.FromSlash(file)))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return sdlcerr.New(sdlcerr.StateUnwritable,
@@ -572,7 +624,7 @@ func (s *Store) ClearActive() error {
 // Lock reads the freeze, or nil if the tests have not been frozen.
 func (s *Store) Lock() (*model.Lock, error) {
 	path := filepath.Join(s.root, filepath.FromSlash(lockFile))
-	raw, err := os.ReadFile(path)
+	raw, err := s.reads.File(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil //nolint:nilnil // nil is the documented "not frozen"; called from internal/cli, changing with it
 	}
@@ -602,6 +654,7 @@ func (s *Store) ClearLock() error {
 	if s.leaves(path) {
 		return sdlcerr.New(sdlcerr.StateUnwritable, "the test freeze could not be lifted", leavesWhy).WithFix(leavesFix)
 	}
+	s.reads.Forget(path)
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			"the test freeze could not be lifted",
@@ -662,7 +715,7 @@ func (s *Store) readRecord(id string) (*model.Record, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, recordFile))
+	raw, err := s.reads.File(filepath.Join(dir, recordFile))
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return model.NewRecord(id, s.now()), nil, nil
@@ -673,7 +726,7 @@ func (s *Store) readRecord(id string) (*model.Record, []byte, error) {
 	}
 
 	var r model.Record
-	if err := json.Unmarshal(raw, &r); err != nil {
+	if err := model.DecodeRecord(raw, &r); err != nil {
 		return nil, nil, sdlcerr.New(sdlcerr.StateUnreadable,
 			"the record for "+quote(id)+isNotValidJSON,
 			storiesDir+"/"+id+"/"+recordFile+" does not parse, and sdlc writes it whole or not "+
@@ -810,14 +863,126 @@ func (s *Store) Now() time.Time { return s.now() }
 
 // writeJSON writes v as indented JSON with a trailing newline. Indented,
 // because these files live in the repository and a user reads them in a diff.
+//
+// The bytes are json.MarshalIndent's, laid out by encodeIndented into one
+// buffer sized by what the file held before, with the newline in the same
+// buffer. MarshalIndent grew its compact and its indented copies by doubling
+// and the newline's append copied the result once more, which for a 190 KB
+// gate record was the largest cost of a subagent's start and stop in the hook
+// (US-129, AC-8). Round 3's record holds the byte-for-byte comparison over the
+// loop's shapes.
 func (s *Store) writeJSON(path string, v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
+	out, err := encodeIndented(s.reads.size(path), v)
 	if err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			relative(s.root, path)+couldNotBeWritten,
 			"the value could not be encoded as JSON").WithCause(err)
 	}
-	return s.writeFile(path, append(data, '\n'))
+	return s.writeFile(path, append(out, '\n'))
+}
+
+// indentWriter is an io.Writer that lays out compact JSON, as json.Marshal
+// writes it, as json.Indent(src, "", "  ") would have written it: each write
+// is the next piece of one value, laid out onto out where the last left off.
+type indentWriter struct {
+	out []byte
+	in  indenter
+}
+
+func (w *indentWriter) Write(p []byte) (int, error) {
+	for _, c := range p {
+		w.out = w.in.next(w.out, c)
+	}
+	return len(p), nil
+}
+
+// indentCounter is indentWriter that keeps the count and not the bytes: the
+// room a value whose file was not read is given, so that laying it out grows
+// nothing. The scratch holds what one byte appends at any depth a record has;
+// deeper than 31 the append spills to the heap and the count is still right.
+type indentCounter struct {
+	n  int
+	in indenter
+}
+
+func (w *indentCounter) Write(p []byte) (int, error) {
+	var scratch [64]byte
+	for _, c := range p {
+		w.n += len(w.in.next(scratch[:0], c))
+	}
+	return len(p), nil
+}
+
+// indenter lays out compact JSON, as json.Marshal writes it, a byte at a time
+// as json.Indent(src, "", "  ") would have written it: a newline and the
+// depth's indent after `{`, `[` and `,`, a space after `:`, the closing
+// bracket on a line of its own, `{}` and `[]` left as they are, and what is
+// inside a string copied as it is. json.Indent reformats through a buffer of
+// its own, grown by doubling, before copying into the caller's (US-129, AC-8);
+// round 3's record holds the byte-for-byte comparison over the loop's shapes.
+// It is where the layout has got to: the depth, whether it is inside a string
+// and after a backslash there, and whether an opening bracket is waiting to
+// learn if its object or array is empty.
+type indenter struct {
+	depth                         int
+	inString, escaped, needIndent bool
+}
+
+// next appends c to dst as json.Indent writes it.
+func (in *indenter) next(dst []byte, c byte) []byte {
+	if in.inString {
+		return in.inside(dst, c)
+	}
+	if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+		return dst
+	}
+	if in.needIndent && c != '}' && c != ']' {
+		in.needIndent = false
+		in.depth++
+		dst = indentLine(dst, in.depth)
+	}
+	switch c {
+	case '"':
+		in.inString = true
+	case '{', '[':
+		in.needIndent = true
+	case ',':
+		return indentLine(append(dst, c), in.depth)
+	case ':':
+		return append(dst, c, ' ')
+	case '}', ']':
+		if in.needIndent {
+			// An empty object or array stays on its line.
+			in.needIndent = false
+		} else {
+			in.depth--
+			dst = indentLine(dst, in.depth)
+		}
+	}
+	return append(dst, c)
+}
+
+// inside appends c, a byte of a string, as it is, and notes where the string
+// ends.
+func (in *indenter) inside(dst []byte, c byte) []byte {
+	switch {
+	case in.escaped:
+		in.escaped = false
+	case c == '\\':
+		in.escaped = true
+	case c == '"':
+		in.inString = false
+	}
+	return append(dst, c)
+}
+
+// indentLine starts a line at depth.
+func indentLine(dst []byte, depth int) []byte {
+	dst = append(dst, '\n')
+	for range depth {
+		dst = append(dst, ' ', ' ')
+	}
+	return dst
 }
 
 // leavesWhy and leavesFix explain a state path that resolves outside the
@@ -863,11 +1028,14 @@ func (s *Store) writeFile(path string, data []byte) error {
 		return sdlcerr.New(sdlcerr.StateUnwritable, relative(s.root, path)+couldNotBeWritten, leavesWhy).
 			WithFix(leavesFix)
 	}
-	if err := fsx.WriteFileAtomic(path, data, 0o644); err != nil {
+	s.reads.Forget(path)
+	info, err := fsx.WriteFileAtomicInfo(path, data, 0o644)
+	if err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			relative(s.root, path)+couldNotBeWritten,
 			"its directory may not be writable, or the disk may be full").WithCause(err)
 	}
+	s.reads.keepWritten(path, data, info)
 	return nil
 }
 
@@ -885,11 +1053,14 @@ func (s *Store) replaceBacklog(path string, data []byte) error {
 	if info, err := os.Stat(target); err == nil {
 		perm = info.Mode().Perm()
 	}
-	if err := fsx.WriteFileAtomic(target, data, perm); err != nil {
+	s.reads.Forget(path, target)
+	written, err := fsx.WriteFileAtomicInfo(target, data, perm)
+	if err != nil {
 		return sdlcerr.New(sdlcerr.StateUnwritable,
 			relative(s.root, path)+couldNotBeWritten,
 			"its directory may not be writable, or the disk may be full").WithCause(err)
 	}
+	s.reads.keepWritten(path, data, written)
 	return nil
 }
 

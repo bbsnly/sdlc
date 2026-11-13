@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bbsnly/sdlc/internal/config"
+	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
@@ -67,13 +68,19 @@ const subagentWait = 30 * time.Minute
 // hold the count for good. The clock is a parameter because the end of a wait
 // is tested by moving time, not by waiting for it.
 func decideStop(raw []byte, getenv func(string) string, warn func(string), now func() time.Time) turnReply {
+	return decideStopIn(raw, getenv, warn, now, nil)
+}
+
+// decideStopIn is decideStop sharing what the call has read.
+func decideStopIn(raw []byte, getenv func(string) string, warn func(string), now func() time.Time, call *callReads) turnReply {
 	allow := turnReply{Continue: true}
 	project, story, ok := stopStory(raw, getenv, warn)
 	if !ok {
 		return allow
 	}
 
-	cfg, err := loadConfig(project)
+	pl := call.placeOf(project)
+	cfg, err := pl.config(project)
 	if err != nil {
 		cfg = config.Default()
 	}
@@ -81,8 +88,7 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string), now f
 	if limit <= 0 {
 		return allow
 	}
-	pl := placeOf(project)
-	s := store.NewIn(&config.Project{Root: project, Config: cfg}, pl.co, pl.err)
+	s := pl.store(cfg)
 	// Decided from what is there once the lock is held. Read before it, a stop
 	// that arrived while a command was recording progress counted the record as
 	// it was, and handed the story to a person the moment after it moved; two
@@ -93,6 +99,7 @@ func decideStop(raw []byte, getenv func(string) string, warn func(string), now f
 		return allow
 	}
 	defer g.Release()
+	s.Reads().Forget()
 	if !stopIsHeldHere(s, story) {
 		return allow
 	}
@@ -265,6 +272,9 @@ func waitFrom(since string, now time.Time) string {
 }
 
 // stopReason says what to do instead of stopping, naming the gate to work.
+// The record is decoded whole, as it always was: decoded for its gates alone,
+// to save the events' bytes, a record whose events do not decode named a gate
+// where this says "the next gate" (US-129 code review, F-2).
 func stopReason(pl place, story string, blocks, limit int) string {
 	next := "the next gate"
 	if record, _, err := pl.record(story); record != nil && err == nil {
@@ -295,6 +305,8 @@ func handOver(s *store.Store, story string, blocks int) turnReply {
 
 	ctx, cancel := context.WithTimeout(context.Background(), treeTimeout)
 	defer cancel()
+	ctx = gitx.WithMemo(ctx)
+	defer gitx.Close(ctx)
 	// Read from a linked worktree, the record is not beside the reader: the
 	// worktree's own copy, if git checked one out, is not it.
 	where := ""

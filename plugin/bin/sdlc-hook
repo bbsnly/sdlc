@@ -21,6 +21,29 @@ set -eu
 
 event="${1:-}"
 
+# The common case first, before any function below is defined: a binary at
+# SDLC_BIN or in the plugin's bin directory is exec'd here, and the shell parses
+# nothing after this block, which was about a millisecond of the six the
+# launcher adds to every call (US-129). The tests and their order are
+# find_binary's, which the rarer cases still go through; the SessionStart fetch
+# below runs only where neither binary is here, so it is not passed over.
+if [ -n "${SDLC_BIN:-}" ] && [ -f "${SDLC_BIN}" ] && [ -x "${SDLC_BIN}" ]; then
+  if [ -n "${SDLC_DEBUG_FILE:-}" ]; then
+    printf 'sdlc-hook %s: running %s\n' "${event}" "${SDLC_BIN}" 2>/dev/null >>"${SDLC_DEBUG_FILE}" || true
+  fi
+  exec "${SDLC_BIN}" hook "${event}"
+fi
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  for candidate in "${CLAUDE_PLUGIN_ROOT}/bin/sdlc" "${CLAUDE_PLUGIN_ROOT}/bin/sdlc.exe"; do
+    if [ -f "${candidate}" ] && [ -x "${candidate}" ]; then
+      if [ -n "${SDLC_DEBUG_FILE:-}" ]; then
+        printf 'sdlc-hook %s: running %s\n' "${event}" "${candidate}" 2>/dev/null >>"${SDLC_DEBUG_FILE}" || true
+      fi
+      exec "${candidate}" hook "${event}"
+    fi
+  done
+fi
+
 # -x alone is true of a directory, and exec'ing one ends this script with no
 # reply at all. An SDLC_BIN that names nothing runnable is passed over quietly,
 # because this is the hot path; "sdlc doctor" is what reports it.

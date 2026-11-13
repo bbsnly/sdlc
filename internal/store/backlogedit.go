@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -47,7 +46,7 @@ func (s *Store) ReviewSubject(ctx context.Context, also ...gitx.Override) (strin
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return gitx.TreeHash(ctx, s.root, also...)
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := s.reads.File(path)
 	if err != nil {
 		return gitx.TreeHash(ctx, s.root, also...)
 	}
@@ -136,57 +135,76 @@ func endLikeFile(edited, data []byte) []byte {
 // in place and a key added after the last one both come out again as exactly
 // the bytes that were there before, so a backlog reads the same here before and
 // after sdlc moves a story.
+//
+// The whole file is parsed once. An earlier version located one member, cut
+// it, and parsed the rest again for the next, which on a 130-story backlog
+// meant 260 passes over 400 KB: 740 MB and 0.8 s for every review stamp
+// (US-129). The spans cut here are the ones that version would have cut, one
+// member at a time, so the bytes come out the same.
 func withoutStoryFields(data []byte, keys ...string) ([]byte, bool) {
 	data = bytes.TrimPrefix(data, byteOrderMark)
-	out := bytes.Clone(data)
-	for {
-		start, end, found, ok := firstStoryField(out, keys)
-		if !ok {
-			return nil, false
-		}
-		if !found {
-			return out, true
-		}
-		out = append(out[:start:start], out[end:]...)
-	}
-}
-
-// firstStoryField locates the first member of any story that keys names, as
-// the span removing it takes out: the member, and the comma that joins it to
-// the member before it -- or, for a first member, to the one after.
-func firstStoryField(data []byte, keys []string) (start, end int, found, ok bool) {
 	top, ok := objectMembers(data, 0, len(data))
 	if !ok {
-		return 0, 0, false, false
+		return nil, false
 	}
 	stories, ok := lastMember(top, "stories")
 	if !ok {
-		return 0, 0, false, false
+		return nil, false
 	}
 	elements, ok := arrayElements(data, stories.valueStart, stories.valueEnd)
 	if !ok {
-		return 0, 0, false, false
+		return nil, false
 	}
+	var cuts [][2]int
 	for _, el := range elements {
 		members, ok := objectMembers(data, el[0], el[1])
 		if !ok {
-			return 0, 0, false, false
+			return nil, false
 		}
-		for i, m := range members {
-			if !slices.ContainsFunc(keys, func(k string) bool { return strings.EqualFold(k, m.key) }) {
-				continue
-			}
-			switch {
-			case i > 0:
-				return members[i-1].valueEnd, m.valueEnd, true, true
-			case len(members) > 1:
-				return m.keyStart, members[1].keyStart, true, true
-			default:
-				return m.keyStart, m.valueEnd, true, true
-			}
+		spans, kept := storyFieldSpans(members, keys)
+		if !kept {
+			// Nothing would be left of the story, and an object with no
+			// members is not one a story can be: refused, as the pass that
+			// parsed the cut story again refused it.
+			return nil, false
+		}
+		cuts = append(cuts, spans...)
+	}
+	out := make([]byte, 0, len(data))
+	at := 0
+	for _, c := range cuts {
+		// Two spans that start at the same kept member overlap; the later
+		// one only extends the cut.
+		if c[0] > at {
+			out = append(out, data[at:c[0]]...)
+		}
+		at = max(at, c[1])
+	}
+	return append(out, data[at:]...), true
+}
+
+// storyFieldSpans is the spans that take the members keys name out of one
+// story, each as cutting them one at a time would have taken it: the member
+// and the comma that joins it to the last member kept before it -- or, with no
+// member kept before it, to the one after. kept is whether any member stays.
+func storyFieldSpans(members []member, keys []string) (spans [][2]int, kept bool) {
+	prevKept := -1
+	for i, m := range members {
+		if !slices.ContainsFunc(keys, func(k string) bool { return strings.EqualFold(k, m.key) }) {
+			prevKept = i
+			kept = true
+			continue
+		}
+		switch {
+		case prevKept >= 0:
+			spans = append(spans, [2]int{members[prevKept].valueEnd, m.valueEnd})
+		case i+1 < len(members):
+			spans = append(spans, [2]int{m.keyStart, members[i+1].keyStart})
+		default:
+			spans = append(spans, [2]int{m.keyStart, m.valueEnd})
 		}
 	}
-	return 0, 0, false, true
+	return spans, kept
 }
 
 // applyChanges replaces the value of every key a change names, and adds the
@@ -231,14 +249,19 @@ func applyChanges(data []byte, members []member, changes []change) []byte {
 		splices = append(splices, splice{last.valueEnd, last.valueEnd, added})
 	}
 
-	// Later offsets first, so each splice leaves the ones still to come where
-	// they were.
-	sort.SliceStable(splices, func(i, j int) bool { return splices[i].start > splices[j].start })
-	out := bytes.Clone(data)
+	// The spans never overlap: each is one member's value, or the end of the
+	// last one, and the two keys a status change names are distinct. So the
+	// file is written once, in order; splicing each in turn copied the rest
+	// of a 400 KB backlog twice per change (US-129, round 6).
+	sort.SliceStable(splices, func(i, j int) bool { return splices[i].start < splices[j].start })
+	out := make([]byte, 0, len(data)+len(added))
+	at := 0
 	for _, s := range splices {
-		out = append(out[:s.start:s.start], append(bytes.Clone(s.text), out[s.end:]...)...)
+		out = append(out, data[at:s.start]...)
+		out = append(out, s.text...)
+		at = s.end
 	}
-	return out
+	return append(out, data[at:]...)
 }
 
 // objectMembers locates the members of the JSON object at data[start:end].
