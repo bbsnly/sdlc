@@ -59,8 +59,15 @@ A few more words are used with a fixed meaning throughout:
   or `tmux` that Claude Code started, and anything a model's tool runs have
   Claude Code's environment variables, and the person's commands refuse
   themselves there with [SDLC-E0079](troubleshooting.md#sdlc-e0079). In Claude
-  Code the slash commands are the way; in Claude Desktop, whose hooks have
-  `AI_AGENT` (Claude Code 2.1.309), a `!` line is.
+  Code and in Claude Desktop the slash commands are the way; in Claude
+  Desktop a `!` line is too. The hook runs a slash command typed there only
+  where the `AI_AGENT` label and three more variables say that it is a hook
+  Claude Code runs itself for a session a person attends. They were read in
+  Claude Code 2.1.321 in Claude Desktop, on 2026-11-13; that release and later
+  ones that keep them are expected to work, and on an earlier one the command
+  may not run, which the hook says.
+- **nested session**: a Claude Code session started from another session's
+  tool call, such as `claude -p` run in a model's Bash.
 - **the conversation** (also called the assistant): the main Claude Code
   session that runs the skill and hands each gate to an agent.
 

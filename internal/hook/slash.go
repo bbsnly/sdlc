@@ -134,28 +134,19 @@ func answerExpansion(stdin io.Reader, stdout io.Writer, getenv func(string) stri
 // runTyped runs the command the person typed and says what came of it.
 func runTyped(e expansion, name string, getenv func(string) string, commands Runner) expansionAnswer {
 	slash := "/sdlc:" + name
-	// The hook's own environment, before anything typed is read. Claude Code
-	// sets AI_AGENT for a model's tools, for a session started from one, and,
-	// in Claude Desktop (Claude Code 2.1.309, seen on 2026-10-29), for every
-	// hook it runs; so a hook that has it may be a model's shell running the
-	// hook on a payload it wrote, and the check fails closed there, by the
-	// person's decision of 2026-10-29. A person there types a `!` line, which
-	// reaches sdlc with none of the markers SDLC-E0079 reads (seen the same
-	// day). init and doctor are no decision, and a model may run both.
-	if getenv(store.AgentEnv) != "" && name != "init" && name != "doctor" {
-		// By name, never its value, as SDLC-E0079's why does.
-		slog.Info("hook: a person's slash command was not run, since the hook's environment has a model's tool variable",
-			"command", slash, "variable", store.AgentEnv)
-		return shown(slash + " did not run: the environment variable " + store.AgentEnv + " is set where this " +
-			"hook runs, and the hook cannot tell that from a model's command. Claude Code sets it for a session " +
-			"started from another Claude Code session's tool call, and in Claude Desktop (Claude Code 2.1.309, " +
-			"seen on 2026-10-29) for every hook it runs. In Claude Desktop, type `!" + terminalForm(name) +
-			"` with the same arguments at the prompt instead. Elsewhere, type " + slash + " again, with the " +
-			"same arguments, in a Claude Code session you opened yourself, or run `" + terminalForm(name) +
-			"` with the same arguments in a terminal outside Claude Code, where sdlc has to be installed " +
-			"(`npx @bbsnly/sdlc install`). If you did open this session yourself from a terminal, that " +
-			"terminal was started inside Claude Code: quit it fully, open it again, and start Claude Code " +
-			"from it.")
+	// The hook's own environment, before anything typed is read. Until US-130
+	// any AI_AGENT refused here, and Claude Code sets it for every hook it
+	// runs, so a person's /sdlc:approve typed in Claude Desktop answered that
+	// it did not run (2026-11-13). The check now reads what tells Claude
+	// Code's own hook in an attended session from a model's shell or a session
+	// one started (typedby.go), and fails closed on anything else. init and
+	// doctor are no decision, and a model may run both.
+	if failed := notTypedBy(getenv); len(failed) > 0 && name != "init" && name != "doctor" {
+		// Every part that failed, by name and never its value, so that one
+		// log shows all four.
+		slog.Info("hook: a person's slash command was not run, since the hook could not tell that a person typed it",
+			"command", slash, "variables", unreadLog(failed))
+		return notTypedAnswer(name, failed)
 	}
 	words, unread := splitTyped(e.CommandArgs)
 	if unread != "" {

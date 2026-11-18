@@ -50,8 +50,9 @@ func refuseInsideClaudeCode(cmd *cobra.Command, slash string) error {
 	if more != "" {
 		them = " with them"
 	}
-	// In Claude Desktop the slash command does not run, since every hook
-	// there has AI_AGENT, so the `!` line is named before the terminal.
+	// The `!` line in Claude Desktop is named before the terminal: it is the
+	// way in Claude Desktop wherever the hook cannot tell that a person typed
+	// the slash command, and it needs no sdlc installed of the person's own.
 	return err.WithFix("a person types " + quote(typed) + " in Claude Code" + more + ", or " + quote("!"+run) +
 		them + " at the prompt in Claude Desktop, or runs " + quote(run) + them + " in a terminal outside Claude " +
 		"Code, in a window they opened themselves; an assistant stops here and says what it would have run")

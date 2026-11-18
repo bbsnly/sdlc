@@ -166,6 +166,13 @@ func valueOnLine(command string, from int) (value string, end int, known bool) {
 			b.WriteByte(c)
 			known = known && c != '$'
 		case c == '$' && quote == 0 && end+1 < len(command) && (command[end+1] == '\'' || command[end+1] == '"'):
+		case c == '$' && expandsExecPath(command[end:]) > 0:
+			// `X="$CLAUDE_CODE_EXECPATH"` is kept as the text of the expansion, so
+			// that `script -q /dev/null "$X"` is read as the program it runs, as
+			// `X=claude` is.
+			n := expandsExecPath(command[end:])
+			b.WriteString(command[end : end+n])
+			end += n - 1
 		case c == '$' || c == '`' && quote != 0:
 			known = false
 		case c == '\\' && end+1 < len(command):

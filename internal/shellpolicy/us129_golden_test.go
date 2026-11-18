@@ -28,8 +28,15 @@ import (
 	"testing"
 )
 
-// us129Golden was written from 37e3ac8 with US129_WRITE_GOLDEN=1, before the
-// freeze. Each line is one command and session, quoted, then the finding.
+// us129Golden was written from 37e3ac8 with US129_WRITE_GOLDEN=1, before
+// US-129's freeze, and written again the same way from US-130's tree with
+// us130_test.go set aside, so that the corpus is still the base's: US-130
+// changes the answers of 160 commands on purpose. In 158 an
+// enforcement-stays-on refusal's reason and route now name the six variables
+// the slash route's check rests on (US-130 AC-3); the other two run a glob as
+// the program on a line that names claude, which US-130 refuses as
+// story-stays-in-its-session (AC-2). Each line is the sum of one command, then
+// the sum of its answers in us129Sessions' order.
 var us129Golden = filepath.Join("testdata", "us129_inspect.golden")
 
 // us129Sessions are corpusState's sessions, from Bash and from PowerShell.

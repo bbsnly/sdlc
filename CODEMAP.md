@@ -177,7 +177,7 @@ Package `shellpolicy`. Works out what `env`, `flock`, `script`, `xargs`, `exec`
 and macOS's `arch` run, so that `program` in `shellpolicy.go` reads through to
 the command behind them. For `env`, that covers its options that take a value,
 and `-S` or `--split-string`, whose string is read as a command line. Each
-reader also keeps on `invocation` what `checkAgentEnv` and the slash route
+reader also keeps on `invocation` what `checkProtectedEnv` and the slash route
 read:
 `cleared` (`env -i`, `exec -c`, `arch -c`), `unsets` (`env -u`, `arch -d`) and
 `replace`, the string `xargs -I`, `-J`, `-i` or `--replace` fills in, which
@@ -1456,8 +1456,13 @@ expansion. `runTyped` runs it through a `Runner`, the signature of
 `store.ClaudeCodeMarkers()` blanked, and answers `{"decision":"block","reason":
 <output>}`: the one place the hook answers its own failure with a block
 (`runGuarded` recovers a panic and says the command did not run). A hook
-whose environment has `AI_AGENT` (`store.AgentEnv`) runs nothing but `init`
-and `doctor`. The skills of the six decisions carry
+runs more than `init` and `doctor` only where `notTypedBy`
+(`internal/hook/typedby.go`, US-130) finds its own environment that of a hook
+Claude Code runs itself for an attended session: the hook's label in
+`AI_AGENT` (`hookLabel`), no `CLAUDE_CODE_EXECPATH`, `GIT_EDITOR` not `true`
+and `CLAUDE_CODE_SESSION_ATTENDED` exactly `1`; otherwise `notTypedAnswer`
+says the command did not run, names each variable it could not read and points
+at docs/troubleshooting.md; the Info line names each too. The skills of the six decisions carry
 `disable-model-invocation` and only report that the command did not run.
 
 **The marker check.** `store.ClaudeCodeMarkers()` returns a copy of the five
@@ -1478,7 +1483,18 @@ second time with its substitutions kept (`programScan.script`, runs marked
 `claude-config-is-the-persons`, a write to `~/.claude`, `~/.claude.json` or
 `CLAUDE_CONFIG_DIR`) and `checkSecondSession` (rule
 `story-stays-in-its-session`, a `claude` started that would expand a
-person's command); `ClaudeConfigWrites` runs the first alone for a session
+person's command; in the session holding the story, `startsClaudeCode` also
+takes the path `CLAUDE_CODE_EXECPATH` holds as the program, named in
+`agentenv.go` and kept through an assignment by `assigned.go`);
+`shellpolicy/terminalstart.go` (`terminalStart`)
+is asked in every session for an `osascript` or `socat` that starts Claude Code
+in a terminal of its own or whose text cannot be read to the end (an
+`osascript` that tells a terminal to run something has to hand it a string
+written out, `handsOnACommand`), for a shell on a terminal that Python's pty
+module gives and that is fed on standard input (`ptyShellStart`), and its
+header holds the evasions it was tried against; `mentionsClaude` reads the
+native installer's versioned path as claude; `ClaudeConfigWrites` runs the
+first alone for a session
 that holds no story. The shell's `State` gains `ClaudeConfig` and
 `ClaudeConfigHeld`, set by `internal/hook/claudeconfig.go` (`personsConfig.
 holds`, `above`, `word`, `heldWord`, built by `newClaudeConfig`) and stubbed
@@ -1602,19 +1618,27 @@ into `gate-record.json` under the store's lock (`agentEvent`), the rest into
 the trace with no lock. The turn marks are `.sdlc/state/trace-read.json`
 (`model.TraceMarkFile`), keyed by a hash of the transcript's path.
 
-Host names stay in four places, for the stories that move them to the host's
-edge: this file (the events, `AI_AGENT`, the hand-back tool and the
-`StopFailure` values), `shellpolicy/forgedhook.go` (the recorded events),
-`shellpolicy/agentenv.go` (`AI_AGENT`, copied from `store.AgentEnv`), and the
-case list of `checkEnforcement` in `shellpolicy/shellpolicy.go`.
+The host names that recording, the slash route's check and
+`enforcement-stays-on` read stay in five places, for the stories that move them
+to the host's edge: this file (the events, `AI_AGENT`, the hand-back tool and
+the `StopFailure` values), `hook/typedby.go` (the four variables of the slash
+route's check, by the person's decision of 2026-11-13T19:41:58Z on US-130),
+`shellpolicy/forgedhook.go` (the recorded events), `shellpolicy/agentenv.go`
+(the six names in `protectedNames`), and the case list of `checkEnforcement`
+in `shellpolicy/shellpolicy.go`. A host is also named where a rule reads its
+program or its files: `shellpolicy/claudeconfig.go` (the `claude` program, its
+configuration files and the recognition of a start in a terminal of its own)
+and `store/store.go` (`AgentEnv` and the markers). A story that moves host
+names out by this list reads those two as well.
 
 ## The trace's shell rules (US-112)
 
 `recorded-event-comes-from-the-host` is `checkHandRunHook` in
 `shellpolicy/forgedhook.go` answering `recordedEvent`; it reads the launcher
 as a later word under any program and a made program given a recorded event.
-`enforcement-stays-on` for `AI_AGENT` is `checkAgentEnv` in
-`shellpolicy/agentenv.go`, asked in `programWalk.run` after the git rules and
+`enforcement-stays-on` for the six protected names is `checkProtectedEnv` in
+`shellpolicy/agentenv.go`, whose finding names the one name a command takes
+where it takes one (`refusedFor`), asked in `programWalk.run` after the git rules and
 in `humanDecisionBy`, so in every session. `trace-is-written-by-the-tool` is
 `ruleTrace` in `shellpolicy/shellpolicy.go` and a rule in `policy.Rules`, with
 the same words in both. `evaluated` in `shellpolicy.go` hands `trap`'s action,
@@ -1624,7 +1648,7 @@ words before what a builtin hands on are scanned for zsh's short forms
 (`startsAReading`). `checkHandRunHook` falls back to `interpreterRunsTheHook`
 for interpreter code that names the hook and a recorded event, and
 `interpretsCode` in `agentenv.go` names the programs whose code is read for
-`AI_AGENT`.
+the protected names.
 
 The readings of a command come from one worklist (`readings.go`): `program`
 and `programUnderEval` read a command's words through the option tables in

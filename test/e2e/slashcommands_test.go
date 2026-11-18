@@ -73,7 +73,9 @@ func (e expanded) shown() string {
 }
 
 // expands hands the hook one UserPromptExpansion event of session, made from
-// dir, and reads its one JSON answer.
+// dir, and reads its one JSON answer. The hook's environment has the markers
+// Claude Code gives the hook of a session a person opened (realHookMarkers):
+// without them the hook cannot tell that a person typed the line (US-130).
 func (sb sandbox) expands(t *testing.T, session, dir string, payload map[string]any) expanded {
 	t.Helper()
 	raw, err := json.Marshal(payload)
@@ -86,7 +88,7 @@ func (sb sandbox) expands(t *testing.T, session, dir string, payload map[string]
 	}
 	cmd := exec.CommandContext(t.Context(), name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(sb.env(t, session), "CLAUDE_PROJECT_DIR="+sb.repo)
+	cmd.Env = append(append(sb.env(t, session), "CLAUDE_PROJECT_DIR="+sb.repo), realHookMarkers...)
 	cmd.Stdin = bytes.NewReader(raw)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut

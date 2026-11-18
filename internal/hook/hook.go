@@ -19,9 +19,9 @@
 // runs the hook on that event itself, on a payload it wrote, is refused as a
 // person's decision: the hook cannot tell that run from Claude Code's by its
 // payload. By its own environment it fails closed, for a spelling that rule
-// cannot read: a hook that has AI_AGENT, which Claude Code sets for a model's
-// tools and, in Claude Desktop, for every hook it runs (Claude Code 2.1.309,
-// seen on 2026-10-29), answers that a typed person's command did not run.
+// cannot read: a typed person's command runs only where the environment is
+// that of a hook Claude Code runs itself for a session a person attends
+// (typedby.go, US-130), and anywhere else answers that it did not run.
 // Recording does not ask: the events are recorded whatever AI_AGENT holds,
 // and the shell rules keep a model's own run of the hook out (US-112).
 //

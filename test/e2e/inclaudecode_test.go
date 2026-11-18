@@ -8,8 +8,8 @@ package e2e
 // command typed in a session, and the story goes on waiting. A slash command
 // typed through the plugin's launcher, whose hook carries the markers a real
 // hook does, still makes the decision. AC-17: the same line expanded in a
-// session started from another session's tool call, whose hook inherits
-// AI_AGENT, records nothing.
+// session started from another session's tool call, whose hook has
+// CLAUDE_CODE_SESSION_ATTENDED=0 (US-130), records nothing.
 
 import (
 	"bytes"
@@ -37,14 +37,16 @@ var bashMarkers = []string{
 	"AI_AGENT=claude-code_2-1-302_agent",
 }
 
-// realHookMarkers is what it sets for a hook: the same, but AI_AGENT, which is
-// a model's tools' alone.
+// realHookMarkers is what Claude Code 2.1.321 sets for a hook it runs in
+// Claude Desktop for a session a person opened (US-130 ANALYSIS 3.1): the
+// same, but AI_AGENT holds the harness's label, not a model's tool's.
 var realHookMarkers = []string{
 	"CLAUDECODE=1",
 	"CLAUDE_CODE_CHILD_SESSION=1",
 	"CLAUDE_CODE_SESSION_ATTENDED=1",
 	"CLAUDE_CODE_ENTRYPOINT=claude-desktop",
 	"CLAUDE_PID=4242",
+	"AI_AGENT=claude-code_2-1-321_harness",
 }
 
 // insideClaudeCode runs the sandbox's sdlc in dir in session, with markers
@@ -167,8 +169,11 @@ func TestAC15APersonsCommandRunWithClaudeCodesMarkersIsRefusedByTheBinaryAndTheS
 		t.Fatal("a person's command refused inside Claude Code changed the record")
 	}
 
+	// A session started with `claude -p` from a model's Bash gives its hook the
+	// harness's label too, and CLAUDE_CODE_SESSION_ATTENDED=0 (US-130 ANALYSIS
+	// 3.2); a later entry of the same name is the one the hook sees.
 	t.Run("AC-17 /sdlc:approve in a session started from a model's Bash records nothing", func(t *testing.T) {
-		e := sb.expandsInClaudeCode(t, sandboxOther, tree, append(append([]string{}, realHookMarkers...), "AI_AGENT=claude-code_2-1-302_agent"),
+		e := sb.expandsInClaudeCode(t, sandboxOther, tree, append(append([]string{}, realHookMarkers...), "CLAUDE_CODE_SESSION_ATTENDED=0"),
 			typedLine(sandboxOther, tree, "sdlc:approve", "US-001"))
 		if !e.blocked() || !strings.Contains(e.shown(), "/sdlc:approve did not run") {
 			t.Errorf("the person is not told that /sdlc:approve did not run: %q", e.raw)

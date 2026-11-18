@@ -26,7 +26,7 @@ import (
 // the hook unread (security, round 2, R2-1).
 //
 // The hook no longer tells its own call by AI_AGENT on the events it records:
-// Claude Code in Claude Desktop sets AI_AGENT for a hook too, so the hook
+// Claude Code gives every hook its harness label in AI_AGENT, so the hook
 // records whatever AI_AGENT holds, and these rules alone keep a model's
 // payload out of the record (US-112, the person's decision of 2026-10-29). So
 // interpreter code that runs the hook on a recorded event, as written out, is

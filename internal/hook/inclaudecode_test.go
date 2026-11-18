@@ -9,12 +9,15 @@ package hook
 // them, as it already hands it none of the session's id, and the command
 // records as AC-1 says.
 //
-// AC-17: a session started from another session's tool call inherits that
-// tool call's AI_AGENT, and Claude Code sets it for nothing but a model's tool
-// (ANALYSIS 7.1 and 7.4, the person's decision 3). So a hook that finds
-// AI_AGENT in its own environment is either such a session's, or a model's
-// shell running the hook on a payload it wrote (T-12); either way no person
-// typed the line, and nothing is recorded.
+// AC-17: a session started from another session's tool call, or a model's
+// shell running the hook on a payload it wrote (T-12), is no person typing the
+// line, and nothing is recorded. US-130 corrected how these rows model them
+// (its ANALYSIS 3.1 to 3.3, Claude Code 2.1.321): every Claude Code process
+// gives itself AI_AGENT=claude-code_<version>_harness, so a nested session's
+// hook carries that label too, with CLAUDE_CODE_SESSION_ATTENDED=0 where it
+// was started with `claude -p`; a model's shell carries _agent,
+// CLAUDE_CODE_EXECPATH and GIT_EDITOR=true. The rows here once gave a nested
+// session's hook _agent, which no real one has.
 
 import (
 	"io"
@@ -25,22 +28,47 @@ import (
 	"github.com/bbsnly/sdlc/internal/cli"
 )
 
-// hookMarkers is what Claude Code 2.1.302's builder gives every hook besides
-// the session id and the project directory (ANALYSIS 7.1), with the plugin's
-// own two. AI_AGENT is not among them: Claude Code sets it for a model's tools.
+// hookMarkers is what Claude Code 2.1.321 gives a hook it runs in Claude
+// Desktop for a session a person opened, besides the session id and the
+// project directory (US-130 ANALYSIS 3.1, the AC-5 fixture), with the
+// plugin's own two. A hook has no CLAUDE_CODE_EXECPATH and no GIT_EDITOR,
+// which a model's Bash has, and its AI_AGENT is the harness's label.
 var hookMarkers = map[string]string{
+	"AI_AGENT":                     "claude-code_2-1-321_harness",
 	"CLAUDECODE":                   "1",
 	"CLAUDE_CODE_CHILD_SESSION":    "1",
 	"CLAUDE_CODE_SESSION_ATTENDED": "1",
 	"CLAUDE_PID":                   "4242",
 	"CLAUDE_CODE_ENTRYPOINT":       "claude-desktop",
-	"CLAUDE_CODE_EXECPATH":         "/opt/claude/versions/2.1.302",
-	"CLAUDE_PLUGIN_ROOT":           "/opt/claude/plugins/cache/sdlc/sdlc/0.5.0",
+	"CLAUDE_EFFORT":                "high",
+	"CLAUDE_PLUGIN_ROOT":           "/opt/claude/plugins/cache/sdlc/sdlc/0.6.1",
 	"CLAUDE_PLUGIN_DATA":           "/opt/claude/plugins/data/sdlc",
 }
 
-// aiAgent is the value Claude Code gives AI_AGENT, in its shape.
-const aiAgent = "claude-code_2-1-302_agent"
+// aiAgent is the value Claude Code gives AI_AGENT in a model's tools, in its
+// shape.
+const aiAgent = "claude-code_2-1-321_agent"
+
+// nestedHook is the hook of a session started with `claude -p` from a model's
+// Bash in Claude Desktop: a harness's label like any hook, and
+// CLAUDE_CODE_SESSION_ATTENDED=0, since nobody attends it. Whether it keeps
+// the Bash's CLAUDE_CODE_EXECPATH and GIT_EDITOR is not known (US-130
+// ANALYSIS 3.3), so it is given both, as the harder case for the CLI, whose
+// own check reads neither.
+var nestedHook = map[string]string{
+	"CLAUDE_CODE_SESSION_ATTENDED": "0",
+	"CLAUDE_CODE_EXECPATH":         "/opt/claude/versions/2.1.321",
+	"GIT_EDITOR":                   "true",
+}
+
+// modelsShell is a model's Bash in Claude Desktop, which runs the hook itself.
+func modelsShell(root string) func(string) string {
+	return env(map[string]string{
+		"AI_AGENT": aiAgent, "CLAUDECODE": "1", "CLAUDE_CODE_CHILD_SESSION": "1", "CLAUDE_CODE_SESSION_ATTENDED": "1",
+		"CLAUDE_CODE_ENTRYPOINT": "claude-desktop", "CLAUDE_CODE_EXECPATH": "/opt/claude/versions/2.1.321",
+		"GIT_EDITOR": "true", "CLAUDE_PROJECT_DIR": root,
+	})
+}
 
 // realHookEnv is the environment Claude Code gives a hook in session, with
 // extra on top of it.
@@ -117,11 +145,10 @@ func TestAC15TheCommandASlashCommandRunsIsHandedNoneOfClaudeCodesMarkers(t *test
 	}
 }
 
-// AC-17: a person's slash command expanded where the hook carries AI_AGENT
-// records nothing, and the person is told that it did not run and why, the
-// slash command named first (AC-12). The rows with the other markers are a
-// session started from a model's Bash; the one with AI_AGENT alone is a
-// model's shell that runs the hook itself.
+// AC-17: a person's slash command expanded in a session started from a
+// model's Bash, or by a model's shell that runs the hook itself, records
+// nothing, and the person is told that it did not run, which variable said so
+// (by name), and what to type instead, the slash command named first (AC-12).
 func TestAC17APersonsSlashCommandExpandedInASessionStartedFromAToolCallRecordsNothingAndSaysWhy(t *testing.T) {
 	t.Parallel()
 	root := loopProject(t)
@@ -134,8 +161,8 @@ func TestAC17APersonsSlashCommandExpandedInASessionStartedFromAToolCallRecordsNo
 		{"assign", "sdlc:assign", `security --model opus --reason "mine"`},
 	} {
 		for envName, getenv := range map[string]func(string) string{
-			"a nested session's hook":       realHookEnv(root, "session-nested", map[string]string{"AI_AGENT": aiAgent}),
-			"a model's shell with AI_AGENT": env(map[string]string{"AI_AGENT": aiAgent, "CLAUDE_PROJECT_DIR": root}),
+			"a nested session's hook": realHookEnv(root, "session-nested", nestedHook),
+			"a model's shell":         modelsShell(root),
 		} {
 			t.Run("AC-17 /"+c.slash+" from "+envName, func(t *testing.T) {
 				calls := 0
@@ -155,8 +182,12 @@ func TestAC17APersonsSlashCommandExpandedInASessionStartedFromAToolCallRecordsNo
 				if !strings.Contains(shown, slash+" did not run") {
 					t.Errorf("the person is not told that %s did not run:\n%s", slash, shown)
 				}
-				if !strings.Contains(shown, "another Claude Code session") {
-					t.Errorf("the person is not told why: the session was started from another Claude Code session's tool call:\n%s", shown)
+				if !strings.Contains(shown, "CLAUDE_CODE_SESSION_ATTENDED") && !strings.Contains(shown, "AI_AGENT") &&
+					!strings.Contains(shown, "CLAUDE_CODE_EXECPATH") && !strings.Contains(shown, "GIT_EDITOR") {
+					t.Errorf("the person is not told why: no variable the hook read is named:\n%s", shown)
+				}
+				if !strings.Contains(shown, "`!"+terminalForm(c.name)) || !strings.Contains(shown, "outside Claude Code") {
+					t.Errorf("the person is not told what to type instead: the `!` line, or a terminal outside Claude Code:\n%s", shown)
 				}
 				if terminalAt := strings.Index(shown, terminalForm(c.name)); terminalAt >= 0 && terminalAt < strings.Index(shown, slash) {
 					t.Errorf("the terminal command comes before %s (AC-12):\n%s", slash, shown)
@@ -178,7 +209,7 @@ func TestAC17ANestedSessionsApproveLeavesTheStoryWaitingWhereThePersonsOwnAnswer
 	before := alikeFiles(files(t, nested), nested)
 	calls := 0
 	r := expand(t, typed(nested, "session-nested", "sdlc:approve", "A-1"),
-		realHookEnv(nested, "session-nested", map[string]string{"AI_AGENT": aiAgent}), counted(&calls))
+		realHookEnv(nested, "session-nested", nestedHook), counted(&calls))
 	if calls != 0 || !r.blocked() {
 		t.Fatalf("a nested session's /sdlc:approve ran %d commands: %+v", calls, r)
 	}

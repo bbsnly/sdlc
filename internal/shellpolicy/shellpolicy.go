@@ -985,7 +985,7 @@ func checkAssignedEnforcement(text string, powerShell bool, reading assignments)
 			return f, true
 		}
 	}
-	return agentText(text, powerShell, reading)
+	return protectedText(text, powerShell, reading)
 }
 
 // walkPlace is where the command was when a subshell opened: what a `cd`
@@ -1738,7 +1738,7 @@ func (w *programWalk) extraRun(r ran, dir string, reading assignments) (Finding,
 	if f, ok := checkHandRunHook(r, w.text); ok {
 		return f, true
 	}
-	return checkAgentEnv(r, w.text)
+	return checkProtectedEnv(r, w.text)
 }
 
 func (w *programWalk) run(r ran, reading assignments) (Finding, bool) {
@@ -1751,7 +1751,7 @@ func (w *programWalk) run(r ran, reading assignments) (Finding, bool) {
 	}
 	if len(words) == 0 {
 		// An assignment alone: `V=AI_AGENT`, kept for a later `unset "$V"`.
-		return checkAgentEnv(r, w.text)
+		return checkProtectedEnv(r, w.text)
 	}
 	w.s.seen.tell(w.s, words)
 	// In a string a shell runs later, a made subcommand is refused as any
@@ -1790,7 +1790,7 @@ func (w *programWalk) run(r ran, reading assignments) (Finding, bool) {
 	if f, ok := checkEnforcement(assignedNames(r.env)); ok {
 		return f, true
 	}
-	if f, ok := checkAgentEnv(r, w.text); ok {
+	if f, ok := checkProtectedEnv(r, w.text); ok {
 		return f, true
 	}
 	w.follow(r.group, dir, unplaced, words)
@@ -2122,7 +2122,7 @@ func humanDecisionsAt(text string, powerShell, undecoded bool, storyWaits func(d
 	}
 	// AI_AGENT as text, last, as Inspect reads it beside setsSession: a
 	// session that holds no story can still forge a recorded event.
-	return agentText(text, powerShell, reading)
+	return protectedText(text, powerShell, reading)
 }
 
 // renamedDecisions asks the runs a line's renames splice, where each run
@@ -2169,7 +2169,7 @@ func wordlessDecision(r ran, text string, powerShell, undecoded bool) (Finding, 
 	if f, ok := checkHandRunHook(r, text); ok {
 		return f, true
 	}
-	if f, ok := checkAgentEnv(r, text); ok || !r.extra {
+	if f, ok := checkProtectedEnv(r, text); ok || !r.extra {
 		return f, ok
 	}
 	return checkUnread(r.words, r.marked, r.piped, r.substituted, powerShell, undecoded)
@@ -2247,9 +2247,10 @@ func humanDecisionBy(r ran, here decisionPlace, text string, powerShell, undecod
 		return f, true
 	}
 	// Whatever the project holds too: a session that holds no story can run
-	// the hook on a payload that names the one that does, and AI_AGENT is
-	// what keeps a person's typed command on the slash route theirs.
-	return checkAgentEnv(r, text)
+	// the hook on a payload that names the one that does, and the six names
+	// agentenv.go protects are what keep a person's typed command on the
+	// slash route theirs.
+	return checkProtectedEnv(r, text)
 }
 
 // Places is every path-shaped word a command names, each once, in the order
@@ -2291,9 +2292,11 @@ func assignedNames(assigns []string) []string {
 // assistant can reach is not a control.
 func checkEnforcement(assigns []string) (Finding, bool) {
 	for _, name := range assigns {
+		// Folded, as the readers in agentenv.go compare them.
+		if protectedNames.namesProtected(name) {
+			return refusedFor(func(set protectedSet) bool { return set.namesProtected(name) }), true
+		}
 		switch name {
-		case agentEnv:
-			return agentMarkerFinding(), true
 		case "SDLC_ENFORCE", "SDLC_BIN", "CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID":
 			return Finding{
 				Rule: "enforcement-stays-on",

@@ -1883,18 +1883,19 @@ Claude Code sets environment variables in the processes it starts: `CLAUDECODE`,
 model's tools. A model's Bash or PowerShell has them, and so does any script, shell or
 interpreter it starts, a `!` line typed in Claude Code run from a terminal, and a terminal app or
 a `tmux` server that Claude Code started. The refusal's why names the first one it found, by its
-name only. A person's decision comes from a slash command they type in Claude Code, a `!` line in
-Claude Desktop, or a terminal outside Claude Code: a terminal window you opened yourself, such as
-Terminal on macOS or PowerShell from the Start menu. A terminal inside Claude Code or Claude
-Desktop is not one, and neither is a `tmux` session that Claude Code started.
+name only. A person's decision comes from a slash command they type in Claude Code or Claude
+Desktop, a `!` line in Claude Desktop, or a terminal outside Claude Code: a terminal window you
+opened yourself, such as Terminal on macOS or PowerShell from the Start menu. A terminal inside
+Claude Code or Claude Desktop is not one, and neither is a `tmux` session that Claude Code
+started.
 
 To go on:
 
 - Type the slash command, with the story where the command names one: `/sdlc:approve <ID>`, or
   `!sdlc approve <ID>` at the prompt in Claude Desktop, or `sdlc approve <ID>` in a terminal
-  outside Claude Code. In Claude Desktop, where the slash command answers that it did not run
-  (Claude Code 2.1.309, seen on 2026-10-29), type the command as a `!` line, which reaches sdlc
-  with none of the variables above. The others are alike:
+  outside Claude Code. Where the slash command answers that it did not run
+  ([see below](#a-slash-command-did-not-run)), type the command as a `!` line in Claude
+  Desktop, which reaches sdlc with none of the variables above. The others are alike:
   `/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."`; `/sdlc:ack`, or
   `sdlc ack --through <commit>`; `/sdlc:remap <ID>`, or `sdlc remap <ID>`, for a landed story
   whose change to `CODEMAP.md` is waiting, with `--replace` or `--drop` where the fix it printed
@@ -1912,6 +1913,28 @@ To go on:
   that `tmux` server, then check that `printenv` no longer lists the variable named.
 - If you are an assistant, stop here and say what you would have run. Do not try another way of
   running it.
+
+#### A slash command did not run
+
+A slash command is not refused with this code. The hook runs it only where its own environment is
+that of a hook Claude Code runs itself for a session a person attends, and otherwise answers that
+the command did not run and names the variable it could not read (read in Claude Code 2.1.321 in
+Claude Desktop, on 2026-11-13):
+
+- `AI_AGENT` has to hold the label Claude Code gives a hook it runs itself,
+  `claude-code_` then its version then `_harness`. A model's tools have a tool's label there
+  instead. An older Claude Code may give its hooks another label: update Claude Desktop or
+  Claude Code.
+- `CLAUDE_CODE_EXECPATH` has to be absent. Claude Code gives it to a model's tools, and a hook
+  has it only where it was started from one of them.
+- `GIT_EDITOR` must not be exactly `true`, which Claude Code gives a model's shell (seen in Claude
+  Desktop on macOS).
+- `CLAUDE_CODE_SESSION_ATTENDED` has to be exactly `1`, which Claude Code writes for a session a
+  person attends. A `claude -p` started from another session has it otherwise, and an older
+  Claude Code does not set it: type the command in an interactive session you opened yourself.
+
+Where one of these was set in the shell you started Claude Code or Claude Desktop from, or in
+Claude Desktop's local environment editor, take it out there and open a new session.
 
 For `sdlc staffing assign`, [SDLC-E0074](#sdlc-e0074) answers first where
 `CLAUDE_CODE_SESSION_ID` is set, as before, and this code covers every other case.

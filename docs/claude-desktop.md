@@ -57,10 +57,9 @@ Some of the loop's commands are a person's decision, and the hook refuses them
 from the model: approving, lifting the freeze, acknowledging the log, putting a
 landed story's map change on trunk, moving a story, and choosing an agent's
 model. In a terminal outside Claude Code you run them as `sdlc` commands. In
-Claude Code you type them as slash commands; in Claude Desktop, as a `!` line
-(below):
+Claude Desktop and in Claude Code you type them as slash commands:
 
-| Type in Claude Code | Stands for |
+| Type in Claude Desktop or Claude Code | Stands for |
 | --- | --- |
 | `/sdlc:approve` | `sdlc approve` |
 | `/sdlc:unfreeze` | `sdlc unfreeze` |
@@ -80,23 +79,34 @@ first six: Claude Code does not offer them to it, and the hook runs only a
 command a person typed. `/sdlc:init` and `/sdlc:doctor` decide nothing, so the
 model may run those too.
 
-In Claude Desktop, type a person's command as a `!` line: `!sdlc approve
-US-001`. Claude Code 2.1.309 in Claude Desktop runs the hook with `AI_AGENT`
-set, so `/sdlc:approve US-001` answers that it did not run. A `!` line there
-runs the command with none of the variables
-[SDLC-E0079](troubleshooting.md#sdlc-e0079) reads (seen on 2026-10-29). A
-terminal outside Claude Code is the fallback; it needs sdlc installed
-([Using a terminal of your own](#using-a-terminal-of-your-own)). In Claude Code
-run from a terminal, the slash command is the way: there a `!` line runs with
-the environment variables Claude Code sets for the model's Bash, so the command
-refuses itself with SDLC-E0079 and changes nothing. A slash command typed in a
-session that was started from another session's tool call does not run
-either: the hook finds `AI_AGENT` in its environment and says that the command
-did not run.
+In Claude Desktop you type `/sdlc:approve US-001` at the prompt, as in Claude
+Code. The hook runs the command only where its own environment is that of a hook
+Claude Code runs itself for a session a person attends, which it tells by four
+variables
+([enforcement](enforcement.md#a-persons-decisions-refused-in-every-session)).
+Those four were read in Claude Code 2.1.321 in Claude Desktop, on 2026-11-13,
+and that release is the one known to work. A later release that keeps them is
+expected to; an earlier one was not tried, and may give its hooks another label,
+and then the command does not run and the hook says to update.
+Where it cannot tell, the command does not run, and the hook says which
+variable it could not read and what to do about it. A `!` line is then the
+way in Claude Desktop: `!sdlc approve US-001` runs the command with none of the
+variables [SDLC-E0079](troubleshooting.md#sdlc-e0079) reads (seen on
+2026-10-29). A terminal outside Claude Code is the fallback; it needs sdlc
+installed ([Using a terminal of your own](#using-a-terminal-of-your-own)). In
+Claude Code run from a terminal, the slash command is the way: there a `!` line
+runs with the environment variables Claude Code sets for the model's Bash, so
+the command refuses itself with SDLC-E0079 and changes nothing. A slash command
+expanded in a session started from another session's tool call, or fed to the
+hook by a model, does not run where the hook can tell: it says that it did not
+run, and which variable told it so. It cannot always tell. A session a model
+starts in a terminal of its own, with `osascript` or `socat` for instance, may
+look attended to it, so the rules in [enforcement](enforcement.md#not-held)
+refuse the starts they read, and that page lists the ones they do not.
 
 After the loop handed `US-001` to a person with a question, typing
-`!sdlc approve US-001` in Claude Desktop, or `/sdlc:approve US-001` in Claude
-Code run from a terminal, shows:
+`/sdlc:approve US-001` in Claude Desktop or in Claude Code, or `!sdlc approve
+US-001` in Claude Desktop, shows:
 
 ```text
 US-001  approved (spec_unclear)
@@ -144,6 +154,11 @@ terminal, still refuses itself
 ([SDLC-E0079](troubleshooting.md#sdlc-e0079), and SDLC-E0074 for
 `sdlc staffing assign`); a `!` line in Claude Desktop runs
 it, as above. It must be exactly `0`.
+
+Leave `AI_AGENT`, `CLAUDE_CODE_EXECPATH` and `GIT_EDITOR=true` out of the
+local environment editor: the hook reads all three to tell a person's typed
+command from a model's, and with any of them set there a slash command answers
+that it did not run and names the variable.
 
 `SDLC_DEBUG_FILE` set in the local environment editor to the full path of a file
 makes the hook, and the plugin's launcher, append a line to it about each call.

@@ -503,18 +503,18 @@ func (s *Store) SetActive(id string) error {
 // session_id.
 const SessionEnv = "CLAUDE_CODE_SESSION_ID"
 
-// AgentEnv is the variable Claude Code sets for a model's tools: a model's
-// Bash or PowerShell and everything they start, a session started from one
-// among them (2.1.302, US-108), and, in Claude Desktop, every hook it runs
-// itself (2.1.309, entrypoint claude-desktop, seen on 2026-10-29). The slash
-// route reads it and fails closed; recording does not read it (US-112). A `!`
-// line typed in Claude Desktop has none of the markers below (seen the same
-// day).
+// AgentEnv is the variable Claude Code labels the processes it starts with:
+// claude-code_<version>_agent in a model's Bash or PowerShell and everything
+// they start, and claude-code_<version>_harness in a process it starts on its
+// own behalf, every hook among them (2.1.321 in Claude Desktop, US-130). The
+// slash route reads the label in internal/hook/typedby.go, which keeps its own
+// copy of the name; recording does not read it (US-112). A `!` line typed in
+// Claude Desktop has none of the markers below (seen on 2026-10-29).
 const AgentEnv = "AI_AGENT"
 
-// claudeCodeMarkers are the variables Claude Code 2.1.302 sets for the
-// processes it starts: a model's Bash or PowerShell, anything they start, a `!`
-// command, and a hook, which outside Claude Desktop has all but AgentEnv.
+// claudeCodeMarkers are the variables Claude Code sets for the processes it
+// starts: a model's Bash or PowerShell, anything they start, a `!` command,
+// and a hook.
 var claudeCodeMarkers = [...]string{"CLAUDECODE", SessionEnv, "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_PID", AgentEnv}
 
 // ClaudeCodeMarkers returns claudeCodeMarkers. The CLI refuses a person's

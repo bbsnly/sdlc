@@ -194,15 +194,22 @@ refusals below stay, [SDLC-E0079](troubleshooting.md#sdlc-e0079) among them.
   ([`claude-config-is-the-persons`](#claude-config-is-the-persons)).
 - Starting a Claude Code session that could expand one of the person's slash
   commands is refused there always
-  ([`story-stays-in-its-session`](#story-stays-in-its-session)).
+  ([`story-stays-in-its-session`](#story-stays-in-its-session)). That includes
+  Terminal or iTerm told by `osascript` to run `claude`, `socat` given an
+  address that runs it, and a program that gives a terminal given the path
+  `CLAUDE_CODE_EXECPATH` holds, and an `osascript` or `socat` whose text the
+  rules cannot read to the end.
 - Running the sdlc hook by hand on `UserPromptExpansion`, the event on which it
   runs a person's slash command, is refused there always
   ([`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)),
   and so is running it on one of the eight events it records
   ([`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host)).
-- A command that takes `AI_AGENT` away from what it runs, blanks it or sets it
-  is refused there always
-  ([`enforcement-stays-on`](#enforcement-stays-on)).
+- A command that takes one of the six protected names away from what it runs,
+  blanks it or sets it is refused there always
+  ([`enforcement-stays-on`](#enforcement-stays-on)): `AI_AGENT`, and the five
+  US-130 added, `CLAUDE_CODE_EXECPATH`, `GIT_EDITOR`,
+  `CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_CODE_CHILD_SESSION` and
+  `CLAUDE_CODE_ENTRYPOINT`.
 
 A command is read to its end, so `sdlc approve A-1; sdlc ack --through HEAD` is
 refused for the `sdlc ack` in it. `sdlc escalate` ends the iteration, so the
@@ -233,25 +240,60 @@ command after them and refuse it there. `env -i`, `exec -c`, `arch -c` and
 `env -u AI_AGENT` are refused themselves, whatever they run
 ([`enforcement-stays-on`](#enforcement-stays-on)). A `!` line typed in Claude
 Code run from a terminal has the variables too, so there a person types the
-slash command instead. In Claude Desktop (Claude Code 2.1.309, seen on
-2026-10-29) a `!` line has none of them and runs the command, while a slash
-command does not run, since the hook there has `AI_AGENT`.
+slash command instead. In Claude Desktop a `!` line has none of them and runs
+the command (Claude Code 2.1.309, seen on 2026-10-29), and so does a slash
+command, as below.
 
 A slash command a person types reaches the hook, which hands the command none
-of those variables, so it records. A hook run from a model's tool call has
-`AI_AGENT`, and so has the hook of a session started from one, and so does
-every hook Claude Code runs in Claude Desktop (2.1.309): there a typed
-person's command answers that it did not run and records no decision, and the
-person types it as a `!` line in Claude Desktop, or runs it in a terminal
-outside Claude Code. What neither
-catches is listed in [Not held](#not-held): a program that starts with a clean
-environment or removes those variables; a part-way `sdlc stop`, which is not
-one of the six; a program Claude Code starts itself from a project's
-configuration, such as an MCP server named in `.mcp.json` or a hook in
-`.claude/settings.json`, which may not have `AI_AGENT`; and a slash command a
-program types into the person's own prompt, as `tmux send-keys` can, which
-reaches Claude Code's own hook as the person's typing would.
-`SDLC_ENFORCE=0` turns none of this off.
+of those variables, so it records. The hook runs it only where its own
+environment is that of a hook Claude Code runs itself for a session a person
+attends, which it tells by four variables, read in Claude Code 2.1.321 in
+Claude Desktop (entrypoint `claude-desktop`) on 2026-11-13:
+
+- `AI_AGENT` holds the label Claude Code gives a hook it runs itself,
+  `claude-code_`, its version with dashes for dots, and `_harness`. A model's
+  Bash or PowerShell, and what it starts, has `claude-code_<version>_agent`
+  instead; a session started from one gives its own hook that label again, so
+  this part alone does not tell a
+  [nested session](the-loop.md#introduction) from the person's.
+- `CLAUDE_CODE_EXECPATH` is not set. Claude Code sets it for a model's tools
+  and not for a hook it runs itself.
+- `GIT_EDITOR` is not `true`. Claude Code sets it to `true` for a model's
+  tools; an editor a person set in their own shell does not count, by the
+  person's decision of 2026-11-13.
+- `CLAUDE_CODE_SESSION_ATTENDED` is `1`. Claude Code writes it afresh for every
+  hook: `1` for a session a person attends, `0` for a `claude -p` started from
+  another session, which is a child (`CLAUDE_CODE_CHILD_SESSION`) and was not
+  started interactively. A session that is not interactive counts as attended
+  only where it is no child and its entrypoint (`CLAUDE_CODE_ENTRYPOINT`) is
+  one Claude Code counts, so those two are what a model would change to make a
+  nested session look attended.
+
+Anything else, a variable the hook cannot read among it, refuses: the typed
+command answers that it did not run, names the first variable that failed (by
+name, never its value), and sends the person to a `!` line in Claude Desktop or
+a terminal outside Claude Code. A model's shell running the hook by hand has a
+tool's label, `CLAUDE_CODE_EXECPATH` and `GIT_EDITOR=true`, and a `claude -p`
+it starts has `CLAUDE_CODE_SESSION_ATTENDED=0`, so neither runs one. The six
+names those four come down to are each protected by
+[`enforcement-stays-on`](#enforcement-stays-on), in every session.
+
+What the four tell is a process Claude Code started itself in a session a
+person attends, not a person at the keyboard. They rest on two more things
+Claude Code does, read in 2.1.321 and not run: a skill marked
+`disable-model-invocation`, as the six decisions' skills are, is not expanded
+for a prompt the model schedules with a cron or wake-up tool, which otherwise
+reaches the hook as a typed one would; and a message put on the session's own
+messaging socket (`CLAUDE_CODE_MESSAGING_SOCKET`, seen by name in a Claude
+Desktop session) is queued with slash commands skipped. What neither the
+commands nor the hook catches is listed in [Not held](#not-held): a program
+that starts with a clean environment or removes those variables; a part-way
+`sdlc stop`, which is not one of the six; a program Claude Code starts itself
+from a project's configuration, such as a hook in `.claude/settings.json` or
+`.claude/settings.local.json`, whose environment passes the hook's check; and a
+slash command a program types into the person's own prompt, as `tmux
+send-keys` can, which reaches Claude Code's own hook as the person's typing
+would. `SDLC_ENFORCE=0` turns none of this off.
 
 Asking one of these commands for its help decides nothing and is not refused:
 `sdlc approve --help`, on a line of its own or after a `cd`, alone or piped to
@@ -2483,29 +2525,35 @@ Not caught by this rule, and caught after it, each in [Not held](#not-held).
 Code handed to an interpreter that runs the hook itself, as `python3 -c` with
 `subprocess.run` does, or a script file that runs it, reaches the hook, which
 answers that the command did not run and records no decision, since the
-process has `AI_AGENT`. Interpreter code that names the hook and the expansion
-or an event it records, written out, is refused; code that builds them still
-reaches the hook, whose check on the slash route answers as before.
-PowerShell's `Invoke-Expression` or `iex`, given the hook's command line as a
-string, reaches the hook with `AI_AGENT` too, and the hook
-answers that the command did not run. A copy of `sdlc` or of the launcher
-under another name, given an event this rule cannot read, as in
-`/tmp/x hook "$E"`, reaches the hook with `AI_AGENT`, and the hook answers that
-the command did not run. An event given in PowerShell as an expression in
-parentheses, as in `sdlc hook ('User'+'PromptExpansion')`, which is read as a
-command of its own, reaches the hook with `AI_AGENT`, and the hook answers that
+process has a tool's label in `AI_AGENT`, and `CLAUDE_CODE_EXECPATH`.
+Interpreter code that names the hook and the expansion or an event it records,
+written out, is refused; code that builds them still reaches the hook, whose
+check on the slash route answers as before. PowerShell's `Invoke-Expression`
+or `iex`, given the hook's command line as a string, reaches the hook with a
+tool's label in `AI_AGENT` too, and the hook answers that the command did not
+run. A copy of `sdlc` or of the launcher under another name, given an event
+this rule cannot read, as in `/tmp/x hook "$E"`, reaches the hook with a tool's
+label in `AI_AGENT`, and the hook answers that the command did not run. An
+event given in PowerShell as an expression in parentheses, as in
+`sdlc hook ('User'+'PromptExpansion')`, which is read as a command of its own,
+reaches the hook with a tool's label in `AI_AGENT`, and the hook answers that
 the command did not run. A session in a project that does not take part,
-running the hook on a payload whose `cwd` names one that does, runs it with
-`AI_AGENT`, and the hook answers that the command did not run. The launcher
-sourced with `.` or `source`, given an event this rule cannot read, gets past
-this rule too. Run that way, as in `. plugin/bin/sdlc-hook "$E" < p.json`, it
-reaches the hook with `AI_AGENT`, and the hook's check of that variable is
-what stops it: the hook answers that the command did not run. A program Claude
-Code starts itself, such as an MCP server or a hook named in the project's
-settings, has an environment of its own that may not have `AI_AGENT`, and a
-payload it feeds the hook is not caught (the project MCP server or hook in Not
-held). A slash command another program types into the person's own prompt
-reaches Claude Code's own hook as the person's typing would (in Not held too).
+running the hook on a payload whose `cwd` names one that does, runs it with a
+tool's label in `AI_AGENT`, and the hook answers that the command did not run.
+That session's own calls are not read, though, so one that has first
+overridden `AI_AGENT` with a hook's label and removed the other markers a
+model's tool carries, all written out, is not caught (in Not held). The
+launcher sourced with `.` or `source`, given an event this rule cannot read,
+gets past this rule too. Run that way, as in
+`. plugin/bin/sdlc-hook "$E" < p.json`, it reaches the hook with a tool's label
+in `AI_AGENT`, and the hook's check of its own environment is what stops it:
+the hook answers that the command did not run. A hook named in the project's
+settings is a program Claude Code starts itself, with an environment of its own
+that passes the hook's check (read in Claude Code 2.1.321), and a payload it
+feeds the hook is not caught; a server named in `.mcp.json` was not checked,
+and is listed with it (the project MCP server or hook in Not held). A slash
+command another program types into the person's own prompt reaches Claude
+Code's own hook as the person's typing would (in Not held too).
 
 ### `recorded-event-comes-from-the-host`
 
@@ -2555,8 +2603,9 @@ refuses adds a `refusal` record, as the refusal of a real call would, and a
 commit payload it allows notes the commit as Claude Code's own call would.
 
 The hook does not ask `AI_AGENT` on these events: Claude Code in Claude
-Desktop (2.1.309, seen on 2026-10-29) runs its hooks with it set, and a check
-there would record nothing for a person working in Claude Desktop. So these
+Desktop ran its hooks with it set (2.1.309, seen on 2026-10-29), and gives
+them a label of their own, ending `_harness`, from 2.1.321, so a check there would record
+nothing for a person working in Claude Desktop on an older release. So these
 rules are what hold the events, and what gets past them is in
 [Not held](#not-held).
 
@@ -2883,8 +2932,11 @@ refused ([not held](#not-held)).
 ### `enforcement-stays-on`
 
 Refuses a command that sets `SDLC_ENFORCE`, `SDLC_BIN`, `CLAUDE_PROJECT_DIR` or
-`CLAUDE_CODE_SESSION_ID`, and, in every session, one that takes `AI_AGENT` away
-from what it runs, blanks it or sets it.
+`CLAUDE_CODE_SESSION_ID`, and, in every session, one that takes one of six
+protected names away from what it runs, blanks it or sets it: `AI_AGENT`, and
+the five US-130 added, `CLAUDE_CODE_EXECPATH`, `GIT_EDITOR`,
+`CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_CODE_CHILD_SESSION` and
+`CLAUDE_CODE_ENTRYPOINT`.
 
 The switch that turns enforcement off belongs to the person who started the
 session. A switch an assistant can reach is not a control.
@@ -2892,52 +2944,71 @@ session. A switch an assistant can reach is not a control.
 there as the one the story holds, so setting it hands the story to a session
 that does not exist.
 
-`AI_AGENT` is another. Claude Code sets it for the tools a model runs, for a
-session started from one, and, in Claude Desktop (Claude Code 2.1.309), for
-every hook it runs, and the hook runs no person's slash command where it is
-set. Taken away, a payload a model wrote could reach the hook as a person's
-typed command, such as `/sdlc:approve`. Recording does not ask it, so the
-story's [trace](the-loop.md#the-trace) and its agent events are held by
+The six protected names are another. The hook runs a person's typed slash
+command only where its own environment is that of a hook Claude Code runs
+itself for a session a person attends, which it tells by `AI_AGENT`,
+`CLAUDE_CODE_EXECPATH`, `GIT_EDITOR` and `CLAUDE_CODE_SESSION_ATTENDED`
+([a person's decisions](#a-persons-decisions-refused-in-every-session)), and
+Claude Code works out the last from `CLAUDE_CODE_CHILD_SESSION` and
+`CLAUDE_CODE_ENTRYPOINT`. Changed by a model, any of them could make a payload
+the model wrote, or a session it starts, pass for a person's typed command,
+such as `/sdlc:approve`. Setting `CLAUDE_CODE_SESSION_ATTENDED` itself does
+nothing, since Claude Code writes it afresh for every hook, and is refused all
+the same. Recording does not ask any of them, so the story's
+[trace](the-loop.md#the-trace) and its agent events are held by
 [`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host)
 instead.
-A command is refused for what it does to the name, however it is spelled:
+A command is refused for what it does to a protected name, however it is
+spelled:
 
 - a builtin that writes a variable it is named: `unset`, `export`, `declare`,
   `typeset`, `local`, `readonly`, `read`, `mapfile`, `getopts`, `printf -v`,
   `wait -p`, `for` and `select`, `coproc`, zsh's `getln` and its module
-  builtins such as `zparseopts`, with `AI_AGENT`, a subscript of it, or a
-  pattern that can match it (`AI_*`) in a place it writes;
-- an assignment to it, in front of a command, alone, in arithmetic or in
-  `${AI_AGENT:=}`, and a value that names it, as `declare -n r=AI_AGENT` or
+  builtins such as `zparseopts`, with a protected name, a subscript of it, or a
+  pattern that can match one (`AI_*`, `CLAUDE_CODE_*`) in a place it writes;
+- an assignment to one, in front of a command, alone, in arithmetic or in
+  `${AI_AGENT:=}`, and a value that names one, as `declare -n r=AI_AGENT` or
   `V=AI_AGENT` kept for a later `unset "$V"`;
-- a program the shell makes, given a word that names it:
+- a program the shell makes, given a word that names one:
   `X=unset; $X AI_AGENT`;
-- a program started without it: `env -i` and its spellings (`env -`,
+- a program started without one: `env -i` and its spellings (`env -`,
   `--ignore-environment` and its prefixes), `exec -c`, `arch -c`, and
   `env -u AI_AGENT`;
-- interpreter code that names it, as `python3 -c` with `os.environ.pop` or
+- interpreter code that names one, as `python3 -c` with `os.environ.pop` or
   `node -e` with `delete process.env.AI_AGENT`, awk's family (`awk`, `gawk`,
   `mawk`, `nawk`) and `perl` among them, in its words or in a document it is
   fed;
 - in PowerShell, `$env:AI_AGENT =`, `Remove-Item`, `Rename-Item` and their kin
   on `Env:AI_AGENT`, a pattern or the bare `env:` drive, `Start-Process
-  -UseNewEnvironment`, and a string that is `AI_AGENT` alone.
+  -UseNewEnvironment`, and a string that is a protected name alone.
 
 Some commands are refused though they change nothing, because the hook cannot
 tell them from ones that do: `declare -p AI_AGENT`, `readonly AI_AGENT`, a
 builtin given a name the shell makes (`read -r "$var"`, `export "$NAME=1"`), a
-value that is the text `AI_AGENT` (`MSG=AI_AGENT make`), awk code that names
-it, a here-document that names it after a command that names an interpreter or
-a shell among its words (`xyz python3 <<EOF`), and `env -i` or `exec -c`
-whatever they run. Reading it is never refused:
-`echo "$AI_AGENT"`, `printenv AI_AGENT`, `export AI_AGENT` and
-`Get-Item Env:AI_AGENT` are left alone.
+value that is the text of a protected name (`MSG=AI_AGENT make`), interpreter
+code that only reads one (`python3 -c` with `os.environ.get("GIT_EDITOR")`),
+awk code that names one, a here-document that names one after a command that
+names an interpreter or a shell among its words (`xyz python3 <<EOF`), and
+`env -i` or `exec -c` whatever they run. A model's
+`GIT_EDITOR=true git rebase --continue` and `CLAUDE_CODE_ENTRYPOINT=x claude`
+are refused too: Claude Code already gives a model's shell `GIT_EDITOR=true`,
+so git needs no assignment. Reading one is never refused:
+`echo "$AI_AGENT"`, `printenv GIT_EDITOR`, `export AI_AGENT` and
+`Get-Item Env:AI_AGENT` are left alone, and so is a longer name that holds
+one, such as `GIT_SEQUENCE_EDITOR`.
 
-*Instead:* leave `AI_AGENT` as Claude Code set it; a command that names
-`AI_AGENT` where the shell or an interpreter could change it is refused even
-when it changes nothing (`declare -p AI_AGENT`, `MSG=AI_AGENT make`), so leave
-the name out of it; spell out a variable's name instead of building it from
-another variable; to drop another variable for one program, use `env -u NAME`,
+The refusal names the protected name the command changes, or all six where it
+cannot tell which, as for a name the shell builds or an emptied environment.
+
+*Instead:* leave the name as Claude Code set it; a command that names it where
+the shell or an interpreter could change it is refused even when it changes
+nothing (`declare -p AI_AGENT`, `MSG=AI_AGENT make`), so leave the name out of
+it; for `GIT_EDITOR`, a git command needs no `GIT_EDITOR` of its own, since
+Claude Code gives a model's shell `GIT_EDITOR=true` (seen in Claude Desktop on
+macOS), so run it without one; where `GIT_EDITOR` is not set,
+`git -c core.editor=true ...` keeps the message as written for one command;
+spell out a variable's name instead of building it from another variable; to
+drop a variable that is not one of the six for one program, use `env -u NAME`,
 not `env -i`; to see what the hook answers, run
 `sdlc hook PreToolUse` as you are, with a payload that has a `session_id` of
 its own, since a refused one with this session's id is counted in the held
@@ -2947,14 +3018,16 @@ story's trace; if a rule is wrong, say which one and why.
 
 Refuses running `claude`, or running `@anthropic-ai/claude-code` through a
 package runner such as `npx`, `npm exec` or `pnpm dlx`, from the session
-working the story. Installing the package is not refused.
+working the story, and running `"$CLAUDE_CODE_EXECPATH"`, the path of the
+`claude` a model's tools run under, as a program there as it refuses `claude`.
+Installing the package is not refused.
 
 A Claude Code session started from a shell is a session of its own, and the
 story holds only the session working it, so none of these rules would hold
 what the new one did. The shell rules do not read a script file, so they
 cannot tell what one runs. A script file that runs `claude` starts a session
-whose hook has `AI_AGENT`, so a person's slash command expanded there answers
-that it did not run, and records no decision. One that sets
+whose hook has `CLAUDE_CODE_SESSION_ATTENDED=0`, so a person's slash command
+expanded there answers that it did not run, and records no decision. One that sets
 `CLAUDE_CODE_SESSION_ID` and runs a person's command is refused by the command
 itself, with SDLC-E0079.
 
@@ -2972,7 +3045,13 @@ not a person's. It refuses:
 - `claude` given a prompt the hook cannot read: one substituted with `$( )`,
   piped or redirected in, or written with a variable;
 - `claude` run through a program that gives it a terminal to type into, such as
-  `tmux`, `screen`, `zellij`, `expect`, `unbuffer` or `script`;
+  `tmux`, `screen`, `zellij`, `expect`, `unbuffer` or `script`, or Python's
+  `pty` module, as in `python3 -m pty claude`. The native installer's binary, a
+  path under `claude/versions/` that `CLAUDE_CODE_EXECPATH` holds on that
+  install, is `claude` wherever these rules read text for it: given to `tmux`,
+  `screen`, `zellij` or `expect` in one string, in a `socat` address and in the
+  text of an `osascript`, and so is a Windows path to it written with
+  backslashes;
 - a program that could be `claude` (a variable, a glob, the versioned binary
   under `~/.local/share/claude/versions/`, `Start-Process`) given a prompt that
   names one of those commands;
@@ -2989,7 +3068,95 @@ not a person's. It refuses:
   `"$(command -v claude)"` is refused too, under the same rule, earlier and with
   the session's reason, "a Claude Code session started from here could expand a
   person's slash command, ...", because `command -v claude` is read as a run of
-  `claude`.
+  `claude`;
+- `osascript` given text that tells Terminal or iTerm (iTerm2 too) to run
+  `claude` or `"$CLAUDE_CODE_EXECPATH"`, as in
+  `osascript -e 'tell application "Terminal" to do script "claude"'`, with
+  `do script`, `create window ... command` or `write text`, in AppleScript or
+  in JavaScript for Automation, in `-e` words, a here-document or a
+  here-string. A terminal app's own shell has none of the variables a model's
+  tool has, so a session started there looks attended and these rules are the
+  only ones in front of it, which is why a person's command in the line is not
+  needed. Text that tells a terminal to run something, with `do script`,
+  `write text` or iTerm's `command`, has to hand it a string in
+  double quotes: a command held in a variable, as in
+  `set c to system attribute "X"` followed by `do script c`, and one built from
+  `do shell script`, `the clipboard`, `read`, `run script` or a text operation,
+  is refused as unreadable, since plain words can build a name too, and a
+  `do script` with no command is refused with them. The price is a command
+  held in a variable, `set c to "ls"` and then `do script c`, which is
+  written as `do script "ls"`;
+- `socat` given an `EXEC:`, `SYSTEM:` or `SHELL:` address that runs `claude` or
+  `"$CLAUDE_CODE_EXECPATH"`, in any case, quoted, a Windows path to it
+  written with backslashes in single quotes included, after options, beside a
+  listener or after the `!!` of a dual address, including one whose first half
+  is a dash address, as in `socat - EXEC:claude,pty` and
+  `socat -,raw!!EXEC:claude,pty /dev/null`, with a person's command in the line
+  or not. A word that begins with a dash is an option unless it holds a comma, a
+  `!`, a colon or an expansion (`$`, a brace or a backtick), since
+  `X=,raw!!EXEC:claude,pty; socat -$X /dev/null` builds a dual address. An
+  option with an expansion in its own word, as in `socat -T$N - TCP:...`, is
+  refused as unreadable with them, which is the price;
+- `"$CLAUDE_CODE_EXECPATH"` given to a program that gives a terminal, as
+  `claude` is, and, in the session working the story only, run as the program
+  itself: a second session may start a session of its own whose prompt it reads,
+  as `claude -p x`, so that is not held there;
+- an `osascript` or `socat` whose text the rules cannot read to the end,
+  whatever it names. An `osascript` is refused that is given its script on
+  standard input or from `xargs`, or whose text holds any character other than
+  letters, digits, spaces, `. , : / = _ -` and quotes: an `&`, a `+`, a
+  backslash, a parenthesis, a `$` or a brace can join, escape or expand the
+  letters of an app's name, so none is let through, and the commands a plain
+  text hands a terminal are held as the bullet above says. A `socat` address
+  word that holds `$`, a brace, a backtick, a glob character (`*`, `?` or `[`)
+  or an open parenthesis, or begins with `@`, the text of an `exec:`,
+  `system:` or `shell:` address held to the plain characters above, and the
+  addresses `xargs` gives it, are refused alike: a glob can build an address
+  from a file the same call makes
+  (`touch 'EXEC:claude,pty'; socat - ?XEC:claude,pty`), bash's extended
+  patterns do it with `?(EXEC:claude,pty)`, and PowerShell splats an array into
+  `socat @A`. That costs an IPv6 address such as `socat - TCP:[::1]:8080`, a
+  parenthesis in a quoted address, as in `socat - 'EXEC:sh -c "(cd /x && make)"'`,
+  and an option written with a glob or an expansion in its own word, as in
+  `socat -T? ...`, which are written out in another form or run by the person.
+  The refusal says how to write the line: as one plain string, one command per
+  call, or in the person's own terminal. It also stops
+  `do script "cd /repo && make"` and `socat TCP:localhost:$PORT -`, which are
+  written out or run by the person. An `osascript` that types a keystroke is
+  read as text and not as a keystroke: `keystroke "claude"` is allowed, and one
+  with a character outside that set is refused as unreadable, whatever it
+  types;
+- a shell on a terminal that is fed on standard input, where what is fed is
+  not read: a `socat` whose `exec:`, `system:` or `shell:` address runs a shell
+  with no script and no command line, given input through a pipe, a
+  here-string or a file, as in `printf 'claude\n' | socat - EXEC:bash,pty`, is
+  refused as a start where the line names `claude` and as unreadable where it
+  does not, and so is Python's `pty` module given such a shell and input, as in
+  `printf 'claude\n' | python3 -m pty bash`. The shell is read as the rules
+  read any program: behind `exec`, `env`, `nohup`, `sudo`, `timeout` and the
+  other wrappers, as in `EXEC:'env bash',pty`, and with options of its own, as
+  in `EXEC:'bash -o posix',pty` and `EXEC:'bash --rcfile /dev/null',pty`. A
+  shell given `-c` or a script is not read as one that takes its commands from
+  the input. The shells are `sh`, `bash`, `zsh`, `dash`, `ksh`, `fish`, `ash`,
+  `csh` and `tcsh`. That costs a shell on a terminal that is fed by a pipe or
+  a file for any other reason, which the person runs in their own terminal;
+- a program word the rules cannot name, a variable, a substitution or a glob,
+  as in `P=osascript; script -q /dev/null "$P" -e '...'` and
+  `/usr/bin/osascrip? -e '...'`, given text that names Terminal or iTerm and
+  `claude`, or an address that runs it, is read as `osascript` and as `socat`.
+  A glob is a word of more than one character with `*`, `?` or `[` in it,
+  which the shell runs as the program it matches, so `/usr/bin/osa*`,
+  `/usr/bin/[o]sascript` and `/usr/bin/soca?` are refused as `claude` with a
+  glob already is, and `ls *.md` and `[ -f x ]` are not. A glob in the place of
+  a program that gives a terminal, as in `/usr/bin/scrip? -q /dev/null claude`
+  and `/opt/homebrew/bin/tmu? new-session -d claude`, is refused when `claude`
+  or `"$CLAUDE_CODE_EXECPATH"` is among its words, as `script` and `tmux` are,
+  and `/usr/bin/scrip? -q /dev/null make test` is not. So is any other glob in
+  the place of a program, since it may match one that gives a terminal:
+  `./build/*.sh claude` is refused too, with the reason about a Claude Code
+  session, and that is the price of reading a glob as the program it may match.
+  Text that is only unreadable is not refused there, since the program may be
+  neither.
 
 The rule's name says "story", and in another session there may be none: it is
 the same rule, about a session started from this one, and a later rename is the
@@ -2997,51 +3164,58 @@ clean fix. A session started with a prompt the hook can read and that names
 none of those commands is not refused there.
 
 Not caught by this rule, and caught after it. Each of these starts a Claude Code
-session that keeps the environment of the model's tool that started it, and the
-hook of a session started that way has `AI_AGENT`, so a person's slash command
-expanded there answers that it did not run, and records no decision:
+session that keeps the environment of the model's tool that started it, with no
+terminal of its own, and Claude Code counts a session started that way as one
+nobody attends: its hook has `CLAUDE_CODE_SESSION_ATTENDED=0`, so a person's
+slash command expanded there answers that it did not run, and records no
+decision (Claude Code 2.1.321). A session given a terminal of its own, as
+`script` or `tmux` gives one, counts as attended; the starts the list above
+names are refused, and one hidden from the rules, or given by a program that
+gives a terminal and is not on that list, is in Not held:
 
-- A script file that starts `claude` starts a session whose hook has
-  `AI_AGENT`.
+- A script file that starts `claude` starts a session whose hook answers that
+  the command did not run.
 - A prompt built inside a program by a means the hook does not read, such as
   one decoded from base64 by a program it does not recognise as inline code, or
   a program name built inside code (`"cl" + "aude"`), reaches a session whose
-  hook has `AI_AGENT`.
+  hook answers that the command did not run.
 - An alias, whether the person's shell profile defines it or the same line
   does, is not something this rule reads, and a shell run by a tool expands
-  none unless `expand_aliases` is set. A session an alias starts has `AI_AGENT`
-  in its hook all the same.
+  none unless `expand_aliases` is set. A session an alias starts answers in
+  its hook that the command did not run all the same.
 - An interpreter is read as taking its program from standard input only where
   no word after its options could be its script: an option that takes a value
   in the next word, other than the few the hook knows (`-W` and `-X` for
   Python, `-r`, `--require`, `--import` and `-C` for Node, `-I` for Perl, and
   the like), makes its value look like the script, as with
   `python3 --check-hash-based-pycs default`, `ruby --disable gems` or
-  `node --title x`. A session such a program starts with `claude` has
-  `AI_AGENT` in its hook.
+  `node --title x`. A session such a program starts with `claude` answers in
+  its hook that the command did not run.
 - A link the copy above does not read as `claude`, one made from the versioned
   binary's path or from a glob such as `cla*`, and a copy made in one call and
-  run in the next, each start a session whose hook has `AI_AGENT`.
-- `su me -c` starts a session whose hook has `AI_AGENT`.
+  run in the next, each start a session whose hook answers that the command
+  did not run.
+- `su me -c` starts a session whose hook answers that the command did not run.
 - An editor or a pager that runs a shell, as in
-  `vim -c '!claude -p /sdlc:approve' -c q`, starts a session whose hook has
-  `AI_AGENT`.
+  `vim -c '!claude -p /sdlc:approve' -c q`, starts a session whose hook answers
+  that the command did not run.
 - An interpreter's own call to the system, as in
   `awk 'BEGIN{system("claude -p /sdlc:approve")}'`, and AppleScript's
   `do shell script`, as in
   `osascript -e 'do shell script "claude -p /sdlc:approve"'`, start a session
-  whose hook has `AI_AGENT`.
+  whose hook answers that the command did not run.
 - A program a git setting runs, as in
-  `git -c core.pager='claude -p /sdlc:approve' log`, and `GIT_EDITOR` set in
-  front of `git commit` in a session that holds no story, start a session whose
-  hook has `AI_AGENT`.
+  `git -c core.pager='claude -p /sdlc:approve' log`, starts a session whose
+  hook answers that the command did not run. An editor set in front of
+  `git commit` with `GIT_EDITOR` is refused in every session, under
+  [`enforcement-stays-on`](#enforcement-stays-on).
 - Code handed to an interpreter that runs `sdlc` itself, as `python3 -c` does
   with `subprocess.run(["sdlc", "approve", ...])`, is refused by the command
   itself, with SDLC-E0079, and the hook run that way answers that the command
-  did not run, since the process has `AI_AGENT`.
+  did not run, since the process has a tool's label in `AI_AGENT`.
 
 `launchctl submit -l x -- claude -p /sdlc:approve` starts `claude` with a
-clean environment, with no `AI_AGENT`, and is not caught (in
+clean environment, and is not caught (in
 [Not held](#not-held), with the other programs that start clean).
 
 ### Claude config through the shell
@@ -3078,6 +3252,12 @@ the person's Claude Code configuration:
   add`, `remove` (or `rm`) and `update`. Their `--help` is not refused, nor is
   any other `claude` command: `claude install`, `update`, `setup-token` and
   `migrate-installer` change the program, not the configuration.
+
+Those commands are read by the word `claude`. `"$CLAUDE_CODE_EXECPATH" mcp add`
+is not read by this rule, so in a session that holds no story it is not
+refused; the session working the story refuses `"$CLAUDE_CODE_EXECPATH"` as a
+program whatever follows it
+([`story-stays-in-its-session`](#story-stays-in-its-session)).
 
 A path is placed as the shell would place it: `~`, `$HOME`, `${HOME}`,
 `$env:HOME`, `$env:USERPROFILE`, `%USERPROFILE%` and `%HOMEDRIVE%%HOMEPATH%`,
@@ -3900,7 +4080,8 @@ how you would notice.
   cannot read it, and the command itself refuses it with SDLC-E0079. Given
   `["sdlc", "hook", "UserPromptExpansion"]` and a payload it wrote, the hook
   answers that the command did not run, and records no decision, since the
-  process has `AI_AGENT`. PowerShell's `Invoke-Expression` or `iex` runs a
+  process has a tool's label in `AI_AGENT`, and `CLAUDE_CODE_EXECPATH`.
+  PowerShell's `Invoke-Expression` or `iex` runs a
   command it is given as a string, which the shell rules do not read;
   `Invoke-Expression 'sdlc approve A-1'` is refused by the command itself,
   with SDLC-E0079. The story's `gate-record.json` lists every approval and
@@ -3909,7 +4090,7 @@ how you would notice.
   `sdlc` or of the plugin's launcher under another name, given an event the
   shell rules cannot read, as in `/tmp/x hook "$E"`, reaches the hook, which
   answers that the command did not run and records no decision, since the
-  process has `AI_AGENT`
+  process has a tool's label in `AI_AGENT`, and `CLAUDE_CODE_EXECPATH`
   ([`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)
   refuses that copy before it runs only with the event written out). The
   story's `gate-record.json` lists every approval and unfreeze with when it
@@ -3920,16 +4101,23 @@ how you would notice.
   subcommand nor the event given that way. `sdlc ('ap'+'prove') US-1` is
   refused by the command itself, with SDLC-E0079, and
   `sdlc hook ('User'+'PromptExpansion')` reaches the hook, which answers that
-  the command did not run, since the process has `AI_AGENT`. The story's
-  `gate-record.json` lists every approval and unfreeze with when it was made.
+  the command did not run, since the process has a tool's label in
+  `AI_AGENT`. The story's `gate-record.json` lists every approval and unfreeze
+  with when it was made.
 - **A session in a project that does not take part.** Its calls are not read.
   A plain `sdlc approve` run there that reaches a project that does take part,
   through a directory the command does not spell, such as
   `cd "$(cat /tmp/d)"`, is refused by the command itself, with SDLC-E0079.
   Running the hook there on a payload whose `cwd` names a project that does
   take part answers that the command did not run, and records no decision,
-  since the process has `AI_AGENT`. That project's `gate-record.json` lists every
-  approval and unfreeze with when it was made.
+  since the process has a tool's label in `AI_AGENT`. Since none of that
+  session's calls are read, though, a run of the hook there after a command has
+  overridden `AI_AGENT` with a hook's label and removed the other markers a
+  model's tool carries, all written out, records a person's decision on such a
+  payload: it is not caught. Besides the label, the hook reads
+  `CLAUDE_CODE_EXECPATH` and `GIT_EDITOR=true` there, which a model's tool has
+  and a hook Claude Code runs itself does not. That project's
+  `gate-record.json` lists every approval and unfreeze with when it was made.
 - **A project MCP server, or a project hook.** Any session can write
   `.mcp.json`, which no rule protects, and Claude Code starts a server named
   there once the person approves it, or with no question where
@@ -3938,28 +4126,41 @@ how you would notice.
   which are protected only in the session that holds the story, and Claude
   Code runs a hook named there when its event comes. Claude Code starts either
   with an environment of its own, which has `CLAUDECODE`, so a person's
-  command it runs is refused with SDLC-E0079. That environment of its own may
-  not have `AI_AGENT`, and a person's slash command it feeds the hook on a
-  payload it wrote, with `sdlc hook UserPromptExpansion`, is then not caught.
-  It can run `sdlc hook SubagentStop`, or any event the hook records, on a
-  payload it wrote too, and since recording asks no variable, the story's
+  command it runs is refused with SDLC-E0079. A hook Claude Code runs that way
+  has the environment the hook's check on the slash route accepts, as a hook of
+  Claude Code's own does (read in Claude Code 2.1.321), and a person's slash
+  command it feeds the hook on a payload it wrote, with
+  `sdlc hook UserPromptExpansion`, is not caught, since it starts with an
+  environment of its own. A server from `.mcp.json`, and a `statusLine`
+  command, were not checked, and are taken to be alike. It can run
+  `sdlc hook SubagentStop`, or any event the hook records, on a payload it
+  wrote too, and since recording asks no variable, the story's
   agent events and trace are then what it wrote, whatever its environment.
   You would notice Claude Code asking you to approve a server you did not add,
-  `git status` showing `.mcp.json` or a file under `.claude` changed, and the
+  `git status` showing `.mcp.json` or a file under `.claude` changed (a
+  `.claude/settings.local.json` that git ignores does not show there), and the
   story's `gate-record.json` listing a decision nobody remembers making.
 - **A slash command a program types into your own prompt.** Where you run
   Claude Code inside `tmux` or `screen`, or on macOS, a command the model runs
   can type into your session's prompt: `tmux send-keys` into the session's
-  pane, `screen -X stuff`, or a keystroke sent with `osascript` through System
-  Events. Claude Code takes what was typed as your typing, and its own hook,
-  which starts with an environment of its own and no `AI_AGENT`, records a
-  person's decision typed that way: it is not caught. In Claude Desktop, whose
-  hooks have `AI_AGENT` (Claude Code 2.1.309), a slash command typed that way
-  does not run, though a `!` line typed that way does. This is not new: in
-  0.4.0 the same keystrokes typed a `!sdlc approve` line, which SDLC-E0079 now
-  refuses. You would notice a command in your session's prompt or transcript
-  that you did not type, and the story's `gate-record.json` listing a decision
-  nobody remembers making.
+  pane, `screen -X stuff`, a keystroke sent with `osascript` through System
+  Events, or `cliclick`. No rule reads any of these as typing, so the line that
+  types is not refused. An `osascript` that also tells Terminal or iTerm to run
+  `claude` is refused as a start, and one with a character outside the plain
+  set is refused as unreadable whatever it types, but no rule reads a keystroke
+  as one. Plain text that tells iTerm to
+  `write text "/sdlc:approve US-001"` into its current session, or Terminal to
+  `do script "/sdlc:approve US-001" in front window`, types a person's command
+  into a window already open, which has an environment of its own, so no rule
+  refuses it and it is not caught. Claude Code takes what was typed as your
+  typing, and its own hook, which starts with an environment of its own,
+  records a person's decision typed that way: it is not caught. In Claude
+  Desktop a slash command typed that way runs too (Claude Code 2.1.321); a `!`
+  line typed that way ran on Claude Code 2.1.309 and was not checked on
+  2.1.321. This is not new: in 0.4.0 the same keystrokes typed a
+  `!sdlc approve` line, which SDLC-E0079 now refuses. You would notice a
+  command in your session's prompt or transcript that you did not type, and the
+  story's `gate-record.json` listing a decision nobody remembers making.
 - **A path no rule can tell is the same file.** On macOS,
   `/.vol/<device>/<inode>` names a file by its volume and inode, and a hard
   link is a second name for the same file. Neither resolves to the path a rule
@@ -3974,35 +4175,53 @@ how you would notice.
   AppleEvents to run it, a `tmux` server a person started that is already
   running, `su -`, `sudo -i`, plain `sudo` and `doas` as they are set up by
   default, `ssh`, `schtasks`, WMI's `Win32_Process` and `Start-Process
-  -UseNewEnvironment` each start it with none of the markers. `at` keeps the
-  environment it is given, and so does an app `open` starts. A person's
+  -UseNewEnvironment` each start it with none of the markers. Terminal or iTerm
+  told to run `claude` is refused as a start
+  ([`story-stays-in-its-session`](#story-stays-in-its-session)), but Terminal
+  told to run a person's decision in its terminal form, as in
+  `do script "sdlc approve US-001"`, is not caught, since its shell has an
+  environment of its own. `at` keeps the environment it is given, and so does
+  an app `open` starts. A person's
   decision in an `at` job submitted after a command removed Claude Code's
   markers is not caught, and neither is one `open` hands to an app that was
   already running, which has an environment of its own. A person's decision
   run after a command has removed or blanked Claude Code's markers, in the
   same call or an earlier one of the persistent shell, or by a program that
-  clears its own environment, is not caught either. Removing `AI_AGENT` alone
-  is enough for the hook: a person's slash command fed to it on a payload a
-  model wrote is not caught once that is unset, since the hook hands the
-  command none of the other markers. Run after removing Claude Code's markers,
+  clears its own environment, is not caught either. A person's slash command
+  fed to the hook on a payload a model wrote is not caught once a command the
+  rules do not read has overridden `AI_AGENT` with a hook's label and removed
+  the other markers the hook reads, since the hook hands the command none of
+  the markers. A nested session started by a spelling the rules do not read,
+  after a command removed `CLAUDE_CODE_CHILD_SESSION` or overrode
+  `CLAUDE_CODE_ENTRYPOINT`, or with an environment of its own, is not caught
+  either. On Claude Code 2.1.312 and later, before US-130 the hook refused a
+  person's slash command in every nested session, since every hook it ran had
+  `AI_AGENT`; now it refuses one only where it can tell that nobody attends it.
+  Run after removing Claude Code's markers,
   `sdlc unfreeze --reason x` lifts a story's freeze, and so a model working a
   story could lift its own. The story's `gate-record.json` lists every
   approval and unfreeze with when it was made.
-- **`AI_AGENT` taken away where the rules cannot see it.** `AI_AGENT` now
-  guards a person's typed command on the slash route alone. The commands
-  [`enforcement-stays-on`](#enforcement-stays-on) reads are refused, and these
-  are not:
+- **A protected name changed where the rules cannot see it.** The six names
+  [`enforcement-stays-on`](#enforcement-stays-on) protects guard a person's
+  typed command on the slash route alone. The commands that rule reads are
+  refused, and these are not:
   - a program that starts clean or drops the environment by its own setup:
     `sudo` and `doas` as set up by default, `su -`, `ssh`, `systemd-run`,
     `setpriv --reset-env`, `launchctl`, `at`, `cron`, and a `tmux` or `screen`
-    session, each running the launcher or a copy of it;
+    session, each running the launcher or a copy of it, and the commands
+    `launchctl` and `tmux` have for the environment they hand on to what they
+    start later, as in `launchctl setenv CLAUDE_CODE_EXECPATH x`,
+    `launchctl unsetenv CLAUDE_CODE_SESSION_ATTENDED`,
+    `tmux set-environment -g CLAUDE_CODE_ENTRYPOINT x` and
+    `tmux setenv -gu CLAUDE_CODE_EXECPATH`, which both sessions allow for any of
+    the six names, as trunk allows them for its one;
   - a program the shell makes that clears the environment (`$X -i …` with
     `X=env`), and a name the shell makes handed to a program the shell makes
     (`$X $Y`), with the variables set in this call or an earlier one of the
     persistent shell;
   - a name the shell makes, handed to one of zsh's module builtins;
   - interpreter code, PowerShell's included, that builds the name, as
-    `'AI_' + 'AGENT'`;
+    `'AI_' + 'AGENT'` or `'GIT_' + 'EDITOR'`;
   - a script run from a file, words or a script fed to a shell, `xargs` or
     `parallel` on standard input or from a file
     (`echo 'unset AI_AGENT; …' | sh`), `eval "$cmd"`, a process substitution
@@ -4023,11 +4242,107 @@ how you would notice.
     is.
 
   Through them a payload a model wrote can reach the hook as a person's typed
-  command, as the entry before this one says. Recording does not need
-  `AI_AGENT` taken away: the next entry says what gets past it.
+  command, as the entry before this one says, and a session a model starts can
+  look attended. Recording does not need any of them changed: the next entry
+  says what gets past it.
+- **A nested session given a terminal of its own.** Claude Code counts a
+  session started from a model's tool as attended where it has a terminal of
+  its own, as `script` or `tmux` gives one. The shell rules refuse these starts
+  ([`story-stays-in-its-session`](#story-stays-in-its-session)): `script`,
+  `tmux` and their kind, and Python's `pty` module, given `claude` or
+  `"$CLAUDE_CODE_EXECPATH"`, an `osascript` that tells Terminal or iTerm to run
+  `claude`, or hands it a command that is not a string in quotes, and `socat`
+  given an `EXEC:`, `SYSTEM:` or `SHELL:` address that runs it, or that runs a
+  shell it is fed. Whether the hook of such
+  a session keeps the model's `CLAUDE_CODE_EXECPATH` and `GIT_EDITOR=true` was
+  not checked on Claude Code 2.1.321; where it does not, its hook looks like the
+  person's, and only those rules stand in front of it. These starts get past
+  the rules:
+  - a script file that starts it, run by `osascript x.scpt`, by
+    `open -a Terminal x.command`, or as an address, as in
+    `socat - EXEC:'sh /tmp/x.sh'`, in the call that writes it or in a later
+    one;
+  - `open -a Terminal /usr/local/bin/claude`, which hands Terminal the path of
+    the program, and which was not tried against a real Terminal;
+  - another terminal app told by AppleScript to run it;
+  - a program that holds or opens a terminal and is not one of those the rules
+    read through, each tried with the program and a slash command in letters:
+    `dtach -n /tmp/s claude`, `abduco -n s claude`, the same two given
+    `"$CLAUDE_CODE_EXECPATH"`, `asciinema rec -c "claude ..." /tmp/x.cast`,
+    `xterm -e claude`, `gnome-terminal -- claude` and
+    `open -na kitty --args claude`;
+  - a program word the rules cannot name, run in a session that holds no story:
+    `X=claude; script -q /dev/null "$X"`, and the same with
+    `X="$CLAUDE_CODE_EXECPATH"`, and a program word and the text it is given
+    both held in variables, as in `P=socat; X=EXEC:claude,pty; "$P" - "$X"`.
+    The session working the story refuses all of them;
+  - a whole `osascript` or `socat` command held in a variable and run with
+    `eval` or `sh -c`, as in
+    `S="osascript -e 'tell application \"Terminal\" to do script \"claude\"'"; eval "$S"`
+    and the same with `bash -c "$S"`, where the text holds no slash command.
+    One that holds a slash command is refused as a start;
+  - PowerShell's `Start-Process` given `osascript` or `socat`, as in
+    `Start-Process osascript -ArgumentList '-e','tell application "Terminal" to do script "claude"'`
+    and `Start-Process socat -ArgumentList '-','EXEC:claude,pty'`, with or
+    without a slash command in the text;
+  - the path `CLAUDE_CODE_EXECPATH` holds, or the one `which claude` prints,
+    reached through a substitution, the `read` builtin or `xargs` and then run:
+    `p=$(printenv CLAUDE_CODE_EXECPATH); "$p" -p x`,
+    `xargs -I{} {} -p x <<< "$CLAUDE_CODE_EXECPATH"`, and PowerShell's
+    `& ([Environment]::GetEnvironmentVariable("CLAUDE_CODE_EXECPATH")) -p x`.
+    A `claude -p` started that way has no terminal, so its hook answers that the
+    command did not run;
+  - the same path handed to a program that gives a terminal the same way, which
+    is the interactive start: `script -q /dev/null $(which claude)`,
+    `tmux new-session -d "$(printenv CLAUDE_CODE_EXECPATH)"`,
+    `p=$(printenv CLAUDE_CODE_EXECPATH); script -q /dev/null "$p"`,
+    `read X <<< "$CLAUDE_CODE_EXECPATH"; script -q /dev/null "$X"` and
+    `printenv CLAUDE_CODE_EXECPATH | xargs script -q /dev/null`, which the
+    rules read as nothing that names claude. The session working the story
+    allows them too, and where `xargs` gives the path they allow a slash command
+    written in the line, as in
+    `which claude | xargs -I{} script -q /dev/null {} "<slash command>"`;
+  - a shell that `script` or `unbuffer` gives a terminal, fed on standard
+    input: `printf 'claude\n' | script -q /dev/null bash` and
+    `printf 'claude\n' | unbuffer bash`, since what is left of the line once the
+    program that gives the terminal is taken off is a shell with no command,
+    which the reader does not give as a run. The same shell fed from a file
+    where nothing in the line names claude, as in
+    `script -q /dev/null bash < /tmp/c`, and `expect` given a shell to spawn
+    and to `interact` with, as in `expect -c 'spawn bash; interact' < /tmp/c`,
+    are not read either;
+  - a program on a terminal that takes what it is fed and that the reading of
+    a shell does not reach: `socat - EXEC:'su -',pty`,
+    `socat - EXEC:'ssh localhost',pty`, `socat - EXEC:python3,pty` and
+    `socat - EXEC:tmux,pty`, each fed a line that names claude; Python code
+    that starts the shell itself, as in
+    `python3 -c 'import pty; pty.spawn("bash")'`; and a file given as the first
+    address in place of standard input, as in
+    `socat OPEN:/tmp/in EXEC:bash,pty`;
+  - a `socat` word that a pattern builds, which the shell reader cuts at its
+    parenthesis: `shopt -s extglob; socat - +(EXEC:claude,pty)`,
+    `socat - !(EXEC:claude,pty)` and zsh's `socat - EXEC:cla(u|)de,pty`, each
+    given a file that the pattern matches and that an earlier command made. The
+    rules read a glob character in the word and a parenthesis in a quoted one,
+    and not these;
+  - a program word the rules cannot name, given text that builds the command
+    and names no claude, as in
+    `P=osascript; "$P" -e 'set c to system attribute "X"'
+    -e 'tell application "Terminal" to do script c'`: it is read for what it
+    names, which here is nothing, in both sessions;
+  - text a terminal app is told to run that runs a file the rules do not read,
+    `do script "sh /tmp/x.sh"`. Text that decodes a name before it runs it, as
+    in `do script "echo ... | base64 -d | sh"`, is refused, but only because a
+    `|` is not plain.
+- **A later Claude Code.** The hook's check on the slash route rests on what
+  Claude Code 2.1.321 sets, read in Claude Desktop on 2026-11-13. A release
+  that renames the label, stops writing `CLAUDE_CODE_SESSION_ATTENDED` afresh
+  for each hook, or changes what a model's tools are given fails closed only
+  where the change leaves the hook a variable it cannot read; one that makes a
+  nested session's hook look like the person's does not.
 - **The hook run on an event it records, where the rules cannot see it.**
   The hook does not ask `AI_AGENT` on the events it records, since Claude Code
-  in Claude Desktop runs its hooks with it set, so
+  in Claude Desktop ran its hooks with it set before 2.1.321, so
   [`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host)
   is what holds them. These get past it:
   - a copy of the launcher, or of sdlc under another name, given `Stop` or

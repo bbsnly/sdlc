@@ -88,10 +88,17 @@ func typed(root, session, name, args string) map[string]any {
 	}
 }
 
-// hookEnv is the environment Claude Code gives a hook in a session: its own
-// session id, and the project directory.
+// hookEnv is the environment Claude Code gives a hook in a session a person
+// opened: its own session id, the project directory, and what the slash
+// route reads to tell that a person typed the line (US-130): the harness's
+// label in AI_AGENT, CLAUDE_CODE_SESSION_ATTENDED=1, and neither
+// CLAUDE_CODE_EXECPATH nor GIT_EDITOR=true. realHookEnv has every other
+// marker as well.
 func hookEnv(root, session string) func(string) string {
-	return env(map[string]string{"CLAUDE_CODE_SESSION_ID": session, "CLAUDE_PROJECT_DIR": root})
+	return env(map[string]string{
+		"CLAUDE_CODE_SESSION_ID": session, "CLAUDE_PROJECT_DIR": root,
+		"AI_AGENT": "claude-code_2-1-321_harness", "CLAUDE_CODE_SESSION_ATTENDED": "1",
+	})
 }
 
 // expand hands the hook one UserPromptExpansion event and reads its answer,

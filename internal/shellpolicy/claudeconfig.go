@@ -872,9 +872,13 @@ func runsClaudeProgram(words []string) bool {
 }
 
 // startsClaudeCode reports whether a command starts a Claude Code session of
-// its own: its command line run as runsClaudeProgram reads it, PowerShell's
-// Start-Process or cmd's start given it, or any word naming its package, its
-// cli.js or the Agent SDK, which `node .../cli.js` and a script's import do.
+// its own: its command line run as runsClaudeProgram reads it, or the program
+// CLAUDE_CODE_EXECPATH names, which is the same binary; PowerShell's
+// Start-Process or cmd's start given either; or any word naming its package,
+// its cli.js or the Agent SDK, which `node .../cli.js` and a script's import do.
+// The variable is read here and not in runsClaudeProgram, which also decides
+// whether a command changes Claude Code's configuration: that rule is the
+// person's own and no row asks it to read the variable.
 func startsClaudeCode(words []string) bool {
 	if runsClaudeProgram(words) {
 		return true
@@ -882,9 +886,12 @@ func startsClaudeCode(words []string) bool {
 	if len(words) == 0 {
 		return false
 	}
+	if namesExecPath(words[0]) {
+		return true
+	}
 	switch base(words[0]) {
 	case "start-process", "saps", "start":
-		if slices.ContainsFunc(words[1:], func(w string) bool { return claudeProgram(base(w)) }) {
+		if slices.ContainsFunc(words[1:], func(w string) bool { return claudeProgram(base(w)) || namesExecPath(w) }) {
 			return true
 		}
 	case "npm", "pnpm", "yarn", "bun", "pip", "pip3", "pipx", "uv", "poetry", "brew", "conda":
@@ -977,7 +984,7 @@ func checkSecondSessionAs(command string, powerShell bool, reading assignments) 
 // command made by read.
 func checkSecondSessionRead(command string, powerShell bool, read func(string, bool) []pair, reading assignments) (Finding, bool) {
 	lower := strings.ToLower(command)
-	if !strings.ContainsAny(command, "$%`*?[") && !mayNameClaude(lower) {
+	if !strings.ContainsAny(command, "$%`*?[") && !mayNameClaude(lower) && !mayNameATerminalStart(lower) {
 		return Finding{}, false
 	}
 	runs, named := everyRun(read(command, powerShell), powerShell, reading)
@@ -986,6 +993,12 @@ func checkSecondSessionRead(command string, powerShell bool, read func(string, b
 	for _, run := range runs {
 		if len(run.words) == 0 || run.extra {
 			continue
+		}
+		// A terminal app or socat told to run claude, which no person's command
+		// in the line is needed to refuse: the terminal's own shell carries none
+		// of the markers the nested hook would be refused by.
+		if f, ok := terminalStart(run, command); ok {
+			return f, true
 		}
 		if expandsAPersonsCommand(run, named, given, command) {
 			return secondSessionFinding, true
@@ -1074,10 +1087,14 @@ func expandsAPersonsCommand(r ran, named, given bool, command string) bool {
 		return true
 	case starts:
 		return r.substituted || r.piped || r.input || given || !readablePrompt(words[1:], r.marked)
-	case terminalGivers[base(words[0])]:
+	case terminalGivers[base(words[0])], globProgram(words[0]), runsPtyModule(words):
 		// `tmux new-session -d 'claude'`: the session is given a terminal
-		// something can type into later.
-		return mentionsClaude(strings.Join(words, " "))
+		// something can type into later. `"$CLAUDE_CODE_EXECPATH"` is claude. A
+		// glob could be any of them, and `/usr/bin/scrip? -q /dev/null claude` was
+		// let through while the same under its name was refused (the verifier,
+		// Gate 6 round 2). So does `python3 -m pty claude`, which is script in
+		// Python and is on every Mac that has Python (security F-4, Gate 7).
+		return mentionsClaudeOrExecPath(strings.Join(words, " "))
 	case runsInlineCode(words, "") || programOnStdin(words, r.input):
 		// Inline code that starts it, or the SDK, whose prompt is not read:
 		// in its words, or, for a program read from standard input, anywhere
@@ -1090,14 +1107,42 @@ func expandsAPersonsCommand(r ran, named, given bool, command string) bool {
 }
 
 // mentionsClaude reports whether text names Claude Code as a program or a
-// package: `"claude"` in a list of arguments does, `.claude` does not.
+// package: `"claude"` in a list of arguments does, `.claude` does not. A path
+// under claude/versions/ is the native installer's binary, which runsClaudeProgram
+// reads as claude too: the text readers let it through, and it is the value
+// CLAUDE_CODE_EXECPATH holds on that install (US-130, security F-2 at Gate 7).
+// The text is read twice, as it stands and with its backslashes as separators,
+// because a Windows path is cut into words at each backslash when it is read
+// as it stands, and its `claude\versions\` is one only when they are slashes.
 func mentionsClaude(text string) bool {
-	for _, w := range wordsIn(strings.ToLower(text)) {
-		if claudeProgram(base(w)) || namesClaudePackage(w) {
+	lower := strings.ToLower(text)
+	return namesClaudeIn(lower) || strings.Contains(lower, `\`) && namesClaudeIn(strings.ReplaceAll(lower, `\`, "/"))
+}
+
+// namesClaudeIn is mentionsClaude for text already folded.
+func namesClaudeIn(lower string) bool {
+	for _, w := range wordsIn(lower) {
+		if claudeProgram(base(w)) || namesClaudePackage(w) || strings.Contains("/"+w, "/claude/versions/") {
 			return true
 		}
 	}
 	return false
+}
+
+// mentionsClaudeOrExecPath is mentionsClaude for text that may also expand
+// CLAUDE_CODE_EXECPATH, read as mayNameClaude reads a line: with its braces
+// expanded and its quotes and backslashes taken out, so that `cl\aude` and
+// `cl{a,}ude` are claude. The text as it stands is asked first, as trunk asked
+// it of every word: with the backslashes of `C:\bin\claude.exe` taken out its
+// base name is not claude, and the new reading let a start through that trunk
+// refused (security F-1 at Gate 7), so this one can only add.
+func mentionsClaudeOrExecPath(text string) bool {
+	lower := strings.ToLower(text)
+	if mentionsClaude(lower) {
+		return true
+	}
+	lower = unescaped.Replace(bracesExpanded(lower))
+	return mentionsClaude(lower) || namesExecPath(lower)
 }
 
 // readablePrompt reports whether each of a session's words is one the rules

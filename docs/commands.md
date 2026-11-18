@@ -79,9 +79,10 @@ companion [`sdlc log`](#sdlc-log) is open to everyone), and
 to every session. Each of these, and `sdlc approve`, also refuses itself where
 it runs with Claude Code's environment variables, in the model's Bash or from a
 `!` line typed in Claude Code run from a terminal
-([SDLC-E0079](troubleshooting.md#sdlc-e0079)): type its slash command in Claude
-Code, as a `!` line in Claude Desktop, or run it in a terminal outside Claude
-Code, a window you opened yourself.
+([SDLC-E0079](troubleshooting.md#sdlc-e0079)). Type its slash command in Claude
+Desktop or Claude Code. Where the slash command answers that it did not run,
+type the command as a `!` line in Claude Desktop, or run it in a terminal
+outside Claude Code, a window you opened yourself.
 In the session working a story, the hook also refuses
 [`sdlc stop`](#sdlc-stop) to the main conversation and to every agent while the
 story still has a gate to pass; once every gate has passed it does not. In any

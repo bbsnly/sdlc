@@ -42,8 +42,14 @@ security defect rather than a bug:
   one, or have one run as if a person typed it: a payload the hook takes for a
   person's that is not, a second Claude Code session started to type one, or a
   write to the person's Claude Code configuration (`~/.claude`,
-  `~/.claude.json`) from a session in a project that takes part. A session in a
-  project that does not take part is held to nothing, and can write that
+  `~/.claude.json`) from a session in a project that takes part. The hook runs
+  a typed slash command only where four things about its own environment hold:
+  `AI_AGENT` holds the label Claude Code gives a hook it runs itself, ending `_harness`,
+  `CLAUDE_CODE_EXECPATH` is absent, `GIT_EDITOR` is not exactly `true`, and
+  `CLAUDE_CODE_SESSION_ATTENDED` is exactly `1`. It trusts Claude Code to set
+  those for its own hooks and not for a model's tools, and the shell rules to
+  refuse a command that changes them; a way past either is in scope. A session
+  in a project that does not take part is held to nothing, and can write that
   configuration, this plugin's launcher, binary and checksums included; that
   residual is accepted, and [enforcement](docs/enforcement.md#claude-config-is-the-persons)
   says so.
