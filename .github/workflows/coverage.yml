@@ -37,10 +37,11 @@ jobs:
         with:
           node-version: '26.12.1'
 
-      # The same invocation as commands.coverage in .sdlc/config.json, so the
-      # figure Codecov shows and the one coverage_min is held to come from the
-      # same run. Codecov counts lines and `go tool cover` counts statements,
-      # so the two differ by a fraction.
+      # The figure coverage_min is held to comes from the profile commands.test
+      # writes in .sdlc/config.json, where most packages run under the race
+      # detector. This run is not raced: every package's figure was the same
+      # either way when the two were last compared. Codecov counts lines and `go tool cover` counts statements, so the two
+      # differ by a fraction.
       - name: Run the tests with a coverage profile
         shell: bash
         run: go test ./... -count=1 -coverprofile="${RUNNER_TEMP}/cover.out"
