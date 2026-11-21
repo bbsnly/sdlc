@@ -1271,6 +1271,10 @@ const (
 	EventLoopEnd       = "loop_end"
 	EventGatesReopened = "gates_reopened"
 	EventLanded        = "landed"
+	// EventLandedWithoutPause is written at the commit gate's pass, before the
+	// landing, where nothing paused the story for a person: what `sdlc log`
+	// shows a person whose sign-off was not asked for (US-133).
+	EventLandedWithoutPause = "landed_without_pause"
 )
 
 // EventBudget is a notice about cost: a story's per-story alert, or the one
@@ -1389,6 +1393,20 @@ func (r *Record) DecisionFor(tree string) (Approval, bool) {
 // it is. An approval is bound to the work it was given for, so a change made
 // after it needs approving again.
 func (r *Record) WaitsForApproval(tier, tree string) string {
+	return r.WaitsForApprovalBecause(TierWaits(tier), tree)
+}
+
+// TierWaits is why a story of tier waits for a person where its tier is what
+// pauses it.
+func TierWaits(tier string) string {
+	return "its risk tier is " + tier + ", and that tier waits for a person's approval " +
+		"before it is committed"
+}
+
+// WaitsForApprovalBecause is WaitsForApproval for a pause whose cause is
+// because: where no person has decided on any work of the story, that cause is
+// the answer.
+func (r *Record) WaitsForApprovalBecause(because, tree string) string {
 	if d, ok := r.DecisionFor(tree); ok {
 		if d.Decision == DecisionApproved {
 			return ""
@@ -1404,8 +1422,7 @@ func (r *Record) WaitsForApproval(tier, tree string) string {
 		return "the work has changed since a person last decided on it, " +
 			"and a decision holds only for the work it was given for"
 	}
-	return "its risk tier is " + tier + ", and that tier waits for a person's approval " +
-		"before it is committed"
+	return because
 }
 
 // NewRecord starts a record for a story.

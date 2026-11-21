@@ -63,6 +63,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1036,18 +1037,19 @@ func trunkOf(pl place) string {
 // the hook and not from the first git call. Whichever ends first is the one
 // that answers: a tree still being measured when the deadline passes is a
 // commit refused, and one that runs out of this first is let through with a
-// warning, as it always was.
+// warning, as it always was, unless a pause for a person is due on it.
 const treeTimeout = 20 * time.Second
 
 // reviewsFresh reports whether the verifier's and the code reviewers' reviews
-// are of the tree as it is now, and, for a story whose risk tier waits for a
-// person, whether that person approved this tree -- the same questions
+// are of the tree as it is now, and, for a story whose tier or change waits
+// for a person, whether that person approved this tree -- the same questions
 // `sdlc gate commit pass` asks, asked before the commit instead of after it.
 //
-// It measures the tree only when there is something to compare it with, and a
-// tree it cannot measure lets the commit through with a warning: git failing
-// here is git failing for the commit too. Git runs under budget, which the
-// whole command shares (see gitBudget).
+// It measures the tree only when there is something to compare it with. A
+// tree it cannot measure lets the commit through with a warning, since git
+// failing here is git failing for the commit too, except where a pause is due:
+// no approval can be shown for a tree nobody measured. Git runs under budget,
+// which the whole command shares (see gitBudget).
 func reviewsFresh(pl place, story string, warn func(string), budget func() context.Context) (bool, string) {
 	project := pl.project
 	record, _, err := pl.record(story)
@@ -1065,31 +1067,77 @@ func reviewsFresh(pl place, story string, warn func(string), budget func() conte
 		return true, ""
 	}
 	s := pl.store(cfg)
-	tier, pauses, err := s.CommitPause(story)
+	// Only the backlog is an error here: git, or a configuration that does
+	// not read, is in the pause as something unread, and that pauses.
+	pause, err := s.PauseFor(budget(), story, record, "")
 	if err != nil {
 		slog.Debug("hook could not read the story's risk tier", "err", err)
 		return false, "the story could not be read from the backlog, so there is no telling " +
 			"whether its risk tier waits for a person's approval (`sdlc doctor` says why)"
 	}
+	// The hook's answer goes into the host's JSON, so its list of files is
+	// bounded; the gate and status name every one.
+	pause = pause.Capped(hookPausedFiles)
 	reviews := stampedReviews(cfg.Team, record)
-	if len(reviews) == 0 && !pauses {
+	if len(reviews) == 0 && !pause.Pauses() {
 		return true, ""
 	}
 
-	tree, refusal, fresh := reviewedTree(s, record, project, budget, warn)
+	tree, refusal, fresh := reviewedTree(s, record, project, budget)
 	if !fresh {
-		return refusal.allowed, refusal.why
+		return unmeasured(pause, refusal, warn)
 	}
 	if stale := staleReviewers(reviews, cfg, record, tree); len(stale) > 0 {
 		return false, "the work has changed since " + strings.Join(stale, ", ") + " reviewed it, " +
 			"so this commit is not what was approved; have the change reviewed again and record " +
 			"those gates again"
 	}
-	if why := record.WaitsForApproval(tier, tree); pauses && why != "" {
+	if why := waitsIn(pause, record, tree); why != "" {
 		return false, why + "; hand it to a person with " +
 			"`sdlc escalate pre_commit_approval --message \"...\"` and stop"
 	}
 	return true, ""
+}
+
+// unmeasured is reviewsFresh's answer where the tree was not measured to a
+// value. Where git could not measure it, no approval can be shown for a tree
+// nobody measured, so a commit a pause is due on is refused, where one nothing
+// pauses is let through with a warning, as it always was.
+func unmeasured(pause config.CommitPause, refusal freshnessAnswer, warn func(string)) (bool, string) {
+	switch {
+	case refusal.unmeasured == nil:
+		return refusal.allowed, refusal.why
+	case pause.Pauses():
+		return false, unmeasuredPause(pause, refusal.unmeasured)
+	}
+	warn(unmeasuredTree)
+	return true, ""
+}
+
+// waitsIn is why the commit of tree waits for a person, or "" where nothing
+// pauses it or a person approved it.
+func waitsIn(pause config.CommitPause, record *model.Record, tree string) string {
+	if !pause.Pauses() {
+		return ""
+	}
+	return pause.WaitsIn(record, tree)
+}
+
+// hookPausedFiles is how many files the hook's refusal of a paused commit
+// names before it counts the rest.
+const hookPausedFiles = 20
+
+// unmeasuredPause is the refusal of a commit a pause is due on where the
+// working tree could not be measured: that, and why, first, since a person who
+// approved the work would otherwise read only that it waits and approve again
+// to no effect, and the next attempt could meet the same deadline. The gate
+// has no deadline, so a commit a person makes by hand is checked there.
+func unmeasuredPause(pause config.CommitPause, cause error) string {
+	return "the working tree could not be measured (" + strconv.Quote(cause.Error()) + "), so this commit " +
+		"cannot be matched to a person's approval, and the story's commit waits for one: " + pause.Why() +
+		"; where a person has approved the work, they make this commit in their own terminal, and " +
+		"`sdlc gate commit pass`, which has no deadline, then checks it against their approval; " +
+		"where nobody has, hand it to a person with `sdlc escalate pre_commit_approval --message \"...\"` and stop"
 }
 
 // stampedReview is the latest review a reviewer recorded, and the tree it
@@ -1116,17 +1164,19 @@ func stampedReviews(team config.Team, record *model.Record) []stampedReview {
 }
 
 // freshnessAnswer is what reviewsFresh returns where the tree could not be
-// measured to a value to compare.
+// measured to a value to compare. unmeasured is why git could not measure it,
+// where that is the answer: reviewsFresh then decides.
 type freshnessAnswer struct {
-	allowed bool
-	why     string
+	allowed    bool
+	why        string
+	unmeasured error
 }
 
 // reviewedTree measures the tree the reviews are compared with. Where it
 // cannot be measured to one, fresh is false and the answer says what
 // reviewsFresh returns instead.
-func reviewedTree(s *store.Store, record *model.Record, project string, budget func() context.Context,
-	warn func(string)) (tree string, answer freshnessAnswer, fresh bool) {
+func reviewedTree(s *store.Store, record *model.Record, project string,
+	budget func() context.Context) (tree string, answer freshnessAnswer, fresh bool) {
 	// Route R1: once the retro has passed, the bookkeeper's CODEMAP.md at the
 	// root is committed on the story's branch, a plain file the reviews did not
 	// see change. Measured as HEAD has it, that first commit is the work the
@@ -1142,7 +1192,7 @@ func reviewedTree(s *store.Store, record *model.Record, project string, budget f
 		// Files beneath CODEMAP.md are a shape the session chose, not a tree
 		// that could not be measured: answering fresh there let R1's one
 		// commit carry anything under that name.
-		return "", freshnessAnswer{false, "CODEMAP.md at the root holds files beneath it, so it is not the bookkeeper's plain file " +
+		return "", freshnessAnswer{why: "CODEMAP.md at the root holds files beneath it, so it is not the bookkeeper's plain file " +
 			"and this commit is not what was reviewed; after the retro only CODEMAP.md, as a plain file, is " +
 			"committed on its own"}, false
 	}
@@ -1152,14 +1202,13 @@ func reviewedTree(s *store.Store, record *model.Record, project string, budget f
 		// is an answer about the work, and not one that fails open.
 		if _, plain := s.ReviewSubject(budget()); plain == nil {
 			slog.Debug("hook could not measure the tree with CODEMAP.md as HEAD has it", "err", err)
-			return "", freshnessAnswer{false, "CODEMAP.md at the root could not be measured as HEAD has it, so this commit is not " +
+			return "", freshnessAnswer{why: "CODEMAP.md at the root could not be measured as HEAD has it, so this commit is not " +
 				"what was reviewed; after the retro only CODEMAP.md, as a plain file, is committed on its own"}, false
 		}
 	}
 	if err != nil {
 		slog.Debug("hook could not measure the working tree", "err", err)
-		warn(unmeasuredTree)
-		return "", freshnessAnswer{true, ""}, false
+		return "", freshnessAnswer{allowed: true, unmeasured: err}, false
 	}
 	return tree, freshnessAnswer{}, true
 }

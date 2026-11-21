@@ -111,7 +111,11 @@ func TestAStoryInAPausedTierIsCommittedOnlyOnceAPersonApprovesIt(t *testing.T) {
 	}
 }
 
-// And a story in a tier that is not paused is committed as it always was.
+// And a story in a tier that is not paused is committed as it always was. The
+// emptied tiers are committed before the story starts, as a person's change of
+// the setting is: in one checkout the configuration committed where the story
+// started counts with the file on disk (US-133 AC-3), so a list emptied on
+// disk alone would still pause the tier it committed.
 func TestAStoryInATierThatIsNotPausedIsNotHeld(t *testing.T) {
 	t.Parallel()
 	root := gitProjectInitialised(t)
@@ -119,6 +123,7 @@ func TestAStoryInATierThatIsNotPausedIsNotHeld(t *testing.T) {
 	writeFile(t, root, "user_stories.json", `{"stories":[
 	  {"id":"PAY-1","title":"Refunds","status":"ready","risk_tier":"high","priority":1,
 	   "acceptance_criteria":[{"id":"AC-1","text":"WHEN a paid invoice is refunded, the money goes back"}]}]}`)
+	commitEverything(t, root)
 	mustRun(t, "start")
 	reach(t, root, model.GateCommit)
 	commitEverything(t, root)

@@ -155,8 +155,24 @@ which one it goes past:
   no range.
 - Anyone who can write into the git directory can plant a HEAD, and what that
   buys is an unrelated commit already on trunk read as the story's.
-- In a tier that waits for a person, a story in its own worktree is held at the
-  stop to the commit its range ends at: a commit amended or added after the
+- A story waits for a person where its tier is in `pre_commit_pause_tiers` or
+  its change touches a path `pre_commit_pause_paths` lists. The change is
+  measured from where a worktree story's branch left trunk, so a branch moved
+  past the shell rules (refs, trunk) shifts what is measured, as it shifts the
+  freeze and the range. In one checkout it is measured from the commit the
+  record names as the start of the story's commits, and every `sdlc start`,
+  a resume included, moves the record's base to HEAD: a commit the hook did not
+  see, made before a restart, is folded into that base, and the pause and every
+  reviewer miss it. That needs a hook bypass first, and closing it needs a start
+  commit on the record that no command moves. In one checkout the configuration
+  committed where the story started counts as well as the file on disk, its
+  tiers as well as its paths, so a git operation that rewrites the file without
+  naming it (`git apply`, `git cherry-pick -n`, `git merge --squash`) narrows
+  neither, and a person who narrows a list commits that before the story
+  starts. The pause reads paths, not content: a change through a link is
+  matched by the link's own path.
+- Where a story waits, by its tier or a path, a story in its own worktree is
+  held at the stop to the commit its range ends at: a commit amended or added after the
   commit gate is refused until a person approves it. A story with no range is
   not held at all, which a commit the hook did not write down can bring about
   on the first pass; a range that stops short of HEAD is refused at the stop

@@ -86,9 +86,14 @@ func (s *Store) At(root string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.atWith(root, cfg), nil
+}
+
+// atWith is At for a checkout whose configuration the caller has read.
+func (s *Store) atWith(root string, cfg config.Config) *Store {
 	out := New(&config.Project{Root: root, Config: cfg})
-	out.now, out.getenv, out.reads = s.now, s.getenv, s.reads
-	return out, nil
+	out.now, out.getenv, out.reads, out.configs = s.now, s.getenv, s.reads, s.configs
+	return out
 }
 
 // worktreesIgnore is the file that keeps the story worktrees out of the main

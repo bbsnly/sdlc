@@ -248,6 +248,49 @@ func stfWithoutReviewPolicy(transcript string) string {
 	return transcript
 }
 
+// stfPauseKey is a JSON key of what US-133 added: pre_commit_pause in status,
+// pre_commit_pause_paths in the configuration, and whatever the log calls the
+// landing without a pause.
+var stfPauseKey = regexp.MustCompile(`"[a-z_]*pause[a-z_]*":\s*`)
+
+// stfWithoutCommitPause is a transcript with what US-133 added taken out: this
+// test is about the staffing, and commitpause_us133_test.go holds what the
+// pause prints. In that order: every value under a key that names the pause,
+// with the comma that joined it to its object; every event of the kind US-133
+// adds; then every line of prose about the pause, which in this walk, with no
+// path listed, names it.
+func stfWithoutCommitPause(transcript string) string {
+	for from := 0; ; {
+		loc := stfPauseKey.FindStringIndex(transcript[from:])
+		if loc == nil {
+			break
+		}
+		start, end := from+loc[0], stfJSONValueEnd(transcript, from+loc[1])
+		trimmed := strings.TrimRight(transcript[:start], " \t\r\n")
+		switch {
+		case strings.HasSuffix(trimmed, ","):
+			start = len(trimmed) - 1
+		default:
+			rest := strings.TrimLeft(transcript[end:], " \t\r\n")
+			if strings.HasPrefix(rest, ",") {
+				end = len(transcript) - len(rest) + 1
+				end += len(transcript[end:]) - len(strings.TrimLeft(transcript[end:], " \t\r\n"))
+			}
+		}
+		transcript = transcript[:start] + transcript[end:]
+		from = start
+	}
+	for _, gone := range []*regexp.Regexp{
+		regexp.MustCompile(`\{[^{}]*landed_without_pause[^{}]*\},\s*`),
+		regexp.MustCompile(`,\s*\{[^{}]*landed_without_pause[^{}]*\}`),
+		// With the blank line before it, where the pause is a block of its own.
+		regexp.MustCompile(`(?mi)(^\n)?^[^$\n].*pause.*\n`),
+	} {
+		transcript = gone.ReplaceAllString(transcript, "")
+	}
+	return transcript
+}
+
 // stfFindingKey is a JSON key of what US-117 added: the findings of a review,
 // and the referred findings status lists.
 var stfFindingKey = regexp.MustCompile(`"(findings?|referred)[a-z_]*":\s*`)
@@ -353,8 +396,8 @@ func TestAC2WithEveryDefaultEveryCommandPrintsWhatTheStaffingPrintedBeforeTheSto
 			if err != nil {
 				t.Fatalf("the output the tool printed before the story is not there to compare with: %v", err)
 			}
-			got := stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, stfOffWalk(t, form.json, form.noTeam))))
-			wanted := stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, string(want))))
+			got := stfWithoutCommitPause(stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, stfOffWalk(t, form.json, form.noTeam)))))
+			wanted := stfWithoutCommitPause(stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, string(want)))))
 			if got == wanted {
 				return
 			}

@@ -151,11 +151,12 @@
   "_human_gates": [
     "Where the loop waits for a person",
     "pre_commit_pause_tiers lists the risk tiers that wait for a person's approval before commit.",
-    "An empty list turns that pause off, so no story waits for approval.",
+    "pre_commit_pause_paths lists globs from the repository root, such as \"src/auth/**\": a story whose change touches one waits too.",
+    "A story waits where either list says so; with both empty, no story waits for approval.",
     "dor_advocate_check: true has the human advocate read each story at Gate 1 as well.",
     "https://github.com/bbsnly/sdlc/blob/main/docs/configuration.md#human_gates"
   ],
-  "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
+  "human_gates": { "pre_commit_pause_tiers": ["high"], "pre_commit_pause_paths": [], "dor_advocate_check": false },
 
   "_budget": [
     "What one story is expected to cost",

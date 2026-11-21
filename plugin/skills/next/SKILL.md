@@ -334,8 +334,10 @@ look again, each given its findings' closings as data, and so does the verifier.
 Until every gate above has passed, the hook refuses `git commit`, naming the missing gate.
 
 A story whose `risk_tier` the project holds for a person (`high`, unless
-`human_gates.pre_commit_pause_tiers` says otherwise) waits for their approval. If nobody has
-approved the work as it stands, hand it over and stop:
+`human_gates.pre_commit_pause_tiers` says otherwise), or whose change touches a path
+`human_gates.pre_commit_pause_paths` lists, waits for their approval. `pre_commit_pause` in
+`sdlc status --json` says whether it will, with `will_pause` and the reasons; read that rather
+than working it out. If nobody has approved the work as it stands, hand it over and stop:
 
 ```bash
 sdlc escalate pre_commit_approval --message "<what changed, what to look at, and why it is ready>"

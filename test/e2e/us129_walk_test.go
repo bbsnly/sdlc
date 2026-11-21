@@ -695,6 +695,81 @@ func u129Formats(w *u129Walk) string {
 // wrote them, captured at 37e3ac8 with U129_WRITE_GOLDEN=1 before the freeze.
 const u129Golden = "testdata/us129_walk.golden"
 
+// u129PauseKey is a JSON key of what US-133 added: pre_commit_pause in status,
+// pre_commit_pause_paths in the configuration, and whatever the record or the
+// log calls the landing without a pause.
+var u129PauseKey = regexp.MustCompile(`"[a-z_]*pause[a-z_]*":\s*`)
+
+// u129WithoutCommitPause is the walk with what US-133 added taken out of both
+// sides: US-133 changes what status, the configuration init writes, the record
+// and doctor say about the commit's pause on purpose, and us133_test.go and
+// internal/cli's commitpause_us133_test.go hold it. In that order: the
+// _human_gates comment init writes, whose wording is the template's; every
+// value under a key that names the pause, with the comma that joined it to its
+// object; every event of the kind US-133 adds; then every line of prose about
+// the pause, which in this walk, with no path listed, names it.
+func u129WithoutCommitPause(walk string) string {
+	walk = regexp.MustCompile(`(?s)\n  "_human_gates": \[\n.*?\n  \],`).ReplaceAllString(walk, "")
+	for from := 0; ; {
+		loc := u129PauseKey.FindStringIndex(walk[from:])
+		if loc == nil {
+			break
+		}
+		start, end := from+loc[0], u129ValueEnd(walk, from+loc[1])
+		trimmed := strings.TrimRight(walk[:start], " \t\r\n")
+		if strings.HasSuffix(trimmed, ",") {
+			start = len(trimmed) - 1
+		} else if rest := strings.TrimLeft(walk[end:], " \t\r\n"); strings.HasPrefix(rest, ",") {
+			end = len(walk) - len(rest) + 1
+			end += len(walk[end:]) - len(strings.TrimLeft(walk[end:], " \t\r\n"))
+		}
+		walk = walk[:start] + walk[end:]
+		from = start
+	}
+	for _, gone := range []*regexp.Regexp{
+		regexp.MustCompile(`\{[^{}]*landed_without_pause[^{}]*\},\s*`),
+		regexp.MustCompile(`,\s*\{[^{}]*landed_without_pause[^{}]*\}`),
+		regexp.MustCompile(`(?m)^.*landed_without_pause.*\n`),
+		// With the blank line before it, where the pause is a block of its own.
+		regexp.MustCompile(`(?mi)(^\n)?^[^=\n].*pause.*\n`),
+	} {
+		walk = gone.ReplaceAllString(walk, "")
+	}
+	return walk
+}
+
+// u129ValueEnd is where the JSON value that starts at from ends: past its
+// closing bracket, string or word.
+func u129ValueEnd(text string, from int) int {
+	depth, inString := 0, false
+	for i := from; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case inString && c == '\\':
+			i++
+		case c == '"':
+			inString = !inString
+			if !inString && depth == 0 {
+				return i + 1
+			}
+		case inString:
+		case c == '[' || c == '{':
+			depth++
+		case c == ']' || c == '}':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+			if depth < 0 {
+				return i
+			}
+		case depth == 0 && (c == ',' || c == '\n'):
+			return i
+		}
+	}
+	return len(text)
+}
+
 // AC-2: every command of the walk prints what it printed at the base and
 // exits as it did, the hook answers each call as it did, and the files under
 // .sdlc/ and .git/sdlc/ are written as they were. It passes at the base by
@@ -711,7 +786,7 @@ func TestAC2TheWalkPrintsExitsAnswersAndWritesWhatItDidAtTheBase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := string(raw)
+	got, want := u129WithoutCommitPause(got), u129WithoutCommitPause(string(raw))
 	if got == want {
 		return
 	}

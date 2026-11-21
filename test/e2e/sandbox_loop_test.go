@@ -42,7 +42,7 @@ func (sb sandbox) holds(t *testing.T, steps ...ran) {
 	for _, s := range steps {
 		r := sb.does(t, s.dir, s.agent, s.stdin, s.args...)
 		stdout, stderr := sb.normalise(r.stdout), sb.normalise(r.stderr)
-		if stdout != s.stdout || stderr != s.stderr || r.code != s.code {
+		if withoutCommitPause(stdout) != withoutCommitPause(s.stdout) || stderr != s.stderr || r.code != s.code {
 			t.Errorf("sdlc %s:\ngot  exit %d\nstdout %q\nstderr %q\nwant exit %d\nstdout %q\nstderr %q",
 				strings.Join(s.args, " "), r.code, stdout, stderr, s.code, s.stdout, s.stderr)
 		} else if s.code != 0 && s.stderr == "" {

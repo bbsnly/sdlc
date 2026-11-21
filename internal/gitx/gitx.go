@@ -372,21 +372,8 @@ func Changes(ctx context.Context, root string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var paths []string
-	entries := strings.Split(string(out), "\x00")
-	for i := 0; i < len(entries); i++ {
-		entry := entries[i]
-		if len(entry) < 4 {
-			continue
-		}
-		paths = append(paths, entry[3:])
-		// A rename or a copy is followed by the path it came from.
-		if (entry[0] == 'R' || entry[0] == 'C') && i+1 < len(entries) {
-			i++
-			paths = append(paths, entries[i])
-		}
-	}
-	return paths, nil
+	// A rename or a copy by both its names, whichever column holds it.
+	return statusPathsBothNames(out), nil
 }
 
 // Branch is the branch HEAD is on, or "" when HEAD is detached. A repository

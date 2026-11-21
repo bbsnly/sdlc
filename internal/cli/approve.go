@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -167,7 +168,7 @@ func runApprove(cmd *cobra.Command, args []string, reject string) error {
 			Reason: approval.Reason, Tree: tree, Commit: commit,
 		})
 	}
-	if err := sayWhatIsStillOpen(cmd.OutOrStdout(), s, record, id, approval); err != nil {
+	if err := sayWhatIsStillOpen(cmd.Context(), cmd.OutOrStdout(), s, record, id, approval); err != nil {
 		return err
 	}
 	sayApproved(cmd.OutOrStdout(), s, record, id, event, rejected)
@@ -200,26 +201,68 @@ func answersTheWork(record *model.Record, rejected bool) bool {
 }
 
 // sayWhatIsStillOpen is said after an approval that does not answer the work:
-// that the pre-commit question is still open, where the tier waits for one,
+// that the pre-commit question is still open, where the story waits for one,
 // and after a by-hand gate's hand-over, that the gate is recorded before the
 // story carries on, or /sdlc:next hands it over again at the same gate.
-func sayWhatIsStillOpen(w io.Writer, s *store.Store, record *model.Record, id string, approval model.Approval) error {
+func sayWhatIsStillOpen(ctx context.Context, w io.Writer, s *store.Store, record *model.Record, id string, approval model.Approval) error {
 	if approval.AnswersCommit() {
 		return nil
 	}
-	_, pauses, err := s.CommitPause(id)
+	asked, err := stillAsked(ctx, s, record, id)
 	if err != nil {
 		return err
 	}
-	if pauses {
+	switch asked {
+	case askedNot:
+	case askedForSure:
 		fmt.Fprintf(w, "This approval lets the loop carry on; it does not answer the pre-commit question, "+
 			"which %s is still asked before its commit.\n", id)
+	case askedMaybe:
+		fmt.Fprintf(w, "This approval lets the loop carry on; it does not answer the pre-commit question, "+
+			"which %s may still be asked before its commit, if its change touches a path in "+
+			"pre_commit_pause_paths.\n", id)
+	case askedUnread:
+		fmt.Fprintf(w, "This approval lets the loop carry on; it does not answer the pre-commit question, "+
+			"which %s may still be asked before its commit.\n", id)
 	}
 	if gate, remaining := record.NextGate(); approval.Type == model.KindWorkByHand && remaining {
 		fmt.Fprintf(w, "Do the %s gate's work by hand and record it first, with `sdlc gate %s pass --story %s`: "+
 			"carrying on before then hands the story over again at the same gate.\n", gate, gate, id)
 	}
 	return nil
+}
+
+// asking is whether the pre-commit question is still to be asked of a story.
+type asking int
+
+const (
+	askedNot asking = iota
+	askedForSure
+	// askedMaybe is a story whose tier does not pause, where what its change
+	// touches could not be measured to tell.
+	askedMaybe
+	// askedUnread is a story where what pauses it could not all be read: the
+	// commit waits while that lasts, whatever the paths (US-133, verifier F-2).
+	askedUnread
+)
+
+// stillAsked is whether the story's commit will wait for a person, as far as
+// that can be told from here: the pause is measured on the story's work,
+// wherever that is, and where it cannot be, a tier that does not pause leaves
+// the question open rather than answered either way.
+func stillAsked(ctx context.Context, s *store.Store, record *model.Record, id string) (asking, error) {
+	pause, measured, err := s.PauseForStory(ctx, id, record)
+	switch {
+	case err != nil:
+		return askedNot, err
+	case measured && pause.Pauses(), pause.TierPauses:
+		return askedForSure, nil
+	case pause.Unread != "":
+		return askedUnread, nil
+	case !measured:
+		return askedMaybe, nil
+	}
+	return askedNot, nil
 }
 
 // approveTarget is the story named, or the one being worked on.

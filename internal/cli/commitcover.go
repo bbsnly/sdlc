@@ -15,8 +15,8 @@ import (
 	"github.com/bbsnly/sdlc/internal/store"
 )
 
-// What a person's approval covers, for a story in its own worktree in a tier
-// that waits for one.
+// What a person's approval covers, for a story in its own worktree that waits
+// for one, by its tier or a path its change touches.
 //
 // The approval is given before the story is committed, so it is of the files:
 // no commit exists yet for a person to read. The messages and authors are
@@ -26,9 +26,9 @@ import (
 // tree, the change and every review as they were, and landed on the approval
 // the story had.
 //
-// A commit above the recorded commit in a tier that waits passes with no person
-// asked only by its own rule in heldTo, and there is one: a commit that changes
-// the root CODEMAP.md alone. The bookkeeper made that commit on the story's
+// A commit above the recorded commit of a story that waits passes with no
+// person asked only by its own rule in heldTo, and there is one: a commit that
+// changes the root CODEMAP.md alone. The bookkeeper made that commit on the story's
 // branch until US-089; in the story's own worktree it now stores its sections,
 // and the stop puts them on trunk after the landing, so the loop makes no such
 // commit there. The rule stands until a person decides to close it.
@@ -260,9 +260,9 @@ func heldTo(ctx context.Context, root, anchor, tip string) *loose {
 	return nil
 }
 
-// requireSameCommits holds the commit gate run again, in a tier that waits, to
-// the commits it recorded before: the person's third decision, that a second
-// pass with other commits needs a person. It passes where nothing was recorded
+// requireSameCommits holds the commit gate run again, where the story waits for
+// a person, to the commits it recorded before: the person's third decision,
+// that a second pass with other commits needs a person. It passes where nothing was recorded
 // yet; where HEAD is held to the recorded commit; and where a person's latest
 // answer approved, was given since the gate last passed, and names a commit
 // HEAD holds. That last is "holds" and not "is held to", so that a rework
@@ -289,9 +289,10 @@ func requireSameCommits(ctx context.Context, rd *reading, id string, record *mod
 	return sdlcerr.New(sdlcerr.ApprovalRequired, notApprovedAsCommitted(id),
 		"the commit gate last recorded the story's commits as the range ending at "+shortCommit(recorded)+
 			", and HEAD, "+shortCommit(head)+", is not that commit with at most commits of the root "+codemap+
-			" alone on top of it: a commit of the story was changed or added since. In a tier that waits for a "+
-			"person the story's commits are fixed when the commit gate passes, and passing it again with other "+
-			"commits needs a person's answer given after that pass. "+gateNotPassed).
+			" alone on top of it: a commit of the story was changed or added since. Where the story waits for "+
+			"a person, by its tier or a path its change touches, its commits are fixed when the commit gate "+
+			"passes, and passing it again with other commits needs a person's answer given after that pass. "+
+			gateNotPassed).
 		WithFix(gateCommitsFix(rd.s, id))
 }
 
@@ -299,24 +300,22 @@ func requireSameCommits(ctx context.Context, rd *reading, id string, record *mod
 // advice about a pass that happened.
 const gateNotPassed = "The commit gate has not passed again, and nothing was recorded"
 
-// requireAnAnchorLeft refuses a commit pass, in a tier that waits, that would
-// leave a story that was held to a commit held to none: the gate had recorded
-// one (known), this pass placed no range, and no approving answer names a
-// commit for the stop to hold the tip to instead. An unwatched commit beside a
+// requireAnAnchorLeft refuses a commit pass, where the story waits for a person,
+// that would leave a story that was held to a commit held to none: the gate
+// had recorded one (known), this pass placed no range, and no approving answer
+// names a commit for the stop to hold the tip to instead. An unwatched commit beside a
 // watched one is all it takes to make a pass record no range, and the stop
-// judges a record with no anchor as it did before.
-func requireAnAnchorLeft(s *store.Store, id string, record *model.Record, known string) error {
-	if known == "" || record.Commit != "" || approvedCommit(record) != "" {
+// judges a record with no anchor as it did before. pauses is what the gate
+// decided of the pause.
+func requireAnAnchorLeft(s *store.Store, id string, record *model.Record, known string, pauses bool) error {
+	if known == "" || record.Commit != "" || approvedCommit(record) != "" || !pauses {
 		return nil
-	}
-	_, pauses, err := s.CommitPause(id)
-	if err != nil || !pauses {
-		return err
 	}
 	return sdlcerr.New(sdlcerr.ApprovalRequired, quote(id)+" would no longer be held to its commits",
 		"this pass would record no range for the story ("+noSingleRange+"), where the commit gate had recorded "+
-			"the range ending at "+shortCommit(known)+". In a tier that waits for a person a story is held to the "+
-			"commit its range ends at, and a pass that leaves none takes that hold off. "+gateNotPassed).
+			"the range ending at "+shortCommit(known)+". Where the story waits for a person, by its tier or a "+
+			"path its change touches, it is held to the commit its range ends at, and a pass that leaves none "+
+			"takes that hold off. "+gateNotPassed).
 		WithFix(gateCommitsFix(s, id))
 }
 
@@ -560,8 +559,9 @@ func kept(ctx context.Context, root string, l model.Replay) *fault {
 	return nil
 }
 
-// requireCommitsApproved is L8's other half: in a tier that waits for a
-// person, a story is landed only on the commits its approval holds it to.
+// requireCommitsApproved is L8's other half: where the story's tier or its
+// change waits for a person, a story is landed only on the commits its
+// approval holds it to.
 //
 // It is asked in every check -- before a replay, after it, and after the
 // commands -- so a tip tampered with before the stop puts the story onto trunk
@@ -574,8 +574,8 @@ func kept(ctx context.Context, root string, l model.Replay) *fault {
 // history holds a commit an earlier pass recorded once had an anchor, and the
 // answer that stood in for it is gone.
 func (l *lander) requireCommitsApproved(ctx context.Context, st *landState) error {
-	_, pauses, err := l.pausedTier(*st)
-	if err != nil || !pauses {
+	pause, err := l.pauseAtLanding(ctx, *st)
+	if err != nil || !pause.Pauses() {
 		return err
 	}
 	record := st.record
@@ -688,8 +688,8 @@ func looseWhy(branch, trunk, recorded string, f *fault) string {
 }
 
 // answerForCommits is the commit a person's answer names, and what an
-// approving answer in a tier that waits is told about it. It is asked before
-// the answer goes on the record, so that whether the story's commits stood is
+// approving answer is told about it where the story waits for a person. It is
+// asked before the answer goes on the record, so that whether the story's commits stood is
 // said of the record as the person found it, and never because of the commit
 // this answer itself is about to name.
 //
@@ -714,12 +714,14 @@ func answerForCommits(ctx context.Context, s *store.Store, id string, record *mo
 	if err != nil {
 		return "", "", err
 	}
-	// Nothing is said in a tier that does not wait: nothing holds the commits
+	// Nothing is said where the story does not wait: nothing holds the commits
 	// there, and the lines would send a person to undo commits nobody is held to.
-	_, pauses, err := s.CommitPause(id)
+	// What could not be read counts as a pause, as it does at the gate.
+	pause, err := s.PauseFor(ctx, id, record, "")
 	if err != nil {
 		return "", "", err
 	}
+	pauses := pause.Pauses()
 	if on != branch {
 		say = "This answer names no commit of the story, because " + worktreeIn(id) + " is not on " + branch +
 			": it is for the files only, and clears no refusal about the story's commits."
@@ -755,7 +757,7 @@ func answerForCommits(ctx context.Context, s *store.Store, id string, record *mo
 	return tip, say, nil
 }
 
-// pausesOnly is say in a tier that waits for a person, and nothing elsewhere.
+// pausesOnly is say where the story waits for a person, and nothing elsewhere.
 func pausesOnly(pauses bool, say string) string {
 	if pauses {
 		return say

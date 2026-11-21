@@ -346,6 +346,19 @@ that cannot block. `--json` lists every disabled agent, the project manager incl
   code-reviewer cannot block: team.agents.code-reviewer.can_block is false
 ```
 
+Until its commit gate passes, and in the checkout that works it, the active
+story has a `pause` line under its `next` line, saying whether the commit will
+wait for a person's approval and why: the story's tier, and each file its change
+touches with the glob of [`pre_commit_pause_paths`](configuration.md#human_gates)
+it matched, or that none does. Where a person has approved the work as it now
+stands, the line says the commit will not pause again. Where something it needs
+cannot be read, the line says what, and that the commit will pause:
+
+```console
+  next   implementation
+  pause  the commit will pause for a person's approval: the story's risk tier is low, which pre_commit_pause_tiers does not pause; "internal/hook/hook.go" matches "internal/hook/**"
+```
+
 An active story with no gate left reads as `finished` rather than `in progress`,
 because there is nothing left to work on it: what it wants is `sdlc stop`.
 
@@ -362,6 +375,7 @@ reads them to decide what to do:
 | `next` | the story `sdlc start` would pick up. Only present when nothing is active, and absent while a story waits for a person |
 | `waiting` | every story handed to a person with `sdlc escalate` and not yet answered, with the question it asks |
 | `disabled` | every agent the `team` section disables, the project manager included. Absent where none is, or when no story is active |
+| `pre_commit_pause` | whether the active story's commit will wait for a person: `will_pause`; `approved`, `true` where a person has approved the work as it stands, so it will not; the story's `tier` and whether `tier_pauses`; `paths`, each `file` the change touches with the `glob` it matched; and `reasons`, the same clauses the `pause` line prints. Absent once the commit gate has passed, and in a checkout that does not work the story |
 | `landing` | whoever holds the landing lock: the `story`, the `command` (`stop`, or `remap`, which lands nothing), `since` when, and its `pid`; `gone` is `true` where that process is not running, with `takeable_from`, the time a stop can take the lock from. `story`, `command` and `since` are there together or not at all: a lock whose owner cannot be read has only `gone`, and `pid` where one is named. Absent while no lock is there |
 | `waiting_to_land` | every `sdlc stop` or `sdlc remap` waiting for the landing lock, with its `story`, `command`, `since` and `pid`, and `for`, the story of the running stop it waits for. Absent while nothing waits |
 | `consolidate` | `finished`, how many stories have finished since the last `/sdlc:consolidate`, and `last`, the date of the newest consolidation file, which is `null` where there has been none. Absent below `consolidate.nudge_after` stories, and where that is `0` |
@@ -793,8 +807,9 @@ goes on the record with the tree it was given for, the story goes back to
 
 Once a story has been committed in its own worktree (the commit gate has passed
 on it at least once), the answer also records the commit the story's branch is
-at, as `commit` on the approval and in the `--json` output. In a tier that
-pauses, an approving answer prints it:
+at, as `commit` on the approval and in the `--json` output. Where the story
+waits for a person, by its tier or a path its change touches, an approving
+answer prints it:
 
 ```text
 This answer is also for the story's commits as they stand: story/US-001 is at 3f2a9c1d7e5b.
@@ -820,8 +835,11 @@ reason is [SDLC-E0034](troubleshooting.md#sdlc-e0034).
 After a `work_by_hand` hand-over, approving does not do the gate's work: `approve` says which
 gate is open and that you record it with `sdlc gate <gate> pass --story <ID>`, after doing its
 work by hand. Carrying on before then hands the story over again at the same gate. Neither a
-`work_by_hand` nor an `agent_failed` approval answers the pre-commit question: a story in a
-paused tier is still asked before its commit, and `approve` says so.
+`work_by_hand` nor an `agent_failed` approval answers the pre-commit question: a story that
+pauses, by its tier or a path its change touches, is still asked before its commit, and `approve`
+says so. Where the change cannot be measured from where `approve` runs, it says the question may
+still be asked, if the change touches a path in `pre_commit_pause_paths`. Where what pauses the
+story could not all be read, it says the question may still be asked, whatever the change touches.
 
 ## `sdlc unfreeze`
 
@@ -1025,6 +1043,16 @@ session:
   finding    design_review architect F-1 fixed, important: the plan: AC-3 has no step
   finding    design_review architect F-2 declined, nit, internal/invoice.go:12: the name says nothing; reason: the name is the domain's word
   finding    design_review architect F-3 referred, nit, docs/elsewhere.md: a stale sentence on another page; reason: another page, and the person should see it
+```
+
+A story whose commit gate last passed with nothing pausing it for a person has a
+`no pause` line, `landed_without_pause` in `--json`, with the reasons the gate
+gave: its tier, and that no file matched `pre_commit_pause_paths`. Where a
+person approved the story's work after that pass, as the landing asks of a
+story rebased or changed, the line says so and when, and is kept:
+
+```console
+  no pause   the commit gate passed with no pause for a person: the story's risk tier is low, which pre_commit_pause_tiers does not pause; pre_commit_pause_paths lists no path
 ```
 
 ### How a story's range is found
@@ -2197,8 +2225,8 @@ with `team.retries` at 2, the third failure hands the story over.
 
 It records nothing else, and nothing passes because of it: no gate, review, staffing or freeze
 changes. Nobody takes the agent's place, and no other agent is a substitute for it. Approving
-the hand-over does not answer the pre-commit question, which a story in a paused tier is still
-asked before its commit.
+the hand-over does not answer the pre-commit question, which a story that pauses, by its tier or
+a path its change touches, is still asked before its commit.
 
 ## `sdlc freeze`
 

@@ -97,7 +97,8 @@ as a story in the backlog's own shape, with `status` set to `blocked`, so
 story is picked next, and a `todo` one is passed over; see
 [Statuses](writing-stories.md#statuses). It gives the follow-up the risk tier of
 the story it follows up, for you to confirm: a story
-with no tier is `low`, and would be committed without waiting for you.
+with no tier is `low`, and would be committed without waiting for you unless its
+change touches a path `pre_commit_pause_paths` lists.
 
 Nothing is added until you say which ones to add. Even then, a follow-up goes
 into the backlog only when no story is being worked on. While one runs, the

@@ -122,7 +122,7 @@ for Go:
     }
   },
   "freeze": { "allow_new_test_files": false },
-  "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
+  "human_gates": { "pre_commit_pause_tiers": ["high"], "pre_commit_pause_paths": [], "dor_advocate_check": false },
   "budget": { "per_story_usd": 60, "alert_fractions": [0.5, 0.8, 1.0] }
 }
 ```
@@ -249,7 +249,8 @@ project you have: it writes the `team` section back at its defaults, and your ow
   "reviews": { "policy": "REVIEW.md" },
   "freeze": { "allow_new_test_files": false }, // true or false; true: a test file may be added after the freeze
   "human_gates": {
-    "pre_commit_pause_tiers": ["high"],      // any of the risk tiers low, medium and high; [] turns the pause off
+    "pre_commit_pause_tiers": ["high"],      // any of the risk tiers low, medium and high; [] pauses no tier
+    "pre_commit_pause_paths": [],            // globs from the repository root, such as "src/auth/**"; [] pauses on no path
     "dor_advocate_check": false              // true or false; true: the human advocate reads each story at Gate 1 too
   },
   "budget": {
@@ -836,17 +837,106 @@ These settings decide where the loop waits for a person.
 
 | Key | What it means |
 | --- | --- |
-| `pre_commit_pause_tiers` | the story risk tiers that wait for a person's approval before they are committed. Default `["high"]`; `[]` turns the pause off |
+| `pre_commit_pause_tiers` | the story risk tiers that wait for a person's approval before they are committed. Default `["high"]`; `[]` pauses no story for its tier, though a path can still pause it |
+| `pre_commit_pause_paths` | globs from the repository root, slash-separated, such as `"internal/hook/**"`: a story whose change touches a path one matches waits for a person's approval before it is committed, whatever its tier. Default `[]`. A glob that cannot mean what it says (one that does not parse, starts with `/`, holds a backslash or `..`, or is not in its plainest form) is refused when the file loads, with [SDLC-E0045](troubleshooting.md#sdlc-e0045) naming the entry |
 | `dor_advocate_check` | have the human advocate read the story at Gate 1 as well. `sdlc gate dor pass` then waits for its review, which is advisory there too. Off by default |
 
 A story's tier is its `risk_tier` in the backlog, and a story without one is
-`low`. One in a paused tier reaches Gate 8 and stops: the loop hands it over
-with `sdlc escalate pre_commit_approval`, and both `git commit` and
-`sdlc gate commit pass` refuse until a person has run
-[`sdlc approve`](commands.md#sdlc-approve) in their own terminal. An approval is
-bound to the work as it stands, so a change made after it needs approving again.
+`low`. A story waits for a person where either list says so: its tier is in
+`pre_commit_pause_tiers`, or its change touches a path `pre_commit_pause_paths`
+matches. One that waits reaches Gate 8 and stops: the loop hands it over with
+`sdlc escalate pre_commit_approval`, and both `git commit` and
+`sdlc gate commit pass` refuse, naming the tier or each file with the glob it
+matched, until a person has run [`sdlc approve`](commands.md#sdlc-approve) in
+their own terminal. An approval is bound to the work as it stands, so a change
+made after it needs approving again.
 [What your approval covers](guides/human-approval-gates.md#what-your-approval-covers)
 says what that is, and what it is not.
+
+A project that wants every high-tier story to pause as it does today keeps
+`pre_commit_pause_tiers` at `["high"]`, the default, and adds paths beside it.
+A release of sdlc older than the one that reads `pre_commit_pause_paths` ignores
+the key, so empty the tiers only once every machine that works the project runs
+a release that reads the paths.
+
+What a story changes is measured from where its branch left trunk: its commits,
+what is staged, what is changed and not staged, deletions, and files git does
+not track yet. A file that moved counts under both its names, so a file moved
+out from under a glob still pauses. A glob matches without regard to case, as
+macOS and Windows read a name, and a bare directory such as `"internal/hook"`
+covers what is under it. In one checkout, with no story worktree, the change
+is what the story has done since it started.
+
+Nothing the story does takes a pause away. In a story's worktree the main
+checkout's lists and the worktree's own copy of `.sdlc/config.json` count
+together, so a story that empties its copy still pauses, and its tier is read
+from the backlog the main checkout's configuration names. In one checkout the
+configuration committed where the story started counts as well as the file on
+disk, its tiers as well as its paths, so narrowing either list takes a commit
+before the story starts. The landing asks again of a story that was rebased or
+changed, with trunk's lists added. A configuration or a change that cannot be
+read is a pause too, never no pause: the refusal says what did not read, a
+person's approval answers it as it answers any pause, and
+[`sdlc doctor`](commands.md#sdlc-doctor) names the file. In one checkout the
+backlog the committed configuration names is a pause too where it does not
+read. The backlog the story's tier is read from, the one the main checkout's
+configuration names, is not: where it does not read, the commit gate refuses
+with its error, which no approval answers, until it is put right as
+`sdlc doctor` says.
+
+[`sdlc status`](commands.md#sdlc-status) says before the commit gate whether
+the commit will pause and why, under `pre_commit_pause` in `--json`. A story
+that passes the commit gate with no pause leaves a `landed_without_pause`
+event on its record, naming its tier and saying that no file matched
+`pre_commit_pause_paths`, and [`sdlc log`](commands.md#sdlc-log) shows a
+`no pause` line for it until `sdlc ack` marks it read. That is so in every
+project once it upgrades, including one that never sets the key: each story
+committed without a person's sign-off is shown as such.
+
+These are this repository's own paths, as an example of the kind to list:
+whatever decides who may approve, commit or enforce, which a Python or Node
+project translates to its own layout.
+
+```json
+{
+  "human_gates": {
+    "pre_commit_pause_tiers": ["high"],
+    "pre_commit_pause_paths": [
+      "internal/cli/approve.go",
+      "internal/cli/freeze.go",
+      "internal/cli/freezecheck.go",
+      "internal/cli/ack.go",
+      "internal/cli/remap.go",
+      "internal/cli/staffing.go",
+      "internal/cli/inclaudecode.go",
+      "internal/store/store.go",
+      "internal/testset/**",
+      "internal/hook/**",
+      "internal/policy/**",
+      "internal/pathrules/**",
+      "internal/shellpolicy/**",
+      "internal/config/commitpause.go",
+      "internal/config/glob.go",
+      "internal/store/commitpause.go",
+      "internal/gitx/changedsince.go",
+      "plugin/hooks/**",
+      "plugin/bin/**",
+      "plugin/skills/approve/**",
+      "plugin/skills/unfreeze/**",
+      "plugin/skills/ack/**",
+      "plugin/skills/remap/**",
+      "plugin/skills/assign/**"
+    ]
+  }
+}
+```
+
+The list leaves to the reviewers the files where the pause and the approval
+are enforced among much else: `internal/cli/loop.go`, `internal/cli/landing.go`,
+`internal/model/model.go`, `internal/config/config.go` and
+`internal/gitx/landing.go`, whose calls to git build the set of files a change
+touches. Listing them would pause nearly every story; a project that wants
+them paused lists them.
 
 ## `budget`
 

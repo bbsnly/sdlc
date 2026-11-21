@@ -145,18 +145,28 @@ by one setting.
 `sdlc init` writes this block into `.sdlc/config.json`:
 
 ```json
-"human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false }
+"human_gates": { "pre_commit_pause_tiers": ["high"], "pre_commit_pause_paths": [], "dor_advocate_check": false }
 ```
 
 `pre_commit_pause_tiers` names the risk tiers that wait for a person before they
 are committed. A story's tier is its `risk_tier` in the backlog, and a story
 without one is `low`. Tiers are compared without regard to case, so a story
-marked `High` is held by `["high"]`. `[]` turns the pause off.
+marked `High` is held by `["high"]`. `[]` pauses no story for its tier.
+
+`pre_commit_pause_paths` names, as globs from the repository root, the files
+whose change waits for a person whatever the story's tier: the files that decide
+who may approve, commit or enforce, say. A tier is a word somebody chose when
+the story was written; the files a change touches are what it does.
+[`human_gates`](../configuration.md#human_gates) gives this repository's own
+list as an example. With both lists empty, no story waits.
 
 To look at a story that would not otherwise be held, give it `risk_tier: high`
-when you write it, or add its tier to `pre_commit_pause_tiers`.
+when you write it, add its tier to `pre_commit_pause_tiers`, or list the paths
+it would touch in `pre_commit_pause_paths`. `sdlc status` says before Gate 8
+whether the commit will pause, and why, and `sdlc log` shows a `no pause` line
+for each story that was committed with nobody asked.
 
-A story in a paused tier reaches Gate 8 and stops. The runbook hands it over
+A story that waits reaches Gate 8 and stops. The runbook hands it over
 with `sdlc escalate pre_commit_approval`, and until a person has approved the
 work, both `git commit` (refused by the
 [`commit-gate`](../enforcement.md#commit-gate) rule) and
@@ -182,8 +192,8 @@ story's commits are fixed afterwards, when the commit gate passes. Nobody asks
 you to read the commits' messages and authors: they land as the session wrote
 them unless they change.
 
-For a story in its own worktree, in a tier that pauses, they cannot change
-unseen. A commit amended, reworded, squashed, reordered or added after the
+For a story in its own worktree that pauses, by its tier or a path, they cannot
+change unseen. A commit amended, reworded, squashed, reordered or added after the
 commit gate is approved again before the story lands: `sdlc stop` refuses it,
 and so does `sdlc gate commit pass` run again
 ([SDLC-E0037](../troubleshooting.md#sdlc-e0037), which says how to read the
@@ -220,9 +230,9 @@ What is not covered:
 - a story whose first commit gate pass recorded no range, which a session can
   bring about. The pass then prints `no range recorded`: read that story's
   commits yourself before the stop;
-- a tier that pauses only in the main checkout's configuration or trunk's, and
-  not in the worktree's own: the stop holds the story to its commits, and the
-  commit gate run again does not;
+- a tier or a path that pauses only in trunk's committed configuration, and
+  not in the worktree's own or the main checkout's: the stop holds the story
+  to its commits, and the commit gate run again does not;
 - a commit gate recorded by an older `sdlc`.
 
 ### Checking the story at Gate 1
@@ -303,7 +313,7 @@ on the story.
 | Gate 5 | an acceptance test changed after the freeze | `freeze_broken` |
 | any gate | a frozen test contradicts a criterion | `frozen_test_wrong` |
 | any gate | a rule in the `## SDLC Contract` blocks a gate | a hand-over that names the rule |
-| Gate 8 | the story's risk tier waits for a person | `pre_commit_approval` |
+| Gate 8 | the story waits for a person (its tier or a path its change touches) | `pre_commit_approval` |
 | any gate | the same gate failed `loop.max_rework_rounds` times | `gate_failing`, by `sdlc gate` |
 | a review | the same reviewer blocked `loop.max_review_rounds` times | `review_not_converging`, by `sdlc review add` |
 | any time | the `Stop` hook sent back `loop.max_stop_blocks` stops in a row with nothing recorded, and the session stopped again | `loop_stalled`, by the `Stop` hook |
@@ -311,10 +321,10 @@ on the story.
 | any gate | the gate's work, or the verifier's or the code reviewer's review, belongs to an agent the project disabled | `work_by_hand` |
 
 Approving an `agent_failed` or a `work_by_hand` hand-over lets the loop carry on, and it does
-not answer the pre-commit question: a story in a paused tier still waits for your approval
-before its commit. That holds only for `agent_failed` and `work_by_hand`: every other kind of
-hand-over you approve, at Gate 8 or before it, is read as your answer to the pre-commit question
-on the work as it stands.
+not answer the pre-commit question: a story that pauses, by its tier or a path its change
+touches, still waits for your approval before its commit. That holds only for `agent_failed`
+and `work_by_hand`: every other kind of hand-over you approve, at Gate 8 or before it, is read as
+your answer to the pre-commit question on the work as it stands.
 
 For a `work_by_hand` hand-over, the gate's work is yours. In your own terminal: run
 `sdlc approve <ID>`, which says which gate is open; do that gate's work by hand; record it with

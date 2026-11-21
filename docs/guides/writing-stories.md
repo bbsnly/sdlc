@@ -97,7 +97,7 @@ what it leaves out:
 | `priority` | no | an integer; lower runs first |
 | `depends_on` | no | ids of stories that must be `done` first |
 | `as_a`, `i_want`, `so_that` | no | the user-story sentence |
-| `risk_tier` | no | `low`, `medium` or `high`; none is `low`, and by default `high` waits for a person before it is committed ([`human_gates`](../configuration.md#human_gates)) |
+| `risk_tier` | no | `low`, `medium` or `high`; none is `low`, and by default `high` waits for a person before it is committed. A story of any tier also waits where its change touches a path `pre_commit_pause_paths` lists, so a tier set low does not take that away ([`human_gates`](../configuration.md#human_gates)) |
 | `non_goals`, `notes` | no | what is deliberately out of scope, and anything else |
 | `decisions` | no | human choices made about the story, as `{at, by, text}` |
 | `created`, `updated` | no | timestamps; the tool sets `updated` when it changes the status |
@@ -208,8 +208,8 @@ acceptance criteria above all.
 Edit the backlog between stories. While a story is running, the hook refuses
 any attempt by the assistant to write it
 ([`backlog-is-not-edited`](../enforcement.md#backlog-is-not-edited)), so the
-criteria the tests are held to and the tier that decides who approves the commit
-stay the ones the story started with.
+criteria the tests are held to and the tier that, with the paths a project
+lists, decides who approves the commit stay the ones the story started with.
 
 ## Priority and dependencies
 

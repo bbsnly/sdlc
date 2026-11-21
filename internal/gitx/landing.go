@@ -609,22 +609,10 @@ func Uncommitted(ctx context.Context, checkout string, untracked bool) ([]string
 	return statusPaths(out), nil
 }
 
-// statusPaths is the paths in git status's porcelain output, written with -z.
+// statusPaths is the paths in git status's porcelain output, written with -z:
+// a rename or a copy by the name it has, whichever column holds it.
 func statusPaths(out []byte) []string {
-	var paths []string
-	fields := strings.Split(string(out), "\x00")
-	for i := 0; i < len(fields); i++ {
-		f := fields[i]
-		if len(f) < 4 {
-			continue
-		}
-		paths = append(paths, f[3:])
-		// A rename or a copy is followed by the name it had.
-		if f[0] == 'R' || f[0] == 'C' {
-			i++
-		}
-	}
-	return paths
+	return statusNames(out, false)
 }
 
 // operations are the files git keeps in a checkout's git directory while an

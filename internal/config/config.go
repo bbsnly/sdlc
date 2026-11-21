@@ -161,8 +161,14 @@ type Freeze struct {
 }
 
 // HumanGates names the points where a person, not the assistant, decides.
+//
+// PreCommitPausePaths is the paths, as globs from the root, whose change waits
+// for a person's approval before it is committed, whatever the story's tier:
+// a tier is a word somebody chose, and the files a change touches are what it
+// does (US-133). PauseFor decides from both.
 type HumanGates struct {
 	PreCommitPauseTiers []string `json:"pre_commit_pause_tiers"`
+	PreCommitPausePaths []string `json:"pre_commit_pause_paths"`
 	DoRAdvocateCheck    bool     `json:"dor_advocate_check"`
 }
 
@@ -308,7 +314,7 @@ func Default() Config {
 		Spec:       Spec{Paths: []string{"docs/", "spec/", "README.md"}},
 		Loop:       Loop{MaxReviewRounds: 2, MaxReworkRounds: 3, MaxStopBlocks: 3},
 		Freeze:     Freeze{AllowNewTestFiles: false},
-		HumanGates: HumanGates{PreCommitPauseTiers: []string{"high"}},
+		HumanGates: HumanGates{PreCommitPauseTiers: []string{"high"}, PreCommitPausePaths: []string{}},
 		Budget:     Budget{PerStoryUSD: 60, AlertFractions: []float64{0.5, 0.8, 1.0}},
 		// A project that sets nothing is nudged: two stories are the least a
 		// pattern can stand on, and three keeps the line from nagging after each.
@@ -566,6 +572,7 @@ func (c Config) check(p *problems) {
 	c.Team.check(p)
 	c.Budget.gateHours(p)
 	c.Paths.checkConflictMarkers(p)
+	c.HumanGates.checkPausePaths(p)
 }
 
 // reviewPolicyPathOK is whether a path can be the review policy. A `..` segment

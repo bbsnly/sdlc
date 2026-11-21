@@ -704,12 +704,34 @@ person.
 
 ### SDLC-E0037
 
-The story's risk tier is one the project holds for a person before it is
-committed, and nobody has approved the work being committed.
+The project holds the story for a person before it is committed, and nobody has
+approved the work being committed. The reason says why it is held:
 
-`human_gates.pre_commit_pause_tiers` in `.sdlc/config.json` names those tiers,
-`high` unless it says otherwise, and a story with no `risk_tier` is `low`. The
-fix says what a person types and, apart from it, what an assistant does:
+- **its risk tier**: `human_gates.pre_commit_pause_tiers` in `.sdlc/config.json`
+  names the tiers that wait, `high` unless it says otherwise, and a story with no
+  `risk_tier` is `low`. A project that keeps `pre_commit_pause_tiers` at
+  `["high"]` has every high-tier story wait here, as before
+  `pre_commit_pause_paths` existed;
+- **a path its change touches**: `human_gates.pre_commit_pause_paths` lists
+  globs, and the reason names each file the story changed with the glob it
+  matched. The change runs from where the story's branch left trunk, with what
+  is uncommitted or untracked, so a file the story left alone pauses nothing.
+  The story's own copy of the configuration cannot take the pause away: the main
+  checkout's lists count too;
+- **something that could not be read**: a configuration, the story's change,
+  or, in one checkout, the backlog that the configuration committed where the
+  story started names. That pauses rather than being read as no pause, and the
+  reason quotes what failed. A person's approval of the work answers it as it
+  answers any pause, and `sdlc doctor` names the file where a configuration is
+  at fault. The backlog the story's tier is read from, the one the main
+  checkout's configuration names, is not a pause: where it does not read, the
+  commit gate refuses with the backlog's own error, which no approval answers,
+  until a person puts the backlog right as `sdlc doctor` says.
+
+A story that passes the commit gate with nothing holding it leaves a
+`landed_without_pause` event on its record instead, and `sdlc log` shows it as a
+`no pause` line. The fix says what a person types and, apart from it, what an
+assistant does:
 
 ```text
 a person reads the work and answers with "/sdlc:approve <ID>", or "sdlc approve <ID>", typing the
@@ -725,9 +747,10 @@ The words in the single quotes are the session's to change, to say what changed 
 $ sdlc escalate pre_commit_approval --message "ready to commit: the refund total is checked"
 ```
 
-**At landing**, it means that, in a tier that pauses, nobody has approved the work as it now is:
-the story's change is not the one a person approved, or the story was rebased, or the tier came
-to pause after the story was committed. An approval given before the commit stands when
+**At landing**, it means that, where the story waits for a person, by its tier or a path its change
+touches, nobody has approved the work as it now is: the story's change is not the one a person
+approved, or the story was rebased, or its tier or a path came to pause after the story was
+committed. An approval given before the commit stands when
 `sdlc stop` itself puts the story onto a trunk that moved and the result is the approved change
 line for line. A story rebased by hand is approved again, and so is one whose reviews were
 recorded again after the commit gate, or one with a code review on its record from a reviewer the
@@ -739,7 +762,8 @@ work changed since a person approved it'` and stops. With no iteration running o
 cannot be handed over from there: `sdlc gate commit fail --story <ID> --note 'the story changed
 after the commit gate; a person is to read it'` in `.sdlc/worktrees/<ID>` and `/sdlc:next` take it
 up again at the commit gate first. A tier pauses where the main checkout's configuration or
-trunk's committed one says it does.
+trunk's committed one says it does, and a path where either lists a glob that the change being
+landed matches.
 
 A person reads the work and runs `/sdlc:approve`, or `sdlc approve` in their own terminal. An
 approval is bound to the work as it stands, so a change made after it needs
@@ -747,10 +771,11 @@ approving again, and work that was sent back stays sent back until it changes.
 The same refusal comes from the hook, before `git commit`, as
 [`commit-gate`](enforcement.md#commit-gate).
 
-**At landing or at the commit gate, the commits.** In a tier that pauses, a story in its own
-worktree is also held to its commits, and the refusal then begins `"<ID>" has not been approved
-by a person as its commits now stand`, or, at the commit gate, `"<ID>" would no longer be held to
-its commits`. What it says next tells the cases apart:
+**At landing or at the commit gate, the commits.** Where the story waits for a person, by its
+tier or a path its change touches, a story in its own worktree is also held to its commits, and
+the refusal then begins `"<ID>" has not been approved by a person as its commits now stand`, or,
+at the commit gate, `"<ID>" would no longer be held to its commits`. What it says next tells the
+cases apart:
 
 - "is not in the history of": a commit of the story was made again after the commit gate passed:
   amended, reworded, squashed, split, reordered or rebased, by a session or by a person, a person
@@ -822,11 +847,11 @@ moved keeps every commit's author and message, any number of times, and asks nob
 - a story without a worktree ([`git.worktrees`](configuration.md#git) set to false);
 - a story whose first commit gate pass recorded no range. A session can bring this about, with a
   commit the hook did not write down among its own. The pass then prints `no range recorded` and
-  the record holds `range_unknown`: where a story in a tier that pauses shows either, its commits
-  are not held, and a person reads them before the stop;
-- a tier that pauses only in the main checkout's configuration or trunk's committed one, and not
-  in the worktree's own: the stop holds the story to its commits, and the commit gate run again
-  does not;
+  the record holds `range_unknown`: where a story that waits for a person shows either, its
+  commits are not held, and a person reads them before the stop;
+- a tier or a path that pauses only in trunk's committed configuration, and not in the
+  worktree's own or the main checkout's: the stop holds the story to its commits, and the commit
+  gate run again does not;
 - a commit gate recorded by an older `sdlc`, which has no rule for a second pass.
 
 ### SDLC-E0038
@@ -1072,6 +1097,11 @@ one, so a single edit fixes them all:
   refused, and `0` turns a gate off. Every command that reads the configuration refuses the
   file, and the hook sets the whole file aside and runs on the defaults until it is fixed.
   `sdlc doctor` names the entry and the keys allowed.
+- **An entry of `human_gates.pre_commit_pause_paths` cannot mean what it says.** It does not
+  parse as a glob, is empty, starts with `/`, holds a backslash or a `..` segment, or is not in
+  its plainest form. Such a glob would match no file git names, so the pause a person listed
+  would be no pause at all. The message names the entry by its place in the list; give a path or
+  a glob from the repository root, slash-separated, as in `"internal/hook/**"`.
 
 Change the settings and run `sdlc doctor`.
 
@@ -1757,9 +1787,10 @@ $ sdlc stop
 
 `sdlc approve` answers the question an assistant asked when it handed the story over, and it
 comes after the resolving and not before, so that the approval is of the work as it now is. A
-person who ran the stop themselves has no question to answer and leaves it out. In a tier that
-waits for a person, the rebased work is approved again: where no question is open, that stop
-refuses with [SDLC-E0037](#sdlc-e0037), whose fix says how the question is asked and answered.
+person who ran the stop themselves has no question to answer and leaves it out. Where the story
+waits for a person, by its tier or a path its change touches, the rebased work is approved
+again: where no question is open, that stop refuses with [SDLC-E0037](#sdlc-e0037), whose fix
+says how the question is asked and answered.
 
 That rebase is git's own, not `sdlc`'s. It runs the hooks, the merge drivers, the editor and the
 filters the repository's configuration names, with your privileges and credentials, and a session

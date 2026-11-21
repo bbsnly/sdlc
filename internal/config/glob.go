@@ -111,6 +111,24 @@ func (p Paths) checkConflictMarkers(found *problems) {
 	}
 }
 
+// checkPausePaths adds what is wrong with the paths whose change pauses the
+// commit gate, as checkConflictMarkers does for its list: a glob that cannot
+// mean what it says matches nothing, and the pause a person listed would be
+// no pause at all (US-133, THREATS T5).
+func (h HumanGates) checkPausePaths(found *problems) {
+	for i, pattern := range h.PreCommitPausePaths {
+		why := badIntendedPath(pattern)
+		switch {
+		case why == "":
+		case found.full():
+			found.count(&found.otherFound, 1)
+		default:
+			found.addOther(fmt.Sprintf("human_gates.pre_commit_pause_paths[%d] is %s, which %s: "+
+				"give a path or a glob from the repository root, slash-separated, as in \"internal/hook/**\"", i, quoted(pattern), why))
+		}
+	}
+}
+
 // badIntendedPath says why pattern is not a path or a glob from the root, or
 // returns "" where it is one.
 func badIntendedPath(pattern string) string {

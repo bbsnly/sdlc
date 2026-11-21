@@ -757,8 +757,9 @@ another file in the repository, the rule goes by where a write lands: a file too
 the name, and the shell rule refuses the name and leaves the target.
 
 The backlog holds the acceptance criteria the tests are held to and each story's
-`risk_tier`, which decides whether a person approves the commit. An assistant
-that lowered a story to `low` mid-iteration would take that pause away. The
+`risk_tier`, which, with the paths the configuration lists, decides whether a
+person approves the commit. An assistant that lowered a story to `low`
+mid-iteration would take that pause away. The
 `sdlc` command still records a story's status there as the loop moves it.
 
 *Instead:* if a story's criteria or risk tier are wrong, say which and stop.
@@ -2660,12 +2661,25 @@ fields `sdlc` writes into the backlog, and a change anywhere else makes them
 stale; the refusal names whose. Measuring the tree takes a moment, so it is done
 only for `git commit`.
 
-A story whose risk tier is in `human_gates.pre_commit_pause_tiers` is also
-refused until a person has approved that same tree with `sdlc approve`. A story
-missing from the backlog is refused too, because its tier cannot be known.
+A story whose risk tier is in `human_gates.pre_commit_pause_tiers`, or whose
+change touches a path `human_gates.pre_commit_pause_paths` matches, is also
+refused until a person has approved that same tree with `sdlc approve`. The
+change runs from where the story's branch left trunk, with what is staged, not
+staged or untracked, and the refusal names each file with its glob, the first
+20 and then how many more, which `sdlc status` names. The main checkout's lists
+count beside the story's own copy of the configuration, which cannot take a
+pause away. A story missing from the backlog is refused too, because its tier
+cannot be known.
+
+Where a pause is due and the working tree cannot be measured, within the
+hook's time or because git failed, the commit is refused, saying so and why: no
+approval can be matched to a tree nobody measured. Where a person has approved
+the work, they make that commit in their own terminal, and
+`sdlc gate commit pass`, which has no deadline, then checks it against their
+approval. A commit nothing pauses is let through with a warning, as before.
 
 The hook still lets through a commit amended once the commit gate has passed:
-the tree is the approved one. For a story in its own worktree in such a tier
+the tree is the approved one. For a story in its own worktree that pauses so,
 the landing is what holds it to the commits the gate recorded, and `sdlc stop`
 refuses another ([`SDLC-E0037`](troubleshooting.md#sdlc-e0037)).
 
@@ -3813,8 +3827,9 @@ how you would notice.
   start over. And an older `sdlc` that runs `sdlc gate verification pass` or `sdlc gate commit
   pass` itself checks no findings at all. That last is the general problem of an older release
   running the loop, which every gate check added since shares and this ledger does not widen. A
-  story in a risk tier the project pauses (`high`, by default) still waits at the commit gate for
-  a person's `sdlc approve`. Keep the plugin's `sdlc` and the one on your `PATH` on one release.
+  story the project pauses, by its risk tier (`high`, by default) or a path its change touches,
+  still waits at the commit gate for a person's `sdlc approve`. Keep the plugin's `sdlc` and the
+  one on your `PATH` on one release.
 - **A path the match does not read.** A glob, or a path written only inside a finding's text, is
   not matched against the story's changes, so such a finding can be referred while the story
   changes the file. The verifier reads every referred finding's path and text against the diff.

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -81,6 +83,9 @@ type logEntry struct {
 	// Failures is every failed run of an agent the session reported, with its
 	// reason, so a failure is seen before the budget for it is spent.
 	Failures []logEvent `json:"failures,omitempty"`
+	// LandedWithoutPause is the commit gate's latest pass where nothing paused
+	// it for a person: what was committed without their sign-off.
+	LandedWithoutPause []logEvent `json:"landed_without_pause,omitempty"`
 	// HeldBy is the checkout holding a story not yet finished, where the
 	// repository has more than one.
 	HeldBy string `json:"held_by,omitempty"`
@@ -325,8 +330,32 @@ func noteEvents(e *logEntry, r *model.Record) {
 		case ev.Type == model.EventAgentFailure:
 			// The reason is a model's, quoted so it cannot end the line.
 			e.Failures = append(e.Failures, logEvent{At: ev.At, Message: "failed " + ev.Message + ": " + quote(ev.Reason)})
+		case ev.Type == model.EventGate && ev.Message == model.GateEvent(model.GateCommit, model.GatePass):
+			// Only the latest pass says what was committed.
+			e.LandedWithoutPause = nil
+		case ev.Type == model.EventLandedWithoutPause:
+			e.LandedWithoutPause = []logEvent{{At: ev.At, Message: ev.Message + approvedAfter(r, ev.At)}}
 		}
 	}
+}
+
+// approvedAfter names a person's approval of the story's work given after a
+// landing without a pause: the landing asks again of a story rebased or
+// changed, and a person who answered then did sign off on what landed, or on
+// a tree before it. The line is kept either way, with the answer beside it, so
+// an approval given for other work hides nothing.
+func approvedAfter(r *model.Record, at string) string {
+	since, err := time.Parse(time.RFC3339, at)
+	if err != nil {
+		return ""
+	}
+	for _, a := range slices.Backward(r.Approvals) {
+		given, err := time.Parse(time.RFC3339, a.At)
+		if err == nil && given.After(since) && a.Decision == model.DecisionApproved && a.AnswersCommit() {
+			return "; a person approved the story's work after it, at " + a.At
+		}
+	}
+	return ""
 }
 
 // noteStaffing copies the staffing the record holds, if it holds one.
@@ -462,6 +491,9 @@ func printLogEntry(w io.Writer, e logEntry) {
 	}
 	for _, ev := range e.Failures {
 		fmt.Fprintf(w, "  %s\n", oneLine(ev.Message))
+	}
+	for _, ev := range e.LandedWithoutPause {
+		fmt.Fprintf(w, "  no pause   %s\n", oneLine(ev.Message))
 	}
 	for _, esc := range e.Escalations {
 		answer := "waiting"

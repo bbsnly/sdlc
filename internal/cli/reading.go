@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	"github.com/bbsnly/sdlc/internal/config"
 	"github.com/bbsnly/sdlc/internal/gitx"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/store"
@@ -38,6 +39,11 @@ type reading struct {
 	// own, and judged whether this gate checked the freeze at all.
 	trunkTests *model.TrunkTests
 	judged     bool
+	// pause is what the commit gate decided about waiting for a person, and
+	// pauseOK whether it decided, which the event written at its pass is
+	// written from.
+	pause   config.CommitPause
+	pauseOK bool
 }
 
 func readingOf(s *store.Store) *reading { return &reading{s: s} }

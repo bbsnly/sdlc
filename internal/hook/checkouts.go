@@ -99,7 +99,7 @@ func (pl place) config(root string) (config.Config, error) {
 // store opens the store for the project with cfg, sharing what the call has
 // read.
 func (pl place) store(cfg config.Config) *store.Store {
-	return store.NewIn(&config.Project{Root: pl.project, Config: cfg}, pl.co, pl.err).Reading(pl.reads)
+	return store.NewIn(&config.Project{Root: pl.project, Config: cfg}, pl.co, pl.err).Reading(pl.reads).ReadingConfigs(pl.config)
 }
 
 // records is the directory the backlog and the story records are kept under:

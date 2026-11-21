@@ -9,6 +9,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -109,6 +110,9 @@ type Store struct {
 	// reads is what the invocation has read of the loop's files, shared by
 	// every store opened for it (Reads).
 	reads *Reads
+	// configs reads another checkout's configuration, as the caller has it
+	// already; nil reads the file (ReadingConfigs).
+	configs func(root string) (config.Config, error)
 }
 
 // placement is where the checkout the store was opened in sits in its
@@ -142,6 +146,25 @@ func (s *Store) Reading(reads *Reads) *Store {
 		out.reads = reads
 	}
 	return &out
+}
+
+// ReadingConfigs is a copy of the store that reads another checkout's
+// configuration through configs, which reads it as config.ForRules does: the
+// hook keeps every configuration its call has read, and the pause reading the
+// main checkout's file again opened it twice in one call (US-129, AC-5).
+func (s *Store) ReadingConfigs(configs func(root string) (config.Config, error)) *Store {
+	out := *s
+	out.configs = configs
+	return &out
+}
+
+// configAt is the configuration of the checkout at root, for the rules.
+func (s *Store) configAt(root string) (config.Config, error) {
+	if s.configs != nil {
+		return s.configs(root)
+	}
+	cfg, _, err := config.ForRules(root)
+	return cfg, err
 }
 
 // Reads is what the store has read for its invocation, for another store or
@@ -237,7 +260,11 @@ func (s *Store) WithEnv(getenv func(string) string) *Store {
 func (s *Store) Root() string { return s.root }
 
 // CommitPause reports the story's risk tier, and whether the project holds a
-// story of that tier for a person's approval before it is committed.
+// story of that tier for a person's approval before it is committed: by the
+// tier alone, as every configuration the story cannot narrow has it
+// (PauseGates). One that does not read is an error, not this checkout's tiers
+// alone, which would be a pause taken away (US-133, verifier F-3). What its
+// change touches is PauseFor's to say, which is what the gates ask.
 func (s *Store) CommitPause(id string) (string, bool, error) {
 	story, _, err := s.Story(id)
 	if err != nil {
@@ -247,7 +274,12 @@ func (s *Store) CommitPause(id string) (string, bool, error) {
 	if tier == "" {
 		tier = config.DefaultRiskTier
 	}
-	return tier, s.cfg.HumanGates.PausesBeforeCommit(tier), nil
+	record, err := s.Record(id)
+	if err != nil {
+		record = nil
+	}
+	gates, err := s.PauseGates(context.Background(), record)
+	return tier, gates.PausesBeforeCommit(tier), err
 }
 
 // StorySubject is the story as a reviewer of it reads it, by content: its entry

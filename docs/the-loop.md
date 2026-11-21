@@ -168,7 +168,7 @@ needed. The sections after it say the same in full.
 | 5 | `implementation` | `sdlc:implementer` | none | the code | a broken freeze |
 | 6 | `verification`, `verifier_review` | `sdlc:verifier` | the verifier's own verdict blocks | `VERIFICATION.md` | a verifier that keeps blocking |
 | 7 | `code_review` | nobody: the diff from Gate 5 is reviewed | `sdlc:code-reviewer` blocks unless its `can_block` is false; `sdlc:security`, `sdlc:perf` and `sdlc:human-advocate` as at Gate 4 | up to four reviews | a reviewer that keeps blocking |
-| 8 | `commit` | the conversation | none | the commit | `sdlc approve`, for a story in a paused risk tier (`high` by default) |
+| 8 | `commit` | the conversation | none | the commit | `sdlc approve`, for a story the project pauses, by its risk tier (`high` by default) or a path its change touches |
 | 9 | `retro` | `sdlc:bookkeeper` | none | `RETRO.md`, and `CODEMAP.md` for anything new | `sdlc log` and `sdlc ack`, once the story is on trunk |
 
 ### The staffing
@@ -367,13 +367,27 @@ now, not as it was when they approved. An approval goes stale the moment the
 code changes, and the window between the code review and the commit is the one
 place that would otherwise not be checked.
 
-A story whose risk tier the project pauses (`high`, by default) waits here for
-a person as well. The conversation hands it over with `sdlc escalate` and stops,
-and the commit is refused until somebody has approved the work as it stands. See
-[`human_gates`](configuration.md#human_gates). In such a tier the pass also
+A story whose risk tier the project pauses (`high`, by default), or whose change
+touches a path `pre_commit_pause_paths` lists, waits here for a person as well.
+The change is measured from where the story's branch left trunk, untracked
+files included, and the refusal names the tier or each file with the glob it
+matched. The conversation hands it over with `sdlc escalate` and stops, and the
+commit is refused until somebody has approved the work as it stands. Neither
+the story's tier nor its own copy of `.sdlc/config.json` takes a pause away,
+and what cannot be read pauses too. See
+[`human_gates`](configuration.md#human_gates). A project that keeps
+`pre_commit_pause_tiers` at `["high"]` has every high-tier story pause here as
+before, and a path only adds to that. Where the story pauses, the pass also
 fixes the commits of a story in its own worktree: the gate passed again with
 other commits, and a landing with other commits, each need a person's answer
 ([what your approval covers](guides/human-approval-gates.md#what-your-approval-covers)).
+
+A pass with no pause for a person writes a `landed_without_pause` event on the
+record, naming the story's tier and saying that no file matched
+`pre_commit_pause_paths`, and [`sdlc log`](commands.md#sdlc-log) shows it as a
+`no pause` line until `sdlc ack` marks it read. Before the gate,
+[`sdlc status`](commands.md#sdlc-status) says whether the commit will pause, and
+why.
 
 The pass also refuses a story whose commits add the markers of an unresolved
 conflict, naming the files and the lines ([`SDLC-E0080`](troubleshooting.md#sdlc-e0080)),
@@ -418,8 +432,8 @@ freeze, with a design or code review finding still open
 ([`SDLC-E0092`](troubleshooting.md#sdlc-e0092)) or referred in a file the story
 changes ([`SDLC-E0091`](troubleshooting.md#sdlc-e0091)), with findings an older
 `sdlc` dropped from the record ([`SDLC-E0093`](troubleshooting.md#sdlc-e0093)),
-with code that has changed since the reviewers saw it, or, in a paused tier,
-with work no person has approved.
+with code that has changed since the reviewers saw it, or, where the tier or a
+listed path pauses the story, with work no person has approved.
 
 ## Gate 9 — `retro`
 
@@ -837,12 +851,12 @@ waits has changed nothing and can be run again at once. The landing checks, in o
   before the commit, for as long as the result is the reviewed change line for
   line: the story's lines in the same files, and nothing else different but what
   trunk changed. A change that differs needs the reviews again
-  ([`SDLC-E0029`](troubleshooting.md#sdlc-e0029)) and, in a tier that waits for
+  ([`SDLC-E0029`](troubleshooting.md#sdlc-e0029)) and, where the story waits for
   a person, the approval again
   ([`SDLC-E0037`](troubleshooting.md#sdlc-e0037)). A story rebased any other way
-  is measured as it always was, with the lines around its change, and in a tier
-  that waits for a person it is approved again;
-- in a tier that waits for a person, the story's commits are the ones the
+  is measured as it always was, with the lines around its change, and where it
+  waits for a person it is approved again;
+- where the story waits for a person, the story's commits are the ones the
   commit gate recorded, with at most commits of the root `CODEMAP.md` alone on
   top, or the stop's own replay of them with every author and message kept. A
   commit amended or added since is approved again

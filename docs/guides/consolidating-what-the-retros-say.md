@@ -146,7 +146,8 @@ you weigh a config proposal.
 ### Proposals that loosen a check
 
 A proposal that loosens a check says so first and names what stops being
-checked: a tier taken out of `pre_commit_pause_tiers`, the code reviewer made
+checked: a tier taken out of `pre_commit_pause_tiers`, a glob taken out of
+`pre_commit_pause_paths`, the code reviewer made
 advisory, a loop limit turned off. A change to who waits for a person before a
 commit is never folded into another proposal, so you always see it on its own.
 

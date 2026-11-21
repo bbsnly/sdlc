@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 
@@ -63,6 +65,29 @@ type statusPayload struct {
 	// Consolidate is how many stories have finished since the last
 	// /sdlc:consolidate, where that is consolidate.nudge_after or more.
 	Consolidate *consolidateState `json:"consolidate,omitempty"`
+	// PreCommitPause is whether the active story's commit will wait for a
+	// person, and why, said from the first gate until the commit gate passes
+	// in the checkout that works the story, so that nobody learns of a pause
+	// only when the gate refuses.
+	PreCommitPause *pausePayload `json:"pre_commit_pause,omitempty"`
+}
+
+// pausePayload is what status says of the commit's pause. Approved is a pause
+// a person has answered for the work as it stands, which then does not pause
+// again; a pause that could not be decided is one that will.
+type pausePayload struct {
+	WillPause  bool        `json:"will_pause"`
+	Approved   bool        `json:"approved"`
+	Tier       string      `json:"tier"`
+	TierPauses bool        `json:"tier_pauses"`
+	Paths      []pausePath `json:"paths,omitempty"`
+	Reasons    []string    `json:"reasons"`
+}
+
+// pausePath is a file the story changes and the glob it matched.
+type pausePath struct {
+	File string `json:"file"`
+	Glob string `json:"glob"`
 }
 
 // landingState is whoever holds the landing lock, as far as its lock can be
@@ -229,7 +254,61 @@ func (v *statusView) readActive(cmd *cobra.Command, p *config.Project) error {
 	if id, held := s.WorkingSession(); held {
 		payload.Session = id
 	}
+	payload.PreCommitPause = describePause(cmd.Context(), s, active, record)
 	return nil
+}
+
+// describePause is what status says of the commit's pause, while the commit
+// gate has not passed and only in the checkout that works the story, whose
+// work the pause is measured on. A story that cannot be read from the backlog
+// gets nothing: status says it is not there, and the commit gate refuses it
+// for that.
+func describePause(ctx context.Context, s *store.Store, id string, record *model.Record) *pausePayload {
+	if record.Pass(model.GateCommit) || !workedHere(s, id) {
+		return nil
+	}
+	pause, err := s.PauseFor(ctx, id, record, "")
+	if err != nil {
+		slog.Debug("status: the story's pause could not be decided", "err", err)
+		return nil
+	}
+	out := &pausePayload{WillPause: pause.Pauses(), Tier: pause.Tier, TierPauses: pause.TierPauses, Reasons: pause.Reasons()}
+	for _, m := range pause.Matches {
+		out.Paths = append(out.Paths, pausePath{File: m.File, Glob: m.Glob})
+	}
+	// A person who has just approved the work is not told it will pause. The
+	// tree is hashed, five git processes, only where an answer on the record
+	// could be for it: status hashed no tree before, and a story nobody has
+	// answered for waits whatever its tree (US-133 design review, perf F-1).
+	if out.WillPause && slices.ContainsFunc(record.Approvals, model.Approval.AnswersCommit) {
+		if tree, err := s.ReviewSubject(ctx); err == nil && pause.WaitsIn(record, tree) == "" {
+			out.WillPause, out.Approved = false, true
+		}
+	}
+	return out
+}
+
+// workedHere reports whether this checkout is the one that works the story,
+// as far as the claims on it can tell.
+func workedHere(s *store.Store, id string) bool {
+	_, elsewhere, err := s.HeldElsewhere(id)
+	return err == nil && !elsewhere
+}
+
+// printPause is status's line about the commit's pause.
+func printPause(w io.Writer, p *pausePayload) {
+	if p == nil {
+		return
+	}
+	reasons := strings.Join(p.Reasons, "; ")
+	switch {
+	case p.Approved:
+		fmt.Fprintf(w, "  pause  a person has approved the work as it stands, so the commit will not pause again: %s\n", reasons)
+	case p.WillPause:
+		fmt.Fprintf(w, "  pause  the commit will pause for a person's approval: %s\n", reasons)
+	default:
+		fmt.Fprintf(w, "  pause  the commit will not pause: %s\n", reasons)
+	}
 }
 
 // print writes the status as text.
@@ -336,6 +415,7 @@ func (v *statusView) printActive(w io.Writer, finished bool, notHere, notHereNex
 	if payload.NextGate != "" {
 		fmt.Fprintf(w, "\n  next   %s\n", payload.NextGate)
 	}
+	printPause(w, payload.PreCommitPause)
 	if payload.NextGate != "" {
 		gate := model.Gate(payload.NextGate)
 		names, counts := failuresSince(record, gate)

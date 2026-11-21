@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -96,7 +97,7 @@ func runTeamFailure(cmd *cobra.Command, args []string, reason string) error {
 	// handOverAt reads a limit at or below nought as off; the clamp on
 	// retries keeps this between 1 and 21, so retries 0 hands over at once.
 	limit := team.RetriesAllowed() + 1
-	message, err := failureMessage(s, record, id, agent, gate, failures)
+	message, err := failureMessage(cmd.Context(), s, record, id, agent, gate, failures)
 	if err != nil {
 		return err
 	}
@@ -134,8 +135,8 @@ func failureCount(n int) string {
 // failureMessage is what the person is told at the hand-over: the agent, the
 // gate, the count, and every reason since the last decision, each quoted, since
 // a model wrote it. That the answer does not answer the pre-commit question is
-// said only where the story's tier waits for one.
-func failureMessage(s *store.Store, record *model.Record, id, agent string, gate model.Gate, failures int) (string, error) {
+// said only where the story waits for one, by its tier or a path.
+func failureMessage(ctx context.Context, s *store.Store, record *model.Record, id, agent string, gate model.Gate, failures int) (string, error) {
 	var reasons []string
 	event := model.AgentFailureEvent(gate, agent)
 	for i := len(record.Events) - 1; i >= 0 && record.Events[i].Type != model.EventApproval; i-- {
@@ -146,12 +147,19 @@ func failureMessage(s *store.Store, record *model.Record, id, agent string, gate
 	message := agent + " has failed " + strconv.Itoa(failures) + " times at " + string(gate) +
 		", and team.retries allows " + strconv.Itoa(s.Config().Team.RetriesAllowed()) +
 		" retries. The reasons: " + strings.Join(reasons, "; ") + ". Approving lets the loop run it again"
-	_, pauses, err := s.CommitPause(id)
+	asked, err := stillAsked(ctx, s, record, id)
 	if err != nil {
 		return "", err
 	}
-	if pauses {
+	switch asked {
+	case askedNot:
+	case askedForSure:
 		message += "; it does not answer the pre-commit question, which is still asked before the commit"
+	case askedMaybe:
+		message += "; it does not answer the pre-commit question, which may still be asked before the commit, " +
+			"if its change touches a path in pre_commit_pause_paths"
+	case askedUnread:
+		message += "; it does not answer the pre-commit question, which may still be asked before the commit"
 	}
 	return message + ".", nil
 }

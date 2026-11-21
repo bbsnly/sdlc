@@ -996,6 +996,7 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) (err error) {
 		return err
 	}
 	record.Append(model.EventGate, model.GateEvent(gate, status), s.Now())
+	g.noteNoPause()
 	// On the record before the save, which a hand-over makes with it.
 	late.record(record, s.Now())
 	handedOver, message, err := g.save()
@@ -1108,6 +1109,18 @@ func (g *gateRun) noteAccepted() {
 	}
 }
 
+// noteNoPause writes landed_without_pause where the commit gate passed with
+// nothing pausing it for a person, so that `sdlc log` shows a person what was
+// committed without their sign-off. It is appended after the gate's event and
+// saved with it, and nothing between the two can fail: a pass is never on the
+// record without it. A pause a person approved writes none.
+func (g *gateRun) noteNoPause() {
+	if g.gate != model.GateCommit || g.status != model.GatePass || !g.rd.pauseOK || g.rd.pause.Pauses() {
+		return
+	}
+	g.record.Append(model.EventLandedWithoutPause, g.rd.pause.NoPause(), g.s.Now())
+}
+
 // moveBase measures the story from HEAD as it is now, where HEAD can be read.
 func (g *gateRun) moveBase(ctx context.Context) {
 	if head, err := g.rd.headOf(ctx); err == nil {
@@ -1189,7 +1202,7 @@ func (g *gateRun) noteCommitGate() error {
 	if !own {
 		return g.requireNoMarkersFrom(ctx, started, began, head)
 	}
-	if err := requireAnAnchorLeft(g.s, g.id, record, known); err != nil {
+	if err := requireAnAnchorLeft(g.s, g.id, record, known, g.rd.pause.Pauses()); err != nil {
 		return err
 	}
 	if err := requireNoConflictMarkers(ctx, g.s.Root(), at.base, head, g.s.Config().Paths,
@@ -1503,22 +1516,37 @@ func requireOrder(gate model.Gate, record *model.Record) error {
 			" to be recorded first")
 }
 
-// requireApproval holds a story whose risk tier the project pauses for a person
-// until that person has approved the work being committed.
+// requireApproval holds a story the project pauses for a person, by its risk
+// tier or by a path its change touches, until that person has approved the
+// work being committed. A decision that could not be made on what it needs
+// pauses too: the reason says what did not read, and a person's approval of
+// the work answers it as it answers any pause.
 //
 // It comes before requireCommitted because the loop asks before committing: a
 // story that was never handed over is told that first, not that the tree is
-// dirty.
+// dirty, and an untracked file under a listed path is said as the pause.
 func requireApproval(ctx context.Context, rd *reading, id string, record *model.Record) error {
-	tier, pauses, err := rd.s.CommitPause(id)
-	if err != nil || !pauses {
+	// The HEAD this command has read, where it has read one, and otherwise
+	// HEAD read for the pause alone: the gate reads the HEAD it records after
+	// the clean check, and work committed in between is still in the change
+	// the pause measured, as uncommitted work.
+	head := ""
+	if rd.headOK {
+		head = rd.head
+	}
+	pause, err := rd.s.PauseFor(ctx, id, record, head)
+	if err != nil {
 		return err
+	}
+	rd.pause, rd.pauseOK = pause, true
+	if !pause.Pauses() {
+		return nil
 	}
 	tree, err := rd.subject(ctx)
 	if err != nil {
 		return err
 	}
-	why := record.WaitsForApproval(tier, tree)
+	why := pause.WaitsIn(record, tree)
 	if why == "" {
 		return requireSameCommits(ctx, rd, id, record)
 	}

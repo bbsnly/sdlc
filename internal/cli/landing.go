@@ -109,55 +109,11 @@ func waitingToLand(id, trunk string, running bool) *sdlcerr.Error {
 		"every gate on it has passed, and it waits to land on "+trunk).WithFix(fix)
 }
 
-// changeBase is where a story's change is measured from: the commit its branch
-// was cut from wherever head still holds it, unless the story sits on a later
-// trunk commit, which head then holds with the cut behind it (laterTrunkCommit).
-// Anything reachable from that commit is reachable from trunk, so none of the
-// story's own commits is ever outside the change, even where trunk came to hold
-// some of them first; what is left out is what trunk holds, and the landing
-// leaves out the same. Only where a person's rebase took the cut out of head is
-// it trunk's merge base with head.
+// changeBase is where a story's change is measured from, which store.ChangeBase
+// works out: the pause measures from the same place, and one answer kept in
+// two packages would drift.
 func changeBase(ctx context.Context, root, cut, head, trunkTip string) (string, error) {
-	if cut != "" {
-		held, err := gitx.IsAncestor(ctx, root, cut, head)
-		if err != nil {
-			return "", err
-		}
-		if held {
-			if on := laterTrunkCommit(ctx, root, cut, head, trunkTip); on != "" {
-				return on, nil
-			}
-			return cut, nil
-		}
-	}
-	base, err := gitx.MergeBase(ctx, root, trunkTip, head)
-	if err != nil {
-		return "", err
-	}
-	if base == "" {
-		return "", sdlcerr.New(sdlcerr.RepositoryUnreadable,
-			"the story's change could not be measured",
-			"HEAD, "+head[:12]+", shares no history with trunk, "+trunkTip[:12])
-	}
-	return base, nil
-}
-
-// laterTrunkCommit is the trunk commit head sits on where it is a later commit
-// than the cut, which head holds; "" otherwise, and wherever it cannot be told.
-// It asks of the commit gate what sittingOn asks of the freeze (meetsTrunk and
-// sitsPastCut) and one thing more, that the cut is an ancestor of it, so that a
-// trunk gone back behind the cut leaves the start where it was. Only sealed
-// calls answer it: ancestry a replacement object could forge would start the
-// change and the range too late, and hide commits of the story's own.
-func laterTrunkCommit(ctx context.Context, root, cut, head, trunkTip string) string {
-	on := meetsTrunk(ctx, root, trunkTip, head)
-	if !sitsPastCut(on, cut, head) {
-		return ""
-	}
-	if later, err := gitx.IsAncestor(ctx, root, cut, on); err != nil || !later {
-		return ""
-	}
-	return on
+	return store.ChangeBase(ctx, root, cut, head, trunkTip)
 }
 
 // changeStart is where the commit gate measures a story in its own worktree
@@ -1160,8 +1116,8 @@ func atOrUnderFold(name, dir string) bool {
 }
 
 // changeChecks is L7 and L8: a change that is not the one reviewed is
-// reviewed again, and one rebased or changed in a tier that pauses is
-// approved again.
+// reviewed again, and one rebased or changed that waits for a person, by its
+// tier or a path its change touches, is approved again.
 func (l *lander) changeChecks(ctx context.Context, st *landState) error {
 	// Before anything is measured, and on every check: the measure overrides
 	// each diff driver by its key, and does not refuse one it cannot, because
@@ -1342,18 +1298,19 @@ func (l *lander) requireReviewsAgain(ctx context.Context, st *landState) error {
 }
 
 // requireApprovalAgain is L8: an approval holds for the work it was given for,
-// and a story rebased or changed in a tier that pauses is not that work. A
-// tier pauses where the main checkout's configuration or trunk's says so.
+// and a story rebased or changed, where its tier or its change pauses, is not
+// that work. What pauses is what the main checkout's configuration or trunk's
+// says does.
 func (l *lander) requireApprovalAgain(ctx context.Context, st landState) error {
-	tier, pauses, err := l.pausedTier(st)
-	if err != nil || !pauses {
+	pause, err := l.pauseAtLanding(ctx, st)
+	if err != nil || !pause.Pauses() {
 		return err
 	}
 	tree, err := l.s.ReviewSubject(ctx)
 	if err != nil {
 		return err
 	}
-	why := st.record.WaitsForApproval(tier, tree)
+	why := pause.WaitsIn(st.record, tree)
 	if why == "" {
 		return nil
 	}
@@ -1365,7 +1322,7 @@ func (l *lander) requireApprovalAgain(ctx context.Context, st landState) error {
 		// of: no tree after the replay is one a person saw.
 		since = ""
 		if reviewed := reviewedTree(st.record); reviewed != "" {
-			if why = st.record.WaitsForApproval(tier, reviewed); why == "" {
+			if why = pause.WaitsIn(st.record, reviewed); why == "" {
 				return nil
 			}
 		}
@@ -1384,18 +1341,25 @@ func (l *lander) requireApprovalAgain(ctx context.Context, st landState) error {
 	return sdlcerr.New(sdlcerr.ApprovalRequired, quote(l.id)+" has not been approved by a person"+since, why).WithFix(fix)
 }
 
-// pausedTier is the story's risk tier, and whether the stop waits for a person
-// in it: where the main checkout's configuration or trunk's says so.
-func (l *lander) pausedTier(st landState) (string, bool, error) {
-	story, _, err := l.s.Story(l.id)
+// pauseAtLanding is whether the stop waits for a person: for the story's risk
+// tier, as the backlog the main checkout's configuration names has it, or for
+// a path the change being landed touches, as trunk's configuration and the
+// main checkout's list them together. The tree was held clean before this, so
+// the change is its commits. A change that cannot be read refuses the stop: it
+// is never read as no pause.
+func (l *lander) pauseAtLanding(ctx context.Context, st landState) (config.CommitPause, error) {
+	story, _, err := store.New(&config.Project{Root: l.m.main, Config: l.m.cfg}).Story(l.id)
 	if err != nil {
-		return "", false, err
+		return config.CommitPause{}, err
 	}
-	tier := strings.TrimSpace(story.RiskTier)
-	if tier == "" {
-		tier = config.DefaultRiskTier
+	gates := st.trunkCfg.HumanGates.With(l.m.cfg.HumanGates)
+	var changed []string
+	if len(gates.PreCommitPausePaths) > 0 {
+		if changed, err = gitx.ChangedBetween(ctx, l.s.Root(), st.from, st.tip); err != nil {
+			return config.CommitPause{}, err
+		}
 	}
-	return tier, st.trunkCfg.HumanGates.PausesBeforeCommit(tier) || l.m.cfg.HumanGates.PausesBeforeCommit(tier), nil
+	return gates.PauseFor(story.RiskTier, changed), nil
 }
 
 // ownReplay reports whether S is the commit the stop itself made when it put
@@ -2182,8 +2146,8 @@ func (l *lander) notReplayed(ctx context.Context, st landState, cause error) err
 				`; resolve the files it stops on, "git add" them and carry the rebase on as git says until it ` +
 				`finishes; then, where an assistant handed this story over, /sdlc:approve ` + l.id + `, or sdlc approve ` + l.id + `, after resolving ` +
 				`and not before, so that the approval is of the work as it now is; then sdlc stop, which runs the ` +
-				`configured commands on the result. In a tier that waits for a person the rebased work is approved ` +
-				`again: where no question is open on the story, that stop says so with SDLC-E0037, and its fix says ` +
+				`configured commands on the result. Where the story waits for a person, by its tier or a path its ` +
+				`change touches, the rebased work is approved again: where no question is open on the story, that stop says so with SDLC-E0037, and its fix says ` +
 				`how the question is asked and answered. That rebase is git's own and not sdlc's: it runs the hooks, ` +
 				`merge drivers, editor and filters the repository's configuration names, with that person's ` +
 				`privileges, so they read "git config --show-origin --list" and .gitattributes there first. Where ` +

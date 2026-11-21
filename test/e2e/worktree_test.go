@@ -1697,7 +1697,7 @@ func TestAC10ASingleCheckoutPrintsAndLeavesWhatTheReleasedToolDoes(t *testing.T)
 	for i, s := range steps {
 		stdout, stderr, code := c.as(s.as).outcome(t, "", s.args...)
 		stdout, stderr = normalised(stdout, root), normalised(stderr, root)
-		if stdout != s.stdout || stderr != s.stderr || code != s.code {
+		if withoutCommitPause(stdout) != withoutCommitPause(s.stdout) || stderr != s.stderr || code != s.code {
 			t.Errorf("step %d, sdlc %s:\ngot  exit %d\nstdout %q\nstderr %q\nwant exit %d\nstdout %q\nstderr %q",
 				i+1, strings.Join(s.args, " "), code, stdout, stderr, s.code, s.stdout, s.stderr)
 		}
