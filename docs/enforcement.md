@@ -928,11 +928,11 @@ Refuses the analysis agent writing outside its own story directory and
 
 ### `reviewer-reviews`
 
-Refuses any of the seven reviewing agents — architect, security, red-team, perf,
-human-advocate, verifier and code-reviewer — writing outside the story's own
+Refuses any of the eight reviewing agents — architect, security, red-team, perf,
+human-advocate, verifier, code-reviewer and test-reviewer — writing outside the story's own
 directory. The retro agent has a rule of its own, below.
 
-None of the seven is given a file-writing tool, so this is a backstop, not the
+None of the eight is given a file-writing tool, so this is a backstop, not the
 thing keeping them out: it is what still holds if an agent's tool list grows.
 Like every rule on this page, it governs the file-writing tools. A reviewer's
 shell commands meet the shell rules instead, which protect loop state, the

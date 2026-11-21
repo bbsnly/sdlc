@@ -55,7 +55,7 @@ func gateTrunkMoves(t *testing.T, main checkout) string {
 func gateReviewedAgain(s *ontoStory) {
 	s.t.Helper()
 	for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
-		for _, r := range model.ReviewersFor(gate) {
+		for _, r := range fixtureReviewers(gate) {
 			if r.WhenDoRAdvocate {
 				continue
 			}
@@ -185,7 +185,7 @@ func TestAC3AndAC10TheCommitGateRunAgainAfterTheStopsOwnReplayNamesOnlyTheStorys
 		default:
 			// Reviews only, below.
 		}
-		for _, r := range model.ReviewersFor(model.Gate(gate)) {
+		for _, r := range fixtureReviewers(model.Gate(gate)) {
 			if r.WhenDoRAdvocate {
 				continue
 			}

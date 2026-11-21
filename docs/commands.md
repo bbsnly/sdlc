@@ -2254,7 +2254,20 @@ has since gone missing without being lifted
 The one exception is `freeze.allow_new_test_files`. With it on, running
 `sdlc freeze` again on the story's own freeze adds the test files written since,
 provided none of the frozen ones has changed, and lists what it added; `--json`
-names them in `added`.
+names them in `added`. Where the test reviewer is staffed, the added files are
+reviewed with the rest first, as below.
+
+Where `sdlc:test-reviewer` is staffed, the freeze waits for its approve of the
+test files as they are, by name and content: until it has one it refuses with
+[SDLC-E0029](troubleshooting.md#sdlc-e0029), where the reviewer has not reviewed,
+has not approved, or reviewed tests that have changed since, or with
+[SDLC-E0030](troubleshooting.md#sdlc-e0030), where it blocked, and the refusal
+names the reviewer. A test changed, added or renamed after the approve makes it
+stale. With the project manager disabled, or a staffing that has no row for the
+test reviewer, the freeze waits for it; one the staffing leaves out, or one
+disabled in `team.agents`, is not waited for, and where its `can_block` is false
+the freeze waits only until it has reviewed. A freeze that succeeds prints what it
+always printed.
 
 Where `commands.freeze_check` is set, `sdlc freeze` runs it first, from the
 repository root, with the test files that are new or changed in

@@ -313,6 +313,7 @@ stderr:
 $ sdlc review list
 exit 0
 stdout:
+  tests_frozen    test-reviewer   blocking  not reviewed
   design_review   architect       blocking  not reviewed
   design_review   red-team        advisory  not reviewed
   design_review   security        blocking  not reviewed
@@ -398,7 +399,7 @@ stderr:
 $ sdlc staffing set
 exit 0
 stdout:
-US-001  staffing recorded: 12 agents needed, 0 left out
+US-001  staffing recorded: 13 agents needed, 0 left out
 stderr:
 
 $ sdlc gate analysis pass
@@ -434,6 +435,13 @@ $ sdlc artifact write test_plan
 exit 0
 stdout:
 US-001  test_plan  .sdlc/stories/US-001/TEST-PLAN.md (12 bytes)
+stderr:
+
+$ sdlc review add tests_frozen test-reviewer approve
+exit 0
+stdout:
+US-001  tests_frozen  test-reviewer  approve (round 1)
+  .sdlc/stories/US-001/reviews/tests_frozen-test-reviewer-1.md
 stderr:
 
 $ sdlc freeze
@@ -534,6 +542,7 @@ stderr:
 $ sdlc review list
 exit 0
 stdout:
+  tests_frozen    test-reviewer   blocking  approve (round 1)
   design_review   architect       blocking  approve (round 2)
   design_review   red-team        advisory  note (round 1)
   design_review   security        advisory  approve (round 1)
@@ -716,6 +725,7 @@ stderr:
 $ sdlc review list
 exit 0
 stdout:
+  tests_frozen    test-reviewer   blocking  approve (round 1)
   design_review   architect       blocking  approve (round 2)
   design_review   red-team        advisory  note (round 1)
   design_review   security        advisory  approve (round 1)
@@ -1034,6 +1044,7 @@ stderr:
 $ sdlc review list
 exit 0
 stdout:
+  tests_frozen    test-reviewer   blocking  approve (round 1)
   design_review   architect       blocking  approve (round 2)
   design_review   red-team        advisory  note (round 1)
   design_review   security        advisory  approve (round 1)
@@ -1069,7 +1080,7 @@ $ sdlc log
 exit 0
 stdout:
 <sha>..<sha>  US-001  Example: reject invoices with a non-positive total
-  rounds     design_review 2 · verifier_review 1 · code_review 1
+  rounds     tests_frozen 1 · design_review 2 · verifier_review 1 · code_review 1
   blocks     1: design_review architect (round 1)
   escalated  spec_unclear: is a zero total refused too? (answered)
   staffing   project-manager: asked for sonnet at medium -- "project-manager has work on this story"; "the change is small and a later gate checks it"
@@ -1084,7 +1095,8 @@ stdout:
   staffing   perf: asked for sonnet at medium -- "perf has work on this story"; "the change is small and a later gate checks it"
   staffing   human-advocate: asked for sonnet at medium -- "human-advocate has work on this story"; "the change is small and a later gate checks it"
   staffing   code-reviewer: asked for sonnet at medium -- "code-reviewer has work on this story"; "the change is small and a later gate checks it"
-  staffing   <time>  staffing_set: 12 agents needed, 0 left out; staffing changes on the record before this: 0
+  staffing   test-reviewer: asked for sonnet at medium -- "test-reviewer has work on this story"; "the change is small and a later gate checks it"
+  staffing   <time>  staffing_set: 13 agents needed, 0 left out; staffing changes on the record before this: 0
   spent      $1.25
 stderr:
 
@@ -1203,7 +1215,7 @@ stderr:
     {
       "at": "<time>",
       "type": "staffing_set",
-      "message": "12 agents needed, 0 left out; staffing changes on the record before this: 0"
+      "message": "13 agents needed, 0 left out; staffing changes on the record before this: 0"
     },
     {
       "at": "<time>",
@@ -1224,6 +1236,11 @@ stderr:
       "at": "<time>",
       "type": "artifact",
       "message": "test_plan stored at .sdlc/stories/US-001/TEST-PLAN.md"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "tests_frozen test-reviewer approve"
     },
     {
       "at": "<time>",
@@ -1380,6 +1397,15 @@ stderr:
     }
   ],
   "reviews": [
+    {
+      "at": "<time>",
+      "gate": "tests_frozen",
+      "role": "test-reviewer",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/tests_frozen-test-reviewer-1.md"
+    },
     {
       "at": "<time>",
       "gate": "design_review",
@@ -1587,6 +1613,14 @@ stderr:
         "asked_model": "sonnet",
         "asked_effort": "medium",
         "asked_reason": "the change is small and a later gate checks it"
+      },
+      {
+        "agent": "test-reviewer",
+        "needed": true,
+        "reason": "test-reviewer has work on this story",
+        "asked_model": "sonnet",
+        "asked_effort": "medium",
+        "asked_reason": "the change is small and a later gate checks it"
       }
     ]
   }
@@ -1663,7 +1697,7 @@ $ sdlc log
 exit 0
 stdout:
 <sha>..<sha>  US-001  Example: reject invoices with a non-positive total
-  rounds     design_review 2 · verifier_review 1 · code_review 1
+  rounds     tests_frozen 1 · design_review 2 · verifier_review 1 · code_review 1
   blocks     1: design_review architect (round 1)
   escalated  spec_unclear: is a zero total refused too? (answered)
   staffing   project-manager: asked for sonnet at medium -- "project-manager has work on this story"; "the change is small and a later gate checks it"
@@ -1678,7 +1712,8 @@ stdout:
   staffing   perf: asked for sonnet at medium -- "perf has work on this story"; "the change is small and a later gate checks it"
   staffing   human-advocate: asked for sonnet at medium -- "human-advocate has work on this story"; "the change is small and a later gate checks it"
   staffing   code-reviewer: asked for sonnet at medium -- "code-reviewer has work on this story"; "the change is small and a later gate checks it"
-  staffing   <time>  staffing_set: 12 agents needed, 0 left out; staffing changes on the record before this: 0
+  staffing   test-reviewer: asked for sonnet at medium -- "test-reviewer has work on this story"; "the change is small and a later gate checks it"
+  staffing   <time>  staffing_set: 13 agents needed, 0 left out; staffing changes on the record before this: 0
   spent      $1.25
 stderr:
 

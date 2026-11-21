@@ -60,7 +60,11 @@ func satisfy(t *testing.T, root string, gate model.Gate) {
 	case model.GateTestsFrozen:
 		writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// AC-1\n")
 		mustRunWith(t, "# Test plan\n", "artifact", "write", "test_plan")
+		// US-112.4: the freeze waits for the test reviewer's approve of the
+		// tests as they are, so its review comes before the freeze, not after.
+		approveWaited(t, gate)
 		mustRun(t, "freeze")
+		return
 	case model.GatePlan:
 		mustRunWith(t, "# Plan\n", "artifact", "write", "plan")
 	case model.GateVerification:
@@ -72,11 +76,24 @@ func satisfy(t *testing.T, root string, gate model.Gate) {
 	case model.GateDoR, model.GateDesignReview, model.GateImplementation, model.GateVerifierReview, model.GateCodeReview:
 		// Nothing of its own to do: only its reviews, below.
 	}
+	approveWaited(t, gate)
+}
+
+// approveWaited records an approve from every reviewer of the gate that the
+// project and the story wait for, but the ones named. A reviewer the team
+// disables, such as the test reviewer that initialised turns off, or one the
+// staffing leaves out, is refused its review as one the gate does not wait for,
+// and is passed over; any other refusal fails the test.
+func approveWaited(t *testing.T, gate model.Gate, except ...string) {
+	t.Helper()
 	for _, r := range model.ReviewersFor(gate) {
-		if r.WhenDoRAdvocate {
-			continue // expected only when the project asks, which is its own test
+		if r.WhenDoRAdvocate || slices.Contains(except, r.Role) {
+			continue // the advocate is expected only when the project asks, which is its own test
 		}
-		mustRunWith(t, "# "+r.Role+"\n", "review", "add", string(gate), r.Role, "approve")
+		got := runWith(t, "# "+r.Role+"\n", "review", "add", string(gate), r.Role, "approve")
+		if got.code != 0 && !strings.Contains(got.stderr, "does not wait for a review from") {
+			t.Fatalf("sdlc review add %s %s approve failed with %d:\n%s", gate, r.Role, got.code, got.stderr)
+		}
 	}
 }
 

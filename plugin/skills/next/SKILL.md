@@ -219,8 +219,10 @@ sdlc escalate untestable --message "AC-3 cannot be observed from outside: <why>"
 ```
 
 Otherwise run `commands.test` and read the output yourself. Every new test must fail; if one
-passes, the gate does not pass.
-Then freeze:
+passes, the gate does not pass. Where `test-reviewer` is staffed, delegate to `sdlc:test-reviewer`
+with the acceptance criteria, `ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md` and the new tests. Send a
+`block` to `sdlc:sdet` to correct the tests and `TEST-PLAN.md`, then ask again, up to its
+`max_rounds` (default `loop.max_review_rounds`). Then freeze:
 
 ```bash
 sdlc freeze
@@ -238,8 +240,8 @@ then `sdlc start <ID>`, then `sdlc unfreeze --reason "..."`, which opens this ga
 after it again.
 
 A test file added after the freeze stops every gate the freeze guards (`SDLC-E0043`) until the
-freeze holds it. Only with `freeze.allow_new_test_files` on may the test author add one; run
-`sdlc freeze` again after it does.
+freeze holds it. Only with `freeze.allow_new_test_files` on may the test author add one; then run
+`sdlc freeze` again, after the test reviewer's approve where it is staffed.
 
 ## Findings, from Gates 4 and 7
 

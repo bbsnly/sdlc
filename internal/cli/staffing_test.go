@@ -48,7 +48,7 @@ const (
 // holds it to plugin/agents.
 var stfAgents = []string{
 	"architect", "bookkeeper", "code-reviewer", "human-advocate", "implementer", "perf",
-	"project-manager", "red-team", "researcher", "sdet", "security", "verifier",
+	"project-manager", "red-team", "researcher", "sdet", "security", "test-reviewer", "verifier",
 }
 
 // stfAgent is one agent of a staffing, as `staffing set` reads it and
@@ -293,13 +293,16 @@ func stfAnalysed(t *testing.T, sensitive bool) {
 	mustRun(t, "gate", "analysis", "pass", flag)
 }
 
-// stfWorked does a gate's own work, leaving its reviews to the test.
+// stfWorked does a gate's own work, leaving its reviews to the test. At Gate 3
+// the test reviewer's approve is part of the work (US-112.4): the freeze waits
+// for it, where the story waits for the test reviewer at all.
 func stfWorked(t *testing.T, root string, gate model.Gate) {
 	t.Helper()
 	switch gate {
 	case model.GateTestsFrozen:
 		writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// AC-1\n")
 		mustRunWith(t, "# Test plan\n", "artifact", "write", "test_plan")
+		approveWaited(t, gate)
 		mustRun(t, "freeze")
 	case model.GatePlan:
 		mustRunWith(t, "# Plan\n", "artifact", "write", "plan")
@@ -315,15 +318,15 @@ func stfWorked(t *testing.T, root string, gate model.Gate) {
 	}
 }
 
-// stfReviewed has every reviewer of a gate approve, but the ones named.
+// stfReviewed has every reviewer of a gate approve, but the ones named. Gate
+// 3's reviews are recorded before its freeze, by stfWorked, so there is nothing
+// left to record after it.
 func stfReviewed(t *testing.T, gate model.Gate, except ...string) {
 	t.Helper()
-	for _, r := range model.ReviewersFor(gate) {
-		if r.WhenDoRAdvocate || slices.Contains(except, r.Role) {
-			continue
-		}
-		mustRunWith(t, "# "+r.Role+"\n", "review", "add", string(gate), r.Role, "approve")
+	if gate == model.GateTestsFrozen {
+		return
 	}
+	approveWaited(t, gate, except...)
 }
 
 // stfThrough takes a story whose analysis has passed through every gate before
@@ -1743,8 +1746,9 @@ func TestAC3AStoryWithNoStaffingRecordedWaitsForEveryReviewer(t *testing.T) {
 	r := run(t, "gate", "design_review", "pass")
 	stfRefused(t, r, "SDLC-E0029", "architect", "red-team", "security", "perf", "human-advocate")
 	listed := decode[stfReviewList](t, mustRun(t, "review", "list", "--json"))
-	if len(listed.Reviews) != 10 {
-		t.Errorf("review list shows %d reviews, want the 10 the released tool waits for: %+v", len(listed.Reviews), listed.Reviews)
+	if len(listed.Reviews) != 11 {
+		t.Errorf("review list shows %d reviews, want the 11 waited for, the test reviewer's among them (US-112.4): %+v",
+			len(listed.Reviews), listed.Reviews)
 	}
 	for _, review := range listed.Reviews {
 		if review.LeftOut {

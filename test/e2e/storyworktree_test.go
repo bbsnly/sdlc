@@ -75,9 +75,17 @@ func worktreesOff(t *testing.T, dir string) {
 }
 
 // projectManagerOff disables the project manager in dir's configuration.
+//
+// The test reviewer goes off with it (US-112.4 decision D1): with nobody staffing
+// the story it is waited for, and `sdlc freeze` would wait for its approve, while
+// the tests built on this are about the freeze and what comes after it. Disabled,
+// the freeze prints what it always did (decision D2). The sandbox has both on.
 func projectManagerOff(t *testing.T, dir string) {
 	t.Helper()
-	setConfig(t, dir, "team", "agents", map[string]any{"project-manager": map[string]any{"enabled": false}})
+	setConfig(t, dir, "team", "agents", map[string]any{
+		"project-manager": map[string]any{"enabled": false},
+		"test-reviewer":   map[string]any{"enabled": false},
+	})
 }
 
 // storyRepository is repository as a project has it that never heard of story
@@ -650,7 +658,7 @@ func (s *treeSession) workGate(gate model.Gate) {
 	case model.GateRetro:
 		s.stores("bookkeeper", "retro", "# Retro\n\nNo deviations.\n")
 	}
-	for _, r := range model.ReviewersFor(gate) {
+	for _, r := range fixtureReviewers(gate) {
 		if r.WhenDoRAdvocate {
 			continue
 		}

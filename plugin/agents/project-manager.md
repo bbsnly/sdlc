@@ -180,6 +180,14 @@ model. It is never left out on a story the analysis records as security-sensitiv
 said is not. It stays in when the project manager cannot tell. With the project manager disabled,
 every enabled agent takes part.
 
+### test-reviewer
+
+The project manager leaves the test-reviewer out of a story only if each criterion's test is
+plainly that criterion and nothing else, with the reason on the record, and never to get past a
+block: the test-reviewer examines the new tests against the criteria, the analysis and the test
+conventions. A staffing with no row for it keeps it in. It stays in when the project manager
+cannot tell. With the project manager disabled, every enabled agent takes part.
+
 ### verifier
 
 The project manager never leaves the verifier out while it is enabled: it reviews Gate 6, and its

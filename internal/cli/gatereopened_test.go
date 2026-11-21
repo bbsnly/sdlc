@@ -182,6 +182,7 @@ func TestAC2RecordingAGateThatReopensNothingPrintsWhatItPrintedBefore(t *testing
 	t.Run("pass as json", func(t *testing.T) {
 		t.Parallel()
 		root := startedAt(t, model.GateVerification)
+		setConfigOnDisk(t, root, "team", map[string]any{})
 		satisfy(t, root, model.GateVerification)
 		out := mustRun(t, "gate", "verification", "pass", "--note", "all commands green", "--json").stdout
 		want := `{"ok":true,"story":"US-001","gate":"verification","status":"pass","note":"all commands green","done":false}` + "\n"
@@ -194,7 +195,8 @@ func TestAC2RecordingAGateThatReopensNothingPrintsWhatItPrintedBefore(t *testing
 	})
 	t.Run("a failure with nothing passed after it", func(t *testing.T) {
 		t.Parallel()
-		startedAt(t, model.GateVerification)
+		root := startedAt(t, model.GateVerification)
+		setConfigOnDisk(t, root, "team", map[string]any{})
 		out := mustRun(t, "gate", "verification", "fail", "--note", "AC-2 is untested").stdout
 		if want := "US-001  verification  fail\n  AC-2 is untested\n"; out != want {
 			t.Errorf("prose = %q, want %q", out, want)

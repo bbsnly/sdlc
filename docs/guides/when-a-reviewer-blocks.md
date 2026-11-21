@@ -128,9 +128,15 @@ gate by gate:
 
 | Gate | Blocking | On budget | Advisory |
 | --- | --- | --- | --- |
+| `tests_frozen` | `test-reviewer`, unless its `can_block` is false | none | none |
 | `design_review` | `architect`; `security` when the story is security-sensitive | `perf` | `red-team`, `human-advocate`; `security` otherwise |
 | `verifier_review` | `verifier` | none | none |
 | `code_review` | `code-reviewer`; `security` when the story is security-sensitive | `perf` | `human-advocate`; `security` otherwise |
+
+The test reviewer is the one whose block refuses a command other than `sdlc gate`:
+it refuses `sdlc freeze`, with SDLC-E0030, until the same reviewer approves the
+tests as they are. Where its `can_block` is false it is advisory, and the freeze
+waits only until it has reviewed.
 
 Whether a story is security-sensitive is recorded at Gate 2 with
 `sdlc gate analysis pass --security-sensitive` or `--security-sensitive=false`.

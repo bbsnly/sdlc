@@ -487,22 +487,25 @@ func describeReviewers(ctx context.Context, s *store.Store, record *model.Record
 func describeReviewer(ctx context.Context, rd *reading, record *model.Record, id string,
 	r model.Reviewer, policy model.ReviewPolicy,
 ) (reviewInfo, error) {
-	subject, err := gateSubject(ctx, rd, id, r.Gate)
-	if err != nil {
-		return reviewInfo{}, err
-	}
 	info := reviewInfo{
 		Gate: string(r.Gate), Role: r.Role,
 		Blocking:       r.Blocks(policy),
 		BlocksOnBreach: !r.Blocks(policy) && r.OnBreach(policy),
 	}
 	if latest, ok := record.LatestReview(r.Gate, r.Role); ok {
+		// Asked only where there is a review to compare it with: the tests
+		// gate's subject hashes every test file.
+		subject, err := gateSubject(ctx, rd, id, r.Gate)
+		if err != nil {
+			return reviewInfo{}, err
+		}
 		info.Verdict, info.Round = string(latest.Verdict), latest.Round
 		info.Stale = latest.Subject != subject
 		if info.Stale && r.Gate == model.GateDesignReview && store.IsPlanRevision(latest.Subject) {
 			info.ReviewedSubject = latest.Subject
 		}
 	}
+	var err error
 	if info.LeftOut, info.BroughtBackBy, err = waited(ctx, rd, record, r.Gate, r.Role); err != nil {
 		return reviewInfo{}, err
 	}
@@ -562,14 +565,18 @@ func describeReviewState(i reviewInfo) string {
 // gateSubject is what a reviewer of this gate is looking at, by content.
 //
 // The definition-of-ready gate reviews the story, and the design gate a
-// document, so their content is the subject. The gates that review work review
-// the whole tree, because a change anywhere can invalidate what they concluded.
-// A gate with no reviewers has no subject, and that is not an error.
+// document, so their content is the subject. The tests gate reviews the test
+// files the freeze is to hold, by name and content, so a test changed, added or
+// renamed makes its review stale. The gates that review work review the whole
+// tree, because a change anywhere can invalidate what they concluded. A gate
+// with no reviewers has no subject, and that is not an error.
 func gateSubject(ctx context.Context, rd *reading, id string, gate model.Gate) (string, error) {
 	s := rd.s
 	switch gate {
 	case model.GateDoR:
 		return s.StorySubject(id)
+	case model.GateTestsFrozen:
+		return rd.testsSubject(ctx)
 	case model.GateDesignReview:
 		// No plan yet is a state, not a failure. It leaves the subject empty,
 		// which makes every review of a plan that is not there stale by
@@ -667,5 +674,8 @@ func describeNote(note string) string {
 	if strings.TrimSpace(note) == "" {
 		return ""
 	}
-	return ": " + note
+	// The note is a reviewer's, printed in a refusal of sdlc's own, the
+	// freeze's among them: a line break in it would start a line that reads
+	// as sdlc's.
+	return ": " + oneLine(note)
 }

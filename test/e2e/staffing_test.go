@@ -25,7 +25,7 @@ import (
 // one of them.
 var staffedAgents = []string{
 	"architect", "bookkeeper", "code-reviewer", "human-advocate", "implementer", "perf",
-	"project-manager", "red-team", "researcher", "sdet", "security", "verifier",
+	"project-manager", "red-team", "researcher", "sdet", "security", "test-reviewer", "verifier",
 }
 
 // staffingDocument is what the project manager gives `sdlc staffing set`:
@@ -174,7 +174,11 @@ func (sb sandbox) staffedGate(t *testing.T, gate model.Gate, out ...string) {
 	case model.GateTestsFrozen:
 		sb.writesFile(t, "sdet", "invoice_test.go", sandboxTest)
 		sb.works(t, tree, "sdet", sandboxTestPlan, "artifact", "write", "test_plan")
+		// US-112.4: the freeze waits for Gate 3's reviews, so they come first.
+		sb.approvesGate(t, gate, out...)
 		sb.works(t, tree, "sdet", "", "freeze")
+		sb.works(t, tree, "", "", "gate", string(gate), "pass", "--note", "worked by the session under test")
+		return
 	case model.GatePlan:
 		sb.works(t, tree, "implementer", sandboxPlan, "artifact", "write", "plan")
 	case model.GateVerification:

@@ -47,6 +47,9 @@ has to pass the leg of `./task check` that covers it (`markdownlint`, `linkcheck
   `hook`. Never upward, and `cli` and `hook` never import each other. Nothing enforces this
   but review. `internal/release`, `internal/testscan` and `internal/tools` are build tooling
   outside the binary.
+- The core is language-neutral and model-neutral: nothing the binary does assumes the project's
+  language, build or test tool, and model and effort names are opaque strings from configuration.
+  A stack's specifics live in what `sdlc init` writes and in examples for every stack it supports.
 - `cmd/sdlc/main.go` stays a dispatcher. Behaviour goes in a package under `internal/`.
 - Stdout is a protocol surface: the hook's stdout is JSON that Claude Code parses. Diagnostics go
   through `internal/logging` to stderr or a file, never stdout.

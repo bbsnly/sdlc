@@ -100,7 +100,7 @@ func ccWorked(t *testing.T, binary string, main checkout, firstAuthor string) *c
 		case model.GateRetro:
 			s.stores("bookkeeper", "retro", "# Retro\n\nNo deviations.\n")
 		}
-		for _, r := range model.ReviewersFor(model.Gate(gate)) {
+		for _, r := range fixtureReviewers(model.Gate(gate)) {
 			if r.WhenDoRAdvocate {
 				continue
 			}

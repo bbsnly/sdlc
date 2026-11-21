@@ -734,12 +734,9 @@ func otSecondStory(t *testing.T, main string) string {
 	swReach(t, wt, otSecondSession, model.GateTestsFrozen)
 	writeFile(t, wt, "internal/shipping_test.go", "package internal\n\n// AC-1 of US-002\n")
 	mustRunWith(t, "# Test plan\n", "artifact", "write", "test_plan")
+	// US-112.4: Gate 3's reviews come before the freeze, which waits for them.
+	approveWaited(t, model.GateTestsFrozen)
 	mustRun(t, "freeze")
-	for _, r := range model.ReviewersFor(model.GateTestsFrozen) {
-		if !r.WhenDoRAdvocate {
-			mustRunWith(t, "# "+r.Role+"\n", "review", "add", string(model.GateTestsFrozen), r.Role, "approve")
-		}
-	}
 	mustRun(t, "gate", string(model.GateTestsFrozen), "pass", "--note", "1 criterion, 1 failing test")
 	swPass(t, wt, otSecondSession, model.GatePlan, model.GateImplementation)
 	writeFile(t, wt, "shipping.go", "package billing\n\n// Shipping is what US-002 adds.\ntype Shipping struct{}\n")

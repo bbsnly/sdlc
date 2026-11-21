@@ -43,7 +43,8 @@ func TestAC5WorkerAtNamesTheAgentWhoseWorkEachGateIs(t *testing.T) {
 func TestAC1EachReviewerBlocksByDefaultAsTheReleasedToolDoes(t *testing.T) {
 	want := map[string]bool{
 		"architect": true, "security": true, "perf": true, "verifier": true, "code-reviewer": true,
-		"red-team": false, "human-advocate": false,
+		"test-reviewer": true, // US-112.4 AC-1
+		"red-team":      false, "human-advocate": false,
 	}
 	for _, r := range Reviewers {
 		blocks, known := want[r.Role]
@@ -71,6 +72,7 @@ func TestAC6FindReviewerAnywhereFindsEveryReviewerAndNoWorker(t *testing.T) {
 		{"human-advocate", GateDoR},
 		{"verifier", GateVerifierReview},
 		{"code-reviewer", GateCodeReview},
+		{"test-reviewer", GateTestsFrozen},
 		{"researcher", ""},
 		{"project-manager", ""},
 		{"nobody", ""},

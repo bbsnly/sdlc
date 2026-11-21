@@ -2,9 +2,12 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -45,7 +48,9 @@ func newFreezeCmd() *cobra.Command {
 			"taking the shortest path to green -- and every gate after that is theatre.\n\n" +
 			"Which files count as tests comes from paths.tests in .sdlc/config.json.\n\n" +
 			"Where commands.freeze_check is set there, freeze runs it first over the new and\n" +
-			"changed test files and takes the freeze only if it passes.",
+			"changed test files and takes the freeze only if it passes.\n\n" +
+			"Where the test reviewer is staffed, freeze waits for its approve of the test\n" +
+			"files as they are.",
 		Example: "  sdlc freeze\n  sdlc freeze --json",
 		Args:    cobra.NoArgs,
 		RunE:    func(cmd *cobra.Command, _ []string) error { return runFreeze(cmd) },
@@ -111,6 +116,9 @@ func (f *freezer) take() error {
 		return err
 	}
 	hashes, err := hashAll(f.s, files)
+	if err == nil {
+		err = f.reviewed(id, files, hashes)
+	}
 	if err != nil {
 		return err
 	}
@@ -180,6 +188,34 @@ func hashAll(s *store.Store, files []string) (map[string]string, error) {
 		hashes[f] = sum
 	}
 	return hashes, nil
+}
+
+// reviewed holds the freeze to the test reviewer's verdict, where the story
+// waits for one, on the files given with the hashes about to be locked. It
+// compares against the digest of those hashes and not a second listing, so a
+// test written in between is not frozen under an approve of a smaller set. The
+// check runs with the lock let go and take runs again from the top, so a review
+// recorded meanwhile is read here on the second pass.
+func (f *freezer) reviewed(id string, files []string, hashes map[string]string) error {
+	record, err := f.s.Record(id)
+	if err == nil {
+		rd := readingOf(f.s)
+		rd.tests, rd.testsOK = testsDigest(files, hashes), true
+		err = requireReviews(f.cmd.Context(), rd, id, model.GateTestsFrozen, record)
+	}
+	return err
+}
+
+// testsDigest is the subject of a review of tests_frozen: one line per file,
+// in path order, of its quoted name and its content hash. Quoted, no name can
+// carry the separator or a line break; beside its own hash, a rename or two
+// files' contents swapped is a change.
+func testsDigest(files []string, hashes map[string]string) string {
+	sum := sha256.New()
+	for _, name := range slices.Sorted(slices.Values(files)) {
+		fmt.Fprintf(sum, "%q %s\n", name, hashes[name])
+	}
+	return hex.EncodeToString(sum.Sum(nil))
 }
 
 // refuseOrExtend is what a freeze that still stands means for a second
@@ -259,15 +295,21 @@ func (f *freezer) passedNote() string {
 // reports done when the command has ended there, with the error it ended on;
 // with nothing to add the freeze is a second one, and refused as one.
 func (f *freezer) addToFreeze(id string, lock *model.Lock) (bool, error) {
-	added, err := pendingAdditions(f.cmd.Context(), f.s, lock)
+	added, listed, err := pendingAdditions(f.cmd.Context(), f.s, lock)
 	if err != nil || len(added) == 0 {
 		return false, err
 	}
 	hashes, err := hashAll(f.s, added)
+	if err == nil {
+		maps.Copy(lock.Files, hashes)
+		// The approve is of the files review add lists, not of lock.Files: a
+		// frozen file that paths.tests or .gitignore has let go of since stays
+		// held, and compared with it in, no approve could ever match.
+		err = f.reviewed(id, listed, lock.Files)
+	}
 	if err != nil {
 		return true, err
 	}
-	maps.Copy(lock.Files, hashes)
 	if f.vetting() {
 		return true, f.vet(id, true, lock.Files)
 	}
@@ -278,13 +320,15 @@ func (f *freezer) addToFreeze(id string, lock *model.Lock) (bool, error) {
 }
 
 // pendingAdditions is the test files written since the freeze was taken, which
-// it does not yet hold. A freeze whose own files have changed gets nothing
-// added: the new files would go in, and the change would go through with them.
-func pendingAdditions(ctx context.Context, s *store.Store, lock *model.Lock) ([]string, error) {
+// it does not yet hold, and every test file listed. A freeze whose own files
+// have changed gets nothing added: the new files would go in, and the change
+// would go through with them.
+func pendingAdditions(ctx context.Context, s *store.Store, lock *model.Lock) (added, listed []string, err error) {
 	if changed := verifyFreeze(s, lock); len(changed) > 0 {
-		return nil, brokenFreeze(changed)
+		return nil, nil, brokenFreeze(changed)
 	}
-	return unfrozenTests(ctx, s, lock)
+	listed, err = listedTests(ctx, s)
+	return unheldOf(lock, listed), listed, err
 }
 
 // refuseALostFreeze refuses to freeze a story whose freeze was taken and is
@@ -524,6 +568,13 @@ func brokenFreeze(changed []string) *sdlcerr.Error {
 // unfrozenTests lists the project's test files that the freeze does not hold,
 // found the way the freeze found the ones it does.
 func unfrozenTests(ctx context.Context, s *store.Store, lock *model.Lock) ([]string, error) {
+	listed, err := listedTests(ctx, s)
+	return unheldOf(lock, listed), err
+}
+
+// listedTests is the project's test files as the freeze finds them, and none
+// where paths.tests names nothing.
+func listedTests(ctx context.Context, s *store.Store) ([]string, error) {
 	m := testset.New(s.Config().Paths.Tests)
 	if !m.Configured() {
 		return nil, nil
@@ -532,13 +583,18 @@ func unfrozenTests(ctx context.Context, s *store.Store, lock *model.Lock) ([]str
 	if err != nil {
 		return nil, err
 	}
+	return m.Filter(all), nil
+}
+
+// unheldOf is the files listed that the freeze does not hold.
+func unheldOf(lock *model.Lock, listed []string) []string {
 	var unheld []string
-	for _, f := range m.Filter(all) {
+	for _, f := range listed {
 		if !lock.Holds(f) {
 			unheld = append(unheld, f)
 		}
 	}
-	return unheld, nil
+	return unheld
 }
 
 func countFiles(n int) string {

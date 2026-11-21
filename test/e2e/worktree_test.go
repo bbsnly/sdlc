@@ -1755,9 +1755,15 @@ func ac10Start(verb, title string) string {
 		"\nNext: a person types /sdlc:next in Claude Code to work the story.\n"
 }
 
+// The test reviewer is disabled with the project manager (US-112.4 D1), and a
+// disabled agent other than the project manager is said, with the pause.
 func ac10StatusStarted(title string) string {
 	return "US-001  in progress  " + title + "\n\n" + ac10Gates +
-		"\n  tests  not frozen\n  cost   $0.00 of $60.00 (0%)\n\n  next   dor\n\n  backlog  1 ready · 1 in progress\n\n" +
+		"\n  tests  not frozen\n  cost   $0.00 of $60.00 (0%)\n\n  next   dor\n" +
+		"  pause  the commit will not pause: the story's risk tier is low, which pre_commit_pause_tiers does not pause; " +
+		"pre_commit_pause_paths lists no path\n\n" +
+		"  test-reviewer is disabled in team.agents.test-reviewer.enabled\n\n" +
+		"  backlog  1 ready · 1 in progress\n\n" +
 		"A person types /sdlc:next in Claude Code to carry on, or runs `sdlc stop` to put it down.\n"
 }
 

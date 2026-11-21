@@ -60,11 +60,11 @@ func TestAC4TheFloorNamesWhoAStaffingMayNeverLeaveOut(t *testing.T) {
 	}
 }
 
-// AC-12: the staffing covers the twelve agents, each once, and every agent
-// that does a gate's work is one of them.
-func TestAC12TheAgentsAStaffingCoversAreTheTwelveAndIncludeWhoeverDoesAGatesWork(t *testing.T) {
-	if len(Agents) != 12 {
-		t.Errorf("a staffing covers %d agents, want 12", len(Agents))
+// AC-12: the staffing covers the thirteen agents, each once, and every agent
+// that does a gate's work is one of them. US-112.4 added the test reviewer.
+func TestAC12TheAgentsAStaffingCoversAreTheThirteenAndIncludeWhoeverDoesAGatesWork(t *testing.T) {
+	if len(Agents) != 13 {
+		t.Errorf("a staffing covers %d agents, want 13", len(Agents))
 	}
 	seen := map[string]bool{}
 	for _, a := range Agents {

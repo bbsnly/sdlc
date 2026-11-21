@@ -131,13 +131,13 @@ func TestAC9TheNamedRoleFieldsAreInDetailsAndNoRoleHandsBackAnEmptyDetails(t *te
 // entry is what the accessors give with no team section.
 func TestAC3TheBinaryViewSaysWhatTheSettledDecisionsSay(t *testing.T) {
 	view := theBinary(t)
-	if len(view.Agents) != 12 {
-		t.Fatalf("the binary lists %d agents, and the plugin has twelve", len(view.Agents))
+	if len(view.Agents) != 13 {
+		t.Fatalf("the binary lists %d agents, and the plugin has thirteen", len(view.Agents))
 	}
 	kinds := map[string]string{
 		"project-manager": "worker", "researcher": "worker", "sdet": "worker", "implementer": "worker", "bookkeeper": "worker",
 		"verifier": "reviewer", "architect": "reviewer", "security": "reviewer", "red-team": "reviewer",
-		"perf": "reviewer", "human-advocate": "reviewer", "code-reviewer": "reviewer",
+		"perf": "reviewer", "human-advocate": "reviewer", "code-reviewer": "reviewer", "test-reviewer": "reviewer",
 	}
 	for name, want := range kinds {
 		if got := view.Kind[name]; got != want {
@@ -157,6 +157,7 @@ func TestAC3TheBinaryViewSaysWhatTheSettledDecisionsSay(t *testing.T) {
 		"perf":            {"code_review", "design_review"},
 		"human-advocate":  {"code_review", "design_review", "dor"},
 		"code-reviewer":   {"code_review"},
+		"test-reviewer":   {"tests_frozen"},
 	}
 	for name, want := range gates {
 		if got := view.Gates[name]; !slices.Equal(got, want) {
@@ -164,7 +165,7 @@ func TestAC3TheBinaryViewSaysWhatTheSettledDecisionsSay(t *testing.T) {
 		}
 	}
 	canBlock := map[string]bool{"architect": true, "security": true, "perf": true, "verifier": true, "code-reviewer": true,
-		"red-team": false, "human-advocate": false}
+		"test-reviewer": true, "red-team": false, "human-advocate": false}
 	for name, want := range canBlock {
 		entry := view.Team[name]
 		if entry["can_block"] != want || entry["enabled"] != true || entry["instances"] != 1 || len(entry) != 3 {

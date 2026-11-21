@@ -212,7 +212,8 @@ The same list is checked again as the story moves. A file that matches
 became a test because you widened `paths.tests` mid-story. In a story's own
 worktree, a test file that only trunk changed since the story was cut is not
 one of these. With
-`freeze.allow_new_test_files` on, running `sdlc freeze` again adds such files.
+`freeze.allow_new_test_files` on, running `sdlc freeze` again adds such files, once the test
+reviewer, where it is staffed, has approved the tests with them.
 
 ### Omitted is not empty
 

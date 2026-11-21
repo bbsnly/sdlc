@@ -345,36 +345,40 @@ func TestAC14ThePagesSayWhatTheReviewsOfThePlanAskedThemToSay(t *testing.T) {
 	}
 }
 
-// AC-12: the count of agents in prose agrees with the plugin.
-func TestAC12EveryPageThatCountsTheAgentsSaysTwelve(t *testing.T) {
+// AC-12: the count of agents in prose agrees with the plugin. US-112.4 made it
+// thirteen, with the test reviewer.
+func TestAC12EveryPageThatCountsTheAgentsSaysThirteen(t *testing.T) {
 	t.Parallel()
 	entries, err := os.ReadDir(filepath.Join("..", "..", "plugin", "agents"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 12 {
-		t.Errorf("plugin/agents holds %d agents, want 12: the eleven and the project manager", len(entries))
+	if len(entries) != 13 {
+		t.Errorf("plugin/agents holds %d agents, want 13: the eleven, the project manager and the test reviewer", len(entries))
 	}
 	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, pg := range []struct{ name, body, want string }{
-		{"README.md", string(readme), "twelve agents"},
-		{"docs/installation.md", page(t, "installation.md"), "twelve agents"},
-		{"docs/the-agents.md", page(t, "the-agents.md"), "Twelve agents"},
-		{"docs/the-loop.md", page(t, "the-loop.md"), "Twelve agents"},
+		{"README.md", string(readme), "thirteen agents"},
+		{"docs/installation.md", page(t, "installation.md"), "thirteen agents"},
+		{"docs/the-agents.md", page(t, "the-agents.md"), "Thirteen agents"},
+		{"docs/the-loop.md", page(t, "the-loop.md"), "Thirteen agents"},
+		{"docs/configuration.md", page(t, "configuration.md"), "thirteen agents"},
 	} {
 		body := stfFolded(pg.body)
 		if !strings.Contains(body, pg.want) {
 			t.Errorf("%s does not say %q", pg.name, pg.want)
 		}
-		if strings.Contains(strings.ToLower(body), "eleven agents") {
-			t.Errorf("%s still counts eleven agents", pg.name)
+		for _, old := range []string{"eleven agents", "twelve agents"} {
+			if strings.Contains(strings.ToLower(body), old) {
+				t.Errorf("%s still counts %s", pg.name, old)
+			}
 		}
 	}
-	if n := strings.Count(stfFolded(page(t, "installation.md")), "twelve agents"); n < 2 {
-		t.Errorf("docs/installation.md counts the agents in two places, and %d say twelve", n)
+	if n := strings.Count(stfFolded(page(t, "installation.md")), "thirteen agents"); n < 2 {
+		t.Errorf("docs/installation.md counts the agents in two places, and %d say thirteen", n)
 	}
 }
 

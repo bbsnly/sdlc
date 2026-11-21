@@ -194,8 +194,10 @@ func (sb *sandbox) build(ctx context.Context, kind string) error {
 			// The commit gate records that the work reached trunk.
 			steps = append(steps, func() error { return sb.commit(ctx, "feat: the story") })
 		case upTo == model.GateTestsFrozen:
-			// A freeze holds the story's tests.
+			// A freeze holds the story's tests, once the test reviewer has
+			// approved them as they are.
 			steps = append(steps, func() error { return sb.write("invoice_test.go", "package invoice\n") })
+			steps = append(steps, sb.approvals(ctx, model.GateTestsFrozen)...)
 		case kind == kindStopped:
 			steps = append(steps, func() error { return sb.sdlc(ctx, "", "stop") })
 		}
@@ -314,7 +316,7 @@ func (sb *sandbox) gateSteps(ctx context.Context, gate model.Gate) []func() erro
 		steps = append(steps, artifact("analysis"), artifact("threats"))
 	case model.GateTestsFrozen:
 		steps = append(steps, func() error { return sb.write("internal/invoice_test.go", "package internal\n\n// AC-1\n") },
-			artifact("test_plan"), func() error { return sb.sdlc(ctx, "", "freeze") })
+			artifact("test_plan"))
 	case model.GatePlan:
 		steps = append(steps, artifact("plan"))
 	case model.GateVerification:
@@ -326,6 +328,20 @@ func (sb *sandbox) gateSteps(ctx context.Context, gate model.Gate) []func() erro
 	case model.GateDoR, model.GateDesignReview, model.GateImplementation, model.GateVerifierReview, model.GateCodeReview:
 		// Nothing of its own: only its reviews, below.
 	}
+	steps = append(steps, sb.approvals(ctx, gate)...)
+	// The freeze waits for the tests gate's reviews, so it is taken after them.
+	if gate == model.GateTestsFrozen {
+		steps = append(steps, func() error { return sb.sdlc(ctx, "", "freeze") })
+	}
+	return append(steps, func() error {
+		return sb.sdlc(ctx, "", "gate", string(gate), "pass", "--note", "reached by the perf tool")
+	})
+}
+
+// approvals is an approve from each reviewer the gate expects, the Gate 1
+// advocate aside.
+func (sb *sandbox) approvals(ctx context.Context, gate model.Gate) []func() error {
+	var steps []func() error
 	for _, r := range model.ReviewersFor(gate) {
 		if r.WhenDoRAdvocate {
 			continue
@@ -334,9 +350,7 @@ func (sb *sandbox) gateSteps(ctx context.Context, gate model.Gate) []func() erro
 			return sb.sdlc(ctx, "# "+r.Role+"\n", "review", "add", string(gate), r.Role, "approve")
 		})
 	}
-	return append(steps, func() error {
-		return sb.sdlc(ctx, "", "gate", string(gate), "pass", "--note", "reached by the perf tool")
-	})
+	return steps
 }
 
 // padStory pads the story's gate record to 190 KB with the agent runs a long

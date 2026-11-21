@@ -333,7 +333,7 @@ func (w *u129Walk) workGate(gate model.Gate) {
 	case model.GateRetro:
 		w.run("bookkeeper", "# Retro\n\nNo deviations.\n", "artifact", "write", "retro")
 	}
-	for _, r := range model.ReviewersFor(gate) {
+	for _, r := range fixtureReviewers(gate) {
 		if r.WhenDoRAdvocate {
 			continue
 		}
@@ -692,7 +692,10 @@ func u129Formats(w *u129Walk) string {
 }
 
 // u129Golden is the walk's transcript and files as the base printed and
-// wrote them, captured at 37e3ac8 with U129_WRITE_GOLDEN=1 before the freeze.
+// wrote them, captured at 37e3ac8 with U129_WRITE_GOLDEN=1 before the freeze. US-112.4
+// added only the test reviewer the fixture disables (decision D1): the line every
+// gate and status print of it, its row in review list and doctor, its entry in the
+// configuration and the status --json disabled list.
 const u129Golden = "testdata/us129_walk.golden"
 
 // u129PauseKey is a JSON key of what US-133 added: pre_commit_pause in status,

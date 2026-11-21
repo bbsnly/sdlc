@@ -118,7 +118,8 @@ for Go:
       "red-team":        { "enabled": true, "can_block": false, "instances": 1 },
       "perf":            { "enabled": true, "can_block": true, "instances": 1 },
       "human-advocate":  { "enabled": true, "can_block": false, "instances": 1 },
-      "code-reviewer":   { "enabled": true, "can_block": true, "instances": 1 }
+      "code-reviewer":   { "enabled": true, "can_block": true, "instances": 1 },
+      "test-reviewer":   { "enabled": true, "can_block": true, "instances": 1 }
     }
   },
   "freeze": { "allow_new_test_files": false },
@@ -240,7 +241,8 @@ project you have: it writes the `team` section back at its defaults, and your ow
       "red-team":        { "enabled": true, "can_block": false, "instances": 1 },
       "perf":            { "enabled": true, "can_block": true, "instances": 1 },
       "human-advocate":  { "enabled": true, "can_block": false, "instances": 1 },
-      "code-reviewer":   { "enabled": true, "can_block": true, "instances": 1 }
+      "code-reviewer":   { "enabled": true, "can_block": true, "instances": 1 },
+      "test-reviewer":   { "enabled": true, "can_block": true, "instances": 1 }
     }
   },
   // the file every reviewer reads, relative to the repository root; leave it out to use
@@ -824,7 +826,11 @@ A new file is not frozen by being written. Until `sdlc freeze` is run again,
 which adds it to the freeze, `tests_frozen`, `plan`, `implementation`,
 `verification` and `commit` refuse with
 [SDLC-E0043](troubleshooting.md#sdlc-e0043); with the setting off, the same
-gates refuse and `sdlc freeze` does not add it.
+gates refuse and `sdlc freeze` does not add it. Where the test reviewer is
+staffed, the added file is reviewed with the rest before `sdlc freeze` takes it:
+until the test reviewer approves the test files as they now are, the freeze
+refuses with [SDLC-E0029](troubleshooting.md#sdlc-e0029) or
+[SDLC-E0030](troubleshooting.md#sdlc-e0030).
 
 > [!WARNING]
 > This is a real loosening, because a test written after the implementation can
@@ -1047,8 +1053,8 @@ both, and sdlc does not observe what a delegation is given.
 
 | Key | What it means |
 | --- | --- |
-| `enabled` | whether the agent runs. Default `true`. `false` takes it out of every story: a worker's gate, or the verifier's or the code reviewer's review, is then yours to do by hand, and the loop hands the story to you there with `sdlc escalate work_by_hand`. A disabled reviewer of the plan or the change is not waited for. With the project manager disabled no story is staffed, and every enabled agent takes part in every story |
-| `can_block` | for an agent that reviews, whether its block stops the gate. Default `true` for the architect, security, perf, the verifier and the code reviewer, and `false` for red-team and the human advocate. `false` makes its review advisory: still waited for, never skipped, and its block does not stop the gate it reviews. Its findings are still closed like any other reviewer's: those of the design review before verification and the commit, and those of the code review before the commit. `true` gives a reviewer no more than its row says, so security still blocks only a story recorded as security-sensitive; on red-team or the human advocate, `true` makes a block stop the gate as perf's does |
+| `enabled` | whether the agent runs. Default `true`. `false` takes it out of every story: a worker's gate, or the verifier's or the code reviewer's review, is then yours to do by hand, and the loop hands the story to you there with `sdlc escalate work_by_hand`. A disabled reviewer of the tests, the plan or the change is not waited for: with the test reviewer disabled, `sdlc freeze` waits for no review. With the project manager disabled no story is staffed, and every enabled agent takes part in every story |
+| `can_block` | for an agent that reviews, whether its block stops the gate. Default `true` for the architect, security, perf, the verifier, the code reviewer and the test reviewer, and `false` for red-team and the human advocate. `false` makes its review advisory: still waited for, never skipped, and its block does not stop the gate it reviews; on the test reviewer, `sdlc freeze` then waits only until it has reviewed. Its findings are still closed like any other reviewer's: those of the design review before verification and the commit, and those of the code review before the commit. `true` gives a reviewer no more than its row says, so security still blocks only a story recorded as security-sensitive; on red-team or the human advocate, `true` makes a block stop the gate as perf's does |
 | `max_rounds` | how many blocks that stop the gate one reviewer may make before the story is handed to a person. Left out, it is `loop.max_review_rounds`; below `1` is refused. It counts only blocks that stop the gate, so it does nothing on an advisory agent, one with `can_block` false, or on one that reviews nothing; `sdlc doctor` says so where it is set on one |
 | `instances` | how many instances of a reviewer review each gate it reviews, from `1` to `16`. Default `1`. The second is `security-2`, the third `security-3`: each is its own run under its own name, and the gate waits for a review from each. On an agent that reviews nothing it does nothing |
 | `lowest` | the lowest `model` and `effort` the project manager may ask for this agent: a model from `models` and an effort from `efforts`. An agent with no `lowest` may be asked for from the first name in each list |
@@ -1092,10 +1098,10 @@ name mistyped here is asked for as it is typed.
 
 ### Setting a floor with `lowest`
 
-`lowest` sits in an agent's own entry, and any of the twelve agents may have one: `researcher`,
+`lowest` sits in an agent's own entry, and any of the thirteen agents may have one: `researcher`,
 `sdet`, `implementer`, `verifier`, `bookkeeper`, `architect`, `security`, `red-team`, `perf`,
-`human-advocate`, `code-reviewer`, `project-manager`. It may give a model, an effort or both. An
-instance has its role's floor.
+`human-advocate`, `code-reviewer`, `test-reviewer`, `project-manager`. It may give a model, an
+effort or both. An instance has its role's floor.
 
 ### Bringing a reviewer back with `bring_back`
 
@@ -1110,6 +1116,10 @@ read, which is where a path typed wrongly shows: it loads, and matches nothing.
 What a staffing cannot do is not a setting: the agents that do a gate's work,
 the verifier and the code reviewer are never left out while they are enabled, and neither is
 security on a story the analysis recorded as security-sensitive.
+
+The test reviewer can be left out of a story, with a reason, and `sdlc freeze` then waits for no
+review; a staffing with no row for it keeps it in, and so does a project with the project manager
+disabled.
 
 Two things it can do are worth knowing. The architect can be left out, and nothing brings it back
 at the design review, where there is no change to read. And perf can be left out, with

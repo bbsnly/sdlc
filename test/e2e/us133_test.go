@@ -89,7 +89,7 @@ func cpeToTheCommit(s *ontoStory, change func(s *ontoStory)) {
 		default:
 			s.t.Fatalf("the story is at %s, which comes after the commit", gate)
 		}
-		for _, r := range model.ReviewersFor(model.Gate(gate)) {
+		for _, r := range fixtureReviewers(model.Gate(gate)) {
 			if r.WhenDoRAdvocate {
 				continue
 			}

@@ -162,7 +162,12 @@ func ktPass(t *testing.T, wt string, gate model.Gate) string {
 		if r.WhenDoRAdvocate {
 			continue
 		}
-		wtMust(t, wt, ldSession, "# "+r.Role+", in the rework\n", "review", "add", string(gate), r.Role, "approve")
+		got := wtRun(t, wt, ldSession, "# "+r.Role+", in the rework\n", "review", "add", string(gate), r.Role, "approve")
+		// A reviewer the project disables, as the fixtures do the test reviewer
+		// (US-112.4 decision D1), is refused a review and passed over.
+		if got.code != 0 && !strings.Contains(got.stderr, "does not wait for a review from") {
+			t.Fatalf("review add %s %s: exit %d\n%s", gate, r.Role, got.code, got.stderr)
+		}
 	}
 	r := wtMust(t, wt, ldSession, "", "gate", string(gate), "pass", "--note", "passed in the rework")
 	return r.stdout + r.stderr

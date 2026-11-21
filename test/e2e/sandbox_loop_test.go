@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -133,7 +134,11 @@ func (sb sandbox) worksGate(t *testing.T, gate model.Gate) {
 	case model.GateTestsFrozen:
 		sb.writesFile(t, "sdet", "invoice_test.go", sandboxTest)
 		sb.works(t, tree, "sdet", sandboxTestPlan, "artifact", "write", "test_plan")
+		// US-112.4: the freeze waits for Gate 3's reviews, so they come first.
+		sb.approvesGate(t, gate)
 		sb.works(t, tree, "sdet", "", "freeze")
+		sb.works(t, tree, "", "", "gate", string(gate), "pass", "--note", "worked by the session under test")
+		return
 	case model.GatePlan:
 		sb.works(t, tree, "implementer", sandboxPlan, "artifact", "write", "plan")
 	case model.GateImplementation:
@@ -156,6 +161,18 @@ func (sb sandbox) worksGate(t *testing.T, gate model.Gate) {
 		return
 	}
 	sb.works(t, tree, "", "", "gate", string(gate), "pass", "--note", "worked by the session under test")
+}
+
+// approvesGate is an approve from every reviewer of the gate, as itself, but
+// the advocate the project does not ask for and the ones named.
+func (sb sandbox) approvesGate(t *testing.T, gate model.Gate, out ...string) {
+	t.Helper()
+	for _, r := range model.ReviewersFor(gate) {
+		if r.WhenDoRAdvocate || slices.Contains(out, r.Role) {
+			continue
+		}
+		sb.works(t, sb.tree(), r.Role, "# "+r.Role+"\n", "review", "add", string(gate), r.Role, "approve")
+	}
 }
 
 // commits is the story's commit: staged, the `git commit` put to the hook,
@@ -201,7 +218,7 @@ func loggedStaffing() string {
 		}
 		out.WriteString("  staffing   " + agent + ": asked for " + asked + " -- \"" + agent + " has work on this story\"; \"" + why + "\"\n")
 	}
-	out.WriteString("  staffing   <time>  staffing_set: 12 agents needed, 0 left out; staffing changes on the record before this: 0\n")
+	out.WriteString("  staffing   <time>  staffing_set: 13 agents needed, 0 left out; staffing changes on the record before this: 0\n")
 	return out.String()
 }
 
@@ -247,6 +264,7 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 	}
 	reviews := func(design, code, state string) string {
 		return "Review policy: REVIEW.md\n" +
+			"  tests_frozen    test-reviewer   blocking  " + state + "\n" +
 			"  design_review   architect       blocking  " + state + "\n" +
 			"  design_review   red-team        advisory  " + state + "\n" +
 			"  design_review   security        " + design + "  " + state + "\n" +
@@ -340,7 +358,7 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 			ran{dir: tree, agent: "researcher", stdin: sandboxThreats, args: []string{"artifact", "write", "threats"},
 				stdout: stored("threats", "THREATS.md", sandboxThreats)},
 			ran{dir: tree, agent: "project-manager", stdin: staffingDocument(t), args: []string{"staffing", "set"},
-				stdout: "US-001  staffing recorded: 12 agents needed, 0 left out\n"},
+				stdout: "US-001  staffing recorded: 13 agents needed, 0 left out\n"},
 			ran{dir: tree, args: []string{"gate", "analysis", "pass", "--security-sensitive=false"},
 				stdout: "US-001  analysis  pass\n"},
 		)
@@ -348,6 +366,11 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 		sb.holds(t,
 			ran{dir: tree, agent: "sdet", stdin: sandboxTestPlan, args: []string{"artifact", "write", "test_plan"},
 				stdout: stored("test_plan", "TEST-PLAN.md", sandboxTestPlan)},
+			// The test reviewer approves the tests as they are, which the freeze
+			// waits for (US-112.4 AC-3).
+			ran{dir: tree, agent: "test-reviewer", stdin: "# test-reviewer\n",
+				args:   []string{"review", "add", "tests_frozen", "test-reviewer", "approve"},
+				stdout: reviewedBy("tests_frozen", "test-reviewer")},
 			ran{dir: tree, agent: "sdet", args: []string{"freeze"}, stdout: "US-001  1 test file frozen\n  invoice_test.go\n"},
 			ran{dir: tree, args: []string{"gate", "tests_frozen", "pass", "--note", "1 criterion, 1 failing test"},
 				stdout: passed("tests_frozen", "1 criterion, 1 failing test")},
@@ -439,7 +462,7 @@ func TestAC2EveryCommandThatNeedsNoPersonRunsToTheEndInTheSandbox(t *testing.T) 
 					"Add a story to user_stories.json (schema: .sdlc/templates/story.schema.json).\n"},
 			ran{dir: main, args: []string{"log"},
 				stdout: "<sha>..<sha>  US-001  " + title + "\n" +
-					"  rounds     design_review 1 · verifier_review 1 · code_review 1\n" + loggedStaffing() + "  spent      $2.40\n"},
+					"  rounds     tests_frozen 1 · design_review 1 · verifier_review 1 · code_review 1\n" + loggedStaffing() + "  spent      $2.40\n"},
 			ran{dir: main, args: []string{"story", "list"},
 				stdout: "  US-001  done   1  " + title + "\n\nNothing to start: the one story in the backlog is finished.\n"},
 			ran{dir: main, args: []string{"doctor"}, stdout: doctor("none"), code: 1},
@@ -582,9 +605,11 @@ func TestAC3TheHarnessPerformsThePersonOnlyStepsFromOutsideTheSessionAndTheRunSt
 	t.Run("AC-3 ack", func(t *testing.T) {
 		sb.holds(t, ran{dir: main, args: []string{"log"},
 			stdout: "<sha>..<sha>  US-001  " + title + "\n" +
-				"  rounds     design_review 1 · verifier_review 1 · code_review 1\n" +
+				"  rounds     tests_frozen 2 · design_review 1 · verifier_review 1 · code_review 1\n" +
 				"  reopened   tests_frozen reopened: the freeze was lifted: AC-1's test asserted the wrong total\n" +
 				"  unfrozen   AC-1's test asserted the wrong total\n" +
+				"  no pause   the commit gate passed with no pause for a person: the story's risk tier is low, " +
+				"which pre_commit_pause_tiers does not pause; pre_commit_pause_paths lists no path\n" +
 				"  escalated  spec_unclear: is a zero total refused too? (answered)\n" + loggedStaffing()})
 		// Acknowledging is refused always, to any session, story or none.
 		for _, session := range []string{sandboxSession, sandboxOther} {

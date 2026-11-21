@@ -44,6 +44,10 @@ type reading struct {
 	// written from.
 	pause   config.CommitPause
 	pauseOK bool
+	// tests is the subject of a review of tests_frozen, and testsOK whether it
+	// was asked. The freeze seeds it with the hashes it is about to lock.
+	tests   string
+	testsOK bool
 }
 
 func readingOf(s *store.Store) *reading { return &reading{s: s} }
@@ -59,6 +63,28 @@ func (r *reading) subject(ctx context.Context) (string, error) {
 	}
 	r.tree, r.treeOK = tree, true
 	return tree, nil
+}
+
+// testsSubject is every test file the freeze finds, by name and content, asked
+// once.
+func (r *reading) testsSubject(ctx context.Context) (string, error) {
+	if r.testsOK {
+		return r.tests, nil
+	}
+	files, err := listedTests(ctx, r.s)
+	if err != nil {
+		return "", err
+	}
+	hashes := make(map[string]string, len(files))
+	for _, f := range files {
+		// A test git lists that cannot be read, a tracked one deleted from the
+		// checkout, goes in with no hash: failing here failed every review list
+		// and review add while it was gone. The freeze still refuses it, in
+		// hashAll, and an approve stamped this way matches no freeze.
+		hashes[f], _ = r.s.HashFile(f)
+	}
+	r.tests, r.testsOK = testsDigest(files, hashes), true
+	return r.tests, nil
 }
 
 // changedPaths is every path the story has changed in the store's checkout,

@@ -378,8 +378,8 @@ func TestAC8AReviewersDefinitionRecordsUnderTheNameItsBriefGivesIt(t *testing.T)
 			t.Errorf("AC-8 %s's definition has no command that records its review", a.Name)
 		}
 	}
-	if seen != 7 {
-		t.Errorf("found %d reviewers among the agents, want 7", seen)
+	if seen != 8 {
+		t.Errorf("found %d reviewers among the agents, want 8, the test reviewer's among them (US-112.4)", seen)
 	}
 }
 

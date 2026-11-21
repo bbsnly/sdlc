@@ -372,7 +372,10 @@ again. The reason
 goes on the record, and the hook refuses the command from an agent.
 
 With `freeze.allow_new_test_files` on, `sdlc freeze` on the story's own freeze adds the test
-files written since it was taken, and refuses only when there are none to add.
+files written since it was taken, and refuses with this code only when there are none to add.
+Where the test reviewer is staffed, it first waits for that reviewer's approve of the test files
+with the new ones among them, and refuses with [SDLC-E0029](#sdlc-e0029) or
+[SDLC-E0030](#sdlc-e0030) until then.
 
 This is about the story you are working on. A freeze left behind by a story that has since
 finished is not in the way: `sdlc stop` lifts it when the story is done, and `sdlc freeze`
@@ -546,6 +549,22 @@ that has since changed is not an approval.
 
 Send the change back to the reviewers that are outstanding; `sdlc review list` names them.
 
+**From `sdlc freeze`**, the review is the test reviewer's of the test files as they are: it has
+not reviewed them, has not approved them, or reviewed them before a test was changed, added or
+renamed. The freeze prints the gate's refusal, though no gate was asked to pass:
+
+```console
+$ sdlc freeze
+sdlc: tests_frozen cannot pass until its reviews are in
+
+  why  test-reviewer has not reviewed
+  fix  delegate to the reviewers this gate expects -- "sdlc review list" shows who is outstanding
+
+  SDLC-E0029  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029
+```
+
+Delegate to `sdlc:test-reviewer` and run `sdlc freeze` again once it approves.
+
 **At landing**, it means `story/<ID>` is not the change its reviewers saw: a commit came after
 the commit gate, or a rebase changed what the story's commits do. What trunk gained around the
 story's lines does not cause this where `sdlc stop` itself put the story onto trunk: the result is
@@ -584,6 +603,9 @@ again. Its new verdict replaces the old one, and the gate reads the latest. Reco
 as failed is how rework begins, but it does not clear the block: the gate still cannot pass
 until the same reviewer approves, because a way past the reviewer would make every review
 optional. [When a reviewer blocks](guides/when-a-reviewer-blocks.md) walks through a round.
+
+**From `sdlc freeze`**, it is the test reviewer's block of the tests: send its findings to the
+test author to correct the tests and the test plan, then have the test reviewer look again.
 
 ### SDLC-E0031
 
@@ -996,7 +1018,9 @@ written to pass, so every gate the freeze guards (`tests_frozen`, `plan`, `imple
 `verification` and `commit`) refuses while one is in the tree.
 
 If the project has `freeze.allow_new_test_files` on, run `sdlc freeze` again: it adds them to the
-freeze, and from then on they are held like the rest. Otherwise remove them. If the story
+freeze, and from then on they are held like the rest. Where the test reviewer is staffed, have it
+review the tests with the new files first: until it approves, the freeze refuses with
+[SDLC-E0029](#sdlc-e0029) or [SDLC-E0030](#sdlc-e0030). Otherwise remove them. If the story
 really needs them, have a person run `/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."` in their
 own terminal and freeze again. `sdlc unfreeze` needs an iteration running: where an assistant
 handed the story over with `sdlc escalate`, the person first answers with `/sdlc:approve <ID>`, or

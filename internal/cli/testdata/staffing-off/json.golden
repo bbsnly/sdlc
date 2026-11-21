@@ -230,7 +230,7 @@ stderr:
 $ sdlc review list --json
 exit 0
 stdout:
-{"ok":true,"story":"US-001","reviews":[{"gate":"design_review","role":"architect","blocking":true},{"gate":"design_review","role":"red-team","blocking":false},{"gate":"design_review","role":"security","blocking":true},{"gate":"design_review","role":"perf","blocking":false,"blocks_on_breach":true},{"gate":"design_review","role":"human-advocate","blocking":false},{"gate":"verifier_review","role":"verifier","blocking":true},{"gate":"code_review","role":"code-reviewer","blocking":true},{"gate":"code_review","role":"security","blocking":true},{"gate":"code_review","role":"perf","blocking":false,"blocks_on_breach":true},{"gate":"code_review","role":"human-advocate","blocking":false}]}
+{"ok":true,"story":"US-001","policy":"REVIEW.md","reviews":[{"gate":"tests_frozen","role":"test-reviewer","blocking":true},{"gate":"design_review","role":"architect","blocking":true},{"gate":"design_review","role":"red-team","blocking":false},{"gate":"design_review","role":"security","blocking":true},{"gate":"design_review","role":"perf","blocking":false,"blocks_on_breach":true},{"gate":"design_review","role":"human-advocate","blocking":false},{"gate":"verifier_review","role":"verifier","blocking":true},{"gate":"code_review","role":"code-reviewer","blocking":true},{"gate":"code_review","role":"security","blocking":true},{"gate":"code_review","role":"perf","blocking":false,"blocks_on_breach":true},{"gate":"code_review","role":"human-advocate","blocking":false}]}
 stderr:
 
 $ sdlc review list --gate design_review --json
@@ -284,7 +284,7 @@ stderr:
 $ sdlc staffing set --json
 exit 0
 stdout:
-US-001  staffing recorded: 12 agents needed, 0 left out
+US-001  staffing recorded: 13 agents needed, 0 left out
 stderr:
 
 $ sdlc gate analysis pass --json
@@ -315,6 +315,12 @@ $ sdlc artifact write test_plan --json
 exit 0
 stdout:
 {"ok":true,"story":"US-001","name":"test_plan","path":".sdlc/stories/US-001/TEST-PLAN.md","bytes":12}
+stderr:
+
+$ sdlc review add tests_frozen test-reviewer approve --json
+exit 0
+stdout:
+{"ok":true,"story":"US-001","gate":"tests_frozen","role":"test-reviewer","verdict":"approve","round":1,"path":".sdlc/stories/US-001/reviews/tests_frozen-test-reviewer-1.md","subject":"<sha>"}
 stderr:
 
 $ sdlc freeze --json
@@ -392,7 +398,7 @@ stderr:
 $ sdlc review list --json
 exit 0
 stdout:
-{"ok":true,"story":"US-001","reviews":[{"gate":"design_review","role":"architect","blocking":true,"verdict":"approve","round":2},{"gate":"design_review","role":"red-team","blocking":false,"verdict":"note","round":1},{"gate":"design_review","role":"security","blocking":false,"verdict":"approve","round":1},{"gate":"design_review","role":"perf","blocking":false,"blocks_on_breach":true,"verdict":"approve","round":1},{"gate":"design_review","role":"human-advocate","blocking":false},{"gate":"verifier_review","role":"verifier","blocking":true},{"gate":"code_review","role":"code-reviewer","blocking":true},{"gate":"code_review","role":"security","blocking":false},{"gate":"code_review","role":"perf","blocking":false,"blocks_on_breach":true},{"gate":"code_review","role":"human-advocate","blocking":false}]}
+{"ok":true,"story":"US-001","policy":"REVIEW.md","reviews":[{"gate":"tests_frozen","role":"test-reviewer","blocking":true,"verdict":"approve","round":1},{"gate":"design_review","role":"architect","blocking":true,"verdict":"approve","round":2},{"gate":"design_review","role":"red-team","blocking":false,"verdict":"note","round":1},{"gate":"design_review","role":"security","blocking":false,"verdict":"approve","round":1},{"gate":"design_review","role":"perf","blocking":false,"blocks_on_breach":true,"verdict":"approve","round":1},{"gate":"design_review","role":"human-advocate","blocking":false},{"gate":"verifier_review","role":"verifier","blocking":true},{"gate":"code_review","role":"code-reviewer","blocking":true},{"gate":"code_review","role":"security","blocking":false},{"gate":"code_review","role":"perf","blocking":false,"blocks_on_breach":true},{"gate":"code_review","role":"human-advocate","blocking":false}]}
 stderr:
 
 $ sdlc gate design_review pass --json
@@ -506,7 +512,7 @@ stderr:
 $ sdlc review list --json
 exit 0
 stdout:
-{"ok":true,"story":"US-001","reviews":[{"gate":"design_review","role":"architect","blocking":true,"verdict":"approve","round":2},{"gate":"design_review","role":"red-team","blocking":false,"verdict":"note","round":1},{"gate":"design_review","role":"security","blocking":false,"verdict":"approve","round":1},{"gate":"design_review","role":"perf","blocking":false,"blocks_on_breach":true,"verdict":"approve","round":1},{"gate":"design_review","role":"human-advocate","blocking":false,"verdict":"approve","round":1},{"gate":"verifier_review","role":"verifier","blocking":true,"verdict":"approve","round":1},{"gate":"code_review","role":"code-reviewer","blocking":true,"verdict":"approve","round":1},{"gate":"code_review","role":"security","blocking":false,"verdict":"note","round":1},{"gate":"code_review","role":"perf","blocking":false,"blocks_on_breach":true,"verdict":"approve","round":1},{"gate":"code_review","role":"human-advocate","blocking":false,"verdict":"approve","round":1}]}
+{"ok":true,"story":"US-001","policy":"REVIEW.md","reviews":[{"gate":"tests_frozen","role":"test-reviewer","blocking":true,"verdict":"approve","round":1},{"gate":"design_review","role":"architect","blocking":true,"verdict":"approve","round":2},{"gate":"design_review","role":"red-team","blocking":false,"verdict":"note","round":1},{"gate":"design_review","role":"security","blocking":false,"verdict":"approve","round":1},{"gate":"design_review","role":"perf","blocking":false,"blocks_on_breach":true,"verdict":"approve","round":1},{"gate":"design_review","role":"human-advocate","blocking":false,"verdict":"approve","round":1},{"gate":"verifier_review","role":"verifier","blocking":true,"verdict":"approve","round":1},{"gate":"code_review","role":"code-reviewer","blocking":true,"verdict":"approve","round":1},{"gate":"code_review","role":"security","blocking":false,"verdict":"note","round":1},{"gate":"code_review","role":"perf","blocking":false,"blocks_on_breach":true,"verdict":"approve","round":1},{"gate":"code_review","role":"human-advocate","blocking":false,"verdict":"approve","round":1}]}
 stderr:
 
 $ sdlc review list --gate design_review --json
@@ -692,7 +698,7 @@ stderr:
 $ sdlc review list --json
 exit 0
 stdout:
-{"ok":true,"story":"US-001","reviews":[{"gate":"design_review","role":"architect","blocking":true,"verdict":"approve","round":2},{"gate":"design_review","role":"red-team","blocking":false,"verdict":"note","round":1},{"gate":"design_review","role":"security","blocking":false,"verdict":"approve","round":1},{"gate":"design_review","role":"perf","blocking":false,"blocks_on_breach":true,"verdict":"approve","round":1},{"gate":"design_review","role":"human-advocate","blocking":false,"verdict":"approve","round":1},{"gate":"verifier_review","role":"verifier","blocking":true,"verdict":"approve","round":1},{"gate":"code_review","role":"code-reviewer","blocking":true,"verdict":"approve","round":1},{"gate":"code_review","role":"security","blocking":false,"verdict":"note","round":1},{"gate":"code_review","role":"perf","blocking":false,"blocks_on_breach":true,"verdict":"approve","round":1},{"gate":"code_review","role":"human-advocate","blocking":false,"verdict":"approve","round":1}]}
+{"ok":true,"story":"US-001","policy":"REVIEW.md","reviews":[{"gate":"tests_frozen","role":"test-reviewer","blocking":true,"verdict":"approve","round":1},{"gate":"design_review","role":"architect","blocking":true,"verdict":"approve","round":2},{"gate":"design_review","role":"red-team","blocking":false,"verdict":"note","round":1},{"gate":"design_review","role":"security","blocking":false,"verdict":"approve","round":1},{"gate":"design_review","role":"perf","blocking":false,"blocks_on_breach":true,"verdict":"approve","round":1},{"gate":"design_review","role":"human-advocate","blocking":false,"verdict":"approve","round":1},{"gate":"verifier_review","role":"verifier","blocking":true,"verdict":"approve","round":1},{"gate":"code_review","role":"code-reviewer","blocking":true,"verdict":"approve","round":1},{"gate":"code_review","role":"security","blocking":false,"verdict":"note","round":1},{"gate":"code_review","role":"perf","blocking":false,"blocks_on_breach":true,"verdict":"approve","round":1},{"gate":"code_review","role":"human-advocate","blocking":false,"verdict":"approve","round":1}]}
 stderr:
 
 $ sdlc review list --gate design_review --json
@@ -710,7 +716,7 @@ stderr:
 $ sdlc log --json
 exit 0
 stdout:
-{"ok":true,"since_source":"none","entries":[{"story":"US-001","title":"Example: reject invoices with a non-positive total","committed_at":"<time>","commit_base":"<sha>","commit":"<sha>","range_source":"record","rounds":{"code_review":1,"design_review":2,"verifier_review":1},"blocks":[{"gate":"design_review","role":"architect","round":1,"note":"AC-1 has no step"}],"escalations":[{"at":"<time>","type":"spec_unclear","message":"is a zero total refused too?","resolved":true}],"spent_usd":1.25,"staffing":{"agents":[{"agent":"project-manager","needed":true,"reason":"project-manager has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"researcher","needed":true,"reason":"researcher has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"sdet","needed":true,"reason":"sdet has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"implementer","needed":true,"reason":"implementer has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"verifier","needed":true,"reason":"verifier has work on this story","asked_model":"opus","asked_effort":"high","asked_reason":"nothing checks the checker"},{"agent":"bookkeeper","needed":true,"reason":"bookkeeper has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"architect","needed":true,"reason":"architect has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"security","needed":true,"reason":"security has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"red-team","needed":true,"reason":"red-team has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"perf","needed":true,"reason":"perf has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"human-advocate","needed":true,"reason":"human-advocate has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"code-reviewer","needed":true,"reason":"code-reviewer has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"}],"amendments":[]},"staffing_events":[{"at":"<time>","message":"staffing_set: 12 agents needed, 0 left out; staffing changes on the record before this: 0"}]}]}
+{"ok":true,"since_source":"none","entries":[{"story":"US-001","title":"Example: reject invoices with a non-positive total","committed_at":"<time>","commit_base":"<sha>","commit":"<sha>","range_source":"record","rounds":{"code_review":1,"design_review":2,"tests_frozen":1,"verifier_review":1},"blocks":[{"gate":"design_review","role":"architect","round":1,"note":"AC-1 has no step"}],"review_counts":[{"gate":"design_review","role":"architect","round":1,"important":1}],"findings":[{"gate":"design_review","role":"architect","round":1,"subject":"<sha>","id":"F-1","importance":"important","text":"AC-1 has no step","state":"fixed","closings":[{"at":"<time>","as":"fixed"}]}],"escalations":[{"at":"<time>","type":"spec_unclear","message":"is a zero total refused too?","resolved":true}],"spent_usd":1.25,"staffing":{"agents":[{"agent":"project-manager","needed":true,"reason":"project-manager has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"researcher","needed":true,"reason":"researcher has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"sdet","needed":true,"reason":"sdet has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"implementer","needed":true,"reason":"implementer has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"verifier","needed":true,"reason":"verifier has work on this story","asked_model":"opus","asked_effort":"high","asked_reason":"nothing checks the checker"},{"agent":"bookkeeper","needed":true,"reason":"bookkeeper has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"architect","needed":true,"reason":"architect has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"security","needed":true,"reason":"security has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"red-team","needed":true,"reason":"red-team has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"perf","needed":true,"reason":"perf has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"human-advocate","needed":true,"reason":"human-advocate has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"code-reviewer","needed":true,"reason":"code-reviewer has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"test-reviewer","needed":true,"reason":"test-reviewer has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"}],"amendments":[]},"staffing_events":[{"at":"<time>","message":"staffing_set: 13 agents needed, 0 left out; staffing changes on the record before this: 0"}],"landed_without_pause":[{"at":"<time>","message":"the commit gate passed with no pause for a person: the story's risk tier is low, which pre_commit_pause_tiers does not pause; pre_commit_pause_paths lists no path"}]}]}
 stderr:
 
 $ sdlc log --since HEAD --json
@@ -814,7 +820,7 @@ stderr:
     {
       "at": "<time>",
       "type": "staffing_set",
-      "message": "12 agents needed, 0 left out; staffing changes on the record before this: 0"
+      "message": "13 agents needed, 0 left out; staffing changes on the record before this: 0"
     },
     {
       "at": "<time>",
@@ -835,6 +841,11 @@ stderr:
       "at": "<time>",
       "type": "artifact",
       "message": "test_plan stored at .sdlc/stories/US-001/TEST-PLAN.md"
+    },
+    {
+      "at": "<time>",
+      "type": "review",
+      "message": "tests_frozen test-reviewer approve"
     },
     {
       "at": "<time>",
@@ -991,6 +1002,15 @@ stderr:
     }
   ],
   "reviews": [
+    {
+      "at": "<time>",
+      "gate": "tests_frozen",
+      "role": "test-reviewer",
+      "verdict": "approve",
+      "round": 1,
+      "subject": "<sha>",
+      "file": ".sdlc/stories/US-001/reviews/tests_frozen-test-reviewer-1.md"
+    },
     {
       "at": "<time>",
       "gate": "design_review",
@@ -1198,6 +1218,14 @@ stderr:
         "asked_model": "sonnet",
         "asked_effort": "medium",
         "asked_reason": "the change is small and a later gate checks it"
+      },
+      {
+        "agent": "test-reviewer",
+        "needed": true,
+        "reason": "test-reviewer has work on this story",
+        "asked_model": "sonnet",
+        "asked_effort": "medium",
+        "asked_reason": "the change is small and a later gate checks it"
       }
     ]
   }
@@ -1248,7 +1276,7 @@ stderr:
 $ sdlc log --json
 exit 0
 stdout:
-{"ok":true,"since_source":"none","entries":[{"story":"US-001","title":"Example: reject invoices with a non-positive total","committed_at":"<time>","commit_base":"<sha>","commit":"<sha>","range_source":"record","rounds":{"code_review":1,"design_review":2,"verifier_review":1},"blocks":[{"gate":"design_review","role":"architect","round":1,"note":"AC-1 has no step"}],"escalations":[{"at":"<time>","type":"spec_unclear","message":"is a zero total refused too?","resolved":true}],"spent_usd":1.25,"staffing":{"agents":[{"agent":"project-manager","needed":true,"reason":"project-manager has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"researcher","needed":true,"reason":"researcher has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"sdet","needed":true,"reason":"sdet has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"implementer","needed":true,"reason":"implementer has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"verifier","needed":true,"reason":"verifier has work on this story","asked_model":"opus","asked_effort":"high","asked_reason":"nothing checks the checker"},{"agent":"bookkeeper","needed":true,"reason":"bookkeeper has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"architect","needed":true,"reason":"architect has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"security","needed":true,"reason":"security has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"red-team","needed":true,"reason":"red-team has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"perf","needed":true,"reason":"perf has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"human-advocate","needed":true,"reason":"human-advocate has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"code-reviewer","needed":true,"reason":"code-reviewer has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"}],"amendments":[]},"staffing_events":[{"at":"<time>","message":"staffing_set: 12 agents needed, 0 left out; staffing changes on the record before this: 0"}]}]}
+{"ok":true,"since_source":"none","entries":[{"story":"US-001","title":"Example: reject invoices with a non-positive total","committed_at":"<time>","commit_base":"<sha>","commit":"<sha>","range_source":"record","rounds":{"code_review":1,"design_review":2,"tests_frozen":1,"verifier_review":1},"blocks":[{"gate":"design_review","role":"architect","round":1,"note":"AC-1 has no step"}],"review_counts":[{"gate":"design_review","role":"architect","round":1,"important":1}],"findings":[{"gate":"design_review","role":"architect","round":1,"subject":"<sha>","id":"F-1","importance":"important","text":"AC-1 has no step","state":"fixed","closings":[{"at":"<time>","as":"fixed"}]}],"escalations":[{"at":"<time>","type":"spec_unclear","message":"is a zero total refused too?","resolved":true}],"spent_usd":1.25,"staffing":{"agents":[{"agent":"project-manager","needed":true,"reason":"project-manager has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"researcher","needed":true,"reason":"researcher has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"sdet","needed":true,"reason":"sdet has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"implementer","needed":true,"reason":"implementer has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"verifier","needed":true,"reason":"verifier has work on this story","asked_model":"opus","asked_effort":"high","asked_reason":"nothing checks the checker"},{"agent":"bookkeeper","needed":true,"reason":"bookkeeper has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"architect","needed":true,"reason":"architect has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"security","needed":true,"reason":"security has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"red-team","needed":true,"reason":"red-team has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"perf","needed":true,"reason":"perf has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"human-advocate","needed":true,"reason":"human-advocate has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"code-reviewer","needed":true,"reason":"code-reviewer has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"},{"agent":"test-reviewer","needed":true,"reason":"test-reviewer has work on this story","asked_model":"sonnet","asked_effort":"medium","asked_reason":"the change is small and a later gate checks it"}],"amendments":[]},"staffing_events":[{"at":"<time>","message":"staffing_set: 13 agents needed, 0 left out; staffing changes on the record before this: 0"}],"landed_without_pause":[{"at":"<time>","message":"the commit gate passed with no pause for a person: the story's risk tier is low, which pre_commit_pause_tiers does not pause; pre_commit_pause_paths lists no path"}]}]}
 stderr:
 
 $ sdlc log --since HEAD --json

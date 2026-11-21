@@ -170,7 +170,7 @@ Four things are checked by the command itself:
 ## How enforcement works
 
 The plugin gives you three skills that only you start (`/sdlc:next`,
-`/sdlc:trunk-review` and `/sdlc:consolidate`), twelve agents, and hooks on
+`/sdlc:trunk-review` and `/sdlc:consolidate`), thirteen agents, and hooks on
 Claude Code's tool calls. Each gate is run by an agent that starts from a fresh
 context and sees none of the others' reasoning, because a reviewer that
 inherited the argument for a change is not a reviewer. A Gate 4 reviewer looking

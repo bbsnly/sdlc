@@ -162,7 +162,7 @@ func TestAC6ACommandThatFailsOnTheTreeAStopMadeLeavesTheStoryWithItsSessionToRew
 		default:
 			// Reviews only, below.
 		}
-		for _, r := range model.ReviewersFor(model.Gate(gate)) {
+		for _, r := range fixtureReviewers(model.Gate(gate)) {
 			if r.WhenDoRAdvocate {
 				continue
 			}

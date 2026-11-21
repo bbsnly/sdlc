@@ -680,11 +680,14 @@ const (
 	roleBookkeeper    = "bookkeeper"
 	roleSecurity      = "security"
 	rolePerf          = "perf"
+	roleTestReviewer  = "test-reviewer"
 )
 
 // Reviewers is every review the loop expects, by gate.
 var Reviewers = []Reviewer{
 	{Role: roleHumanAdvocate, Gate: GateDoR, WhenDoRAdvocate: true},
+
+	{Role: roleTestReviewer, Gate: GateTestsFrozen, Blocking: true},
 
 	{Role: "architect", Gate: GateDesignReview, Blocking: true},
 	{Role: "red-team", Gate: GateDesignReview},
@@ -1089,6 +1092,7 @@ const (
 var Agents = []string{
 	"project-manager", roleResearcher, roleSDET, roleImplementer, roleVerifier, roleBookkeeper,
 	"architect", roleSecurity, "red-team", rolePerf, roleHumanAdvocate, roleCodeReviewer,
+	roleTestReviewer,
 }
 
 // Doers pairs each gate that has work with the agent that does it. The gates

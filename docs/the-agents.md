@@ -13,7 +13,7 @@
 
 ## Introduction
 
-Twelve agents do the work of the gates. Each starts from a fresh context, can
+Thirteen agents do the work of the gates. Each starts from a fresh context, can
 only write what its gate produces, and never sees the others' reasoning.
 
 That last part is the whole design. A reviewer that inherited the argument for a
@@ -55,6 +55,7 @@ stop the gate, and what it writes.
 | `sdlc:project-manager` | after 1 and 2, unless `team.agents.project-manager.enabled` is false ([the staffing](#the-staffing)) | — | the staffing, through `sdlc staffing set` and `amend` |
 | `sdlc:researcher` | 2 | — | `ANALYSIS.md`, `THREATS.md`, `CODEMAP.md` |
 | `sdlc:sdet` | 3 | — | test files, `TEST-PLAN.md` |
+| `sdlc:test-reviewer` | 3 | **Yes**, unless its [`can_block`](configuration.md#an-agents-entry) is false | its review |
 | `sdlc:implementer` | 4, 5 | — | `PLAN.md`, then production code |
 | `sdlc:architect` | 4 | **Yes** | its review |
 | `sdlc:security` | 4, 7 | **Yes** when the story is security-sensitive | its review |
@@ -64,6 +65,18 @@ stop the gate, and what it writes.
 | `sdlc:verifier` | 6 | **Yes** | `VERIFICATION.md`, its verdict |
 | `sdlc:code-reviewer` | 7 | **Yes**, unless its [`can_block`](configuration.md#an-agents-entry) is false | its review |
 | `sdlc:bookkeeper` | 9 | — | `RETRO.md`, and the story's sections of `CODEMAP.md` |
+
+**`sdlc:test-reviewer`** reads the new tests before they are frozen, while a
+test can still change. It reads them against the acceptance criteria, the
+analysis and your contract's test conventions, runs them, and blocks on a test
+that contradicts a criterion, a criterion no test would catch, a test that
+passes for the wrong reason, a test that depends on the clock, the network, an
+order or the developer's git configuration, and a criterion id missing from the
+test names. Its block goes back to `sdlc:sdet`. Where it is staffed,
+`sdlc freeze` waits for its approve of the test files as they are, so a test
+changed, added or renamed after the approve has to be reviewed again. It edits
+no test: its definition tells it so. Before the freeze no rule of the hook stops
+a reviewer writing a test file through the shell.
 
 Don't worry if a reviewer is marked as not blocking by default. Not blocking does
 not mean optional. A gate will not pass until every reviewer it expects has reported,

@@ -16,6 +16,11 @@ package cli
 // between two runs is replaced: where the project is, the time, and the names of
 // commits and trees.
 //
+// US-112.4 added the test reviewer to them, and nothing else: its approve before
+// the freeze, its row in every review list, the thirteenth agent in the staffing,
+// and what the record and the log then hold of the three. The freeze itself prints
+// what it did (decision D2).
+//
 // The configuration `sdlc init` writes, which the walk prints, is compared with its
 // top-level `_` keys and the team section cut out (stfWithoutConfigComments, in
 // configcomments_test.go): the block's wording and the section's layout are not what
@@ -156,6 +161,9 @@ func stfOffWalk(t *testing.T, asJSON, noTeam bool) string {
 
 	writeFile(t, root, "internal/invoice_test.go", "package internal\n\n// AC-1\n")
 	tr.run("# Test plan\n", "artifact", "write", "test_plan")
+	// US-112.4 decision D1: the staffing needs the test reviewer, so the freeze
+	// waits for its approve of the tests as they are.
+	tr.run("# test-reviewer\n", "review", "add", "tests_frozen", "test-reviewer", "approve")
 	tr.run("", "freeze")
 	tr.run("", "gate", "tests_frozen", "pass", "--note", "1 criterion, 1 failing test")
 	tr.run("# Plan\n", "artifact", "write", "plan")

@@ -413,7 +413,7 @@ func TestAC9AnApprovedFailureIsNotThePreCommitAnswerInASandbox(t *testing.T) {
 				case model.GateVerification:
 					s.stores("verifier", "verification", "# Verification\n\nEvery command green.\n")
 				}
-				for _, r := range model.ReviewersFor(model.Gate(gate)) {
+				for _, r := range fixtureReviewers(model.Gate(gate)) {
 					if !r.WhenDoRAdvocate {
 						s.here().runWith(t, "# "+r.Role+"\n", "review", "add", gate, r.Role, "approve")
 					}

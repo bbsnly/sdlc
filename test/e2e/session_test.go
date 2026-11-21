@@ -183,7 +183,7 @@ func (s *session) workGate(gate model.Gate, story string) {
 	case model.GateRetro:
 		s.stores("bookkeeper", "retro", "# Retro\n\nNo deviations.\n")
 	}
-	for _, r := range model.ReviewersFor(gate) {
+	for _, r := range fixtureReviewers(gate) {
 		if r.WhenDoRAdvocate {
 			continue // expected only when the project asks for it
 		}

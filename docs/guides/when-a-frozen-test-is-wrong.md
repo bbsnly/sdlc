@@ -87,6 +87,11 @@ during an iteration. Either delegate the change to `sdlc:sdet`, or run
 `sdlc stop` in your own terminal, edit the test yourself, and `sdlc start` again,
 in the story's worktree with `git.worktrees` on.
 
+Where the test reviewer is staffed, the corrected test is reviewed again before
+it is frozen: its earlier approve was of the tests as they were, so `sdlc freeze`
+waits for a new one ([SDLC-E0029](../troubleshooting.md#sdlc-e0029)). Tests put
+back byte for byte as they were keep their approve.
+
 Then freeze again, with the story active, and pass the gate the unfreeze
 reopened:
 

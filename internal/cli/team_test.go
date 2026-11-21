@@ -205,7 +205,8 @@ func TestAC1EveryAgentIsOnByDefaultAndEachReviewerBlocksAsTheReleasedToolDoes(t 
 				t.Errorf("AC-1 status --json says staffing %q, want none: the project manager is on by default", got.Staffing)
 			}
 			for _, r := range decode[reviewListPayload](t, mustRun(t, "review", "list", "--json")).Reviews {
-				wantBlocking := r.Role == "architect" || r.Role == "verifier" || r.Role == "code-reviewer" || r.Role == "security"
+				wantBlocking := r.Role == "architect" || r.Role == "verifier" || r.Role == "code-reviewer" || r.Role == "security" ||
+					r.Role == "test-reviewer"
 				if r.Blocking != wantBlocking {
 					t.Errorf("AC-1 %s at %s: blocking %v, want %v", r.Role, r.Gate, r.Blocking, wantBlocking)
 				}

@@ -38,6 +38,10 @@ func fcAtTheTests(t *testing.T, command string) sandbox {
 	sb.works(t, sb.repo, "", "", "start")
 	sb.worksGate(t, model.GateDoR)
 	sb.worksGate(t, model.GateAnalysis)
+	// US-112.4: these are about the check, not the test reviewer, whose approve the
+	// freeze would otherwise wait for; the project manager leaves it out (AC-2).
+	sb.works(t, sb.tree(), "project-manager", "", "staffing", "amend", "test-reviewer", "--left-out",
+		"--reason", "the freeze check is what these read")
 	sb.works(t, sb.tree(), "sdet", sandboxTestPlan, "artifact", "write", "test_plan")
 	return sb
 }

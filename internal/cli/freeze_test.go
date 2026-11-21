@@ -46,12 +46,27 @@ func gitProject(t *testing.T) string {
 // agent then takes part, which is what they have always walked through. A test of
 // the staffing puts it back: stfProjectFrom writes a team section of its own, and
 // team_test.go's teamOn does the same.
+//
+// The test reviewer is disabled as well (US-112.4 decision D1): with the project
+// manager off it is waited for, and `sdlc freeze` would refuse until it approved,
+// while these tests are about the freeze and what comes after it. Disabled, the
+// freeze prints and records what it always did (decision D2). The walk that
+// takes a story through every gate records its review where it is enabled
+// (satisfy), and testreviewer_us1124_test.go turns it back on.
 func initialised(t *testing.T, root string) {
 	t.Helper()
 	runIn(t, root, "init")
 	worktreesOff(t, root)
 	projectManagerOff(t, root)
+	testReviewerOff(t, root)
 	commitEverything(t, root)
+}
+
+// testReviewerOff disables the test reviewer in root's configuration, keeping the
+// rest of the team section as it is.
+func testReviewerOff(t *testing.T, root string) {
+	t.Helper()
+	setTeamAgentOnDisk(t, root, "test-reviewer", map[string]any{"enabled": false})
 }
 
 // projectManagerOff disables the project manager in root's configuration, keeping

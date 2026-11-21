@@ -275,7 +275,7 @@ The repository is its own marketplace, so there is nothing else to add. That
 gives you three skills only you start in Claude Code (`/sdlc:next` to work the
 loop, `/sdlc:trunk-review` to look back at what landed and `/sdlc:consolidate`
 to turn the retros into changes to your contract and configuration),
-twelve agents, and the `PreToolUse`, `PostToolUse` and `Stop` hooks that do the
+thirteen agents, and the `PreToolUse`, `PostToolUse` and `Stop` hooks that do the
 enforcing. It also gives you a slash command for each command only a person
 runs, such as `/sdlc:approve` for `sdlc approve`, which the hook runs when you
 type it, and `/sdlc:init` and `/sdlc:doctor`. [Claude Desktop](claude-desktop.md)
@@ -361,7 +361,7 @@ gives you `/next`, `/trunk-review` or `/consolidate` in a session.
 
 Know what that route brings and what it does not. It brings the runbook: the
 order of the gates, what each one produces, what to do when one fails. It does
-**not** bring the binary, the twelve agents, or the hook, so nothing is
+**not** bring the binary, the thirteen agents, or the hook, so nothing is
 recorded, nothing is frozen, and nothing is refused. `next` checks for the tool
 and for the agents before it does anything and stops if either is missing,
 because a loop with no enforcement behind it is a checklist, and a checklist you

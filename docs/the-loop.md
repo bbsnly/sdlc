@@ -188,8 +188,8 @@ gate waits for `security` and for `security-2`. It is not the plan: the plan is 
 document, and says how the change is made, not who makes it.
 [Agents](the-agents.md#the-staffing) says how it is chosen and where to read it.
 
-Twelve agents take part. With the project manager disabled, a story that needs no rework
-runs agents fifteen times: one each at Gates 2, 3, 5, 6 and 9, six at Gate 4 and
+Thirteen agents take part. With the project manager disabled, a story that needs no rework
+runs agents sixteen times: one each at Gates 2, 5, 6 and 9, two at Gate 3, six at Gate 4 and
 four at Gate 7, plus the human advocate at Gate 1 when the project asks for it.
 With it enabled, `sdlc:project-manager` runs twice more, after Gates 1 and 2, and each
 reviewer it leaves out is one run fewer at Gate 4, Gate 7 or both. Every one
@@ -251,11 +251,31 @@ downstream is built on this.
 
 ## Gate 3 — `tests_frozen`
 
-**Who:** `sdlc:sdet`. **Produces:** `TEST-PLAN.md`, the tests, and the freeze.
+**Who:** `sdlc:sdet` writes them; `sdlc:test-reviewer` reviews them. **Produces:**
+`TEST-PLAN.md`, the tests, the test reviewer's review, and the freeze.
 
 Each acceptance criterion becomes a test that fails now, for the reason the
 criterion names. The test plan maps every criterion to the test that covers it
 and says why each fails today.
+
+Before the freeze, `sdlc:test-reviewer` reads the new tests against the criteria,
+`ANALYSIS.md`, `THREATS.md` and `TEST-PLAN.md`, runs them, and approves or blocks.
+A block goes back to `sdlc:sdet` to correct the tests and the test plan, and the
+reviewer is asked again, up to its `max_rounds` (`loop.max_review_rounds` where it
+has none), after which the story goes to a person. Where the test reviewer is
+staffed, `sdlc freeze` waits for its approve and refuses until then, with
+[SDLC-E0029](troubleshooting.md#sdlc-e0029) where it has not reviewed, has not
+approved, or reviewed tests that have changed since, and with
+[SDLC-E0030](troubleshooting.md#sdlc-e0030) where it blocked. It is staffed unless
+the staffing leaves it out, with a reason: with the project manager disabled, or a
+staffing that has no row for it, the freeze waits for it. Where its `can_block` is
+false, the freeze waits only until it has reviewed, and a disabled test reviewer is
+not waited for.
+
+The approve is of the test files by name and content: every file `paths.tests`
+matches, trunk's included. A test changed, added or renamed after it makes it
+stale, and so does a rebase that brings in a test trunk changed, so the reviewer
+reads the tests again before the freeze is taken.
 
 Then `sdlc freeze` records the sha256 of every test file. From this moment
 nobody edits them: not the implementer, not the agent that wrote them, not the
