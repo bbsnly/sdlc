@@ -300,9 +300,12 @@ jobs:
   # The architectures no `check` runner covers. A release publishes five
   # platforms; until this job existed, two of them -- linux/arm64 and
   # windows/arm64 -- had never run the binary they ship, let alone installed
-  # it. This runs the tests and every installer route that applies, which is
-  # what the primary runners do, without the linters and vendored-kit legs
-  # that are not architecture-dependent.
+  # it. This runs every installer route that applies, then the binary itself:
+  # its own tests and the ones that drive it, built, through the launcher in a
+  # real repository. It ran every other package too until run 40743601803,
+  # where those cost 25 of this job's 28 minutes on windows-11-arm to repeat
+  # what `check` had run on the same operating system: nothing in them
+  # depends on the architecture, and the cross-build job vets each target.
   install:
     name: install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -335,15 +338,13 @@ jobs:
         shell: bash
         run: go test -count=1 ./test/install/...
 
-      - name: The test suite, on this architecture
+      - name: The binary, on this architecture
         shell: bash
         run: |
           set -euo pipefail
-          # Everything except the installers, which the step above already ran
-          # and which are slow enough not to want twice. The limit is the one
-          # `task test` gives: internal/cli passed in over eight minutes on
-          # windows-11-arm and then, with more tests, was killed at go test's
-          # default ten with nothing hung. On Windows it is forty-five, as there.
+          # The limit is the one `task test` gives, not go test's default ten:
+          # a package here was once killed at ten with nothing hung. On Windows
+          # it is forty-five, as there.
           limit=20m
           if [ "$RUNNER_OS" = Windows ]; then limit=45m; fi
-          go list ./... | grep -v '/test/install$' | xargs go test -count=1 -timeout "$limit"
+          go test -count=1 -timeout "$limit" ./cmd/... ./test/e2e/...
