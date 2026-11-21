@@ -226,8 +226,9 @@ project you have: it writes the `team` section back at its defaults, and your ow
         "enabled": true,
         "can_block": true,
         "instances": 1,
-        // max_rounds: 1 or more, the blocks that stop the gate before the story is handed
-        //   to you; left out, it is loop.max_review_rounds
+        // max_rounds: 1 or more, the blocks that stop the gate before it goes to the
+        //   agent's arbiter, and the arbiter's before the story is handed to you; left
+        //   out, it is loop.max_review_rounds
         "max_rounds": 2,
         // lowest: the floor the project manager may not staff this agent below: a model
         //   from team.models (haiku, sonnet, opus) and an effort from team.efforts
@@ -763,7 +764,7 @@ The defaults of 2, 3 and 3 are rarely worth changing.
 
 | Key | What it means |
 | --- | --- |
-| `max_review_rounds` | how many times one reviewer may block a gate before `sdlc review add` hands the story to a person, unless the agent has `max_rounds` in [`team`](#an-agents-entry). A block that cannot stop the gate is not counted |
+| `max_review_rounds` | how many times one reviewer may block a gate before `sdlc review add` sends the gate to its [arbiter](the-loop.md#the-arbiter), and how many times the arbiter may before the story is handed to a person, unless the agent has `max_rounds` in [`team`](#an-agents-entry). A disabled agent has no arbiter, and its reviewer's limit hands the story over. A block that cannot stop the gate is not counted |
 | `max_rework_rounds` | how many times one gate may be recorded as failed before `sdlc gate` hands the story to a person |
 | `max_stop_blocks` | how many stops in a row, with nothing recorded on the story, the `Stop` hook sends back before it hands the story to a person. See [stopping mid-story](enforcement.md#stopping-mid-story) |
 
@@ -1055,7 +1056,7 @@ both, and sdlc does not observe what a delegation is given.
 | --- | --- |
 | `enabled` | whether the agent runs. Default `true`. `false` takes it out of every story: a worker's gate, or the verifier's or the code reviewer's review, is then yours to do by hand, and the loop hands the story to you there with `sdlc escalate work_by_hand`. A disabled reviewer of the tests, the plan or the change is not waited for: with the test reviewer disabled, `sdlc freeze` waits for no review. With the project manager disabled no story is staffed, and every enabled agent takes part in every story |
 | `can_block` | for an agent that reviews, whether its block stops the gate. Default `true` for the architect, security, perf, the verifier, the code reviewer and the test reviewer, and `false` for red-team and the human advocate. `false` makes its review advisory: still waited for, never skipped, and its block does not stop the gate it reviews; on the test reviewer, `sdlc freeze` then waits only until it has reviewed. Its findings are still closed like any other reviewer's: those of the design review before verification and the commit, and those of the code review before the commit. `true` gives a reviewer no more than its row says, so security still blocks only a story recorded as security-sensitive; on red-team or the human advocate, `true` makes a block stop the gate as perf's does |
-| `max_rounds` | how many blocks that stop the gate one reviewer may make before the story is handed to a person. Left out, it is `loop.max_review_rounds`; below `1` is refused. It counts only blocks that stop the gate, so it does nothing on an advisory agent, one with `can_block` false, or on one that reviews nothing; `sdlc doctor` says so where it is set on one |
+| `max_rounds` | how many blocks that stop the gate one reviewer may make before the gate goes to its [arbiter](the-loop.md#the-arbiter), and the arbiter before the story is handed to a person; each instance and its arbiter count their own. Left out, it is `loop.max_review_rounds`; below `1` is refused. It counts only blocks that stop the gate, so it does nothing on an advisory agent, one with `can_block` false, or on one that reviews nothing; `sdlc doctor` says so where it is set on one |
 | `instances` | how many instances of a reviewer review each gate it reviews, from `1` to `16`. Default `1`. The second is `security-2`, the third `security-3`: each is its own run under its own name, and the gate waits for a review from each. On an agent that reviews nothing it does nothing |
 | `lowest` | the lowest `model` and `effort` the project manager may ask for this agent: a model from `models` and an effort from `efforts`. An agent with no `lowest` may be asked for from the first name in each list |
 | `bring_back` | for a reviewer of the code, the paths a change to which brings it back where the staffing left it out |

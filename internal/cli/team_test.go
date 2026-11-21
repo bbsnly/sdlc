@@ -1342,12 +1342,23 @@ func TestAC6SecurityWithCanBlockTrueStillBlocksOnlyASensitiveStory(t *testing.T)
 
 // ---------------------------------------------------------------------- AC-7 (D-3)
 
+// teamBlock is what one block said: since US-131 AC-6, the reviewer's limit-th
+// sends the gate to an arbiter, and only the arbiter's own limit-th hands over.
+type teamBlock struct {
+	reviewPayload
+	Arbiter string `json:"arbiter"`
+}
+
+// counted reports whether the block reached its limit: the gate went to an
+// arbiter, or the story to a person.
+func (b teamBlock) counted() bool { return b.Arbiter != "" || b.HandedOver != "" }
+
 // teamBlocks has a reviewer block n times at a gate, and returns what each said.
-func teamBlocks(t *testing.T, gate model.Gate, role string, n int) []reviewPayload {
+func teamBlocks(t *testing.T, gate model.Gate, role string, n int) []teamBlock {
 	t.Helper()
-	out := make([]reviewPayload, 0, n)
+	out := make([]teamBlock, 0, n)
 	for i := range n {
-		out = append(out, decode[reviewPayload](t, mustRunWith(t, "# "+role+"\n",
+		out = append(out, decode[teamBlock](t, mustRunWith(t, "# "+role+"\n",
 			"review", "add", string(gate), role, "block", "--important", "1", "--finding", "important the one finding", "--note", "objection "+strconv.Itoa(i+1), "--json")))
 	}
 	return out
@@ -1378,15 +1389,26 @@ func TestAC7MaxRoundsHandsTheStoryOverOnceTheAgentHasBlockedThatManyTimes(t *tes
 			reach(t, root, model.GateDesignReview)
 			for i := 1; i <= 5; i++ {
 				got := teamBlocks(t, model.GateDesignReview, "architect", 1)[0]
-				if want := i == tc.handsOver; (got.HandedOver != "") != want {
-					t.Fatalf("AC-7 block %d: handed over %q, want a hand-over = %v", i, got.HandedOver, want)
+				if want := i == tc.handsOver; got.counted() != want {
+					t.Fatalf("AC-7 block %d: %+v, want the limit reached = %v", i, got, want)
 				}
-				if got.HandedOver != "" {
-					if got.HandedOver != "review_not_converging" {
-						t.Errorf("AC-7 the kind of hand-over is %q, which the guide and a person's approval read", got.HandedOver)
+				if !got.counted() {
+					continue
+				}
+				// US-131 AC-6: the reviewer's limit sends the gate to an arbiter,
+				// and the arbiter's own, the same setting, hands the story over.
+				if got.HandedOver != "" || got.Arbiter != "architect-arbiter" {
+					t.Fatalf("AC-6 the architect's limit-th block: %+v, want it sent to architect-arbiter", got)
+				}
+				for j, arb := range teamBlocks(t, model.GateDesignReview, "architect-arbiter", tc.handsOver) {
+					if want := j == tc.handsOver-1; (arb.HandedOver != "") != want {
+						t.Fatalf("AC-6 the arbiter's block %d: %+v, want a hand-over = %v", j+1, arb, want)
 					}
-					return
+					if arb.HandedOver != "" && arb.HandedOver != "review_not_converging" {
+						t.Errorf("AC-7 the kind of hand-over is %q, which the guide and a person's approval read", arb.HandedOver)
+					}
 				}
+				return
 			}
 		})
 	}
@@ -1397,8 +1419,11 @@ func TestAC7TheHandOverSaysWhichAgentAndGateAndWhatThePersonCanDo(t *testing.T) 
 	root := teamProject(t, teamOf(agentEntries{"architect": {"max_rounds": 1}, "project-manager": {"enabled": false}}))
 	mustRun(t, "start")
 	reach(t, root, model.GateDesignReview)
-	out := mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step").stdout
-	for _, want := range []string{"architect", "design_review", "team.agents.architect.max_rounds", "sdlc approve US-001", "AC-3 has no step"} {
+	// US-131 AC-6: the architect's limit sends the gate to its arbiter; the
+	// arbiter's, under the same setting, hands the story over.
+	teamBlocks(t, model.GateDesignReview, "architect", 1)
+	out := mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect-arbiter", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step").stdout
+	for _, want := range []string{"architect-arbiter", "design_review", "team.agents.architect.max_rounds", "sdlc approve US-001", "AC-3 has no step"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("AC-7 the hand-over does not say %q:\n%s", want, out)
 		}
@@ -1410,8 +1435,9 @@ func TestAC7TheHandOverSaysWhichAgentAndGateAndWhatThePersonCanDo(t *testing.T) 
 	root = teamProject(t, teamOf(agentEntries{"project-manager": {"enabled": false}}))
 	mustRun(t, "start")
 	reach(t, root, model.GateDesignReview)
-	teamBlocks(t, model.GateDesignReview, "architect", 1)
-	second := mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding").stdout
+	teamBlocks(t, model.GateDesignReview, "architect", 2)
+	teamBlocks(t, model.GateDesignReview, "architect-arbiter", 1)
+	second := mustRunWith(t, "# architect\n", "review", "add", "design_review", "architect-arbiter", "block", "--important", "1", "--finding", "important the one finding").stdout
 	if !strings.Contains(second, "loop.max_review_rounds") {
 		t.Errorf("AC-7 the hand-over does not name the setting that applied:\n%s", second)
 	}
@@ -1453,8 +1479,8 @@ func TestAC7OnlyABlockThatStopsTheGateCounts(t *testing.T) {
 			mustRun(t, "start")
 			reach(t, root, tc.gate)
 			for _, got := range teamBlocks(t, tc.gate, tc.role, 3) {
-				if got.HandedOver != "" {
-					t.Fatalf("AC-7 a block that cannot stop the gate handed the story over: %+v", got)
+				if got.counted() {
+					t.Fatalf("AC-7 a block that cannot stop the gate reached the limit: %+v", got)
 				}
 			}
 		})
@@ -1473,7 +1499,7 @@ func TestAC7OnlyABlockThatStopsTheGateCounts(t *testing.T) {
 			root := teamProject(t, teamOf(agentEntries{tc.role: tc.entry, "project-manager": {"enabled": false}}))
 			mustRun(t, "start")
 			reach(t, root, model.GateDesignReview)
-			if got := teamBlocks(t, model.GateDesignReview, tc.role, 1)[0]; got.HandedOver == "" {
+			if got := teamBlocks(t, model.GateDesignReview, tc.role, 1)[0]; !got.counted() {
 				t.Errorf("AC-7 %s's block stops the gate and did not count: %+v", tc.role, got)
 			}
 		})
@@ -1487,7 +1513,7 @@ func TestAC7OnlyABlockThatStopsTheGateCounts(t *testing.T) {
 			root := teamProject(t, teamOf(agentEntries{"security": {"max_rounds": 1}, "project-manager": {"enabled": false}}))
 			mustRun(t, "start")
 			teamThrough(t, root, model.GateDesignReview, sensitive)
-			if got := teamBlocks(t, model.GateDesignReview, "security", 1)[0]; (got.HandedOver != "") != sensitive {
+			if got := teamBlocks(t, model.GateDesignReview, "security", 1)[0]; got.counted() != sensitive {
 				t.Errorf("AC-7 security's block with the story sensitive = %v: %+v", sensitive, got)
 			}
 		})
@@ -1501,20 +1527,24 @@ func TestAC7APersonsDecisionStartsTheCountAgainAndAnotherGateIsAnotherCount(t *t
 	mustRun(t, "start")
 	teamThrough(t, root, model.GateDesignReview, true)
 	for i, got := range teamBlocks(t, model.GateDesignReview, "security", 2) {
-		if got.HandedOver != "" {
-			t.Fatalf("AC-7 block %d of 3 handed the story over: %+v", i+1, got)
+		if got.counted() {
+			t.Fatalf("AC-7 block %d of 3 reached the limit: %+v", i+1, got)
 		}
 	}
 	// Another gate: its own count, or this block would be the third.
-	if got := teamBlocks(t, model.GateCodeReview, "security", 1)[0]; got.HandedOver != "" {
+	if got := teamBlocks(t, model.GateCodeReview, "security", 1)[0]; got.counted() {
 		t.Errorf("AC-7 a block at another gate was counted with this one's: %+v", got)
 	}
-	if got := teamBlocks(t, model.GateDesignReview, "security", 1)[0]; got.HandedOver == "" {
-		t.Fatal("AC-7 the third block did not hand the story over")
+	if got := teamBlocks(t, model.GateDesignReview, "security", 1)[0]; !got.counted() {
+		t.Fatal("AC-7 the third block did not reach the limit")
+	}
+	// US-131 AC-6: the third sent the gate to the arbiter, whose third hands over.
+	if got := teamBlocks(t, model.GateDesignReview, "security-arbiter", 3)[2]; got.HandedOver == "" {
+		t.Fatal("AC-6 the arbiter's third block did not hand the story over")
 	}
 	mustRun(t, "approve", "US-001")
 	mustRun(t, "start")
-	if got := teamBlocks(t, model.GateDesignReview, "security", 1)[0]; got.HandedOver != "" {
+	if got := teamBlocks(t, model.GateDesignReview, "security", 1)[0]; got.counted() {
 		t.Errorf("AC-7 a block after a person's decision was counted with the ones before it: %+v", got)
 	}
 }
@@ -1726,15 +1756,19 @@ func TestAC8ACopyTakesItsRolesSettingsAndCountsItsOwnBlocks(t *testing.T) {
 		root := teamStaffedAnalysed(t, teamOf(agentEntries{"architect": {"instances": 2, "max_rounds": 2}}),
 			stfFull().plus("architect-2", "sonnet", "low"), false)
 		stfThrough(t, root, model.GateDesignReview)
-		if got := teamBlocks(t, model.GateDesignReview, "architect", 1)[0]; got.HandedOver != "" {
-			t.Fatalf("AC-7 the first block handed over: %+v", got)
+		if got := teamBlocks(t, model.GateDesignReview, "architect", 1)[0]; got.counted() {
+			t.Fatalf("AC-7 the first block reached the limit: %+v", got)
 		}
-		if got := teamBlocks(t, model.GateDesignReview, "architect-2", 1)[0]; got.HandedOver != "" {
+		if got := teamBlocks(t, model.GateDesignReview, "architect-2", 1)[0]; got.counted() {
 			t.Fatalf("AC-7 the copy's first block spent the role's budget: %+v", got)
 		}
-		got := decode[reviewPayload](t, mustRunWith(t, "# architect-2\n", "review", "add", "design_review", "architect-2", "block", "--important", "1", "--finding", "important the one finding", "--json"))
-		if got.HandedOver == "" {
-			t.Fatalf("AC-7 the copy's second block did not hand over: %+v", got)
+		got := teamBlocks(t, model.GateDesignReview, "architect-2", 1)[0]
+		if got.Arbiter != "architect-2-arbiter" || got.HandedOver != "" {
+			t.Fatalf("AC-6 the copy's second block did not send the gate to the copy's arbiter: %+v", got)
+		}
+		// US-131 AC-6: the copy's arbiter, under the role's setting, hands over.
+		if last := teamBlocks(t, model.GateDesignReview, "architect-2-arbiter", 2)[1]; last.HandedOver == "" {
+			t.Fatalf("AC-6 the copy's arbiter's second block did not hand over: %+v", last)
 		}
 		if r := run(t, "start"); !strings.Contains(r.stderr, "architect-2") {
 			t.Errorf("AC-7 the hand-over does not name the copy:\n%s", r.stderr)

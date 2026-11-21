@@ -67,10 +67,18 @@ func TestAReviewerThatKeepsBlockingIsHandedToAPerson(t *testing.T) {
 		"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step", "--json")); first.HandedOver != "" {
 		t.Fatalf("the first block handed the story over: %+v", first)
 	}
+	// US-131 AC-6: the reviewer's second block, at loop.max_review_rounds, sends
+	// the gate to an arbiter; the arbiter's second hands the story over.
+	if second := decode[teamBlock](t, mustRunWith(t, "# architect\n",
+		"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 still has no step", "--json")); second.HandedOver != "" || second.Arbiter == "" {
+		t.Fatalf("the second block, at loop.max_review_rounds, did not send the gate to an arbiter: %+v", second)
+	}
+	mustRunWith(t, "# architect\n",
+		"review", "add", "design_review", "architect-arbiter", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step yet")
 	second := decode[reviewPayload](t, mustRunWith(t, "# architect\n",
-		"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 still has no step", "--json"))
+		"review", "add", "design_review", "architect-arbiter", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 still has no step", "--json"))
 	if second.HandedOver != "review_not_converging" {
-		t.Fatalf("the second block, at loop.max_review_rounds, did not hand the story over: %+v", second)
+		t.Fatalf("the arbiter's second block, at loop.max_review_rounds, did not hand the story over: %+v", second)
 	}
 	if r := run(t, "start"); !strings.Contains(r.stderr, "SDLC-E0036") || !strings.Contains(r.stderr, "still has no step") {
 		t.Fatalf("the story carried on past the hand-over:\n%s%s", r.stdout, r.stderr)
@@ -89,8 +97,16 @@ func TestAHandOverFromAReviewSaysWhatAPersonDoesNext(t *testing.T) {
 	if strings.Contains(first.stdout, "handed to a person") {
 		t.Fatalf("the first block was announced as a hand-over:\n%s", first.stdout)
 	}
+	// US-131 AC-6: the architect's limit sends the gate to its arbiter, whose
+	// own second block is the hand-over.
+	for _, name := range []string{"architect", "architect-arbiter"} {
+		if r := mustRunWith(t, "# architect\n",
+			"review", "add", "design_review", name, "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step"); strings.Contains(r.stdout, "handed to a person") {
+			t.Fatalf("%s's block was announced as a hand-over:\n%s", name, r.stdout)
+		}
+	}
 	out := mustRunWith(t, "# architect\n",
-		"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 still has no step").stdout
+		"review", "add", "design_review", "architect-arbiter", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 still has no step").stdout
 	for _, want := range []string{
 		"US-001 is handed to a person",
 		"loop.max_review_rounds is 2",

@@ -10,7 +10,9 @@
 <!-- What is in and out of scope right now. Example for a pure-domain phase: -->
 
 - Current phase: TBD (e.g. "pure business logic — no storage, no network, no external dependencies").
-- Allowed dependencies: TBD (e.g. "standard library only; test framework X").
+- Allowed dependencies: TBD (e.g. "standard library only; test framework X"). The loop may add an
+  open-source dependency whose licence the project's licence check accepts, and records the choice
+  and the alternatives it weighed with `sdlc decide`. Licence check: TBD (the command that runs it).
 - Out of scope until a later phase: TBD (e.g. "persistence adapters, HTTP handlers, observability").
 
 ### Architecture rules (the design reviewer blocks on these)

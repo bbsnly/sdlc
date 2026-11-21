@@ -163,8 +163,14 @@ func TestUS008ABlockAtTheLimitHandsTheStoryOverOrChangesNothingInTheSandbox(t *t
 	for gate := sb.nextGate(t); gate != string(model.GateDesignReview); gate = sb.nextGate(t) {
 		sb.worksGate(t, model.Gate(gate))
 	}
-	blocked := model.ReviewEvent(model.GateDesignReview, "architect", model.VerdictBlock)
-	block := []string{"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step"}
+	// US-131 AC-6: the architect's second block, at the limit, sends the gate to
+	// its arbiter, and it is the arbiter's limit that hands the story over.
+	for range 2 {
+		sb.works(t, tree, "architect", "# architect\n\nAC-3 has no step.\n", "review", "add", "design_review", "architect", "block",
+			"--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step")
+	}
+	blocked := model.ReviewEvent(model.GateDesignReview, "architect-arbiter", model.VerdictBlock)
+	block := []string{"review", "add", "design_review", "architect-arbiter", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step"}
 
 	// `sdlc init` sets loop.max_review_rounds to 2.
 	t.Run("AC-4 a block below the limit is recorded without git", func(t *testing.T) {
@@ -187,7 +193,7 @@ func TestUS008ABlockAtTheLimitHandsTheStoryOverOrChangesNothingInTheSandbox(t *t
 
 	t.Run("AC-3 the same command with git back is counted once and hands the story over", func(t *testing.T) {
 		out := sb.works(t, tree, "architect", "# architect\n\nAC-3 still has no step.\n", block...)
-		for _, want := range []string{"block (round 2)", "US-001 is handed to a person", "architect has blocked design_review 2 times"} {
+		for _, want := range []string{"block (round 2)", "US-001 is handed to a person", "architect-arbiter has blocked design_review 2 times"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("the hand-over does not say %q:\n%s", want, out)
 			}
@@ -205,13 +211,13 @@ func TestUS008ABlockAtTheLimitHandsTheStoryOverOrChangesNothingInTheSandbox(t *t
 		}
 		var listed []string
 		for _, rev := range record.Reviews {
-			if rev.Gate == model.GateDesignReview && rev.Role == "architect" {
+			if rev.Gate == model.GateDesignReview && rev.Role == "architect-arbiter" {
 				listed = append(listed, filepath.Base(filepath.FromSlash(rev.File)))
 			}
 		}
 		var kept []string
 		for _, name := range sb.handOverReviews(t) {
-			if strings.HasPrefix(name, "design_review-architect-") {
+			if strings.HasPrefix(name, "design_review-architect-arbiter-") {
 				kept = append(kept, name)
 			}
 		}

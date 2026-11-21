@@ -14,6 +14,8 @@
 - [Gate 8 — `commit`](#gate-8--commit)
 - [Gate 9 — `retro`](#gate-9--retro)
 - [Rework](#rework)
+  - [The arbiter](#the-arbiter)
+- [Two kinds of decision](#two-kinds-of-decision)
 - [Why approvals go stale](#why-approvals-go-stale)
 - [Where everything lives](#where-everything-lives)
 - [More than one checkout](#more-than-one-checkout)
@@ -140,7 +142,7 @@ flowchart TD
 
     esc{{"Escalate: the story waits for a person"}}
     g1 -.->|a criterion cannot be tested| esc
-    g2 -.->|open questions| esc
+    g2 -.->|a product question| esc
     g3 -.->|a frozen test is wrong| esc
     g7 -.->|rework that does not converge| esc
     g8 -.->|a high-risk story| esc
@@ -162,7 +164,7 @@ needed. The sections after it say the same in full.
 | Gate | Record keys | Who does the work | Who reviews it | Produces | Where a person comes in |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `dor` | the conversation | `sdlc:human-advocate`, advisory, only with `human_gates.dor_advocate_check` | nothing | a criterion that cannot be tested |
-| 2 | `analysis` | `sdlc:researcher` | none | `ANALYSIS.md`, `THREATS.md`, and whether the story is security-sensitive | open questions |
+| 2 | `analysis` | `sdlc:researcher` | none | `ANALYSIS.md`, `THREATS.md`, and whether the story is security-sensitive | product questions, once |
 | 3 | `tests_frozen` | `sdlc:sdet` | none | the failing tests, `TEST-PLAN.md`, the freeze | `sdlc unfreeze`, when a frozen test is wrong |
 | 4 | `plan`, `design_review` | `sdlc:implementer` | `sdlc:architect` blocks; `sdlc:security` blocks when the story is security-sensitive; `sdlc:perf` blocks only on a stated budget; `sdlc:red-team` and `sdlc:human-advocate` are advisory | `PLAN.md`, up to five reviews | a reviewer that keeps blocking |
 | 5 | `implementation` | `sdlc:implementer` | none | the code | a broken freeze |
@@ -197,10 +199,11 @@ starts from a fresh context, and none reads another's work at the same gate. The
 one exception is a Gate 4 reviewer asked to look again at a revised plan, which is
 resumed instead. It is given its own findings and their closings, not everyone's,
 and the diff shows what the others' findings changed. The independence that
-remains is the first look. A gate that keeps failing, or a reviewer that keeps
-blocking, hands the story to a person after
-[`loop.max_rework_rounds`](configuration.md#loop) failures or
-`loop.max_review_rounds` blocks.
+remains is the first look. A gate that keeps failing hands the story to a
+person after [`loop.max_rework_rounds`](configuration.md#loop) failures. A
+reviewer that keeps blocking sends the gate to its [arbiter](#the-arbiter)
+after `loop.max_review_rounds` blocks, and the arbiter's own limit hands the
+story over.
 
 ## Gate 1 — `dor`, definition of ready
 
@@ -244,8 +247,14 @@ what could go wrong at each trust boundary it crosses. It also decides whether
 the story is security-sensitive, which is what makes the security reviewer
 blocking at Gates 4 and 7.
 
-Open questions stop the loop rather than being guessed at, because everything
-downstream is built on this.
+Nothing is guessed at, because everything downstream is built on this. The
+researcher marks each open question `product` or `implementation`, against the
+[two kinds](#two-kinds-of-decision), with the line of the definition it rests
+on and a recommendation. The runbook records every implementation question
+with `sdlc decide --by researcher`. Where a product question is left, the gate
+fails and the story is escalated once as `product_decision`, listing every
+product question with two or three options and a recommendation each, so that
+the person answers them all in one sitting.
 
 **Refused without it:** a pass with either document missing.
 
@@ -541,12 +550,13 @@ When a reviewer blocks, the way past is the same reviewer looking again. Its new
 verdict replaces the old one, because a gate reads the latest.
 
 Rework does not go round for ever. A gate recorded as failed
-[`loop.max_rework_rounds`](configuration.md#loop) times, or a reviewer that
-blocks `loop.max_review_rounds` times, hands the story to a person: the rework
-is not converging, and another round would meet the same wall. The count starts
-again once the person has answered. The failure that reaches the limit is
-recorded together with the hand-over, or the command is refused and records
-neither.
+[`loop.max_rework_rounds`](configuration.md#loop) times hands the story to a
+person: the rework is not converging, and another round would meet the same
+wall. A reviewer that blocks `loop.max_review_rounds` times sends the gate to
+[its arbiter](#the-arbiter), and the arbiter that blocks as many times hands the
+story over. The count starts again once the person has answered. The failure
+that reaches the limit is recorded together with the hand-over, or the command
+is refused and records neither.
 
 Recording a gate again, pass or fail, reopens every gate after it: each goes
 back to `pending`, with a note saying why, and has to be passed again. A new
@@ -560,6 +570,110 @@ story already marked `done` puts it back to `in_progress`: being done is a
 reading of the gate record, not a door that locks behind you. It is also the
 only way back in, which is what keeps reopening a decision somebody made rather
 than a side effect of running a command.
+
+### The arbiter
+
+A disagreement between a reviewer and the work it reviews is settled by the
+loop, not by a person. The reviewer's stopping block that reaches its limit,
+`loop.max_review_rounds` or its own `team.agents.<agent>.max_rounds`, sends the
+gate to an **arbiter**: a fresh instance of the same role, recorded as
+`<role>-arbiter`, or `security-2-arbiter` for an instance. `sdlc review add`
+names it, and `sdlc staffing show --gate` lists it in the reviewer's place, one
+step above the reviewer in `team.efforts`, or in `team.models` where effort is
+already at its ceiling. The runbook gives it the open findings, their closings
+and the reviewer's documents. It rules on each finding, fixed or declined with a
+reason, and each ruling is closed with `sdlc finding close` and recorded with
+`sdlc decide`.
+
+The arbiter's review stands for its role at that gate in place of the
+reviewer's latest, at the gate, in `sdlc review list` (as `reviewed_by`), in the
+staffing and in the hook's check of a commit. It stands from its first review
+until a person answers a `review_not_converging` hand-over that a block of that
+role, or of its arbiter, raised at that gate. An answer to another role's
+hand-over, or to another gate's, does not end it. Nor does a pre-commit
+approval, an answer to a failing gate, a failing agent, a stalled loop or work
+done by hand. Every escalation an answer resolves is read, so a hand-over
+stacked on top of a review's hides it from none.
+
+From the reviewer's limit-th block, and while its arbiter's review stands, the
+reviewer itself is refused at that gate, and the arbiter is refused before
+that block: one of the two is always the one taken. Between that block and the
+arbiter's first review, nothing stands yet, and the reviewer's blocks are
+counted since a person last answered for the story: any answer, to a stalled
+loop, a failing gate or another role's hand-over at the same gate, starts the
+count again, takes the reviewer, and leaves the arbiter refused until the limit
+comes round again. Only once the arbiter has reviewed does the boundary above
+hold. The arbiter's own limit-th
+stopping block, under the same setting, hands the story to a person as
+`review_not_converging`. A role the project disables has no arbiter, and its
+reviewer's limit hands over as before; an arbiter whose review already stood
+when the role was disabled keeps its turn, so one of the two is still taken.
+The trace records an arbiter's run as asked for the step above, and says
+nothing where a run could have been either.
+
+Two things rest on the runbook rather than on the binary, and are accepted:
+
+- **That the arbiter is a fresh instance.** It runs as its role's agent, and
+  nothing a model cannot forge says which instance recorded a review. The
+  trace's agent ids show it afterwards.
+- **A model's own `review_not_converging`.** A session that raises
+  `sdlc escalate review_not_converging` straight after a stopping block of the
+  role or its arbiter makes a person's answer to it end that dispute. That is
+  usually the agent that recorded the block, or the main conversation where the
+  hook, which records an agent's end only as far as it can, did not record that
+  agent's end. It gives what the arbiter's own limit gives, sooner, and still
+  takes a person's answer. `sdlc escalate` cannot refuse the kind: it keeps
+  every reason it has ever accepted, and the criterion that brought the arbiter
+  in asks it to.
+
+## Two kinds of decision
+
+Every question the loop meets is one of two kinds, and the kind says who
+answers it. Nothing in code sorts them: the agents judge each question against
+these two definitions, and the person reads every decision afterwards.
+
+A **product decision** is one about what the story's user sees or can do; about
+which of two readings of a criterion is meant, where the readings change that;
+about what is in or out of the story's scope; or about anything the project's
+`## SDLC Contract` reserves to a person. It is the person's. The loop stops for
+it once per story: the runbook escalates `product_decision` with every product
+question of the story, each with two or three options and a recommendation, so
+that the person answers them all in one sitting. `spec_unclear` and
+`design_decision` are for a product decision too, and for nothing else.
+
+An **implementation decision** is every other one: how an edge case behaves,
+whether a suspected bug is real, which of two designs meets the criteria, what
+kind of test to write, an internal name, and, where the contract allows it,
+which open-source dependency to use. The loop makes it and never escalates it.
+The agent that raised it recommends one option and says why, and the runbook
+applies that recommendation, or the [arbiter's](#the-arbiter) ruling where a
+reviewer and the work disagree, and records it:
+
+```console
+$ sdlc decide US-001 --question "..." --option "..." --option "..." --chosen "..." --reason "..." --by researcher
+```
+
+`sdlc decide` puts a `decision` event on the story's gate record, with the
+question, the options, the one chosen, the reason, who decided and the gate,
+and writes it into `.sdlc/stories/<ID>/DECISIONS.md` in the order made. A
+decision changes no gate, review, freeze, staffing or approval, and it answers
+nothing a person was asked. `sdlc log` lists each decision with its story, and
+`sdlc status` counts them as `decisions_unread` until your `sdlc ack` covers the
+story's commit. You read every one afterwards, and can open a story to change
+one.
+
+`--by` names the agent whose recommendation or ruling was applied, as the
+runbook reports it, not the session that ran the command. Any session may give
+any name the loop knows, and a person's name is refused. No gate reads it, and
+the trace shows which session ran the command, so this is accepted.
+
+Each agent says in its Rules, in these words, which of its own questions it
+recommends on. On a product decision it stops and hands back `blocked`, with
+two or three options and its recommendation in `blocked_on`, and the runbook
+takes that as no failure but escalates it as `spec_unclear` (which reading of a
+criterion is meant) or `design_decision`. The researcher does not stop: it marks
+each product question, counts it and finishes the analysis, so that Gate 2
+escalates every one at once as `product_decision`.
 
 ## Why approvals go stale
 

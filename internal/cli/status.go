@@ -70,6 +70,13 @@ type statusPayload struct {
 	// in the checkout that works the story, so that nobody learns of a pause
 	// only when the gate refuses.
 	PreCommitPause *pausePayload `json:"pre_commit_pause,omitempty"`
+	// DecisionsUnread is how many decisions no ack of a person's has covered,
+	// said at 0 too: a script reads 0 as read, and a key left out as an older
+	// sdlc. DecisionsUnknown is every story whose record could not be read, so
+	// its decisions are not in the count (US-131 AC-9).
+	DecisionsUnread  int      `json:"decisions_unread"`
+	DecisionsUnknown []string `json:"decisions_unknown,omitempty"`
+	decisionsLine    string
 }
 
 // pausePayload is what status says of the commit's pause. Approved is a pause
@@ -203,6 +210,8 @@ func runStatus(cmd *cobra.Command) error {
 	}
 
 	v.payload.Consolidate = consolidateOf(s, backlog)
+	unread := countUnreadDecisions(cmd.Context(), s, backlog, cmd.ErrOrStderr())
+	v.payload.DecisionsUnread, v.payload.DecisionsUnknown, v.payload.decisionsLine = unread.total, unread.unknown, unread.line()
 
 	if wantJSON(cmd) {
 		return emitJSON(cmd.OutOrStdout(), v.payload)
@@ -343,6 +352,9 @@ func (v *statusView) print(w io.Writer) {
 	for _, lw := range payload.WaitingToLand {
 		fmt.Fprintf(w, "  to land  %s  sdlc %s, pid %d, since %s, waits for %s\n",
 			lw.Story, lw.Command, lw.PID, lw.Since, cmp.Or(lw.For, "the landing lock"))
+	}
+	if payload.decisionsLine != "" {
+		fmt.Fprintf(w, "\n%s\n", payload.decisionsLine)
 	}
 	v.printAdvice(w, finished, notHereNext)
 	if payload.Consolidate != nil {

@@ -319,7 +319,7 @@ func (h *held) agentStopped(p notePayload, read Transcripts) {
 	}
 	if record != nil {
 		r["start"] = startOf(record, id)
-		r["asked_model"], r["asked_effort"] = askedFor(record, p.AgentType)
+		r["asked_model"], r["asked_effort"] = askedFor(record, h.cfg.Team, p.AgentType, id)
 	}
 	if read != nil && p.AgentTranscriptPath != "" {
 		if u, _, err := countsFrom(read, "agent", p.AgentTranscriptPath, 0); err == nil {
@@ -398,7 +398,60 @@ func startOf(record *model.Record, id string) string {
 // instance of a role runs as the role's agent type, so where the role has an
 // instance's row nothing is said: the trace does not know which instance this
 // run was, and claiming one would record a model nobody asked of it.
-func askedFor(record *model.Record, agentType string) (askedModel, askedEffort string) {
+//
+// An arbiter runs as its role's agent type too (US-131 AC-6), and is asked for
+// one step above its reviewer, as `sdlc staffing show` lists it (staffedAtGate
+// in internal/cli/staffing.go, the same Team.StepAbove). So the reviews this
+// run recorded say which it was: only the arbiter's is the step above, only the
+// role's is the role's row, and both, or none while the role has blocked the
+// gate the story is at since a person last answered, is nothing said, for the
+// same reason as an instance.
+func askedFor(record *model.Record, team config.Team, agentType, id string) (askedModel, askedEffort string) {
+	m, e := rowAskedFor(record, agentType)
+	if m == "" && e == "" {
+		return "", ""
+	}
+	agent := policy.NormalizeAgent(agentType)
+	own, ruled := reviewedIn(record, agent, id)
+	switch {
+	case own && ruled:
+		return "", ""
+	case ruled:
+		m, e = team.StepAbove(m, e)
+		return label(m, idMax), label(e, labelMax)
+	case own:
+		return m, e
+	}
+	if g, ok := record.NextGate(); ok && record.SinceDecision(model.EventReview, model.ReviewEvent(g, agent, model.VerdictBlock)) > 0 {
+		return "", ""
+	}
+	return m, e
+}
+
+// reviewedIn reports whether the agent's run with this id recorded a review
+// under the agent's own name, and under its arbiter's: the review events
+// between the run's newest agent_start and the end of the record.
+func reviewedIn(record *model.Record, agent, id string) (own, ruled bool) {
+	arbiter := model.ArbiterName(agent)
+	for _, e := range slices.Backward(record.Events) {
+		if e.Type == model.EventAgentStart && e.AgentID == id {
+			return own, ruled
+		}
+		if e.Type != model.EventReview {
+			continue
+		}
+		if fields := strings.Fields(e.Message); len(fields) == 3 {
+			own = own || fields[1] == agent
+			ruled = ruled || fields[1] == arbiter
+		}
+	}
+	// No start to bound the run: what it recorded is not known.
+	return false, false
+}
+
+// rowAskedFor is what the staffing asked for the agent's own row, with what a
+// person assigned over it.
+func rowAskedFor(record *model.Record, agentType string) (askedModel, askedEffort string) {
 	if record.Staffing == nil || !policy.IsLoopRole(agentType) {
 		return "", ""
 	}

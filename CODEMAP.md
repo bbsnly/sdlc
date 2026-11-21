@@ -1000,6 +1000,24 @@ whether or not the reviewer is expected, and refuses on any stamped with
 another tree. `cli` and `hook` do not import each other, so a rule all three
 share lives in `internal/model`.
 
+All three read a reviewer's verdict through `Record.StandingReview`, which
+gives its arbiter's latest review instead where one stands (`<role>-arbiter`,
+or `<role>-<n>-arbiter` for an instance; `model.ArbiterName` and
+`ArbiterOf`). An arbiter's review stands from its first review until a person
+answers a `review_not_converging` hand-over that a block of that role, or of
+its arbiter, raised at that gate. `answeredReviews` finds that answer: the
+escalation's kind is read from its paired `Escalations` entry, and the block
+that raised it is the review event just before the escalate event, past
+`findings` and `budget` events only. An answer to another role's or another
+gate's hand-over, a pre-commit approval, or an answer to a failing gate, a
+failing agent, a stalled loop or work done by hand does not end it. `saveReview`
+writes the hand-over straight after the block for that reason. `review add`
+refuses the reviewer at the gate once its limit is reached or its arbiter
+stands, and the arbiter before then (`refuseOutOfTurn`). The limit is counted
+with `SinceDecision` (`arbiterDue`), so before the arbiter's first review any
+answer of a person's starts the reviewer's count again; the boundary above
+holds only once the arbiter has reviewed, and `turnBack` words the two.
+
 `sdlc gate analysis pass --security-sensitive` is the only writer of
 `Record.Security`. It is set whenever the flag is given, on any recording of
 that gate, and no hook rule asks which agent runs `sdlc gate`.

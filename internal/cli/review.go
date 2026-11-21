@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -31,6 +32,9 @@ type reviewPayload struct {
 	// HandedOver is the kind of escalation, when this block was one too many
 	// and the story went to a person.
 	HandedOver string `json:"handed_over,omitempty"`
+	// Arbiter is the <role>-arbiter the gate goes to, on the reviewer's
+	// limit-th stopping block (US-131 AC-6).
+	Arbiter string `json:"arbiter,omitempty"`
 }
 
 type reviewListPayload struct {
@@ -67,6 +71,9 @@ type reviewInfo struct {
 	// gate does not wait for, bar the verifier and the code reviewer, whose
 	// review a person then records.
 	Disabled bool `json:"disabled,omitempty"`
+	// ReviewedBy is the arbiter whose review stands for the reviewer, where
+	// one does: the verdict and the round are then the arbiter's.
+	ReviewedBy string `json:"reviewed_by,omitempty"`
 }
 
 func newReviewCmd() *cobra.Command {
@@ -262,6 +269,9 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 	if err := refuseUnwaited(cmd.Context(), s, record, gate, reviewer.Role); err != nil {
 		return err
 	}
+	if err := refuseOutOfTurn(s, record, gate, reviewer.Role); err != nil {
+		return err
+	}
 	subject, err := gateSubject(cmd.Context(), readingOf(s), id, gate)
 	if err != nil {
 		return err
@@ -281,7 +291,7 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 	record.Append(model.EventReview, model.ReviewEvent(gate, reviewer.Role, verdict), s.Now())
 	noteListedFindings(record, rev, s.Now())
 	late.record(record, s.Now())
-	handedOver, message, err := saveReview(cmd, s, record, reviewer, doc, verdict, f.note)
+	saved, err := saveReview(cmd, s, record, reviewer, doc, verdict, f.note)
 	if err != nil {
 		return err
 	}
@@ -290,13 +300,16 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 		return emitJSON(cmd.OutOrStdout(), reviewPayload{
 			OK: true, Story: id, Gate: string(gate), Role: reviewer.Role,
 			Verdict: string(verdict), Round: rev.Round, Path: path, Subject: subject,
-			HandedOver: handedOver, Important: f.important, Nits: f.nits,
+			HandedOver: saved.handedOver, Arbiter: saved.arbiter, Important: f.important, Nits: f.nits,
 		})
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s  %s (round %d)\n  %s\n",
 		id, gate, reviewer.Role, verdict, rev.Round, path)
-	if handedOver != "" {
-		sayHandedOver(cmd.OutOrStdout(), id, message)
+	switch {
+	case saved.handedOver != "":
+		sayHandedOver(cmd.OutOrStdout(), id, saved.message)
+	case saved.arbiter != "":
+		fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", saved.message)
 	}
 	return nil
 }
@@ -310,7 +323,12 @@ func refuseUnwaited(ctx context.Context, s *store.Store, record *model.Record, g
 	team := s.Config().Team
 	base := model.BaseRole(name)
 	what := string(gate) + " does not wait for a review from " + quote(name)
-	if _, n, ok := model.InstanceOf(name); ok && team.Enabled(base) && n > team.Seats(base) {
+	// An arbiter sits in its reviewer's seat.
+	seat := name
+	if reviewer, ok := model.ArbiterOf(name); ok {
+		seat = reviewer
+	}
+	if _, n, ok := model.InstanceOf(seat); ok && team.Enabled(base) && n > team.Seats(base) {
 		return sdlcerr.New(sdlcerr.UnknownReviewer, what,
 			fmt.Sprintf("%s is past team.agents.%s.instances, which gives %s %d", name, base, base, team.Seats(base)))
 	}
@@ -342,31 +360,179 @@ func reviewedStory(s *store.Store, named string) (string, error) {
 	return named, nil
 }
 
+// refuseOutOfTurn refuses whichever of a reviewer and its arbiter the gate is
+// not with, before anything is recorded (US-131 AC-6, T-1 of the threats). An
+// arbiter reviews only from the block that reaches its reviewer's limit, or
+// while its own review stands, so its name cannot dodge a blocking review. The
+// reviewer is refused from that block on: the runbook could otherwise send the
+// work back to it until it approved, and pass the gate with neither the arbiter
+// nor a person (security F-1 of the design review). One of the two is always
+// taken, so nothing deadlocks.
+func refuseOutOfTurn(s *store.Store, record *model.Record, gate model.Gate, name string) error {
+	role, isArbiter := model.ArbiterOf(name)
+	if !isArbiter {
+		role = name
+	}
+	reviewer, ok := model.FindReviewer(gate, role)
+	if !ok {
+		return nil
+	}
+	arbiter := model.ArbiterName(role)
+	due, blocks, limit, setting := arbiterDue(s, record, reviewer)
+	stands := arbiterStands(record, gate, role)
+	switch {
+	case isArbiter && !stands && !s.Config().Team.Enabled(reviewer.Role):
+		// A disabled verifier or code reviewer is still waited for, so its
+		// arbiter's name gets this far; its block does stop the gate, by a
+		// hand-over, and nobody is delegated to (code-reviewer F-2). An arbiter
+		// whose review already stands keeps its turn: a role disabled after
+		// that had both names refused, and the gate taking neither
+		// (security F-1 of the code review, verifier F-3 of the verifier's review).
+		base := model.BaseRole(role)
+		return sdlcerr.New(sdlcerr.UnknownReviewer,
+			name+" does not review "+string(gate),
+			role+" is disabled in team.agents."+base+".enabled, so it has no arbiter: its limit-th block hands the story to a person").
+			WithFix("a person records " + role + "'s review by hand, under its own name")
+	case isArbiter && !due && !stands && !arbitrated(s, record, reviewer):
+		// Without this the refusal of an advisory reviewer's arbiter read as
+		// a count not yet reached, though the count had reached the limit.
+		return sdlcerr.New(sdlcerr.UnknownReviewer,
+			name+" has nothing to rule on at "+string(gate),
+			role+"'s block does not stop "+string(gate)+" here, so no number of them sends the gate to an arbiter").
+			WithFix("delegate to sdlc:" + model.BaseRole(role) + " as " + role + " for the reviewer's own review")
+	case isArbiter && !due && !stands:
+		return sdlcerr.New(sdlcerr.UnknownReviewer,
+			name+" reviews "+string(gate)+" only from the block that reaches "+role+"'s limit since a person last answered",
+			fmt.Sprintf("%s is %d, and %s %s", setting, limit, role, blockedIt(blocks))).
+			WithFix("delegate to sdlc:" + model.BaseRole(role) + " as " + role + " for the reviewer's own review")
+	case isArbiter || !due && !stands:
+		return nil
+	}
+	why := fmt.Sprintf("%s %s since a person last answered, and %s is %d", role, blockedIt(blocks), setting, limit)
+	if stands {
+		why = arbiter + "'s review stands for " + role + " at " + string(gate)
+	}
+	return sdlcerr.New(sdlcerr.UnknownReviewer, string(gate)+" has gone to "+arbiter, why).
+		WithFix("delegate to a fresh sdlc:" + model.BaseRole(role) + " as " + arbiter + ", asked for what sdlc staffing show --gate " +
+			string(gate) + " gives it; " + turnBack(role, gate, stands))
+}
+
+// blockedIt is a reviewer's count of stopping blocks in words: the refusal of
+// an arbiter not yet due is most often read at 0 or 1, where "1 times" read
+// badly (human-advocate F-6).
+func blockedIt(n int) string {
+	switch n {
+	case 0:
+		return "has not blocked it yet"
+	case 1:
+		return "has blocked it once"
+	}
+	return "has blocked it " + strconv.Itoa(n) + " times"
+}
+
+// raisedAt names the one hand-over whose answer gives a reviewer its turn back
+// once its arbiter has reviewed. An answer to another role's at the same gate
+// does not, so the words name the role (human-advocate F-15 of the design
+// review).
+func raisedAt(role string, gate model.Gate) string {
+	return "a review_not_converging hand-over raised by " + role + " or " + model.ArbiterName(role) + " at " + string(gate)
+}
+
+// turnBack says what gives a reviewer its turn back at a gate that has gone to
+// its arbiter. Until the arbiter's first review the reviewer's blocks are
+// counted since a person last answered, so any answer starts the count again;
+// from that review only an answer to the role's own hand-over ends its
+// standing. The words once named only the second, and a runbook that trusted
+// them delegated to an arbiter that was then refused (verifier F-1).
+func turnBack(role string, gate model.Gate, stands bool) string {
+	own := "a person's answer to " + raisedAt(role, gate) + " gives " + role + " its turn again"
+	if stands {
+		return "only " + own
+	}
+	arbiter := model.ArbiterName(role)
+	return "until " + arbiter + " first reviews, any answer a person gives the story starts " + role +
+		"'s count again and gives it its turn, and " + arbiter + " waits for the next limit; from that review, only " + own
+}
+
+// reviewLimit is the most stopping blocks a reviewer gives a gate: the agent's
+// own max_rounds where it has one, counted for each name, so that an instance
+// and an arbiter count their own blocks under the role's setting; else
+// loop.max_review_rounds. Zero is no limit.
+func reviewLimit(cfg config.Config, role string) (limit int, setting string) {
+	if own, ok := cfg.Team.MaxRounds(role); ok {
+		return own, "team.agents." + model.BaseRole(role) + ".max_rounds"
+	}
+	return cfg.Loop.MaxReviewRounds, "loop.max_review_rounds"
+}
+
+// arbiterDue reports whether a reviewer's stopping blocks of its gate since a
+// person last answered have reached its limit, so that the gate goes to its
+// arbiter, with the count, the limit and the setting it came from. A disabled
+// role has no arbiter, and hands over at its reviewer's limit as before.
+func arbiterDue(s *store.Store, record *model.Record, reviewer model.Reviewer) (due bool, blocks, limit int, setting string) {
+	limit, setting = reviewLimit(s.Config(), reviewer.Role)
+	blocks = record.SinceDecision(model.EventReview, model.ReviewEvent(reviewer.Gate, reviewer.Role, model.VerdictBlock))
+	due = arbitrated(s, record, reviewer) && limit > 0 && blocks >= limit
+	return due, blocks, limit, setting
+}
+
+// arbitrated reports whether a reviewer's blocks can send its gate to an
+// arbiter at all: only a block that stops the gate counts, and a disabled role
+// has no arbiter.
+func arbitrated(s *store.Store, record *model.Record, reviewer model.Reviewer) bool {
+	return s.Config().Team.Enabled(reviewer.Role) && reviewer.Stops(reviewPolicy(s, record), model.VerdictBlock)
+}
+
+// arbiterStands reports whether the arbiter's review is the one that stands
+// for the role at the gate.
+func arbiterStands(record *model.Record, gate model.Gate, role string) bool {
+	standing, ok := record.StandingReview(gate, role)
+	return ok && standing.Role == model.ArbiterName(role)
+}
+
+// savedReview is what saving a review led to: the kind of hand-over, or the
+// arbiter the gate went to, and what the person or the runbook is told.
+type savedReview struct {
+	handedOver, arbiter, message string
+}
+
 // saveReview saves the record with the review on it. A block that cannot stop
 // the gate is a finding, not a round the rework lost, so only a block that
-// stops it counts towards handing the story over.
+// stops it counts. A reviewer's limit-th sends the gate to its arbiter in the
+// same save, and the iteration goes on; the arbiter's own limit-th, or a
+// disabled role's reviewer's, hands the story over (US-131 AC-6).
+//
+// A hand-over is written straight after the review, its findings and any
+// budget event, and nothing else: model.Record.answeredReviews finds the block
+// that raised it by that, and an event of another kind in between would make a
+// person's answer end no arbiter's standing.
 func saveReview(cmd *cobra.Command, s *store.Store, record *model.Record, reviewer model.Reviewer,
 	doc *store.ReviewDocument, verdict model.Verdict, note string,
-) (handedOver, message string, err error) {
+) (savedReview, error) {
 	if !reviewer.Stops(reviewPolicy(s, record), verdict) {
-		return "", "", saveRecorded(s, record, doc)
+		return savedReview{}, saveRecorded(s, record, doc)
 	}
 	gate := doc.Gate
-	// The agent's own limit where it has one, counted for each name, so an
-	// instance counts its own blocks under its role's setting.
-	limit, setting := s.Config().Loop.MaxReviewRounds, "loop.max_review_rounds"
-	if own, ok := s.Config().Team.MaxRounds(reviewer.Role); ok {
-		limit, setting = own, "team.agents."+model.BaseRole(reviewer.Role)+".max_rounds"
+	if _, isArbiter := model.ArbiterOf(reviewer.Role); !isArbiter {
+		if due, blocks, limit, setting := arbiterDue(s, record, reviewer); due {
+			arbiter := model.ArbiterName(reviewer.Role)
+			message := fmt.Sprintf("%s has blocked %s %d times, and %s is %d: the gate goes to %s, a fresh sdlc:%s "+
+				"that rules on the open findings and whose review then stands for %s at %s; %s is refused there, and %s",
+				reviewer.Role, gate, blocks, setting, limit, arbiter, model.BaseRole(reviewer.Role),
+				reviewer.Role, gate, reviewer.Role, turnBack(reviewer.Role, gate, false))
+			return savedReview{arbiter: arbiter, message: message}, saveRecorded(s, record, doc)
+		}
 	}
+	limit, setting := reviewLimit(s.Config(), reviewer.Role)
 	blocks := record.SinceDecision(model.EventReview,
 		model.ReviewEvent(gate, reviewer.Role, model.VerdictBlock))
-	message = fmt.Sprintf("%s has blocked %s %d times, and %s is %d, "+
+	message := fmt.Sprintf("%s has blocked %s %d times, and %s is %d, "+
 		"so the rework is not converging on what it asks for. The last note: %s",
 		reviewer.Role, gate, blocks, setting, limit, lastNote(note))
-	handedOver, err = handOverAt(cmd, s, record, doc, limitCount{
-		count: blocks, limit: limit, kind: "review_not_converging", message: message, what: "the block",
+	handedOver, err := handOverAt(cmd, s, record, doc, limitCount{
+		count: blocks, limit: limit, kind: model.KindReviewNotConverging, message: message, what: "the block",
 	})
-	return handedOver, message, err
+	return savedReview{handedOver: handedOver, message: message}, err
 }
 
 func newReviewListCmd() *cobra.Command {
@@ -492,7 +658,7 @@ func describeReviewer(ctx context.Context, rd *reading, record *model.Record, id
 		Blocking:       r.Blocks(policy),
 		BlocksOnBreach: !r.Blocks(policy) && r.OnBreach(policy),
 	}
-	if latest, ok := record.LatestReview(r.Gate, r.Role); ok {
+	if latest, ok := record.StandingReview(r.Gate, r.Role); ok {
 		// Asked only where there is a review to compare it with: the tests
 		// gate's subject hashes every test file.
 		subject, err := gateSubject(ctx, rd, id, r.Gate)
@@ -500,6 +666,9 @@ func describeReviewer(ctx context.Context, rd *reading, record *model.Record, id
 			return reviewInfo{}, err
 		}
 		info.Verdict, info.Round = string(latest.Verdict), latest.Round
+		if latest.Role != r.Role {
+			info.ReviewedBy = latest.Role
+		}
 		info.Stale = latest.Subject != subject
 		if info.Stale && r.Gate == model.GateDesignReview && store.IsPlanRevision(latest.Subject) {
 			info.ReviewedSubject = latest.Subject
@@ -550,15 +719,26 @@ func describeReviewState(i reviewInfo) string {
 			"; delegate to sdlc:project-manager to amend the staffing if the story needs it"
 	case i.Verdict == "":
 		return "not reviewed"
+	}
+	// The review that stands is the arbiter's where ReviewedBy names one: the
+	// reviewer's own name with the arbiter's suffix, which StandingReview
+	// matched exactly, so no free text from the record. Its revision is the
+	// arbiter's, so the diff is asked from the arbiter's review too; from the
+	// reviewer's own it began at another plan (code-reviewer F-1).
+	round := " (round " + strconv.Itoa(i.Round)
+	if i.ReviewedBy != "" {
+		round = " (by " + i.ReviewedBy + ", round " + strconv.Itoa(i.Round)
+	}
+	switch {
 	case i.ReviewedSubject != "":
 		// The role is the reviewers' table's, and the subject has passed the check
 		// that it is a hash: neither is free text from the record.
-		return verdict + " (round " + strconv.Itoa(i.Round) + ", stale -- what was reviewed has changed since; reviewed revision " +
-			i.ReviewedSubject + "; see sdlc artifact diff plan --since " + i.Role + ")"
+		return verdict + round + ", stale -- what was reviewed has changed since; reviewed revision " +
+			i.ReviewedSubject + "; see sdlc artifact diff plan --since " + cmp.Or(i.ReviewedBy, i.Role) + ")"
 	case i.Stale:
-		return verdict + " (round " + strconv.Itoa(i.Round) + ", stale -- what was reviewed has changed since)"
+		return verdict + round + ", stale -- what was reviewed has changed since)"
 	default:
-		return verdict + " (round " + strconv.Itoa(i.Round) + ")"
+		return verdict + round + ")"
 	}
 }
 
@@ -623,16 +803,21 @@ func requireReviews(ctx context.Context, rd *reading, id string, gate model.Gate
 	var outstanding, blocked []string
 	for _, r := range reviewers {
 		blocking := r.Blocks(policy)
-		latest, ok := record.LatestReview(gate, r.Role)
+		// The review that stands, the arbiter's where one does, and named so.
+		latest, ok := record.StandingReview(gate, r.Role)
+		by := r.Role
+		if ok {
+			by = latest.Role
+		}
 		switch {
 		case !ok:
 			outstanding = append(outstanding, r.Role+" has not reviewed"+back[r.Role])
 		case latest.Subject != subject:
-			outstanding = append(outstanding, r.Role+" reviewed something that has changed since"+back[r.Role])
+			outstanding = append(outstanding, by+" reviewed something that has changed since"+back[r.Role])
 		case r.Stops(policy, latest.Verdict):
-			blocked = append(blocked, r.Role+" blocked"+describeNote(latest.Note))
+			blocked = append(blocked, by+" blocked"+describeNote(latest.Note))
 		case blocking && latest.Verdict != model.VerdictApprove:
-			outstanding = append(outstanding, r.Role+" has not approved")
+			outstanding = append(outstanding, by+" has not approved")
 		}
 	}
 	if len(blocked) > 0 {

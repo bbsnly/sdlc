@@ -140,7 +140,7 @@ stderr:
 $ sdlc status --json
 exit 0
 stdout:
-{"ok":true,"backlog":{"ready":1},"next":{"story":"US-001","title":"Example: reject invoices with a non-positive total"}}
+{"ok":true,"backlog":{"ready":1},"next":{"story":"US-001","title":"Example: reject invoices with a non-positive total"},"decisions_unread":0}
 stderr:
 
 $ sdlc story list --json
@@ -212,7 +212,7 @@ stderr:
 $ sdlc status --json
 exit 0
 stdout:
-{"ok":true,"active":"US-001","title":"Example: reject invoices with a non-positive total","next_gate":"dor","backlog":{"in_progress":1},"cost":{"spent_usd":0,"budget_usd":60},"staffing":"none"}
+{"ok":true,"active":"US-001","title":"Example: reject invoices with a non-positive total","next_gate":"dor","backlog":{"in_progress":1},"cost":{"spent_usd":0,"budget_usd":60},"staffing":"none","decisions_unread":0}
 stderr:
 
 $ sdlc story list --json
@@ -494,7 +494,7 @@ stderr:
 $ sdlc status --json
 exit 0
 stdout:
-{"ok":true,"active":"US-001","title":"Example: reject invoices with a non-positive total","gates":{"analysis":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"next_gate":"code_review","backlog":{"in_progress":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"staffing":"recorded"}
+{"ok":true,"active":"US-001","title":"Example: reject invoices with a non-positive total","gates":{"analysis":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"next_gate":"code_review","backlog":{"in_progress":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"staffing":"recorded","decisions_unread":0}
 stderr:
 
 $ sdlc story list --json
@@ -578,7 +578,7 @@ stderr:
 $ sdlc status --json
 exit 0
 stdout:
-{"ok":true,"backlog":{"awaiting_human":1},"waiting":[{"story":"US-001","title":"Example: reject invoices with a non-positive total","type":"spec_unclear","message":"is a zero total refused too?","at":"<time>"}]}
+{"ok":true,"backlog":{"awaiting_human":1},"waiting":[{"story":"US-001","title":"Example: reject invoices with a non-positive total","type":"spec_unclear","message":"is a zero total refused too?","at":"<time>"}],"decisions_unread":0}
 stderr:
 
 $ sdlc story list --json
@@ -680,7 +680,7 @@ stderr:
 $ sdlc status --json
 exit 0
 stdout:
-{"ok":true,"active":"US-001","title":"Example: reject invoices with a non-positive total","gates":{"analysis":"pass","code_review":"pass","commit":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","retro":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"backlog":{"done":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":1.25,"budget_usd":60,"fraction":0.020833333333333332},"staffing":"recorded"}
+{"ok":true,"active":"US-001","title":"Example: reject invoices with a non-positive total","gates":{"analysis":"pass","code_review":"pass","commit":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","retro":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"backlog":{"done":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":1.25,"budget_usd":60,"fraction":0.020833333333333332},"staffing":"recorded","decisions_unread":0}
 stderr:
 
 $ sdlc story list --json
@@ -1240,7 +1240,7 @@ stderr:
 $ sdlc status --json
 exit 0
 stdout:
-{"ok":true,"backlog":{"done":1}}
+{"ok":true,"backlog":{"done":1},"decisions_unread":0}
 stderr:
 
 $ sdlc story list --json

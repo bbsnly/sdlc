@@ -342,13 +342,13 @@ func refuseLeavingOut(team config.Team, record *model.Record, agent string) erro
 		return e
 	}
 	for _, r := range model.Reviewers {
-		// The latest review, stale or not: a block of work that has since
-		// changed is still the reviewer's last word on it. An instance's is
-		// recorded under its own name.
-		if latest, ok := record.LatestReview(r.Gate, agent); r.Role == model.BaseRole(agent) && !record.Pass(r.Gate) &&
+		// The review that stands, stale or not: a block of work that has since
+		// changed is still the last word on it. An instance's is recorded
+		// under its own name, and its arbiter's stands in its place.
+		if latest, ok := record.StandingReview(r.Gate, agent); r.Role == model.BaseRole(agent) && !record.Pass(r.Gate) &&
 			ok && latest.Verdict == model.VerdictBlock {
 			return sdlcerr.New(sdlcerr.StaffingReviewBlocks,
-				agent+" blocked "+string(r.Gate)+", and that gate has not passed",
+				latest.Role+" blocked "+string(r.Gate)+", and that gate has not passed",
 				"leaving the reviewer out would pass the gate over its block")
 		}
 	}
@@ -619,12 +619,32 @@ func staffedAtGate(ctx context.Context, s *store.Store, record *model.Record, ga
 		if err != nil {
 			return err
 		}
-		if !out && r.Expected(policy) && team.Enabled(r.Role) {
+		switch {
+		case out || !r.Expected(policy) || !team.Enabled(r.Role):
+		case gone(s, record, r):
+			// The arbiter in the reviewer's place, which review add then
+			// refuses, one step above what the reviewer was asked for. No row
+			// is written for it: staffing set would demand one of every story.
+			var row model.Staffed
+			if team.StaffingOn() {
+				row, _ = staffingRow(record, r.Role)
+			}
+			m, e := team.StepAbove(row.AskedModel, row.AskedEffort)
+			payload.AtGate = append(payload.AtGate, atGateInfo{Agent: model.ArbiterName(r.Role), AskedModel: m, AskedEffort: e})
+		default:
 			at(r.Role)
 		}
 		payload.markBroughtBack(r.Role, by)
 	}
 	return nil
+}
+
+// gone reports whether the reviewer's gate has gone to its arbiter: from the
+// block that reached its limit, and while the arbiter's review stands. It is
+// the rule review add refuses the reviewer by (refuseOutOfTurn).
+func gone(s *store.Store, record *model.Record, r model.Reviewer) bool {
+	due, _, _, _ := arbiterDue(s, record, r)
+	return due || arbiterStands(record, r.Gate, r.Role)
 }
 
 // markBroughtBack names who brought the reviewer back, on its row.

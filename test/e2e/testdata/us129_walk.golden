@@ -5,7 +5,7 @@
 --- stderr
 sdlc: commands.smoke was not run, because neither sh nor bash is on PATH, so this starts without knowing whether trunk works
 === status --json #1: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","next_gate":"dor","backlog":{"in_progress":1,"ready":1},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]}}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","next_gate":"dor","backlog":{"in_progress":1,"ready":1},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]},"decisions_unread":0}
 === hook PreToolUse Bash: cd "<tree>" && sdlc gate dor pass --note worked by the session #1: exit 0
 {"continue":true}
 === gate dor pass --note worked by the session #1: exit 0
@@ -13,7 +13,7 @@ US-001  dor  pass
   worked by the session
   test-reviewer is disabled in team.agents.test-reviewer.enabled
 === status --json #2: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"dor":"pass"},"next_gate":"analysis","backlog":{"in_progress":1,"ready":1},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]}}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"dor":"pass"},"next_gate":"analysis","backlog":{"in_progress":1,"ready":1},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]},"decisions_unread":0}
 === hook PreToolUse Bash [sdlc:researcher]: cd "<tree>" && sdlc artifact write analysis #1: exit 0
 {"continue":true}
 === artifact write analysis #1: exit 0
@@ -29,7 +29,7 @@ US-001  analysis  pass
   worked by the session
   test-reviewer is disabled in team.agents.test-reviewer.enabled
 === status --json #3: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","dor":"pass"},"next_gate":"tests_frozen","backlog":{"in_progress":1,"ready":1},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]}}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","dor":"pass"},"next_gate":"tests_frozen","backlog":{"in_progress":1,"ready":1},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]},"decisions_unread":0}
 === hook PreToolUse Write [sdlc:sdet]: <tree>/invoice_test.go #1: exit 0
 {"continue":true}
 === hook PreToolUse Bash [sdlc:sdet]: cd "<tree>" && sdlc artifact write test_plan #1: exit 0
@@ -48,7 +48,7 @@ US-001  tests_frozen  pass
   worked by the session
   test-reviewer is disabled in team.agents.test-reviewer.enabled
 === status --json #4: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","dor":"pass","tests_frozen":"pass"},"next_gate":"plan","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]}}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","dor":"pass","tests_frozen":"pass"},"next_gate":"plan","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]},"decisions_unread":0}
 === hook PreToolUse Edit [sdlc:implementer]: <tree>/invoice_test.go #1: exit 0
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"invoice_test.go is a frozen acceptance test. It was locked by content when the test gate passed, and an agent that can edit its own tests will eventually edit them -- which makes every gate after this one theatre. Instead: change the code until the test passes; if the test itself is wrong, say which acceptance criterion it got wrong and stop: the person running the session lifts the freeze with `/sdlc:unfreeze`, or `sdlc unfreeze --reason \"...\"`, which puts the change on the record [frozen-test-is-not-edited]"}}
 === hook PreToolUse Bash [sdlc:implementer]: cd "<tree>" && sdlc artifact write plan #1: exit 0
@@ -62,7 +62,7 @@ US-001  plan  pass
   worked by the session
   test-reviewer is disabled in team.agents.test-reviewer.enabled
 === status --json #5: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","dor":"pass","plan":"pass","tests_frozen":"pass"},"next_gate":"design_review","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]}}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","dor":"pass","plan":"pass","tests_frozen":"pass"},"next_gate":"design_review","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]},"decisions_unread":0}
 === hook PreToolUse Bash [sdlc:architect]: cd "<tree>" && sdlc review add design_review architect approve #1: exit 0
 {"continue":true}
 === review add design_review architect approve #1: exit 0
@@ -95,7 +95,7 @@ US-001  design_review  pass
   worked by the session
   test-reviewer is disabled in team.agents.test-reviewer.enabled
 === status --json #6: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","plan":"pass","tests_frozen":"pass"},"next_gate":"implementation","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]}}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","plan":"pass","tests_frozen":"pass"},"next_gate":"implementation","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]},"decisions_unread":0}
 === hook PreToolUse Write [sdlc:implementer]: <tree>/invoice.go #1: exit 0
 {"continue":true}
 === hook PreToolUse Bash: cd "<tree>" && sdlc gate implementation pass --note worked by the session #1: exit 0
@@ -105,7 +105,7 @@ US-001  implementation  pass
   worked by the session
   test-reviewer is disabled in team.agents.test-reviewer.enabled
 === status --json #7: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass"},"next_gate":"verification","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]}}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass"},"next_gate":"verification","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]},"decisions_unread":0}
 === hook PreToolUse Bash [sdlc:verifier]: cd "<tree>" && sdlc artifact write verification #1: exit 0
 {"continue":true}
 === artifact write verification #1: exit 0
@@ -117,7 +117,7 @@ US-001  verification  pass
   worked by the session
   test-reviewer is disabled in team.agents.test-reviewer.enabled
 === status --json #8: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass"},"next_gate":"verifier_review","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]}}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass"},"next_gate":"verifier_review","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]},"decisions_unread":0}
 === hook PreToolUse Bash [sdlc:verifier]: cd "<tree>" && sdlc review add verifier_review verifier approve #1: exit 0
 {"continue":true}
 === review add verifier_review verifier approve #1: exit 0
@@ -130,7 +130,7 @@ US-001  verifier_review  pass
   worked by the session
   test-reviewer is disabled in team.agents.test-reviewer.enabled
 === status --json #9: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"next_gate":"code_review","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]}}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"next_gate":"code_review","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]},"decisions_unread":0}
 === hook PreToolUse Bash [sdlc:code-reviewer]: cd "<tree>" && sdlc review add code_review code-reviewer approve #1: exit 0
 {"continue":true}
 === review add code_review code-reviewer approve #1: exit 0
@@ -158,7 +158,7 @@ US-001  code_review  pass
   worked by the session
   test-reviewer is disabled in team.agents.test-reviewer.enabled
 === status --json #10: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","code_review":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"next_gate":"commit","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]}}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","code_review":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"next_gate":"commit","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]},"decisions_unread":0}
 === hook PreToolUse Bash: cd "<tree>" && git commit -m US-001 #1: exit 0
 {"continue":true}
 === hook PreToolUse Bash: cd "<tree>" && sdlc gate commit pass --note worked by the session #1: exit 0
@@ -169,7 +169,7 @@ US-001  commit  pass
   committed on story/US-001 in <hash>..<hash>
   test-reviewer is disabled in team.agents.test-reviewer.enabled
 === status --json #11: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","code_review":"pass","commit":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"next_gate":"retro","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","code_review":"pass","commit":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"next_gate":"retro","backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"decisions_unread":0}
 === hook PreToolUse Bash [sdlc:bookkeeper]: cd "<tree>" && sdlc artifact write retro #1: exit 0
 {"continue":true}
 === artifact write retro #1: exit 0
@@ -183,7 +183,7 @@ US-001  retro  pass
 Every gate on US-001 has passed. `sdlc stop` in .sdlc/worktrees/US-001 lands it on main.
   test-reviewer is disabled in team.agents.test-reviewer.enabled
 === status --json #12: exit 0
-{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","code_review":"pass","commit":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","retro":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}]}
+{"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","gates":{"analysis":"pass","code_review":"pass","commit":"pass","design_review":"pass","dor":"pass","implementation":"pass","plan":"pass","retro":"pass","tests_frozen":"pass","verification":"pass","verifier_review":"pass"},"backlog":{"in_progress":1,"ready":1},"freeze":{"story":"US-001","at":"<time>","files":1,"intact":true},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"decisions_unread":0}
 === hook PreToolUse Bash: cd "<tree>" && sdlc story list #1: exit 0
 {"continue":true}
 === story list #1: exit 0

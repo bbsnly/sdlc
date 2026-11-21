@@ -86,6 +86,9 @@ type logEntry struct {
 	// LandedWithoutPause is the commit gate's latest pass where nothing paused
 	// it for a person: what was committed without their sign-off.
 	LandedWithoutPause []logEvent `json:"landed_without_pause,omitempty"`
+	// Decisions is every implementation decision the loop recorded on the
+	// story with `sdlc decide`, in the order made (US-131 AC-3).
+	Decisions []logDecision `json:"decisions,omitempty"`
 	// HeldBy is the checkout holding a story not yet finished, where the
 	// repository has more than one.
 	HeldBy string `json:"held_by,omitempty"`
@@ -112,6 +115,17 @@ type logReviewCount struct {
 	Round     int    `json:"round"`
 	Important *int   `json:"important,omitempty"`
 	Nits      *int   `json:"nits,omitempty"`
+}
+
+// logDecision is one decision, as `sdlc decide` recorded it.
+type logDecision struct {
+	At       string   `json:"at"`
+	Gate     string   `json:"gate"`
+	By       string   `json:"by,omitempty"`
+	Question string   `json:"question"`
+	Options  []string `json:"options,omitempty"`
+	Chosen   string   `json:"chosen,omitempty"`
+	Reason   string   `json:"reason,omitempty"`
 }
 
 type logEvent struct {
@@ -335,6 +349,10 @@ func noteEvents(e *logEntry, r *model.Record) {
 			e.LandedWithoutPause = nil
 		case ev.Type == model.EventLandedWithoutPause:
 			e.LandedWithoutPause = []logEvent{{At: ev.At, Message: ev.Message + approvedAfter(r, ev.At)}}
+		case ev.Type == model.EventDecision:
+			c := ev.Decision()
+			e.Decisions = append(e.Decisions, logDecision{At: ev.At, Gate: string(c.Gate), By: c.By,
+				Question: c.Question, Options: c.Options, Chosen: c.Chosen, Reason: c.Reason})
 		}
 	}
 }
@@ -495,6 +513,9 @@ func printLogEntry(w io.Writer, e logEntry) {
 	for _, ev := range e.LandedWithoutPause {
 		fmt.Fprintf(w, "  no pause   %s\n", oneLine(ev.Message))
 	}
+	for _, d := range e.Decisions {
+		fmt.Fprintf(w, "  decided    %s\n", describeDecision(d))
+	}
 	for _, esc := range e.Escalations {
 		answer := "waiting"
 		if esc.Resolved {
@@ -605,3 +626,17 @@ func headPast(head, end string) string {
 }
 
 func shortCommit(sha string) string { return oneLine(sha[:min(len(sha), 12)]) }
+
+// describeDecision is a decision on one line of the log. Each value is a
+// model's and is quoted, as the staffing's reason is, so that a question that
+// holds "-- chose" stays inside its quotes and none can end the line (security
+// F-3 of the design review). The gate and --by are names sdlc checked when it
+// recorded them, and are only made safe to print.
+func describeDecision(d logDecision) string {
+	gate := decisionGate(d.Gate)
+	if d.By == "" {
+		return oneLine(gate) + ": " + quote(d.Question)
+	}
+	return fmt.Sprintf("%s by %s: %s -- chose %s, because %s",
+		oneLine(gate), oneLine(d.By), quote(d.Question), quote(d.Chosen), quote(d.Reason))
+}

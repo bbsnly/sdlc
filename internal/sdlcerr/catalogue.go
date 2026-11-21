@@ -306,6 +306,13 @@ var (
 	// and dropped them, and read as none they would let the gate pass.
 	FindingsDropped = register("SDLC-E0093",
 		`have each reviewer the message names record its review again with "sdlc review add" and one --finding for each finding it listed, whose text is in its review documents under .sdlc/stories/<ID>/reviews/, then close them with "sdlc finding close"; and run this sdlc, or a later one, everywhere the record is saved: "sdlc version" gives the one on PATH, and the plugin's is the sdlc in the plugin's bin directory`)
+
+	// DecisionRefused is an `sdlc decide` that is missing a part, holds one the
+	// record cannot take, or names a story whose decisions nobody would read.
+	// Each refusal sets its own fix, naming only what it refuses; this is the
+	// general one.
+	DecisionRefused = register("SDLC-E0094",
+		`give each part of the decision on one line each: --question "<what was decided>", --option "<an option>" at least twice with no two the same, --chosen with one of the options word for word, --reason "<why>", and --by with the agent whose recommendation or ruling was applied. Nothing was recorded, so run the command again`)
 )
 
 // entry is one row of the catalogue.

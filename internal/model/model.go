@@ -734,10 +734,7 @@ func ReviewersFor(g Gate) []Reviewer {
 // record another reviewer's review with nothing refusing it.
 func FindReviewer(g Gate, role string) (Reviewer, bool) {
 	role = strings.ToLower(strings.TrimSpace(role))
-	base := role
-	if b, _, ok := InstanceOf(role); ok {
-		base = b
-	}
+	base := BaseRole(role)
 	for _, r := range Reviewers {
 		if r.Gate == g && r.Role == base {
 			r.Role = role
@@ -782,13 +779,44 @@ func InstanceOf(name string) (role string, n int, ok bool) {
 	return role, n, true
 }
 
-// BaseRole is the role a name stands for: an instance's role, or the name
-// itself.
+// BaseRole is the role a name stands for: an arbiter's or an instance's role,
+// or the name itself.
 func BaseRole(name string) string {
+	if reviewer, ok := ArbiterOf(name); ok {
+		name = reviewer
+	}
 	if role, _, ok := InstanceOf(name); ok {
 		return role
 	}
 	return name
+}
+
+// ArbiterSuffix ends the name of an arbiter: a fresh instance of a reviewer's
+// role that rules on the open findings once the reviewer has blocked its limit
+// (US-131 AC-6), recorded under a name of its own so that its rounds and its
+// review are told from the reviewer's.
+const ArbiterSuffix = "-arbiter"
+
+// ArbiterName is the name of a reviewer's arbiter.
+func ArbiterName(reviewer string) string { return reviewer + ArbiterSuffix }
+
+// ArbiterOf reads an arbiter's name: a roster review role or an instance
+// InstanceOf reads, then ArbiterSuffix. It is the closed reading InstanceOf
+// is, so an arbiter of an arbiter, of an agent that reviews nothing, or of a
+// seat spelt otherwise is no name: the hook and sdlc read names through here,
+// and a looser reading in one of them would let a review through it.
+func ArbiterOf(name string) (reviewer string, ok bool) {
+	reviewer, ok = strings.CutSuffix(name, ArbiterSuffix)
+	if !ok {
+		return "", false
+	}
+	if IsReviewRole(reviewer) {
+		return reviewer, true
+	}
+	if _, _, ok := InstanceOf(reviewer); ok {
+		return reviewer, true
+	}
+	return "", false
 }
 
 // ReviewerNames lists the roles one gate expects, for a message that has to say.
@@ -866,6 +894,66 @@ type Event struct {
 	// kept out of Message, which SinceDecision counts by equality, since a
 	// reason written by a model would make each failure a message of its own.
 	Reason string `json:"reason,omitempty"`
+	// Choice is what a decision event decided, kept out of Message for the
+	// same reason. Read it through Decision, which also reads a decision an
+	// older sdlc saved without it.
+	Choice *Choice `json:"choice,omitempty"`
+}
+
+// EventDecision is an implementation decision the loop made and recorded with
+// `sdlc decide` (US-131 AC-3). It is not a person's answer: nothing that counts
+// from one, SinceDecision, DecisionFor or WaitsForApproval, reads it.
+const EventDecision = "decision"
+
+// AfterLastGate is the gate a decision is recorded at once every gate has
+// passed. It is no gate of the nine, and is left untyped so that a switch over
+// the nine gates need not name it.
+const AfterLastGate = "done"
+
+// DecisionsFile is a story's decisions, written from its record's decision
+// events by `sdlc decide` alone. It is not one of Artifacts, which `sdlc
+// artifact write` takes, so that nothing but the record is its source.
+const DecisionsFile = "DECISIONS.md"
+
+// MaxDecisionBytes and MaxDecisionOptions bound a decision, since every hook
+// call reads the record that holds it (US-131 T-6).
+const (
+	MaxDecisionBytes   = 1000
+	MaxDecisionOptions = 10
+)
+
+// Choice is one decision: the question, the options weighed, the one chosen and
+// why, the agent whose recommendation or ruling was applied, and the gate the
+// story was at.
+type Choice struct {
+	Gate     Gate     `json:"gate"`
+	By       string   `json:"by"`
+	Question string   `json:"question"`
+	Options  []string `json:"options"`
+	Chosen   string   `json:"chosen"`
+	Reason   string   `json:"reason"`
+}
+
+// DecisionMessage is a decision event's Message.
+func DecisionMessage(c Choice) string {
+	return string(c.Gate) + " " + c.By + ": " + c.Question
+}
+
+// Decision is what a decision event decided. An sdlc older than the decision
+// event keeps an event's type and message when it saves a record and drops the
+// field it does not know, so where Choice is gone the message is the question,
+// and the gate its first word where that is one this version knows.
+func (e Event) Decision() Choice {
+	if e.Choice != nil {
+		return *e.Choice
+	}
+	c := Choice{Question: e.Message}
+	if word, _, ok := strings.Cut(e.Message, " "); ok {
+		if g := Gate(word); g.Valid() || g == AfterLastGate {
+			c.Gate = g
+		}
+	}
+	return c
 }
 
 // Escalation is a point where the loop stopped and asked a person.
@@ -903,6 +991,12 @@ const (
 	KindAgentFailed = "agent_failed"
 	KindWorkByHand  = "work_by_hand"
 )
+
+// KindReviewNotConverging is the hand-over at an arbiter's limit, or at a
+// disabled role's reviewer's. A person's answer to one that a block of a role,
+// or of its arbiter, raised at a gate is what ends that arbiter's standing
+// there (StandingReview).
+const KindReviewNotConverging = "review_not_converging"
 
 // AnswersCommit reports whether this answer is a person's decision on the work
 // itself, the answer the pre-commit pause waits for. Only an approval of the
@@ -1257,6 +1351,141 @@ func (r *Record) LatestReview(g Gate, role string) (Review, bool) {
 	return Review{}, false
 }
 
+// StandingReview is the review that stands for a role at a gate: its arbiter's
+// latest, where the arbiter has reviewed the gate since a person last answered
+// a hand-over of that role's dispute there (answeredReviews), else the role's
+// own latest. It is the one rule: the gates, `review list`, the staffing and
+// the hook's commit check all read it, since a reader that kept its own would
+// pass a commit the gate refuses, or refuse one it passes. It reads the order
+// of the events, never their times, which an answer and a review can share.
+func (r *Record) StandingReview(g Gate, role string) (Review, bool) {
+	arbiter := ArbiterName(role)
+	ruled := make([]string, 0, len(Verdicts))
+	for _, v := range Verdicts {
+		ruled = append(ruled, ReviewEvent(g, arbiter, v))
+	}
+	from := r.answeredReviews(g, role)
+	for i := len(r.Events) - 1; i > from; i-- {
+		if e := r.Events[i]; e.Type == EventReview && slices.Contains(ruled, e.Message) {
+			return r.LatestReview(g, arbiter)
+		}
+	}
+	return r.LatestReview(g, role)
+}
+
+// answeredReviews is the index in Events of the newest approval event that
+// answered a review_not_converging hand-over raised by a stopping block of the
+// role, or of its arbiter, at the gate, or -1 where there is none. Any other
+// answer, a pre-commit approval, a failing gate's or agent's, a stalled loop,
+// work done by hand, or another role's or gate's dispute, leaves an arbiter's
+// ruling standing: ended by those, the block it overruled stood again and held
+// the commit gate (architect F-1, red-team F-9 of the design review).
+//
+// An answer resolves every escalation pending at it (Decide), so the escalate
+// events between it and the answer before it are what it answered, and each is
+// read: a gate_failing stacked on a review's hand-over cannot hide it. Each
+// event pairs with its entry counted from the newest, Escalations with escalate
+// events and Approvals with approval events, which holds because writeHandOver
+// and `sdlc approve` are the only writers of each and write the pair in one
+// save: a second writer of either would break it. An event with nothing to pair
+// with is no review's answer, which keeps the arbiter standing, and it may still
+// review. The kind is the entry's Type compared whole, never the event's
+// message, whose kind is any word `sdlc escalate` was given. A window with no
+// escalate event at all, a record written before they were, reads the answer as
+// its own hand-over, with its Approvals entry's Type.
+func (r *Record) answeredReviews(g Gate, role string) int {
+	w := answerWalk{
+		r: r, own: ReviewEvent(g, role, VerdictBlock), arbiter: ReviewEvent(g, ArbiterName(role), VerdictBlock), answer: -1,
+	}
+	for i, e := range slices.Backward(r.Events) {
+		found := false
+		switch e.Type {
+		case EventEscalate:
+			found = w.escalate(i)
+		case EventApproval:
+			found = w.approval(i)
+		}
+		if found {
+			return w.answer
+		}
+	}
+	if w.answeredItsOwn() {
+		return w.answer
+	}
+	return -1
+}
+
+// answerWalk is answeredReviews' walk back through the events: the approval
+// whose window it is in, how many of each pair it has passed, and what that
+// window has held so far.
+type answerWalk struct {
+	r                      *Record
+	own, arbiter           string
+	approvals, escalations int
+	answer                 int
+	held, itself           bool
+}
+
+// raised reports whether the hand-over at index i was raised by a block of the
+// role or of its arbiter.
+func (w *answerWalk) raised(i int) bool {
+	m, ok := w.r.raisedBy(i)
+	return ok && (m == w.own || m == w.arbiter)
+}
+
+// escalate reads an escalate event. Before any answer it is pending; after one,
+// the answer resolved it, and is the one sought where it is a
+// review_not_converging hand-over the role or its arbiter raised.
+func (w *answerWalk) escalate(i int) bool {
+	k := len(w.r.Escalations) - 1 - w.escalations
+	w.escalations++
+	if w.answer < 0 {
+		return false // pending: no answer yet
+	}
+	w.held = true
+	return k >= 0 && w.r.Escalations[k].Type == KindReviewNotConverging && w.raised(i)
+}
+
+// approval reads an approval event, which closes the window of the answer
+// after it: that answer is the one sought where its window held no escalate
+// event and it answered its own hand-over. Otherwise this one is the answer
+// whose window the walk goes on into.
+func (w *answerWalk) approval(i int) bool {
+	if w.answeredItsOwn() {
+		return true
+	}
+	k := len(w.r.Approvals) - 1 - w.approvals
+	w.approvals++
+	w.answer, w.held = i, false
+	w.itself = k >= 0 && w.r.Approvals[k].Type == KindReviewNotConverging && w.raised(i)
+	return false
+}
+
+// answeredItsOwn reports whether the answer met last, in a window with no
+// escalate event, answered a hand-over of the role's at the gate by its own
+// Approvals entry.
+func (w *answerWalk) answeredItsOwn() bool { return w.answer >= 0 && !w.held && w.itself }
+
+// raisedBy is the review event a hand-over at index i was raised by: walking
+// back past the findings and budget events that one save of `sdlc review add`
+// writes between a review and its hand-over, the first other event, where it is
+// a review. Any other event met first means no block raised it. A later change
+// that appends another kind of event in that save makes every arbiter's limit
+// answer no boundary, and the reviewer never has its turn back.
+func (r *Record) raisedBy(i int) (string, bool) {
+	for j := i - 1; j >= 0; j-- {
+		switch e := r.Events[j]; e.Type {
+		case EventFindings, EventBudget:
+			continue
+		case EventReview:
+			return e.Message, true
+		default:
+			return "", false
+		}
+	}
+	return "", false
+}
+
 // The kinds of event in a record's history that the loop's own limits count.
 const (
 	EventGate     = "gate"
@@ -1354,6 +1583,9 @@ func (r *Record) PendingEscalation() (Escalation, bool) {
 // Decide records a person's answer to what is waiting for one, bound to the
 // tree it was given for, and resolves every escalation it answers. It reports
 // false when nothing is waiting: an answer to no question is not a decision.
+// That it resolves every one is what lets answeredReviews read the escalate
+// events since the answer before as the ones this answer resolved, and its
+// caller writes the approval event in the same save, which pairs the two.
 func (r *Record) Decide(approved bool, reason, tree string, at time.Time) (Approval, bool) {
 	pending, ok := r.PendingEscalation()
 	if !ok {

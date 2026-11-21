@@ -853,6 +853,42 @@ func (s *Store) ArtifactStored(story string, a model.Artifact) bool {
 	return fsx.Exists(filepath.Join(dir, a.File))
 }
 
+// RecordStored reports whether a story has a gate record on disk, which Record
+// does not say: it starts a fresh one where there is none. An unsafe story id
+// answers false, as ArtifactStored does.
+func (s *Store) RecordStored(id string) bool {
+	dir, err := s.StoryDir(id)
+	if err != nil {
+		return false
+	}
+	return fsx.Exists(filepath.Join(dir, recordFile))
+}
+
+// WriteDecisions writes a story's DECISIONS.md and returns its path, as
+// WriteArtifact does, and undo, which puts back what the file held before, or
+// removes it where there was none: a decision whose record then could not be
+// saved leaves no line the record does not hold. Undo writes and removes as
+// the store does, on the path it checked, under the caller's lock.
+func (s *Store) WriteDecisions(story string, content []byte) (string, func() error, error) {
+	dir, err := s.StoryDir(story)
+	if err != nil {
+		return "", nil, err
+	}
+	path := filepath.Join(dir, model.DecisionsFile)
+	was, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", nil, sdlcerr.New(sdlcerr.StateUnreadable,
+			storiesDir+"/"+story+"/"+model.DecisionsFile+couldNotBeRead,
+			"the file exists but could not be opened, and a decision that could not be saved has to put it back as it was").
+			WithFix("make the file readable, or move it aside: sdlc decide writes it again whole from the story's record").
+			WithCause(err)
+	}
+	if err := s.writeFile(path, content); err != nil {
+		return "", nil, err
+	}
+	return relative(s.rootOf(path), path), func() error { return s.putBack(path, was) }, nil
+}
+
 // WriteReview stores one reviewer's document inside the story's own reviews
 // directory and returns the path, relative to the checkout the story's records
 // are kept in, as WriteArtifact does.
@@ -879,6 +915,17 @@ func ReviewPath(story string, gate model.Gate, role string, round int) string {
 
 func reviewName(gate model.Gate, role string, round int) string {
 	return string(gate) + "-" + role + "-" + strconv.Itoa(round) + ".md"
+}
+
+// DecisionsPath is where a story's DECISIONS.md lives, relative to the
+// repository root and slash-separated, whether or not it has been written yet.
+func DecisionsPath(story string) string {
+	return storiesDir + "/" + story + "/" + model.DecisionsFile
+}
+
+// RecordPath is where a story's gate record lives, in the same form.
+func RecordPath(story string) string {
+	return storiesDir + "/" + story + "/" + recordFile
 }
 
 // ArtifactPath is where an artifact lives, relative to the repository root and

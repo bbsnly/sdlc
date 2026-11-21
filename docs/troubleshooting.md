@@ -500,7 +500,7 @@ an assistant that meets this code for one of them stops and tells the person.
 
 ### SDLC-E0027
 
-That gate does not expect a review from that role.
+That gate does not take a review from that role now.
 
 Reviews are registered per gate: the architect reviews the design, the code reviewer reviews the
 diff, and so on. To see which roles the gate expects, and where each review has got to, run:
@@ -523,6 +523,24 @@ The message says which of these it is, and only that one:
 - **The name is past `instances`.** An instance is named for its role with a number after it, such
   as `security-2`, and `team.agents.<agent>.instances` says how many there are. Use a name within
   it, or have a person raise it.
+- **The arbiter is not due.** `<role>-arbiter` reviews a gate only from the stopping block that
+  reaches its reviewer's limit since a person last answered, `loop.max_review_rounds` or the
+  agent's own `max_rounds`, and while its review stands there. Before that, the reviewer reviews
+  under its own name. A reviewer whose block does not stop the gate, such as an advisory one,
+  has no arbiter there however often it blocks. Nor has a role disabled in
+  `team.agents.<agent>.enabled`: a disabled verifier or code reviewer is still waited for, its
+  limit-th block hands the story to a person, and a person records its review by hand under its
+  own name. An arbiter whose review already stood when the role was disabled keeps its turn,
+  and the reviewer stays refused until that review stops standing, as below. See
+  [The arbiter](the-loop.md#the-arbiter).
+- **The gate has gone to the arbiter.** The reviewer has blocked the gate as many times as its
+  limit allows, or its arbiter's review stands there, so the gate takes the arbiter's review
+  instead. Delegate to a fresh agent of the reviewer's kind as `<role>-arbiter`, at what
+  `sdlc staffing show --gate <gate>` gives it. Until the arbiter first reviews, any answer a
+  person gives the story starts the reviewer's count again and gives it its turn, and the
+  arbiter waits for the next limit. From the arbiter's first review, only a person's answer to a
+  `review_not_converging` hand-over that `<role>` or `<role>-arbiter` raised at that gate gives
+  the reviewer its turn again; an answer to another role's does not.
 
 `sdlc artifact diff plan` needs `--since` to name one of the design review's reviewers, because a
 diff starts from the plan that reviewer last reviewed. `sdlc review list --gate design_review`
@@ -2389,6 +2407,31 @@ documents and confirms the lost findings were listed again, and blocks where the
 An older `sdlc` that runs `sdlc gate verification pass` or `sdlc gate commit pass` itself, rather
 than only saving the record, checks no findings at all; this release refuses only at a gate it
 runs. [What is not held](enforcement.md#the-findings-ledger) says what still stands in its way.
+
+### SDLC-E0094
+
+`sdlc decide` refused the decision, so nothing was recorded: no `decision` event on the story's
+record, and no line in its `DECISIONS.md`. The message names the one part it refused, and the fix
+says what that part needs. A decision has five parts, each on one line:
+
+- **`--question`**: what was decided. It is not blank.
+- **`--option`**: each option weighed, one flag for each. There are at least two, none blank, no
+  two the same, and at most ten.
+- **`--chosen`**: the option chosen, word for word as one of the `--option` values.
+- **`--reason`**: why it was chosen. It is not blank.
+- **`--by`**: the agent whose recommendation or ruling was applied: an agent of the plugin such
+  as `researcher`, an instance within `team.agents.<agent>.instances` such as `security-2`, or
+  `<role>-arbiter` such as `architect-arbiter`. A person is never one, so that no decision reads
+  as a person's answer.
+
+Each value is at most 1,000 bytes and holds no line break, control character or invisible one:
+every hook call reads the record that holds it, and the text is shown on lines of `sdlc`'s own.
+Give every part and run the command again.
+
+One refusal is about the story and not a flag: a story whose commit your `sdlc ack` already
+covers. A decision recorded on it now would be neither counted by `sdlc status` nor listed by
+`sdlc log`. Record it on the story under way, which `sdlc status` names, and name the story in
+`--question`.
 
 ## Warnings the hook prints
 

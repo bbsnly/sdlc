@@ -16,6 +16,7 @@
   - [`review-is-written-by-the-tool`](#review-is-written-by-the-tool)
   - [`gate-artifact-is-written-by-the-tool`](#gate-artifact-is-written-by-the-tool)
   - [`trace-is-written-by-the-tool`](#trace-is-written-by-the-tool)
+  - [`decisions-are-written-by-the-tool`](#decisions-are-written-by-the-tool)
   - [`frozen-test-is-not-edited`](#frozen-test-is-not-edited)
   - [`no-new-test-after-the-freeze`](#no-new-test-after-the-freeze)
   - [`implementer-does-not-write-tests`](#implementer-does-not-write-tests)
@@ -832,6 +833,27 @@ marks, `.sdlc/state/trace-read.json`, are under `.sdlc/state` and held with it
 *Instead:* there is nothing to record by hand: read it with `sdlc trace` and
 the story's id, and put anything else you want kept in your hand-back.
 
+### `decisions-are-written-by-the-tool`
+
+Refuses any write to a story's `DECISIONS.md`, in any story's directory, by a
+file tool, from every agent and the main conversation alike. Spellings that
+fold to the same file on a case-insensitive disk are the same name. A
+`DECISIONS.md` outside a story's directory is not this rule's, and reading the
+file is never refused.
+
+The file lists the implementation decisions the loop made on the story
+([two kinds of decision](the-loop.md#two-kinds-of-decision)), and `sdlc decide`
+writes it again from the story's gate record each time it records one. A
+decision the assistant could rewrite in place is not a record of one. The
+shell rules hold it under
+[`loop-state-through-the-tool`](#loop-state-through-the-tool).
+
+*Instead:*
+
+```text
+sdlc decide <ID> --question ... --option ... --option ... --chosen ... --reason ... --by <role>
+```
+
 ### `frozen-test-is-not-edited`
 
 Refuses any edit of a file in the freeze, from any role.
@@ -1551,7 +1573,7 @@ names differ from the project's own path.
 
 Refuses a command that would write or delete the loop's own files: `.sdlc/state`,
 `.sdlc/config.json`, `.sdlc/claude-progress.json`, any story's
-`gate-record.json`, any `reviews/` directory, or any gate document, and `.sdlc`,
+`gate-record.json` or `DECISIONS.md`, any `reviews/` directory, or any gate document, and `.sdlc`,
 `.sdlc/stories` or a story's directory taken whole — by redirection; through
 `rm`, `mv`, `cp`, `tee`, `dd`, `sed -i`, `find -delete`, `git rm`,
 `git checkout`, a hard link (`ln`, `link`, `fsutil hardlink create`), a named
@@ -1571,7 +1593,8 @@ It also refuses taking away a checkout of this repository, or a directory that
 holds one: the session's own, the main checkout, or another story's worktree,
 each with the story and the loop state it holds.
 
-*Instead:* `sdlc artifact write`, `sdlc review add`, `sdlc gate`. The freeze is
+*Instead:* `sdlc artifact write`, `sdlc review add`, `sdlc gate`, and
+`sdlc decide` for a story's `DECISIONS.md`. The freeze is
 lifted by the person running the session. For `.sdlc/config.json` there is no
 command: the person running the session changes it by hand, outside a running
 iteration. Remove only what the story made, by naming it inside the checkout,

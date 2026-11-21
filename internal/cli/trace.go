@@ -781,13 +781,16 @@ func (p *printer) linef(format string, args ...any) {
 
 // allTraceRow is one story of `sdlc trace --all --json`.
 type allTraceRow struct {
-	Story             string         `json:"story"`
-	Start             string         `json:"start"`
-	End               *string        `json:"end"`
-	Wall              *float64       `json:"wall"`
-	Agents            *float64       `json:"agents"`
-	Person            *float64       `json:"person"`
-	Escalations       map[string]int `json:"escalations"`
+	Story       string         `json:"story"`
+	Start       string         `json:"start"`
+	End         *string        `json:"end"`
+	Wall        *float64       `json:"wall"`
+	Agents      *float64       `json:"agents"`
+	Person      *float64       `json:"person"`
+	Escalations map[string]int `json:"escalations"`
+	// Decisions is how many implementation decisions the loop recorded with
+	// `sdlc decide` (US-131 AC-9).
+	Decisions         int            `json:"decisions"`
 	Unfreezes         int            `json:"unfreezes"`
 	ReviewRounds      map[string]int `json:"review_rounds"`
 	FirstPass         *bool          `json:"first_pass"`
@@ -878,6 +881,9 @@ func allRowOf(cmd *cobra.Command, s *store.Store, id string) (allTraceRow, bool,
 	for _, e := range record.Events {
 		if e.Type == unfreezeEvent {
 			row.Unfreezes++
+		}
+		if e.Type == model.EventDecision {
+			row.Decisions++
 		}
 	}
 	for _, r := range st.Reviews {
@@ -1041,8 +1047,8 @@ func writeAllTrace(w io.Writer, doc allTrace) error {
 			count(r.PeakContext), shown(r.TestTime), count(r.Refusals), count(r.DiffFiles), count(r.DiffLines), first)
 		// What the gate record counts goes on a line of its own under the row,
 		// without the story's id: a table twenty columns wide is not read.
-		p.linef("%-10s escalations: %s; unfreezes: %d; review rounds: %s; a gate failed after the commit gate: %s", "",
-			namedCounts(r.Escalations, slices.Sorted(maps.Keys(r.Escalations))), r.Unfreezes,
+		p.linef("%-10s escalations: %s; decisions: %d; unfreezes: %d; review rounds: %s; a gate failed after the commit gate: %s", "",
+			namedCounts(r.Escalations, slices.Sorted(maps.Keys(r.Escalations))), r.Decisions, r.Unfreezes,
 			namedCounts(r.ReviewRounds, gates), yesNo(r.FailedAfterCommit))
 	}
 	m := doc.Medians

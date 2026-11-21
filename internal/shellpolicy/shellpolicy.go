@@ -2557,9 +2557,15 @@ func runsSubcommand(words []string, sub string) bool {
 // the findings on `sdlc review add`. With the flag taken out the words are read
 // as they were before there was one, so the word after it is read as the
 // subcommand as well as the flag's value: read only as the value, a command only
-// a person runs that was refused there stopped being refused.
+// a person runs that was refused there stopped being refused. The flags of
+// `sdlc decide` are read both ways for the same reason (US-131 T-8), so an
+// option or a choice worded as a person's command is refused with it.
 func flagReadBothWays(word string) bool {
-	return word == "--model" || word == "--effort" || word == "--important" || word == "--nits" || word == "--finding"
+	switch word {
+	case "--model", "--effort", "--important", "--nits", "--finding", "--question", "--option", "--chosen", "--by":
+		return true
+	}
+	return false
 }
 
 // ValueFlags are the flags of sdlc that take the next word as their value. The
@@ -2570,6 +2576,7 @@ var ValueFlags = map[string]bool{
 	"--reason": true, "--reject": true, "--since": true, "--story": true, "--through": true,
 	"--usd": true, "--model": true, "--effort": true,
 	"--important": true, "--nits": true, "--finding": true,
+	"--question": true, "--option": true, "--chosen": true, "--by": true,
 }
 
 // checkCommit puts the commit gate in front of the commit, for a commit in this
@@ -3279,10 +3286,27 @@ func frozenFinding(frozen string) Finding {
 // files, hit as loopState folded it and word as it was spelled: the trace
 // under its own rule, and every other under the record's.
 func storyFileFinding(hit, word string) Finding {
-	if path.Base(hit) == model.TraceFile {
+	switch path.Base(hit) {
+	case model.TraceFile:
 		return traceFinding(storyOf(word))
+	case pathrules.Fold(model.DecisionsFile):
+		return decisionsFinding(hit)
 	}
 	return recordFinding(hit)
+}
+
+// decisionsFinding is the refusal of a write to a story's DECISIONS.md, under
+// the record's rule, since the record is its source (US-131 T-4): a model that
+// could rewrite it could unmake a decision it made. The generic route, which
+// names `sdlc artifact write`, would be wrong advice.
+func decisionsFinding(hit string) Finding {
+	return Finding{
+		Rule: ruleLoopState,
+		Reason: hit + " is the loop's record of the decisions it made, written from the story's gate record, " +
+			"and a shell command is the one way around every rule that protects it",
+		Route: "record a decision with `sdlc decide <ID> --question ... --option ... --option ... --chosen ... " +
+			"--reason ... --by <role>`, which writes this file again from the record; read it as any other file",
+	}
 }
 
 // ruleTrace is the rule a write to a story's trace is refused under, by the
@@ -5807,14 +5831,15 @@ func loopState(word string) (string, bool) {
 }
 
 // storyOwned reports whether rest, what follows .sdlc/stories in a path, is
-// the stories directory, a whole story directory, a review, the record or a
-// gate document.
+// the stories directory, a whole story directory, a review, the record, the
+// trace, the decisions or a gate document.
 func storyOwned(rest string) bool {
 	if rest == "" || !strings.Contains(rest, "/") {
 		return true
 	}
 	_, tail, _ := strings.Cut(rest, "/")
-	if strings.HasPrefix(tail, "reviews/") || tail == "reviews" || tail == model.RecordFile || tail == model.TraceFile {
+	if strings.HasPrefix(tail, "reviews/") || tail == "reviews" || tail == model.RecordFile || tail == model.TraceFile ||
+		tail == pathrules.Fold(model.DecisionsFile) {
 		return true
 	}
 	_, ok := model.ArtifactByFile(tail)

@@ -1140,23 +1140,27 @@ func unmeasuredPause(pause config.CommitPause, cause error) string {
 		"where nobody has, hand it to a person with `sdlc escalate pre_commit_approval --message \"...\"` and stop"
 }
 
-// stampedReview is the latest review a reviewer recorded, and the tree it
-// was of.
+// stampedReview is the review that stands for a reviewer, and the tree it was
+// of: role is the seat the gate waits for, and by whoever's review stands in
+// it, the arbiter's where one does.
 type stampedReview struct {
 	gate    model.Gate
 	role    string
+	by      string
 	subject string
 }
 
-// stampedReviews are the latest reviews recorded at the two review gates, by
-// every instance the team gives a reviewer: enumerating the roster alone let a
-// copy's review of an older tree through.
+// stampedReviews are the reviews that stand at the two review gates, for every
+// instance the team gives a reviewer: enumerating the roster alone let a copy's
+// review of an older tree through. Which review stands is model's one rule,
+// which the gates read too: a rule of the hook's own would refuse a commit the
+// commit gate passes, or pass one it refuses (US-131 AC-6).
 func stampedReviews(team config.Team, record *model.Record) []stampedReview {
 	var reviews []stampedReview
 	for _, gate := range []model.Gate{model.GateVerifierReview, model.GateCodeReview} {
 		for _, r := range team.ReviewersFor(gate) {
-			if latest, ok := record.LatestReview(gate, r.Role); ok {
-				reviews = append(reviews, stampedReview{gate, r.Role, latest.Subject})
+			if latest, ok := record.StandingReview(gate, r.Role); ok {
+				reviews = append(reviews, stampedReview{gate, r.Role, latest.Role, latest.Subject})
 			}
 		}
 	}
@@ -1227,7 +1231,7 @@ func staleReviewers(reviews []stampedReview, cfg config.Config, record *model.Re
 			continue
 		}
 		if r.subject != tree {
-			stale = append(stale, r.role+" ("+string(r.gate)+")")
+			stale = append(stale, r.by+" ("+string(r.gate)+")")
 		}
 	}
 	return stale

@@ -87,6 +87,33 @@ func (t Team) EffortList() []string {
 	return t.Efforts
 }
 
+// StepAbove is what an arbiter is asked for, given what its reviewer was asked
+// for (US-131 AC-6): the next of EffortList, at the same model; at the effort
+// ceiling, the next of ModelList, at the same effort; at both ceilings, what
+// was asked. An effort the list does not hold, and nothing asked at all, which
+// is a project with the staffing off, step to the highest effort. At the effort
+// ceiling a model the list does not hold, as after team.models is edited
+// mid-story, stays as asked: read as index -1 plus one, it stepped down to the
+// lowest model (red-team F-5 of the design review).
+func (t Team) StepAbove(askedModel, askedEffort string) (string, string) {
+	efforts := t.EffortList()
+	if len(efforts) == 0 {
+		return askedModel, askedEffort
+	}
+	top := len(efforts) - 1
+	switch i := slices.Index(efforts, askedEffort); {
+	case i < 0:
+		return askedModel, efforts[top]
+	case i < top:
+		return askedModel, efforts[i+1]
+	}
+	models := t.ModelList()
+	if i := slices.Index(models, askedModel); i >= 0 && i < len(models)-1 {
+		return models[i+1], askedEffort
+	}
+	return askedModel, askedEffort
+}
+
 // Enabled reports whether the agent, or the role of an instance, runs.
 func (t Team) Enabled(agent string) bool {
 	e := t.entry(agent).Enabled
@@ -214,6 +241,11 @@ func (t Team) ReviewersFor(g model.Gate) []model.Reviewer {
 // otherwise the staffing's row, whose floor stays a defence, decides. A seat
 // with no row is not left out, so it is waited for.
 func (t Team) StandsDown(record *model.Record, name string) (out, returnable bool) {
+	// An arbiter takes its reviewer's seat, so the arbiter of a seat past
+	// instances has none, and a left-out reviewer's arbiter is out with it.
+	if reviewer, ok := model.ArbiterOf(name); ok {
+		name = reviewer
+	}
 	role := model.BaseRole(name)
 	if _, n, ok := model.InstanceOf(name); ok && n > t.Seats(role) {
 		return true, false

@@ -346,19 +346,23 @@ func TestAC5ARefusalThatIsNotAHandOverDoesNotSayAFailureWentUnrecorded(t *testin
 
 // ---------------------------------------------------------------- AC-3
 
-// hoBlockedOnce is a story at the design review, one architect's block below
-// loop.max_review_rounds, 2.
+// hoBlockedOnce is a story at the design review one block from a hand-over:
+// since US-131 AC-6 the architect's second block, at loop.max_review_rounds, 2,
+// sends the gate to its arbiter, and the arbiter has blocked once.
 func hoBlockedOnce(t *testing.T) string {
 	t.Helper()
 	root := planned(t)
-	mustRunWith(t, "# architect\n\nAC-3 has no step.\n",
-		"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step")
+	for _, name := range []string{"architect", "architect", "architect-arbiter"} {
+		mustRunWith(t, "# architect\n\nAC-3 has no step.\n",
+			"review", "add", "design_review", name, "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 has no step")
+	}
 	return root
 }
 
 var (
 	hoArchitectBlocked = model.ReviewEvent(model.GateDesignReview, "architect", model.VerdictBlock)
-	hoSecondBlock      = []string{"review", "add", "design_review", "architect", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 still has no step"}
+	hoArbiterBlocked   = model.ReviewEvent(model.GateDesignReview, "architect-arbiter", model.VerdictBlock)
+	hoSecondBlock      = []string{"review", "add", "design_review", "architect-arbiter", "block", "--important", "1", "--finding", "important the one finding", "--note", "AC-3 still has no step"}
 )
 
 // One run for each cause holds both halves of AC-3: they start from the same
@@ -408,8 +412,8 @@ func TestAC3ABlockWhoseHandOverCannotBeCompletedLeavesTheRecordAndNoReviewFileAn
 		}
 
 		record := readRecord(t, root, "US-001")
-		if n := record.SinceDecision(model.EventReview, hoArchitectBlocked); n != 2 {
-			t.Errorf("the record counts %d blocks by the architect, want 2: one before, and the one handed over, once", n)
+		if n := record.SinceDecision(model.EventReview, hoArbiterBlocked); n != 2 {
+			t.Errorf("the record counts %d blocks by the architect's arbiter, want 2: one before, and the one handed over, once", n)
 		}
 		if n := len(record.Escalations); n != 1 {
 			t.Fatalf("the record holds %d escalations, want 1: %+v", n, record.Escalations)

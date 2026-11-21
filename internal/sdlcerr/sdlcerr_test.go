@@ -365,6 +365,13 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	for _, id := range []string{"SDLC-E0089", "SDLC-E0090", "SDLC-E0091", "SDLC-E0092", "SDLC-E0093"} {
 		released = append(released, pin{registered(id), id})
 	}
+	// US-131 AC-4: every malformed `sdlc decide` is refused under one code of its
+	// own, the next after SDLC-E0093. Pinned outright and found by number, as
+	// SDLC-E0093 is: the row fails by rendering as nothing until it is
+	// registered. TestAC4TheDecisionCodeIsDocumentedAndItsFixNamesEachPart says
+	// what it is for. US-133 is under way beside this story; whichever lands
+	// second takes the next number on its rebase, before either is released.
+	released = append(released, pin{registered("SDLC-E0094"), "SDLC-E0094"})
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
 			t.Errorf("%s now renders as %s: a released code was renumbered", r.id, got)

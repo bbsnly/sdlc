@@ -691,7 +691,7 @@ func TestAC7StatusJSONCarriesTheLandingAndTheWaitInFieldsOfItsOwnAndChangesNoneO
 const (
 	lhQuietText = "No iteration running.\n\n  backlog  2 ready\n  next up  US-001  Story US-001\n\n" +
 		"A person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.\n"
-	lhQuietJSON = `{"ok":true,"backlog":{"ready":2},"next":{"story":"US-001","title":"Story US-001"}}` + "\n"
+	lhQuietJSON = `{"ok":true,"backlog":{"ready":2},"next":{"story":"US-001","title":"Story US-001"},"decisions_unread":0}` + "\n"
 )
 
 // AC-8: with no story landing or waiting to, status prints what it printed

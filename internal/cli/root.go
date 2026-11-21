@@ -73,6 +73,7 @@ func New(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newRemapCmd(),
 		newReviewCmd(),
 		newFindingCmd(),
+		newDecideCmd(),
 		newStaffingCmd(),
 		newTeamCmd(),
 		newFreezeCmd(),

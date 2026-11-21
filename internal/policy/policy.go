@@ -274,6 +274,22 @@ var Rules = []Rule{
 		},
 	},
 	{
+		// Ahead of every role rule, as the trace's is: a story's decisions are
+		// written from its record by `sdlc decide` alone, and a model that
+		// could edit the file could unmake a decision it made (US-131 T-4).
+		// shellpolicy's decisionsFinding says the same of a shell command.
+		ID: "decisions-are-written-by-the-tool",
+		Route: "record a decision with `sdlc decide <ID> --question ... --option ... --option ... --chosen ... " +
+			"--reason ... --by <role>`, which writes this file again from the story's record",
+		check: func(r Request) string {
+			if !pathrules.SameName(fileAt(r.Path), model.DecisionsFile) {
+				return ""
+			}
+			return r.Path + " is the loop's record of the decisions it made, written from the story's gate record " +
+				"by sdlc decide, and a decision the assistant can rewrite is not a record of one"
+		},
+	},
+	{
 		ID: "frozen-test-is-not-edited",
 		Route: "change the code until the test passes; if the test itself is wrong, " +
 			"say which acceptance criterion it got wrong and stop: the person running " +

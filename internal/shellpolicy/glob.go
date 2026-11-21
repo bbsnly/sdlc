@@ -30,6 +30,9 @@ func protectedShapes(configured ...string) []string {
 	for _, a := range model.Artifacts {
 		shapes = append(shapes, ".sdlc/stories/*/"+a.File)
 	}
+	// After the gate documents: a glob that names both, `*.md`, is refused
+	// with the documents' words, as it was before DECISIONS.md was here.
+	shapes = append(shapes, ".sdlc/stories/*/"+model.DecisionsFile)
 	shapes = append(shapes, protectedShellPaths...)
 	for _, held := range configured {
 		if held != "" {

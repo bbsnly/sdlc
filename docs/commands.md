@@ -41,6 +41,7 @@ Commands the loop's agents run:
 - [`sdlc review list`](#sdlc-review-list)
 - [`sdlc review add GATE ROLE VERDICT`](#sdlc-review-add-gate-role-verdict)
 - [`sdlc finding close GATE ROLE F-N`](#sdlc-finding-close-gate-role-f-n)
+- [`sdlc decide <ID>`](#sdlc-decide-id)
 - [`sdlc staffing`](#sdlc-staffing)
 - [`sdlc staffing show`](#sdlc-staffing-show)
 - [`sdlc staffing set`](#sdlc-staffing-set)
@@ -379,6 +380,31 @@ reads them to decide what to do:
 | `landing` | whoever holds the landing lock: the `story`, the `command` (`stop`, or `remap`, which lands nothing), `since` when, and its `pid`; `gone` is `true` where that process is not running, with `takeable_from`, the time a stop can take the lock from. `story`, `command` and `since` are there together or not at all: a lock whose owner cannot be read has only `gone`, and `pid` where one is named. Absent while no lock is there |
 | `waiting_to_land` | every `sdlc stop` or `sdlc remap` waiting for the landing lock, with its `story`, `command`, `since` and `pid`, and `for`, the story of the running stop it waits for. Absent while nothing waits |
 | `consolidate` | `finished`, how many stories have finished since the last `/sdlc:consolidate`, and `last`, the date of the newest consolidation file, which is `null` where there has been none. Absent below `consolidate.nudge_after` stories, and where that is `0` |
+| `decisions_unread` | how many decisions [`sdlc decide`](#sdlc-decide-id) recorded that your `sdlc ack` does not yet cover. Always present, `0` included |
+| `decisions_unknown` | every story whose record could not be read, so that its decisions are not in `decisions_unread`. Absent where every record reads |
+
+A decision is read once your [`sdlc ack`](#sdlc-ack) covers its story's commit, as the
+[log](#sdlc-log) reads a story. So `decisions_unread` counts every decision of a story under
+way, and those of a committed story whose commit the ack does not cover; with no ack yet, every
+committed story's. It counts the stories the backlog holds and has not dropped: a dropped story
+never commits, so no ack could clear it, and its decisions stay in its `DECISIONS.md` and in
+`sdlc trace --all`. Where there is one or more, status says so on a line of its own, naming each
+story under way with its file, up to three of them and then how many more:
+
+```text
+Decisions: 5 not yet acknowledged (2 in stories committed since your last ack, listed by sdlc log; 2 in US-131 (.sdlc/stories/US-131/DECISIONS.md) and 1 in US-140 (.sdlc/stories/US-140/DECISIONS.md), under way)
+```
+
+A record that cannot be read does not fail status. Its story goes in `decisions_unknown`, the
+line says `at least`, and standard error says which and what to do:
+
+```text
+sdlc: the decisions of US-140 are not counted: .sdlc/stories/US-140/gate-record.json could not be read (<the read error>); they are counted again once it reads, and git history holds the last committed copy of it
+```
+
+An `.sdlc/state/acknowledged` that names no commit git has counts every committed story's
+decisions as not acknowledged, and standard error says so with
+[SDLC-E0047](troubleshooting.md#sdlc-e0047)'s fix.
 
 Where `consolidate.nudge_after` stories (3 unless you set it) have finished
 since the last `/sdlc:consolidate`, status ends with one more line, after
@@ -1055,6 +1081,14 @@ story rebased or changed, the line says so and when, and is kept:
   no pause   the commit gate passed with no pause for a person: the story's risk tier is low, which pre_commit_pause_tiers does not pause; pre_commit_pause_paths lists no path
 ```
 
+Each implementation decision the loop recorded with [`sdlc decide`](#sdlc-decide-id) has a
+line of its own, `decisions` in `--json`, with the gate it was taken before, who took it, the
+question, what was chosen and why. The story's `DECISIONS.md` has the options it weighed:
+
+```console
+  decided    plan by implementer: "Which file holds the parser?" -- chose "internal/parse", because "it keeps the reader out of the CLI"
+```
+
 ### How a story's range is found
 
 The range is the one the commit gate recorded; see
@@ -1342,20 +1376,21 @@ trace that cannot be read with [SDLC-E0005](troubleshooting.md#sdlc-e0005).
 
 Every story in the backlog that has a record, one row each, with the median of
 each time and count column under them. Under each row, a second line gives what
-the gate record counts: the escalations by kind, the unfreezes, the review
-rounds by gate, and whether a gate failed after the commit gate passed. Here
+the gate record counts: the escalations by kind, the decisions recorded with
+`sdlc decide`, the unfreezes, the review rounds by gate, and whether a gate
+failed after the commit gate passed. Here
 US-8 and US-9 predate tracing, and US-10 is under way:
 
 ```text
 story      start                     end                       wall         agents       waiting on a person  design review to end  tokens         largest context  test time    refusals     diff files   diff lines   first pass
 US-7       2026-10-01T10:00:00.000Z  2026-10-01T20:00:00.000Z  10h00m       2h18m        30m                  5h30m                 1100           900              5s           3            4            42           yes
-           escalations: spec_unclear 1; unfreezes: 0; review rounds: design_review 2, verifier_review 1, code_review 1; a gate failed after the commit gate: no
+           escalations: spec_unclear 1; decisions: 2; unfreezes: 0; review rounds: design_review 2, verifier_review 1, code_review 1; a gate failed after the commit gate: no
 US-8       2026-10-01T10:00:00.000Z  2026-10-01T14:00:00.000Z  4h00m        not recorded 0s                   3h00m                 not recorded   not recorded     not recorded not recorded not recorded not recorded no
-           escalations: none; unfreezes: 1; review rounds: code_review 2; a gate failed after the commit gate: yes
+           escalations: none; decisions: 0; unfreezes: 1; review rounds: code_review 2; a gate failed after the commit gate: yes
 US-9       2026-10-01T10:00:00.000Z  2026-10-01T13:00:00.000Z  3h00m        not recorded 15m                  1h45m                 not recorded   not recorded     not recorded not recorded not recorded not recorded yes
-           escalations: hard_stop 1, human_check 1; unfreezes: 0; review rounds: none; a gate failed after the commit gate: no
+           escalations: hard_stop 1, human_check 1; decisions: 0; unfreezes: 0; review rounds: none; a gate failed after the commit gate: no
 US-10      2026-10-01T10:00:00.000Z  in progress               20h00m       not recorded 0s                   not yet               not recorded   not recorded     not recorded not recorded not recorded not recorded not yet
-           escalations: none; unfreezes: 0; review rounds: none; a gate failed after the commit gate: no
+           escalations: none; decisions: 0; unfreezes: 0; review rounds: none; a gate failed after the commit gate: no
 median                                                         4h00m        2h18m        15m                  3h00m                 1100           900              5s           3            4            42
 first-pass success, of the stories that ended: 67%
 a story still in progress is left out of the medians; not recorded is a figure its story did not record
@@ -1367,7 +1402,7 @@ first-pass share; its time from the last design review pass to the end reads
 review, and no failure at Gates 6 and 7, the verification included; a story
 under way with none of those yet reads "not yet", and one that already has one
 reads "no". `--json` gives every
-row with `escalations` by kind, `unfreezes`, `review_rounds` by gate,
+row with `escalations` by kind, `decisions`, `unfreezes`, `review_rounds` by gate,
 `first_pass`, `design_to_end` (from the last design review pass to the end),
 `failed_after_commit`, `tokens`, `peak_context`, `test_time`, `refusals`,
 `diff_files` and `diff_lines`, then
@@ -1858,12 +1893,21 @@ Review policy: REVIEW.md
 The hash is `reviewed_subject` in `--json`. It is there for a stale design review
 whose stamp can name a revision, and for no other review.
 
+Where a gate has [gone to the reviewer's arbiter](the-loop.md#the-arbiter), the reviewer's
+row gives the arbiter's review, which stands for it, and names the arbiter — `reviewed_by` in
+`--json`:
+
+```console
+  code_review     security        blocking  approve (by security-arbiter, round 1)
+```
+
 ## `sdlc review add GATE ROLE VERDICT`
 
 Record one reviewer's conclusion. Each reviewing agent runs this when it has
 finished, with the review itself on standard input. ROLE is the reviewer's name:
 its role, or an instance's name, such as `security-2`, where the `team` section
-gives it more than one.
+gives it more than one, or its arbiter's, `<role>-arbiter` or `<role>-<n>-arbiter`,
+once the gate has [gone to it](the-loop.md#the-arbiter).
 
 ```console
 $ sdlc review add design_review architect block --important 1 --finding "important the plan: AC-3 has no step" < review.md
@@ -1904,8 +1948,30 @@ itself, and the tree leaves out `.sdlc/`; see
 [Why approvals go stale](the-loop.md#why-approvals-go-stale).
 
 A block that stops the gate, recorded `loop.max_review_rounds` times by the same
-reviewer since a person last answered for the story, hands the story to that
-person as `review_not_converging`, and says so — `handed_over` in `--json`.
+reviewer since a person last answered for the story (or the agent's own
+[`max_rounds`](configuration.md#team) where it has one), sends the gate to that
+reviewer's [arbiter](the-loop.md#the-arbiter), and says so on a line of its own —
+`arbiter` in `--json`:
+
+```console
+  security has blocked code_review 3 times, and loop.max_review_rounds is 3: the gate goes to security-arbiter, a fresh sdlc:security that rules on the open findings and whose review then stands for security at code_review; security is refused there, and until security-arbiter first reviews, any answer a person gives the story starts security's count again and gives it its turn, and security-arbiter waits for the next limit; from that review, only a person's answer to a review_not_converging hand-over raised by security or security-arbiter at code_review gives security its turn again
+```
+
+From that block on, `review add` refuses the reviewer at that gate with
+[SDLC-E0027](troubleshooting.md#sdlc-e0027), and takes the arbiter; it refuses the
+arbiter before it. The arbiter's own block, recorded that many times, hands the story to a
+person as `review_not_converging`, and says so — `handed_over` in `--json`. So does the
+reviewer's limit-th block where the role is disabled, since a disabled role has no arbiter.
+
+What gives the reviewer its turn again depends on whether the arbiter has reviewed yet:
+
+- **Before the arbiter's first review**, the reviewer's blocks are counted since a person last
+  answered for the story, so any answer starts the count again, whatever it was about: a
+  stalled loop, a failing gate, another role's hand-over at the same gate. The reviewer is then
+  taken, and the arbiter is refused until the reviewer's limit comes round again.
+- **From the arbiter's first review**, its review stands, and only a person's answer to a
+  `review_not_converging` hand-over that the reviewer or its arbiter raised at that gate gives
+  the reviewer its turn again. An answer to another role's or another gate's does not.
 
 That block and the hand-over are recorded together or not at all, as a
 [gate failure at its limit](#sdlc-gate-gate-status) is. Where the story cannot
@@ -2025,6 +2091,70 @@ US-001  code_review code-reviewer F-1  referred for a person to read when the st
 $ sdlc finding close design_review architect F-2 --declined --reason "the name is the domain's word" --json
 {"ok":true,"story":"US-001","gate":"design_review","role":"architect","id":"F-2","closing":{"at":"2026-11-03T19:52:33Z","as":"declined","reason":"the name is the domain's word","session":"3f2c9a6e-5d1b-4c8e-9a7f-2b6d4e8c1a90"}}
 ```
+
+## `sdlc decide <ID>`
+
+Record an [implementation decision](the-loop.md#two-kinds-of-decision) the loop made, and why. A
+product decision is a person's, and goes to them with [`sdlc escalate`](#sdlc-escalate)
+`product_decision`.
+
+```console
+$ sdlc decide US-001 --question "Which total does AC-2 mean when a refund is pending?" \
+    --option "the gross total" --option "the net total" --chosen "the net total" \
+    --reason "AC-2 says what the customer is charged" --by researcher
+US-001  analysis  D-1 by researcher recorded in .sdlc/stories/US-001/DECISIONS.md
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--question` | what was decided, as a question |
+| `--option` | one option weighed; once for each, at least two and at most ten, no two the same |
+| `--chosen` | the option chosen, word for word as one of the `--option` values |
+| `--reason` | why it was chosen |
+| `--by` | the agent whose recommendation or ruling was applied |
+
+Each value is one line of at most 1,000 bytes. `--by` is an agent of the plugin such as
+`researcher`, an instance within `team.agents.<agent>.instances` such as `security-2`, or a
+reviewer's arbiter such as `architect-arbiter`; a person is never one. It names whose
+recommendation or ruling was applied, as the runbook reports it, not the session that ran the
+command: any session may give any name the loop knows, no gate reads it, and the trace shows
+which session ran it.
+
+It appends a `decision` event to the story's gate record, holding the question, the options, the
+one chosen, the reason, who decided, the gate the story is at (`done` once every gate has
+passed) and the time, and writes the story's `DECISIONS.md` again from the record's decisions,
+in the order made. It prints one line on stdout: the story, the gate, the decision's number,
+`D-<n>`, which is its heading in `DECISIONS.md`, who decided, and the file. Nothing a model wrote
+is on it. `--json` prints `{"ok":true,"story":...,"gate":...,"by":...,"number":...,"path":...}`
+instead.
+
+A decision changes no gate, review, freeze, staffing or approval, and answers nothing a person
+was asked. `sdlc log` lists it with its story, and `sdlc status` counts it in `decisions_unread`
+until a person's `sdlc ack` covers its story's commit, as `sdlc ack` marks the rest of the log
+read.
+
+- It exits 0 once the decision is recorded, and 1 when it is refused. A missing or blank part, a
+  part over 1,000 bytes or holding a line break, a control character or an invisible one, fewer
+  than two options or more than ten, an option given twice, a `--chosen` that is not one of the
+  options, and a `--by` the loop does not know are each refused with
+  [SDLC-E0094](troubleshooting.md#sdlc-e0094), whose fix names the part. Nothing is recorded:
+  neither the record nor `DECISIONS.md` changes.
+- A story the backlog does not hold, or one never started, is refused with
+  [SDLC-E0009](troubleshooting.md#sdlc-e0009) or [SDLC-E0011](troubleshooting.md#sdlc-e0011), and
+  one held by another checkout as `sdlc finding close` is.
+- A story whose commit your `sdlc ack` already covers is refused with SDLC-E0094 too: a decision
+  recorded on it would be neither counted by `sdlc status` nor listed by `sdlc log`. Record it on
+  the story under way, and name the story in `--question`.
+- It is taken while a story waits for a person. A decision answers nothing, so `sdlc start` is
+  still refused until the person answers, and the runbook records an arbiter's ruling in the
+  same turn as the arbiter's last review, which may be the one that hands the story over.
+- A retried `sdlc decide` records the decision again, as the next `D-<n>`: the record is
+  history, and the time on each tells the two apart.
+- Written in front of the subcommand, each of these flags' values is read by the hook as a word
+  of the command line as well, so that a person's command cannot hide behind one:
+  `sdlc --option x approve US-001` is refused as `sdlc approve US-001` is. After `decide`, an
+  option or a choice is only that, whatever it says; word it as a phrase all the same, since the
+  log and `DECISIONS.md` are read by a person.
 
 ## `sdlc staffing`
 
@@ -2296,7 +2426,14 @@ $ sdlc escalate pre_commit_approval --message "the migration has no down step"
 | `--message` | what the person is being asked to decide. Required |
 
 The type is a word for the kind of question — `pre_commit_approval`,
-`spec_unclear`, `loop_stalled` — and the message is the question. It goes on the
+`product_decision`, `loop_stalled` — and the message is the question. Any word
+is taken, as it always was. `product_decision` is the one escalation Gate 2
+makes for a story's [product decisions](the-loop.md#two-kinds-of-decision):
+every product question of the story, each with two or three options and a
+recommendation, so that the person answers them all at once. `spec_unclear`
+and `design_decision` are for a product decision too; an implementation
+decision is never escalated, and is recorded with [`sdlc decide`](#sdlc-decide-id).
+The question goes on the
 story's record, bound to the work as it stands. The story becomes
 `awaiting_human`, and the iteration ends, so the session stops rather than
 carrying on past the question. `sdlc start` refuses the story until somebody

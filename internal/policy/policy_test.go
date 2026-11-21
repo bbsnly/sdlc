@@ -92,6 +92,12 @@ var fixtures = map[string]fixture{
 		denies:  Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/trace.jsonl", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/notes.jsonl", Story: "A-1"},
 	},
+	// US-131 T-4: a story's DECISIONS.md, which only `sdlc decide` writes, under a
+	// rule of its own, as the trace has.
+	"decisions-are-written-by-the-tool": {
+		denies:  Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/DECISIONS.md", Story: "A-1"},
+		permits: Request{Tool: "Write", Agent: "sdlc:researcher", Path: ".sdlc/stories/A-1/decisions-notes.md", Story: "A-1"},
+	},
 	"review-is-written-by-the-tool": {
 		denies:  Request{Tool: "Write", Agent: "sdlc:architect", Path: ".sdlc/stories/A-1/reviews/design_review-architect-1.md", Story: "A-1"},
 		permits: Request{Tool: "Write", Agent: "sdlc:architect", Path: ".sdlc/stories/A-1/notes.md", Story: "A-1"},
