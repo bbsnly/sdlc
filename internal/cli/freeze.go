@@ -207,14 +207,16 @@ func (f *freezer) reviewed(id string, files []string, hashes map[string]string) 
 
 // forTheFreeze is the tests gate's refusal said as the freeze's own: worded
 // for a gate that cannot pass, it sent a person who ran sdlc freeze looking
-// for a gate to run. The code, the why and the fix are the gate's.
+// for a gate to run. The code, the why and the fix are the gate's: built
+// afresh, the error took the catalogue's fix, which dropped the one naming the
+// test reviewer's arbiter at its limit.
 func forTheFreeze(err error) error {
 	refused, ok := errors.AsType[*sdlcerr.Error](err)
 	if !ok || refused.Code != sdlcerr.ReviewsMissing && refused.Code != sdlcerr.ReviewBlocks {
 		return err
 	}
 	return sdlcerr.New(refused.Code, "the freeze waits for the test reviewer's review of the tests as they are",
-		refused.Why)
+		refused.Why).WithFix(refused.Fix)
 }
 
 // testsDigest is the subject of a review of tests_frozen: one line per file,

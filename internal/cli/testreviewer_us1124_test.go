@@ -335,6 +335,30 @@ func TestAC5ATestReviewerAtItsLimitSendsTheTestsToItsArbiterWhoseOwnLimitHandsTh
 	}
 }
 
+// The freeze rewords the tests gate's refusal as its own, and a rewording that
+// built the error afresh put the catalogue's fix back: the person who ran sdlc
+// freeze was told to have the test reviewer look again, which its limit now
+// refuses, rather than whom to delegate the tests to.
+func TestAC6AtTheTestReviewersLimitTheFreezeIsRefusedWithAFixThatNamesItsArbiter(t *testing.T) {
+	t.Parallel()
+	const arbiter = trReviewer + "-arbiter"
+	root := trStory(t, map[string]any{"max_rounds": 1})
+	if got := decode[arReview](t, trReview(t, "block", "--json")); got.Arbiter != arbiter {
+		t.Fatalf("AC-6 the test reviewer's block at max_rounds 1 named arbiter %q, want %s", got.Arbiter, arbiter)
+	}
+
+	r := run(t, "freeze")
+	trRefused(t, root, r, trBlocks, "the freeze waits for the test reviewer's review of the tests as they are",
+		"has gone to "+arbiter, "AC-2 has no test")
+	fix := stfFixLine(r.stderr)
+	for _, want := range []string{"as " + arbiter, "sdlc:" + trReviewer, "sdlc staffing show --gate tests_frozen"} {
+		if !strings.Contains(fix, want) {
+			t.Errorf("AC-6 the freeze's fix at the test reviewer's limit does not say %q, so it does not name whom the tests went to: %q",
+				want, fix)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------- AC-7
 
 func TestAC7AfterAPersonLiftsTheFreezeAChangedTestWaitsForANewApprove(t *testing.T) {
