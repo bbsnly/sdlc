@@ -551,11 +551,11 @@ Send the change back to the reviewers that are outstanding; `sdlc review list` n
 
 **From `sdlc freeze`**, the review is the test reviewer's of the test files as they are: it has
 not reviewed them, has not approved them, or reviewed them before a test was changed, added or
-renamed. The freeze prints the gate's refusal, though no gate was asked to pass:
+renamed:
 
 ```console
 $ sdlc freeze
-sdlc: tests_frozen cannot pass until its reviews are in
+sdlc: the freeze waits for the test reviewer's review of the tests as they are
 
   why  test-reviewer has not reviewed
   fix  delegate to the reviewers this gate expects -- "sdlc review list" shows who is outstanding
@@ -1017,10 +1017,11 @@ that arrives after the freeze was not written before the code, and nothing says 
 written to pass, so every gate the freeze guards (`tests_frozen`, `plan`, `implementation`,
 `verification` and `commit`) refuses while one is in the tree.
 
-If the project has `freeze.allow_new_test_files` on, run `sdlc freeze` again: it adds them to the
-freeze, and from then on they are held like the rest. Where the test reviewer is staffed, have it
-review the tests with the new files first: until it approves, the freeze refuses with
-[SDLC-E0029](#sdlc-e0029) or [SDLC-E0030](#sdlc-e0030). Otherwise remove them. If the story
+If the project has `freeze.allow_new_test_files` on, first have the test reviewer, where it is
+staffed, review the tests with the new files among them: until it approves, the freeze refuses
+with [SDLC-E0029](#sdlc-e0029) or [SDLC-E0030](#sdlc-e0030). Then run `sdlc freeze` again: it adds
+them to the freeze, and from then on they are held like the rest. With the setting off, remove
+them. If the story
 really needs them, have a person run `/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."` in their
 own terminal and freeze again. `sdlc unfreeze` needs an iteration running: where an assistant
 handed the story over with `sdlc escalate`, the person first answers with `/sdlc:approve <ID>`, or

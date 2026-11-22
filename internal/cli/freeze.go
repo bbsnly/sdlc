@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -49,8 +48,8 @@ func newFreezeCmd() *cobra.Command {
 			"Which files count as tests comes from paths.tests in .sdlc/config.json.\n\n" +
 			"Where commands.freeze_check is set there, freeze runs it first over the new and\n" +
 			"changed test files and takes the freeze only if it passes.\n\n" +
-			"Where the test reviewer is staffed, freeze waits for its approve of the test\n" +
-			"files as they are.",
+			"Where the test reviewer is staffed, freeze waits for its review of the test\n" +
+			"files as they are: its approve, or, where its can_block is false, any review.",
 		Example: "  sdlc freeze\n  sdlc freeze --json",
 		Args:    cobra.NoArgs,
 		RunE:    func(cmd *cobra.Command, _ []string) error { return runFreeze(cmd) },
@@ -201,9 +200,21 @@ func (f *freezer) reviewed(id string, files []string, hashes map[string]string) 
 	if err == nil {
 		rd := readingOf(f.s)
 		rd.tests, rd.testsOK = testsDigest(files, hashes), true
-		err = requireReviews(f.cmd.Context(), rd, id, model.GateTestsFrozen, record)
+		err = forTheFreeze(requireReviews(f.cmd.Context(), rd, id, model.GateTestsFrozen, record))
 	}
 	return err
+}
+
+// forTheFreeze is the tests gate's refusal said as the freeze's own: worded
+// for a gate that cannot pass, it sent a person who ran sdlc freeze looking
+// for a gate to run. The code, the why and the fix are the gate's.
+func forTheFreeze(err error) error {
+	refused, ok := errors.AsType[*sdlcerr.Error](err)
+	if !ok || refused.Code != sdlcerr.ReviewsMissing && refused.Code != sdlcerr.ReviewBlocks {
+		return err
+	}
+	return sdlcerr.New(refused.Code, "the freeze waits for the test reviewer's review of the tests as they are",
+		refused.Why)
 }
 
 // testsDigest is the subject of a review of tests_frozen: one line per file,
@@ -299,13 +310,17 @@ func (f *freezer) addToFreeze(id string, lock *model.Lock) (bool, error) {
 	if err != nil || len(added) == 0 {
 		return false, err
 	}
-	hashes, err := hashAll(f.s, added)
+	// The approve is of the files review add lists, by the names it lists them
+	// under and their contents, not of lock.Files. A frozen file that
+	// paths.tests or .gitignore has let go of since stays held, and one renamed
+	// only in case is held under its old spelling (Holds folds case): looked up
+	// as lock keys, either left a digest no approve could ever match.
+	hashes, err := hashAll(f.s, listed)
 	if err == nil {
-		maps.Copy(lock.Files, hashes)
-		// The approve is of the files review add lists, not of lock.Files: a
-		// frozen file that paths.tests or .gitignore has let go of since stays
-		// held, and compared with it in, no approve could ever match.
-		err = f.reviewed(id, listed, lock.Files)
+		for _, name := range added {
+			lock.Files[name] = hashes[name]
+		}
+		err = f.reviewed(id, listed, hashes)
 	}
 	if err != nil {
 		return true, err

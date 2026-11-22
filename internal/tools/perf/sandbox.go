@@ -194,8 +194,8 @@ func (sb *sandbox) build(ctx context.Context, kind string) error {
 			// The commit gate records that the work reached trunk.
 			steps = append(steps, func() error { return sb.commit(ctx, "feat: the story") })
 		case upTo == model.GateTestsFrozen:
-			// A freeze holds the story's tests, once the test reviewer has
-			// approved them as they are.
+			// A test file for the measured freeze to hold, and the test
+			// reviewer's approve of it, which that freeze waits for.
 			steps = append(steps, func() error { return sb.write("invoice_test.go", "package invoice\n") })
 			steps = append(steps, sb.approvals(ctx, model.GateTestsFrozen)...)
 		case kind == kindStopped:
