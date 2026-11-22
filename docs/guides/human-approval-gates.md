@@ -315,7 +315,7 @@ on the story.
 | any gate | a rule in the `## SDLC Contract` blocks a gate | a hand-over that names the rule |
 | Gate 8 | the story waits for a person (its tier or a path its change touches) | `pre_commit_approval` |
 | any gate | the same gate failed `loop.max_rework_rounds` times | `gate_failing`, by `sdlc gate` |
-| a review | the same reviewer blocked `loop.max_review_rounds` times | `review_not_converging`, by `sdlc review add` |
+| a review | a reviewer's [arbiter](../the-loop.md#the-arbiter) blocked as many times as its reviewer's limit (`loop.max_review_rounds`, or the agent's `max_rounds`), or a disabled reviewer reached its own | `review_not_converging`, by `sdlc review add` |
 | any time | the `Stop` hook sent back `loop.max_stop_blocks` stops in a row with nothing recorded, and the session stopped again | `loop_stalled`, by the `Stop` hook |
 | any gate | an agent's run failed more than `team.retries` times at the gate, each reported with `sdlc team failure` | `agent_failed`, by `sdlc team failure` |
 | any gate | the gate's work, or the verifier's or the code reviewer's review, belongs to an agent the project disabled | `work_by_hand` |

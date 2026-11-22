@@ -1901,6 +1901,15 @@ row gives the arbiter's review, which stands for it, and names the arbiter — `
   code_review     security        blocking  approve (by security-arbiter, round 1)
 ```
 
+From the reviewer's limit-th block until its arbiter first reviews, the row still gives the
+reviewer's own block, stale or not, and says where the gate has gone — `gone_to` in `--json`.
+The reviewer is refused there, and `sdlc gate <gate> pass` and `sdlc freeze` name the arbiter
+in their [SDLC-E0030](troubleshooting.md#sdlc-e0030) refusal:
+
+```console
+  design_review   architect       blocking  block (round 2; the gate has gone to architect-arbiter, which reviews it next)
+```
+
 ## `sdlc review add GATE ROLE VERDICT`
 
 Record one reviewer's conclusion. Each reviewing agent runs this when it has
@@ -1950,11 +1959,14 @@ itself, and the tree leaves out `.sdlc/`; see
 A block that stops the gate, recorded `loop.max_review_rounds` times by the same
 reviewer since a person last answered for the story (or the agent's own
 [`max_rounds`](configuration.md#team) where it has one), sends the gate to that
-reviewer's [arbiter](the-loop.md#the-arbiter), and says so on a line of its own —
+reviewer's [arbiter](the-loop.md#the-arbiter), and says so in four lines of its own —
 `arbiter` in `--json`:
 
 ```console
-  security has blocked code_review 3 times, and loop.max_review_rounds is 3: the gate goes to security-arbiter, a fresh sdlc:security that rules on the open findings and whose review then stands for security at code_review; security is refused there, and until security-arbiter first reviews, any answer a person gives the story starts security's count again and gives it its turn, and security-arbiter waits for the next limit; from that review, only a person's answer to a review_not_converging hand-over raised by security or security-arbiter at code_review gives security its turn again
+  security has blocked code_review 3 times, and loop.max_review_rounds is 3: the gate goes to security-arbiter, a fresh sdlc:security that rules on the open findings.
+  Its review then stands for security at code_review, and security is refused there.
+  Until security-arbiter first reviews, any answer a person gives the story starts security's count again and gives it its turn.
+  From then on, only a person's answer to a review_not_converging hand-over raised by security or security-arbiter at code_review gives security its turn again.
 ```
 
 From that block on, `review add` refuses the reviewer at that gate with
@@ -2392,9 +2404,11 @@ test files as they are, by name and content: until it has one it refuses with
 [SDLC-E0029](troubleshooting.md#sdlc-e0029), where the reviewer has not reviewed,
 has not approved, or reviewed tests that have changed since, or with
 [SDLC-E0030](troubleshooting.md#sdlc-e0030), where it blocked, and the refusal
-names the reviewer. A test changed, added or renamed after the approve makes it
-stale. With the project manager disabled, or a staffing that has no row for the
-test reviewer, the freeze waits for it; one the staffing leaves out, or one
+names the reviewer, or, where the tests have gone to it, `test-reviewer-arbiter`,
+whose review the freeze then reads in the test reviewer's place. A test changed,
+added or renamed after the approve makes it stale. With the project manager
+disabled, or a staffing that has no row for the test reviewer, the freeze waits
+for it; one the staffing leaves out, or one
 disabled in `team.agents`, is not waited for, and where its `can_block` is false
 the freeze waits only until it has reviewed. A freeze that succeeds prints what it
 always printed.

@@ -122,8 +122,16 @@ func TestAC1EveryAgentAndTheRunbookPointToTheDefinition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(agents) != 12 {
-		t.Fatalf("there are %d agents, want 12", len(agents))
+	// Counted on disk rather than pinned, so that an agent added later is held
+	// to the link by this row instead of breaking it; and never none, so that
+	// the loop below cannot pass by reading nothing.
+	onDisk, err := filepath.Glob(filepath.Join(pluginDir, "agents", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk) == 0 || len(agents) != len(onDisk) {
+		t.Fatalf("there are %d agents read and %d definitions in %s, want the same and at least one",
+			len(agents), len(onDisk), filepath.Join(pluginDir, "agents"))
 	}
 	for _, a := range agents {
 		if !strings.Contains(a.Body, link) {

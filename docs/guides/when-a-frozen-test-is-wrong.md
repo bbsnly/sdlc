@@ -89,7 +89,11 @@ in the story's worktree with `git.worktrees` on.
 
 Where the test reviewer is staffed, the corrected test is reviewed again before
 it is frozen: its earlier approve was of the tests as they were, so `sdlc freeze`
-waits for a new one ([SDLC-E0029](../troubleshooting.md#sdlc-e0029)). Tests put
+waits for a new one ([SDLC-E0029](../troubleshooting.md#sdlc-e0029)). The review
+is the test reviewer's, or `test-reviewer-arbiter`'s where the test reviewer's
+limit sent the tests to it before the freeze: the unfreeze answers no
+`review_not_converging` hand-over, so the [arbiter](../the-loop.md#the-arbiter)
+reviews the corrected tests and the test reviewer is refused there. Tests put
 back byte for byte as they were keep their approve.
 
 Then freeze again, with the story active, and pass the gate the unfreeze

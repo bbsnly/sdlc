@@ -74,6 +74,10 @@ type reviewInfo struct {
 	// ReviewedBy is the arbiter whose review stands for the reviewer, where
 	// one does: the verdict and the round are then the arbiter's.
 	ReviewedBy string `json:"reviewed_by,omitempty"`
+	// GoneTo is the arbiter the gate has gone to while the reviewer's own
+	// review still stands, from its limit-th block to the arbiter's first
+	// review: the row showed only the refused reviewer's block (verifier F-9).
+	GoneTo string `json:"gone_to,omitempty"`
 }
 
 func newReviewCmd() *cobra.Command {
@@ -309,7 +313,9 @@ func runReviewAdd(cmd *cobra.Command, args []string, f reviewFlags) error {
 	case saved.handedOver != "":
 		sayHandedOver(cmd.OutOrStdout(), id, saved.message)
 	case saved.arbiter != "":
-		fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", saved.message)
+		for line := range strings.SplitSeq(saved.message, "\n") {
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", line)
+		}
 	}
 	return nil
 }
@@ -515,12 +521,19 @@ func saveReview(cmd *cobra.Command, s *store.Store, record *model.Record, review
 	gate := doc.Gate
 	if _, isArbiter := model.ArbiterOf(reviewer.Role); !isArbiter {
 		if due, blocks, limit, setting := arbiterDue(s, record, reviewer); due {
-			arbiter := model.ArbiterName(reviewer.Role)
-			message := fmt.Sprintf("%s has blocked %s %d times, and %s is %d: the gate goes to %s, a fresh sdlc:%s "+
-				"that rules on the open findings and whose review then stands for %s at %s; %s is refused there, and %s",
-				reviewer.Role, gate, blocks, setting, limit, arbiter, model.BaseRole(reviewer.Role),
-				reviewer.Role, gate, reviewer.Role, turnBack(reviewer.Role, gate, false))
-			return savedReview{arbiter: arbiter, message: message}, saveRecorded(s, record, doc)
+			// One line a sentence: as one line of 600 characters it had to be
+			// read three times at the terminal (human-advocate F-17 of the
+			// design review).
+			role, arbiter := reviewer.Role, model.ArbiterName(reviewer.Role)
+			lines := []string{
+				fmt.Sprintf("%s has blocked %s %d times, and %s is %d: the gate goes to %s, a fresh sdlc:%s "+
+					"that rules on the open findings.", role, gate, blocks, setting, limit, arbiter, model.BaseRole(role)),
+				fmt.Sprintf("Its review then stands for %s at %s, and %s is refused there.", role, gate, role),
+				fmt.Sprintf("Until %s first reviews, any answer a person gives the story starts %s's count again and gives it its turn.",
+					arbiter, role),
+				fmt.Sprintf("From then on, only a person's answer to %s gives %s its turn again.", raisedAt(role, gate), role),
+			}
+			return savedReview{arbiter: arbiter, message: strings.Join(lines, "\n")}, saveRecorded(s, record, doc)
 		}
 	}
 	limit, setting := reviewLimit(s.Config(), reviewer.Role)
@@ -668,6 +681,8 @@ func describeReviewer(ctx context.Context, rd *reading, record *model.Record, id
 		info.Verdict, info.Round = string(latest.Verdict), latest.Round
 		if latest.Role != r.Role {
 			info.ReviewedBy = latest.Role
+		} else if gone(rd.s, record, r) {
+			info.GoneTo = model.ArbiterName(r.Role)
 		}
 		info.Stale = latest.Subject != subject
 		if info.Stale && r.Gate == model.GateDesignReview && store.IsPlanRevision(latest.Subject) {
@@ -729,16 +744,21 @@ func describeReviewState(i reviewInfo) string {
 	if i.ReviewedBy != "" {
 		round = " (by " + i.ReviewedBy + ", round " + strconv.Itoa(i.Round)
 	}
+	end := ")"
+	if i.GoneTo != "" {
+		// Built from the role, as ReviewedBy is: no free text from the record.
+		end = "; the gate has gone to " + i.GoneTo + ", which reviews it next)"
+	}
 	switch {
 	case i.ReviewedSubject != "":
 		// The role is the reviewers' table's, and the subject has passed the check
 		// that it is a hash: neither is free text from the record.
 		return verdict + round + ", stale -- what was reviewed has changed since; reviewed revision " +
-			i.ReviewedSubject + "; see sdlc artifact diff plan --since " + cmp.Or(i.ReviewedBy, i.Role) + ")"
+			i.ReviewedSubject + "; see sdlc artifact diff plan --since " + cmp.Or(i.ReviewedBy, i.Role) + end
 	case i.Stale:
-		return verdict + round + ", stale -- what was reviewed has changed since)"
+		return verdict + round + ", stale -- what was reviewed has changed since" + end
 	default:
-		return verdict + round + ")"
+		return verdict + round + end
 	}
 }
 
@@ -800,7 +820,7 @@ func requireReviews(ctx context.Context, rd *reading, id string, gate model.Gate
 		return err
 	}
 
-	var outstanding, blocked []string
+	var outstanding, blocked, ruling []string
 	for _, r := range reviewers {
 		blocking := r.Blocks(policy)
 		// The review that stands, the arbiter's where one does, and named so.
@@ -812,6 +832,14 @@ func requireReviews(ctx context.Context, rd *reading, id string, gate model.Gate
 		switch {
 		case !ok:
 			outstanding = append(outstanding, r.Role+" has not reviewed"+back[r.Role])
+		case r.Stops(policy, latest.Verdict) && by == r.Role && gone(rd.s, record, r):
+			// Between the limit-th block and the arbiter's first review the
+			// block still stands, but the reviewer is refused: "have the same
+			// reviewer look again" sent the runbook to a refusal (red-team
+			// F-13 of the design review). Asked before staleness, which named
+			// the refused reviewer too once the work changed (verifier F-9).
+			why, fix := goneToArbiter(gate, latest, latest.Subject != subject)
+			blocked, ruling = append(blocked, why), append(ruling, fix)
 		case latest.Subject != subject:
 			outstanding = append(outstanding, by+" reviewed something that has changed since"+back[r.Role])
 		case r.Stops(policy, latest.Verdict):
@@ -821,9 +849,7 @@ func requireReviews(ctx context.Context, rd *reading, id string, gate model.Gate
 		}
 	}
 	if len(blocked) > 0 {
-		return sdlcerr.New(sdlcerr.ReviewBlocks,
-			string(gate)+" is blocked by a reviewer",
-			strings.Join(blocked, "; "))
+		return blockedRefusal(gate, blocked, ruling)
 	}
 	if len(outstanding) > 0 {
 		return sdlcerr.New(sdlcerr.ReviewsMissing,
@@ -831,6 +857,37 @@ func requireReviews(ctx context.Context, rd *reading, id string, gate model.Gate
 			strings.Join(outstanding, "; "))
 	}
 	return nil
+}
+
+// goneToArbiter is requireReviews' why and fix for a reviewer whose block
+// stands at a gate that has gone to its arbiter, of the work as it is or as it
+// was: either way only the arbiter may review it next.
+func goneToArbiter(gate model.Gate, block model.Review, stale bool) (why, fix string) {
+	arbiter := model.ArbiterName(block.Role)
+	why = block.Role + " blocked"
+	if stale {
+		why += " something that has changed since"
+	}
+	why += describeNote(block.Note) + ", and " + string(gate) + " has gone to " + arbiter
+	fix = "delegate " + block.Role + "'s open findings to a fresh sdlc:" + model.BaseRole(block.Role) +
+		" as " + arbiter + ", asked for what sdlc staffing show --gate " + string(gate) + " gives it"
+	return why, fix
+}
+
+// blockedRefusal is requireReviews' refusal of a gate a block stops. Where a
+// blocking reviewer's gate has gone to its arbiter, the fix names the arbiter
+// for it, and keeps the catalogue's for any other reviewer that blocked.
+func blockedRefusal(gate model.Gate, blocked, ruling []string) error {
+	e := sdlcerr.New(sdlcerr.ReviewBlocks,
+		string(gate)+" is blocked by a reviewer",
+		strings.Join(blocked, "; "))
+	if len(ruling) == 0 {
+		return e
+	}
+	if len(ruling) < len(blocked) {
+		ruling = append(ruling, "for the rest, "+e.Fix)
+	}
+	return e.WithFix(strings.Join(ruling, "; "))
 }
 
 // expectedReviewers is who the gate waits for, and for each one brought back

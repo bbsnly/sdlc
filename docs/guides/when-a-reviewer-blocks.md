@@ -13,13 +13,15 @@
 
 ## Introduction
 
-Three gates are reviewed: `design_review` at Gate 4, `verifier_review` at Gate 6
-and `code_review` at Gate 7. Sooner or later one of the reviewers will find
-something wrong and record a `block`. Don't worry if that happens to your first
-story: it is the loop doing what it is for.
+Four gates are reviewed: `tests_frozen` at Gate 3, `design_review` at Gate 4,
+`verifier_review` at Gate 6 and `code_review` at Gate 7. Sooner or later one of
+the reviewers will find something wrong and record a `block`. Don't worry if
+that happens to your first story: it is the loop doing what it is for.
 
 A block that can stop the gate does stop it, and the only way past it is the
-same reviewer looking again at the reworked plan or code. This page shows you
+same reviewer looking again at the reworked tests, plan or code, or, once it has
+blocked as often as its limit allows, its
+[arbiter](#when-the-rework-does-not-converge). This page shows you
 what a block looks like, how a rework round goes, and which reviewers are able
 to block in the first place.
 
@@ -134,9 +136,10 @@ gate by gate:
 | `code_review` | `code-reviewer`; `security` when the story is security-sensitive | `perf` | `human-advocate`; `security` otherwise |
 
 The test reviewer is the one whose block refuses a command other than `sdlc gate`:
-it refuses `sdlc freeze`, with SDLC-E0030, until the same reviewer approves the
-tests as they are. Where its `can_block` is false it is advisory, and the freeze
-waits only until it has reviewed.
+it refuses `sdlc freeze`, with SDLC-E0030, until the review that stands for the
+test reviewer approves the tests as they are: its own, or `test-reviewer-arbiter`'s
+once its limit has sent the tests there. Where its `can_block` is false it is
+advisory, and the freeze waits only until it has reviewed.
 
 Whether a story is security-sensitive is recorded at Gate 2 with
 `sdlc gate analysis pass --security-sensitive` or `--security-sensitive=false`.
@@ -166,16 +169,39 @@ A role the gate does not expect is refused with
 ## When the rework does not converge
 
 Rounds are not unlimited. A block that stops the gate, recorded
-`loop.max_review_rounds` times by the same reviewer, hands the story to a
-person. The configuration `sdlc init` writes sets it to 2, so had the architect
+`loop.max_review_rounds` times by the same reviewer (or its own
+[`max_rounds`](../configuration.md#an-agents-entry)), sends the gate to that
+reviewer's [arbiter](../the-loop.md#the-arbiter): a fresh agent of the same kind,
+recorded as `<role>-arbiter`, that rules on the open findings. The test reviewer
+is no exception: at its limit the tests go to `test-reviewer-arbiter`. The
+configuration `sdlc init` writes sets the limit to 2, so had the architect
 blocked again in round 2:
 
 ```console
 $ sdlc review add design_review architect block --important 1 --finding "important the plan: AC-2 still has no step" --note "AC-2 still has no step" < review.md
 US-001  design_review  architect  block (round 2)
   .sdlc/stories/US-001/reviews/design_review-architect-2.md
+  architect has blocked design_review 2 times, and loop.max_review_rounds is 2: the gate goes to architect-arbiter, a fresh sdlc:architect that rules on the open findings.
+  Its review then stands for architect at design_review, and architect is refused there.
+  Until architect-arbiter first reviews, any answer a person gives the story starts architect's count again and gives it its turn.
+  From then on, only a person's answer to a review_not_converging hand-over raised by architect or architect-arbiter at design_review gives architect its turn again.
+```
 
-US-001 is handed to a person: architect has blocked design_review 2 times, and loop.max_review_rounds is 2, so the rework is not converging on what it asks for. The last note: AC-2 still has no step
+Nothing is handed over yet, and the iteration goes on. The runbook delegates
+the open findings, their closings and the architect's documents to a fresh
+`sdlc:architect` as `architect-arbiter`, at what
+`sdlc staffing show --gate design_review` asks for it, one step above the
+architect. From here `sdlc review add design_review architect` is refused with
+[SDLC-E0027](../troubleshooting.md#sdlc-e0027), and the gate reads the
+arbiter's review in the architect's place. Only the arbiter's own limit hands
+the story to a person, had it blocked twice too:
+
+```console
+$ sdlc review add design_review architect-arbiter block --important 1 --finding "important the plan: AC-2 still has no step" --note "AC-2 still has no step" < review.md
+US-001  design_review  architect-arbiter  block (round 2)
+  .sdlc/stories/US-001/reviews/design_review-architect-arbiter-2.md
+
+US-001 is handed to a person: architect-arbiter has blocked design_review 2 times, and loop.max_review_rounds is 2, so the rework is not converging on what it asks for. The last note: AC-2 still has no step
 
 A person reads the work and answers in Claude Code or in their own terminal:
   /sdlc:approve US-001, or sdlc approve US-001
@@ -183,10 +209,17 @@ A person reads the work and answers in Claude Code or in their own terminal:
 ```
 
 The iteration ends there, and `sdlc status` lists the story as waiting. A block
-from an advisory reviewer is a finding, not a lost round, so it is not counted.
+from an advisory reviewer is a finding, not a lost round, so it is not counted,
+and it sends nothing to an arbiter. A reviewer the project disables has no
+arbiter, so its own limit hands the story over, as above.
+
 Recording the same gate as failed `loop.max_rework_rounds` times, 3 by default,
-hands the story over in the same way. Both counts start again once a person has
-answered with `sdlc approve`. See [`loop`](../configuration.md#loop).
+hands the story over in the same way, and that count starts again once a person
+has answered with `sdlc approve`. The reviewer's turn comes back as the lines
+above say: before the arbiter's first review, any answer starts its count again;
+from that review, only an answer to a `review_not_converging` hand-over raised by
+the reviewer or its arbiter at that gate does. See
+[`loop`](../configuration.md#loop).
 
 ## Why the other approvals go stale too
 

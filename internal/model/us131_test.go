@@ -379,3 +379,38 @@ func TestAC3ADecisionIsReadFromItsChoiceOrFromItsMessageWhereTheChoiceIsGone(t *
 		})
 	}
 }
+
+// The arbiter rule covers the test reviewer too, a person's decision on the
+// story: test-reviewer-arbiter, and an instance's arbiter, review at the tests
+// gate with the test reviewer's power, and at no other gate.
+func TestAC6TheTestReviewersArbiterReadsAsItsReviewerAtTheTestsGateOnly(t *testing.T) {
+	t.Parallel()
+	role, ok := FindReviewer(GateTestsFrozen, "test-reviewer")
+	if !ok {
+		t.Fatal("AC-6 tests_frozen expects no review from test-reviewer")
+	}
+	for _, c := range []struct{ name, recorded, base string }{
+		{"test-reviewer-arbiter", "test-reviewer-arbiter", "test-reviewer"},
+		{" Test-Reviewer-Arbiter ", "test-reviewer-arbiter", "test-reviewer"},
+		{"test-reviewer-2-arbiter", "test-reviewer-2-arbiter", "test-reviewer"},
+	} {
+		r, ok := FindReviewer(GateTestsFrozen, c.name)
+		if !ok || r.Role != c.recorded || BaseRole(r.Role) != c.base {
+			t.Errorf("AC-6 FindReviewer(tests_frozen, %q) = %+v, %v, want %s standing for %s", c.name, r, ok, c.recorded, c.base)
+			continue
+		}
+		if r.Blocking != role.Blocking || r.BlocksOnBreach != role.BlocksOnBreach {
+			t.Errorf("AC-6 %q blocks otherwise than the test reviewer: %+v against %+v", c.name, r, role)
+		}
+	}
+	for _, g := range []Gate{GateDesignReview, GateVerifierReview, GateCodeReview} {
+		if r, ok := FindReviewer(g, "test-reviewer-arbiter"); ok {
+			t.Errorf("AC-6 %s expects a review from test-reviewer-arbiter, read as %+v", g, r)
+		}
+	}
+	for _, name := range []string{"test-reviewer-arbiter-arbiter", "sdet-arbiter", "test-arbiter"} {
+		if r, ok := FindReviewer(GateTestsFrozen, name); ok {
+			t.Errorf("AC-6 tests_frozen expects a review from %q, read as %+v", name, r)
+		}
+	}
+}

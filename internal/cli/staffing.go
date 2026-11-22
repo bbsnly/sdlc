@@ -347,9 +347,21 @@ func refuseLeavingOut(team config.Team, record *model.Record, agent string) erro
 		// under its own name, and its arbiter's stands in its place.
 		if latest, ok := record.StandingReview(r.Gate, agent); r.Role == model.BaseRole(agent) && !record.Pass(r.Gate) &&
 			ok && latest.Verdict == model.VerdictBlock {
-			return sdlcerr.New(sdlcerr.StaffingReviewBlocks,
+			e := sdlcerr.New(sdlcerr.StaffingReviewBlocks,
 				latest.Role+" blocked "+string(r.Gate)+", and that gate has not passed",
 				"leaving the reviewer out would pass the gate over its block")
+			policy := model.ReviewPolicy{SecuritySensitive: record.SecuritySensitive(), CanBlock: team.CanBlock()}
+			if reviewer, found := model.FindReviewer(r.Gate, agent); found && latest.Role == agent &&
+				reviewer.Stops(policy, model.VerdictBlock) {
+				// From the limit-th block the reviewer is refused, so "have it
+				// review again" alone sent the runbook to a refusal (red-team
+				// F-13 of the design review). Said either way, since the team
+				// alone does not hold the limit.
+				arbiter := model.ArbiterName(agent)
+				e = e.WithFix(e.Fix + "; where sdlc review add has sent " + string(r.Gate) + " to " + arbiter +
+					", it is " + arbiter + " that reviews again, delegated to a fresh sdlc:" + model.BaseRole(agent))
+			}
+			return e
 		}
 	}
 	return nil

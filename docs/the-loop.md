@@ -271,11 +271,14 @@ Before the freeze, `sdlc:test-reviewer` reads the new tests against the criteria
 `ANALYSIS.md`, `THREATS.md` and `TEST-PLAN.md`, runs them, and approves or blocks.
 A block goes back to `sdlc:sdet` to correct the tests and the test plan, and the
 reviewer is asked again, up to its `max_rounds` (`loop.max_review_rounds` where it
-has none), after which the story goes to a person. Where the test reviewer is
-staffed, `sdlc freeze` waits for its approve and refuses until then, with
-[SDLC-E0029](troubleshooting.md#sdlc-e0029) where it has not reviewed, has not
-approved, or reviewed tests that have changed since, and with
-[SDLC-E0030](troubleshooting.md#sdlc-e0030) where it blocked. It is staffed unless
+has none). At that limit the tests go to its [arbiter](#the-arbiter),
+`test-reviewer-arbiter`, whose review then stands for it, and only the arbiter's
+own limit hands the story to a person. Where the test reviewer is staffed,
+`sdlc freeze` waits for the approve of the review that stands for it, its own or
+its arbiter's, and refuses until then, with
+[SDLC-E0029](troubleshooting.md#sdlc-e0029) where that review is missing, is not
+an approve, or is of tests that have changed since, and with
+[SDLC-E0030](troubleshooting.md#sdlc-e0030) where it is a block. It is staffed unless
 the staffing leaves it out, with a reason: with the project manager disabled, or a
 staffing that has no row for it, the freeze waits for it. Where its `can_block` is
 false, the freeze waits only until it has reviewed, and a disabled test reviewer is
@@ -292,7 +295,11 @@ conversation. `sdlc unfreeze --reason "..."` lifts it, puts the reason on the
 record, and sends the story back to this gate. A person runs it in their own
 terminal, because the hook refuses it from an agent.
 [When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md) walks
-through it.
+through it. Where `test-reviewer-arbiter` has reviewed, it reviews the corrected
+tests after an unfreeze, and the test reviewer is refused there: an unfreeze
+answers no `review_not_converging` hand-over, so the test reviewer has its turn
+again only once a person answers one raised by `test-reviewer` or
+`test-reviewer-arbiter` at `tests_frozen`.
 
 A project can set `commands.freeze_check`, which `sdlc freeze` runs first on the
 test files that are new or changed. The freeze is taken only if it passes, so the

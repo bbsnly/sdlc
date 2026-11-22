@@ -567,8 +567,9 @@ that has since changed is not an approval.
 
 Send the change back to the reviewers that are outstanding; `sdlc review list` names them.
 
-**From `sdlc freeze`**, the review is the test reviewer's of the test files as they are: it has
-not reviewed them, has not approved them, or reviewed them before a test was changed, added or
+**From `sdlc freeze`**, the review is the test reviewer's of the test files as they are, or
+`test-reviewer-arbiter`'s where the test reviewer's limit has sent the tests to it: it has not
+reviewed them, has not approved them, or reviewed them before a test was changed, added or
 renamed:
 
 ```console
@@ -581,7 +582,8 @@ sdlc: the freeze waits for the test reviewer's review of the tests as they are
   SDLC-E0029  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029
 ```
 
-Delegate to `sdlc:test-reviewer` and run `sdlc freeze` again once it approves.
+Delegate to `sdlc:test-reviewer`, as `test-reviewer-arbiter` where the refusal names it, and run
+`sdlc freeze` again once it approves.
 
 **At landing**, it means `story/<ID>` is not the change its reviewers saw: a commit came after
 the commit gate, or a rebase changed what the story's commits do. What trunk gained around the
@@ -622,8 +624,21 @@ as failed is how rework begins, but it does not clear the block: the gate still 
 until the same reviewer approves, because a way past the reviewer would make every review
 optional. [When a reviewer blocks](guides/when-a-reviewer-blocks.md) walks through a round.
 
-**From `sdlc freeze`**, it is the test reviewer's block of the tests: send its findings to the
-test author to correct the tests and the test plan, then have the test reviewer look again.
+Once the reviewer has blocked as many times as its limit allows, the gate has gone to its
+[arbiter](the-loop.md#the-arbiter) and the reviewer is refused, so it cannot look again. The
+refusal then says that the gate has gone to `<role>-arbiter`, and its fix names the arbiter in
+place of the same reviewer. It does so with this code even where the work has changed since the
+block, which would otherwise be [SDLC-E0029](#sdlc-e0029), since the arbiter reviews it next
+either way:
+
+```text
+  why  test-reviewer blocked: AC-2 still has no test, and tests_frozen has gone to test-reviewer-arbiter
+  fix  delegate test-reviewer's open findings to a fresh sdlc:test-reviewer as test-reviewer-arbiter, asked for what sdlc staffing show --gate tests_frozen gives it
+```
+
+**From `sdlc freeze`**, it is the test reviewer's block of the tests, or its arbiter's: send its
+findings to the test author to correct the tests and the test plan, then have the test reviewer
+look again, or `test-reviewer-arbiter` where the refusal names it.
 
 ### SDLC-E0031
 
@@ -1785,7 +1800,10 @@ A staffing or an amendment would leave out a reviewer whose latest review is a b
 that has not passed. The gate would then pass over the block. Nothing was recorded.
 
 Take the reviewer's findings through rework and have it review again; amend once its latest
-review is no longer a block. Where the block itself is wrong, hand the story to a person with
+review is no longer a block. Where `sdlc review add` has sent the gate to the reviewer's
+[arbiter](the-loop.md#the-arbiter), the reviewer is refused there, and it is `<role>-arbiter`,
+a fresh agent of the reviewer's kind, that reviews again; the fix says so. Where the block
+itself is wrong, hand the story to a person with
 `sdlc escalate <type> --message "..."`. The person answers the reviewer, or records the gate as
 failed.
 

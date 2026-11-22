@@ -271,32 +271,64 @@ func TestAC2AStaffingThatLeavesTheTestReviewerOutFreezesWithNoReviewAndOneThatKe
 
 // ---------------------------------------------------------------------- AC-5
 
-// The rounds are the reviewer's own limit where it has one, and the hand-over
-// names the reviewer, the gate and its last note.
-func TestAC5ATestReviewerThatKeepsBlockingHandsTheStoryToAPersonNamingItselfTheGateAndTheFindings(t *testing.T) {
+// The rounds are the reviewer's own limit where it has one. Under US-131 the
+// arbiter rule covers the test reviewer too, a person's decision on that story:
+// the reviewer's limit-th block sends the tests to test-reviewer-arbiter and
+// hands nothing over, the reviewer is refused from then on, and only the
+// arbiter's own limit-th block, at the same limit, hands the story to a person.
+// The hand-over names the arbiter, the gate and its last note.
+func TestAC5ATestReviewerAtItsLimitSendsTheTestsToItsArbiterWhoseOwnLimitHandsTheStoryToAPerson(t *testing.T) {
 	t.Parallel()
-	blocksUntilHandedOver := func(entry map[string]any) (int, string) {
+	const arbiter = trReviewer + "-arbiter"
+	// limits is how many blocks the reviewer gave before the tests went to its
+	// arbiter, how many the arbiter gave before the story went to a person, and
+	// what status and the log then say.
+	limits := func(entry map[string]any) (reviewer, ruling int, said string) {
 		t.Helper()
-		trStory(t, entry)
+		root := trStory(t, entry)
+		for n := 1; n <= 6 && reviewer == 0; n++ {
+			got := decode[arReview](t, trReview(t, "block", "--json"))
+			if got.HandedOver != "" {
+				t.Fatalf("AC-5 the test reviewer's block %d handed the story over as %q, want the tests sent to %s", n, got.HandedOver, arbiter)
+			}
+			if got.Arbiter != "" {
+				if got.Arbiter != arbiter {
+					t.Errorf("AC-5 the test reviewer's limit-th block names arbiter %q, want %s", got.Arbiter, arbiter)
+				}
+				reviewer = n
+			}
+		}
+		if reviewer == 0 {
+			t.Fatalf("AC-5 six blocks and the tests never went to %s", arbiter)
+		}
+		if refusal := arRefusedAt(t, root, model.GateTestsFrozen, trReviewer, "block"); !strings.Contains(refusal, "SDLC-E0027") ||
+			!strings.Contains(refusal, arbiter) {
+			t.Errorf("AC-5 the test reviewer's block past its limit was not refused with SDLC-E0027 naming %s:\n%s", arbiter, refusal)
+		}
 		for n := 1; n <= 6; n++ {
-			got := decode[reviewPayload](t, trReview(t, "block", "--json"))
+			got := decode[arReview](t, mustRunWith(t, "# Test review, the arbiter\n", "review", "add", "tests_frozen", arbiter, "block",
+				"--important", "1", "--note", "AC-2 still has no test", "--json"))
 			if got.HandedOver != "" {
 				if got.HandedOver != "review_not_converging" {
 					t.Errorf("AC-5 handed over as %q", got.HandedOver)
 				}
-				return n, mustRun(t, "status").stdout + mustRun(t, "log").stdout
+				return reviewer, n, mustRun(t, "status").stdout + mustRun(t, "log").stdout
 			}
 		}
-		t.Fatal("AC-5 six blocks and the story was never handed to a person")
-		return 0, ""
+		t.Fatal("AC-5 six blocks by the arbiter and the story was never handed to a person")
+		return 0, 0, ""
 	}
-	byDefault, _ := blocksUntilHandedOver(map[string]any{})
-	own, said := blocksUntilHandedOver(map[string]any{"max_rounds": 1})
+	byDefault, rulingByDefault, _ := limits(map[string]any{})
+	own, ruling, said := limits(map[string]any{"max_rounds": 1})
 	if own >= byDefault {
-		t.Errorf("AC-5 with max_rounds 1 the story went to a person after %d blocks, and after %d with loop.max_review_rounds",
+		t.Errorf("AC-5 with max_rounds 1 the tests went to the arbiter after %d blocks, and after %d with loop.max_review_rounds",
 			own, byDefault)
 	}
-	for _, want := range []string{trReviewer, "tests_frozen", "AC-2 has no test"} {
+	if rulingByDefault != byDefault || ruling != own {
+		t.Errorf("AC-5 the arbiter handed the story over after %d and %d blocks, want its role's limits, %d and %d",
+			rulingByDefault, ruling, byDefault, own)
+	}
+	for _, want := range []string{arbiter, "tests_frozen", "AC-2 still has no test"} {
 		if !strings.Contains(said, want) {
 			t.Errorf("AC-5 the hand-over does not name %q:\n%s", want, said)
 		}

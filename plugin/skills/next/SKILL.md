@@ -100,8 +100,7 @@ sdlc escalate <type> --message "<the question, and what you found>"
 
 Then stop, and tell the user what you asked. The story waits until a
 person answers with `sdlc approve <ID>` in their own terminal, in the story's worktree if it has
-one. Do not run `sdlc approve` yourself, and do not start the story again before they have
-answered.
+one. Do not run `sdlc approve` yourself.
 
 Do not end your turn mid-story any other way: the Stop hook sends you back. Only handing the
 story to a person ends it, or `sdlc stop` once
@@ -123,6 +122,8 @@ this is, so no rule would hold it. Tell the user so, that Claude Code did not pa
 `CLAUDE_CODE_SESSION_ID` to its commands, that the story is now in progress, and that
 `/sdlc:next` in a session that passes it picks it up. Then stop. Do not work the story without it.
 
+On `"resume": true` the earlier gates stand: go straight to its `next_gate`'s section.
+
 On `SDLC-E0010`, show the user the `why` and stop. Never start a `todo` story:
 they mark it `ready` or name it.
 `SDLC-E0033` in a story's worktree means it waits to land: go to Gate 9's `sdlc stop`.
@@ -143,7 +144,7 @@ sdlc escalate spec_unclear --message "AC-2 names an implementation: what should 
 ```
 
 If `sdlc review list --gate dor --json` lists `human-advocate`, delegate to `sdlc:human-advocate`
-with the path in its `policy`, and read what it found before deciding. It is advisory.
+with the path in its `policy`, and read what it found before deciding.
 
 When the story is ready:
 
@@ -226,8 +227,9 @@ sdlc escalate untestable --message "AC-3 cannot be observed from outside: <why>"
 Otherwise run `commands.test` and read the output yourself. Every new test must fail; if one
 passes, the gate does not pass. Where `test-reviewer` is staffed, delegate to `sdlc:test-reviewer`
 with the acceptance criteria, `ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md` and the new tests. Send a
-`block` to `sdlc:sdet` to correct the tests and `TEST-PLAN.md`, then ask again, up to its
-`max_rounds` (default `loop.max_review_rounds`). Then freeze:
+`block` to `sdlc:sdet` to correct the tests and `TEST-PLAN.md`, then ask again; at its
+`max_rounds` (default `loop.max_review_rounds`) the tests go to `test-reviewer-arbiter`, as
+Rework says. Then freeze:
 
 ```bash
 sdlc freeze
