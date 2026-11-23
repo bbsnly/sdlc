@@ -50,7 +50,14 @@ func TestAC9TheImplementationGateIsRefusedWhileLintFailsAndTakenWithItsResultOnc
 	named := ""
 	for _, found := range us134StoryFile.FindAllString(r.stderr, -1) {
 		found = strings.TrimRight(found, ".,;:)")
-		for _, path := range []string{found, filepath.Join(sb.repo, filepath.FromSlash(found)), filepath.Join(tree, filepath.FromSlash(found))} {
+		paths := []string{found}
+		// Joined onto a root, an absolute path is no path at all on Windows
+		// ("C:\repo\C:\repo\..."), and reading it fails with an error that is
+		// not "does not exist" (windows-11-arm, CI run 45256250859).
+		if !filepath.IsAbs(found) {
+			paths = append(paths, filepath.Join(sb.repo, filepath.FromSlash(found)), filepath.Join(tree, filepath.FromSlash(found)))
+		}
+		for _, path := range paths {
 			if strings.Contains(readFile(t, path), "LINT-FAILS is not allowed") {
 				named = path
 			}

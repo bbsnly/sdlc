@@ -691,6 +691,10 @@ func TestAC6ARebasedStoryHasTheCommandsRunOnTheTreeThatLandsAndRecorded(t *testi
 	t.Parallel()
 	spy := newRCSpy(t)
 	main, wt := rcFinishedWith(t, spy)
+	// The stop makes the story's commits again on the moved trunk, which needs
+	// a committer; git only makes one up where the host has a full name, and
+	// ubuntu-latest has none (CI run 45256250859).
+	otIdentity(t, main)
 	ldMoveTrunk(t, main)
 	before := spy.count(t, "test")
 
