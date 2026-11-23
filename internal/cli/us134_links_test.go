@@ -19,9 +19,11 @@ package cli
 // it goes on. The helpers carry an rl prefix, for run logs and links.
 
 import (
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +65,12 @@ func rlFifo(t *testing.T, path string) {
 	}
 	if out, err := exec.CommandContext(t.Context(), mkfifo, path).CombinedOutput(); err != nil {
 		t.Skipf("this platform makes no named pipe: %v %s", err, out)
+	}
+	// Git for Windows' mkfifo succeeds and makes a pipe only its own programs
+	// see: Windows finds nothing at the path (windows-latest, CI run
+	// 45270785246).
+	if info, err := os.Lstat(path); err != nil || info.Mode()&fs.ModeNamedPipe == 0 {
+		t.Skipf("mkfifo made no named pipe the operating system sees at %s", path)
 	}
 }
 
@@ -314,6 +322,12 @@ func TestAC3AFileSwappedForAPipeOrALinkOrALinkRetargetedHasTheGateRefusedNamingI
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			if tc.pipe == "" && tc.link == "" && runtime.GOOS == "windows" {
+				// Git Bash's ln -s copies the file unless MSYS names
+				// winsymlinks, so the command swaps nothing for a link and
+				// the gate rightly passes (windows-latest, CI run 45270785246).
+				t.Skip("the shell's ln -s makes a copy on Windows, not a link")
+			}
 			if tc.pipe != "" {
 				if _, err := exec.LookPath("mkfifo"); err != nil {
 					t.Skip("this platform has no mkfifo, so no named pipe to swap in")

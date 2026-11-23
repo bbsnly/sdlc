@@ -346,8 +346,15 @@ func TestAC3EachPathOfTheTreeIsTakenByWhatItIsWithoutFollowingALinkOrWaitingOnAP
 	if got := pathState(filepath.Join(dir, "absent.go")); got != "absent" {
 		t.Errorf("AC-3 a path that is not there is taken as %q, want absent", got)
 	}
-	if got := pathState(filepath.Join(file, "beneath")); got != "unreadable" {
-		t.Errorf("AC-3 a path beneath a file is taken as %q, want unreadable", got)
+	// Windows answers a path beneath a file as not found, and Go reads that as
+	// absent (windows-latest, CI run 45270785246); either differs from the
+	// file the path held, which is what the run is held to.
+	beneath := "unreadable"
+	if runtime.GOOS == "windows" {
+		beneath = "absent"
+	}
+	if got := pathState(filepath.Join(file, "beneath")); got != beneath {
+		t.Errorf("AC-3 a path beneath a file is taken as %q, want %s", got, beneath)
 	}
 	sub := filepath.Join(dir, "pkg")
 	if err := os.Mkdir(sub, 0o755); err != nil {
