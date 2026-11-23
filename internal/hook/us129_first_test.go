@@ -39,12 +39,14 @@ var us129FirstBase = map[string]map[string]uint64{
 const us129FirstNoise = 10 // one part in ten
 
 // us129FirstFloor is the least a first call may sit above its pin, in bytes.
-// The small events move with the host more than with the code: on
-// ubuntu-latest the PostToolUse call measured 66,224 and 70,592 bytes on one
-// tree (CI run 45256250859), where a Linux container measures 62,000 against
-// a pin of 58,952, and a longer TMPDIR alone adds 12 KB. 16 KiB is a fraction
-// of what a call that grew would show, and the total still holds the 60%.
-const us129FirstFloor = 16 << 10
+// The small events move with the host more than with the code: on one tree
+// ubuntu-latest measured the PostToolUse call at 66,224, 70,592 and 75,984
+// bytes (CI runs 45256250859 and 45259902598), where a Linux container
+// measures 62,000 against a pin of 58,952, and a longer TMPDIR alone adds
+// 8 KB to it in path lookups. 16 KiB was not enough. 32 KiB is still a
+// fraction of the hundreds of KB a cost put back would show, and the total
+// still holds the 60%.
+const us129FirstFloor = 32 << 10
 
 // TestUS129FirstCallChild is the process a case of the row runs in, and
 // nothing on its own.
