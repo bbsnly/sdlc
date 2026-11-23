@@ -132,7 +132,7 @@ func TestAC4AChangedChangeHasTheCommandsRunWithoutARebase(t *testing.T) {
 	})
 	t.Run("AC-4 one fails", func(t *testing.T) {
 		t.Parallel()
-		main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true, lx: true, set: map[string]string{"test": "exit 1"}})
+		main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true, lx: true, set: map[string]string{"test": ldAtTheLanding("exit 1")}})
 		lxChangeAfterTheReviews(t, wt)
 		ldReviewAgain(t, wt)
 		before := ldTrunk(t, main)
@@ -153,7 +153,7 @@ func TestAC4AChangedChangeHasTheCommandsRunWithoutARebase(t *testing.T) {
 // landed.
 func TestAC4WhereTrunkAlreadyHoldsAChangedTipTheCommandsStillRun(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true, lx: true, set: map[string]string{"test": "exit 1"}})
+	main, wt := ldWalked(t, ldWalk{finished: true, lx: true, set: map[string]string{"test": ldAtTheLanding("exit 1")}})
 	ldOnSpike(t, main)
 	ldBookkeeping(t, wt)
 	tip := lxChangeAfterTheReviews(t, wt)
@@ -289,7 +289,7 @@ func TestAC4TheNumberJudgedIsTheLastOnePrintedOnStdout(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			main := lxRepository(t, map[string]string{"coverage": tc.command}, tc.thresholds)
+			main := lxRepository(t, map[string]string{"coverage": ldAtTheLanding(tc.command)}, tc.thresholds)
 			wt := ldFinished(t, main)
 			ldBookkeeping(t, wt)
 			ldMoveTrunk(t, main)
@@ -480,7 +480,7 @@ func TestLandingRefusesEachStateWithItsCode(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			main, wt := ldWalked(t, ldWalk{finished: true, lx: true, set: tc.commands})
+			main, wt := ldWalked(t, ldWalk{finished: true, lx: true, set: ldAllAtTheLanding(tc.commands)})
 			if tc.spike {
 				ldOnSpike(t, main)
 			}
@@ -662,7 +662,10 @@ func TestWhatALandingSaysItDid(t *testing.T) {
 	})
 	t.Run("kept", func(t *testing.T) {
 		t.Parallel()
-		_, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+		// No bookkeeping commit: since US-134 a tree other than Gate 5's has
+		// the commands run at the landing (AC-6), which refuses uncommitted work;
+		// the kept worktree is the landing that runs none.
+		_, wt := ldWalked(t, ldWalk{finished: true})
 		writeFile(t, wt, "scratch.txt", "a thought\n")
 		out := said(t, wt)
 		suSays(t, out, "Kept .sdlc/worktrees/US-001 and story/US-001")

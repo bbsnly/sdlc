@@ -372,6 +372,14 @@ func TestEveryCodeKeepsTheNumberItWasReleasedWith(t *testing.T) {
 	// what it is for. US-133 is under way beside this story; whichever lands
 	// second takes the next number on its rebase, before either is released.
 	released = append(released, pin{registered("SDLC-E0094"), "SDLC-E0094"})
+	// US-134 AC-2: `sdlc gate implementation pass` refused because a configured
+	// command failed, a threshold was not met or coverage printed no figure, the
+	// next after SDLC-E0094, which US-131 took first on trunk. Pinned outright
+	// and found by number, as SDLC-E0085 is: the row fails by rendering as
+	// nothing until it is registered. The landing keeps SDLC-E0055 for its own
+	// run (ANALYSIS 6.2). TestAC2TheGateRunCodeIsDocumentedAndSaysWhatToDo says
+	// what it is for.
+	released = append(released, pin{registered("SDLC-E0095"), "SDLC-E0095"})
 	for _, r := range released {
 		if got := r.code.String(); got != r.id {
 			t.Errorf("%s now renders as %s: a released code was renumbered", r.id, got)

@@ -61,7 +61,10 @@ gives.
 
 ## Gate 4 — the plan
 
-1. Run the frozen tests. Read the failures. A plan written without seeing them is a guess.
+1. Run the frozen tests with `commands.test_files`, `SDLC_TEST_FILES` naming a file that lists
+   them, and read the failures. Read the output file `sdlc freeze` left, `freeze-run.log` in the
+   story's directory, with `freeze_run` in the gate record and `TEST-PLAN.md`. A plan written
+   without seeing them is a guess.
 2. List the files you will change and what each change does, in the order you will do them.
    Each step should leave the tree building, and each should be small enough to review.
 3. Name the alternative you rejected and why, in one or two sentences. A plan with no rejected
@@ -77,7 +80,9 @@ written.
 
 Only after the design review has passed.
 
-1. One plan step at a time. After each, run `commands.test`. Say which tests moved.
+1. One plan step at a time. After each, run the frozen tests and the tests of what the step
+   touched with `commands.test_files`, and say which moved. The whole `commands.test` is the
+   gate's run, not yours.
 2. Write the simplest thing that makes the test pass and that you would defend in review.
    Match the surrounding code — its naming, its idiom, its comment density. Nits in your brief are
    for how a step is written; they do not change the plan.
@@ -90,8 +95,10 @@ Only after the design review has passed.
    stop. Lifting the freeze is a decision somebody else records.
 5. If the plan turns out to be wrong, stop at the step where you found out, say what you found,
    and propose the change. Do not quietly plan something else as you go.
-6. When the frozen tests pass, run the rest of `commands` — build, lint, format — and leave the
-   tree clean.
+6. When the frozen tests pass, run `commands.fmt` and leave the tree clean. `sdlc gate
+   implementation pass` runs the configured commands; where it is refused with `SDLC-E0095`, read
+   the output file it names, `implementation-run.log` in the story's directory, before you change
+   anything.
 
 ## Findings
 
@@ -185,7 +192,7 @@ and `blocked_on` says which, with the step.
   "blocked_on": null,
   "unchecked": [],
   "addressed_me": [],
-  "details": {"steps_done": 0, "files_changed": ["<path>"], "tests_passing": true, "commands_run": ["test", "lint"], "deviations": []}
+  "details": {"steps_done": 0, "files_changed": ["<path>"], "tests_passing": true, "commands_run": ["test_files", "fmt"], "deviations": []}
 }
 ```
 

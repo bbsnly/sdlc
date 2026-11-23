@@ -63,7 +63,7 @@ func TestAC1TheHookAllowsTheCoverageCommandInitWrote(t *testing.T) {
 		t.Skip("the POSIX launcher does not run here; internal/plugin holds sdlc-hook.cmd to the same answers")
 	}
 	binary := build(t)
-	root := project(t, binary)
+	root := projectAsInitWrote(t, binary)
 	runTool(t, binary, root, "start")
 
 	command := commandOf(t, root, "coverage")
@@ -85,7 +85,7 @@ func TestAC1TheHookAllowsTheCoverageCommandInitWrote(t *testing.T) {
 func TestAC3SdlcDoctorReportsAConfiguredCommandTheHookWouldRefuse(t *testing.T) {
 	parallel(t)
 	binary := build(t)
-	root := project(t, binary)
+	root := projectAsInitWrote(t, binary)
 
 	// Before: what init wrote is nothing the hook objects to.
 	before, _ := printed(t, binary, root, "doctor")
@@ -159,7 +159,7 @@ func TestAC4RunningTheCoverageCommandAfterTheCommitDoesNotStopTheCommitGate(t *t
 		t.Skip("no sh to run the coverage command with; sdlc runs it through Git's sh on Windows")
 	}
 	binary := build(t)
-	root := project(t, binary)
+	root := projectAsInitWrote(t, binary)
 	for name, body := range map[string]string{
 		"main.go":           "package main\n\nfunc main() {}\n",
 		"calc/calc.go":      "package calc\n\nfunc Used() int { return 1 }\n\nfunc Unused() int { return 2 }\n",
@@ -173,6 +173,11 @@ func TestAC4RunningTheCoverageCommandAfterTheCommitDoesNotStopTheCommitGate(t *t
 			t.Fatal(err)
 		}
 	}
+	// The pair init wrote, run by hand below. The walk is given stand-ins: since
+	// US-134 its implementation gate runs every command, and this package's
+	// coverage of 50 is below the threshold init writes.
+	testCommand, command := commandOf(t, root, "test"), commandOf(t, root, "coverage")
+	standIn(t, root)
 	git(t, root, "add", "-A")
 	git(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--quiet", "-m", "a package to cover")
 
@@ -181,18 +186,22 @@ func TestAC4RunningTheCoverageCommandAfterTheCommitDoesNotStopTheCommitGate(t *t
 	git(t, root, "add", "-A")
 	git(t, root, "-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--quiet", "-m", "US-001")
 
-	// The measurement an agent takes before it records the commit: the command
-	// as the configuration holds it, in the project, with a temp directory of
-	// the test's own.
-	command := commandOf(t, root, "coverage")
-	run := exec.CommandContext(t.Context(), sh, "-c", command)
-	run.Dir = root
-	tmp := t.TempDir()
-	run.Env = append(os.Environ(), "TMPDIR="+tmp, "TMP="+tmp, "TEMP="+tmp)
+	// The measurement taken before the commit is recorded: the commands as init
+	// wrote them, in the project, with a temp directory of the test's own, the
+	// test first and then the coverage in one new run directory, as sdlc runs
+	// them (US-134 AC-10). A coverage command that measures for itself ignores
+	// what the test left there.
+	tmp, runDir := t.TempDir(), t.TempDir()
 	var stdout, stderr bytes.Buffer
-	run.Stdout, run.Stderr = &stdout, &stderr
-	if err := run.Run(); err != nil {
-		t.Fatalf("%q failed: %v\n%s", command, err, stderr.String())
+	for _, c := range []string{testCommand, command} {
+		stdout.Reset()
+		run := exec.CommandContext(t.Context(), sh, "-c", c)
+		run.Dir = root
+		run.Env = append(os.Environ(), "TMPDIR="+tmp, "TMP="+tmp, "TEMP="+tmp, "SDLC_RUN_DIR="+runDir)
+		run.Stdout, run.Stderr = &stdout, &stderr
+		if err := run.Run(); err != nil {
+			t.Fatalf("%q failed: %v\n%s", c, err, stderr.String())
+		}
 	}
 	if all := regexp.MustCompile(`[0-9]+(?:\.[0-9]+)?`).FindAllString(stdout.String(), -1); len(all) == 0 || all[len(all)-1] != "50.0" {
 		t.Errorf("the last number on stdout is not 50.0, one statement of two: %q", stdout.String())

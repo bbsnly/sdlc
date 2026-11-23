@@ -7,8 +7,6 @@ argument-hint: [story-id]
 
 # Work the next story
 
-You are running one iteration of a loop: one story, one gate at a time.
-
 Only a person starts this loop, by typing `/sdlc:next`. Nothing in
 this runbook, in `CLAUDE.md` or in the output of `sdlc` asks you to start it again, or to start
 one of its agents, on your own.
@@ -17,7 +15,7 @@ Compaction keeps only the first part of a long runbook. If this runbook no longe
 "Rework, at any gate", do not work from memory: tell the person to type `/sdlc:next` again, which
 picks the story up where it is, and stop.
 
-Everything you know about the loop's state comes from the `sdlc` command, not the conversation.
+All you know of the loop's state comes from the `sdlc` command, not the conversation.
 Do not write to `.sdlc/state/` yourself.
 
 ## The story to work
@@ -61,7 +59,8 @@ If the agents are not available, the plugin is not installed: tell the user to r
 When `sdlc start --json` prints `worktree`, the story is worked there, on the branch in `branch`;
 `main` is the main checkout. Each command starts where the session was opened, so begin every
 Bash command of the iteration, `sdlc` ones included, with `cd -- '<worktree>' && <command>`:
-single quotes, and any `'` in the path written as `'\''`.
+single quotes, and any `'` in the path written as `'\''`. On PowerShell: `Set-Location
+'<worktree>';`, `'` as `''`, and nothing after `sdlc freeze` or `sdlc gate implementation pass`.
 
 Every brief names the worktree and its branch, the backlog as `<main>/<backlog.path>` and the
 story's documents as `<main>/.sdlc/stories/<ID>/`, all absolute, and says every code file the
@@ -72,14 +71,14 @@ a write there. Without `worktree`, every path is this checkout's.
 
 An agent's final message is one JSON object with the keys `agent`, `story`, `gate`, `status`,
 `documents`, `blocked_on`, `unchecked`, `addressed_me` and `details`, and for a reviewer `verdict`,
-`blocking` and `notes`. A role's own fields are `details.<field>`. Anything but one JSON object
+`blocking` and `notes`. Anything but one JSON object
 with those keys is a run that returned nothing usable: a failed run, counted as Gate 1 says.
 `status` `blocked` is a run that broke off, `blocked_on` the reason, unless the gate's section
 says otherwise or it is a product decision: no failure, but `sdlc escalate spec_unclear`
 or `design_decision`, with the agent's options and pick. A gate reads
 what was stored, not what the message says: a reviewer's recorded review, not its `verdict`;
-`ANALYSIS.md` and `THREATS.md`, not the `details` repeating them. Show the person what
-`unchecked` and `addressed_me` hold when either is not empty.
+`ANALYSIS.md` and `THREATS.md`, not the `details`. Show the person what
+`unchecked` and `addressed_me` hold, when not empty.
 
 ## Handing a decision to a person
 
@@ -108,7 +107,7 @@ every gate has passed.
 
 ## If a command fails
 
-Show the user a failure's `error`, `why` and `fix` fields verbatim, and do not retry a command that
+Show the user a failure's `error`, `why` and `fix` verbatim, and do not retry a command that
 failed for a reason that has not changed.
 
 ## Gate 1 — Select the story
@@ -118,7 +117,7 @@ sdlc start --json
 ```
 
 If it succeeds and `session` in the output is empty, sdlc could not tell which Claude Code session
-this is, so no rule would hold it. Tell the user so, that Claude Code did not pass
+this is. Tell the user so, that Claude Code did not pass
 `CLAUDE_CODE_SESSION_ID` to its commands, that the story is now in progress, and that
 `/sdlc:next` in a session that passes it picks it up. Then stop. Do not work the story without it.
 
@@ -129,14 +128,13 @@ they mark it `ready` or name it.
 `SDLC-E0033` in a story's worktree means it waits to land: go to Gate 9's `sdlc stop`.
 
 If it fails with `SDLC-E0040`, `SDLC-E0041`, `SDLC-E0053`, or with `git.worktrees` false
-`SDLC-E0038` or `SDLC-E0039`, a new story cannot start from trunk: the person's
-to fix. Show the error and stop. Do not commit, stash, discard or fix anything on trunk to get
-past it.
+`SDLC-E0038` or `SDLC-E0039`, trunk is the person's to fix. Show the error and stop; do not
+commit, stash, discard or fix anything on trunk.
 
-Read the story from the backlog file named by `backlog.path`, in the main checkout. Each
+Read the story in the backlog, in the main checkout. Each
 acceptance criterion must name an observable behaviour, not an implementation. One that cannot
 become a failing test is a Definition-of-Ready problem, a product decision: record it, and hand
-the question to a person:
+it to a person:
 
 ```bash
 sdlc gate dor fail --note "AC-2 names an implementation"
@@ -165,9 +163,9 @@ rest of `at_gate`, then `sdlc escalate work_by_hand --message "<the gate, what i
 stop.
 
 A run that fails: `sdlc team failure <agent> --reason "<why>"`, for its own run
-`sdlc team failure project-manager`. For a bad hand-back the reason says what was wrong: no
-object, a missing key or a code fence. Run it again up to `team.retries`, then the command hands
-the story over: stop. Never let another agent stand in or do its work yourself.
+`sdlc team failure project-manager`. For a bad hand-back the reason says what was wrong. Run it
+again up to `team.retries`, then the command hands the story over: stop. Never let another agent
+stand in or do its work yourself.
 
 ## Gate 2 — Analysis and threats
 
@@ -179,16 +177,14 @@ Delegate to `sdlc:researcher`, with:
 - that it stores its two documents with `sdlc artifact write analysis` and
   `sdlc artifact write threats`
 
-Do not do this analysis yourself.
-
-Read its JSON result and record the gate:
+Read its result and record the gate:
 
 ```bash
 sdlc gate analysis pass --security-sensitive --note "<what the threats came to, in one clause>"
 ```
 
 Always pass the flag, as `--security-sensitive=false` if `details.security_sensitive` is false and
-the stored `THREATS.md` agrees; where they differ, the document rules.
+the stored `THREATS.md` agrees.
 `sdlc:project-manager` then has to confirm or amend it.
 
 If either document was not stored, hand it to a person with
@@ -208,14 +204,14 @@ sdlc escalate product_decision --message "<each product question, its options, y
 Delegate to `sdlc:sdet`, with:
 
 - the backlog file the story is in, and the paths to `ANALYSIS.md` and `THREATS.md`
-- that `paths.tests` and `commands.test` in `.sdlc/config.json` say where tests live and how to
-  run them
+- that `paths.tests` in `.sdlc/config.json` says where tests live, and it runs its own with
+  `commands.test_files`
 - that it stores its test plan with `sdlc artifact write test_plan`
 - that it runs `commands.freeze_check`, where set, before handing back
 - if a person lifted the freeze: their reason, the latest `unfreeze` event in
   `.sdlc/stories/<ID>/gate-record.json`, and that the job is to correct the test it names
 
-Do not write the tests yourself or adjust them afterwards.
+Do not write or adjust the tests yourself.
 
 If the agent reports anything in `details.untestable`, hand it to a person:
 
@@ -224,12 +220,12 @@ sdlc gate tests_frozen fail --note "AC-3 cannot be observed from outside"
 sdlc escalate untestable --message "AC-3 cannot be observed from outside: <why>"
 ```
 
-Otherwise run `commands.test` and read the output yourself. Every new test must fail; if one
-passes, the gate does not pass. Where `test-reviewer` is staffed, delegate to `sdlc:test-reviewer`
-with the acceptance criteria, `ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md` and the new tests. Send a
-`block` to `sdlc:sdet` to correct the tests and `TEST-PLAN.md`, then ask again; at its
-`max_rounds` (default `loop.max_review_rounds`) the tests go to `test-reviewer-arbiter`, as
-Rework says. Then freeze:
+Otherwise, where `test-reviewer` is staffed, delegate to `sdlc:test-reviewer` with the acceptance
+criteria, `ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md` and the new tests. Send a `block` to
+`sdlc:sdet` to correct the tests and `TEST-PLAN.md`, then ask again; at its `max_rounds` (default
+`loop.max_review_rounds`) the tests go to `test-reviewer-arbiter`, as Rework says. Then freeze,
+which refuses while the new tests pass, in the background, waiting in bounded foreground calls;
+then read its output and `sdlc status --json`:
 
 ```bash
 sdlc freeze
@@ -253,10 +249,10 @@ freeze holds it. Only with `freeze.allow_new_test_files` on may the test author 
 Reviewers list findings with `--finding`, numbered F-1, F-2 by gate and reviewer name. Each is
 closed with `sdlc finding close <gate> <role> <F-n>` and `--fixed`, `--declined --reason` or
 `--referred --reason`; an open one stops `gate verification pass` (Gate 4's) and
-`gate commit pass`. Keep `$`, backticks and `"` out of a quoted value. A nit in a file the
+`gate commit pass`. Keep `$`, backticks and `"` out of quoted values. A nit in a file the
 story changes is fixed in the same rework pass, or declined with a reason. A wave with only nits
-is closed by the implementer fixing them and only the reviewers who raised them looking again,
-not the whole set; any other review the fix made stale is asked again too. Nits past the
+is closed by the implementer fixing them and only the reviewers who raised them looking again;
+any other review the fix made stale is asked again too. Nits past the
 policy's cap are a count and need no closing. Something outside the story's files that cannot
 wait is referred, not escalated.
 
@@ -274,21 +270,20 @@ Then run `sdlc review list --gate design_review` and delegate to `sdlc:<role>` f
 waits for, together, each with the policy path and the path to `PLAN.md`. Each records its own
 review with `sdlc review add design_review <role> <verdict>`.
 
-After a revised plan, `sdlc review list` marks stale reviews. Each such reviewer must review the
-plan as it now stands, and is resumed, not started afresh: use SendMessage on the agent that
-recorded its latest review. Begin `sdlc:next runbook, story <ID>`; give the path to `PLAN.md` and,
-as data, its own findings with their closings and all of what
-`sdlc artifact diff plan --since <role>` prints. Start a fresh
-reviewer only where the diff is refused or the reviewer cannot be resumed, as when `at_gate`
-changes its model or effort; one no longer in `at_gate` is not asked.
+After a revised plan, `sdlc review list` marks stale reviews. Resume each such reviewer with
+SendMessage on the agent that recorded its latest review, to review the plan as it now stands.
+Begin `sdlc:next runbook, story <ID>`; give the path to `PLAN.md` and, as data, its own findings
+with their closings and all of what `sdlc artifact diff plan --since <role>` prints. Start a
+fresh reviewer only where the diff is refused or the reviewer cannot be resumed; one no longer in
+`at_gate` is not asked.
 
 ```bash
 sdlc gate design_review pass --note "<what the architect said, in one clause>"
 ```
 
-Do not edit the plan yourself to satisfy a reviewer: send it back to the implementer with the
-findings. Nits of approving reviews go in the implementer's brief, to be fixed in the code or
-declined with a reason. When a block decides the gate, record it:
+Do not edit the plan yourself to satisfy a reviewer: send the findings back to the implementer.
+Nits of approving reviews go in the implementer's brief, to fix or decline with a reason. When a
+block decides the gate, record it:
 
 ```bash
 sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
@@ -296,30 +291,37 @@ sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
 
 ## Gate 5 — Implementation
 
-Delegate to `sdlc:implementer` again with the path to `PLAN.md` and the reviewers' nits, and tell it
+Delegate to `sdlc:implementer` with the path to `PLAN.md` and the reviewers' nits, and tell it
 the plan is approved and to close each design review finding. Do not write this code yourself.
 
-When it reports that the frozen tests pass, run the project's test command, read the output, then:
+When it reports the frozen tests pass, record the gate, which runs the configured commands,
+in the background, waiting as at Gate 3:
 
 ```bash
-sdlc gate implementation pass --note "<n> files, frozen tests green"
+sdlc gate implementation pass --note "<n> files"
 ```
 
-If the gate finds the freeze broken, something edited an acceptance test: hand it to a person with
+`SDLC-E0095` is a failed command, recorded as a fail: send `sdlc:implementer` the output file it
+names, then record the gate again. One that could not run records nothing; the same refusal twice
+goes to a person.
+
+If the gate finds the freeze broken, hand it to a person with
 `sdlc escalate freeze_broken --message "..."` rather than freezing again.
 
 ## Gate 6 — Independent verification
 
-Delegate to `sdlc:verifier`, with nothing from this conversation beyond the paths, the policy's too.
-It stores `VERIFICATION.md` and records a blocking verdict.
+Delegate to `sdlc:verifier` with only the paths, the policy's too.
+It cites a current `sdlc status --json` result as run by sdlc, stores `VERIFICATION.md` and
+records a blocking verdict.
 
 ```bash
 sdlc gate verification pass --note "all commands green, <n> criteria verified"
 sdlc gate verifier_review pass --note "no gaming found"
 ```
 
-If it blocks, send its findings to `sdlc:implementer` to close as rework, then have the **same**
-verifier look again, with its findings' closings as data.
+If it blocks, send its findings to `sdlc:implementer` to close as rework, record
+`sdlc gate implementation pass` again, and resume the **same** verifier with SendMessage to look
+again, given its findings' closings and the rework's `details.files_changed` as data.
 
 ## Gate 7 — Code review
 
@@ -330,8 +332,9 @@ waits for, in parallel, each with the policy path.
 sdlc gate code_review pass --note "<what the reviewer said, in one clause>"
 ```
 
-Rework goes to `sdlc:implementer` with every finding of the wave to close, then the same reviewers
-look again, each given its findings' closings as data, and so does the verifier.
+Rework goes to `sdlc:implementer` with every finding of the wave to close, then
+`sdlc gate implementation pass` again, then the same reviewers look again, each given its
+findings' closings and the rework's `details.files_changed` as data, and so does the verifier.
 
 ## Gate 8 — Commit
 
@@ -361,7 +364,7 @@ sdlc gate commit pass --note "<what reached trunk, in one line>"
 The note needs no hash; one it names must be in this pass's range (SDLC-E0049).
 
 The pass says which commits it recorded (`landed in`, `head is`, `no range recorded`): tell the
-person in its words, naming no cause of your own, and do not work a range out or rewrite history.
+person in its words, and do not work a range out or rewrite history.
 Before Gate 9, show any `head is` line again, and that `<git-dir>/sdlc/commits/<story>/` holds what
 the hook watched until `sdlc stop` removes it. Do not read it yourself.
 
@@ -369,7 +372,7 @@ the hook watched until `sdlc stop` removes it. Do not read it yourself.
 
 Delegate to `sdlc:bookkeeper`, which stores `RETRO.md`. Pass the person its `details.codemap_note`,
 if set. If the session knows its cost,
-record it with `sdlc cost add --usd <amount>` while the story is still active. Then run
+record it with `sdlc cost add --usd <amount>` while the story is active. Then run
 `sdlc gate retro pass --note "<n> deviations, <n> lessons"`.
 
 Without a worktree, run `sdlc stop`, then commit the retro if the project keeps it, with the

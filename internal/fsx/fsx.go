@@ -6,6 +6,7 @@
 package fsx
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -66,7 +67,7 @@ func WriteFileAtomicInfo(path string, data []byte, perm fs.FileMode) (fs.FileInf
 	if err := os.Chmod(tmp, perm); err != nil {
 		return nil, fmt.Errorf("set permissions on %s: %w", tmp, err)
 	}
-	if err := replace(tmp, path); err != nil {
+	if err := Replace(tmp, path); err != nil {
 		return nil, fmt.Errorf("move %s into place at %s: %w", tmp, path, err)
 	}
 	return info, nil
@@ -82,8 +83,10 @@ const (
 	replacePoll = 10 * time.Millisecond
 )
 
-// replace renames tmp over path, waiting out a reader that has path open.
-func replace(tmp, path string) error {
+// Replace renames tmp over path, waiting out a reader that has path open. A
+// rename replaces whatever stands at path, a link or a pipe among them, and
+// never writes through it.
+func Replace(tmp, path string) error {
 	deadline := time.Now().Add(replaceWait)
 	for {
 		err := os.Rename(tmp, path)
@@ -92,6 +95,35 @@ func replace(tmp, path string) error {
 		}
 		time.Sleep(replacePoll)
 	}
+}
+
+// ErrNotRegular is a path that is not a regular file, or that changed between
+// its Lstat and its open.
+var ErrNotRegular = errors.New("not a regular file")
+
+// OpenRegular opens path to read only where it is a regular file, and returns
+// it with what the open descriptor is. It never follows a link and never waits
+// on a named pipe (OpenFlags), and it keeps the descriptor only where it is the
+// file the Lstat saw: a link to /dev/zero or to a pipe, or one swapped in
+// between the two, is refused rather than read.
+func OpenRegular(path string) (*os.File, fs.FileInfo, error) {
+	seen, err := os.Lstat(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !seen.Mode().IsRegular() {
+		return nil, nil, ErrNotRegular
+	}
+	f, err := os.OpenFile(path, os.O_RDONLY|OpenFlags, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	fi, err := f.Stat()
+	if err != nil || !fi.Mode().IsRegular() || !os.SameFile(seen, fi) {
+		_ = f.Close()
+		return nil, nil, ErrNotRegular
+	}
+	return f, fi, nil
 }
 
 // Exists reports whether path is there. It says nothing about whether it can be

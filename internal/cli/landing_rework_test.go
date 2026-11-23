@@ -390,7 +390,7 @@ func TestLandingReadsACoverageFigureWithinTheLast64KBOfStdout(t *testing.T) {
 			t.Parallel()
 			pad := lrPadFile(t, tc.padAfter)
 			command := "printf '95'; cat " + suSh(pad)
-			main := lxRepository(t, map[string]string{"coverage": command}, nil)
+			main := lxRepository(t, map[string]string{"coverage": ldAtTheLanding(command)}, nil)
 			wt := ldFinished(t, main)
 			ldBookkeeping(t, wt)
 			// needsCommands only runs the configured commands where the tree is

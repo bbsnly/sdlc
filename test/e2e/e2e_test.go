@@ -78,9 +78,49 @@ func builtOnce(t *testing.T, name, pkg, failure string) string {
 	return out
 }
 
-// project makes a real Git repository with the tool set up in it, and story
-// worktrees turned off.
+// project makes a real Git repository with the tool set up in it, story
+// worktrees turned off, and commands that stand for a project whose new tests
+// fail and whose code passes (projectStandIns).
 func project(t *testing.T, binary string) string {
+	t.Helper()
+	return newProject(t, binary, true)
+}
+
+// projectAsInitWrote is project with every command as sdlc init wrote it, for
+// a test about those commands themselves.
+func projectAsInitWrote(t *testing.T, binary string) string {
+	t.Helper()
+	return newProject(t, binary, false)
+}
+
+// projectStandIns is what a command init wrote for this project is replaced
+// with. Since US-134 the freeze runs the new tests with commands.test_files, and
+// the implementation gate runs every command the landing does, on every story:
+// init's Go commands judge the files a test writes, which are no Go anyone could
+// build, test, lint or measure (a test file with no test in it, a main package
+// with no main), so they would refuse every walk at the freeze or at Gate 5 for
+// a reason no test here is about. Each stand-in keeps what the loop sees: the
+// new tests fail, as Gate 3 has them, and the code passes every check at its
+// threshold. A test about failing commands sets its own.
+var projectStandIns = map[string]string{
+	"build": "exit 0", "test": "exit 0", "lint": "exit 0", "fmt_check": "exit 0",
+	"coverage": "echo 100", "mutation": "echo 100",
+}
+
+// standIn gives root's configuration projectStandIns in place of the commands
+// init wrote, and only those, so that the landing and the gate run the set a Go
+// project has and no other; and a commands.test_files that fails.
+func standIn(t *testing.T, root string) {
+	t.Helper()
+	for key, command := range projectStandIns {
+		if commandOf(t, root, key) != "" {
+			setConfig(t, root, "commands", key, command)
+		}
+	}
+	setConfig(t, root, "commands", "test_files", "exit 1")
+}
+
+func newProject(t *testing.T, binary string, standIns bool) string {
 	t.Helper()
 	root := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
@@ -100,6 +140,9 @@ func project(t *testing.T, binary string) string {
 	// takes part, which is what they have always walked through. The sandbox is the
 	// project as `sdlc init` wrote it, with the project manager on, and has its staffing.
 	projectManagerOff(t, root)
+	if standIns {
+		standIn(t, root)
+	}
 	// Committed, as a project is before its first story: `sdlc start` begins new
 	// work only from a trunk with nothing uncommitted on it.
 	git(t, root, "add", "-A")

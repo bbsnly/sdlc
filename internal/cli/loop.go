@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -799,6 +800,10 @@ type gatePayload struct {
 	// Disabled is every agent the team disables but the project manager,
 	// which takes no part in a gate.
 	Disabled []string `json:"disabled,omitempty"`
+	// Commands and TreeHash are what the implementation gate's pass ran, and
+	// the tree it ran them on.
+	Commands []model.CommandRun `json:"commands,omitempty"`
+	TreeHash string             `json:"tree_hash,omitempty"`
 }
 
 // settleStory keeps the backlog honest about a story whose gates have all
@@ -938,6 +943,9 @@ type gateRun struct {
 	status model.GateStatus
 	note   string
 	record *model.Record
+	// ran is what the implementation gate's pass ran, set only once every
+	// command passed on a tree that held.
+	ran *gateResult
 }
 
 func runGate(cmd *cobra.Command, args []string, flags gateFlags) (err error) {
@@ -950,7 +958,9 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) (err error) {
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	// Through the variable: the implementation gate's run lets the lock go
+	// for its commands and takes it back after them.
+	defer func() { unlock() }()
 	id := flags.story
 	if id == "" {
 		if id, err = activeStory(s, "gate records an outcome for the story being worked on"); err != nil {
@@ -973,7 +983,8 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) (err error) {
 	}
 	// Said before anything below can refuse the gate: one refused again and
 	// again is the circle the line is for. Nothing goes on the record here,
-	// since noteForks saves it next, and a refused gate changes nothing.
+	// since noteForks saves it next, and a gate refused by its checks changes
+	// nothing; one refused by the commands it ran is recorded as a fail.
 	late := gateHoursOver(s.Config().Budget, record)
 	late.say(cmd.ErrOrStderr())
 	// What this gate asks git about the tree and HEAD, up to saving the
@@ -989,31 +1000,57 @@ func runGate(cmd *cobra.Command, args []string, flags gateFlags) (err error) {
 	if err := g.checkAndStaff(flags); err != nil {
 		return err
 	}
-	g.keepCommit()
-	reopened := record.SetGate(gate, status, flags.note, s.Now())
-	g.noteAccepted()
-	if err := g.noteCommits(); err != nil {
+	if g.runsCommands() {
+		return g.runCommands(&unlock, late)
+	}
+	w, err := g.write(late)
+	if err != nil {
 		return err
 	}
-	record.Append(model.EventGate, model.GateEvent(gate, status), s.Now())
+	return g.report(w.reopened, w.done, w.handedOver, w.message)
+}
+
+// gateWritten is what a gate's write did, for its report.
+type gateWritten struct {
+	reopened            []string
+	done                bool
+	handedOver, message string
+}
+
+// write records the gate on g.record and saves it, settling the story where
+// that was its last gate.
+func (g *gateRun) write(late gateOvers) (gateWritten, error) {
+	s, record, id := g.s, g.record, g.id
+	g.keepCommit()
+	var w gateWritten
+	w.reopened = record.SetGate(g.gate, g.status, g.note, s.Now())
+	if g.ran != nil {
+		gate := record.Gates[g.gate]
+		gate.TreeHash, gate.Commands = g.ran.tree, g.ran.commands
+		record.Gates[g.gate] = gate
+	}
+	g.noteAccepted()
+	if err := g.noteCommits(); err != nil {
+		return w, err
+	}
+	record.Append(model.EventGate, model.GateEvent(g.gate, g.status), s.Now())
 	g.noteNoPause()
 	// On the record before the save, which a hand-over makes with it.
 	late.record(record, s.Now())
-	handedOver, message, err := g.save()
-	if err != nil {
-		return err
+	var err error
+	if w.handedOver, w.message, err = g.save(); err != nil {
+		return w, err
 	}
 	g.noteDiff()
 	// A story handed over is the backlog's awaiting_human, written with
 	// the hand-over; there is nothing left to settle, and nothing left
 	// that could fail once a person has been asked.
-	done := false
-	if handedOver == "" {
-		if done, err = settleStory(s, id, record); err != nil {
-			return err
+	if w.handedOver == "" {
+		if w.done, err = settleStory(s, id, record); err != nil {
+			return w, err
 		}
 	}
-	return g.report(reopened, done, handedOver, message)
+	return w, nil
 }
 
 // sayTeamOnRefusal names the disabled agents on stderr where the gate was
@@ -1305,17 +1342,21 @@ func (g *gateRun) report(reopened []string, done bool, handedOver, message strin
 		start, end, past = record.CommitBase, record.Commit, record.HeadPastCommit
 	}
 	if wantJSON(cmd) {
-		return emitJSON(cmd.OutOrStdout(), gatePayload{
+		payload := gatePayload{
 			OK: true, Story: id, Gate: string(gate), Status: string(g.status), Note: note,
 			CommitBase: start, Commit: end, RangeUnknown: gate == model.GateCommit && record.RangeUnknown,
 			HeadPastCommit: past, Reopened: reopened,
 			Done: done, HandedOver: handedOver, Disabled: gateDisabled(g.s.Config().Team),
-		})
+		}
+		return emitJSON(cmd.OutOrStdout(), g.withRun(payload))
 	}
 	w := cmd.OutOrStdout()
 	fmt.Fprintf(w, "%s  %s  %s\n", id, gate, g.status)
 	if note != "" {
 		fmt.Fprintf(w, "  %s\n", oneLine(note))
+	}
+	if g.ran != nil {
+		fmt.Fprintf(w, "  ran %s on tree %s\n", ranLine(g.ran.commands), short(g.ran.tree))
 	}
 	if len(reopened) > 0 {
 		fmt.Fprintf(w, "  reopened: %s\n", strings.Join(reopened, ", "))
@@ -1341,6 +1382,15 @@ func (g *gateRun) report(reopened []string, done bool, handedOver, message strin
 		sayHandedOver(w, id, message)
 	}
 	return nil
+}
+
+// withRun is payload with the commands the gate ran and the tree they ran on,
+// where it ran them.
+func (g *gateRun) withRun(payload gatePayload) gatePayload {
+	if g.ran != nil {
+		payload.Commands, payload.TreeHash = g.ran.commands, g.ran.tree
+	}
+	return payload
 }
 
 // sayLanded says where the commit gate found the story's commits.
@@ -1559,7 +1609,7 @@ func requireApproval(ctx context.Context, rd *reading, id string, record *model.
 // the gate to say and record.
 func (r *reading) requireIntactFreeze(ctx context.Context, id string, record *model.Record) error {
 	h, err := requireIntactFreeze(ctx, r.s, id, r.freezeAt(ctx, id, record))
-	r.trunkTests, r.judged = h.accepted, err == nil
+	r.trunkTests, r.judged, r.files = h.accepted, err == nil, h.files
 	return err
 }
 
@@ -1795,4 +1845,13 @@ func requireCriteria(s *store.Store, id string) error {
 	return sdlcerr.New(sdlcerr.NoAcceptanceCriteria, what,
 		"Gate 3 writes and freezes the tests from them, and with none there is nothing "+
 			"to test and nothing to verify the work against")
+}
+
+// ranLine is each command a run passed, with the time it took.
+func ranLine(commands []model.CommandRun) string {
+	parts := make([]string, 0, len(commands))
+	for _, c := range commands {
+		parts = append(parts, fmt.Sprintf("%s (%s)", c.Name, humanTime(time.Duration(c.DurationMS)*time.Millisecond)))
+	}
+	return strings.Join(parts, ", ")
 }

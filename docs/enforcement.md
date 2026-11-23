@@ -52,6 +52,7 @@
   - [`branch-through-the-tool`](#branch-through-the-tool)
   - [`git-command-cannot-be-read`](#git-command-cannot-be-read)
   - [`enforcement-stays-on`](#enforcement-stays-on)
+  - [`commands-run-as-configured`](#commands-run-as-configured)
   - [`story-stays-in-its-session`](#story-stays-in-its-session)
   - [Claude config through the shell](#claude-config-through-the-shell)
   - [`command-too-deep-to-read`](#command-too-deep-to-read)
@@ -3051,6 +3052,217 @@ not `env -i`; to see what the hook answers, run
 its own, since a refused one with this session's id is counted in the held
 story's trace; if a rule is wrong, say which one and why.
 
+### `commands-run-as-configured`
+
+Refuses `sdlc gate implementation pass` and `sdlc freeze` where the same command line changes the
+environment sdlc starts with, or runs the call behind a word that can change it. On PowerShell, a
+line that may run the call must be the call alone.
+
+What a refusal most often means, and the cure for each:
+
+- **A setting, a wrapper or a second command in front of the call.** Run the call alone, and put a
+  setting the commands need in the configured command, in `.sdlc/config.json`, which a person
+  edits.
+- **On Bash, a here-document with its delimiter unquoted, whose body holds `$(`, a backtick, `$[`,
+  a `${…}` other than a plain `${name}`, or zsh's `$name[`, on a line that names the call; a made
+  call with a setting in such a body; or such bodies whose expansions take more than 32 KB to
+  read again.** Quote the delimiter (`<<'EOF'`), so that the body is text.
+- **On PowerShell, something after the call, a pipe, a comment or a double-quoted note.** End the
+  line at the call, with a plain or single-quoted note.
+- **On PowerShell, a change of directory before the call.** Use `Set-Location` or `cd` to an
+  absolute path, then `;` or `&&`, and nothing else.
+- **On PowerShell, text that names sdlc and the call's words:** a commit message, a `Write-Host`,
+  or the document or a `--finding` of `sdlc review add` or `sdlc artifact write`. Write the text to
+  a file first, by a file write rather than a shell line, then hand it over with
+  `git commit -F <file>`, `sdlc review add … --file <file>` or
+  `sdlc artifact write <name> --file <file>`. A `--finding` is a flag's value, so one that names
+  the call is worded without it.
+- **On PowerShell, a typographic quote (‘ ’ ‚ ‛ “ ” „) anywhere on the line**, an editor's
+  apostrophe in `it’s` among them. Write ASCII quotes, or hand the text over in a file as above.
+- **On PowerShell, `pwsh` or `powershell` given a variable, a splat or an expression.** Give it
+  literal words (`pwsh -File ./build.ps1`).
+
+Both calls run the project's configured commands and record the result, which the landing and the
+verifier reuse in place of a run of their own. The commands inherit the environment sdlc starts
+with, and the session chooses it: `GOFLAGS='-run=^$'`, a `PATH` whose `go` exits 0, or
+`NODE_OPTIONS=--require` in front of the call records a pass of a run that tested nothing. So the
+rule refuses any change, and names no tool's variable: an assignment in front of the call, `env`
+with a setting or an unset, an export, a declaration, `set -a`, an unset, an alias or a function
+defined on the line, a limit (`ulimit`, `umask`, zsh's `limit`), a builtin that writes a variable
+it is named, a descriptor stored in a name (`{HOME}>/dev/null`), `hash` told which file a name runs
+(`hash -p`, zsh's `hash name=path`), the keyword or allexport option turned on through `set`,
+`setopt` or `shopt`, an assigning `${…}` with flags or a nested name, an assignment to `$env:NAME`
+with any operator, arithmetic that assigns or increments, and the call handed to a shell or an
+interpreter as text, which the rule cannot read, or to a reader that runs a command of its
+choosing: `man` (`-P`, `MANPAGER`, `PAGER`), `less` and `more` (`LESSOPEN`), and `rg --pre`.
+Earlier on the line counts as much as in front of the call, in the same compound or not. A
+here-document's body is text to every rule, but where its delimiter is not quoted the shell runs
+the body's substitutions and evaluates its arithmetic, its `${…}` and, on zsh, the index of a
+subscript on a bare parameter (`$path[HOME=1]`, `$#path[…]`, `$@[…]`), in the call's own process
+for the call's own document on zsh. So a line that names the call and holds such a body with
+`$(`, a backtick, `$[`, `${` or `$name[` in it is refused; a plain `${name}`, which changes and
+runs nothing, is not. On any line, each of those expansions is also read as the line's own, after
+the rest of it, from where it opens to the end of the body, so that a reader that ends it too
+early (at a `)` in double quotes, a case pattern or a comment) only reads more:
+`$(GOFLAGS=x sdl? freeze)` and `$(echo ")"; GOFLAGS=x sdl? freeze)` in such a body are refused as
+they are anywhere else, and `$(date)` is not. Each such reading reads the rest of the body again,
+so a line whose bodies take more than 32 KB to read that way is refused. A quoted delimiter
+(`<<'EOF'`, `<<"EOF"`, `<<\EOF`) keeps the body as written. The call's own words are not read as
+a change, so
+`sdlc gate implementation pass --note "GOFLAGS=-v is no longer needed"` stays allowed.
+
+The rule asks the reading [`enforcement-stays-on`](#enforcement-stays-on) makes of a line for its
+six protected names, with any name in their place, so that a spelling read there for the six is
+read here for every name. Its reading of a quoted name on a PowerShell line is the one left out,
+since any quoted word would then refuse; on PowerShell the line rule below holds more. The rule
+adds readings of its own for what that rule has no need to read: the limits, the keyword and
+allexport options, an option word the shell makes (`set -$(printf a)`), an assigning `${…}` head,
+a descriptor stored in a name, `hash -p`, PowerShell's compound assignments and arithmetic that
+assigns.
+
+Arithmetic needs no name written out to assign one: `$(( ${x:-HOME}=1 ))` sets HOME. So wherever
+the shell evaluates arithmetic, an assigning operator (`=`, `+=` and the other compound forms), an
+increment or a decrement refuses, whatever stands before it; `==`, `!=`, `<=` and `>=` do not. That
+is in `((…))` and `$((…))`, each `((` paired with its own `))`, in `$[…]`, a subscript, the offset
+of `${name:…}`, zsh's padding flags, the operands of a `[[ … ]]` that holds `-eq` or another
+arithmetic test, and the words zsh reads as arithmetic, given to `shift`, `repeat`, `return`,
+`break`, `continue`, `printf` and `print -f`. A single-quoted string is read the same way, since
+`${1@P}` and zsh's `${(e)…}` expand one. So is an assigning operator straight after a word the
+shell makes, anywhere on the line outside a here-document's body, as a name written out with `=`
+already is: `echo ${x}=1` is refused beside the call.
+
+The program word may be made by the shell. A substitution, an expansion or a glob in sdlc's place
+(`$(command -v sdlc)`, `"${s}lc"`, `sdl?`) is read as sdlc where the words after it could be the
+call, its tail (`implementation pass`, `pass`) included, and so is a made word that stands for the
+whole call (`$(printf 'sd%s freeze' lc)`, `"$@"` after `set --`), where the line changes the
+environment. With nothing changed, a made program word is left alone:
+`$(command -v sdlc) gate implementation pass --note x` is allowed.
+
+The line is read a second time as zsh reads it, where a parenthesis stuck to the end of a word is
+part of the word, as glob qualifiers or a group of a pattern: `~/.local/bin/sdlc(N)`, `sdlc(:A)`,
+`sdlc(.)` and `sdlc(#q.)` run sdlc in zsh, the default shell on macOS, and are made program words
+here, refused with a setting in front or an export earlier and allowed alone. A qualifier that runs
+code or adds words, `(e:…:)`, `(+name)` or `(P:…:)`, refuses a line that may run the call wherever
+it stands, since `sdlc(e:'export GOFLAGS=-v':) freeze` sets the variable with nothing in front of
+the call.
+
+On Bash, every word in front of the call is one of `time`, `!`, `exec`, `command`, `nice` and
+`nohup`, each bare, with `-p` only straight after `time` or `command`. Anything else refuses the
+call, whatever it does with the environment: the rule reads the words, not what each wrapper does.
+So `firejail --env=…`, `bwrap --setenv`, `direnv exec .`, `uv run --env-file`, `pipenv run`,
+`npx`, `op run --`, `doppler run --`, `prlimit`, `sudo`, `timeout 600`, `setsid`, `exec -a`,
+`ssh host`, `env` with nothing set and `go run ./cmd/sdlc` are refused in front of the call, with
+sdlc written out or made. A `cd` before the call, the call's output sent elsewhere, and
+`set -euo pipefail` change nothing and stay allowed.
+
+On PowerShell the call runs alone on its line: `sdlc freeze`, or `sdlc gate implementation pass`
+with a plain or single-quoted `--note`, and nothing before or after it but one `Set-Location` or
+`cd` to an absolute path, then `;` or `&&`:
+
+```powershell
+Set-Location 'C:\Users\dev\work\US-134'; sdlc gate implementation pass --note 'green'
+```
+
+The path is a plain word or a whole single-quoted string, starting with `/` or a drive letter.
+A cmdlet, a relative `cd`, `sl`, `Push-Location`, a provider path, a pipe, a comment, a variable
+and a double-quoted note are all refused: PowerShell runs a subexpression in a double-quoted
+string before sdlc starts. So is a line that may run the call another way, at any depth of blocks
+and subexpressions: any line that names sdlc and the call's words, a commit message among them; a
+computed program before the call's words (`& (gcm sdl?) freeze`); sdlc given a parenthesised
+operand where the call's words stand; `Invoke-Expression` given a literal or an expression; `pwsh`
+or `powershell` given an encoded command, or any word but a plain word or a single-quoted string;
+and any line holding a typographic quote, at which PowerShell ends a string as at an ASCII quote.
+PowerShell reaches the environment, and starts processes with one of their own, in more ways than
+a reading can list (.NET, a cmdlet given a member's name, the Environment provider), and each
+round of review found another, so the rule reads what is allowed rather than what refuses.
+`$env:GOFLAGS = '-v'; sdlc status`, `& $exe build`, `pwsh -NoProfile -File ./build.ps1` and
+`Write-Host 'its fine'` stay allowed, as does a commit message that names the call on Bash, and a
+typographic quote there, which is a character.
+
+The refusal names its cause. On PowerShell, the first of these that holds names it. On Bash, a
+here-document's body gives the fourth text, and every other cause the fifth, a setting, a wrapper
+or a second command in front of the call among them:
+
+1. A typographic quote on the line:
+
+   > this line holds a typographic quote, one of ‘ ’ ‚ ‛ “ ” „, at which PowerShell ends a string
+   > as at an ASCII quote, so what it runs cannot be read, and it may run sdlc freeze or sdlc gate
+   > implementation pass with an environment it changed
+
+   *Instead:* write ASCII quotes in place of typographic ones, or hand the text over in a file (git
+   commit -F, or --file on sdlc review add and sdlc artifact write); a setting the project's
+   commands need goes in the configured command itself, in .sdlc/config.json, which a person edits
+
+2. `pwsh` or `powershell` given a word that is not literal, or the encoded switch:
+
+   > pwsh or powershell is given a word that is not literal, or an encoded command, so the script
+   > it runs cannot be read, and it may run sdlc freeze or sdlc gate implementation pass with an
+   > environment it changed
+
+   *Instead:* give pwsh only plain words and single-quoted strings, as in pwsh -File ./build.ps1,
+   and no encoded command; a setting the project's commands need goes in the configured command
+   itself, in .sdlc/config.json, which a person edits
+
+3. The call written out, with something beside it, a setting in front of it among them:
+
+   > on PowerShell, sdlc freeze and sdlc gate implementation pass run alone on their line, because
+   > PowerShell can change the environment they start with in more ways than a reading of the line
+   > can list, and this line holds something beside the call
+
+   *Instead:* run the call alone on its line, written out as sdlc, with a plain or single-quoted
+   note, after at most one Set-Location or cd to an absolute path then ; or &&; a setting the
+   project's commands need goes in the configured command itself, in .sdlc/config.json, which a
+   person edits
+
+4. On Bash, a here-document whose delimiter is not quoted and whose body holds `$(`, a backtick,
+   `$[`, `${` or `$name[`, on a line that names the call; whose body's expansions, each read as
+   the line's own to the end of the body, would be refused; or whose expansions take more than
+   32 KB to read that way:
+
+   > this line holds a here-document whose delimiter is not quoted, so the shell runs the
+   > substitutions in its body and evaluates its arithmetic and its other expansions, which can run
+   > sdlc freeze or sdlc gate implementation pass, or change the environment either starts with
+
+   *Instead:* quote the delimiter, as in <<'EOF', so that the body is text, or hand the text over
+   in a file (git commit -F, or --file on sdlc review add and sdlc artifact write); a setting the
+   project's commands need goes in the configured command itself, in .sdlc/config.json, which a
+   person edits
+
+5. Anything else, Bash's other refusals among them: a line that names the call without holding
+   it, or that gives a made program the call's words, sdlc a parenthesised operand, or `iex` a
+   literal or an expression:
+
+   > sdlc gate implementation pass and sdlc freeze run the configured commands with the environment
+   > they start with, and record the result; a line that changes it could make them pass or fail
+   > for a reason that is not the code
+
+   *Instead:* run the call with nothing in front of it; a setting the project's commands need goes
+   in the configured command itself, in .sdlc/config.json, which a person edits
+
+A line that only names the call, such as a commit message on PowerShell, gets the fifth text; its
+cure is the file above.
+
+What the rule cannot read, and so does not refuse, is in [Not held](#not-held), each entry naming
+this rule. The forms a session is likeliest to meet: a script or a file the line runs through a
+runner whose line does not name the call (`bash ./x.sh`, `make gate`); the binary run under
+another name, a copy (`cp "$(command -v sdlc)" ./x`), a hard link, or `go build -o x ./cmd/sdlc`
+in a project that builds sdlc; inline interpreter code that builds the name (`python3 -c` joining
+`"sd"` and `"lc"`); and a made word that is the whole call behind a program other than the words
+above (`sudo $(printf 'sd%s freeze' lc)`), which cannot be told from a substitution that is an
+argument. None of these gives more than `bash ./x.sh` already does. So a result `run by sdlc` was
+run as configured from a line the rule could read; it is not proof that nobody chose the
+environment, and the verifier's gaming check stays the net.
+
+The evasions tried against the rule are in the headers of `internal/shellpolicy/us134_test.go`,
+`us134_wrappers_test.go` and `us134_agentenv_test.go`: settings, exports, declarations and options
+before the call; made words, wrappers and limits; every builtin the protected names' rule reads
+as writing a name; the keyword option through `set`, `setopt` and `shopt`; assigning heads with
+flags or a nested name; PowerShell's compound assignments and the `Env:` drive named alone; a
+builtin reached through a made program word; made words that stand for the whole call or a tail of
+it; a made sdlc word behind a wrapper; and, on PowerShell, every statement beside the call, a line
+naming it, `Invoke-Expression`, an encoded command and a typographic quote. Bash and zsh ran the
+Bash rows; no PowerShell was at hand for the PowerShell rows.
+
 ### `story-stays-in-its-session`
 
 Refuses running `claude`, or running `@anthropic-ai/claude-code` through a
@@ -4419,6 +4631,64 @@ how you would notice.
   was not a run Claude Code reported. A forged run fakes the cost figures,
   never a gate: `first_pass`, the review rounds, the escalations and every gate
   come from reviews and gate events, which agent events do not touch.
+- **A run of the configured commands from a line the rule cannot read.**
+  [`commands-run-as-configured`](#commands-run-as-configured) narrows what can choose the
+  environment of `sdlc gate implementation pass` and `sdlc freeze`, and does not remove it. A
+  result `run by sdlc` was run as configured from a line the rule could read, which is not proof
+  that nobody chose the environment; the verifier's gaming check stays the net. None of the lines
+  below gives more than `bash ./x.sh` already does. You would notice a recorded pass whose tests
+  did not run, or ran fewer than the story's, in the output file the gate names. The rule does not
+  read:
+  - a script or file the line runs through a runner whose line does not name the call:
+    `bash ./x.sh`, `make gate`, `npm run`, `python3 x.py`;
+  - the binary run under another name: a copy (`cp "$(command -v sdlc)" ./x`), a hard link, or,
+    in a project that builds sdlc, `go build -o x ./cmd/sdlc`, then `./x gate implementation pass`
+    with a setting in front;
+  - inline interpreter code that builds the name, such as `python3 -c` or `node -e` joining `"sd"`
+    and `"lc"`;
+  - a made word that is the whole call, behind a program other than the words the rule allows
+    (`sudo $(printf 'sd%s freeze' lc)`), which cannot be told from a substitution that is an
+    argument; and a made sdlc word followed by a made subcommand behind a wrapper
+    (`sudo $(command -v sdlc) $(echo freeze)`), which cannot be told from `cp "$a" "$b"`;
+  - an `eval` given text the line builds, and on Bash a shell given a script the line builds:
+    `export GOFLAGS=-v; bash -c "$(echo c2RsYyBmcmVlemU= | base64 -d)"`. On PowerShell,
+    `Invoke-Expression` given a variable or piped text that the line builds without naming the
+    call: `$c = '{0}lc freeze' -f 'sd'; iex $c`;
+  - the call as a command string handed to a program the hook does not know as taking one,
+    beyond `su`, `runuser`, `man`, `less`, `more` and `rg --pre`;
+  - on Bash, `pwsh` or `powershell` given an encoded command, whose script the hook does not
+    decode, and `export GOFLAGS=-v; pwsh -c '& (gcm sdl?) freeze'`, whose call operator Bash's
+    readings do not read;
+  - a tool's persistent configuration (`go env -w GOFLAGS=…`), a shell's startup files, the
+    person's shell, and a variable set in the agent host's settings;
+  - an export made in one shell call reaching the next, where the host keeps the shell between
+    calls; and in the same way a function, filter or alias named sdlc, `Set-Location` or `cd`, or
+    a `LocationChangedAction`, that one call defines and a later call runs, and a variable that one
+    call sets to an assignment, which arithmetic in a later call evaluates by its bare name
+    (`(( y ))`, with `y` holding `HOME=1`).
+- **On PowerShell, lines that may run the configured commands and that
+  [`commands-run-as-configured`](#commands-run-as-configured) does not read as the call.** Each
+  sets a variable and runs `sdlc freeze` or `sdlc gate implementation pass` without naming the
+  call. You would notice as above.
+  - A process the line starts, through `Start-Process` or .NET, for a program name or call words
+    it builds other than by joining quoted parts with `+`: `-f`, `-join`, `-replace`, character
+    codes or variables (`$p.StartInfo.FileName = '{0}lc' -f 'sd'`).
+  - Text the line builds without naming the call, handed to an invoker other than `iex`: a script
+    block from `[scriptblock]::Create` run through `&` or `.`, `InvokeScript`, `AddScript`,
+    `Invoke-Command` or `Start-Job`: `& ([scriptblock]::Create(('{0}lc freeze' -f 'sd')))`.
+  - A single-quoted script given to `pwsh` or `powershell` after `-Command`, `-c`,
+    `-CommandWithArgs` or any start of them, or to Windows PowerShell as its first bare word, that
+    runs the call without naming it: `$env:GOFLAGS = '-v'; pwsh -NoProfile -Command '& (gcm sdl?)
+    freeze'`. A single-quoted string is a literal word, and the rule does not open it.
+  - `pwsh` or `powershell` started other than as its statement's program, which goes unread
+    whatever it is given, the encoded switch and built words among them:
+    `Start-Process pwsh -ArgumentList '-ec', '<b64>' -Wait -NoNewWindow`, `cmd /c pwsh -ec <b64>`,
+    `[Diagnostics.Process]::Start('pwsh', '-ec <b64>')`, `& (gcm pws?) -ec <b64>`,
+    `wsl pwsh -ec <b64>` and `Set-Alias p pwsh; p -ec <b64>`.
+  - An apostrophe in a `#` comment or in `<# … #>`, where PowerShell opens no string, but the
+    rule's split pairs it with a later quote, so a statement reads as text to it.
+  - A script piped to `pwsh` whose words are all literal:
+    `$env:GOFLAGS = '-v'; '& (gcm sdl?) freeze' | pwsh -NoProfile -Command -`.
 
 #### What the reading of `sdlc` leaves out
 

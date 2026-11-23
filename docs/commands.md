@@ -1465,6 +1465,72 @@ requires. A `fail` is always recordable, because a gate can fail precisely
 because its work could not be done, and the loop has to have somewhere to put
 that.
 
+`sdlc gate implementation pass` runs the configured commands the landing runs, before it records
+the pass: `build`, `test`, `lint`, `fmt_check`, `coverage` and `mutation`, those that are set, in
+that order, at the root of the story's worktree, as the worktree's own `.sdlc/config.json` gives
+them. Each is held to the landing's rule ([what counts as
+passing](configuration.md#what-counts-as-passing)), `coverage` and `mutation` to `thresholds`. A
+gate with none of them set runs nothing, and `fail` and `pending` run nothing. Before each command
+one line goes to standard error naming it and the file its output is put in when the run ends:
+
+- **Where it runs.** One run of the commands is handed one new, empty directory in the operating
+  system's temporary directory, `SDLC_RUN_DIR`, removed when the run ends, so that `coverage` can
+  read what `test` left there ([the run directory](configuration.md#the-run-directory)). A gate
+  run inside one of the commands, where `SDLC_RUN_DIR` is already set, is refused.
+- **What it records.** The tree hash is taken once before the run, the one reviews and approvals
+  are stamped with, and a pass records each command's name, exit status, duration and a digest of
+  its command and threshold against it, never the command's text. The report names each command
+  with its time and the tree's first 12 characters, and `--json` gives them as `commands` and
+  `tree_hash`. `sdlc status --json` says, in its `commands` block, whether that result is for the
+  tree and the commands as they are now (`current`), and the landing lands on it without running
+  the commands again where it is. Recording the gate again, whatever its outcome, clears the
+  result.
+- **A command that fails.** One that exits other than 0, misses its threshold or prints no figure
+  refuses the gate with [SDLC-E0095](troubleshooting.md#sdlc-e0095), with nothing on standard
+  output. The refusal names the first command that did not pass and its status, the file that
+  holds all the commands printed, `.sdlc/stories/<ID>/implementation-run.log` in the main
+  checkout, and shows the last 20 lines. It is recorded as a fail of the gate, so it counts
+  towards [`loop.max_rework_rounds`](configuration.md#loop), and at the limit the story is handed
+  to a person as a recorded fail hands it over. The file is replaced by each run.
+- **What records nothing.** A command that could not be started (no shell, a start that failed, a
+  signal, or the shell's own 126 or 127), a command that wrote a file of the tree it ran on, and a
+  story that changed while the commands ran (another gate recorded, the freeze taken again or
+  lifted, HEAD moved) each refuse with the same code and record nothing: no rework round is spent.
+  After the run every file the gate listed is checked in Go, a link by its own text and never
+  followed, so a command that rewrites a file and the implementer puts back cannot leave a result
+  for a tree nobody ran the commands on. Two things it does not see: an edit made and put back
+  while the run is in progress, and a file a command adds that is later deleted.
+- **The locks.** The project's lock is let go while the commands run, so other stories and
+  `sdlc status` go on. The story's run lock is held for the whole run, and a second
+  `sdlc gate implementation pass` or `sdlc freeze` of the same story is refused at once
+  ([SDLC-E0006](troubleshooting.md#sdlc-e0006)), naming the one that holds it.
+- **The environment.** The commands start with the environment of the line that ran the gate.
+  The hook refuses a line that changes it before the call
+  ([`commands-run-as-configured`](enforcement.md#commands-run-as-configured)), so a result run by
+  sdlc was run as configured from a line the rule could read, and is not proof the environment was
+  not chosen: [Not held](enforcement.md#not-held) lists what can still change it. On PowerShell the
+  accepted form is the call alone, after at most `Set-Location '<absolute path>';` and a space,
+  with a note that is a plain word or a single-quoted string.
+
+```text
+$ sdlc gate implementation pass --note "the work is done"
+sdlc: running commands.build for US-001's implementation gate in /home/dev/project/.sdlc/worktrees/US-001; its output is put in /home/dev/project/.sdlc/stories/US-001/implementation-run.log when the run ends
+sdlc: running commands.test for US-001's implementation gate in /home/dev/project/.sdlc/worktrees/US-001; its output is put in /home/dev/project/.sdlc/stories/US-001/implementation-run.log when the run ends
+sdlc: commands.test ended with status 1 and did not pass, so the implementation gate is recorded as failed
+
+  why  it exited with status 1; everything the commands printed is in /home/dev/project/.sdlc/stories/US-001/implementation-run.log
+
+  commands.test printed (last 20 lines):
+    --- FAIL: TestRefund (0.00s)
+        refund_test.go:12: want 10, got 0
+    FAIL
+  fix  read the file under .sdlc/stories/<ID>/ that the message names: it holds everything the commands printed. [...]
+
+  SDLC-E0095  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0095
+```
+
+The fix is shortened here; the refusal gives it whole.
+
 In a story's own worktree a gate writes one thing to the record whether it then
 passes or is refused: which commits on the branch are the story's own (`forks`),
 so that trunk's branch pointed at one of them later does not make its test files
@@ -2425,6 +2491,37 @@ can clear, such as a missing program, goes to a person. A freeze that adds
 files runs the check again; one with nothing to add is refused as before,
 without running it. [The freeze check](configuration.md#the-freeze-check) says
 what the check is handed, what it costs and an example.
+
+A first freeze then runs the narrow command over the same new and changed test files:
+`commands.test_files`, or the whole `commands.test` where `commands.test_files` is empty, from the
+repository root, with `SDLC_TEST_FILES` naming a file that lists them, one to a line,
+slash-separated and relative to the root, and `SDLC_RUN_DIR` the run's own directory
+([the narrow test command](configuration.md#the-narrow-test-command)). Nothing runs where neither
+command is set, where no test file is new or changed, or where the freeze only adds files under
+`freeze.allow_new_test_files`. A test written before its code fails until the code exists, so:
+
+- where the run passes, the freeze is refused with
+  [SDLC-E0085](troubleshooting.md#sdlc-e0085): those tests test nothing yet;
+- where it could not run at all (no shell, a signal, or the shell's 126 or 127), it is refused
+  too, and is a person's to put right;
+- a test file whose name holds a control character other than a tab, DEL, U+0085, U+2028 or
+  U+2029 is refused before anything runs, since one name to a line cannot carry it;
+- where it fails, the freeze is taken, and `freeze_run` on the record holds the command, its exit
+  status, its duration and the tree hash it ran on. The output says so in one line, and `--json`
+  gives the run as `run`.
+
+Everything the run printed is in `.sdlc/stories/<ID>/freeze-run.log`, on a pass and on a refusal
+alike, replaced by each run; the story's `.gitignore` lists it. The story's run lock is held while
+it runs, as at the implementation gate.
+
+What a taken freeze proves is that the narrow command exited non-zero, and not why. A runner that
+found no tests exits non-zero too (pytest's exit 5, jest's "No tests found"), and so does a
+`--test=<name>` naming no cargo target or a wrong `commands.test_files` that fails whatever the
+tests hold; where the story's base could not be read every test file is listed, and the freeze's
+line says so. The test author's own run, and the test reviewer, are what show each test failing for
+the right reason. On PowerShell the line that runs `sdlc freeze` takes the same form as the
+implementation gate's: the call alone, after at most `Set-Location '<absolute path>';` and a
+space.
 
 ## `sdlc escalate`
 

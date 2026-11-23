@@ -76,9 +76,6 @@ func lkProject(t *testing.T, ids ...string) *lkHeldOpen {
 			t.Skipf("no named pipe could be made here: %v\n%s", err, out)
 		}
 	}
-	setConfig(t, main.dir, "commands", "test", "if test -f us001.go && test ! -f '"+once+"'; then : > '"+once+
-		"'; echo started > '"+started+"'; head -n 1 '"+release+"' > /dev/null; fi")
-	commitEverything(t, main.dir, "a test command that can be held open")
 	sessions := []string{sessionFirst, sessionSecond}
 	h := &lkHeldOpen{main: main}
 	for i, id := range ids {
@@ -87,6 +84,13 @@ func lkProject(t *testing.T, ids ...string) *lkHeldOpen {
 	for _, s := range h.stories {
 		s.worked()
 	}
+	// Trunk takes the command that can be held open only once the stories are
+	// worked: since US-134 the implementation gate runs commands.test (AC-1),
+	// and there, with nothing reading the pipe, it would wait for ever. The
+	// landing runs trunk's commands, and on a tree that moved (AC-6).
+	setConfig(t, main.dir, "commands", "test", "if test -f us001.go && test ! -f '"+once+"'; then : > '"+once+
+		"'; echo started > '"+started+"'; head -n 1 '"+release+"' > /dev/null; fi")
+	commitPaths(t, main.dir, "a test command that can be held open", filepath.Join(".sdlc", "config.json"))
 	// Trunk moves after the stories were cut, so that the stop puts the first
 	// onto it and runs the commands on what that makes.
 	writeFile(t, filepath.Join(main.dir, "CHANGES.md"), "a person's work\n")

@@ -48,14 +48,18 @@ gives.
   shows the changed ones; read each in full
 - `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (whichever of
   the two holds the section) — the project's test conventions
-- `.sdlc/config.json` → `commands.test` and `paths.tests`
+- `.sdlc/config.json` → `paths.tests`, and `commands.test_files`, which runs the test files a file
+  names, one per line, in `SDLC_TEST_FILES`
 
 ## Procedure
 
 1. Read the review policy and the findings rules below, before anything else.
 2. Read the inputs above, and say in `unchecked` any you could not read.
-3. Run the new tests with `commands.test`, narrowed to them where the project's test tool allows,
-   and see each fail for the reason TEST-PLAN.md gives. A test that passes now, or fails for
+3. Run the new and changed tests with `commands.test_files`, from the repository root, with
+   `SDLC_TEST_FILES` naming a file that lists them, one per line, relative to the root; where it
+   is empty, run only those files, with the project's runner. The whole `commands.test` is not
+   yours to run: `sdlc gate implementation pass` runs it at Gate 5. See each fail for the reason
+   TEST-PLAN.md gives. A test that passes now, or fails for
    another reason, is a finding.
 4. Go through `What it blocks on`, and keep for each finding where it is, why it matters and what
    would fix it.

@@ -158,12 +158,32 @@ func (w *worklist) read(r resume, reading assignments) invocation {
 			}
 		}
 		var done bool
-		if words, done = w.unwrap(&run, first, words, reading); done {
+		if words, done = w.unwrapRecorded(&run, first, words, reading); done {
 			break
 		}
 	}
 	w.scan(run, run.words, 0, len(run.words))
 	return run
+}
+
+// unwrapRecorded is unwrap, with the wrapper it takes off, and the words it
+// takes with it, recorded on run.
+func (w *worklist) unwrapRecorded(run *invocation, first string, words []string, reading assignments) ([]string, bool) {
+	wrapper := wraps(first)
+	if wrapper {
+		// Recorded before unwrap, so that a reading it forks off carries the
+		// wrapper's name too.
+		run.wrappers = append(slices.Clip(run.wrappers), first)
+	}
+	rest, done := w.unwrap(run, first, words, reading)
+	switch {
+	case !wrapper:
+	case done:
+		run.wrappers = run.wrappers[:len(run.wrappers)-1]
+	case len(rest) < len(words):
+		run.wrappers = append(run.wrappers, words[1:len(words)-len(rest)]...)
+	}
+	return rest, done
 }
 
 // scan pushes a reading of the words after each of words[i:j] that starts
@@ -302,5 +322,16 @@ func clipped(run invocation) invocation {
 	run.assigns = slices.Clip(run.assigns)
 	run.cut = slices.Clip(run.cut)
 	run.unsets = slices.Clip(run.unsets)
+	run.wrappers = slices.Clip(run.wrappers)
 	return run
+}
+
+// wraps reports a first word unwrap takes off as a wrapper of the command
+// after it, rather than as a keyword or a group's closer.
+func wraps(first string) bool {
+	switch base(first) {
+	case "if", "then", "else", "elif", "do", "while", "until", "always", "]]", "}", "function":
+		return false
+	}
+	return true
 }

@@ -877,6 +877,33 @@ type GateResult struct {
 	At       string     `json:"at"`
 	Note     string     `json:"note,omitempty"`
 	TreeHash string     `json:"tree_hash,omitempty"`
+	// Commands is what sdlc ran at the implementation gate's pass, on the tree
+	// TreeHash names. It belongs to that pass alone: every recording of the
+	// gate clears it, so a result never stands for a fail recorded after it.
+	Commands []CommandRun `json:"commands,omitempty"`
+}
+
+// CommandRun is one configured command sdlc ran, and how it ended. Digest is
+// over the command and its threshold, never their text, because a command can
+// hold a token and the record is committed.
+type CommandRun struct {
+	Name       string `json:"name"`
+	Exit       int    `json:"exit"`
+	DurationMS int64  `json:"duration_ms"`
+	Digest     string `json:"digest,omitempty"`
+}
+
+// FreezeRun is the narrow run the first freeze made of the new tests, and the
+// tree it ran on.
+type FreezeRun struct {
+	CommandRun
+	TreeHash string `json:"tree_hash,omitempty"`
+}
+
+// CommandSetRun is the command set the landing ran, and the tree it ran on.
+type CommandSetRun struct {
+	TreeHash string       `json:"tree_hash,omitempty"`
+	Commands []CommandRun `json:"commands,omitempty"`
 }
 
 // Event is one thing that happened during the iteration, in order. The record
@@ -1127,6 +1154,10 @@ type Record struct {
 	// a project that turns the staffing on. Nil is none recorded, and then every
 	// agent is needed.
 	Staffing *Staffing `json:"staffing,omitempty"`
+	// FreezeRun is the narrow run of the last first freeze that ran one, and
+	// LandingRun the command set the landing ran, nil where it ran none.
+	FreezeRun  *FreezeRun     `json:"freeze_run,omitempty"`
+	LandingRun *CommandSetRun `json:"landing_run,omitempty"`
 }
 
 // Staffing is the project manager's answer, for one story, to which agents it
@@ -1734,6 +1765,10 @@ func (r *Record) SetGate(g Gate, status GateStatus, note string, at time.Time) [
 	prev.Status = status
 	prev.At = Timestamp(at)
 	prev.Note = note
+	// What a pass ran is that pass's: kept, it would stand for this fail, or
+	// for a pass whose own run sets it afresh.
+	prev.TreeHash = ""
+	prev.Commands = nil
 	r.Gates[g] = prev
 
 	reopened := r.reopenAfter(g, "reopened when "+string(g)+" was recorded "+string(status), at)

@@ -24,7 +24,11 @@ func TestAC6EveryGitTheCountingGitSawWasStartedByAProcessOfTheWalkOrByGit(t *tes
 	gits := map[int]bool{}
 	for _, qs := range byPID {
 		for _, q := range qs {
-			gits[q.pid] = true
+			// A configured command run is not a git, and what it starts is not
+			// started by git.
+			if !q.run {
+				gits[q.pid] = true
+			}
 		}
 	}
 	if len(gits) == 0 {
@@ -36,7 +40,9 @@ func TestAC6EveryGitTheCountingGitSawWasStartedByAProcessOfTheWalkOrByGit(t *tes
 			continue
 		}
 		for _, q := range qs {
-			strays = append(strays, w.spelt(strings.Join(u129Sealed(q.args), " ")))
+			if !q.run {
+				strays = append(strays, w.spelt(strings.Join(u129Sealed(q.args), " ")))
+			}
 		}
 	}
 	slices.Sort(strays)

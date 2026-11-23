@@ -163,6 +163,13 @@ below it is.
   command goes on meanwhile;
   another story's landing waits its turn, as above. A second stop of the same story that began
   later waits for the first and is then told the story has landed.
+- **The story's commands are already running.** `sdlc gate implementation pass` and
+  `sdlc freeze` run the configured commands under a lock of the story's own, and a second of
+  either for the same story is refused at once rather than waiting behind a run that can take
+  many minutes. The message names the holder: its process id, when it started, and which of the
+  two it is. Wait for it to finish, then run your command again. Other stories, the hook and
+  `sdlc status` go on meanwhile. A holder that was killed outright leaves the lock, and it is
+  taken once it has gone two minutes without a refresh, as above; nothing is removed by hand.
 
 **At a limit.** `sdlc gate ... fail` and `sdlc review add ... block` hand the story to a person
 when the failure or the block reaches its limit, and the hand-over writes the backlog, the claim
@@ -2235,10 +2242,12 @@ defence.
 ### SDLC-E0085
 
 `sdlc freeze` did not freeze the tests, because of the freeze check the project configures,
-[`commands.freeze_check`](configuration.md#the-freeze-check). The check runs once per freeze,
-before anything is recorded, over the test files that are new or changed since the story started.
-Nothing was recorded and nothing was frozen, and the story is where it was: the refusal is not an
-escalation. The message says which of these it is:
+[`commands.freeze_check`](configuration.md#the-freeze-check), or because of the narrow run of the
+new and changed tests, [`commands.test_files`](configuration.md#the-narrow-test-command) (or
+`commands.test` where that is empty). Both run once per freeze, before anything is recorded, over
+the test files that are new or changed since the story started. Nothing was recorded and nothing
+was frozen, and the story is where it was: the refusal is not an escalation. The message says
+which of these it is:
 
 - **The check failed.** It ended with a status other than 0, or was killed by a signal. The message
   gives how it ended, and under `commands.freeze_check printed (last 40 lines):` the last 40
@@ -2262,22 +2271,38 @@ escalation. The message says which of these it is:
   formatter that rewrites files belongs in the author's own run before the freeze. A check that
   writes a test file on every run never settles, and no correction to a test clears it: a person
   changes `commands.freeze_check`.
-- **A test file's name holds a line break.** One name to a line cannot carry it. The message shows
-  the name with the break written `\n`. Rename the file, with `git mv`, so that its name has no
-  line break, and run `sdlc freeze` again.
-- **There is no shell to run the check in.** `commands.freeze_check` runs under `sh` or `bash`,
-  and neither is on PATH (on Windows, Git Bash provides them). The freeze is refused rather than
-  taken unchecked. A person puts one on PATH, and `sdlc freeze` is run again.
-- **The check ran `sdlc freeze`, or `SDLC_FREEZE_FILES` was already set.** A check that freezes
-  starts the check again, with the project's lock let go and no time limit. A person removes the
-  `sdlc freeze` from `commands.freeze_check` or from the script it runs; whoever exported
-  `SDLC_FREEZE_FILES` by hand unsets it.
-- **The story or its freeze moved while the check ran.** The lock is let go for the run, so
+- **The narrow run passed.** A test written before its code fails until the code exists, and the
+  new and changed tests passed, so they test nothing yet. Everything the command printed is in
+  `.sdlc/stories/<ID>/freeze-run.log`, and its last 20 lines follow the message. The test author
+  makes each new test fail for the reason it is there and runs `sdlc freeze` again. Where the
+  command runs tests other than the ones `SDLC_TEST_FILES` lists, so that other tests decide how
+  it ends, a person corrects `commands.test_files`.
+- **The narrow run could not run.** It could not be started, or ended with the shell's 126 or 127,
+  or by a signal, which says nothing of the tests, so it is not taken for tests that fail. A person
+  puts the program, the shell or the command right, and `sdlc freeze` is run again.
+- **A test file's name holds a line break**, or another character a reader splits lines at: a
+  control character other than a tab, DEL, U+0085, U+2028 or U+2029. One name to a line cannot
+  carry it. The message shows the name with the character escaped. Rename the file, with `git mv`,
+  and run `sdlc freeze` again.
+- **There is no shell to run a command in.** `commands.freeze_check` and the narrow run run under
+  `sh` or `bash`, and neither is on PATH (on Windows, Git Bash provides them). The message names
+  the command that could not be run. The freeze is refused rather than taken unchecked. A person
+  puts one on PATH, and `sdlc freeze` is run again.
+- **The run could not be set up in the temporary directory.** Each run has a directory of its own
+  there, and the narrow run is handed the list of test files in a file there, `SDLC_TEST_FILES`.
+  The message names the commands, says which of the two could not be made, and why. A person
+  makes the temporary directory writable and frees room in it (`TMPDIR` names it, `TMP` or `TEMP`
+  on Windows), and `sdlc freeze` is run again.
+- **A command ran `sdlc freeze`, or `SDLC_FREEZE_FILES` or `SDLC_RUN_DIR` was already set.** A
+  command that freezes starts the run again, with the project's lock let go and no time limit. A
+  person removes the `sdlc freeze` from the command or from the script it runs; whoever exported
+  either variable by hand unsets it.
+- **The story or its freeze moved while the commands ran.** The lock is let go for the run, so
   another story can become the one being worked on, or a person can lift the freeze. (A session
-  that takes the story over is [SDLC-E0048](#sdlc-e0048) instead.) The message names the story the
-  check ran for and the one being worked on when it ended. Run `sdlc status` to see which story is
-  being worked on and whether its tests are frozen, and run `sdlc freeze` again only if that is
-  the story you meant.
+  that takes the story over is [SDLC-E0048](#sdlc-e0048) instead.) The message names the commands
+  that ran, the story they ran for and the one being worked on when they ended. Run `sdlc status`
+  to see which story is being worked on and whether its tests are frozen, and run `sdlc freeze`
+  again only if that is the story you meant.
 
 A check judged by how it ended: a process it left running that held its output open does not make
 a pass a failure. One residual remains: the content is hashed again a moment after the comparison,
@@ -2450,6 +2475,52 @@ One refusal is about the story and not a flag: a story whose commit your `sdlc a
 covers. A decision recorded on it now would be neither counted by `sdlc status` nor listed by
 `sdlc log`. Record it on the story under way, which `sdlc status` names, and name the story in
 `--question`.
+
+### SDLC-E0095
+
+`sdlc gate implementation pass` runs the commands the configuration sets (`build`, `test`,
+`lint`, `fmt_check`, `coverage` and `mutation`, those that are set, in that order) in the story's
+worktree, and records the pass only where all of them pass. This code is that gate refused by the
+run. The first line of the message names the command, `commands.<key>`, and how it ended.
+
+Everything the commands printed is in `.sdlc/stories/<ID>/implementation-run.log`, each command
+under a line sdlc writes (`sdlc: commands.<key>, exit <n>, <time>`), capped at 16 MiB. The last
+20 lines of the command that stopped the run follow the message on stderr. Read the file first.
+
+These states count as a fail of the gate, recorded with `implementation fail`, towards
+`loop.max_rework_rounds`; at that limit the story goes to a person:
+
+- **A command failed.** It exited non-zero. The implementer puts the work right in the story's
+  worktree, and `sdlc gate implementation pass` is recorded again, which runs the commands again.
+- **A threshold was not met**, or a coverage command printed no figure. The same as a failure.
+
+These states record nothing, and spend no rework round:
+
+- **A command could not be started**: no shell, a program that is not there (status 127), one
+  that cannot run (126), or one ended by a signal. This is a person's to put right: the
+  program, the shell, or `commands.<key>` in `.sdlc/config.json`.
+- **A command wrote a file of the tree it ran on.** The message names the path. A command writes
+  what it makes under `$SDLC_RUN_DIR` or a path git ignores; then record the gate again.
+- **The story changed while the commands ran.** The message says what moved: a gate recorded, the
+  freeze taken again or lifted, a frozen test changed, or HEAD. Another session in this checkout,
+  or a person's own command, is the usual cause; record the gate again once it has finished.
+- **`SDLC_RUN_DIR` was already set**, which is a gate run from inside a configured command.
+  Unset it.
+
+The same refusal twice goes to a person with `sdlc escalate`.
+
+`SDLC_RUN_DIR` is a directory of the run's own, made empty in the OS temporary directory and
+removed when the run ends. A coverage command reads the profile the test command wrote there;
+one that finds nothing in `SDLC_RUN_DIR` was most likely run by hand, or its test command writes
+its profile somewhere else. [The run directory](configuration.md#the-run-directory) shows the pair
+for each stack.
+
+Where the output could not be put at `implementation-run.log`, because a directory stands at the
+name or a reader held the old file open, the message names the temporary file beside it that
+holds the output instead. Remove what stands at the name before the next run.
+
+A second run of the same story while one is going is refused with
+[SDLC-E0006](#sdlc-e0006), naming the run that holds the story's lock.
 
 ## Warnings the hook prints
 

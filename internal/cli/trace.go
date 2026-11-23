@@ -162,6 +162,10 @@ type storyTrace struct {
 	Refusals     []refusalRow    `json:"refusals"`
 	Diff         *diffFigures    `json:"diff"`
 	Reviews      []reviewRow     `json:"reviews"`
+	// ImplementationCommands is what sdlc ran at the implementation gate's
+	// last pass, from the record and apart from the test runs the trace
+	// counts, so that it is there for a story with no trace too.
+	ImplementationCommands *gateCommands `json:"implementation_commands,omitempty"`
 
 	// What the text says besides: the title, the runs that ended and left no
 	// measurement, the runs and turns recorded without their counts, and the
@@ -273,6 +277,7 @@ func storyReport(id string, rp *replay, record *model.Record, reading trace.Read
 	if reading.TruncatedAt != "" {
 		st.TruncatedAt = &reading.TruncatedAt
 	}
+	st.ImplementationCommands = gateCommandsOf(record)
 	// A gate's rest is the time in it that nothing the record holds accounts
 	// for, and is given whether or not the story was traced. The story's own
 	// rest is left out where its subagents' time is not recorded (AC-21).
@@ -598,6 +603,38 @@ func shown(seconds *float64) string {
 
 const unrecorded = "not recorded"
 
+// gateCommands is the implementation gate's commands: how many, and the time
+// they took, in seconds.
+type gateCommands struct {
+	Count int     `json:"count"`
+	Time  float64 `json:"time"`
+}
+
+// gateCommandsOf is the implementation gate's commands on the record, nil
+// where it holds none.
+func gateCommandsOf(record *model.Record) *gateCommands {
+	if record == nil {
+		return nil
+	}
+	ran := record.Gates[model.GateImplementation].Commands
+	if len(ran) == 0 {
+		return nil
+	}
+	g := &gateCommands{Count: len(ran)}
+	for _, c := range ran {
+		g.Time += float64(c.DurationMS) / 1000
+	}
+	return g
+}
+
+// writeGateCommands is the implementation gate's line, where it ran any.
+func writeGateCommands(p *printer, st storyTrace) {
+	if g := st.ImplementationCommands; g != nil {
+		p.linef("Gate 5 commands, run by sdlc at the implementation gate: %d, %s in all", g.Count,
+			humanTime(time.Duration(g.Time*float64(time.Second))))
+	}
+}
+
 func writeStoryTrace(w io.Writer, st storyTrace) error {
 	p := &printer{w: w}
 	p.linef("%s  %s", st.Story, st.title)
@@ -606,6 +643,8 @@ func writeStoryTrace(w io.Writer, st storyTrace) error {
 	if st.Traced {
 		writeAgentTypes(p, st.AgentTypes)
 		writeMeasures(p, st)
+	} else {
+		writeGateCommands(p, st)
 	}
 	writeReviews(p, st.Reviews)
 	return p.err
@@ -709,6 +748,7 @@ func writeMeasures(p *printer, st storyTrace) {
 	}
 	p.linef("test runs: %d, %s in all, %d passed, %d failed", st.Tests.Count,
 		humanTime(time.Duration(st.Tests.Time*float64(time.Second))), st.Tests.Passes, st.Tests.Failures)
+	writeGateCommands(p, st)
 	p.linef("refusals, by rule, agent and code:")
 	for _, r := range st.Refusals {
 		p.linef("  %s, %s%s: %d", r.Rule, cmp.Or(r.AgentType, "the main conversation"), prefixed(", ", r.Code), r.Count)

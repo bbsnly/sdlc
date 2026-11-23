@@ -968,6 +968,9 @@ type ran struct {
 	// renamedFrom is the words as written of a run whose program word the
 	// line renamed, which the refusal shows beside what they run.
 	renamedFrom string
+	// wrappers are the words of what only wrapped the command, taken off
+	// its front (invocation.wrappers).
+	wrappers []string
 }
 
 // handed is what a line is handed by the command that hands it to a shell, or
@@ -1420,7 +1423,7 @@ func (p *programScan) plain(i int, c lexedCommand, reading assignments) {
 		marked: marked.words, env: c.env, sets: sets, chdir: marked.chdir, piped: c.fed, input: c.input,
 		expression: p.powerShell && !l.calls[i], replace: c.replace, cleared: c.cleared, unsets: c.unsets,
 		subscript: c.subscript, script: p.h.script, defines: c.defines, value: p.h.value, alias: p.h.alias,
-		literal: c.literal})
+		literal: c.literal, wrappers: run.wrappers})
 	if base(run.words[0]) != "find" {
 		return
 	}
@@ -1476,7 +1479,8 @@ func (p *programScan) findExec(c lexedCommand, args, margs []string, reading ass
 		marks := pairedMarks(e.words, me.words, c.cut)
 		p.out = append(p.out, ran{words: e.words, group: c.in, substituted: c.cut,
 			marked: marks, env: c.env, piped: c.fed, replace: "{}", cleared: c.cleared || e.cleared,
-			unsets: slices.Concat(c.unsets, e.unsets), subscript: c.subscript, script: p.h.script})
+			unsets: slices.Concat(c.unsets, e.unsets), subscript: c.subscript, script: p.h.script,
+			wrappers: e.wrappers})
 		if e.shell && p.nests() {
 			p.execScript(c, e, me.words, reading)
 		}

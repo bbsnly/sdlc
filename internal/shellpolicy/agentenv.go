@@ -76,6 +76,17 @@ import (
 // protectedSet is a list of names the readers below look for.
 type protectedSet []string
 
+// anyName is the set that takes any name for a protected one. The rule that
+// the configured commands run as configured (configuredrun.go) asks this
+// file's whole reading of a line with it, so that a spelling read here for the
+// six is read there for every name, and the two cannot drift (US-134, the
+// person's option A). Only the leaves below answer differently for it. It
+// holds a NUL, which no name can, so no list is ever taken for it.
+var anyName = protectedSet{"\x00any"}
+
+// any reports the set that takes any name.
+func (set protectedSet) any() bool { return len(set) == 1 && set[0] == anyName[0] }
+
 // protectedNames are the six. AI_AGENT is store.AgentEnv's value, copied
 // because shellpolicy and store share a tier and neither imports the other;
 // internal/hook/typedby.go keeps the four its check reads. Review holds each
@@ -222,6 +233,13 @@ func (set protectedSet) takesProtected(r ran, text string) bool {
 		return false
 	}
 	if shellMade(words[0], r.replace) {
+		// For any name, a made program given any word may be a builtin
+		// writing it: `$(printf exp%s ort) GOFLAGS=-v` (security F-22). A
+		// PowerShell expression is a value, not a program, so it is read as
+		// for the six: `$env:GOFLAGS -eq '-v'` changes nothing.
+		if set.any() && !r.expression {
+			return len(words) > 1
+		}
 		// `X=unset; $X AI_AGENT`: what runs cannot be named, so a word that
 		// names a protected name may be the name it takes away. Given other
 		// words, a made program stays open (`X=go; $X test ./...`).
@@ -262,9 +280,11 @@ func (set protectedSet) builtinTakesProtected(words []string, replace string) bo
 	case "zparseopts", "zstyle", "zformat", "zregexparse", "zstat", "strftime", "sysread", "zselect", "zsystem",
 		"ztie", "pcre_match", "compadd", "vared":
 		// zsh's module builtins take a name in many places among their
-		// options and values, so any word that names one is read as one.
+		// options and values, so any word that names one is read as one;
+		// asked for any name, so is a word the shell makes, which may name
+		// one once it runs (`strftime -s ${x:-HOME} %s 0`).
 		return slices.ContainsFunc(words[1:], func(w string) bool {
-			return set.namesProtected(w) || set.patternOfProtected(w)
+			return set.namesProtected(w) || set.patternOfProtected(w) || set.any() && shellMade(w, replace)
 		})
 	}
 	return false
@@ -340,8 +360,12 @@ func (set protectedSet) interpreterTakesProtected(words []string, input bool, te
 	return input && (code || namesAShell(words)) && set.mayNameProtected(text)
 }
 
-// mayNameProtected reports text that holds one of the set, in any case.
+// mayNameProtected reports text that holds one of the set, in any case. Any
+// text may hold some name.
 func (set protectedSet) mayNameProtected(text string) bool {
+	if set.any() {
+		return true
+	}
 	return slices.ContainsFunc(set, func(name string) bool { return mayName(text, name) })
 }
 
@@ -373,6 +397,13 @@ func (set protectedSet) namesProtected(w string) bool {
 	w = strings.ToUpper(strings.ReplaceAll(w, `\`, ""))
 	if name, _, ok := strings.Cut(w, "="); ok {
 		w = strings.TrimSuffix(name, "+")
+	}
+	if set.any() {
+		// A name, cut at a subscript: the shape of a variable's name.
+		if i := strings.IndexByte(w, '['); i > 0 {
+			w = w[:i]
+		}
+		return nameShaped(w)
 	}
 	return slices.ContainsFunc(set, func(name string) bool { return w == name || strings.HasPrefix(w, name+"[") })
 }
@@ -407,6 +438,9 @@ func (set protectedSet) patternOfProtected(w string) bool {
 		return false
 	}
 	w = strings.ToUpper(strings.ReplaceAll(w, `\`, ""))
+	if set.any() {
+		return patternOfAName(w)
+	}
 	if i := strings.IndexAny(w, "(|<^#~"); i >= 0 {
 		head := w[:i]
 		if j := strings.IndexAny(head, "*?["); j >= 0 {
@@ -430,21 +464,49 @@ func (set protectedSet) patternOfProtected(w string) bool {
 var setsProtected = sync.OnceValue(func() map[string]*regexp.Regexp {
 	out := make(map[string]*regexp.Regexp, len(protectedNames))
 	for _, name := range protectedNames {
-		n := regexp.QuoteMeta(strings.ToLower(name))
-		out[name] = regexp.MustCompile(`(?i)(?:^|[^$\w])` + n + `(?:\[[^\]]*\])?\s*(?:[-+*/%&|^]|<<|>>|::?)?=(?:[^=]|$)` +
-			`|(?:^|[^$\w])` + n + `\s*(?:\+\+|--)(?:[^\w-]|$)` +
-			`|(?:^|[^-\w])(?:\+\+|--)` + n + `\b` +
-			`|\$\{env:` + n + `\}\s*\+?=` +
-			`|\b(?:set-item|new-item|remove-item|clear-item|rename-item|move-item|copy-item|set-content|add-content|` +
-			`clear-content|si|ni|ri|cli|rni|mi|cpi|sc|ac|clc|rm|del|erase|rd|rmdir)\b[^;|\n]*?env:[\\/]?` + n + `\b` +
-			`|setenvironmentvariable\(\s*['"]` + n + `['"]`)
+		out[name] = regexp.MustCompile(assignsAsText(name, false))
 	}
 	return out
 })
 
+// setsAnyName is setsProtected's expression for any name.
+var setsAnyName = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(assignsAsText("", true)) })
+
+// envDriveWriters are the cmdlets, and their aliases, that write, remove or
+// rename an item on the env: drive they are given.
+var envDriveWriters = []string{
+	"set-item", "new-item", "remove-item", "clear-item", "rename-item", "move-item", "copy-item", "set-content",
+	"add-content", "clear-content", "si", "ni", "ri", "cli", "rni", "mi", "cpi", "sc", "ac", "clc", "rm", "del",
+	"erase", "rd", "rmdir",
+}
+
+// assignsAsText is the expression setsProtected matches for name, or, where
+// anyName is set, for any name. Built in one place, so that the two readings
+// cannot drift. For any name two forms are left out: a name straight after a
+// `-`, since `-run=x` and `--note=x` are a flag's; and an increment outside
+// arithmetic, since `--note` is a flag. configuredrun.go reads arithmetic for
+// itself.
+func assignsAsText(name string, anyName bool) string {
+	n, before := regexp.QuoteMeta(strings.ToLower(name)), `[^$\w]`
+	if anyName {
+		n, before = `[a-z_]\w*`, `[^-$\w]`
+	}
+	expr := `(?i)(?:^|` + before + `)` + n + `(?:\[[^\]]*\])?\s*(?:[-+*/%&|^]|<<|>>|::?)?=(?:[^=]|$)`
+	if !anyName {
+		expr += `|(?:^|[^$\w])` + n + `\s*(?:\+\+|--)(?:[^\w-]|$)` +
+			`|(?:^|[^-\w])(?:\+\+|--)` + n + `\b`
+	}
+	return expr + `|\$\{env:` + n + `\}\s*\+?=` +
+		`|\b(?:` + strings.Join(envDriveWriters, "|") + `)\b[^;|\n]*?env:[\\/]?` + n + `\b` +
+		`|setenvironmentvariable\(\s*['"]` + n + `['"]`
+}
+
 // setsProtectedText reports text that assigns one of the set as setsProtected
 // reads it.
 func (set protectedSet) setsProtectedText(text string) bool {
+	if set.any() {
+		return setsAnyName().MatchString(text)
+	}
 	return slices.ContainsFunc(set, func(name string) bool {
 		return mayName(text, name) && setsProtected()[name].MatchString(text)
 	})
@@ -576,7 +638,14 @@ func startsAfresh(r ran) bool {
 
 // quotesProtected reports a name of the set quoted alone, `'AI_AGENT'` or
 // `"AI_AGENT"`, anywhere but as the name GetEnvironmentVariable( reads.
+//
+// For any name it answers no: it would refuse every quoted word, and on a
+// PowerShell line that may run the configured commands, configuredrun.go
+// refuses everything beside the call, which is more than this holds.
 func (set protectedSet) quotesProtected(text string) bool {
+	if set.any() {
+		return false
+	}
 	lower := strings.ToLower(text)
 	return slices.ContainsFunc(set, func(name string) bool {
 		name = strings.ToLower(name)
@@ -597,6 +666,38 @@ func (set protectedSet) quotesProtected(text string) bool {
 			}
 		}
 	})
+}
+
+// nameShaped reports a word, folded to upper case, that has the shape of a
+// variable's name.
+func nameShaped(w string) bool {
+	if w == "" || w[0] >= '0' && w[0] <= '9' {
+		return false
+	}
+	return strings.Trim(w, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == ""
+}
+
+// patternOfAName reports a pattern, folded to upper case, that can match some
+// name: its literal parts are name characters. A zsh pattern is read up to its
+// first special character, as for the six.
+func patternOfAName(w string) bool {
+	if i := strings.IndexAny(w, "(|<^#~"); i >= 0 {
+		w = w[:i]
+	}
+	var b strings.Builder
+	for i := 0; i < len(w); i++ {
+		switch c := w[i]; c {
+		case '*', '?':
+		case '[':
+			// A bracket expression matches one character, whatever it holds.
+			if j := strings.IndexByte(w[i:], ']'); j > 0 {
+				i += j
+			}
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return strings.Trim(b.String(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == ""
 }
 
 // startOf reports whether p is a start of name, as PowerShell takes a

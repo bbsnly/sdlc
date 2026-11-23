@@ -11,8 +11,11 @@ import (
 	"hash"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/bbsnly/sdlc/internal/sdlcerr"
 )
 
 // The tree hash from the private index git writes, in Go: `git add -A` fills
@@ -355,4 +358,68 @@ func treeHashOf(entries []indexEntry, hashLen int, sum hash.Hash) []byte {
 	sum.Write([]byte{0})
 	sum.Write(content.Bytes())
 	return sum.Sum(nil)
+}
+
+// CommitTreeHash is the tree TreeHash measures of a checkout that holds
+// commit's files and nothing else: commit's tree less .sdlc and everything
+// beneath it, which is what TreeHash's ":(exclude).sdlc" leaves out, with the
+// overrides applied as TreeHash applies them. The landing compares it with the
+// tree the implementation gate measured on the working tree, before anything
+// was committed: work a checkout holds and nobody committed is not what lands.
+// A listing this cannot read refuses as unmeasurable, never as a match.
+func CommitTreeHash(ctx context.Context, root, commit string, overrides ...Override) (string, error) {
+	if err := fullHashes(commit); err != nil {
+		return "", err
+	}
+	out, err := sealed(ctx, root, "ls-tree", "-r", "-z", "--full-tree", commit)
+	if err != nil {
+		return "", err
+	}
+	hashLen := len(commit) / 2
+	unreadable := func(why string) error {
+		return sdlcerr.New(sdlcerr.RepositoryUnreadable, "the tree of "+commit[:12]+" could not be measured", why)
+	}
+	var entries []indexEntry
+	for item := range strings.SplitSeq(string(out), "\x00") {
+		if item == "" {
+			continue
+		}
+		entry, ok := lsTreeEntry(item, hashLen)
+		if !ok {
+			return "", unreadable("git listed an entry this does not read: " + strconv.Quote(item))
+		}
+		if entry.hash != nil {
+			entries = append(entries, entry)
+		}
+	}
+	// The index's order, which treeHashOf reads: paths by their bytes.
+	sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
+	for _, o := range overrides {
+		var ok bool
+		if entries, ok, err = overrideEntry(ctx, root, nil, entries, hashLen, o); err != nil {
+			return "", err
+		} else if !ok {
+			return "", unreadable("the override of " + strconv.Quote(o.Path) + " could not be applied")
+		}
+	}
+	return hex.EncodeToString(treeHashOf(entries, hashLen, newObjectHash(hashLen))), nil
+}
+
+// lsTreeEntry reads one item of ls-tree -r -z as an index entry, and gives
+// one with no hash for a path under .sdlc, which TreeHash leaves out unread.
+func lsTreeEntry(item string, hashLen int) (indexEntry, bool) {
+	meta, name, ok := strings.Cut(item, "\t")
+	fields := strings.Fields(meta)
+	if !ok || len(fields) != 3 {
+		return indexEntry{}, false
+	}
+	if name == ".sdlc" || strings.HasPrefix(name, ".sdlc/") {
+		return indexEntry{path: name}, true
+	}
+	mode, err := strconv.ParseUint(fields[0], 8, 32)
+	sum, decodeErr := hex.DecodeString(fields[2])
+	if err != nil || decodeErr != nil || len(sum) != hashLen {
+		return indexEntry{}, false
+	}
+	return indexEntry{mode: uint32(mode), hash: sum, path: name}, true
 }

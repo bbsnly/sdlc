@@ -317,6 +317,27 @@ func TestAC4TheTeamDefaultsGoldenFilesHoldAConfigurationOnceItsCommentsAreCut(t 
 	}
 }
 
+// ccmTestFilesLine and ccmPairLine are the lines of the commands US-134 changes
+// in what init writes: the narrow test command it adds for every stack, and the
+// test and coverage pair it changes for the stacks that had one, so that they
+// share one run (AC-10). internal/scaffold/us134_test.go holds what those
+// commands do, by running them, and not their spelling.
+var (
+	ccmTestFilesLine = regexp.MustCompile(`(?m)^[ \t]*"test_files":.*\n`)
+	ccmPairLine      = regexp.MustCompile(`(?m)^[ \t]*"(test|coverage)":.*\n`)
+)
+
+// ccmWithoutUS134 is text with those lines taken out, the pair's only for the
+// stacks whose pair US-134 changes. Every other line, the empty
+// test and coverage of the other stacks included, is still held as it was.
+func ccmWithoutUS134(text, stack string) string {
+	text = ccmTestFilesLine.ReplaceAllString(text, "")
+	if stack == "Go" || stack == "Python" {
+		text = ccmPairLine.ReplaceAllString(text, "")
+	}
+	return text
+}
+
 // AC-4: every setting's value, for every stack and for none, is what init wrote
 // before the story. The files under testdata/init-config were captured from
 // the template as it stood before the story, with the top-level `_` keys cut
@@ -349,7 +370,8 @@ func TestAC4EverySettingHasTheValueInitWroteBeforeTheStoryForEveryStackAndNone(t
 			if err != nil {
 				t.Fatalf("what init wrote before the story is not there to compare with: %v", err)
 			}
-			want := string(wantRaw)
+			want := ccmWithoutUS134(string(wantRaw), stack.name)
+			got = ccmWithoutUS134(got, stack.name)
 			if got == want {
 				return
 			}

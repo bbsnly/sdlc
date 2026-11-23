@@ -26,6 +26,8 @@ type freezePayload struct {
 	Files []string `json:"files"`
 	Count int      `json:"count"`
 	Added []string `json:"added,omitempty"`
+	// Run is the narrow run of the new tests a first freeze made.
+	Run *model.FreezeRun `json:"run,omitempty"`
 }
 
 type unfreezePayload struct {
@@ -81,6 +83,19 @@ type freezer struct {
 	passed    bool
 	id        string
 	extending bool
+	// narrow is the command a first freeze runs over its new and changed
+	// tests, and narrowKey its key; ran is that run, once it has failed as new
+	// tests do, and files the test files the first pass judged, which a
+	// second pass after the narrow run alone hashes again instead of asking
+	// git for the list.
+	narrow, narrowKey string
+	ran               *model.FreezeRun
+	ranLog            string
+	judged            map[string]string
+	fellBack          bool
+	files             []string
+	// keys is the commands the first pass ran, as a refusal names them.
+	keys string
 }
 
 func runFreeze(cmd *cobra.Command) error {
@@ -92,6 +107,7 @@ func runFreeze(cmd *cobra.Command) error {
 		cmd: cmd, s: s, p: p, lock: heldLock{release: unlock},
 		check: strings.TrimSpace(p.Config.Commands["freeze_check"]),
 	}
+	f.narrowKey, f.narrow = narrowCommand(p.Config)
 	defer f.lock.letGo()
 	return f.take()
 }
@@ -110,9 +126,11 @@ func (f *freezer) take() error {
 	if lock != nil {
 		return f.refuseOrExtend(id, lock)
 	}
-	files, err := findTests(f.cmd, f.p, f.s)
-	if err != nil {
-		return err
+	files := f.files
+	if !f.passed || f.check != "" || files == nil {
+		if files, err = findTests(f.cmd, f.p, f.s); err != nil {
+			return err
+		}
 	}
 	hashes, err := hashAll(f.s, files)
 	if err == nil {
@@ -121,13 +139,48 @@ func (f *freezer) take() error {
 	if err != nil {
 		return err
 	}
-	if f.vetting() {
+	if f.passed && f.ran != nil && f.check == "" {
+		// The narrow run alone ran: a test file it changed is refused as the
+		// check's change is.
+		if changed := changedFiles(f.files, f.judged, hashes); len(changed) > 0 {
+			return f.changed(commandsPrefix+f.narrowKey, changed)
+		}
+	}
+	if f.vetting() || f.narrowing() {
+		f.files = files
 		return f.vet(id, false, hashes)
 	}
 	if err := f.s.SaveLock(model.NewLock(id, hashes, f.s.Now())); err != nil {
 		return err
 	}
 	return f.sayFrozen(id, files, nil)
+}
+
+// narrowCommand is the command a first freeze runs over its new and changed
+// tests, and its key: commands.test_files, or the whole commands.test where
+// that is empty; none where neither is set.
+func narrowCommand(cfg config.Config) (key, command string) {
+	if command = strings.TrimSpace(cfg.Commands["test_files"]); command != "" {
+		return "test_files", command
+	}
+	if command = strings.TrimSpace(cfg.Commands[commandTest]); command != "" {
+		return commandTest, command
+	}
+	return "", ""
+}
+
+// narrowing is whether this first freeze still has its narrow run to make.
+func (f *freezer) narrowing() bool { return f.narrow != "" && !f.passed }
+
+// changedFiles is each of files whose hash differs between before and now.
+func changedFiles(files []string, before, now map[string]string) []string {
+	var changed []string
+	for _, name := range files {
+		if before[name] != now[name] {
+			changed = append(changed, name)
+		}
+	}
+	return changed
 }
 
 // ground is the story the freeze is for, once the session and the claim have
@@ -270,6 +323,11 @@ func (f *freezer) sayFrozen(id string, files, added []string) error {
 	record, err := s.Record(id)
 	if err == nil {
 		record.Append("freeze", message+f.passedNote(), s.Now())
+		// A first freeze puts its narrow run on the record, and one that ran
+		// none takes an earlier one off.
+		if len(added) == 0 {
+			record.FreezeRun = f.ran
+		}
 		// A freeze taken, and not one added to: it holds every test file
 		// there is, so the story's list of its own commits starts again, in
 		// the save that says so, unless it was the stop that lifted the last
@@ -282,9 +340,13 @@ func (f *freezer) sayFrozen(id string, files, added []string) error {
 	if err != nil {
 		return err
 	}
+	var ran *model.FreezeRun
+	if len(added) == 0 {
+		ran = f.ran
+	}
 	if wantJSON(cmd) {
 		return emitJSON(cmd.OutOrStdout(), freezePayload{
-			OK: true, Story: id, Files: files, Count: len(files), Added: added,
+			OK: true, Story: id, Files: files, Count: len(files), Added: added, Run: ran,
 		})
 	}
 	w := cmd.OutOrStdout()
@@ -292,13 +354,21 @@ func (f *freezer) sayFrozen(id string, files, added []string) error {
 	for _, name := range listed {
 		fmt.Fprintf(w, "  %s\n", name)
 	}
+	if ran != nil {
+		over := "the new and changed test files"
+		if f.fellBack {
+			over = "every test file, since the story's base could not be read"
+		}
+		fmt.Fprintf(w, "  %s ran over %s and failed with status %d, as new tests do; its output is in %s\n",
+			ran.Name, over, ran.Exit, f.ranLog)
+	}
 	return nil
 }
 
 // passedNote is what the record says of a check that ran, apart from the
 // message the command prints, which a skill reads.
 func (f *freezer) passedNote() string {
-	if f.passed {
+	if f.passed && f.check != "" {
 		return "; " + freezeCheckKey + " ran and passed"
 	}
 	return ""
@@ -583,24 +653,33 @@ func brokenFreeze(changed []string) *sdlcerr.Error {
 }
 
 // unfrozenTests lists the project's test files that the freeze does not hold,
-// found the way the freeze found the ones it does.
-func unfrozenTests(ctx context.Context, s *store.Store, lock *model.Lock) ([]string, error) {
-	listed, err := listedTests(ctx, s)
-	return unheldOf(lock, listed), err
+// found the way the freeze found the ones it does, and every file the listing
+// gave, nil where none was taken. The implementation gate's run checks the
+// tree by that listing, so that it asks git for the files once.
+func unfrozenTests(ctx context.Context, s *store.Store, lock *model.Lock) (unheld, all []string, err error) {
+	listed, all, err := testsListed(ctx, s)
+	return unheldOf(lock, listed), all, err
 }
 
 // listedTests is the project's test files as the freeze finds them, and none
 // where paths.tests names nothing.
 func listedTests(ctx context.Context, s *store.Store) ([]string, error) {
+	listed, _, err := testsListed(ctx, s)
+	return listed, err
+}
+
+// testsListed is listedTests, and every file the listing gave, nil where none
+// was taken.
+func testsListed(ctx context.Context, s *store.Store) (listed, all []string, err error) {
 	m := testset.New(s.Config().Paths.Tests)
 	if !m.Configured() {
-		return nil, nil
+		return nil, nil, nil
 	}
-	all, err := gitx.Files(ctx, s.Root())
+	all, err = gitx.Files(ctx, s.Root())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return m.Filter(all), nil
+	return m.Filter(all), all, nil
 }
 
 // unheldOf is the files listed that the freeze does not hold.

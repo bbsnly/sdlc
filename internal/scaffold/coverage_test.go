@@ -156,16 +156,33 @@ func withoutVariables(env []string, names ...string) []string {
 // extra added, and returns what it printed on stdout. The temp directory is the
 // test's own, so a profile that goes there is found and removed with it, and
 // one that does not is not hidden by the machine's.
+//
+// The project's test command runs first, in the same new SDLC_RUN_DIR, as sdlc
+// runs the two (US-134 AC-10): a coverage command may read the figure from what
+// the test command left there rather than run the suite again.
 func runCoverage(t *testing.T, dir, command, tmp string, extra ...string) (string, error) {
 	t.Helper()
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := append(withoutVariables(os.Environ(), "TMPDIR", "TMP", "TEMP", "COVERAGE_FILE", "SDLC_RUN_DIR"),
+		"TMPDIR="+tmp, "TMP="+tmp, "TEMP="+tmp, "SDLC_RUN_DIR="+t.TempDir())
+	env = append(env, extra...)
+	if test := cfg.Commands["test"]; test != "" {
+		run := exec.CommandContext(t.Context(), shellFor(t), "-c", test)
+		run.Dir, run.Env = dir, env
+		if out, err := run.CombinedOutput(); err != nil {
+			t.Logf("commands.test: %s", out)
+			return "", err
+		}
+	}
 	cmd := exec.CommandContext(t.Context(), shellFor(t), "-c", command)
 	cmd.Dir = dir
-	cmd.Env = append(withoutVariables(os.Environ(), "TMPDIR", "TMP", "TEMP", "COVERAGE_FILE"),
-		"TMPDIR="+tmp, "TMP="+tmp, "TEMP="+tmp)
-	cmd.Env = append(cmd.Env, extra...)
+	cmd.Env = env
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		t.Logf("%s\n%s", stdout.String(), stderr.String())
 	}
@@ -346,14 +363,28 @@ func TestAC4TheGoCoverageCommandLeavesNothingInTheProjectForTheCommitGateToRefus
 }
 
 // fakePytest stands in for pytest with pytest-cov, which is not on every
-// machine: it writes its data file where pytest-cov does, at COVERAGE_FILE
-// when that is set and .coverage in the working directory when it is not, and
-// prints the terminal report pytest-cov prints.
+// machine: run with --cov, it writes its data file where pytest-cov does, at
+// COVERAGE_FILE when that is set and .coverage in the working directory when it
+// is not, and prints the terminal report pytest-cov prints. Without --cov,
+// pytest-cov measures nothing and writes no data.
 const fakePytest = `#!/bin/sh
+case " $* " in *" --cov"*) ;; *) exit 0 ;; esac
 printf 'data' > "${COVERAGE_FILE:-.coverage}"
 printf '%s\n' '---------- coverage: platform linux, python 3.12 ----------' \
 	'Name         Stmts   Miss  Cover' 'app.py          10      2    80%' \
 	'--------------------------------' 'TOTAL           10      2    80%'
+`
+
+// fakeCoverage stands in for coverage.py, run as coverage or as python -m: its
+// report reads the data at COVERAGE_FILE, else .coverage, and fails where there
+// is none. python -m pytest is handed on to the pytest stand-in.
+const fakeCoverage = `#!/bin/sh
+case "$1" in -m) shift; [ "$1" = pytest ] && { shift; exec pytest "$@"; }; shift ;; esac
+if [ -f "${COVERAGE_FILE:-.coverage}" ]; then
+	printf '%s\n' 'Name         Stmts   Miss  Cover' 'app.py          10      2    80%' 'TOTAL           10      2    80%'
+else
+	echo 'No data to report.'; exit 1
+fi
 `
 
 // pythonProject is a Python project as one in use is, committed, with the
@@ -393,8 +424,10 @@ func TestAC2AndAC4ThePythonCoverageCommandKeepsItsDataFileOutOfTheProject(t *tes
 	}
 	root, command := pythonProject(t, nil)
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "pytest"), []byte(fakePytest), 0o755); err != nil {
-		t.Fatal(err)
+	for name, body := range map[string]string{"pytest": fakePytest, "coverage": fakeCoverage, "python": fakeCoverage, "python3": fakeCoverage} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	before := snapshot(t, root)
 

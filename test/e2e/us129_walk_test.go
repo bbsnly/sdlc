@@ -48,12 +48,17 @@ type u129Call struct {
 	stdout, stderr string
 }
 
-// u129Query is one git process the counting git saw.
+// u129Query is one git process the counting git saw, or, with run set, one
+// configured command the process ppid ran through the walk's sh.
 type u129Query struct {
 	pid, ppid       int
 	dir, vars, disk string
 	args            []string
+	run             bool
 }
+
+// u129RunMark is the walk's sh noting a configured command run.
+const u129RunMark = "<command run>"
 
 type u129Walk struct {
 	t                *testing.T
@@ -124,9 +129,11 @@ func u129NewWalk(t *testing.T) *u129Walk {
 	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// PATH holds the counting git and the four programs it runs, and nothing
-	// else, so that nothing the binary prints depends on what the machine has
-	// installed: doctor names the go and the sdlc it finds on PATH.
+	// PATH holds the counting git and the four programs it runs, and the sh
+	// the configured commands run in (since US-134 the freeze and the
+	// implementation gate run them on every story), and nothing else, so that
+	// nothing the binary prints depends on what the machine has installed:
+	// doctor names the go and the sdlc it finds on PATH.
 	tools := t.TempDir()
 	for _, name := range []string{"find", "xargs", "cksum", "sort"} {
 		found, err := exec.LookPath(name)
@@ -136,6 +143,18 @@ func u129NewWalk(t *testing.T) *u129Walk {
 		if err := os.Symlink(found, filepath.Join(tools, name)); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// The sh on PATH notes in the log, before it runs, that the process that
+	// started it ran a configured command (u129RunMark), and starts no git.
+	realSh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("the configured commands need sh on PATH")
+	}
+	shell := "#!/bin/sh\n" +
+		"printf '%s\\037%s\\037" + u129RunMark + "\\036' \"$$\" \"$PPID\" >> " + u129Quote(log) + "\n" +
+		"exec " + u129Quote(realSh) + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(tools, "sh"), []byte(shell), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "PATH=") })
 	env = append(env, "PATH="+dir+string(os.PathListSeparator)+tools)
@@ -414,6 +433,14 @@ func (w *u129Walk) queries() map[int][]u129Query {
 			continue
 		}
 		f := strings.Split(rec, "\037")
+		if len(f) == 3 && f[2] == u129RunMark {
+			ppid, err := strconv.Atoi(f[1])
+			if err != nil {
+				w.t.Fatalf("the walk's sh logged %q", rec)
+			}
+			out[ppid] = append(out[ppid], u129Query{ppid: ppid, run: true})
+			continue
+		}
 		if len(f) < 5 {
 			w.t.Fatalf("the counting git logged %q", rec)
 		}
@@ -527,6 +554,15 @@ func TestAC3NoSdlcProcessAsksGitTheSameReadOnlyQueryTwiceWhileNothingCouldChange
 		first := map[string]string{}
 		told := map[string]bool{}
 		for _, q := range byPID[c.pid] {
+			// A configured command run between two queries could have changed
+			// the answer, as a write could: AC-6 has the stop run the project's
+			// commands, and code the tool does not trust may change the tree
+			// without the disk the counting git fingerprints looking any
+			// different by the next query. Nothing else is a reason to ask again.
+			if q.run {
+				clear(first)
+				continue
+			}
 			if !u129ReadOnly(q.args) {
 				continue
 			}
@@ -546,14 +582,20 @@ func TestAC3NoSdlcProcessAsksGitTheSameReadOnlyQueryTwiceWhileNothingCouldChange
 func u129GitCounts(w *u129Walk, byPID map[int][]u129Query) map[string]int {
 	counts := map[string]int{}
 	for _, c := range w.calls {
-		if n := len(byPID[c.pid]); n > 0 {
+		n := 0
+		for _, q := range byPID[c.pid] {
+			if !q.run {
+				n++
+			}
+		}
+		if n > 0 {
 			counts[c.label] = n
 		}
 	}
 	return counts
 }
 
-func TestAC6NoProcessOfTheWalkStartsMoreGitThanAtTheBaseAndAllOfThemAtMostHalf(t *testing.T) {
+func TestAC6NoProcessOfTheWalkStartsMoreGitThanItsCapAndTheWalkNoMoreThanTheSumOfTheCaps(t *testing.T) {
 	parallel(t)
 	w, byPID := u129Walked(t)
 	counts := u129GitCounts(w, byPID)
@@ -572,40 +614,77 @@ func TestAC6NoProcessOfTheWalkStartsMoreGitThanAtTheBaseAndAllOfThemAtMostHalf(t
 			t.Errorf("AC-6 %s started %d git processes, more than the %d it started at the base", c.label, n, want)
 		}
 	}
-	if got*2 > base {
-		t.Errorf("AC-6 the walk started %d git processes in all, want at most half the %d it started at the base, %d",
-			got, base, base/2)
+	// The walk in all is held to the sum of the caps, the base measured at
+	// 3ca3e83 (87) and the allowances below: a tighter guard than half of
+	// US-129's base (185), which the walk already beat by the time US-134 began.
+	if got > base {
+		t.Errorf("AC-6 the walk started %d git processes in all, more than the %d its steps may start between them",
+			got, base)
 	}
 }
 
-// u129BaseGitCounts is what each process of the walk started at 37e3ac8, the
-// story's base, measured by this file on macOS (Gate 3); a process not named
-// started none. 185 in all, so the walk may start 92 at most.
+// u129HashesTheTree is the git processes one taking of the tree hash starts, as
+// gitx.TreeHash takes it in the walk: `add -A` into an index of its own, and
+// then `write-tree` or, for the backlog's override, the one process that stores
+// it. Measured at 3ca3e83 by having the freeze and the stop take it once more.
+const u129HashesTheTree = 2
+
+// u129FindsNewTests is what the freeze starts to find the new and changed test
+// files at 3ca3e83 (newOrChanged, which asks git for HEAD, what changed since
+// the story's cut and what is uncommitted, beyond what the freeze already
+// asked), which it does there only where commands.freeze_check is set: US-134's
+// run needs the list on every freeze (AC-13). Measured by having the walk's
+// freeze ask for it.
+const u129FindsNewTests = 2
+
+// u129LandingRunsCommands is what a stop at 3ca3e83 starts beyond the walk's
+// own when it runs the configured commands, as it does on a story rebased or
+// changed: runLandingCommands, from its check that nothing is left
+// uncommitted, and what the stop asks git again after the commands ran. The walk
+// commits CODEMAP.md after Gate 5, so the tree that lands is not the one the
+// result was recorded for, and AC-6 has the stop run the commands. Measured by
+// having the walk's stop run them at 3ca3e83.
+const u129LandingRunsCommands = 10
+
+// u129BaseGitCounts is what each process of the walk may start: what it started
+// at 3ca3e83, US-134's base, with sh on PATH, measured by this file on macOS (87
+// in all), with the allowances for what US-134 adds; a process not named started
+// none. The freeze finds the new tests and records the tree its run ran on
+// (AC-13); the implementation gate records the tree its commands ran on (AC-3);
+// every status after it says whether that result is the tree's as it is now
+// (AC-4); and the stop compares the tree that lands with the result and runs the
+// commands on it (AC-6).
 var u129BaseGitCounts = map[string]int{
-	"start --json #1": 7,
-	"gate dor pass --note worked by the session #1":      3,
-	"gate analysis pass --note worked by the session #1": 3,
-	"freeze #1": 4,
-	"gate tests_frozen pass --note worked by the session #1":       5,
-	"gate plan pass --note worked by the session #1":               5,
-	"gate design_review pass --note worked by the session #1":      3,
-	"gate implementation pass --note worked by the session #1":     5,
-	"gate verification pass --note worked by the session #1":       5,
-	"review add verifier_review verifier approve #1":               5,
-	"gate verifier_review pass --note worked by the session #1":    8,
-	"review add code_review code-reviewer approve #1":              5,
-	"review add code_review security approve #1":                   5,
-	"review add code_review perf approve #1":                       5,
-	"review add code_review human-advocate approve #1":             5,
-	"gate code_review pass --note worked by the session #1":        8,
-	`hook PreToolUse Bash: cd "<tree>" && git commit -m US-001 #1`: 7,
-	"gate commit pass --note worked by the session #1":             26,
-	"gate retro pass --note worked by the session #1":              4,
-	"review list #1": 5,
-	"doctor #1":      8,
-	`hook PreToolUse Bash: cd "<tree>" && git add CODEMAP.md && git commit -m 'docs: map US-001' #1`: 11,
-	"stop #1":         36,
-	"start --json #2": 7,
+	"start --json #1": 4,
+	"gate dor pass --note worked by the session #1":      1,
+	"gate analysis pass --note worked by the session #1": 1,
+	"freeze #1": 2 + u129FindsNewTests + u129HashesTheTree,
+	"gate tests_frozen pass --note worked by the session #1":   2,
+	"gate plan pass --note worked by the session #1":           2,
+	"gate design_review pass --note worked by the session #1":  1,
+	"gate implementation pass --note worked by the session #1": 2 + u129HashesTheTree,
+	"status --json #7": u129HashesTheTree,
+	"gate verification pass --note worked by the session #1": 2,
+	"status --json #8": u129HashesTheTree,
+	"review add verifier_review verifier approve #1":            2,
+	"gate verifier_review pass --note worked by the session #1": 3,
+	"status --json #9": u129HashesTheTree,
+	"review add code_review code-reviewer approve #1":       2,
+	"review add code_review security approve #1":            2,
+	"review add code_review perf approve #1":                2,
+	"review add code_review human-advocate approve #1":      2,
+	"gate code_review pass --note worked by the session #1": 3,
+	"status --json #10": u129HashesTheTree,
+	`hook PreToolUse Bash: cd "<tree>" && git commit -m US-001 #1`: 3,
+	"gate commit pass --note worked by the session #1":             15,
+	"status --json #11": u129HashesTheTree,
+	"gate retro pass --note worked by the session #1": 3,
+	"status --json #12": u129HashesTheTree,
+	"review list #1":    2,
+	"doctor #1":         3,
+	`hook PreToolUse Bash: cd "<tree>" && git add CODEMAP.md && git commit -m 'docs: map US-001' #1`: 3,
+	"stop #1":         21 + u129LandingRunsCommands + u129HashesTheTree,
+	"start --json #2": 4,
 }
 
 // u129Transcript is what every process of the walk printed, and its exit
@@ -692,9 +771,11 @@ func u129Formats(w *u129Walk) string {
 }
 
 // u129Golden is the walk's transcript and files as the base printed and
-// wrote them, captured at 37e3ac8 with U129_WRITE_GOLDEN=1 before the freeze. US-112.4
-// added only the test reviewer the fixture disables (decision D1): the line every
-// gate and status print of it, its row in review list and doctor, its entry in the
+// wrote them, captured at 37e3ac8 with U129_WRITE_GOLDEN=1 before the freeze,
+// and captured again there for US-134 with sh on the walk's PATH, which has
+// start run commands.smoke where it said it could not. US-112.4 added only the
+// test reviewer the fixture disables (decision D1): the line every gate and
+// status print of it, its row in review list and doctor, its entry in the
 // configuration and the status --json disabled list.
 const u129Golden = "testdata/us129_walk.golden"
 
@@ -739,6 +820,89 @@ func u129WithoutCommitPause(walk string) string {
 		walk = gone.ReplaceAllString(walk, "")
 	}
 	return walk
+}
+
+// u129Changed is a step whose output US-134 changes: status --json says whether
+// the recorded results are for the tree as it is (AC-4), the freeze runs the new
+// tests (AC-13), the implementation gate runs the configured commands (AC-1),
+// the stop lands on their result or runs them again (AC-6), and the trace shows
+// the time the Gate 5 commands took (AC-7). Their exit lines are still compared;
+// what they print is US-134's own tests', which hold its meaning and not one
+// wording that an implementation would have to copy.
+var u129Changed = regexp.MustCompile(`^=== (status --json|freeze|gate implementation pass|stop|trace US-001) .*: exit -?\d+\n$`)
+
+// u129Added is a member US-134 adds to the gate record: the implementation
+// gate's results and the tree they ran on, and the runs of the freeze and the
+// landing. u129InImplementation is where the first two go.
+var (
+	u129Added            = regexp.MustCompile(`"(freeze_run|landing_run)":\s*`)
+	u129ImplementationOf = regexp.MustCompile(`"(commands|tree_hash)":\s*`)
+	u129InImplementation = regexp.MustCompile(`"implementation":\s*\{`)
+)
+
+// u129WithoutUS134 is a transcript and its files less what US-134 changes: the
+// output of the steps of u129Changed, the members of u129Added in the gate
+// record, and a file under .sdlc/stories/ that want does not hold, which is
+// where the freeze and the gate keep a run's output. want is "" for the base's
+// own side.
+func u129WithoutUS134(text, want string) string {
+	var b strings.Builder
+	skipping := false
+	for line := range strings.Lines(text) {
+		if strings.HasPrefix(line, "=== ") {
+			skipping = false
+			if path, ok := strings.CutPrefix(strings.TrimSuffix(line, "\n"), "=== file "); ok &&
+				strings.HasPrefix(path, ".sdlc/stories/") && want != "" && !strings.Contains(want, line) {
+				skipping = true
+				continue
+			}
+			if u129Changed.MatchString(line) {
+				b.WriteString(line)
+				skipping = true
+				continue
+			}
+		}
+		if !skipping {
+			b.WriteString(line)
+		}
+	}
+	out := u129WithoutMembers(b.String(), u129Added)
+	for from := 0; ; {
+		loc := u129InImplementation.FindStringIndex(out[from:])
+		if loc == nil {
+			return out
+		}
+		start := from + loc[1] - 1
+		end := u129ValueEnd(out, start)
+		inner := u129WithoutMembers(out[start:end], u129ImplementationOf)
+		out = out[:start] + inner + out[end:]
+		from = start + len(inner)
+	}
+}
+
+// u129WithoutMembers is text with every JSON member whose key matches key taken
+// out, with the comma that joined it to its object.
+func u129WithoutMembers(text string, key *regexp.Regexp) string {
+	for from := 0; ; {
+		loc := key.FindStringIndex(text[from:])
+		if loc == nil {
+			return text
+		}
+		start, end := from+loc[0], u129ValueEnd(text, from+loc[1])
+		if rest := strings.TrimLeft(text[end:], " \t\r\n"); strings.HasPrefix(rest, ",") {
+			end = len(text) - len(rest) + 1
+		} else if before := strings.TrimRight(text[:start], " \t\r\n"); strings.HasSuffix(before, ",") {
+			start = len(before) - 1
+		}
+		for start > 0 && (text[start-1] == ' ' || text[start-1] == '\t') {
+			start--
+		}
+		if strings.HasPrefix(text[end:], "\n") && (start == 0 || text[start-1] == '\n') {
+			end++
+		}
+		text = text[:start] + text[end:]
+		from = start
+	}
 }
 
 // u129ValueEnd is where the JSON value that starts at from ends: past its
@@ -789,7 +953,9 @@ func TestAC2TheWalkPrintsExitsAnswersAndWritesWhatItDidAtTheBase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, want := u129WithoutCommitPause(got), u129WithoutCommitPause(string(raw))
+	want := u129WithoutUS134(string(raw), "")
+	got = u129WithoutUS134(got, want)
+	got, want = u129WithoutCommitPause(got), u129WithoutCommitPause(want)
 	if got == want {
 		return
 	}

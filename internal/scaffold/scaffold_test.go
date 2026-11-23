@@ -46,8 +46,10 @@ func TestDetectGo(t *testing.T) {
 	if s.Name != "Go" {
 		t.Fatalf("stack = %q", s.Name)
 	}
-	if s.Commands["test"] != "go test ./... -count=1" {
-		t.Errorf("test command = %q", s.Commands["test"])
+	// The whole suite, uncached. How it leaves its run for the coverage command
+	// (US-134 AC-10) is the coverage tests' to hold.
+	if test := s.Commands["test"]; !strings.Contains(test, "go test ./...") || !strings.Contains(test, "-count=1") {
+		t.Errorf("test command = %q", test)
 	}
 	if len(others) != 0 {
 		t.Errorf("also seen = %v", others)

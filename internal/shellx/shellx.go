@@ -120,7 +120,10 @@ func Run(cmd *exec.Cmd) error {
 // for as long as waitDelay at most, until each command Run started has been
 // killed or has ended. Ending a context only asks for the kill, which exec
 // sends from a goroutine of its own, and the handler exits straight after.
+// Then it removes what the run registered (RunDir), so that an interrupted run
+// leaves no directory of its own behind.
 func StopAll() {
+	defer removeAll()
 	stops.Lock()
 	all := make([]*stop, 0, len(stops.of))
 	var over []chan struct{}

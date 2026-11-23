@@ -2,8 +2,6 @@
 {"continue":true}
 === start --json #1: exit 0
 {"ok":true,"story":"US-001","title":"Story US-001","resume":false,"next_gate":"dor","session":"e2e-first-story-session","worktree":"<main>/.sdlc/worktrees/US-001","branch":"story/US-001","main":"<main>"}
---- stderr
-sdlc: commands.smoke was not run, because neither sh nor bash is on PATH, so this starts without knowing whether trunk works
 === status --json #1: exit 0
 {"ok":true,"active":"US-001","title":"Story US-001","session":"e2e-first-story-session","next_gate":"dor","backlog":{"in_progress":1,"ready":1},"cost":{"spent_usd":0,"budget_usd":60},"disabled":["project-manager","test-reviewer"],"held":[{"story":"US-001","checkout":"<main>/.sdlc/worktrees/US-001","here":true}],"pre_commit_pause":{"will_pause":false,"approved":false,"tier":"low","tier_pauses":false,"reasons":["the story's risk tier is low, which pre_commit_pause_tiers does not pause","pre_commit_pause_paths lists no path"]},"decisions_unread":0}
 === hook PreToolUse Bash: cd "<tree>" && sdlc gate dor pass --note worked by the session #1: exit 0
@@ -257,28 +255,20 @@ sdlc doctor
   ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read; US-001 held in "<main>/.sdlc/worktrees/US-001", this checkout
   ok       review policy        REVIEW.md
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
-  ok       commands             build, coverage, fmt, fmt_check, fmt_file, lint, smoke, test
-  problem  commands on PATH     go is not installed, so build and coverage and smoke and test would fail
-                                fix: install go, or clear commands.build in .sdlc/config.json
-  problem  commands on PATH     gofmt is not installed, so fmt and fmt_check and fmt_file would fail
+  ok       commands             build, coverage, fmt, fmt_check, fmt_file, lint, smoke, test, test_files
+  problem  commands on PATH     go is not installed, so smoke would fail
+                                fix: install go, or clear commands.smoke in .sdlc/config.json
+  problem  commands on PATH     gofmt is not installed, so fmt and fmt_file would fail
                                 fix: install gofmt, or clear commands.fmt in .sdlc/config.json
-  problem  commands on PATH     golangci-lint is not installed, so lint would fail
-                                fix: install golangci-lint, or clear commands.lint in .sdlc/config.json
-  problem  commands on PATH     grep is not installed, so coverage would fail
-                                fix: install grep, or clear commands.coverage in .sdlc/config.json
-  problem  commands on PATH     mktemp is not installed, so coverage would fail
-                                fix: install mktemp, or clear commands.coverage in .sdlc/config.json
-  problem  commands on PATH     tail is not installed, so coverage would fail
-                                fix: install tail, or clear commands.coverage in .sdlc/config.json
   ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
   problem  sdlc on PATH         the hooks cannot find sdlc, so nothing is enforced
                                 fix: install it with "npx @bbsnly/sdlc install", which puts it where the hooks find it without PATH; from a checkout "./task build" prints the line to add to PATH. A desktop app such as Claude Desktop keeps the PATH it started with, so quit it fully and reopen it after changing PATH, or set SDLC_BIN to the binary
 
-7 problems. The fix is above each one.
+3 problems. The fix is above each one.
 === hook PostToolUse Bash: cd "<tree>" && go test ./... #1: exit 0
 {"continue":true}
 === hook PostToolUse Write: <tree>/notes.md #1: exit 0
-{"continue":true,"systemMessage":"sdlc: commands.fmt_file was not run on notes.md, because neither sh nor bash is on PATH."}
+{"continue":true}
 === hook SubagentStart [sdlc:bookkeeper] #1: exit 0
 {"continue":true}
 === hook SubagentStop [sdlc:bookkeeper] #1: exit 0
@@ -300,8 +290,6 @@ Ended the iteration on US-001. Every gate passed, so the story is done and `sdlc
 Removed .sdlc/worktrees/US-001, with the files git ignored in it, and story/US-001.
 === start --json #2: exit 0
 {"ok":true,"story":"US-002","title":"Story US-002","resume":false,"next_gate":"dor","session":"e2e-second-story-session","worktree":"<tree>","branch":"story/US-002","main":"<main>"}
---- stderr
-sdlc: commands.smoke was not run, because neither sh nor bash is on PATH, so this starts without knowing whether trunk works
 === stop #2: exit 0
 Stopped the iteration on US-002. Nothing was recorded; `sdlc start` picks it up again.
 === release US-002 --reason to be worked in another checkout #1: exit 0
@@ -419,16 +407,17 @@ Anything the checkout at "<tree>" has not committed stays there, and is not move
     "per_story_usd": 60
   },
   "commands": {
-    "build": "go build ./...",
-    "coverage": "p=$(mktemp) \u0026\u0026 trap 'rm -f \"$p\"' EXIT \u0026\u0026 go test ./... -count=1 -coverprofile=\"$p\" \u003e/dev/null \u0026\u0026 go tool cover -func=\"$p\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'",
+    "build": "exit 0",
+    "coverage": "echo 100",
     "fmt": "gofmt -w .",
-    "fmt_check": "test -z \"$(gofmt -l .)\"",
+    "fmt_check": "exit 0",
     "fmt_file": "case \"$FILE\" in *.go) gofmt -w \"$FILE\" ;; esac",
     "freeze_check": "",
-    "lint": "golangci-lint run",
+    "lint": "exit 0",
     "mutation": "",
     "smoke": "test -z \"$(go list ./...)\" || go vet ./...",
-    "test": "go test ./... -count=1"
+    "test": "exit 0",
+    "test_files": "exit 1"
   },
   "freeze": {
     "allow_new_test_files": false

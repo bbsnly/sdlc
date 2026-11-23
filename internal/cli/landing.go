@@ -4,13 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -227,16 +224,17 @@ func quoteSome(names []string) string {
 
 // ---------------------------------------------------------------- the landing
 
-// commandCoverage and commandMutation are the configured commands whose last
-// number is held to a threshold.
+// commandTest names the suite; commandCoverage and commandMutation are the
+// configured commands whose last number is held to a threshold.
 const (
+	commandTest     = "test"
 	commandCoverage = "coverage"
 	commandMutation = "mutation"
 )
 
 // landingCommands are the configured commands a landing runs on the tree that
 // lands, in the order it runs them.
-var landingCommands = []string{"build", "test", "lint", "fmt_check", commandCoverage, commandMutation}
+var landingCommands = []string{"build", commandTest, "lint", "fmt_check", commandCoverage, commandMutation}
 
 const (
 	// commandOutputLimit is how much of what a failed command printed its
@@ -298,17 +296,62 @@ type landState struct {
 	rebased, changed bool
 	// accepted is the test files the freeze check took as trunk's own.
 	accepted *model.TrunkTests
+	// landingRun is what the landing ran and the tree it ran on, nil where
+	// it ran nothing; reused is the tree of the result it landed on instead.
+	landingRun *model.CommandSetRun
+	reused     string
 }
 
-// needsCommands reports whether the configured commands run before the story
-// lands: wherever the tree is not the one verified, rebased or changed, except
-// where a landing cut short after its move stands for commands that passed on
-// this very tip.
-func (st landState) needsCommands() bool {
-	if !st.rebased && !st.changed {
-		return false
+// cutShort reports a landing cut short after its move, whose commands passed
+// on this very tip: nothing runs again for it.
+func (st landState) cutShort() bool {
+	return st.already && st.marked && st.record.Landing.To == st.tip
+}
+
+// whyCommandsRun is whether the configured commands run before the story
+// lands, and why, with the tree that lands, measured as the implementation
+// gate measured the tree it ran on. They run where trunk's configuration sets
+// any, unless the landing was cut short after its move, and then where the
+// story was rebased or the result Gate 5 recorded is not for this tree and
+// trunk's commands as they are (PLAN D7). The tree compared is the one
+// measured on the tip, never the recorded one (red-team F-1).
+func (l *lander) whyCommandsRun(ctx context.Context, st landState) (run bool, why, tree string, err error) {
+	if len(setCommands(st.trunkCfg)) == 0 || st.cutShort() {
+		return false, "", "", nil
 	}
-	return !st.already || !st.marked || st.record.Landing.To != st.tip
+	if tree, err = l.s.ReviewSubjectAt(ctx, st.tip); err != nil {
+		return false, "", "", err
+	}
+	gate := st.record.Gates[model.GateImplementation]
+	switch {
+	case st.rebased:
+		why = "the story was rebased onto " + l.m.trunk
+	case gate.TreeHash == "" || len(gate.Commands) == 0:
+		why = "no result was recorded at Gate 5"
+	case gate.TreeHash != tree:
+		why = "the tree that lands, " + short(tree) + ", is not the tree Gate 5 ran on, " + short(gate.TreeHash)
+	case !resultHolds(gate, st.trunkCfg, tree):
+		why = differingCommand(gate, st.trunkCfg) + " is not what Gate 5 ran, or is set on one side only"
+	default:
+		return false, "", tree, nil
+	}
+	return true, why, tree, nil
+}
+
+// differingCommand is the first command, with its threshold, that the
+// recorded result and cfg do not agree on.
+func differingCommand(gate model.GateResult, cfg config.Config) string {
+	set := setCommands(cfg)
+	for i := range max(len(set), len(gate.Commands)) {
+		switch {
+		case i >= len(set):
+			return gate.Commands[i].Name
+		case i >= len(gate.Commands) || gate.Commands[i].Name != commandsPrefix+set[i][0] ||
+			gate.Commands[i].Digest != commandDigest(cfg, set[i][0]):
+			return commandsPrefix + set[i][0] + " or its threshold"
+		}
+	}
+	return "a command"
 }
 
 // landIfFinished lands the story where stop runs in a finished story's own
@@ -661,14 +704,31 @@ func (l *lander) readyToMove(ctx context.Context) (landState, error) {
 			return st, err
 		}
 	}
-	if st.needsCommands() {
-		if err := l.runLandingCommands(ctx, st); err != nil {
-			return st, err
-		}
-		if st, err = l.askAgain(ctx, st); err != nil {
-			return st, err
-		}
+	run, why, tree, err := l.whyCommandsRun(ctx, st)
+	if err != nil {
+		return st, err
 	}
+	if !run {
+		if tree != "" {
+			st.reused = tree
+		}
+		return st, nil
+	}
+	if gate := st.record.Gates[model.GateImplementation]; gate.TreeHash != "" || len(gate.Commands) > 0 {
+		// Before the first progress line: a result is on the record, and a
+		// person reading the run asks why it was not landed on.
+		fmt.Fprintln(l.cmd.ErrOrStderr(), "sdlc: the configured commands run again because "+why+".")
+	}
+	results, err := l.runLandingCommands(ctx, st)
+	if err != nil {
+		return st, err
+	}
+	if st, err = l.askAgain(ctx, st); err != nil {
+		return st, err
+	}
+	// Carried across askAgain, which reads the state afresh, and put on the
+	// record by finish alone.
+	st.landingRun = &model.CommandSetRun{TreeHash: tree, Commands: results}
 	return st, nil
 }
 
@@ -1525,31 +1585,26 @@ func unfreezeRoute(id string) string {
 
 // runLandingCommands is L9: the configured commands, as trunk commits them at
 // T, run in the worktree on S, each held to leaving S as it found it.
-func (l *lander) runLandingCommands(ctx context.Context, st landState) error {
+func (l *lander) runLandingCommands(ctx context.Context, st landState) ([]model.CommandRun, error) {
 	if err := l.nothingUncommitted(ctx,
 		"the configured commands run on the tree that lands, and would run with these in it"); err != nil {
-		return err
+		return nil, err
 	}
 	// The project's lock is let go for the run: the commands are the
 	// project's own, and can run for longer than any other command waits for
 	// it. The landing's own lock stays held.
 	(*l.unlock)()
 	*l.unlock = noUnlock
-	for _, key := range landingCommands {
-		command := strings.TrimSpace(st.trunkCfg.Commands[key])
-		if command == "" {
-			continue
-		}
-		if err := l.runCommand(ctx, st, key, command); err != nil {
-			return err
-		}
+	results, err := l.runCommands(ctx, st)
+	if err != nil {
+		return nil, err
 	}
 	g, err := lockFresh(ctx, func() (*store.Guard, error) { return store.LockOn(l.s.LockRoot(), "stop", envIn(ctx).lockClock) })
 	if err != nil {
-		return err
+		return nil, err
 	}
 	*l.unlock = g.Release
-	return nil
+	return results, nil
 }
 
 // nothingUncommitted refuses a worktree holding anything nobody committed,
@@ -1566,42 +1621,39 @@ func (l *lander) nothingUncommitted(ctx context.Context, why string) error {
 			worktreeIn(l.id) + `, then run "sdlc stop" there again`)
 }
 
-// runCommand runs one configured command in the worktree, in a process group
-// of its own, and holds it to the pass rule and to leaving S as it was.
-func (l *lander) runCommand(ctx context.Context, st landState, key, command string) error {
-	fmt.Fprintf(l.cmd.ErrOrStderr(), "sdlc: running commands.%s on %s in %s\n", key, st.tip[:12], worktreeIn(l.id))
-	c, err := shellx.Command(ctx, l.s.Root(), command)
+// runCommands runs the configured commands in the worktree, each in a process
+// group of its own, through the runner the implementation gate shares, and
+// holds each to the pass rule and to leaving S as it was. The run is handed a
+// directory of its own, gone when it ends.
+func (l *lander) runCommands(ctx context.Context, st landState) ([]model.CommandRun, error) {
+	run, err := shellx.NewRunDir()
 	if err != nil {
-		return sdlcerr.New(sdlcerr.LandingCheckFailed,
-			commandsPrefix+key+" could not be run", err.Error()).WithCause(err)
+		return nil, sdlcerr.New(sdlcerr.LandingCheckFailed, "the configured commands could not be run",
+			"the run's directory could not be made: "+err.Error()).WithCause(err)
 	}
-	shellx.InGroup(c)
-	c.Env = gitx.Environ()
-	output, stdout := shellx.NewTail(commandOutputLimit), shellx.NewTail(numberLimit)
-	c.Stdout, c.Stderr = io.MultiWriter(stdout, output), output
-	started := time.Now()
-	runErr := shellx.Run(c)
-	// The command may have done anything to the repository.
-	gitx.Forget(ctx)
-	exit := 0
-	var exited *exec.ExitError
-	switch {
-	case errors.As(runErr, &exited):
-		exit = exited.ExitCode()
-	case errors.Is(runErr, exec.ErrWaitDelay):
-		// Something it started held its output open after it had finished:
-		// what counts is how the command itself ended.
-		exit = c.ProcessState.ExitCode()
-	case runErr != nil:
-		return sdlcerr.New(sdlcerr.LandingCheckFailed,
-			commandsPrefix+key+" could not be run", runErr.Error()).WithCause(runErr)
+	defer func() { _ = run.Close() }()
+	r, err := runSet(ctx, commandSet{
+		root: l.s.Root(), cfg: st.trunkCfg, run: run, keep: commandOutputLimit,
+		before: func(key string) {
+			fmt.Fprintf(l.cmd.ErrOrStderr(), "sdlc: running commands.%s on %s in %s\n", key, st.tip[:12], worktreeIn(l.id))
+		},
+		written: func(ran ranCommand) {
+			slog.Debug("landing ran a command", "story", l.id, "command", commandsPrefix+ran.key, "trunk", st.trunkTip[:12],
+				"tip", st.tip[:12], "exit", ran.exit, "duration", ran.duration)
+		},
+		after: func(key string) error { return l.unmoved(ctx, st, key) },
+	})
+	if err != nil {
+		return nil, err
 	}
-	slog.Debug("landing ran a command", "story", l.id, "command", commandsPrefix+key, "trunk", st.trunkTip[:12],
-		"tip", st.tip[:12], "exit", exit, "duration", time.Since(started))
-	if ok, how := passes(key, exit, stdout.String(), thresholdOf(st.trunkCfg, key)); !ok {
-		return l.commandFailed(ctx, st, key, how, output.String())
+	if f := r.failed; f != nil {
+		if f.startErr != nil {
+			return nil, sdlcerr.New(sdlcerr.LandingCheckFailed,
+				commandsPrefix+f.key+" could not be run", f.startErr.Error()).WithCause(f.startErr)
+		}
+		return nil, l.commandFailed(ctx, st, f.key, r.why, f.printed)
 	}
-	return l.unmoved(ctx, st, key)
+	return r.results(st.trunkCfg), nil
 }
 
 // commandFailed is SDLC-E0055 for a command that did not pass. What it
@@ -1771,6 +1823,7 @@ func (l *lander) finish(ctx context.Context, st landState) error {
 	// the commit an earlier landing's map made is not this one's, and left
 	// here it would read as "already on trunk" to the notice and the repair.
 	r.CodemapCommit = ""
+	r.LandingRun = st.landingRun
 	recordAccepted(l.s, l.id, r, st.accepted)
 	r.Append(model.EventLanded, landedEvent(l.m.trunk, st), now)
 	if l.running {
@@ -1827,6 +1880,14 @@ func landedLines(id, trunk string, st landState, holding []string, running bool)
 			moved += "; the files in " + quotePaths(holding) + ", which have " + trunk + " checked out, moved with them."
 		}
 		lines = append(lines, moved)
+	}
+	if st.reused != "" {
+		var keys []string
+		for _, c := range st.record.Gates[model.GateImplementation].Commands {
+			keys = append(keys, c.Name)
+		}
+		lines = append(lines, fmt.Sprintf("Landed on the result sdlc recorded at Gate 5 for tree %s: %s passed on it, so none "+
+			"ran again.", short(st.reused), strings.Join(keys, ", ")))
 	}
 	if ownReplay(st) {
 		lines = append(lines, replayedLine(id, trunk, *st.record.Replay, false)+".")
@@ -1918,55 +1979,6 @@ func (l *lander) nothingLanded() string {
 		return "Nothing landed: " + trunk + " is unchanged, and the iteration on " + l.id + " is still running"
 	}
 	return "Nothing landed: " + trunk + " is unchanged, and " + l.id + " waits in " + worktreeIn(l.id)
-}
-
-// thresholdOf is the threshold a command's last number is held to, where it
-// has one.
-func thresholdOf(cfg config.Config, key string) float64 {
-	switch key {
-	case commandCoverage:
-		return cfg.Thresholds.CoverageMin
-	case commandMutation:
-		return cfg.Thresholds.MutationMin
-	}
-	return 0
-}
-
-// passes is the pass rule: the command exits 0, and coverage and mutation, held
-// to a threshold above zero, print on standard output a last number at least
-// that. Standard error is shown but never searched. It says how the command
-// failed where it did.
-func passes(key string, exit int, stdout string, threshold float64) (bool, string) {
-	switch {
-	case exit < 0:
-		return false, "it was stopped before it finished"
-	case exit != 0:
-		return false, fmt.Sprintf("it exited with status %d", exit)
-	case key != commandCoverage && key != commandMutation || threshold <= 0:
-		return true, ""
-	}
-	name := "thresholds." + key + "_min"
-	n, ok := lastNumber(stdout)
-	if !ok {
-		return false, fmt.Sprintf("it printed no number on standard output, and %s is %s", name, number(threshold))
-	}
-	if n < threshold {
-		return false, fmt.Sprintf("the last number it printed on standard output is %s, below %s of %s",
-			number(n), name, number(threshold))
-	}
-	return true, ""
-}
-
-var numberPattern = regexp.MustCompile(`[0-9]+(\.[0-9]+)?`)
-
-// lastNumber is the last number in text.
-func lastNumber(text string) (float64, bool) {
-	found := numberPattern.FindAllString(text, -1)
-	if len(found) == 0 {
-		return 0, false
-	}
-	n, err := strconv.ParseFloat(found[len(found)-1], 64)
-	return n, err == nil
 }
 
 func number(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }

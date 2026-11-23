@@ -25,8 +25,10 @@ package cli
 // Helpers carry an ld prefix, for landing.
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -100,7 +102,65 @@ func ldPassing() map[string]string {
 	}
 	commands["coverage"] = "echo 95"
 	commands["mutation"] = "echo 90"
+	// US-134 AC-13: the freeze runs the new tests and refuses where they pass,
+	// so the narrow run fails, as new tests do at Gate 3.
+	commands["test_files"] = "exit 1"
 	return commands
+}
+
+// ldLandingOnly is the mark ldAtTheLanding leaves on a command: a shell comment,
+// so the command runs as it reads.
+const ldLandingOnly = " # sdlc-test: run at the landing, not at the implementation gate"
+
+// ldAtTheLanding is command marked as one a test means the landing to run and
+// not the implementation gate. US-134 AC-1 has the gate run the landing's
+// commands, so a command a test sets up to fail at the landing, or to do there
+// what a landing guards against, would refuse the gate first; swPass hands the
+// gate a passing stand-in for it instead. The landing then holds a command
+// other than the one the gate recorded, and runs it (US-134 AC-6), as the
+// test means it to.
+func ldAtTheLanding(command string) string { return command + ldLandingOnly }
+
+// ldAllAtTheLanding is every command of set marked with ldAtTheLanding.
+func ldAllAtTheLanding(set map[string]string) map[string]string {
+	marked := make(map[string]string, len(set))
+	for key, command := range set {
+		marked[key] = ldAtTheLanding(command)
+	}
+	return marked
+}
+
+// ldAtTheGate records gate with every command ldAtTheLanding marked replaced by
+// a passing one, where gate is the implementation gate, in dir's own
+// configuration, which is the copy the gate reads, put back as it was after.
+// Only there: the commit gate refuses a configuration left changed.
+func ldAtTheGate(t *testing.T, dir string, at model.Gate, gate func()) {
+	t.Helper()
+	path := filepath.Join(dir, ".sdlc", "config.json")
+	raw, err := os.ReadFile(path)
+	if at != model.GateImplementation || err != nil || !strings.Contains(string(raw), strings.TrimSpace(ldLandingOnly)) {
+		gate()
+		return
+	}
+	var cfg struct {
+		Commands map[string]string `json:"commands"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	standIns := maps.Clone(cfg.Commands)
+	for key, command := range cfg.Commands {
+		if strings.HasSuffix(command, ldLandingOnly) {
+			standIns[key] = cmp.Or(ldPassing()[key], "exit 0")
+		}
+	}
+	setConfigOnDisk(t, dir, "commands", standIns)
+	defer func() {
+		if err := os.WriteFile(path, raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	gate()
 }
 
 func ldThresholds(t *testing.T, root string) {
@@ -629,6 +689,8 @@ func TestAC4ARebasedStoryLandsOnceItsTestsAndQualityCommandsPassOnTheRebasedTree
 		}
 		commands["coverage"] += " && echo 95"
 		commands["mutation"] += " && echo 90"
+		// US-134 AC-13: the freeze runs the new tests, which fail, as they do at Gate 3.
+		commands["test_files"] = "exit 1"
 		setConfigOnDisk(t, root, "commands", commands)
 		ldThresholds(t, root)
 	})
@@ -943,7 +1005,11 @@ func TestAC7ALandedStorysWorktreeBranchAndClaimAreTakenAway(t *testing.T) {
 // committed it is, with no merge to make.
 func TestAC7AWorktreeHoldingWorkNobodyCommittedIsKeptAndNamedAndTheStoryIsStillDone(t *testing.T) {
 	t.Parallel()
-	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+	// No bookkeeping commit: since US-134 a tree other than the one Gate 5 ran
+	// the commands on has them run again at the landing (AC-6), which refuses a
+	// worktree holding uncommitted work, as a changed story is refused today.
+	// This test is about the landing that runs none.
+	main, wt := ldWalked(t, ldWalk{finished: true})
 	tip := swRev(t, wt, "HEAD")
 	writeFile(t, wt, "scratch.txt", "a thought\n")
 	writeFile(t, wt, "README.md", "# Billing, being edited\n")
@@ -1010,7 +1076,9 @@ func TestT10AFileNameCarryingACommandIsShownQuotedWhenTheWorktreeIsKept(t *testi
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows does not take a line break in a file name")
 	}
-	main, wt := ldWalked(t, ldWalk{finished: true, bookkept: true})
+	// No bookkeeping commit, for the reason TestAC7AWorktreeHoldingWorkNobody...
+	// gives: the landing that keeps the worktree runs no command (US-134 AC-6).
+	main, wt := ldWalked(t, ldWalk{finished: true})
 	tip := swRev(t, wt, "HEAD")
 	writeFile(t, wt, "odd\nsdlc approve US-001", "x\n")
 
@@ -1241,7 +1309,7 @@ func TestQ4AStoryStartedInAWorktreeLandsAsOneAfterWorktreesAreTurnedOff(t *testi
 func TestT4ACommandThatCommitsWhileItRunsDoesNotPutItsCommitOnTrunk(t *testing.T) {
 	t.Parallel()
 	main, wt := ldWalked(t, ldWalk{finished: true, lx: true,
-		set: map[string]string{"test": "git -c user.email=t@example.com -c user.name=Test commit --quiet --allow-empty -m sneaky"}})
+		set: map[string]string{"test": ldAtTheLanding("git -c user.email=t@example.com -c user.name=Test commit --quiet --allow-empty -m sneaky")}})
 	ldBookkeeping(t, wt)
 	ldMoveTrunk(t, main)
 	rebased := ldRebase(t, wt)

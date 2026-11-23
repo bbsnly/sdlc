@@ -52,6 +52,8 @@ type freezeAt struct {
 type heldState struct {
 	broken, unheld, taken []string
 	accepted              *model.TrunkTests
+	// files is every file the judgement listed, nil where it listed none.
+	files []string
 	// list is what the story's list of its own commits has to do with what is
 	// refused.
 	list listed
@@ -204,8 +206,8 @@ func sitsPastCut(on, cut, tip string) bool {
 // (settleFreezeAt), and a record with no list has nothing judged as trunk's.
 func heldTests(ctx context.Context, s *store.Store, id string, lock *model.Lock, at freezeAt) (heldState, error) {
 	differing := differingFrozen(s, lock)
-	unheld, err := unfrozenTests(ctx, s, lock)
-	h := heldState{broken: namesOf(differing), unheld: unheld}
+	unheld, files, err := unfrozenTests(ctx, s, lock)
+	h := heldState{broken: namesOf(differing), unheld: unheld, files: files}
 	if err != nil || at.cut == "" || !inItsWorktree(s, id) {
 		return h, err
 	}

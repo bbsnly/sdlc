@@ -20,7 +20,9 @@ var interruptedWrite = regexp.MustCompile(`^\..+\.tmp[0-9]+$`)
 // a file nobody reads, and one the commit gate counts as uncommitted work.
 //
 // The caller holds the project's lock. Every write this looks for is made
-// under it, so none of them can still be in progress.
+// under it, so none of them can still be in progress. A gate's or a freeze's
+// output file is written with the lock let go, and its name ends in .out so
+// that this does not look for it.
 func (s *Store) ClearInterruptedWrites() {
 	dirs := []string{filepath.Join(s.root, filepath.FromSlash(stateDir))}
 	shared, err := s.shared()

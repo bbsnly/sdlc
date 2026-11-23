@@ -284,7 +284,7 @@ func swPass(t *testing.T, dir, session string, from, upTo model.Gate) {
 		}
 		if on = on || gate == from; on {
 			satisfy(t, dir, gate)
-			mustRun(t, "gate", string(gate), "pass", "--note", "passed by the test helper")
+			ldAtTheGate(t, dir, gate, func() { mustRun(t, "gate", string(gate), "pass", "--note", "passed by the test helper") })
 		}
 	}
 }

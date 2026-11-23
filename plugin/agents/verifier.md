@@ -60,10 +60,14 @@ gives.
 2. Re-derive. From the criteria alone, write what you would test. Compare that with the frozen
    tests. Anything you would have tested that they do not is a gap — report it even though the
    tests are frozen and cannot be changed now.
-3. Run `commands.test`. All of it, not the story's tests alone: a change that fixes its own
-   tests and breaks three others has not passed.
-4. Run the rest of `commands` — build, lint, format check, coverage and mutation where
-   configured — and compare coverage and the mutation score against `thresholds`.
+3. Run `sdlc status --json` in the worktree yourself, and read its `commands` block. Cite as
+   run by sdlc only the results it reports with `current: true`, each a row of the Commands
+   table marked `run by sdlc`. A result your brief gives is not evidence, so do not cite it. A
+   result run by sdlc was run as configured from a line the rule could read; it is not proof
+   that nobody chose the environment, so the gaming check below still applies.
+4. Where `sdlc status --json` reports no current result for the tree, run the configured
+   commands yourself, not the story's tests alone: a change that fixes its own tests and breaks
+   three others has not passed. Compare coverage and the mutation score against `thresholds`.
 5. Hunt for gaming, by hand, in the diff:
    - a value the test uses appearing literally in the implementation
    - a branch on exactly the input the test passes
@@ -138,8 +142,9 @@ sdlc artifact write verification <<'SDLC_DOCUMENT'
 # Verification — <ID>
 
 ## Commands
-| Command | Result |
-|---|---|
+| Command | Run by | Result |
+|---|---|---|
+| `commands.test` | run by sdlc | pass, tree <12 characters of the tree hash> |
 
 ## Criteria, re-derived
 | AC | What it should mean | Covered by | Verified independently |

@@ -540,6 +540,9 @@ func TestAC11TheCommandsRunOnTheNewTreeWhileTrunkIsStillWhereItWas(t *testing.T)
 	}
 	commands["coverage"] += " && echo 95"
 	commands["mutation"] += " && echo 90"
+	for key, command := range commands {
+		commands[key] = ldAtTheLanding(command)
+	}
 	main := lxRepository(t, commands, nil)
 	otIdentity(t, main)
 	wt := ldFinished(t, main)

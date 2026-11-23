@@ -636,7 +636,7 @@ func TestAC3AStopAfterTheGateRunAgainStillRunsTheConfiguredCommandsOnTheTreeThat
 	}
 	t.Run("AC-3 rebased by hand, and a command that fails on the tree", func(t *testing.T) {
 		t.Parallel()
-		s := cgByHand(t, cgHow{set: map[string]string{"test": "test ! -f CHANGES.md"}}, nil)
+		s := cgByHand(t, cgHow{set: map[string]string{"test": ldAtTheLanding("test ! -f CHANGES.md")}}, nil)
 		cgRetro(t, s.wt)
 
 		out := swRefused(t, ldCheckFailed, s.wt, ldSession, "stop")
@@ -650,7 +650,7 @@ func TestAC3AStopAfterTheGateRunAgainStillRunsTheConfiguredCommandsOnTheTreeThat
 	t.Run("AC-3 rebased by hand, and commands that pass", func(t *testing.T) {
 		t.Parallel()
 		command, file := lxMarker(t)
-		s := cgByHand(t, cgHow{set: map[string]string{"test": command}}, nil)
+		s := cgByHand(t, cgHow{set: map[string]string{"test": ldAtTheLanding(command)}}, nil)
 		cgRetro(t, s.wt)
 		if got := ranOn(t, file); got == s.head {
 			t.Fatalf("precondition: commands.test had already run on %s before the stop", got)
@@ -664,7 +664,7 @@ func TestAC3AStopAfterTheGateRunAgainStillRunsTheConfiguredCommandsOnTheTreeThat
 	t.Run("AC-3 put onto trunk by the stop's own replay and reworked", func(t *testing.T) {
 		t.Parallel()
 		command, file := lxMarker(t)
-		s := cgByTheStop(t, cgHow{set: map[string]string{"build": command}})
+		s := cgByTheStop(t, cgHow{set: map[string]string{"build": ldAtTheLanding(command)}})
 		cgRetro(t, s.wt)
 		if got := ranOn(t, file); got == s.head {
 			t.Fatalf("precondition: commands.build had already run on %s before the stop", got)

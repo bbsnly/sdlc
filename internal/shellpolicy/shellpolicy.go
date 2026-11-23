@@ -1669,7 +1669,8 @@ func checkPrograms(text string, s State, reading assignments) (Finding, bool) {
 			return inSubscript(f, r), true
 		}
 	}
-	return Finding{}, false
+	// Last, over the same runs, so that every rule above keeps its name.
+	return checkConfiguredRun(runs, text, s, reading)
 }
 
 // inSubscript is f, the refusal of r, with what brought r to be read where it
@@ -3732,6 +3733,12 @@ type invocation struct {
 	// Only the first reading has either; everyReading gives them all.
 	others []invocation
 	unread bool
+	// wrappers are the words of each wrapper unwrap took off the front, with
+	// its options and their values, in order: `nice -n 5`, `sudo`, `exec -a
+	// x`. The keywords and group closers it takes off are not wrappers. Only
+	// commands-run-as-configured reads them, which allows a few words in front
+	// of the call and no others (US-134, security F-11).
+	wrappers []string
 }
 
 // unwrap takes one wrapper off the front of words, whose first word, with

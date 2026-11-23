@@ -309,8 +309,59 @@ var stfFindingKey = regexp.MustCompile(`"(findings?|referred)[a-z_]*":\s*`)
 // the transcript closes it. US-117's own tests hold what they print. A value
 // holds brackets of its own, so it is read to its end rather than matched.
 func stfWithoutFindings(transcript string) string {
+	transcript = stfWithoutKeys(transcript, stfFindingKey)
+	return regexp.MustCompile(`\{[^{}]*\bfindings?\b[^{}]*\},\s*`).ReplaceAllString(transcript, "")
+}
+
+// stfRunKey is a JSON key of what US-134 added to the record: the commands the
+// implementation gate ran and the tree they ran on, and the runs of the freeze
+// and the landing.
+var (
+	stfRunKey            = regexp.MustCompile(`"(commands|tree_hash)":\s*`)
+	stfRecordRunKey      = regexp.MustCompile(`"(freeze_run|landing_run)":\s*`)
+	stfImplementationKey = regexp.MustCompile(`"implementation":\s*\{`)
+	stfTestFilesLine     = regexp.MustCompile(`(?m)^[ \t]*"test_files":[ \t]*"[^"\n]*",?[ \t]*\n`)
+	stfLandedOnResult    = regexp.MustCompile(`(?mi)^.*(\bresults?\b.*<sha>|<sha>.*\bresults?\b).*\n`)
+	// stfStatusCommands is the status's commands object, renamed to
+	// stfStatusCommandsKey so that stfWithoutKeys takes it out alone.
+	stfStatusCommands = regexp.MustCompile(`"commands":\s*\{\s*"current"`)
+)
+
+const stfStatusCommandsKey = "us134_status_commands"
+
+// stfWithoutGateRuns is a transcript with what US-134 added taken out: this test
+// is about the staffing, and US-134's own tests hold what it prints. The walk's
+// implementation gate now runs the commands and records them with its tree; the
+// freeze and the landing may record a run; the stop says in one line, naming the
+// tree, that it landed on the recorded result; `sdlc status --json` gives the
+// recorded results and whether they are the tree's as it is (AC-4), in a
+// `commands` object that starts with `current`, which the configuration's
+// `commands` never does; and init writes a narrow test command. A tree hash
+// another gate records is kept: only the implementation gate's is the story's.
+func stfWithoutGateRuns(transcript string) string {
+	transcript = stfWithoutKeys(transcript, stfRecordRunKey)
+	transcript = stfWithoutKeys(stfStatusCommands.ReplaceAllString(transcript, `"`+stfStatusCommandsKey+`":{"current"`),
+		regexp.MustCompile(`"`+stfStatusCommandsKey+`":\s*`))
 	for from := 0; ; {
-		loc := stfFindingKey.FindStringIndex(transcript[from:])
+		loc := stfImplementationKey.FindStringIndex(transcript[from:])
+		if loc == nil {
+			break
+		}
+		start := from + loc[1] - 1
+		end := stfJSONValueEnd(transcript, start)
+		inner := stfWithoutKeys(transcript[start:end], stfRunKey)
+		transcript = transcript[:start] + inner + transcript[end:]
+		from = start + len(inner)
+	}
+	transcript = stfTestFilesLine.ReplaceAllString(transcript, "")
+	return stfLandedOnResult.ReplaceAllString(transcript, "")
+}
+
+// stfWithoutKeys is transcript with every value under a key that key matches
+// taken out, with the comma that joined it to its object.
+func stfWithoutKeys(transcript string, key *regexp.Regexp) string {
+	for from := 0; ; {
+		loc := key.FindStringIndex(transcript[from:])
 		if loc == nil {
 			break
 		}
@@ -329,7 +380,7 @@ func stfWithoutFindings(transcript string) string {
 		transcript = transcript[:start] + transcript[end:]
 		from = start
 	}
-	return regexp.MustCompile(`\{[^{}]*\bfindings?\b[^{}]*\},\s*`).ReplaceAllString(transcript, "")
+	return transcript
 }
 
 // stfJSONValueEnd is where the JSON value that starts at from ends: past its
@@ -404,8 +455,8 @@ func TestAC2WithEveryDefaultEveryCommandPrintsWhatTheStaffingPrintedBeforeTheSto
 			if err != nil {
 				t.Fatalf("the output the tool printed before the story is not there to compare with: %v", err)
 			}
-			got := stfWithoutCommitPause(stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, stfOffWalk(t, form.json, form.noTeam)))))
-			wanted := stfWithoutCommitPause(stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, string(want)))))
+			got := stfWithoutGateRuns(stfWithoutCommitPause(stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, stfOffWalk(t, form.json, form.noTeam))))))
+			wanted := stfWithoutGateRuns(stfWithoutCommitPause(stfWithoutReviewPolicy(stfWithoutFindings(stfWithoutConfigComments(t, string(want))))))
 			if got == wanted {
 				return
 			}

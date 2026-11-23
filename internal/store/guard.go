@@ -243,6 +243,45 @@ func (s *Store) LockLanding(id string) (*Guard, error) {
 	})
 }
 
+// The commands that run a story's configured commands under its run lock.
+const (
+	RunGate   = "gate implementation pass"
+	RunFreeze = "freeze"
+)
+
+// LockRun takes story id's run lock for what, RunGate or RunFreeze, without
+// waiting: the lock the story holds while its configured commands run with
+// the project's lock let go, so that a second gate or freeze of the same
+// story is not started over the first. A run can take many minutes, so the
+// second is refused at once, naming the first, rather than made to wait.
+func (s *Store) LockRun(id, what string) (*Guard, error) {
+	if err := CheckID(id); err != nil {
+		return nil, err
+	}
+	path := guardPath(s.LockRoot()) + "-run-" + id
+	return take(path, what+" "+id, 0, realClock{}, staleness{now: s.ages()}.breakOpen, func() error {
+		return sdlcerr.New(sdlcerr.StateUnwritable,
+			"the configured commands of "+id+" are already running",
+			runHeldBy(path)+" holds the story's run lock at "+sdlcerr.QuotePath(path)+
+				", and a story's commands are run by one gate or freeze at a time").
+			WithFix("wait for it to finish, then run the command again; a holder killed outright leaves the lock, " +
+				"which is taken once it has gone " + staleWords() + " without a refresh, and nothing is removed by hand")
+	})
+}
+
+// runHeldBy is heldBy for a story's run lock, which only a gate's run or a
+// freeze holds.
+func runHeldBy(path string) string {
+	return holderWords(path, func(what string) bool {
+		for _, label := range []string{RunGate, RunFreeze} {
+			if id, ok := strings.CutPrefix(what, label+" "); ok && CheckID(id) == nil {
+				return true
+			}
+		}
+		return false
+	})
+}
+
 // LockLandings takes the one lock every landing of the project holds, as a
 // stop. See LockLandingsAs.
 func (s *Store) LockLandings(id string, wait time.Duration) (*Guard, error) {

@@ -42,6 +42,12 @@ func TestAC2EveryCodeItsFixAndItsPageAreWhatTheyWereAtTheBase(t *testing.T) {
 	}
 	want := strings.SplitAfter(string(raw), "\n")
 	have := strings.SplitAfter(got, "\n")
+	// A code registered after the base, at the catalogue's end, is not one the
+	// base had (US-134 adds SDLC-E0095): the golden holds every code up to its
+	// last line, and TestEveryCodeKeepsTheNumberItWasReleasedWith holds the rest.
+	if len(got) > len(raw) && strings.HasPrefix(got, string(raw)) {
+		have = want
+	}
 	for i := range max(len(want), len(have)) {
 		var w, h string
 		if i < len(want) {

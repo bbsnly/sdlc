@@ -77,6 +77,10 @@ type statusPayload struct {
 	DecisionsUnread  int      `json:"decisions_unread"`
 	DecisionsUnknown []string `json:"decisions_unknown,omitempty"`
 	decisionsLine    string
+	// Commands is what the active story's implementation gate ran, given only
+	// where it holds a result, and whether that result is for the tree and
+	// the commands as they are now.
+	Commands *commandsState `json:"commands,omitempty"`
 }
 
 // pausePayload is what status says of the commit's pause. Approved is a pause
@@ -95,6 +99,38 @@ type pausePayload struct {
 type pausePath struct {
 	File string `json:"file"`
 	Glob string `json:"glob"`
+}
+
+// commandsState is the implementation gate's result: current first, since it
+// is what a reader asks.
+type commandsState struct {
+	Current  bool               `json:"current"`
+	TreeHash string             `json:"tree_hash"`
+	Results  []model.CommandRun `json:"results"`
+}
+
+// readCommands gives --json the active story's result, and nothing where its
+// implementation gate holds none, and then with no git: plain status starts
+// none. current is resultHolds against this checkout's tree and
+// configuration, and false, with no hashing, where the story is held by
+// another checkout, and false where the tree cannot be measured: status is
+// where a person looks to see why the gate refuses, so it answers rather than
+// fails (code review F-2).
+func (v *statusView) readCommands(cmd *cobra.Command, cfg config.Config) {
+	gate := v.record.Gates[model.GateImplementation]
+	if !wantJSON(cmd) || gate.TreeHash == "" && len(gate.Commands) == 0 {
+		return
+	}
+	state := &commandsState{TreeHash: gate.TreeHash, Results: gate.Commands}
+	// A holder that cannot be read counts as held elsewhere: not current.
+	if _, elsewhere, err := v.s.HeldElsewhere(v.payload.Active); err == nil && !elsewhere {
+		if tree, err := v.s.ReviewSubject(cmd.Context()); err == nil {
+			state.Current = resultHolds(gate, cfg, tree)
+		} else {
+			slog.Debug("status could not measure the tree", "story", v.payload.Active, "err", err)
+		}
+	}
+	v.payload.Commands = state
 }
 
 // landingState is whoever holds the landing lock, as far as its lock can be
@@ -264,6 +300,7 @@ func (v *statusView) readActive(cmd *cobra.Command, p *config.Project) error {
 		payload.Session = id
 	}
 	payload.PreCommitPause = describePause(cmd.Context(), s, active, record)
+	v.readCommands(cmd, p.Config)
 	return nil
 }
 

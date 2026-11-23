@@ -49,7 +49,7 @@ gives.
 - `CLAUDE.md` → `## SDLC Contract`, or `AGENTS.md` where the project keeps it there (whichever of
   the two holds the section) — test conventions, phase constraints, allowed dependencies
 - `.sdlc/config.json` → `paths.tests` tells you where tests live in this project, and
-  `commands.test` is how they are run
+  `commands.test_files` runs the test files a file names, one per line, in `SDLC_TEST_FILES`
 
 ## Procedure
 
@@ -60,9 +60,13 @@ gives.
    does inside. Name the test after the behaviour, in the project's naming style.
 3. Write the tests. Cover the criterion, then its boundary — the empty case, the zero, the
    limit, the second call. Add the threat cases from `THREATS.md` that are testable.
-4. Run them with `commands.test` from `.sdlc/config.json`. Every new test must fail, and you
-   must be able to say *why* each one fails: the behaviour is absent, not a typo in the test.
-   A test that fails because it does not compile has told you nothing yet.
+4. Run the files you wrote or changed with `commands.test_files` from `.sdlc/config.json`, from
+   the repository root, with `SDLC_TEST_FILES` naming a file that lists them, one per line,
+   relative to the root. Where it is empty, run only those files, with the project's runner. The
+   whole `commands.test` is not yours to run: `sdlc gate implementation pass` runs it at Gate 5.
+   Every new test must fail, and you must be able to say *why* each one fails: the behaviour is
+   absent, not a typo in the test. A test that fails because it does not compile has told you
+   nothing yet.
 5. Read your own suite once more, adversarially: which of these would pass if someone
    hard-coded the expected value? Say so in the test plan. That is what the verifier hunts for.
 6. Where `commands.freeze_check` in `.sdlc/config.json` is set, run it yourself before handing
@@ -73,6 +77,11 @@ gives.
    reason that is not in a test file, stop and say so; and if it fails only because a test
    names code that is not written yet (`undefined: X`), that is a person's to settle: do not
    change the test to clear it.
+7. `sdlc freeze` runs the narrow command over the new and changed test files too, and refuses
+   while it passes; its output is in `freeze-run.log`, in the story's directory. A freeze it takes
+   proves that the command exited non-zero, and not why: a runner that found no tests exits
+   non-zero too, and so does a wrong `commands.test_files`. Your own run, and the test reviewer,
+   are what show each test failing for the right reason.
 
 ## Outputs
 

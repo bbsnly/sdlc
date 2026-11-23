@@ -23,6 +23,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/bbsnly/sdlc/internal/fsx"
 	"github.com/bbsnly/sdlc/internal/model"
 	"github.com/bbsnly/sdlc/internal/pathrules"
 )
@@ -320,14 +321,14 @@ func openToAppend(path string) (*os.File, fs.FileInfo, error) {
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			seen = nil
-			f, err = os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_EXCL|openFlags, 0o644) //nolint:gosec // G302: the person reads it, as git and the editor read the gate record
+			f, err = os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_EXCL|fsx.OpenFlags, 0o644) //nolint:gosec // G302: the person reads it, as git and the editor read the gate record
 			if errors.Is(err, fs.ErrExist) && !again {
 				continue
 			}
 		case err == nil && !seen.Mode().IsRegular():
 			return nil, nil, ErrNotOurs
 		case err == nil:
-			f, err = os.OpenFile(path, os.O_RDWR|os.O_APPEND|openFlags, 0)
+			f, err = os.OpenFile(path, os.O_RDWR|os.O_APPEND|fsx.OpenFlags, 0)
 		}
 		if err != nil {
 			return nil, nil, plain("the trace could not be opened", err)
@@ -343,7 +344,7 @@ func openToAppend(path string) (*os.File, fs.FileInfo, error) {
 // either.
 func checked(f *os.File, seen fs.FileInfo) (*os.File, fs.FileInfo, error) {
 	fi, err := f.Stat()
-	if err != nil || !fi.Mode().IsRegular() || seen != nil && !os.SameFile(seen, fi) || !oneName(f, fi) {
+	if err != nil || !fi.Mode().IsRegular() || seen != nil && !os.SameFile(seen, fi) || !fsx.OneName(f, fi) {
 		_ = f.Close()
 		return nil, nil, ErrNotOurs
 	}
@@ -374,7 +375,7 @@ func read(storyDir, only string) (Reading, error) {
 	}
 	var f *os.File
 	if err == nil {
-		f, err = os.OpenFile(path, os.O_RDONLY|openFlags, 0)
+		f, err = os.OpenFile(path, os.O_RDONLY|fsx.OpenFlags, 0)
 	}
 	if err != nil {
 		return Reading{}, plain("the trace could not be read", err)

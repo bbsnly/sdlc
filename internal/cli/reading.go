@@ -48,6 +48,9 @@ type reading struct {
 	// was asked. The freeze seeds it with the hashes it is about to lock.
 	tests   string
 	testsOK bool
+	// files is every file the check of the freeze listed, which the
+	// implementation gate's run checks the tree by; nil where none was taken.
+	files []string
 }
 
 func readingOf(s *store.Store) *reading { return &reading{s: s} }

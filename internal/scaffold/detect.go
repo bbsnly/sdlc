@@ -8,10 +8,11 @@ import (
 
 // The command keys the configuration names, spelt the same for every stack.
 const (
-	cmdTest     = "test"
-	cmdLint     = "lint"
-	cmdFmt      = "fmt"
-	cmdFmtCheck = "fmt_check"
+	cmdTest      = "test"
+	cmdTestFiles = "test_files"
+	cmdLint      = "lint"
+	cmdFmt       = "fmt"
+	cmdFmtCheck  = "fmt_check"
 )
 
 // Directories that more than one stack keeps sources, tests or test inputs in.
@@ -86,9 +87,17 @@ func detectGo(root string) (Stack, bool) {
 			// A module with no packages in it yet is not broken, and both
 			// `go build ./...` and `go vet ./...` fail on one; vet also
 			// compiles a package that so far has only tests.
-			"smoke":     `test -z "$(go list ./...)" || go vet ./...`,
-			"build":     "go build ./...",
-			cmdTest:     "go test ./... -count=1",
+			"smoke": `test -z "$(go list ./...)" || go vet ./...`,
+			"build": "go build ./...",
+			// Run by sdlc, the suite runs once per tree: test leaves its
+			// profile in the run's directory, and coverage reads the figure
+			// from it. Run by hand, with no run directory, each runs alone.
+			cmdTest: `if [ -n "${SDLC_RUN_DIR-}" ]; then go test ./... -count=1 -coverprofile="$SDLC_RUN_DIR/cover.out"; ` +
+				`else go test ./... -count=1; fi`,
+			// The packages that hold the files listed, a fixture under
+			// testdata/ standing for the package above it.
+			cmdTestFiles: `if [ -n "${SDLC_TEST_FILES-}" ]; then sed -e 's#^#./#' -e 's#/testdata/.*#/x#' -e 's#/[^/]*$##' ` +
+				`"$SDLC_TEST_FILES" | tr '\n' '\0' | xargs -0 go test -count=1; else go test ./... -count=1; fi`,
 			cmdLint:     "golangci-lint run",
 			cmdFmt:      "gofmt -w .",
 			cmdFmtCheck: `test -z "$(gofmt -l .)"`,
@@ -99,9 +108,13 @@ func detectGo(root string) (Stack, bool) {
 			// hand is refused; a profile left elsewhere in the project is
 			// uncommitted work the commit gate refuses (SDLC-E0032), except in
 			// a story's worktree, which ignores .sdlc/state.
-			"coverage": `p=$(mktemp) && trap 'rm -f "$p"' EXIT && ` +
+			// Run by sdlc, it reads the profile test left, and prints no figure
+			// where there is none: a figure from another run is never read.
+			"coverage": `if [ -n "${SDLC_RUN_DIR-}" ]; then test -f "$SDLC_RUN_DIR/cover.out" && ` +
+				`go tool cover -func="$SDLC_RUN_DIR/cover.out" | tail -1 | grep -Eo '[0-9]+\.[0-9]+'; ` +
+				`else p=$(mktemp) && trap 'rm -f "$p"' EXIT && ` +
 				`go test ./... -count=1 -coverprofile="$p" >/dev/null && ` +
-				`go tool cover -func="$p" | tail -1 | grep -Eo '[0-9]+\.[0-9]+'`,
+				`go tool cover -func="$p" | tail -1 | grep -Eo '[0-9]+\.[0-9]+'; fi`,
 		},
 		// testdata as well as the test files: a frozen test that reads a
 		// golden file is only frozen if the golden file is too.
@@ -118,9 +131,14 @@ func detectRust(root string) (Stack, bool) {
 	return Stack{
 		Name: "Rust",
 		Commands: map[string]string{
-			"smoke":     "cargo check --all-targets",
-			"build":     "cargo build",
-			cmdTest:     "cargo test",
+			"smoke": "cargo check --all-targets",
+			"build": "cargo build",
+			cmdTest: "cargo test",
+			// Each integration test under tests/ by its name; where a file
+			// listed is anything else, the whole of cargo test.
+			cmdTestFiles: `if [ -n "${SDLC_TEST_FILES-}" ] && ! grep -qv '^tests/[^/]*\.rs$' "$SDLC_TEST_FILES"; then ` +
+				`sed 's#^tests/\(.*\)\.rs$#--test=\1#' "$SDLC_TEST_FILES" | tr '\n' '\0' | xargs -0 cargo test; ` +
+				`else cargo test; fi`,
 			cmdLint:     "cargo clippy --all-targets -- -D warnings",
 			cmdFmt:      "cargo fmt",
 			cmdFmtCheck: "cargo fmt --check",
@@ -163,6 +181,8 @@ func detectNode(root string) (Stack, bool) {
 	}
 	if hasScript("test") {
 		cmds[cmdTest] = "npm test --silent"
+		cmds[cmdTestFiles] = `if [ -n "${SDLC_TEST_FILES-}" ]; then sed 's#^#./#' "$SDLC_TEST_FILES" | tr '\n' '\0' | ` +
+			`xargs -0 npm test --silent --; else npm test --silent; fi`
 	}
 	if hasScript("lint") {
 		cmds[cmdLint] = "npm run lint --silent"
@@ -203,16 +223,23 @@ func detectPython(root string) (Stack, bool) {
 	return Stack{
 		Name: "Python",
 		Commands: map[string]string{
-			cmdTest:     "pytest -q",
+			// Run by sdlc, test keeps its coverage data in the run's
+			// directory, for coverage to report.
+			cmdTest: `if [ -n "${SDLC_RUN_DIR-}" ]; then COVERAGE_FILE="$SDLC_RUN_DIR/.coverage" pytest -q --cov; ` +
+				`else pytest -q; fi`,
+			cmdTestFiles: `if [ -n "${SDLC_TEST_FILES-}" ]; then sed 's#^#./#' "$SDLC_TEST_FILES" | tr '\n' '\0' | ` +
+				`xargs -0 pytest -q; else pytest -q; fi`,
 			cmdLint:     "ruff check .",
 			cmdFmt:      "ruff format .",
 			cmdFmtCheck: "ruff format --check .",
 			"fmt_file":  `case "$FILE" in *.py) ruff format "$FILE" ;; esac`,
 			// pytest-cov writes .coverage in the working directory unless
 			// COVERAGE_FILE says where; the same temp file as Go's profile.
-			"coverage": `p=$(mktemp) && trap 'rm -f "$p"' EXIT && ` +
+			"coverage": `if [ -n "${SDLC_RUN_DIR-}" ]; then COVERAGE_FILE="$SDLC_RUN_DIR/.coverage" python3 -m coverage report | ` +
+				`grep -E '^TOTAL' | grep -Eo '[0-9]+%' | tr -d %; ` +
+				`else p=$(mktemp) && trap 'rm -f "$p"' EXIT && ` +
 				`COVERAGE_FILE="$p" pytest -q --cov --cov-report=term | grep -E '^TOTAL' | ` +
-				`grep -Eo '[0-9]+%' | tr -d %`,
+				`grep -Eo '[0-9]+%' | tr -d %; fi`,
 		},
 		// conftest.py is where pytest fixtures live, so a test's outcome can
 		// be changed there without touching a test file.

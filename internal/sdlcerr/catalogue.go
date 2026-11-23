@@ -313,6 +313,12 @@ var (
 	// general one.
 	DecisionRefused = register("SDLC-E0094",
 		`give each part of the decision on one line each: --question "<what was decided>", --option "<an option>" at least twice with no two the same, --chosen with one of the options word for word, --reason "<why>", and --by with the agent whose recommendation or ruling was applied. Nothing was recorded, so run the command again`)
+	// GateRunRefused is "sdlc gate implementation pass" refused by the commands
+	// it ran: one failed, missed its threshold or printed no coverage figure,
+	// could not be started, wrote a file of the tree it ran on, or the story
+	// changed under it. The landing keeps SDLC-E0055 for its own run.
+	GateRunRefused = register("SDLC-E0095",
+		`read the file under .sdlc/stories/<ID>/ that the message names: it holds everything the commands printed. Where a command failed, the implementer puts the work right in the story's worktree and "sdlc gate implementation pass" is recorded again, which runs the commands again; each such refusal counts as a fail of the gate towards loop.max_rework_rounds. Where a command could not be started, wrote a file of the tree it ran on, or the story changed while it ran, or where SDLC_RUN_DIR was already set, nothing was recorded: a person puts the program, the shell or commands.<key> in .sdlc/config.json right, a command is made to write only under SDLC_RUN_DIR or a path git ignores, or SDLC_RUN_DIR is unset, and the gate is recorded again; the same refusal twice goes to a person with "sdlc escalate"`)
 )
 
 // entry is one row of the catalogue.

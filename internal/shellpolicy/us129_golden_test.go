@@ -35,8 +35,13 @@ import (
 // enforcement-stays-on refusal's reason and route now name the six variables
 // the slash route's check rests on (US-130 AC-3); the other two run a glob as
 // the program on a line that names claude, which US-130 refuses as
-// story-stays-in-its-session (AC-2). Each line is the sum of one command, then
-// the sum of its answers in us129Sessions' order.
+// story-stays-in-its-session (AC-2). US-134 changes the answer of one command
+// on purpose, by a person's decision: "`sdlc gate` for an outcome; the freeze
+// is lifted by the person running the session" names sdlc and freeze, so on
+// PowerShell it may be the call and is refused as commands-run-as-configured
+// (AC-1, AC-13, security F-39). Only that line was written again, from a
+// prototype of the rule; every other line is as it was. Each line is the sum
+// of one command, then the sum of its answers in us129Sessions' order.
 var us129Golden = filepath.Join("testdata", "us129_inspect.golden")
 
 // us129Sessions are corpusState's sessions, from Bash and from PowerShell.

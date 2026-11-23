@@ -78,7 +78,7 @@ A few more words are used with a fixed meaning throughout:
 Every gate follows the same shape, and the shape is the point:
 
 1. Work is delegated to an agent that starts from a fresh context (a Gate 4
-   reviewer looking again is resumed; see
+   reviewer or the Gate 6 verifier looking again is resumed; see
    [why approvals go stale](#why-approvals-go-stale)).
 2. The agent stores what it produced **through the tool**, never as a file it
    writes itself.
@@ -196,9 +196,10 @@ four at Gate 7, plus the human advocate at Gate 1 when the project asks for it.
 With it enabled, `sdlc:project-manager` runs twice more, after Gates 1 and 2, and each
 reviewer it leaves out is one run fewer at Gate 4, Gate 7 or both. Every one
 starts from a fresh context, and none reads another's work at the same gate. The
-one exception is a Gate 4 reviewer asked to look again at a revised plan, which is
-resumed instead. It is given its own findings and their closings, not everyone's,
-and the diff shows what the others' findings changed. The independence that
+exceptions are a Gate 4 reviewer asked to look again at a revised plan, and the
+Gate 6 verifier asked to look again after a rework, which are resumed instead. Each
+is given its own findings and their closings, not everyone's, and the change since
+its last review, which shows what the others' findings changed. The independence that
 remains is the first look. A gate that keeps failing hands the story to a
 person after [`loop.max_rework_rounds`](configuration.md#loop) failures. A
 reviewer that keeps blocking sends the gate to its [arbiter](#the-arbiter)
@@ -306,6 +307,17 @@ test files that are new or changed. The freeze is taken only if it passes, so th
 test author corrects what the check finds now, and not after the plan and its
 reviews at the cost of a person's unfreeze.
 
+The first freeze of a story then runs `commands.test_files` over the same new and changed test
+files, from the repository root, with their list in the file `SDLC_TEST_FILES` names; where
+`commands.test_files` is empty it runs the whole `commands.test`. A test written before its code
+fails until the code exists, so `sdlc freeze` refuses where the run passes, and where it could not
+run at all (the shell's 126 or 127), and takes the freeze where it fails. Everything the run printed
+is in `.sdlc/stories/<ID>/freeze-run.log`. The test author runs its own tests the same narrow way
+while it writes them; the whole `commands.test` is not its to run. A freeze that only adds files
+under [`freeze.allow_new_test_files`](configuration.md#freezeallow_new_test_files) runs the check
+alone. The runbook runs `sdlc freeze` in the background and waits for it in bounded calls until it
+exits.
+
 The freeze belongs to the iteration. It survives `sdlc stop` and a new session,
 so resuming a story finds its tests still locked; it is lifted when the story
 finishes, so the next story freezes its own.
@@ -347,12 +359,36 @@ approval of a plan that has since changed.
 
 **Who:** `sdlc:implementer`. **Produces:** the code.
 
-The plan is carried out one step at a time, running the tests after each. The
-implementer cannot touch any test file, and cannot add a new one. It closes each design review
-finding with `sdlc finding close`: fixed, declined with a reason, or, for something outside the
-story's files that cannot wait, referred with a reason.
+The plan is carried out one step at a time, running `commands.test_files` over the story's tests
+after each. The implementer cannot touch any test file, and cannot add a new one. It closes each
+design review finding with `sdlc finding close`: fixed, declined with a reason, or, for something
+outside the story's files that cannot wait, referred with a reason.
 
-**Refused without it:** a pass when the freeze is gone or broken.
+`sdlc gate implementation pass` then runs the commands the landing runs: `build`, `test`, `lint`,
+`fmt_check`, `coverage` and `mutation`, those that are set, in that order, at the root of the
+story's worktree, each held to the landing's rule and thresholds. One run of them shares one new
+directory, `SDLC_RUN_DIR`, so that `coverage` reads what `test` left there rather than running the
+suite again. The gate takes the tree hash before the run, the one reviews are stamped with, and
+records each command's name, exit status and duration against it. A command that fails, misses
+its threshold or prints no figure refuses the gate with
+[SDLC-E0095](troubleshooting.md#sdlc-e0095), names the command and its status, puts all it
+printed in `.sdlc/stories/<ID>/implementation-run.log` and shows the last 20 lines; the refusal is
+recorded as a fail of the gate, and counts towards
+[`loop.max_rework_rounds`](configuration.md#loop) as one. A command that could not be started, a
+command that wrote a file of the tree it ran on, or a story that changed while it ran, refuses with
+the same code and records nothing. The runbook runs the gate in the background and waits for it in
+bounded calls, then reads its output and `sdlc status --json`; every rework that changes the tree
+records the gate again, which runs the commands on the new tree and leaves the gates before it
+standing.
+
+Two things the check after the run does not see: an edit made and put back while the run is in
+progress, and a file a command adds and that is later deleted. Until it is deleted, an added
+file that git does not ignore makes the result no longer current, so the verifier and the landing
+run the commands themselves. Keep build output under a path git ignores or under
+`$SDLC_RUN_DIR`.
+
+**Refused without it:** a pass when the freeze is gone or broken, or one whose commands did not
+all pass.
 
 ## Gate 6 — `verification`, then `verifier_review`
 
@@ -361,10 +397,17 @@ story's files that cannot wait, referred with a reason.
 A verifier that has not seen the implementer's reasoning re-derives what each acceptance
 criterion should mean, compares that with the frozen tests, runs every command
 the project configures, and hunts by hand for the thing tests cannot catch: an
-implementation that passes them without the behaviour being there. It checks
+implementation that passes them without the behaviour being there. It asks
+`sdlc status --json` itself whether the result the implementation gate recorded is for the tree
+hash and the commands as they are now; where it says `current: true`, the verifier cites those
+results as run by sdlc and does not run them again, and where it does not, it runs them. A result
+run by sdlc is not proof the environment the commands started with was not chosen, so the gaming
+check still applies. It checks
 every gaming vector the red team named at Gate 4. Before it approves, it checks the findings
 ledger: every design review finding closed, each fix in the diff, each decline's reason sound, and
-nothing the diff touches referred.
+nothing the diff touches referred. After a block, the implementer closes its findings, Gate 5
+is recorded again, and the same verifier is resumed to look again, given how each of its
+findings was closed and the files the rework changed.
 
 **Refused without it:** a pass with the verification document missing, a broken
 freeze, a design review finding still open
@@ -563,7 +606,9 @@ wall. A reviewer that blocks `loop.max_review_rounds` times sends the gate to
 [its arbiter](#the-arbiter), and the arbiter that blocks as many times hands the
 story over. The count starts again once the person has answered. The failure
 that reaches the limit is recorded together with the hand-over, or the command
-is refused and records neither.
+is refused and records neither. A gate refused by its checks records nothing; the
+implementation gate refused because a command it ran failed is recorded as the
+fail that it is.
 
 Recording a gate again, pass or fail, reopens every gate after it: each goes
 back to `pending`, with a note saying why, and has to be passed again. A new
@@ -681,6 +726,18 @@ takes that as no failure but escalates it as `spec_unclear` (which reading of a
 criterion is meant) or `design_decision`. The researcher does not stop: it marks
 each product question, counts it and finishes the analysis, so that Gate 2
 escalates every one at once as `product_decision`.
+
+## Who runs the commands
+
+| Gate | Command | Who runs it | When |
+| --- | --- | --- | --- |
+| 3 | `commands.test_files` | the test author, `sdlc:sdet` | on its own tests, as it writes them |
+| 3 | `commands.test_files` | the test reviewer, where it is staffed | on the new and changed tests, before `sdlc freeze` |
+| 3 | `commands.test_files` (or `commands.test`) and `commands.freeze_check` | sdlc | at `sdlc freeze` |
+| 4 and 5 | `commands.test_files` | the implementer | after each step |
+| 5 | `commands.test`, with `build`, `lint`, `fmt_check`, `coverage` and `mutation` | sdlc | at `sdlc gate implementation pass`, and after every rework |
+| 6 | the same | the verifier | only where `sdlc status --json` reports no current result |
+| 9 | the same | sdlc | at `sdlc stop`, where the tree or a command differs from the result recorded |
 
 ## Why approvals go stale
 
@@ -1002,11 +1059,13 @@ waits has changed nothing and can be run again at once. The landing checks, in o
   top, or the stop's own replay of them with every author and message kept. A
   commit amended or added since is approved again
   ([`SDLC-E0037`](troubleshooting.md#sdlc-e0037));
-- where the story was put onto a trunk that moved, or changed since the commit
-  gate, the configured commands pass on the tree that is about to be trunk, as
+- the configured commands pass on the tree that is about to be trunk, as
   trunk's committed configuration has them
-  ([configuration](configuration.md#commands)). A command that fails there lands
-  nothing, and the story stays with its session to rework
+  ([configuration](configuration.md#commands)). Where Gate 5 recorded a result for
+  that very tree, with trunk's commands and thresholds, and the story was not rebased, the
+  landing lands on that result and runs nothing again, and says so in one line naming the tree;
+  otherwise it runs them, says why first, and records what it ran. A command that fails there
+  lands nothing, and the story stays with its session to rework
   ([`SDLC-E0055`](troubleshooting.md#sdlc-e0055)).
 
 Then trunk moves, by fast-forward and never by merge, and nothing is pushed.
@@ -1103,6 +1162,9 @@ trunk with the story, and two of those still conflict as any file does
 commits can mark `CODEMAP.md` in `.gitattributes` with git's built-in union
 merge, `CODEMAP.md merge=union`, which the stop's replay honours. That is the
 project's choice, and `sdlc` does not write it.
+
+`CODEMAP.md` counts in the tree hash Gate 5 records its commands' result against, so a branch
+that carries a commit of it has its commands run again at the landing.
 
 ### Removing a worktree
 

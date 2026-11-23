@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"io/fs"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/bbsnly/sdlc/internal/fsx"
 	"github.com/bbsnly/sdlc/internal/gitx"
 )
 
@@ -57,6 +61,64 @@ func (s *Store) ReviewSubject(ctx context.Context, also ...gitx.Override) (strin
 		return gitx.TreeHash(ctx, s.root, also...)
 	}
 	return gitx.TreeHash(ctx, s.root, append([]gitx.Override{{Path: filepath.ToSlash(rel), Content: normal}}, also...)...)
+}
+
+// BacklogSubject is the backlog as ReviewSubject measures it: its path from
+// the root, slash-separated, and its bytes less every story's status and
+// updated. ok is false where ReviewSubject measures no backlog of its own: one
+// outside the root, or one that cannot be read. One that does not parse is
+// given as it is, as ReviewSubject hashes it.
+//
+// It is read only where it is a regular file, by fsx.OpenRegular, and never
+// through the invocation's reads: the implementation gate asks it before and
+// after the commands, with the project's lock held, and an open that followed
+// a link a command swapped in for a named pipe would wait there until an
+// interrupt (code review, security F-3). Anything else is not ok, which the
+// gate takes by the path's type.
+func (s *Store) BacklogSubject() (rel string, normal []byte, ok bool) {
+	path := s.cfg.BacklogPath(s.root)
+	r, err := filepath.Rel(s.root, path)
+	if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+		return "", nil, false
+	}
+	f, _, err := fsx.OpenRegular(path)
+	if err != nil {
+		return "", nil, false
+	}
+	defer func() { _ = f.Close() }()
+	raw, err := io.ReadAll(f)
+	if err != nil {
+		return "", nil, false
+	}
+	if n, parsed := withoutStoryFields(raw, storyBookkeeping...); parsed {
+		raw = n
+	}
+	return filepath.ToSlash(r), raw, true
+}
+
+// ReviewSubjectAt is ReviewSubject of commit rather than of the working tree:
+// the tree that lands, measured as the implementation gate measured the tree
+// it ran on, so that the two compare. The backlog is the one commit holds,
+// less the same bookkeeping.
+func (s *Store) ReviewSubjectAt(ctx context.Context, commit string) (string, error) {
+	path := s.cfg.BacklogPath(s.root)
+	rel, err := filepath.Rel(s.root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return gitx.CommitTreeHash(ctx, s.root, commit)
+	}
+	slash := filepath.ToSlash(rel)
+	raw, err := gitx.FileAt(ctx, s.root, commit, slash)
+	if errors.Is(err, fs.ErrNotExist) {
+		return gitx.CommitTreeHash(ctx, s.root, commit)
+	}
+	if err != nil {
+		return "", err
+	}
+	normal, ok := withoutStoryFields(raw, storyBookkeeping...)
+	if !ok {
+		return gitx.CommitTreeHash(ctx, s.root, commit)
+	}
+	return gitx.CommitTreeHash(ctx, s.root, commit, gitx.Override{Path: slash, Content: normal})
 }
 
 // byteOrderMark is what Windows PowerShell 5 starts a file it saves with. The

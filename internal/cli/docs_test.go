@@ -221,6 +221,9 @@ func shellRules(t *testing.T) []string {
 		"echo x > .sdlc/stories/A-1/trace.jsonl",
 		// US-112 B1: the hook run by hand on an event it records.
 		"sdlc hook SubagentStop < /tmp/p.json",
+		// US-134 AC-1 and AC-13: a call that runs the configured commands with
+		// its environment changed.
+		"GOFLAGS=-v sdlc freeze",
 	} {
 		f, ok := shellpolicy.Inspect(command, shellpolicy.State{})
 		if !ok {

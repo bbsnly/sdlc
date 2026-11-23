@@ -88,12 +88,13 @@ for Go:
   "commands": {
     "smoke": "test -z \"$(go list ./...)\" || go vet ./...",
     "build": "go build ./...",
-    "test": "go test ./... -count=1",
+    "test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then go test ./... -count=1 -coverprofile=\"$SDLC_RUN_DIR/cover.out\"; else go test ./... -count=1; fi",
+    "test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ]; then sed -e 's#^#./#' -e 's#/testdata/.*#/x#' -e 's#/[^/]*$##' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 go test -count=1; else go test ./... -count=1; fi",
     "lint": "golangci-lint run",
     "fmt": "gofmt -w .",
     "fmt_check": "test -z \"$(gofmt -l .)\"",
     "fmt_file": "case \"$FILE\" in *.go) gofmt -w \"$FILE\" ;; esac",
-    "coverage": "p=$(mktemp) && trap 'rm -f \"$p\"' EXIT && go test ./... -count=1 -coverprofile=\"$p\" >/dev/null && go tool cover -func=\"$p\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'"
+    "coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then test -f \"$SDLC_RUN_DIR/cover.out\" && go tool cover -func=\"$SDLC_RUN_DIR/cover.out\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'; else p=$(mktemp) && trap 'rm -f \"$p\"' EXIT && go test ./... -count=1 -coverprofile=\"$p\" >/dev/null && go tool cover -func=\"$p\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'; fi"
   },
   "thresholds": { "coverage_min": 80, "mutation_min": 70 },
   "paths": {
@@ -185,6 +186,7 @@ project you have: it writes the `team` section back at its defaults, and your ow
     "smoke": "",
     "build": "",
     "test": "",
+    "test_files": "",
     "lint": "",
     "fmt": "",
     "fmt_check": "",
@@ -278,7 +280,8 @@ a build system `init` could not guess.
 | Key | When it runs |
 | --- | --- |
 | `build` | the implementer, when the frozen tests pass; the verifier, at Gate 6 |
-| `test` | the test author at Gate 3, the implementer after each step, the verifier at Gate 6 |
+| `test` | `sdlc gate implementation pass`; the verifier at Gate 6 where no current result is recorded; `sdlc freeze` where `test_files` is empty |
+| `test_files` | the test author at Gate 3 and the implementer after each step, on the story's tests; `sdlc freeze`, over the new and changed tests: [The narrow test command](#the-narrow-test-command) |
 | `lint` | the implementer, when the frozen tests pass; the verifier, at Gate 6 |
 | `fmt` | the implementer, when the frozen tests pass |
 | `fmt_check` | the verifier |
@@ -497,10 +500,116 @@ configuration that cascades, such as ESLint's `.eslintrc` and `.editorconfig`. A
 `GOWORK=off` in the commands, or commit a workspace that works from there.
 Installing in `smoke` gives the worktree a `node_modules` of its own.
 
+### The run directory
+
+`sdlc gate implementation pass`, the landing and the freeze's narrow run hand each run of the
+commands one new directory, `SDLC_RUN_DIR`: empty when the first command begins, the same for
+every command of that run, and outside the project. It is made in the operating system's
+temporary directory (`$TMPDIR` on macOS, usually `/tmp` on Linux, `%TEMP%` on Windows), named
+`sdlc-run-` and a random suffix, mode 0700, and removed when the run ends, whether it passed,
+failed or was interrupted. A run killed outright leaves it, and it is safe to delete. `sdlc`
+makes the directory, names it and removes it; it knows nothing of what a tool puts in it.
+
+That is how `test` and `coverage` share one run of the suite: `test` leaves its coverage data in
+the directory and `coverage` reads the figure from it. Each run's directory is new, so a figure
+another run left is never read, and a `coverage` that finds no data prints no figure and is
+refused. Run by hand, with no `SDLC_RUN_DIR`, each command runs as it did on its own. A
+configuration written before this, whose `coverage` runs the suite itself, still works; it runs
+the suite twice.
+
+#### Go
+
+`init` writes this pair:
+
+```json
+"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then go test ./... -count=1 -coverprofile=\"$SDLC_RUN_DIR/cover.out\"; else go test ./... -count=1; fi",
+"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then test -f \"$SDLC_RUN_DIR/cover.out\" && go tool cover -func=\"$SDLC_RUN_DIR/cover.out\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'; else p=$(mktemp) && trap 'rm -f \"$p\"' EXIT && go test ./... -count=1 -coverprofile=\"$p\" >/dev/null && go tool cover -func=\"$p\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'; fi"
+```
+
+#### Python
+
+`init` writes this pair. It needs pytest-cov, which `--cov` turns on, and coverage.py, which comes
+with it:
+
+```json
+"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then COVERAGE_FILE=\"$SDLC_RUN_DIR/.coverage\" pytest -q --cov; else pytest -q; fi",
+"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then COVERAGE_FILE=\"$SDLC_RUN_DIR/.coverage\" python3 -m coverage report | grep -E '^TOTAL' | grep -Eo '[0-9]+%' | tr -d %; else p=$(mktemp) && trap 'rm -f \"$p\"' EXIT && COVERAGE_FILE=\"$p\" pytest -q --cov --cov-report=term | grep -E '^TOTAL' | grep -Eo '[0-9]+%' | tr -d %; fi"
+```
+
+#### Rust
+
+`init` writes no `coverage` for Rust. With [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov)
+installed, a pair that shares one run is:
+
+```json
+"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then cargo llvm-cov --lcov --output-path \"$SDLC_RUN_DIR/lcov.info\"; else cargo test; fi",
+"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then test -f \"$SDLC_RUN_DIR/lcov.info\" && awk -F: '/^LF:/{t+=$2} /^LH:/{h+=$2} END{if (t) printf \"%.1f\\n\", 100*h/t}' \"$SDLC_RUN_DIR/lcov.info\"; else cargo llvm-cov --summary-only | grep -E '^TOTAL' | grep -Eo '[0-9]+\\.[0-9]+%' | tail -1 | tr -d %; fi"
+```
+
+#### Node
+
+`init` writes no `coverage` for Node. With [c8](https://github.com/bcoe/c8) as a development
+dependency, a pair that shares one run is:
+
+```json
+"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then npx c8 --reporter=json-summary --report-dir \"$SDLC_RUN_DIR\" npm test --silent; else npm test --silent; fi",
+"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then test -f \"$SDLC_RUN_DIR/coverage-summary.json\" && node -e 'console.log(require(process.argv[1]).total.lines.pct)' \"$SDLC_RUN_DIR/coverage-summary.json\"; fi"
+```
+
+#### What a run leaves
+
+The gate writes what its commands print to a temporary file in the story's directory,
+`.implementation-run.log.tmp`, random digits and `.out` (`.freeze-run.log.tmp` at the freeze), and
+puts it at `implementation-run.log` or `freeze-run.log` when the run ends. Another `sdlc` command
+run meanwhile leaves it alone. The story's `.gitignore` lists both names and the pattern
+`.*-run.log.tmp*`, so a temporary file a killed run leaves is not committed; it is safe to delete.
+The gate and the freeze set no time limit of their own, as the landing sets none.
+
+### The narrow test command
+
+`commands.test_files` runs the test files a story adds or changes, and not the whole suite: the
+test author runs it on its own tests at Gate 3, the implementer after each step at Gates 4 and 5,
+and `sdlc freeze` over the new and changed test files before it takes the freeze. Where it is
+empty, `sdlc freeze` runs the whole `commands.test` instead, and where neither is set it runs
+nothing. It runs from the repository root, with `SDLC_TEST_FILES` naming a file that lists the
+files, one to a line, slash-separated and relative to the root, as git names them, and with
+`SDLC_RUN_DIR` set as above. A name that holds a C0 control character other than a tab (a line
+feed and a carriage return among them), DEL, U+0085, U+2028 or U+2029 is refused before anything
+runs, since a reader such as Python's `splitlines` would split it in two. `init` writes it for
+every stack it knows, using only `tr`, `xargs -0`, `sed`, `grep` and `if`, and leaves the key empty
+for a project it does not know.
+
+For Go, the packages that hold the files listed, a file under `testdata/` standing for the package
+above it:
+
+```json
+"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ]; then sed -e 's#^#./#' -e 's#/testdata/.*#/x#' -e 's#/[^/]*$##' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 go test -count=1; else go test ./... -count=1; fi"
+```
+
+For Python, each file listed, from `./`:
+
+```json
+"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ]; then sed 's#^#./#' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 pytest -q; else pytest -q; fi"
+```
+
+For Rust, `--test=<name>` for each `tests/<name>.rs`, and where a file listed is anything else,
+the whole `cargo test`:
+
+```json
+"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ] && ! grep -qv '^tests/[^/]*\\.rs$' \"$SDLC_TEST_FILES\"; then sed 's#^tests/\\(.*\\)\\.rs$#--test=\\1#' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 cargo test; else cargo test; fi"
+```
+
+For Node, each file listed, from `./`, handed to the `test` script, where `package.json` has one:
+
+```json
+"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ]; then sed 's#^#./#' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 npm test --silent --; else npm test --silent; fi"
+```
+
 ### The coverage profile
 
-The `coverage` command `init` guesses for Go writes its profile to a temporary file made by
-`mktemp`, in the operating system's temporary directory, and removes it when the shell exits,
+Run by hand, with no `SDLC_RUN_DIR`, the `coverage` command `init` guesses for Go writes its
+profile to a temporary file made by `mktemp`, in the operating system's temporary directory, and
+removes it when the shell exits,
 whether the run passed or a step failed. The Python command does the same with pytest-cov's
 data file, through `COVERAGE_FILE`. Neither leaves anything in the project, so Gate 8's
 `git add -A` has nothing to pick up and `sdlc init` has no `.gitignore` line to write; what a
@@ -529,14 +638,19 @@ exception, described next.
 ### At landing
 
 A story worked in its worktree lands when `sdlc stop` runs there after the retro
-([the loop](the-loop.md#done-when-it-lands)). Where the story was rebased
-onto a trunk that had moved, or its change is not the one the reviewers saw, the
-landing runs `build`, `test`, `lint`, `fmt_check`, `coverage` and `mutation`,
-those that are set, in that order, in the story's worktree, on the commit that
-would land. It reads them, and `thresholds`, from `.sdlc/config.json` as trunk
+([the loop](the-loop.md#done-when-it-lands)). Where Gate 5 recorded a result for the tree that
+would land, with trunk's commands and thresholds, and the story was not rebased onto a trunk that
+had moved, the landing lands on that result and runs nothing again. Otherwise it runs `build`,
+`test`, `lint`, `fmt_check`, `coverage` and `mutation`, those that are set, in that order, in the
+story's worktree, on the commit that would land, says first why it runs them, and records what it
+ran against that tree. It reads them, and `thresholds`, from `.sdlc/config.json` as trunk
 commits it at the tip the landing would move from, never from a checkout's copy
 on disk: an uncommitted edit that would make a failing command pass changes
 nothing. Trunk is the main checkout's `git.trunk_branch`.
+
+A file git tracks and `.gitignore` also matches is in the commit's tree but not in the one Gate 5
+measured, so in such a project the two never agree and the landing runs the commands every time.
+`git ls-files -ci --exclude-standard` lists such files; untrack each one, or stop ignoring it.
 
 #### What counts as passing
 
