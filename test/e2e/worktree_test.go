@@ -919,7 +919,9 @@ func TestAC4StartsAtTheSameMomentInThreeCheckoutsNeverShareAStory(t *testing.T) 
 	given := map[string]string{}
 	for i, r := range results {
 		if r.err != nil {
-			t.Errorf("start in %s failed: %v\n%s", checkouts[i].dir, r.err, r.stderr)
+			// --json puts a refusal on stdout: CI run 45265124445 showed
+			// an exit 1 here with nothing else to go on.
+			t.Errorf("start in %s failed: %v\n%s%s", checkouts[i].dir, r.err, r.stdout, r.stderr)
 			continue
 		}
 		var doc struct {

@@ -162,6 +162,13 @@ func startLocked(cmd *cobra.Command, asked string, checked bool, said *startSaid
 		// trunk, as it always was.
 		plan, err := decideStart(s, asked, s.CommandSession())
 		said.passed = plan.passedOver
+		if plan.raced {
+			// Read while the start holding the lock was claiming the story
+			// this one picked: refused here, a bare start lost a story it
+			// passes over under the lock (the e2e AC-4 row, CI run
+			// 45265124445). The lock decides.
+			return nil
+		}
 		if err != nil || !plan.fresh || checked {
 			return err
 		}

@@ -33,6 +33,11 @@ type startPlan struct {
 	// checkout holding it no longer exists. It is filled even where picking
 	// then fails, which is when a person most needs to hear it.
 	passedOver []goneHolder
+	// raced is a story start picked itself that another checkout held by the
+	// time start checked it: the reads fell either side of another start's
+	// claim. Only a decision made without the lock can see that, and the lock
+	// settles it, by passing the story over.
+	raced bool
 }
 
 // goneHolder is a story held by a checkout that no longer exists.
@@ -205,6 +210,8 @@ func decidePicked(s *store.Store, asked string) (startPlan, error) {
 		return plan, err
 	}
 	if err := refuseIfHeldElsewhere(s, id, "a story is worked in one checkout at a time"); err != nil {
+		// nextRunnable has just left out every story held elsewhere.
+		plan.raced = asked == ""
 		return plan, err
 	}
 	if err := refuseIfWaiting(s, id); err != nil {
