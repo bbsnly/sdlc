@@ -2506,6 +2506,10 @@ command is set, where no test file is new or changed, or where the freeze only a
   too, and is a person's to put right;
 - a test file whose name holds a control character other than a tab, DEL, U+0085, U+2028 or
   U+2029 is refused before anything runs, since one name to a line cannot carry it;
+- a test file the run changes refuses the freeze; one it creates is not held, and is refused from
+  Gate 3 on, by `sdlc gate tests_frozen pass` and every gate after it
+  ([SDLC-E0043](troubleshooting.md#sdlc-e0043)), where a `commands.freeze_check` would have had
+  it refused at the freeze;
 - where it fails, the freeze is taken, and `freeze_run` on the record holds the command, its exit
   status, its duration and the tree hash it ran on. The output says so in one line, and `--json`
   gives the run as `run`.

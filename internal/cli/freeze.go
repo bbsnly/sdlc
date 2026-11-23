@@ -126,25 +126,9 @@ func (f *freezer) take() error {
 	if lock != nil {
 		return f.refuseOrExtend(id, lock)
 	}
-	files := f.files
-	if !f.passed || f.check != "" || files == nil {
-		if files, err = findTests(f.cmd, f.p, f.s); err != nil {
-			return err
-		}
-	}
-	hashes, err := hashAll(f.s, files)
-	if err == nil {
-		err = f.reviewed(id, files, hashes)
-	}
+	files, hashes, err := f.testsToHold(id)
 	if err != nil {
 		return err
-	}
-	if f.passed && f.ran != nil && f.check == "" {
-		// The narrow run alone ran: a test file it changed is refused as the
-		// check's change is.
-		if changed := changedFiles(f.files, f.judged, hashes); len(changed) > 0 {
-			return f.changed(commandsPrefix+f.narrowKey, changed)
-		}
 	}
 	if f.vetting() || f.narrowing() {
 		f.files = files
@@ -154,6 +138,37 @@ func (f *freezer) take() error {
 		return err
 	}
 	return f.sayFrozen(id, files, nil)
+}
+
+// testsToHold is the test files a first freeze would hold, with their hashes,
+// once the test reviewer's wait is met and the narrow run, where it ran alone,
+// changed none of them. That pass keeps the first listing, so a test file the
+// run created is not among them: from Gate 3 on, the tests_frozen gate and each
+// one after it refuse it as one the freeze does not hold (SDLC-E0043), where a
+// check would have had it refused here.
+func (f *freezer) testsToHold(id string) ([]string, map[string]string, error) {
+	files := f.files
+	if !f.passed || f.check != "" || files == nil {
+		var err error
+		if files, err = findTests(f.cmd, f.p, f.s); err != nil {
+			return nil, nil, err
+		}
+	}
+	hashes, err := hashAll(f.s, files)
+	if err == nil {
+		err = f.reviewed(id, files, hashes)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	if f.passed && f.ran != nil && f.check == "" {
+		// The narrow run alone ran: a test file it changed is refused as the
+		// check's change is.
+		if changed := changedFiles(f.files, f.judged, hashes); len(changed) > 0 {
+			return nil, nil, f.changed(commandsPrefix+f.narrowKey, changed)
+		}
+	}
+	return files, hashes, nil
 }
 
 // narrowCommand is the command a first freeze runs over its new and changed

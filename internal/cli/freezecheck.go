@@ -40,8 +40,12 @@ func (f *freezer) vetting() bool { return f.check != "" && !f.passed }
 // to hold: commands.freeze_check, and on a first freeze the narrow run of the
 // new and changed tests (PLAN D8). The freeze is taken only where the check
 // passes and the narrow run fails, as tests written before their code do, and
-// both left every test file as they found it. Its result is the result of the
-// whole command.
+// neither changed a test file it was given. A test file the check creates is
+// refused at the freeze too, since the second pass lists the tests again; one
+// the narrow run alone creates is not, since that pass keeps the first
+// listing, and from Gate 3 on the tests_frozen gate and each one after it
+// refuse it as a test the freeze does not hold (SDLC-E0043). Its result is the
+// result of the whole command.
 //
 // The project's lock is let go while they run, as it is for the landing's
 // commands: a linter or a test run can take longer than any other command
