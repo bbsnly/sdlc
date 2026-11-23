@@ -7,6 +7,74 @@ All notable changes to this project are documented here. The format follows
 Error codes are part of the interface: once published, a code's meaning does
 not change and it is never reused.
 
+## [0.7.1](https://github.com/bbsnly/sdlc/releases/tag/v0.7.1) - 2026-11-24
+
+Upgrading from 0.6.1: see
+[docs/migrations/v0.6.1-to-v0.7.1.md](docs/migrations/v0.6.1-to-v0.7.1.md).
+
+There is no 0.7.0 release. The `v0.7.0` tag was pushed, its check failed on Windows before
+anything was built, and a tag here cannot be moved, so these changes are first released as 0.7.1.
+
+### Added
+
+- The loop decides implementation questions itself and stops only for product ones.
+  `docs/the-loop.md` says which is which. `sdlc decide` records an implementation decision as a
+  `decision` event in the gate record and in the story's `DECISIONS.md`, which only the tool
+  writes, and refuses a malformed call with the new `SDLC-E0094`. `sdlc log` lists decisions,
+  `sdlc ack` covers them, `sdlc trace --all` counts them per story, and `sdlc escalate` takes
+  `product_decision`. A reviewer that blocks for the `max_rounds`-th time sends the gate to its
+  arbiter, `<role>-arbiter`, staffed one step up, whose review stands for the role until a person
+  answers. Breaking: `sdlc status --json` gains `decisions_unread`, `sdlc review add --json` gains
+  `arbiter`, and a reviewer at its limit no longer hands the story to a person while its arbiter
+  has not ruled.
+- Tests are reviewed before they are frozen. A new `sdlc:test-reviewer` agent, the thirteenth,
+  reads the test files at Gate 3, and its approval is tied to their names and content, so a change
+  to either makes it stale. At its limit the tests gate goes to `test-reviewer-arbiter`. Breaking:
+  `sdlc freeze` waits for a current review from it wherever it is enabled, with `SDLC-E0029` or
+  `SDLC-E0030`, an `SDLC-E0030` for a gate that has gone to its arbiter names the arbiter, and
+  `sdlc review list --json` gains `gone_to`. An extending freeze after a test was renamed only by
+  case, on macOS or Windows, no longer locks up.
+- A story pauses before its commit for the paths it touches, not only for its tier.
+  `human_gates.pre_commit_pause_paths` lists globs, and the commit gate, the hook and the landing
+  pause where a changed, moved, deleted or untracked file matches one, reading the main
+  checkout's, the story checkout's and the base commit's configuration together so that no copy
+  can narrow a pause. A pass with no pause records `landed_without_pause`, which `sdlc log` shows
+  and `sdlc ack` marks read. Breaking: the `SDLC-E0037` and `SDLC-E0075` texts name a path as well
+  as the tier, `sdlc status --json` gains `pre_commit_pause`, and `sdlc init` writes the key.
+
+### Changed
+
+- Breaking: the tests and checks run once per tree, at Gate 5. `sdlc gate implementation pass`
+  runs the configured commands itself, under a run lock, and records the result against the tree
+  hash, the commands and the thresholds; a failed run is refused with the new `SDLC-E0095`, which
+  names its log. The verifier cites the recorded result, `sdlc status` shows it, and the landing
+  reuses it where the tree is the one measured, so a story no longer runs its suite up to four
+  times. `sdlc freeze` runs `commands.test_files` over the new and changed tests only, naming them
+  in `SDLC_TEST_FILES`, and proves they fail against the code as it is; with `test_files` empty it
+  runs `commands.test`. Because the recorded result stands in for a run, a new shell rule refuses
+  a line that changes the environment before `sdlc freeze` or `sdlc gate implementation pass`;
+  what it does not hold is listed in `docs/enforcement.md`.
+- Each command and hook call keeps git's answers and the files it read for as long as it runs. A
+  story's walk runs about half the git processes it did, and the hook's events allocate about
+  half as much on a first call.
+
+### Fixed
+
+- A person's `/sdlc:approve`, `/sdlc:unfreeze`, `/sdlc:ack`, `/sdlc:remap`, `/sdlc:release` and
+  `/sdlc:assign`, typed in Claude Desktop's Code tab, run again. Claude Code 2.1.312 sets
+  `AI_AGENT` in every hook, and the hook took each of them for a model's. It now tells them
+  apart by four variables of its own environment and refuses if any is absent or different.
+  Breaking: the refusal names each variable that failed, `enforcement-stays-on` protects six names
+  rather than one, and `story-stays-in-its-session` reads more ways of starting a nested session.
+- Two bare `sdlc start`s in two checkouts at once no longer leave one refused with `SDLC-E0050`
+  for the story the other has just claimed; the one that waited passes it over and takes the
+  next.
+- On Windows, a quick command at the landing, the implementation gate or the freeze is no longer
+  refused as one that could not be run. The command was started and then put in its job object,
+  and one that had already ended, having printed what it should and exited 0, was refused with
+  "Access is denied". A command is now started suspended and let run only once it is in its job,
+  so a child it starts can no longer outlive a stop either.
+
 ## [0.6.1](https://github.com/bbsnly/sdlc/releases/tag/v0.6.1) - 2026-11-05
 
 Upgrading from 0.5.0: see
